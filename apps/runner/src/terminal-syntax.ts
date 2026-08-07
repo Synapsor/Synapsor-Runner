@@ -73,7 +73,48 @@ export function renderTerminalJson(value: unknown, color = false, indent = 2): s
 
 export function renderTerminalSql(value: string, color = false): string {
   const statement = formatSqlForTerminal(safeTerminalText(value));
-  if (!color) return statement;
+  return color ? highlightTerminalSql(statement) : statement;
+}
+
+export function renderTerminalSqlFrame(
+  value: string,
+  options: {
+    title: string;
+    metadata?: string[];
+    color?: boolean;
+    columns?: number;
+  },
+): string {
+  const statement = renderTerminalSql(value, false);
+  const metadata = (options.metadata ?? []).map(safeTerminalText);
+  const safeTitle = safeTerminalText(options.title);
+  const availableWidth = Math.max(24, Math.min(100, (options.columns ?? 100) - 2));
+  const naturalWidth = Math.max(
+    24,
+    safeTitle.length + 6,
+    ...statement.split("\n").map((line) => line.length + 4),
+    ...metadata.map((line) => line.length + 4),
+  );
+  const frameWidth = Math.min(availableWidth, naturalWidth);
+  const innerWidth = frameWidth - 4;
+  const statementLines = statement.split("\n").flatMap((line) =>
+    wrapTerminalFrameLine(line, innerWidth));
+  const metadataLines = metadata.flatMap((line) => wrapTerminalFrameLine(line, innerWidth));
+  const body = statementLines.map((line) => framedTerminalLine(
+    options.color ? highlightTerminalSql(line) : line,
+    line.length,
+    innerWidth,
+  ));
+  const footer = metadataLines.map((line) => framedTerminalLine(line, line.length, innerWidth));
+  return [
+    titledTerminalBorder(safeTitle, frameWidth),
+    ...body,
+    ...(footer.length > 0 ? [plainTerminalBorder(frameWidth), ...footer] : []),
+    plainTerminalBorder(frameWidth),
+  ].join("\n");
+}
+
+function highlightTerminalSql(statement: string): string {
   return statement.replace(sqlToken, (match) => {
     const upper = match.toUpperCase();
     if (match.startsWith("--") || match.startsWith("/*")) return style("2", match);
@@ -91,6 +132,45 @@ export function renderTerminalSql(value: string, color = false): string {
     if (sqlKeywords.has(upper)) return style("1;36", match);
     return match;
   });
+}
+
+function titledTerminalBorder(title: string, width: number): string {
+  const maximum = Math.max(1, width - 6);
+  const shown = title.length > maximum
+    ? `${title.slice(0, Math.max(1, maximum - 3))}...`
+    : title;
+  return `+-- ${shown} ${"-".repeat(Math.max(0, width - shown.length - 6))}+`;
+}
+
+function plainTerminalBorder(width: number): string {
+  return `+${"-".repeat(Math.max(0, width - 2))}+`;
+}
+
+function framedTerminalLine(
+  rendered: string,
+  visibleLength: number,
+  innerWidth: number,
+): string {
+  return `| ${rendered}${" ".repeat(Math.max(0, innerWidth - visibleLength))} |`;
+}
+
+function wrapTerminalFrameLine(value: string, width: number): string[] {
+  if (value.length <= width) return [value];
+  const initialIndent = value.match(/^\s*/)?.[0] ?? "";
+  const continuationIndent = `${initialIndent}  `.slice(0, Math.max(0, width - 1));
+  const lines: string[] = [];
+  let remaining = value;
+  while (remaining.length > width) {
+    const candidate = remaining.slice(0, width + 1);
+    const wordBreak = candidate.lastIndexOf(" ");
+    const splitAt = wordBreak > Math.max(0, initialIndent.length)
+      ? wordBreak
+      : width;
+    lines.push(remaining.slice(0, splitAt).trimEnd());
+    remaining = `${continuationIndent}${remaining.slice(splitAt).trimStart()}`;
+  }
+  lines.push(remaining);
+  return lines;
 }
 
 function formatSqlForTerminal(statement: string): string {

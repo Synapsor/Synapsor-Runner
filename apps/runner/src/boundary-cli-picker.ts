@@ -9,6 +9,7 @@ import {
   padTerminalLine,
   terminalContentWidth,
 } from "./terminal-layout.js";
+import { formatDerivedScopePath } from "./derived-scope-display.js";
 
 export type BoundaryFieldTier = "visible" | "withheld_from_model" | "kept_out";
 export type BoundaryFieldTierEditResult =
@@ -160,7 +161,7 @@ async function resolveBlockedResource(
     ...(view.derived_tenant_scope?.candidates ?? []).map((scope) => ({
       kind: "derived" as const,
       value: scope.path_id,
-      label: `via ${scope.path_id} to ${scope.ancestor_resource}.${scope.ancestor_column}`,
+      label: `${formatDerivedScopePath(scope)} (mandatory relationship path)`,
       selected: view.derived_tenant_scope?.selected?.path_id === scope.path_id,
     })),
   ];
@@ -305,9 +306,10 @@ async function chooseResource(
         const end = start + visible.length;
         const below = resources.length - end;
         const highlighted = resources[selected]!;
-        const eligible = resources.filter((resource) =>
-          resource.status === "draft_read" || resource.inline_resolution_available === true).length;
-        const unavailable = resources.length - eligible;
+        const eligible = resources.filter(firstTableIsStartable).length;
+        const ancestorRequired = resources.filter((resource) =>
+          resource.first_table_startable === false).length;
+        const unavailable = resources.length - eligible - ancestorRequired;
         render([
           theme.title(`CHOOSE FIRST TABLE - ${safeTerminalText(startingBoundaryName)}`),
           "A new boundary starts with the table you choose. Nothing is copied from another boundary.",
@@ -315,7 +317,9 @@ async function chooseResource(
           "",
           ...visible.map((resource, index) => {
             const absolute = start + index;
-            const details = resource.status === "draft_read"
+            const details = resource.first_table_startable === false
+              ? `START FROM ANCESTOR · ${resource.first_table_guidance ?? "add its scoped ancestor first"}`
+              : resource.status === "draft_read"
               ? `${resource.model_visible_fields} model · ` +
                 `${resource.runner_output_only_fields} Runner-only · ${resource.kept_out_fields} kept out`
               : resource.inline_resolution_available
@@ -324,12 +328,13 @@ async function chooseResource(
             const line = `${absolute === selected ? ">" : " "} ${safeTerminalText(resource.resource_id)}  ` +
               `[${safeTerminalText(details)}]`;
             if (absolute === selected) return theme.focus(line);
-            return resource.status === "draft_read" || resource.inline_resolution_available
+            return firstTableIsStartable(resource)
               ? line
               : theme.dim(line);
           }),
           theme.dim(
-            `Inspected tables: ${resources.length} total · ${eligible} eligible · ${unavailable} unavailable.`,
+            `Inspected tables: ${resources.length} total · ${eligible} can start · ` +
+            `${ancestorRequired} add after ancestor · ${unavailable} unavailable.`,
           ),
           ...(below > 0 || start > 0
             ? [theme.dim(
@@ -355,7 +360,15 @@ async function chooseResource(
           continue;
         }
         if (key.name === "return" || key.name === "enter") {
-          if (highlighted.status !== "draft_read" && !highlighted.inline_resolution_available) {
+          if (!firstTableIsStartable(highlighted)) {
+            if (highlighted.first_table_startable === false) {
+              startingTableNotice = `${safeTerminalText(highlighted.resource_id)} cannot be the first table. ` +
+                `${safeTerminalText(highlighted.first_table_guidance ?? "Add its directly scoped ancestor first.")}. ` +
+                `Required scope is derived through ${safeTerminalText(
+                  highlighted.first_table_scope_label ?? "a mandatory reviewed relationship path",
+                )}.`;
+              continue;
+            }
             startingTableNotice = `${safeTerminalText(highlighted.resource_id)} cannot start a boundary: ` +
               safeTerminalText(highlighted.blockers[0] ?? "structural review is required first.");
             continue;
@@ -1221,10 +1234,12 @@ function boundaryResourceMapLines(
     `|-- Record identity: ${safeTerminalText(candidate.primary_key)}`,
     `|-- Trusted tenant scope: ${candidate.tenant_key
       ? `${safeTerminalText(candidate.tenant_key)} (direct; bound outside model arguments)`
-      : `via ${safeTerminalText(candidate.tenant_scope!.path_id)} to ${safeTerminalText(candidate.tenant_scope!.ancestor_resource)}.${safeTerminalText(candidate.tenant_scope!.ancestor_column)} (mandatory)`}`,
+      : `${safeTerminalText(formatDerivedScopePath(candidate.tenant_scope!))} (mandatory relationship path)`}`,
     `|-- Trusted principal scope: ${candidate.principal_key
       ? `${safeTerminalText(candidate.principal_key)} (bound outside model arguments)`
-      : "not configured"}`,
+      : candidate.principal_scope
+        ? `${safeTerminalText(formatDerivedScopePath(candidate.principal_scope))} (mandatory relationship path)`
+        : "not configured"}`,
     ...mapTierLines(view, candidate, "visible", groupedFields.get("visible")!, theme),
     ...mapTierLines(
       view,
@@ -1238,6 +1253,11 @@ function boundaryResourceMapLines(
     `\`-- Aggregate guard: minimum group size ${candidate.minimum_cohort_size}; small groups are suppressed`,
   ];
   return lines;
+}
+
+function firstTableIsStartable(resource: BoundaryResourceReviewSummary): boolean {
+  if (resource.first_table_startable === false) return false;
+  return resource.status === "draft_read" || resource.inline_resolution_available === true;
 }
 
 function mapTierLines(

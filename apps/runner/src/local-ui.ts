@@ -84,6 +84,10 @@ import {
 } from "./guided-project.js";
 import { buildInstantFirstValue } from "./instant-first-value.js";
 import {
+  derivedScopeStartSequence,
+  formatDerivedScopePath,
+} from "./derived-scope-display.js";
+import {
   instantLocalBoundaryCandidate,
   recommendedBoundaryReviewCandidate,
 } from "./boundary-candidate.js";
@@ -1057,6 +1061,29 @@ async function handleRequest(input: {
     let progress: BoundaryReviewProgress;
     if (url.pathname === "/api/boundary/library/create") {
       const resourceId = requiredReviewText(body.resource_id, "starting table");
+      const startingResource = currentCandidate.pack.resources.find((resource) =>
+        resource.id === resourceId);
+      const requiredScopes = [
+        ...(!currentCandidate.organization_scope && startingResource?.tenant_scope
+          ? [startingResource.tenant_scope]
+          : []),
+        ...(startingResource?.principal_scope ? [startingResource.principal_scope] : []),
+      ];
+      if (requiredScopes.length > 0) {
+        const guidance = requiredScopes.map((scope) => {
+          const sequence = derivedScopeStartSequence(scope);
+          const ancestor = sequence[0] ?? scope.ancestor_resource;
+          const intermediate = sequence.slice(1, -1);
+          return "start with " + ancestor
+            + (intermediate.length ? ", then add " + intermediate.join(", then ") : "")
+            + ", then add this table";
+        });
+        throw new Error(
+          resourceId + " cannot be the first table. " + guidance.join("; ") + ". "
+          + "Its required scope is derived through "
+          + requiredScopes.map(formatDerivedScopePath).join("; ") + ".",
+        );
+      }
       progress = await createSavedBoundary({
         ...context,
         name,
@@ -6061,7 +6088,9 @@ function renderBoundaryShell(csrfToken: string): string {
     const post=async(url,body)=>{const r=await fetch(url,{method:"POST",headers:{"content-type":"application/json","x-synapsor-csrf":csrf},body:JSON.stringify(body)});const p=await r.json();if(!r.ok||!p.ok)throw new Error(p.error||"Request failed");return p};
     const has=(r,f,k)=>k==="filterable_fields"||k==="time_bucket_fields"?Object.hasOwn(r[k],f):r[k].includes(f);
     const currentResource=id=>candidate.pack.resources.find(r=>r.id===id);
-    const scopeLabel=(resource,kind)=>{const direct=resource[kind+"_key"];if(direct)return direct;const scope=resource[kind+"_scope"];return scope?"via "+scope.path_id+" to "+scope.ancestor_resource+"."+scope.ancestor_column:"not configured"};
+    const scopePathLabel=scope=>{const links=scope?.proof?.links||[];const resources=[];if(links[0]?.source_resource)resources.push(links[0].source_resource);links.forEach(link=>{if(resources.at(-1)!==link.source_resource)resources.push(link.source_resource);if(resources.at(-1)!==link.target_resource)resources.push(link.target_resource)});if(resources.at(-1)!==scope.ancestor_resource)resources.push(scope.ancestor_resource);if(!resources.length)resources.push(scope.ancestor_resource);const shown=resources.map(resource=>resource.startsWith("public.")?resource.slice(7):resource);shown[shown.length-1]=shown.at(-1)+"."+scope.ancestor_column;return shown.join(" → ")};
+    const scopeLabel=(resource,kind)=>{const direct=resource[kind+"_key"];if(direct)return direct;const scope=resource[kind+"_scope"];return scope?"mandatory relationship path "+scopePathLabel(scope):"not configured"};
+    const reviewDecisionLabel=item=>{const separator=item.indexOf(":");if(separator<1)return item;const resource=currentResource(item.slice(0,separator));if(item.includes(": confirm mandatory derived tenant scope ")&&resource?.tenant_scope)return resource.id+": confirm customer isolation through "+scopePathLabel(resource.tenant_scope);if(item.includes(": confirm mandatory derived principal scope ")&&resource?.principal_scope)return resource.id+": confirm user/owner isolation through "+scopePathLabel(resource.principal_scope);return item};
     function allDecisionsConfirmed(){return reviewDecisions.length>0&&document.querySelectorAll("[data-review-decision]:checked").length===reviewDecisions.length}
     function updateActivationState(){document.getElementById("activate").disabled=!digest||!allDecisionsConfirmed()}
     function changed(){digest=undefined;updateActivationState()}
@@ -6116,7 +6145,7 @@ function renderBoundaryShell(csrfToken: string): string {
       }catch(e){status.className="error";status.textContent=e.message}
     }
     async function loadProtect(){const status=document.getElementById("protect-message");try{const p=await fetch("/api/protect").then(r=>r.json());if(!p.ok)throw new Error(p.error||"Could not load recent queries");protectQueries=p.queries;selectedProtect=protectQueries.length?0:null;renderProtect();status.className="";status.textContent=protectQueries.length?protectQueries.length+" recent query or analysis result(s) ready for review.":p.message||"No recent query is ready yet."}catch(e){protectQueries=[];selectedProtect=null;renderProtect();status.className="error";status.textContent=e.message}}
-    async function load(){const p=await fetch("/api/boundary").then(r=>r.json());if(!p.ok)throw new Error(p.error||"Could not load review");original=p.draft;candidate=structuredClone(p.draft);reviewReport=p.review;reviewDecisions=[...p.review.unresolved_decisions];const s=p.review.summary;document.getElementById("summary").innerHTML=[[s.objects,"objects"],[s.draft_reads,"draft reads"],[s.blocked_objects,"blocked"],[s.sensitive_fields_kept_out,"kept-out fields"],[s.rls_policies,"RLS policies"],[s.structured_write_candidates,"disabled actions"]].map(([v,l])=>'<div class="metric"><strong>'+v+'</strong><span>'+l+'</span></div>').join("");document.getElementById("decisions").innerHTML=reviewDecisions.map((item,index)=>'<p><label><input type="checkbox" data-review-decision="'+index+'"> '+esc(item)+"</label></p>").join("");document.querySelectorAll("[data-review-decision]").forEach(input=>input.addEventListener("change",updateActivationState));document.getElementById("deployment-profile").addEventListener("change",event=>{candidate.deployment_profile=event.currentTarget.value;changed();renderPosture()});document.getElementById("state").textContent=p.active?"Active reviewed boundary":"Disabled · review required";renderPosture();renderBlocked();renderResources();renderBudgets()}
+    async function load(){const p=await fetch("/api/boundary").then(r=>r.json());if(!p.ok)throw new Error(p.error||"Could not load review");original=p.draft;candidate=structuredClone(p.draft);reviewReport=p.review;reviewDecisions=[...p.review.unresolved_decisions];const s=p.review.summary;document.getElementById("summary").innerHTML=[[s.objects,"objects"],[s.draft_reads,"draft reads"],[s.blocked_objects,"blocked"],[s.sensitive_fields_kept_out,"kept-out fields"],[s.rls_policies,"RLS policies"],[s.structured_write_candidates,"disabled actions"]].map(([v,l])=>'<div class="metric"><strong>'+v+'</strong><span>'+l+'</span></div>').join("");document.getElementById("decisions").innerHTML=reviewDecisions.map((item,index)=>'<p><label><input type="checkbox" data-review-decision="'+index+'"> '+esc(reviewDecisionLabel(item))+"</label></p>").join("");document.querySelectorAll("[data-review-decision]").forEach(input=>input.addEventListener("change",updateActivationState));document.getElementById("deployment-profile").addEventListener("change",event=>{candidate.deployment_profile=event.currentTarget.value;changed();renderPosture()});document.getElementById("state").textContent=p.active?"Active reviewed boundary":"Disabled · review required";renderPosture();renderBlocked();renderResources();renderBudgets()}
     document.getElementById("preview").onclick=async()=>{try{msg.className="";msg.textContent="Validating narrowed boundary…";const p=await post("/api/boundary/preview",{candidate});digest=p.digest;msg.textContent="Exact digest: "+digest;updateActivationState()}catch(e){msg.className="error";msg.textContent=e.message}};
     document.getElementById("activate").onclick=async()=>{try{const actor=document.getElementById("actor").value.trim();if(!actor)throw new Error("Enter the local operator identity.");const confirmedDecisions=[...document.querySelectorAll("[data-review-decision]:checked")].map(input=>reviewDecisions[Number(input.dataset.reviewDecision)]);msg.className="";msg.textContent="Rechecking schema lock and database-role posture…";await post("/api/boundary/activate",{candidate,expected_digest:digest,actor,confirmation:"ACTIVATE "+digest,confirmed_decisions:confirmedDecisions});msg.className="success";msg.textContent="Activated. Reconnect the local authoring MCP session to use Scoped Explore.";document.getElementById("state").textContent="Active reviewed boundary";document.getElementById("activate").disabled=true}catch(e){msg.className="error";msg.textContent=e.message}};
     document.getElementById("refresh-protect").onclick=loadProtect;

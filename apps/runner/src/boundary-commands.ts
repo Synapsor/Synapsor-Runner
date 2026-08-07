@@ -36,6 +36,7 @@ import {
   saveBoundaryReviewProgress
 } from "./boundary-review-domain.js";
 import { displayPath } from "./onboarding.js";
+import { formatDerivedScopePath } from "./derived-scope-display.js";
 import { resolveOperatorIdentity, verifyJwtOperatorProof, verifySignedOperatorProof, type OperatorIdentityConfig } from "./operator-identity.js";
 import { resolveSynapsorProject } from "./project-resolution.js";
 import { disableScopedExplore } from "./protect-query.js";
@@ -1013,14 +1014,16 @@ async function interactiveBoundaryReviewLoop(input: {
           risk_count: resource.blockers.length,
         }))
         .sort((left, right) =>
-          Number(left.status !== "draft_read") - Number(right.status !== "draft_read")
+          Number(left.first_table_startable === false) - Number(right.first_table_startable === false)
+          || Number(left.status !== "draft_read") - Number(right.status !== "draft_read")
           || right.risk_count - left.risk_count
           || left.resource_id.localeCompare(right.resource_id));
       if (!startingResources.some((resource) =>
-        resource.status === "draft_read" || resource.inline_resolution_available === true)) {
+        resource.first_table_startable !== false
+        && (resource.status === "draft_read" || resource.inline_resolution_available === true))) {
         process.stdout.write([
-          "Boundary was not created because no generated table has proven identity and tenant scope.",
-          "Resolve a blocked table in the detailed review before creating another boundary.",
+          "Boundary was not created because no inspected table can safely start it alone.",
+          "Start from a directly scoped ancestor. Derived tables can be added after their required ancestor is inside the boundary.",
           "",
         ].join("\n"));
         continue;
@@ -1032,6 +1035,18 @@ async function interactiveBoundaryReviewLoop(input: {
       );
       if (!startingSelection || !("resource_id" in startingSelection)) {
         process.stdout.write("New boundary cancelled. Nothing was saved or activated.\n");
+        continue;
+      }
+      const startingSummary = startingResources.find((resource) =>
+        resource.resource_id === startingSelection.resource_id);
+      if (startingSummary?.first_table_startable === false) {
+        process.stdout.write([
+          `${startingSelection.resource_id} cannot be the first table in this boundary.`,
+          `${startingSummary.first_table_guidance ?? "Add its directly scoped ancestor first."}.`,
+          `Its required scope is derived through ${startingSummary.first_table_scope_label ?? "a mandatory reviewed relationship path"}.`,
+          "No table review was started, and nothing was saved or activated.",
+          "",
+        ].join("\n"));
         continue;
       }
       let startingView = await inspectBoundaryResourceReview(
@@ -1402,12 +1417,18 @@ async function resolveBlockedBoundaryResource(input: {
       input.schemaInspector,
     );
     const committed = await commitBoundaryResourceReviewMutation(input.projectRoot, preview);
+    const derivedTenantScope = resolution.tenant_scope_path
+      ? input.view.derived_tenant_scope?.candidates.find((scope) =>
+        scope.path_id === resolution.tenant_scope_path)
+      : undefined;
     process.stdout.write([
       `Saved structural review for ${input.view.resource_id} in disabled boundary revision ${committed.review_revision}.`,
       `Record ID: ${resolution.row_identity}`,
       resolution.tenant_key
         ? `Tenant isolation: ${resolution.tenant_key} (direct column; trusted value stays outside model arguments)`
-        : `Tenant isolation: mandatory path ${resolution.tenant_scope_path} (trusted value stays outside model arguments)`,
+        : `Tenant isolation: ${derivedTenantScope
+          ? formatDerivedScopePath(derivedTenantScope)
+          : resolution.tenant_scope_path} (mandatory relationship path; trusted value stays outside model arguments)`,
       "Agent authority activated: no",
       "Review column access next.",
       "",
@@ -1603,7 +1624,7 @@ function formatFocusedBoundaryActivationReview(
     .filter((resource) => Boolean(resource.principal_key || resource.principal_scope))
     .map((resource) => resource.principal_key
       ? `${resource.id}.${resource.principal_key}`
-      : `${resource.id} via ${resource.principal_scope!.path_id} to ${resource.principal_scope!.ancestor_resource}.${resource.principal_scope!.ancestor_column}`);
+      : `${resource.id} through ${formatDerivedScopePath(resource.principal_scope!)}`);
   const tenantScopeSummary = bundle.candidate.organization_scope
     ? `Single organization (${bundle.candidate.organization_scope.organization_id}); no tenant predicate is applied`
     : `${allTenantScopesDirect && directTenantKeys.length === 1
@@ -2903,7 +2924,11 @@ function formatRequestedBoundaryChanges(
   if (request.row_identity) lines.push(`Record ID: ${describeReviewedField(view, request.row_identity)}`);
   if (request.tenant_key) lines.push(`Trusted customer scope: ${describeReviewedField(view, request.tenant_key)}`);
   if (request.tenant_scope_path) {
-    lines.push(`Trusted customer scope: mandatory reviewed path ${request.tenant_scope_path}`);
+    const scope = view.derived_tenant_scope?.candidates.find((candidate) =>
+      candidate.path_id === request.tenant_scope_path);
+    lines.push(`Trusted customer scope: mandatory reviewed path ${scope
+      ? formatDerivedScopePath(scope)
+      : request.tenant_scope_path}`);
   }
   if (request.principal_key !== undefined) {
     lines.push(request.principal_key === null
@@ -3515,7 +3540,7 @@ function reviewedTenantScopeLabel(
   resource: ExplorationBoundaryDraft["pack"]["resources"][number],
 ): string {
   return resource.tenant_key
-    ?? `via ${resource.tenant_scope!.path_id} -> ${resource.tenant_scope!.ancestor_resource}.${resource.tenant_scope!.ancestor_column}`;
+    ?? `through ${formatDerivedScopePath(resource.tenant_scope!)}`;
 }
 
 function formatBoundarySettingsSignoff(bundle: BoundaryReviewBundle): string {
@@ -3592,8 +3617,8 @@ function formatBoundaryResourceSignoff(
           resource.principal_key
             ? `${resource.principal_key} - supplied outside AI requests`
             : resource.principal_scope
-              ? `via ${resource.principal_scope.path_id} -> ${resource.principal_scope.ancestor_resource}.${resource.principal_scope.ancestor_column} - supplied outside AI requests`
-            : "No separate per-user column is configured",
+              ? `through ${formatDerivedScopePath(resource.principal_scope)} - supplied outside AI requests`
+              : "No separate per-user column is configured",
         ],
         ["Allowed operations", operationCounts],
         [

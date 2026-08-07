@@ -34,6 +34,11 @@ import {
 import { detectProjectContext } from "./project-detection.js";
 import { readGuidedOnboardingState } from "./guided-project.js";
 import { recommendedBoundaryReviewCandidate } from "./boundary-candidate.js";
+import {
+  derivedScopeStartSequence,
+  formatDerivedScopePath,
+  formatDerivedScopePathWithId,
+} from "./derived-scope-display.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -189,6 +194,9 @@ export type BoundaryResourceReviewSummary = {
   minimum_cohort_size?: number;
   minimum_cohort_overridden?: boolean;
   inline_resolution_available?: boolean;
+  first_table_startable?: boolean;
+  first_table_guidance?: string;
+  first_table_scope_label?: string;
   relationships: Array<{
     relationship_id: string;
     target_resource: string;
@@ -268,6 +276,10 @@ export async function listBoundaryResourceReviews(
       const candidate = state.candidate.pack.resources.find((item) => item.id === resource.id);
       const active = activeBoundary?.pack.resources.find((item) => item.id === resource.id);
       const display = candidate ?? generated;
+      const firstTable = firstTableAvailability(
+        Boolean(state.candidate.organization_scope),
+        resource,
+      );
       const pendingDecisions = state.candidate.unresolved_decisions
         .filter((decision) => decision.startsWith(`${resource.id}:`) && !confirmed.has(decision));
       return {
@@ -304,11 +316,56 @@ export async function listBoundaryResourceReviews(
             || resource.tenant_key.candidates.length
             || resource.derived_tenant_scope?.candidates.length,
           ),
+        ...firstTable,
         relationships: boundaryRelationshipSummaries(generated, candidate, active),
       };
     })
     .sort((left, right) =>
       right.risk_count - left.risk_count || left.resource_id.localeCompare(right.resource_id));
+}
+
+function firstTableAvailability(
+  singleOrganization: boolean,
+  resource: BoundaryReviewFiles["review"]["resources"][number],
+): Pick<
+  BoundaryResourceReviewSummary,
+  "first_table_startable" | "first_table_guidance" | "first_table_scope_label"
+> {
+  if (!resource.primary_key.selected && resource.primary_key.candidates.length === 0) {
+    return { first_table_startable: true };
+  }
+
+  const requiredScopes = [
+    ...(!singleOrganization
+      && !resource.tenant_key.selected
+      && resource.tenant_key.candidates.length === 0
+      ? [resource.derived_tenant_scope?.selected
+        ?? resource.derived_tenant_scope?.candidates[0]]
+      : []),
+    ...(!resource.principal_key.selected && resource.derived_principal_scope?.selected
+      ? [resource.derived_principal_scope.selected]
+      : []),
+  ].filter((scope): scope is NonNullable<typeof scope> => Boolean(scope));
+  if (requiredScopes.length === 0) return { first_table_startable: true };
+
+  const paths = requiredScopes.map((scope) => {
+    const sequence = derivedScopeStartSequence(scope);
+    const ancestor = sequence[0] ?? scope.ancestor_resource;
+    const intermediate = sequence.slice(1, -1);
+    return {
+      scope,
+      guidance: intermediate.length > 0
+        ? "start with " + ancestor + ", then add " + intermediate.join(", then ") + ", then add this table"
+        : "start with " + ancestor + ", then add this table",
+    };
+  });
+  return {
+    first_table_startable: false,
+    first_table_scope_label: paths.map(({ scope }) => formatDerivedScopePath(scope)).join("; "),
+    first_table_guidance: paths.length === 1
+      ? paths[0]!.guidance
+      : "satisfy both required scope paths: " + paths.map(({ guidance }) => guidance).join("; "),
+  };
 }
 
 export async function currentBoundaryReviewMutationBindings(
@@ -1245,7 +1302,9 @@ function validateBoundaryRequestAgainstResource(
       candidate.path_id === request.tenant_scope_path)) {
     throw new Error(
       `${resource.id} tenant path ${JSON.stringify(request.tenant_scope_path)} is not a current non-null, catalog-proven many-to-one path. ` +
-      `Available derived tenant paths: ${resource.derived_tenant_scope?.candidates.map((candidate) => candidate.path_id).join(", ") || "none"}.`,
+      `Available derived tenant paths: ${resource.derived_tenant_scope?.candidates.map(
+        formatDerivedScopePathWithId,
+      ).join(", ") || "none"}. Use the exact path ID with --tenant-scope-path.`,
     );
   }
   if (request.principal_scope_path
@@ -1253,7 +1312,9 @@ function validateBoundaryRequestAgainstResource(
       candidate.path_id === request.principal_scope_path)) {
     throw new Error(
       `${resource.id} principal path ${JSON.stringify(request.principal_scope_path)} is not a current non-null, catalog-proven many-to-one path. ` +
-      `Available derived principal paths: ${resource.derived_principal_scope?.candidates.map((candidate) => candidate.path_id).join(", ") || "none"}.`,
+      `Available derived principal paths: ${resource.derived_principal_scope?.candidates.map(
+        formatDerivedScopePathWithId,
+      ).join(", ") || "none"}. Use the exact path ID with --principal-scope-path.`,
     );
   }
 

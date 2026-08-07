@@ -1,6 +1,7 @@
 import type { SchemaInspection, SourceEngine, TableInfo } from "@synapsor-runner/schema-inspector";
 import type { ActivatedExplorationBoundary, DerivedScopePath } from "./auto-boundary.js";
 import type { DoctorCheck } from "./doctor-domain.js";
+import { formatDerivedScopePath } from "./derived-scope-display.js";
 
 
 type ScopeKind = "tenant" | "principal";
@@ -179,10 +180,7 @@ function hasUsableLeadingIndex(table: TableInfo, requiredColumns: string[]): boo
 
 
 function derivedScopePathLabel(scope: DerivedScopePath, kind: ScopeKind): string {
-  const resources = scope.proof.links.length > 0
-    ? [scope.proof.links[0]!.source_resource, ...scope.proof.links.map((link) => link.target_resource)]
-    : [scope.ancestor_resource];
-  return `${resources.join(" -> ")} (${kind})`;
+  return `${formatDerivedScopePath(scope)} (${kind})`;
 }
 
 

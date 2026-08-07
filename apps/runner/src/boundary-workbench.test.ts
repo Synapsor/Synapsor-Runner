@@ -32,6 +32,10 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("Choose its first table. Nothing is copied from another boundary");
     expect(html).toContain('id="new-boundary-table"');
     expect(html).toContain("Showing all '+esc(inspectedStartingTables.length)+' inspected tables");
+    expect(html).toContain("can be added after their scoped ancestor");
+    expect(html).toContain("firstTableState");
+    expect(html).toContain("derivedScopeStartGuidance");
+    expect(html).toContain("resource.derived_principal_scope?.selected");
     expect(html).toContain("unavailable tables remain visible with their reason");
     expect(html).toContain("resource.blockers?.[0]");
     expect(html).toContain("Choose table and edit");
@@ -47,6 +51,8 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain('kind:reviewedKind');
     expect(html).toContain('tenant_scope_path');
     expect(html).toContain('principal_scope_path');
+    expect(html).toContain('return "mandatory relationship path "+shown.join(" → ")');
+    expect(html).toContain("Advanced exact path IDs");
     expect(html).toContain('post("/api/boundary/library/switch"');
     expect(html).toContain('post("/api/boundary/library/delete"');
     expect(html).toContain('<details class="boundary-options"><summary>Rename selected boundary</summary>');

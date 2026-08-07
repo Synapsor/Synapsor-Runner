@@ -1135,3 +1135,70 @@ Post-change gates:
 
 No package or Spec/DSL version changed. Nothing was merged, pushed, tagged,
 published, or released in this checkpoint.
+
+## First-Table Scope Guidance, Nested Completion, and SQL Framing (2026-08-07)
+
+This unpublished 1.7.0 checkpoint closes the remaining first-run boundary and
+Analytics-shell presentation gaps without changing authority, generation-lock
+content, or model-facing tools.
+
+Completed behavior:
+
+- A unique slash-command prefix now reveals both its canonical command and the
+  valid next actions. For example, typing `/catal`, `/det`, or `/protec`
+  shows the nested catalog, details, or Protect actions immediately. Ambiguous
+  prefixes remain conservative, and exact commands with a trailing space still
+  show their argument choices.
+- Human-facing derived tenant and principal paths now read as table chains, for
+  example `order_item_events -> order_items -> orders.tenant_id`. CLI review,
+  activation summaries, Workbench review, generated `REVIEW.md`, and doctor
+  advisories share that presentation. Canonical foreign-key path IDs remain
+  available under advanced details and remain byte-identical in review state,
+  digests, generation locks, and scripted flags.
+- A table whose required tenant scope or selected principal scope is derived
+  can no longer consume a full first-table review and then fail. The CLI and
+  Workbench classify it as `START FROM ANCESTOR`, show every required
+  ancestor-first sequence, and prevent selection before column review. This
+  also covers a selected derived principal path in single-organization mode;
+  directly scoped tables remain startable and genuinely unprovable tables
+  remain unavailable.
+- Operator-only SQL in `/details [last|A#] --sql` keeps multiline formatting
+  and syntax highlighting and is now enclosed in an aligned ASCII frame with
+  parameter metadata inside the same frame.
+
+Hands-on verification used the packaged Runner against a disposable copy of the
+user's test project. The original project was not edited. In a real PTY:
+
+- `/catal`, `/catalog `, and `/details ` displayed the complete valid next
+  actions before submission.
+- The first-table picker showed three startable tables, two ancestor-dependent
+  tables, and two unavailable tables. Selecting the two-hop derived table
+  stayed in the picker and explained
+  `order_item_events -> order_items -> orders.tenant_id`; no table review or
+  boundary was created.
+- `/catalog --diagram` rendered two terminal-native routes with physical
+  arrows and six reviewed cross-table questions, without Mermaid source.
+- A real read-only aggregate produced analysis `A9`; `/details A9 --sql`
+  rendered the compiled PostgreSQL statement inside the framed diagnostic and
+  reported `Source database changed: no`.
+
+Post-change gates:
+
+- Focused CLI, Workbench, boundary, catalog, syntax, derived-scope, and local-UI
+  suites: 239/239.
+- Typecheck and packaged Runner build passed.
+- Final uninterrupted root suite with live PostgreSQL integration enabled:
+  92 files and 1,440/1,440 tests passed. License/content, human command-surface,
+  DSL source-path compatibility, and Cursor packaging checks also passed.
+- Secured PostgreSQL HTTP, secured MySQL HTTP, and packed npm-style production
+  HTTP gates passed. Each retained exactly `app.describe_data` and
+  `app.explore_data`, principal isolation, direct and derived scope,
+  connection/session ceilings, and no source mutation.
+- Auto Boundary Workbench visual verification passed 27 captured states.
+  Workbench Ask passed eight browser states with no provider-key persistence,
+  no browser storage, and no source mutation. The new-boundary screenshot was
+  inspected at original resolution.
+- `git diff --check` was clean before final commit preparation.
+
+No package or Spec/DSL version changed. Nothing was merged, pushed, tagged,
+published, or released in this checkpoint.

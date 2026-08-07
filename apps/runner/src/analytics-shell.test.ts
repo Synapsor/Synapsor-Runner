@@ -1265,13 +1265,45 @@ describe("Synapsor Analytics shell", () => {
   it("shows, filters, and fully clears transient slash actions while editing", async () => {
     expect(slashCommandSuggestions("/")).toContain("/access");
     expect(slashCommandSuggestions("/ac")).toEqual(["/access", "/access-workbench"]);
+    expect(slashCommandSuggestions("/catal")).toEqual([
+      "/catalog",
+      "/catalog --diagram",
+      "/catalog --diagram --export",
+      "/catalog --diagram --boundary <name>",
+      "/catalog <page>",
+    ]);
+    expect(slashCommandSuggestions("/det")).toEqual([
+      "/details",
+      "/details last",
+      "/details last --sql",
+      "/details <A#>",
+      "/details <A#> --sql",
+    ]);
+    expect(slashCommandSuggestions("/protec")).toEqual([
+      "/protect",
+      "/protect last",
+      "/protect <A#>",
+      "/protect <A#> as <name>",
+    ]);
     expect(slashCommandSuggestions("/catalog")).toEqual([
       "/catalog --diagram",
       "/catalog --diagram --export",
       "/catalog --diagram --boundary <name>",
       "/catalog <page>",
     ]);
+    expect(slashCommandSuggestions("/catalog ")).toEqual([
+      "/catalog --diagram",
+      "/catalog --diagram --export",
+      "/catalog --diagram --boundary <name>",
+      "/catalog <page>",
+    ]);
     expect(slashCommandSuggestions("/details")).toEqual([
+      "/details last",
+      "/details last --sql",
+      "/details <A#>",
+      "/details <A#> --sql",
+    ]);
+    expect(slashCommandSuggestions("/details ")).toEqual([
       "/details last",
       "/details last --sql",
       "/details <A#>",
@@ -1295,6 +1327,8 @@ describe("Synapsor Analytics shell", () => {
     expect(renderSlashCommandMenu("/catalog")).toContain("/catalog <page>");
     expect(renderSlashCommandMenu("/catalog")).toContain("/catalog --diagram --export");
     expect(renderSlashCommandMenu("/catalog")).toContain("/catalog --diagram --boundary <name>");
+    expect(renderSlashCommandMenu("/catal")).toContain("/catalog --diagram");
+    expect(renderSlashCommandMenu("/det")).toContain("/details last --sql");
     expect(renderSlashCommandMenu("/catalog --diagram")).toContain(
       "Show the terminal relationship topology",
     );
@@ -1376,6 +1410,27 @@ describe("Synapsor Analytics shell", () => {
     expect(chunks.join("")).not.toContain("\u001b[u");
     expect(chunks.join("")).not.toContain("\u001b7");
     expect(chunks.join("")).not.toContain("\u001b8");
+    io.close();
+  });
+
+  it("shows nested actions while a unique slash command prefix is still being typed", async () => {
+    const readable = new PassThrough();
+    const writable = new PassThrough();
+    const chunks: string[] = [];
+    writable.on("data", (chunk) => chunks.push(String(chunk)));
+    const io = createTerminalAnalyticsShellIo({ readable, writable, terminal: true });
+    const answer = io.read("synapsor> ");
+
+    readable.write("/catal");
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const rendered = chunks.join("");
+    expect(rendered).toContain("/catalog");
+    expect(rendered).toContain("/catalog --diagram");
+    expect(rendered).toContain("/catalog --diagram --export");
+    expect(rendered).toContain("/catalog --diagram --boundary <name>");
+
+    readable.write("\r");
+    await expect(answer).resolves.toBe("/catal");
     io.close();
   });
 
@@ -1846,7 +1901,8 @@ describe("Synapsor Analytics shell", () => {
     const output = io.output();
     expect(output).toContain("COMPILED DATABASE STATEMENT");
     expect(output).toContain("Operator diagnostic only. The model never received this SQL.");
-    expect(output).toContain([
+    expect(output).toContain("+-- Statement 1 - postgres");
+    for (const sqlLine of [
       "SELECT",
       '  "region",',
       "  COUNT(*)",
@@ -1855,7 +1911,9 @@ describe("Synapsor Analytics shell", () => {
       "WHERE",
       '  "tenant_id" = $1',
       "LIMIT $2",
-    ].join("\n"));
+    ]) {
+      expect(output).toContain(`| ${sqlLine}`);
+    }
     expect(output).toContain("Parameter types: string, integer");
     expect(output).toContain("Parameter values: redacted");
     expect(output).not.toContain("tenant-secret-value");

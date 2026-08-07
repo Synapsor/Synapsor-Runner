@@ -356,6 +356,46 @@ describe("Auto Boundary compiler", () => {
     expect(reviewed.lock.protected_authority).not.toContain("public.order_items");
   });
 
+  it("renders readable derived scope chains in REVIEW.md without changing canonical authority", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-derived-scope-review-"));
+    const inspection = derivedTenantScopeInspection();
+    const overrides: AutoBoundaryReviewOverrides = {
+      schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+      resources: {
+        "public.order_items": {
+          tenant_scope_path: {
+            value: "order_items_order_id_fkey",
+            actor: "owner@example.test",
+            reason: "Order items inherit tenant isolation from their required order.",
+            decided_at: "2026-08-07T12:00:00.000Z",
+          },
+        },
+      },
+    };
+    const build = buildAutoBoundary({
+      inspection,
+      project: projectSummary(root),
+      sourceEnv: "DATABASE_URL",
+      overrides,
+    });
+    const beforeDigest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const review = await fs.readFile(path.join(root, "synapsor/generated/REVIEW.md"), "utf8");
+      expect(review).toContain(
+        "confirm mandatory derived tenant scope through order_items -> orders.tenant_id",
+      );
+      expect(review).toContain("## Advanced Scope Path IDs");
+      expect(review).toContain("`order_items_order_id_fkey` (order_items -> orders.tenant_id)");
+      expect(explorationBoundaryCandidateDigest(build.exploration_boundary)).toBe(beforeDigest);
+      expect(build.exploration_boundary.pack.resources.find((resource) =>
+        resource.id === "public.order_items")?.tenant_scope?.path_id)
+        .toBe("order_items_order_id_fkey");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("keeps nullable and ambiguous relationship-carried tenant paths blocked", () => {
     const nullable = buildAutoBoundary({
       inspection: derivedTenantScopeInspection({ nullable: true }),

@@ -33,7 +33,7 @@ describe("derived-scope index doctor", () => {
     expect(checks).toHaveLength(1);
     expect(checks[0]).toMatchObject({ level: "warn", advisory: "warning", ok: true });
     expect(checks[0]!.message).toContain("public.order_items.order_id");
-    expect(checks[0]!.message).toContain("public.order_items -> public.orders (tenant)");
+    expect(checks[0]!.message).toContain("order_items -> orders.tenant_id (tenant)");
     expect(checks[0]!.message).toContain('CREATE INDEX ON "public"."order_items" ("order_id");');
     expect(checks.some((check) => check.level === "fail")).toBe(false);
   });

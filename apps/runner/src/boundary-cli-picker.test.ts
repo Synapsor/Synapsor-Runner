@@ -512,8 +512,36 @@ describe("boundary review terminal picker", () => {
     const rendered = output.read()?.toString() ?? "";
     expect(rendered).toContain("public.audit_log");
     expect(rendered).toContain("UNAVAILABLE");
-    expect(rendered).toContain("Inspected tables: 2 total · 1 eligible · 1 unavailable.");
+    expect(rendered).toContain("Inspected tables: 2 total · 1 can start · 0 add after ancestor · 1 unavailable.");
     expect(rendered).toContain("public.audit_log cannot start a boundary");
+  });
+
+  it("blocks a derived-only table before first-table structural review", async () => {
+    const { input, output } = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const derived = summary("public.order_items", 0);
+    derived.included = false;
+    derived.first_table_startable = false;
+    derived.first_table_guidance = "start with public.orders, then add this table";
+    derived.first_table_scope_label = "order_items -> orders.tenant_id";
+    const ancestor = summary("public.orders", 0);
+    ancestor.included = false;
+    ancestor.first_table_startable = true;
+    const selected = session.chooseResource(
+      [derived, ancestor],
+      undefined,
+      { initialView: "access", startingBoundaryName: "sales" },
+    );
+
+    await send(input, "\r");
+    await send(input, "\u001b[B");
+    await send(input, "\r");
+    await expect(selected).resolves.toEqual({ resource_id: "public.orders", action: "add" });
+    const rendered = output.read()?.toString() ?? "";
+    expect(rendered).toContain("START FROM ANCESTOR");
+    expect(rendered).toContain("1 can start · 1 add after ancestor · 0 unavailable");
+    expect(rendered).toContain("public.order_items cannot be the first table");
+    expect(rendered).toContain("order_items -> orders.tenant_id");
   });
 
   it("uses colored selected text instead of inverse-video highlighting", () => {
@@ -829,6 +857,39 @@ describe("boundary review terminal picker", () => {
     });
   });
 
+  it("renders a derived tenant path as a table chain while returning its canonical id", async () => {
+    const { input, output } = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const view = reviewView();
+    const scope = twoHopDerivedScope();
+    view.status = "blocked_scope";
+    view.candidate = null;
+    view.generated_candidate = null;
+    view.tenant_key = {
+      ...view.tenant_key,
+      selected: undefined,
+      candidates: [],
+      alternatives_considered: [],
+    };
+    view.derived_tenant_scope = {
+      candidates: [scope],
+      selected: scope,
+      confirmation_required: true,
+      safety_consequence: "This mandatory path scopes every row.",
+    };
+
+    const resolution = session.resolveBlockedResource!(view);
+    const rendered = stripAnsi(output.read()?.toString() ?? "");
+    expect(rendered).toContain("order_item_events -> order_items -> orders.tenant_id (mandatory");
+    expect(rendered).toContain("relationship path)");
+    expect(rendered).not.toContain("events_item_fkey__items_order_fkey");
+    await send(input, "\r");
+    await expect(resolution).resolves.toEqual({
+      row_identity: "outcome",
+      tenant_scope_path: "events_item_fkey__items_order_fkey",
+    });
+  });
+
   it("sanitizes inspected names before rendering the structural map", () => {
     const view = reviewView();
     view.resource_id = "public.check_ins\u001b[2J";
@@ -1027,5 +1088,42 @@ function reviewView(): BoundaryResourceReviewView {
       review_revision: 0,
     },
     source_database_changed: false,
+  };
+}
+
+function twoHopDerivedScope() {
+  const link = (
+    constraint_name: string,
+    source_resource: string,
+    target_resource: string,
+  ) => ({
+    constraint_name,
+    source_resource,
+    target_resource,
+    source_columns: ["parent_id"],
+    target_columns: ["id"],
+    target_uniqueness: {
+      kind: "primary_key" as const,
+      name: `${target_resource.split(".").at(-1)}_pkey`,
+      columns: ["id"],
+    },
+    nullable: false,
+    cardinality: "many_to_one" as const,
+    max_fan_out: 1 as const,
+  });
+  const links = [
+    link("events_item_fkey", "public.order_item_events", "public.order_items"),
+    link("items_order_fkey", "public.order_items", "public.orders"),
+  ];
+  return {
+    mode: "derived" as const,
+    path_id: "events_item_fkey__items_order_fkey",
+    ancestor_resource: "public.orders",
+    ancestor_column: "tenant_id",
+    proof: {
+      source: "database_catalog" as const,
+      links,
+      digest: `sha256:${"7".repeat(64)}` as `sha256:${string}`,
+    },
   };
 }

@@ -27,6 +27,7 @@ import {
 import type {
   BoundaryReviewProgressArtifact,
 } from "./boundary-review-progress-types.js";
+import { formatDerivedScopePath } from "./derived-scope-display.js";
 
 export const AUTO_BOUNDARY_VERSION = "synapsor.auto-boundary.v1";
 export const GENERATION_LOCK_VERSION = "synapsor.generation-lock.v1";
@@ -3538,6 +3539,14 @@ function unresolvedDecisions(
 }
 
 function reviewMarkdown(build: AutoBoundaryBuild): string {
+  const derivedScopes = build.review.resources.flatMap((resource) => [
+    ...(resource.derived_tenant_scope?.selected
+      ? [{ resource: resource.id, kind: "tenant", scope: resource.derived_tenant_scope.selected }]
+      : []),
+    ...(resource.derived_principal_scope?.selected
+      ? [{ resource: resource.id, kind: "principal", scope: resource.derived_principal_scope.selected }]
+      : []),
+  ]);
   const lines = [
     "# Auto Boundary Review",
     "",
@@ -3557,12 +3566,42 @@ function reviewMarkdown(build: AutoBoundaryBuild): string {
     "",
     "## Required Review",
     "",
-    ...build.review.unresolved_decisions.map((decision) => `- [ ] ${decision}`),
+    ...build.review.unresolved_decisions.map((decision) =>
+      `- [ ] ${humanReadableScopeDecision(decision, derivedScopes)}`),
+    ...(derivedScopes.length
+      ? [
+          "",
+          "## Advanced Scope Path IDs",
+          "",
+          "These canonical IDs are for scripted review flags. Runtime enforcement and digests use them unchanged.",
+          "",
+          ...derivedScopes.map(({ resource, kind, scope }) =>
+            `- ${resource} ${kind}: \`${scope.path_id}\` (${formatDerivedScopePath(scope)})`),
+        ]
+      : []),
     "",
     "Database, ORM, and API comments are naming evidence only. They never create read, write, approval, or activation authority.",
     "",
   ];
   return lines.join("\n");
+}
+
+function humanReadableScopeDecision(
+  decision: string,
+  scopes: Array<{
+    resource: string;
+    kind: string;
+    scope: DerivedScopePath;
+  }>,
+): string {
+  let displayed = decision;
+  for (const { scope } of scopes) {
+    displayed = displayed.replace(
+      `via ${scope.path_id} to ${scope.ancestor_resource}.${scope.ancestor_column}`,
+      `through ${formatDerivedScopePath(scope)}`,
+    );
+  }
+  return displayed;
 }
 
 function inference<T>(

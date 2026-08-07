@@ -1155,12 +1155,44 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     function derivedScopePathLabel(scope){
       if(!scope)return "unresolved";
       const links=scope.proof?.links||[];
-      const path=links.map(link=>
-        link.source_resource+"."+(link.source_columns||[]).join("+")+
-        " → "+link.target_resource+"."+(link.target_columns||[]).join("+")
-      ).join(" → ");
-      return "mandatory path "+scope.path_id+" to "+scope.ancestor_resource+"."+scope.ancestor_column+
-        (path?" ("+path+")":"");
+      const resources=[];
+      if(links[0]?.source_resource)resources.push(links[0].source_resource);
+      links.forEach(link=>{
+        if(resources.at(-1)!==link.source_resource)resources.push(link.source_resource);
+        if(resources.at(-1)!==link.target_resource)resources.push(link.target_resource);
+      });
+      if(resources.at(-1)!==scope.ancestor_resource)resources.push(scope.ancestor_resource);
+      if(!resources.length)resources.push(scope.ancestor_resource);
+      const shown=resources.map(resource=>resource.startsWith("public.")?resource.slice(7):resource);
+      shown[shown.length-1]=shown.at(-1)+"."+scope.ancestor_column;
+      return "mandatory relationship path "+shown.join(" → ");
+    }
+
+    function derivedScopeStartGuidance(scope){
+      const links=scope?.proof?.links||[];
+      const chain=links.length?[links[0].source_resource,...links.map(link=>link.target_resource)]:[scope.ancestor_resource];
+      if(chain.at(-1)!==scope.ancestor_resource)chain.push(scope.ancestor_resource);
+      const sequence=[...new Set(chain)].reverse();
+      const ancestor=sequence[0]||scope.ancestor_resource;
+      const intermediate=sequence.slice(1,-1);
+      return "start with "+ancestor+(intermediate.length?", then add "+intermediate.join(", then "):"")+", then add this table";
+    }
+
+    function firstTableState(resource,generatedStartingIds){
+      const generated=resource.status==="draft_read"&&generatedStartingIds.has(resource.id);
+      if(resource.status==="blocked_role"||(!resource.primary_key?.selected&&!resource.primary_key?.candidates?.length))return {kind:"unavailable",reason:resource.blockers?.[0]||"record identity or database-role posture is unresolved"};
+      const requiredScopes=[];
+      if(!candidate.organization_scope&&!resource.tenant_key?.selected&&!resource.tenant_key?.candidates?.length){
+        const tenantScope=resource.derived_tenant_scope?.selected||resource.derived_tenant_scope?.candidates?.[0];
+        if(tenantScope)requiredScopes.push(tenantScope);
+      }
+      if(!resource.principal_key?.selected&&resource.derived_principal_scope?.selected){
+        requiredScopes.push(resource.derived_principal_scope.selected);
+      }
+      if(requiredScopes.length)return {kind:"ancestor",reason:requiredScopes.map(scope=>derivedScopeStartGuidance(scope)+" ("+derivedScopePathLabel(scope)+")").join("; ")};
+      if(candidate.organization_scope)return generated?{kind:"startable"}:{kind:"unavailable",reason:resource.blockers?.[0]||"structural review required"};
+      if(resource.tenant_key?.selected||resource.tenant_key?.candidates?.length)return generated?{kind:"startable"}:{kind:"unavailable",reason:resource.blockers?.[0]||"structural review required"};
+      return generated?{kind:"startable"}:{kind:"unavailable",reason:resource.blockers?.[0]||"structural review required"};
     }
 
     function reviewedTenantScopeLabel(resource,review){
@@ -1216,13 +1248,16 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		      const generatedStartingIds=new Set(original.pack.resources.map(resource=>resource.id));
 		      const inspectedStartingTables=(reviewReport.resources||[])
 		        .slice()
-		        .sort((left,right)=>Number(left.status!=="draft_read")-Number(right.status!=="draft_read")||left.id.localeCompare(right.id));
-		      const eligibleStartingTables=inspectedStartingTables.filter(resource=>resource.status==="draft_read"&&generatedStartingIds.has(resource.id));
+		        .sort((left,right)=>Number(firstTableState(left,generatedStartingIds).kind!=="startable")-Number(firstTableState(right,generatedStartingIds).kind!=="startable")||Number(left.status!=="draft_read")-Number(right.status!=="draft_read")||left.id.localeCompare(right.id));
+		      const startingTableStates=new Map(inspectedStartingTables.map(resource=>[resource.id,firstTableState(resource,generatedStartingIds)]));
+		      const eligibleStartingTables=inspectedStartingTables.filter(resource=>startingTableStates.get(resource.id)?.kind==="startable");
+		      const ancestorStartingTables=inspectedStartingTables.filter(resource=>startingTableStates.get(resource.id)?.kind==="ancestor");
 		      const startingTableOptions=inspectedStartingTables
 		        .map(resource=>{
-		          const eligible=resource.status==="draft_read"&&generatedStartingIds.has(resource.id);
-		          const reason=resource.blockers?.[0]||"structural review required";
-		          return '<option value="'+esc(eligible?resource.id:"")+'" '+(eligible?'':'disabled')+'>'+esc(humanizeIdentifier(resource.id.split(".").pop()||resource.id)+(eligible?'':' - unavailable: '+reason))+'</option>';
+		          const state=startingTableStates.get(resource.id);
+		          const eligible=state?.kind==="startable";
+		          const suffix=state?.kind==="ancestor"?' - start from ancestor: '+state.reason:state?.kind==="unavailable"?' - unavailable: '+state.reason:'';
+		          return '<option value="'+esc(eligible?resource.id:"")+'" '+(eligible?'':'disabled')+'>'+esc(humanizeIdentifier(resource.id.split(".").pop()||resource.id)+suffix)+'</option>';
 		        })
 		        .join("");
 		      const activeIds=new Set(activeBoundaries.flatMap(boundary=>(boundary?.pack?.resources||[]).map(resource=>resource.id)));
@@ -1257,7 +1292,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 			      const cohortCurrent=cohortValues.length===1?cohortValues[0]:5;
 			      const cohortSettings='<details class="boundary-options"><summary>Privacy for all tables'+(cohortValues.length===1?' · minimum group size '+esc(cohortCurrent):' · mixed group sizes')+'</summary><div class="boundary-name-editor"><label>Minimum group size for every included table<select id="boundary-cohort-all"><option value="5" '+(cohortCurrent===5?'selected':'')+'>5 — default; hide groups with 1–4 rows</option><option value="4" '+(cohortCurrent===4?'selected':'')+'>4 — hide groups with 1–3 rows</option><option value="3" '+(cohortCurrent===3?'selected':'')+'>3 — hide groups with 1–2 rows</option><option value="2" '+(cohortCurrent===2?'selected':'')+'>2 — hide groups with 1 row</option><option value="1" '+(cohortCurrent===1?'selected':'')+'>1 — show every non-empty group; suppression off</option></select></label><label>Human reviewer<input id="boundary-cohort-actor" type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><label>Reason for this privacy setting<textarea id="boundary-cohort-reason" maxlength="500" rows="2" placeholder="Explain why this minimum group size is appropriate for every table in this boundary."></textarea></label><button id="save-boundary-cohort" class="secondary" type="button" '+(candidate.pack.resources.length?'':'disabled')+'>Save for all '+esc(candidate.pack.resources.length)+' table'+(candidate.pack.resources.length===1?'':'s')+'</button><span id="boundary-cohort-status" class="status-message" aria-live="polite"></span><small>Runner hides aggregate groups with fewer rows than this number. Choosing 1 turns small-group suppression off and may reveal a group containing one person or record. Saving creates one disabled boundary change; Review and activate remains separate.</small></div></details>';
 			      panel.innerHTML=
-			        '<div class="boundary-overview-head"><div><p class="instant-kicker">Scoped Explore</p><h2 id="boundary-overview-title">Your boundaries</h2><p>Each boundary is an independently reviewed set of tables, columns, relationships, and limits. An active boundary adds choices to the same two Explore tools; one query still uses exactly one boundary.</p><div class="boundary-version-table-wrap"><table class="boundary-version-table"><thead><tr><th>Name</th><th>Status</th><th>Tables</th><th>Authority</th><th>Actions</th></tr></thead><tbody>'+rows+'</tbody></table></div><p class="muted">Active boundaries never merge relationship graphs. If a table appears in several boundaries, Runner requires the caller to name one.</p>'+pendingBoundaryBanner+'<div id="new-boundary-form" class="band" hidden><h3>Create another boundary</h3><p>Choose its first table. Nothing is copied from another boundary, and no authority is activated.</p><label class="field">Boundary name<input id="new-boundary-name" type="text" maxlength="64" spellcheck="false" placeholder="support_analytics"></label><label class="field">Starting table<select id="new-boundary-table"><option value="">Choose a table</option>'+startingTableOptions+'</select></label><small>Showing all '+esc(inspectedStartingTables.length)+' inspected tables. '+esc(eligibleStartingTables.length)+' can start a boundary; unavailable tables remain visible with their reason.</small><small>Runner opens the selected table&apos;s column access next. Related tables can be added afterward through reviewed foreign-key paths.</small><div class="actions"><button id="create-boundary" type="button">Choose table and edit</button><button id="cancel-new-boundary" class="secondary" type="button">Cancel</button></div></div><p id="boundary-library-status" class="status-message" aria-live="polite"></p><details class="boundary-options"><summary>Rename selected boundary</summary><div class="boundary-name-editor"><label>Boundary name<input id="boundary-pack-name" type="text" maxlength="64" spellcheck="false" value="'+esc(candidate.pack.name)+'" aria-describedby="boundary-name-help"></label><button id="save-boundary-name" class="secondary" type="button">Save disabled name</button><span id="boundary-name-status" class="status-message" aria-live="polite"></span><small id="boundary-name-help">Saving changes only the selected disabled draft. The name is included in its final review fingerprint.</small></div></details>'+cohortSettings+rankedSettings+'</div>'+lifecycleControls+'</div>'
+		        '<div class="boundary-overview-head"><div><p class="instant-kicker">Scoped Explore</p><h2 id="boundary-overview-title">Your boundaries</h2><p>Each boundary is an independently reviewed set of tables, columns, relationships, and limits. An active boundary adds choices to the same two Explore tools; one query still uses exactly one boundary.</p><div class="boundary-version-table-wrap"><table class="boundary-version-table"><thead><tr><th>Name</th><th>Status</th><th>Tables</th><th>Authority</th><th>Actions</th></tr></thead><tbody>'+rows+'</tbody></table></div><p class="muted">Active boundaries never merge relationship graphs. If a table appears in several boundaries, Runner requires the caller to name one.</p>'+pendingBoundaryBanner+'<div id="new-boundary-form" class="band" hidden><h3>Create another boundary</h3><p>Choose its first table. Nothing is copied from another boundary, and no authority is activated.</p><label class="field">Boundary name<input id="new-boundary-name" type="text" maxlength="64" spellcheck="false" placeholder="support_analytics"></label><label class="field">Starting table<select id="new-boundary-table"><option value="">Choose a table</option>'+startingTableOptions+'</select></label><small>Showing all '+esc(inspectedStartingTables.length)+' inspected tables. '+esc(eligibleStartingTables.length)+' can start a boundary; '+esc(ancestorStartingTables.length)+' can be added after their scoped ancestor; unavailable tables remain visible with their reason.</small><small>Runner opens the selected table&apos;s column access next. Related tables can be added afterward through reviewed foreign-key paths.</small><div class="actions"><button id="create-boundary" type="button">Choose table and edit</button><button id="cancel-new-boundary" class="secondary" type="button">Cancel</button></div></div><p id="boundary-library-status" class="status-message" aria-live="polite"></p><details class="boundary-options"><summary>Rename selected boundary</summary><div class="boundary-name-editor"><label>Boundary name<input id="boundary-pack-name" type="text" maxlength="64" spellcheck="false" value="'+esc(candidate.pack.name)+'" aria-describedby="boundary-name-help"></label><button id="save-boundary-name" class="secondary" type="button">Save disabled name</button><span id="boundary-name-status" class="status-message" aria-live="polite"></span><small id="boundary-name-help">Saving changes only the selected disabled draft. The name is included in its final review fingerprint.</small></div></details>'+cohortSettings+rankedSettings+'</div>'+lifecycleControls+'</div>'
 		        +(selectedEntry?.active?'<div id="boundary-disable-confirmation" class="band notice" hidden><strong>Deactivate '+esc(selectedEntry.name)+'?</strong><p>This removes only this boundary from local Explore. Other active boundaries, protected capabilities, evidence, ledger, and source data stay unchanged.</p><div class="actions"><button id="confirm-disable-boundary" class="danger" type="button">Deactivate selected boundary</button><button id="cancel-disable-boundary" class="secondary" type="button">Cancel</button></div><p id="boundary-disable-status" class="status-message" aria-live="polite"></p></div>':"")
 		        +renderBoundaryRelationshipMap(boundaryCatalog,boundaryDiagrams);
 		      wireBoundaryRelationshipMaps(panel);
@@ -2055,9 +2090,12 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       }
       const selectedKind=currentDerived?pathKind:kind;
       const selectedValue=currentDerived||currentDirect||(allowNone?"__none__":undefined);
+      const exactPathIds=derived.length
+        ?'<details class="access-secondary"><summary>Advanced exact path IDs</summary><p>Use these canonical IDs only with scripted <code>--'+esc(pathKind.replaceAll("_","-"))+'</code> review. Human review and enforcement still refer to the readable mandatory path above.</p><ul>'+derived.map(option=>'<li><code>'+esc(option.value)+'</code> · '+esc(option.label)+'</li>').join("")+'</ul></details>'
+        :"";
       const explanation=inferenceExplanation(label,directInference)
         +(derivedInference?'<div class="risk unresolved"><strong>Relationship-carried scope available</strong><p>Runner will inject the selected path into every read. The AI cannot remove, weaken, or choose this join.</p><p><strong>Safety consequence:</strong> '+esc(derivedInference.safety_consequence)+'</p></div>':"");
-      return explanation+'<div class="review-form" data-scope-review-form><h3>Confirm or change the '+esc(label)+'</h3><div class="form-grid"><label class="field">Reviewed scope<select data-scope-review-value>'+options.map(option=>'<option value="'+esc(option.value)+'" data-review-kind="'+esc(option.kind)+'" '+(selectedKind===option.kind&&selectedValue===option.value?"selected":"")+'>'+esc(option.label)+'</option>').join("")+'</select></label><label class="field">Human reviewer<input data-scope-review-actor type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><label class="field">Why is this correct?<textarea data-scope-review-reason maxlength="500" rows="2" placeholder="Describe why this direct column or mandatory relationship path enforces the application scope."></textarea></label></div><div class="actions"><button data-submit-scope-review="'+esc(kind)+'" type="button">Save this reviewed choice</button></div><span data-scope-review-status class="status-message"></span></div>';
+      return explanation+'<div class="review-form" data-scope-review-form><h3>Confirm or change the '+esc(label)+'</h3><div class="form-grid"><label class="field">Reviewed scope<select data-scope-review-value>'+options.map(option=>'<option value="'+esc(option.value)+'" data-review-kind="'+esc(option.kind)+'" '+(selectedKind===option.kind&&selectedValue===option.value?"selected":"")+'>'+esc(option.label)+'</option>').join("")+'</select></label><label class="field">Human reviewer<input data-scope-review-actor type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><label class="field">Why is this correct?<textarea data-scope-review-reason maxlength="500" rows="2" placeholder="Describe why this direct column or mandatory relationship path enforces the application scope."></textarea></label></div><div class="actions"><button data-submit-scope-review="'+esc(kind)+'" type="button">Save this reviewed choice</button></div><span data-scope-review-status class="status-message"></span></div>'+exactPathIds;
     }
 
     function invalidateResourceReview(id){
@@ -2407,6 +2445,16 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       if(decision.startsWith("trusted context:"))return "Your application chooses the customer and user. The AI cannot change either.";
       if(decision.startsWith("database role:"))return "The database login is verified read-only and cannot bypass row security.";
       if(decision.includes(": confirm tenant key "))return decision.slice(0,decision.indexOf(":"))+": confirm the customer-isolation column.";
+      if(decision.includes(": confirm mandatory derived tenant scope ")){
+        const resource=reviewResource(decision.slice(0,decision.indexOf(":")));
+        const scope=resource?.derived_tenant_scope?.selected;
+        return scope?resource.id+": confirm customer isolation through the "+derivedScopePathLabel(scope)+".":decision;
+      }
+      if(decision.includes(": confirm mandatory derived principal scope ")){
+        const resource=reviewResource(decision.slice(0,decision.indexOf(":")));
+        const scope=resource?.derived_principal_scope?.selected;
+        return scope?resource.id+": confirm user/owner isolation through the "+derivedScopePathLabel(scope)+".":decision;
+      }
       if(decision.includes(": confirm principal scope "))return decision.slice(0,decision.indexOf(":"))+": confirm whether each user is limited to their own rows.";
       if(decision.endsWith(": confirm visible and kept-out fields"))return decision.slice(0,decision.indexOf(":"))+": confirm which fields are model-visible, withheld from the model, or kept out.";
       if(decision.endsWith(": confirm filter/sort/group/aggregate-only field permissions"))return decision.slice(0,decision.indexOf(":"))+": confirm how fields may be searched, sorted, grouped, or totaled.";

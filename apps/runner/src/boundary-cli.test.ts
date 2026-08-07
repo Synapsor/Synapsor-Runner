@@ -579,6 +579,9 @@ describe("boundary operator-plane CLI", () => {
       expect(draft.pack.resources.length).toBeGreaterThan(0);
       expect(draft.pack.resources.every((resource: Record<string, unknown>) =>
         resource.tenant_key === undefined && resource.tenant_scope === undefined)).toBe(true);
+      const reviews = await listBoundaryResourceReviews(root);
+      expect(reviews.length).toBeGreaterThan(0);
+      expect(reviews.every((resource) => resource.first_table_startable === true)).toBe(true);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -2518,6 +2521,153 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 20_000);
 
+  it("marks derived-only tables as add-after-ancestor and refuses them before first-table review", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-derived-first-table-"));
+    const inspection = derivedFirstTableInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    let chooseCall = 0;
+    const resolveBlockedResource = vi.fn();
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async (resources, _overview, options) => {
+        chooseCall += 1;
+        if (chooseCall === 1) return { action: "create" };
+        if (options?.startingBoundaryName) {
+          const child = resources.find((resource) => resource.resource_id === "public.order_items")!;
+          const ancestor = resources.find((resource) => resource.resource_id === "public.orders")!;
+          expect(child).toMatchObject({
+            first_table_startable: false,
+            first_table_scope_label: "order_items -> orders.tenant_id",
+          });
+          expect(child.first_table_guidance).toContain("start with public.orders");
+          expect(ancestor.first_table_startable).toBe(true);
+          return { resource_id: child.resource_id, action: "add" };
+        }
+        return undefined;
+      },
+      editFieldTiers: async () => undefined,
+      resolveBlockedResource,
+      promptText: async () => "line_item_analytics",
+      confirm: async () => true,
+    };
+
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await expect(boundaryReviewCommand([
+        "resource", "public.order_items",
+        "--project-root", root,
+        "--include",
+        "--row-identity", "id",
+        "--tenant-scope-path", "order_items_order_id_fkey",
+        "--no-principal",
+        "--actor", "owner@example.test",
+        "--reason", "Order items inherit tenant isolation through their required order.",
+        "--json",
+      ], async () => inspection)).resolves.toBe(0);
+      expect(JSON.parse(output)).toMatchObject({
+        semantic_diff: {
+          resource_id: "public.order_items",
+          selected_tenant_scope_path: "order_items_order_id_fkey",
+        },
+        authority_activated: false,
+      });
+      output = "";
+      const resources = await listBoundaryResourceReviews(root);
+      expect(resources.find((resource) => resource.resource_id === "public.order_items"))
+        .toMatchObject({
+          first_table_startable: false,
+          first_table_scope_label: "order_items -> orders.tenant_id",
+        });
+      await expect(boundaryReviewCommandInternal([
+        "--project-root", root,
+        "--access",
+      ], async () => inspection, session)).resolves.toBe(0);
+      expect(resolveBlockedResource).not.toHaveBeenCalled();
+      expect(output).toContain("public.order_items cannot be the first table");
+      expect(output).toContain("start with public.orders, then add this table");
+      expect(output).toContain("No table review was started, and nothing was saved or activated.");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("also blocks a selected derived principal path from starting a boundary alone", async () => {
+    for (const singleOrganization of [false, true]) {
+      const root = await fs.mkdtemp(path.join(
+        os.tmpdir(),
+        singleOrganization
+          ? "synapsor-derived-principal-single-org-first-table-"
+          : "synapsor-derived-principal-first-table-",
+      ));
+      const inspection = derivedPrincipalFirstTableInspection(singleOrganization);
+      const decision = (value: string, reason: string) => ({
+        value,
+        actor: "owner@example.test",
+        reason,
+        decided_at: "2026-08-07T12:00:00.000Z",
+      });
+      const build = buildAutoBoundary({
+        inspection,
+        project: {
+          root,
+          package_manager: "npm",
+          frameworks: ["node"],
+          schema_inputs: [],
+          database_env_names: ["DATABASE_URL"],
+        },
+        sourceEnv: "DATABASE_URL",
+        inspectedSchema: "public",
+        overrides: {
+          schema_version: "synapsor.auto-boundary-overrides.v1",
+          resources: {
+            "public.orders": {
+              principal_key: decision(
+                "owner_id",
+                "Each order is owned by the reviewed application principal.",
+              ),
+            },
+            "public.order_items": {
+              principal_scope_path: decision(
+                "order_items_order_id_fkey",
+                "Each item inherits principal scope through its required order.",
+              ),
+            },
+          },
+        },
+        ...(singleOrganization
+          ? { singleOrganization: { organizationId: "internal-analytics" } }
+          : {}),
+      });
+      try {
+        await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+        const resources = await listBoundaryResourceReviews(root);
+        expect(resources.find((resource) => resource.resource_id === "public.order_items"))
+          .toMatchObject({
+            first_table_startable: false,
+            first_table_scope_label: "order_items -> orders.owner_id",
+            first_table_guidance: "start with public.orders, then add this table",
+          });
+      } finally {
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    }
+  });
+
   it("keeps invalid interactive boundary names inside review and normalizes ordinary capitalization", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-name-cli-"));
     const inspection = boundaryInspection();
@@ -3198,6 +3348,117 @@ function boundaryInspection(): SchemaInspection {
       },
     }],
   };
+}
+
+function derivedFirstTableInspection(): SchemaInspection {
+  const inspection = boundaryInspection();
+  const orders = structuredClone(inspection.tables[0]!);
+  orders.name = "orders";
+  orders.unique_constraints = [{ name: "orders_pkey", columns: ["id"] }];
+  orders.indexes = [{ name: "orders_pkey", columns: ["id"], unique: true }];
+  const orderItems = structuredClone(orders);
+  orderItems.name = "order_items";
+  orderItems.columns = orderItems.columns.filter((field) =>
+    field.name !== "tenant_id" && field.name !== "status" && field.name !== "scheduled_at");
+  orderItems.columns.push({
+    name: "order_id",
+    data_type: "uuid",
+    nullable: false,
+    generated: false,
+    ordinal_position: orderItems.columns.length + 1,
+    suggestions: {
+      tenant: false,
+      conflict: false,
+      sensitive: false,
+      immutable: true,
+      large_or_binary: false,
+    },
+  });
+  orderItems.suggestions.tenant_columns = [];
+  orderItems.suggestions.default_visible_columns = ["id", "order_id"];
+  orderItems.row_level_security = false;
+  orderItems.row_level_security_policies = [];
+  orderItems.role_posture!.row_security_effective_for_current_role = false;
+  orderItems.unique_constraints = [{ name: "order_items_pkey", columns: ["id"] }];
+  orderItems.indexes = [{ name: "order_items_pkey", columns: ["id"], unique: true }];
+  orderItems.foreign_keys = [{
+    name: "order_items_order_id_fkey",
+    columns: ["order_id"],
+    referenced_schema: "public",
+    referenced_table: "orders",
+    referenced_columns: ["id"],
+    delete_rule: "RESTRICT",
+  }];
+  inspection.tables = [orderItems, orders];
+  return inspection;
+}
+
+function derivedPrincipalFirstTableInspection(singleOrganization: boolean): SchemaInspection {
+  const inspection = boundaryInspection();
+  const orders = structuredClone(inspection.tables[0]!);
+  orders.name = "orders";
+  orders.columns.push({
+    name: "owner_id",
+    data_type: "uuid",
+    nullable: false,
+    generated: false,
+    ordinal_position: orders.columns.length + 1,
+    suggestions: {
+      tenant: false,
+      conflict: false,
+      sensitive: false,
+      immutable: true,
+      large_or_binary: false,
+    },
+  });
+  orders.suggestions.default_visible_columns.push("owner_id");
+  orders.unique_constraints = [{ name: "orders_pkey", columns: ["id"] }];
+  orders.indexes = [{ name: "orders_pkey", columns: ["id"], unique: true }];
+
+  const orderItems = structuredClone(orders);
+  orderItems.name = "order_items";
+  orderItems.columns = orderItems.columns.filter((field) =>
+    field.name !== "owner_id" && field.name !== "status" && field.name !== "scheduled_at");
+  orderItems.columns.push({
+    name: "order_id",
+    data_type: "uuid",
+    nullable: false,
+    generated: false,
+    ordinal_position: orderItems.columns.length + 1,
+    suggestions: {
+      tenant: false,
+      conflict: false,
+      sensitive: false,
+      immutable: true,
+      large_or_binary: false,
+    },
+  });
+  orderItems.suggestions.default_visible_columns = orderItems.columns.map((field) => field.name);
+  orderItems.unique_constraints = [{ name: "order_items_pkey", columns: ["id"] }];
+  orderItems.indexes = [{ name: "order_items_pkey", columns: ["id"], unique: true }];
+  orderItems.foreign_keys = [{
+    name: "order_items_order_id_fkey",
+    columns: ["order_id"],
+    referenced_schema: "public",
+    referenced_table: "orders",
+    referenced_columns: ["id"],
+    delete_rule: "RESTRICT",
+  }];
+  if (singleOrganization) {
+    for (const table of [orders, orderItems]) {
+      table.columns = table.columns.filter((field) => field.name !== "tenant_id");
+      table.suggestions.tenant_columns = [];
+      table.suggestions.default_visible_columns =
+        table.suggestions.default_visible_columns.filter((field) => field !== "tenant_id");
+      table.row_level_security = false;
+      table.row_level_security_policies = [];
+      if (table.role_posture) {
+        table.role_posture.row_security_effective_for_current_role = false;
+      }
+    }
+  }
+  inspection.tables = [orderItems, orders];
+  return inspection;
 }
 
 function batchBoundaryInspection(): SchemaInspection {

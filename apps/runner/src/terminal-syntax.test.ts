@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   renderTerminalJson,
   renderTerminalSql,
+  renderTerminalSqlFrame,
   terminalSyntaxColorEnabled,
 } from "./terminal-syntax.js";
 
@@ -98,6 +99,34 @@ describe("terminal syntax rendering", () => {
       "  COUNT(*) DESC",
       "LIMIT ?",
     ].join("\n"));
+  });
+
+  it("frames formatted SQL and metadata without exceeding the terminal width", () => {
+    const frame = renderTerminalSqlFrame(
+      'SELECT "status", COUNT(*) FROM "public"."orders" WHERE "tenant_id" = $1 GROUP BY "status" ORDER BY COUNT(*) DESC LIMIT $2',
+      {
+        title: "Statement 1 - postgres",
+        metadata: ["Parameter types: string, integer", "Parameter values: redacted"],
+        columns: 64,
+      },
+    );
+    const lines = frame.split("\n");
+    expect(lines[0]).toMatch(/^\+-- Statement 1 - postgres -+\+$/);
+    expect(frame).toContain("| SELECT");
+    expect(frame).toContain("|   COUNT(*)");
+    expect(frame).toContain("Parameter values: redacted");
+    expect(new Set(lines.map((line) => line.length)).size).toBe(1);
+    expect(lines[0]!.length).toBeLessThanOrEqual(62);
+
+    const colored = renderTerminalSqlFrame("SELECT COUNT(*) FROM `orders` WHERE `id` = ?", {
+      title: "Statement 1 - mysql",
+      color: true,
+      columns: 48,
+    });
+    expect(colored).toContain("\u001b[1;36mSELECT\u001b[0m");
+    const coloredWidths = stripAnsi(colored).split("\n").map((line) => line.length);
+    expect(new Set(coloredWidths).size).toBe(1);
+    expect(coloredWidths[0]).toBeLessThanOrEqual(46);
   });
 
   it("escapes terminal controls before adding trusted syntax colors", () => {

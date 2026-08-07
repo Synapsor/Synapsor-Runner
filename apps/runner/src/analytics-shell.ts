@@ -39,6 +39,7 @@ import {
 import {
   renderTerminalJson,
   renderTerminalSql,
+  renderTerminalSqlFrame,
 } from "./terminal-syntax.js";
 import {
   boundaryCatalogRunnerOnlyAnalysisSummary,
@@ -405,8 +406,13 @@ function slashMenuSuggestions(line: string): SlashCommandSuggestion[] {
   const argumentSuggestions = argumentCommandSuggestions(line);
   if (argumentSuggestions !== undefined) return argumentSuggestions;
   const normalized = line.toLowerCase();
-  return BASE_COMMAND_SUGGESTIONS.filter((entry) =>
+  const baseMatches = BASE_COMMAND_SUGGESTIONS.filter((entry) =>
     entry.label.startsWith(normalized));
+  if (baseMatches.length !== 1 || baseMatches[0]!.label === normalized) return baseMatches;
+
+  const nested = argumentCommandSuggestions(baseMatches[0]!.label) ?? [];
+  return [...baseMatches, ...nested].filter((entry, index, entries) =>
+    entries.findIndex((candidate) => candidate.label === entry.label) === index);
 }
 
 export function slashCommandSuggestions(line: string): string[] {
@@ -1623,12 +1629,16 @@ async function showDetails(
             "",
             "COMPILED DATABASE STATEMENT",
             "Operator diagnostic only. The model never received this SQL. Parameter values are redacted and this view is not persisted.",
-            ...operatorInspection.statements.flatMap((statement, index) => [
-              `Statement ${index + 1}${statement.period ? ` (${statement.period})` : ""} - ${operatorInspection!.engine}`,
-              renderTerminalSql(statement.statement, color),
-              `Parameter types: ${statement.parameter_types.join(", ") || "none"}`,
-              "Parameter values: redacted",
-            ]),
+            ...operatorInspection.statements.map((statement, index) =>
+              renderTerminalSqlFrame(statement.statement, {
+                title: `Statement ${index + 1}${statement.period ? ` (${statement.period})` : ""} - ${operatorInspection!.engine}`,
+                metadata: [
+                  `Parameter types: ${statement.parameter_types.join(", ") || "none"}`,
+                  "Parameter values: redacted",
+                ],
+                color,
+                columns: input.io.columns(),
+              })),
           ]
         : ["", "Compiled SQL is unavailable because the active reviewed artifacts could not be inspected."]
       : ["", "Use /details --sql for the local operator-only parameterized statement."]),
