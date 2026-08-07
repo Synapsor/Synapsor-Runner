@@ -4,6 +4,7 @@ import type {
   BoundaryResourceReviewSummary,
   BoundaryResourceReviewView,
 } from "./boundary-review-mutation.js";
+import type { DerivedScopePath } from "./auto-boundary.js";
 import { readTerminalTextWithEscape } from "./terminal-prompt.js";
 import {
   padTerminalLine,
@@ -101,10 +102,12 @@ type Keypress = {
 type ResourcePickerView = "boundary" | "related" | "all";
 
 type BoundaryRelationshipConnection = {
+  kind: "relationship" | "derived_tenant_scope" | "derived_principal_scope";
   source_resource: string;
   target_resource: string;
   relationship_id: string;
   path_depth: number;
+  derived_scope?: DerivedScopePath;
 };
 
 const tierOrder: BoundaryFieldTier[] = ["visible", "withheld_from_model", "kept_out"];
@@ -1543,6 +1546,7 @@ function boundaryRelationshipConnections(
   for (const relationship of candidate.relationships) {
     if (!boundaryIds.has(relationship.target_resource)) continue;
     connections.push({
+      kind: "relationship",
       source_resource: candidate.resource_id,
       target_resource: relationship.target_resource,
       relationship_id: relationship.relationship_id,
@@ -1553,6 +1557,7 @@ function boundaryRelationshipConnections(
     for (const relationship of boundaryResource.relationships) {
       if (relationship.target_resource !== candidate.resource_id) continue;
       connections.push({
+        kind: "relationship",
         source_resource: boundaryResource.resource_id,
         target_resource: candidate.resource_id,
         relationship_id: relationship.relationship_id,
@@ -1560,11 +1565,78 @@ function boundaryRelationshipConnections(
       });
     }
   }
+  connections.push(...boundaryDerivedScopeConnections(candidate, boundaryResources));
   return connections.sort((left, right) =>
     left.path_depth - right.path_depth
+      || connectionKindOrder(left.kind) - connectionKindOrder(right.kind)
       || left.source_resource.localeCompare(right.source_resource)
       || left.target_resource.localeCompare(right.target_resource)
       || left.relationship_id.localeCompare(right.relationship_id));
+}
+
+function boundaryDerivedScopeConnections(
+  candidate: BoundaryResourceReviewSummary,
+  boundaryResources: BoundaryResourceReviewSummary[],
+): BoundaryRelationshipConnection[] {
+  const boundaryIds = new Set(boundaryResources.map((resource) => resource.resource_id));
+  const inferences = [
+    ...derivedScopePaths(candidate.derived_tenant_scope).map((scope) => ({
+      kind: "derived_tenant_scope" as const,
+      scope,
+    })),
+    ...derivedScopePaths(candidate.derived_principal_scope).map((scope) => ({
+      kind: "derived_principal_scope" as const,
+      scope,
+    })),
+  ];
+  return inferences.flatMap(({ kind, scope }) => {
+    const links = scope.proof?.links ?? [];
+    let expectedSource = candidate.resource_id;
+    const visited = new Set([candidate.resource_id]);
+    for (const link of links) {
+      if (link.source_resource !== expectedSource
+        || visited.has(link.target_resource)
+        || !boundaryIds.has(link.target_resource)
+        || link.nullable
+        || link.cardinality !== "many_to_one"
+        || link.max_fan_out !== 1
+        || link.source_columns.length < 1
+        || link.source_columns.length !== link.target_columns.length
+        || link.target_uniqueness.columns.length !== link.target_columns.length
+        || link.target_uniqueness.columns.some(
+          (field, index) => field !== link.target_columns[index],
+        )) return [];
+      expectedSource = link.target_resource;
+      visited.add(link.target_resource);
+    }
+    if (links.length < 1
+      || expectedSource !== scope.ancestor_resource
+      || !boundaryIds.has(scope.ancestor_resource)) return [];
+    return [{
+      kind,
+      source_resource: candidate.resource_id,
+      target_resource: scope.ancestor_resource,
+      relationship_id: scope.path_id,
+      path_depth: links.length,
+      derived_scope: scope,
+    }];
+  });
+}
+
+function derivedScopePaths(
+  inference: BoundaryResourceReviewSummary["derived_tenant_scope"],
+): DerivedScopePath[] {
+  if (!inference) return [];
+  const paths = [
+    ...(inference.selected ? [inference.selected] : []),
+    ...inference.candidates,
+  ];
+  return paths.filter((scope, index) =>
+    paths.findIndex((candidate) => candidate.path_id === scope.path_id) === index);
+}
+
+function connectionKindOrder(kind: BoundaryRelationshipConnection["kind"]): number {
+  return kind === "derived_tenant_scope" ? 0 : kind === "derived_principal_scope" ? 1 : 2;
 }
 
 function bestBoundaryRelationshipConnection(
@@ -1591,6 +1663,20 @@ function relationshipConnectionDetail(
 ): string[] {
   const connection = bestBoundaryRelationshipConnection(candidate, boundaryResources);
   if (!connection) return [];
+  if (connection.derived_scope) {
+    const scopeLabel = connection.kind === "derived_principal_scope"
+      ? "Derived principal scope"
+      : "Derived tenant scope";
+    return [
+      theme.relationship(
+        `${scopeLabel}: ${safeTerminalText(formatDerivedScopePath(connection.derived_scope))}`,
+      ),
+      theme.dim(
+        `Exact path ID: ${safeTerminalText(connection.relationship_id)}; continuous non-null ` +
+        `many-to-one catalog proof. Human review is still required before use.`,
+      ),
+    ];
+  }
   return [
     theme.relationship(
       `Proven path: ${safeTerminalText(connection.source_resource)} -> ` +

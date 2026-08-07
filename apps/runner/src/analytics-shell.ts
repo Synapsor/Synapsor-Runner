@@ -37,9 +37,12 @@ import {
   terminalContentWidth,
 } from "./terminal-layout.js";
 import {
+  renderTerminalFact,
   renderTerminalJson,
+  renderTerminalJsonFrame,
   renderTerminalSql,
   renderTerminalSqlFrame,
+  renderTerminalToolName,
 } from "./terminal-syntax.js";
 import {
   boundaryCatalogRunnerOnlyAnalysisSummary,
@@ -631,7 +634,7 @@ export async function runAnalyticsShell(
           response.analyses,
           input.io.columns(),
           {
-            ansi: input.io.isTerminal?.() === true,
+            ansi: input.io.isTerminal?.() === true && !("NO_COLOR" in process.env),
             includeAttempts: input.verboseAttempts === true,
             attemptsHint: "Type /attempts to inspect.",
             accessGuidance: response.access_guidance,
@@ -1575,6 +1578,7 @@ async function showDetails(
     ?? stringRecordValue(toolArguments?.boundary)
     ?? "recorded reviewed boundary";
   const color = input.io.isTerminal?.() === true && !("NO_COLOR" in process.env);
+  const theme = terminalTheme(color);
   let operatorInspection: OperatorCompiledExploreEvidence | undefined;
   let inspectionFailure: string | undefined;
   if (input.inspectAnalysis && selected.normalized_plan) {
@@ -1586,49 +1590,77 @@ async function showDetails(
   }
   const modelRequest = toolArguments
     ?? { plan: redactPlanLiterals(selected.normalized_plan) };
+  const toolName = live?.analysis.tool ?? "app.explore_data";
+  const planValidated = live?.analysis.status === "refused" ? "no" : "yes";
+  const sourceQueryExecuted = live?.analysis.status === "refused" ? "no" : "yes";
+  const outcome = selected.outcome
+    ?? stringRecordValue(asRecord(liveResult?.outcome).status)
+    ?? "ok";
+  const returnedRowsOrGroups = numberRecordValue(returned.rows_or_groups)
+    ?? selected.returned_rows_or_groups
+    ?? "unknown";
+  const returnedCells = numberRecordValue(returned.cells)
+    ?? selected.returned_cells
+    ?? "unknown";
+  const returnedBytes = numberRecordValue(returned.bytes) ?? "unknown";
+  const suppressedGroups = numberRecordValue(suppression.suppressed_groups)
+    ?? selected.suppressed_groups
+    ?? 0;
+  const outcomeTone = /^(?:ok|success)$/i.test(outcome)
+    ? "success" as const
+    : /(?:fail|error|refus)/i.test(outcome)
+      ? "danger" as const
+      : "warning" as const;
   input.io.write([
     "",
-    `ANALYSIS ${safeTerminalText(selected.token)}`,
+    theme.title(`ANALYSIS ${safeTerminalText(selected.token)}`),
     "",
-    "QUESTION",
+    theme.bold("QUESTION"),
     live
-      ? safeTerminalText(live.question)
+      ? theme.italic(safeTerminalText(live.question))
       : "Original question unavailable. The MCP host or an earlier local session supplied this typed plan; Runner does not infer the missing conversation.",
     "",
-    "WHAT THE MODEL REQUESTED",
-    live?.analysis.tool ?? "app.explore_data",
-    renderTerminalJson(modelRequest, color),
+    theme.title("WHAT THE MODEL REQUESTED"),
+    `${theme.bold("Tool:")} ${renderTerminalToolName(toolName, color)}`,
+    renderTerminalJsonFrame(modelRequest, {
+      title: "Model request parameters",
+      color,
+      columns: input.io.columns(),
+    }),
     "",
-    "WHAT RUNNER EXECUTED",
-    `Plan validated: ${live?.analysis.status === "refused" ? "no" : "yes"}`,
-    `Boundary: ${safeTerminalText(operatorInspection?.boundary_name ?? boundaryName)}`,
-    `Boundary fingerprint: ${selected.boundary_digest}`,
-    `Trusted tenant scope: ${safeTerminalText(operatorInspection?.trusted_scope.tenant ?? "bound outside model arguments")}`,
-    `Trusted principal scope: ${safeTerminalText(operatorInspection?.trusted_scope.principal ?? "bound outside model arguments or not required")}`,
-    `Database role: ${operatorInspection ? "verified read-only before execution" : "verified by the recorded Explore execution"}`,
-    `Transaction: ${safeTerminalText(operatorInspection?.transaction ?? stringRecordValue(freshness.snapshot_consistency) ?? "single_read_only_transaction")}`,
-    "Normalized validated plan:",
-    renderTerminalJson(redactPlanLiterals(selected.normalized_plan), color),
+    theme.title("WHAT RUNNER EXECUTED"),
+    renderTerminalFact("Plan validated", planValidated, { color, tone: planValidated === "yes" ? "success" : "danger" }),
+    renderTerminalFact("Boundary", operatorInspection?.boundary_name ?? boundaryName, { color, tone: "identifier" }),
+    renderTerminalFact("Boundary fingerprint", selected.boundary_digest, { color, tone: "identifier" }),
+    renderTerminalFact("Trusted tenant scope", operatorInspection?.trusted_scope.tenant ?? "bound outside model arguments", { color, tone: "value" }),
+    renderTerminalFact("Trusted principal scope", operatorInspection?.trusted_scope.principal ?? "bound outside model arguments or not required", { color, tone: "value" }),
+    renderTerminalFact("Database role", operatorInspection ? "verified read-only before execution" : "verified by the recorded Explore execution", { color, tone: "success" }),
+    renderTerminalFact("Transaction", operatorInspection?.transaction ?? stringRecordValue(freshness.snapshot_consistency) ?? "single_read_only_transaction", { color, tone: "identifier" }),
+    renderTerminalJsonFrame(redactPlanLiterals(selected.normalized_plan), {
+      title: "Normalized validated plan",
+      color,
+      columns: input.io.columns(),
+    }),
     "",
-    "WHAT RUNNER RETURNED",
-    `Outcome: ${selected.outcome ?? stringRecordValue(asRecord(liveResult?.outcome).status) ?? "ok"}`,
-    `Source query executed: ${live?.analysis.status === "refused" ? "no" : "yes"}`,
-    "Raw source rows exposed: no",
-    `Bounded rows/groups: ${numberRecordValue(returned.rows_or_groups) ?? selected.returned_rows_or_groups ?? "unknown"}`,
-    `Returned cells: ${numberRecordValue(returned.cells) ?? selected.returned_cells ?? "unknown"}`,
-    `Returned bytes: ${numberRecordValue(returned.bytes) ?? "unknown"}`,
-    `Suppressed groups: ${numberRecordValue(suppression.suppressed_groups) ?? selected.suppressed_groups ?? 0}`,
-    `Evidence: ${selected.evidence_bundle_id ?? "unavailable"}`,
-    `Query audit: ${selected.query_audit_handle ?? "unavailable"}`,
-    `Protectable until: ${selected.expires_at}`,
-    "Source database changed: no",
-    ...(inspectionFailure ? ["", `Advanced inspection unavailable: ${safeTerminalText(inspectionFailure)}`] : []),
+    theme.title("WHAT RUNNER RETURNED"),
+    renderTerminalFact("Outcome", outcome, { color, tone: outcomeTone }),
+    renderTerminalFact("Source query executed", sourceQueryExecuted, { color, tone: sourceQueryExecuted === "yes" ? "success" : "warning" }),
+    renderTerminalFact("Raw source rows exposed", "no", { color, tone: "success" }),
+    renderTerminalFact("Bounded rows/groups", returnedRowsOrGroups, { color, tone: "value" }),
+    renderTerminalFact("Returned cells", returnedCells, { color, tone: "value" }),
+    renderTerminalFact("Returned bytes", returnedBytes, { color, tone: "value" }),
+    renderTerminalFact("Suppressed groups", suppressedGroups, { color, tone: Number(suppressedGroups) > 0 ? "warning" : "success" }),
+    renderTerminalFact("Evidence", selected.evidence_bundle_id ?? "unavailable", { color, tone: selected.evidence_bundle_id ? "identifier" : "muted" }),
+    renderTerminalFact("Query audit", selected.query_audit_handle ?? "unavailable", { color, tone: selected.query_audit_handle ? "identifier" : "muted" }),
+    renderTerminalFact("Protectable until", selected.expires_at, { color, tone: "value" }),
+    renderTerminalFact("Source database changed", "no", { color, tone: "success" }),
+    ...(inspectionFailure ? ["", renderTerminalFact("Advanced inspection unavailable", inspectionFailure, { color, tone: "warning" })] : []),
     ...(includeSql
       ? operatorInspection
         ? [
             "",
-            "COMPILED DATABASE STATEMENT",
-            "Operator diagnostic only. The model never received this SQL. Parameter values are redacted and this view is not persisted.",
+            theme.title("COMPILED DATABASE STATEMENT"),
+            theme.dim("Operator diagnostic only. The model never received this SQL. Parameter values are redacted and this view is not persisted."),
             ...operatorInspection.statements.map((statement, index) =>
               renderTerminalSqlFrame(statement.statement, {
                 title: `Statement ${index + 1}${statement.period ? ` (${statement.period})` : ""} - ${operatorInspection!.engine}`,

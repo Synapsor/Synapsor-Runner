@@ -356,7 +356,7 @@ export async function tryAsk(
             ? terminalContentWidth(process.stdout.columns)
             : process.stdout.columns ?? 100,
           {
-            ansi: Boolean(process.stdout.isTTY),
+            ansi: Boolean(process.stdout.isTTY) && !("NO_COLOR" in process.env),
             includeAttempts: verbose,
             attemptsHint: "Rerun with --verbose to inspect them.",
             accessGuidance: response.access_guidance,

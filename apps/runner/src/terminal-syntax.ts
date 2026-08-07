@@ -58,7 +58,59 @@ export function safeTerminalCellText(value: string): string {
 
 export function renderTerminalJson(value: unknown, color = false, indent = 2): string {
   const serialized = safeTerminalText(JSON.stringify(value, null, indent) ?? "null");
-  if (!color) return serialized;
+  return color ? highlightTerminalJson(serialized) : serialized;
+}
+
+export function renderTerminalJsonFrame(
+  value: unknown,
+  options: {
+    title: string;
+    color?: boolean;
+    columns?: number;
+  },
+): string {
+  const serialized = renderTerminalJson(value, false);
+  return renderTerminalSyntaxFrame(serialized, {
+    title: options.title,
+    color: options.color,
+    columns: options.columns,
+    highlight: highlightTerminalJson,
+  });
+}
+
+export function renderTerminalToolName(value: string, color = false): string {
+  const safe = safeTerminalText(value);
+  if (!color) return safe;
+  const segments = safe.split(".");
+  if (segments.length === 1) return style("1;32", safe);
+  return segments.map((segment, index) =>
+    `${index > 0 ? style("2", ".") : ""}${style(index === segments.length - 1 ? "1;32" : "36", segment)}`,
+  ).join("");
+}
+
+export function renderTerminalFact(
+  label: string,
+  value: string | number | boolean,
+  options: {
+    color?: boolean;
+    tone?: "value" | "identifier" | "success" | "warning" | "danger" | "muted";
+  } = {},
+): string {
+  const safeLabel = safeTerminalText(label);
+  const safeValue = safeTerminalText(String(value));
+  if (!options.color) return `${safeLabel}: ${safeValue}`;
+  const valueCode = {
+    value: "1",
+    identifier: "36",
+    success: "1;32",
+    warning: "1;33",
+    danger: "1;31",
+    muted: "2",
+  }[options.tone ?? "value"];
+  return `${style("1;36", `${safeLabel}:`)} ${style(valueCode, safeValue)}`;
+}
+
+function highlightTerminalJson(serialized: string): string {
   const token = /"(?:\\.|[^"\\])*"|-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|\b(?:true|false|null)\b|[{}\[\],:]/g;
   return serialized.replace(token, (match, offset: number) => {
     if (match.startsWith('"')) {
@@ -86,32 +138,62 @@ export function renderTerminalSqlFrame(
   },
 ): string {
   const statement = renderTerminalSql(value, false);
+  return renderTerminalSyntaxFrame(statement, {
+    title: options.title,
+    metadata: options.metadata,
+    color: options.color,
+    columns: options.columns,
+    highlight: highlightTerminalSql,
+  });
+}
+
+function renderTerminalSyntaxFrame(
+  bodyValue: string,
+  options: {
+    title: string;
+    metadata?: string[];
+    color?: boolean;
+    columns?: number;
+    highlight: (value: string) => string;
+  },
+): string {
+  const bodyValueSafe = safeTerminalText(bodyValue);
   const metadata = (options.metadata ?? []).map(safeTerminalText);
   const safeTitle = safeTerminalText(options.title);
   const availableWidth = Math.max(24, Math.min(100, (options.columns ?? 100) - 2));
   const naturalWidth = Math.max(
     24,
     safeTitle.length + 6,
-    ...statement.split("\n").map((line) => line.length + 4),
+    ...bodyValueSafe.split("\n").map((line) => line.length + 4),
     ...metadata.map((line) => line.length + 4),
   );
   const frameWidth = Math.min(availableWidth, naturalWidth);
   const innerWidth = frameWidth - 4;
-  const statementLines = statement.split("\n").flatMap((line) =>
+  const bodyLines = bodyValueSafe.split("\n").flatMap((line) =>
     wrapTerminalFrameLine(line, innerWidth));
   const metadataLines = metadata.flatMap((line) => wrapTerminalFrameLine(line, innerWidth));
-  const body = statementLines.map((line) => framedTerminalLine(
-    options.color ? highlightTerminalSql(line) : line,
+  const body = bodyLines.map((line) => framedTerminalLine(
+    options.color ? options.highlight(line) : line,
     line.length,
     innerWidth,
   ));
-  const footer = metadataLines.map((line) => framedTerminalLine(line, line.length, innerWidth));
+  const footer = metadataLines.map((line) => framedTerminalLine(
+    options.color ? highlightTerminalMetadata(line) : line,
+    line.length,
+    innerWidth,
+  ));
   return [
     titledTerminalBorder(safeTitle, frameWidth),
     ...body,
     ...(footer.length > 0 ? [plainTerminalBorder(frameWidth), ...footer] : []),
     plainTerminalBorder(frameWidth),
   ].join("\n");
+}
+
+function highlightTerminalMetadata(value: string): string {
+  const separator = value.indexOf(":");
+  if (separator < 0) return style("1", value);
+  return `${style("1;36", value.slice(0, separator + 1))}${style("1", value.slice(separator + 1))}`;
 }
 
 function highlightTerminalSql(statement: string): string {

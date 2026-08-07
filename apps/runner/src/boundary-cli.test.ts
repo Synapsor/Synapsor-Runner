@@ -21,6 +21,7 @@ import {
 import {
   boundaryActivateCommand as boundaryActivateCommandInternal,
   boundaryReviewCommand as boundaryReviewCommandInternal,
+  formatFocusedBoundaryActivationReview,
   loadBoundaryReviewContext,
 } from "./boundary-commands.js";
 import {
@@ -1484,6 +1485,21 @@ describe("boundary operator-plane CLI", () => {
         output.indexOf(`Reviewed boundary "${build.exploration_boundary.pack.name}" is active`),
       );
       expect(output).not.toContain("TABLE SIGN-OFF");
+      const styledReviewContext = await loadBoundaryReviewContext(root);
+      const plainReview = formatFocusedBoundaryActivationReview(
+        styledReviewContext.bundle,
+        false,
+      );
+      const styledReview = formatFocusedBoundaryActivationReview(
+        styledReviewContext.bundle,
+        true,
+      );
+      expect(styledReview).toContain("\u001b[1;36mTable");
+      expect(styledReview).toContain("\u001b[1;35mpublic.service_visits\u001b[0m");
+      expect(styledReview).toContain("\u001b[1;32m");
+      expect(styledReview).toContain("\u001b[1;33m");
+      expect(styledReview).toContain("\u001b[2m");
+      expect(stripAnsi(styledReview)).toBe(plainReview);
       const active = JSON.parse(await fs.readFile(
         path.join(root, ".synapsor/exploration-boundary.active.json"),
         "utf8",
@@ -2592,6 +2608,9 @@ describe("boundary operator-plane CLI", () => {
         .toMatchObject({
           first_table_startable: false,
           first_table_scope_label: "order_items -> orders.tenant_id",
+          derived_tenant_scope: {
+            candidates: [{ path_id: "order_items_order_id_fkey" }],
+          },
         });
       await expect(boundaryReviewCommandInternal([
         "--project-root", root,
@@ -3529,4 +3548,8 @@ async function initializeSignedReviewProject(
     configPath: guided.config_path,
     privateKeyPath,
   };
+}
+
+function stripAnsi(value: string): string {
+  return value.replace(/\u001b\[[0-9;]*m/g, "");
 }

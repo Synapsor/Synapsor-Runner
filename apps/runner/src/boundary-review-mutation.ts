@@ -197,6 +197,8 @@ export type BoundaryResourceReviewSummary = {
   first_table_startable?: boolean;
   first_table_guidance?: string;
   first_table_scope_label?: string;
+  derived_tenant_scope?: DerivedScopeInference;
+  derived_principal_scope?: DerivedScopeInference;
   relationships: Array<{
     relationship_id: string;
     target_resource: string;
@@ -317,6 +319,12 @@ export async function listBoundaryResourceReviews(
             || resource.derived_tenant_scope?.candidates.length,
           ),
         ...firstTable,
+        ...(resource.derived_tenant_scope
+          ? { derived_tenant_scope: structuredClone(resource.derived_tenant_scope) }
+          : {}),
+        ...(resource.derived_principal_scope
+          ? { derived_principal_scope: structuredClone(resource.derived_principal_scope) }
+          : {}),
         relationships: boundaryRelationshipSummaries(generated, candidate, active),
       };
     })

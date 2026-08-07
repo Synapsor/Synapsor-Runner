@@ -1202,3 +1202,63 @@ Post-change gates:
 
 No package or Spec/DSL version changed. Nothing was merged, pushed, tagged,
 published, or released in this checkpoint.
+
+## Terminal Evidence, Review Color, and Derived Related Tables (2026-08-07)
+
+This unpublished 1.7.0 checkpoint improves operator readability and makes
+derived-scope tables discoverable in the primary boundary-add flow. It changes
+no reviewed authority, digest, generation lock, query compiler, or model-facing
+tool.
+
+Completed behavior:
+
+- Runner-verified result rows render as aligned ASCII tables with borders.
+  Headers, text cells, numeric cells, and borders have distinct terminal
+  styles; narrow terminals use bordered vertical records without dropping
+  values.
+- `/details` renders both the typed model request and Runner's normalized plan
+  in titled JSON frames. JSON tokens, `app.explore_data`, evidence facts, and
+  success/warning states are visually distinct. Compiled SQL keeps its framed,
+  multiline syntax-highlighted diagnostic.
+- `NO_COLOR` now disables ANSI consistently for the interactive Analytics
+  answer body and noninteractive human Ask output, not only banners/details.
+- Boundary activation review tables use distinct styles for table/scope,
+  Model + Runner fields, Runner-only fields, kept-out fields, value allowlists,
+  reviewed links, privacy limits, and write posture. Stripping ANSI produces
+  the same plain transcript.
+- `A Add related tables` now includes a child whose tenant or principal scope
+  is carried through a proven derived path. It appears only when every required
+  intermediate and ancestor is already inside the boundary and every link is a
+  continuous non-null, unique-target, many-to-one path with maximum fan-out 1.
+  Nullable, unrelated, and premature grandchild paths remain absent.
+- A derived child is labeled with its human-readable scope chain, for example
+  `order_items -> orders.tenant_id`, even when the same FK also exists as
+  ordinary relationship metadata. The canonical path ID remains visible for
+  scripted review, and adding the table still enters the existing human review
+  and activation flow.
+
+Hands-on verification used the packaged Runner and a disposable copy of
+`Synapsor-runner-test`; the original test project was not edited. In a real PTY,
+a new boundary was started from `public.orders`. `A Add related tables` listed
+customers, invoices, and the previously hidden `public.order_items`. Selecting
+the derived child displayed `Derived tenant scope: order_items ->
+orders.tenant_id` and the continuous non-null many-to-one proof. The real
+`order_flow` activation review was also rendered with category-specific colors.
+
+Post-change gates:
+
+- Focused terminal, Analytics shell, boundary CLI, and picker tests passed,
+  including ANSI-stripped equivalence, narrow-terminal framing, `NO_COLOR`,
+  proof-gated one-hop/two-hop discovery, nullable-path exclusion, and derived
+  scope display priority.
+- Packaged Runner build passed.
+- Final uninterrupted root suite with live PostgreSQL integration enabled:
+  92 files and 1,445/1,445 tests passed. License/content, human command-surface,
+  DSL source-path compatibility, and Cursor package checks also passed.
+- Secured PostgreSQL HTTP, secured MySQL HTTP, and packed npm-style production
+  HTTP gates passed on the final worktree. Each retained exactly
+  `app.describe_data` and `app.explore_data`, principal isolation, direct and
+  derived scope, connection/session ceilings, and no source mutation.
+
+No package or Spec/DSL version changed. Nothing was merged, pushed, tagged,
+published, or released in this checkpoint.

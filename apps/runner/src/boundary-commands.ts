@@ -1584,7 +1584,7 @@ async function confirmAndActivateFocusedBoundary(input: {
   );
 }
 
-function formatFocusedBoundaryActivationReview(
+export function formatFocusedBoundaryActivationReview(
   bundle: BoundaryReviewBundle,
   color = false,
 ): string {
@@ -1689,11 +1689,45 @@ function formatFocusedBoundaryActivationReview(
 }
 
 function styleReviewTable(lines: string[], theme: ReturnType<typeof terminalTheme>): string[] {
+  const separator = lines[1] ?? "";
+  const splitAt = separator.indexOf("  ");
+  if (splitAt < 0) return lines.map((line, index) =>
+    index === 0 ? theme.bold(line) : index === 1 ? theme.dim(line) : theme.value(line));
+  let activeLabel = "";
   return lines.map((line, index) => {
-    if (index === 0) return theme.bold(line);
+    if (index === 0) {
+      return `${theme.title(line.slice(0, splitAt))}  ${theme.bold(line.slice(splitAt + 2))}`;
+    }
     if (index === 1) return theme.dim(line);
-    return theme.value(line);
+    if (!line.trim()) {
+      activeLabel = "";
+      return line;
+    }
+    const labelCell = line.slice(0, splitAt);
+    const valueCell = line.slice(splitAt + 2);
+    const label = labelCell.trim();
+    if (label) activeLabel = label;
+    return `${label ? theme.key(labelCell) : labelCell}  ${styleReviewValue(valueCell, activeLabel, theme)}`;
   });
+}
+
+function styleReviewValue(
+  value: string,
+  label: string,
+  theme: ReturnType<typeof terminalTheme>,
+): string {
+  if (label === "Table" || label === "Tenant scope" || label === "Principal scope") {
+    return theme.scope(value);
+  }
+  if (label === "Model + Runner") return theme.visible(value);
+  if (label === "Runner only") return theme.runnerOnly(value);
+  if (label === "Kept out") return theme.keptOut(value);
+  if (label === "Value allowlists" || label === "Reviewed links") {
+    return theme.relationship(value);
+  }
+  if (label === "Small-group privacy") return theme.warning(value);
+  if (label === "Writes") return theme.success(value);
+  return theme.value(value);
 }
 
 function localInteractiveActor(): string {

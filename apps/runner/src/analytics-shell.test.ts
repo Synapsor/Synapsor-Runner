@@ -189,12 +189,21 @@ describe("Synapsor Analytics shell", () => {
       { region: "mountain", count: 127 },
     ], 60);
 
-    expect(rendered[0]).toContain("Region");
-    expect(rendered[0]).toContain("Count");
-    expect(rendered[2]?.trimStart()).toMatch(/^pacific\s+/);
-    expect(rendered[3]?.trimStart()).toMatch(/^mountain\s+/);
-    expect(rendered[0]?.length).toBe(rendered[2]?.length);
-    expect(rendered[2]?.length).toBe(rendered[3]?.length);
+    expect(rendered[0]).toMatch(/^\+-+\+-+\+$/);
+    expect(rendered[1]).toContain("Region");
+    expect(rendered[1]).toContain("Count");
+    expect(rendered[3]).toMatch(/^\| pacific\s+\|\s+7 \|$/);
+    expect(rendered[4]).toMatch(/^\| mountain\s+\|\s+127 \|$/);
+    expect(new Set(rendered.map((line) => line.length)).size).toBe(1);
+
+    const colored = renderTable([
+      { region: "pacific", count: 7 },
+      { region: "mountain", count: 127 },
+    ], 60, undefined, true).join("\n");
+    expect(colored).toContain("\u001b[1;36mRegion");
+    expect(colored).toContain("\u001b[36mpacific");
+    expect(colored).toContain("\u001b[1;33m    7\u001b[0m");
+    expect(stripAnsi(colored)).toBe(rendered.join("\n"));
   });
 
   it("labels a sum of a non-total field without implying a second total", () => {
@@ -883,28 +892,36 @@ describe("Synapsor Analytics shell", () => {
       plan: { kind: "aggregate", resource: "public.sessions", top_n: 10 },
     };
     const output = renderRefusedAttempts([refused], true).join("\n");
+    expect(output).toContain("+-- Typed tool request");
     expect(output).toContain('\u001b[1;36m"boundary"\u001b[0m');
     expect(output).toContain('\u001b[1;32m"reviewed_sessions"\u001b[0m');
     expect(output).toContain("\u001b[1;33m10\u001b[0m");
   });
 
   it("styles model prose and Runner facts differently in a TTY", async () => {
+    const previousNoColor = process.env.NO_COLOR;
+    delete process.env.NO_COLOR;
     const io = fakeIo(["show reviewed totals", "/exit"], 100, true);
-    await runAnalyticsShell({
-      providerLabel: "OpenAI",
-      profileLabel: "staging",
-      reviewedDataAreas: 1,
-      io,
-      ask: async () => ({
-        turn: turn("The verified result follows."),
-        analyses: [analysis("A1", 0)],
-        answer_id: "ans_eeeeeeeeeeeeeeeeeeeeeeee",
-      }),
-      listAnalyses: async () => [storedAnalysis("A1")],
-      protect: vi.fn(),
-      clearConversation: vi.fn(),
-      cancel: vi.fn(() => false),
-    });
+    try {
+      await runAnalyticsShell({
+        providerLabel: "OpenAI",
+        profileLabel: "staging",
+        reviewedDataAreas: 1,
+        io,
+        ask: async () => ({
+          turn: turn("The verified result follows."),
+          analyses: [analysis("A1", 0)],
+          answer_id: "ans_eeeeeeeeeeeeeeeeeeeeeeee",
+        }),
+        listAnalyses: async () => [storedAnalysis("A1")],
+        protect: vi.fn(),
+        clearConversation: vi.fn(),
+        cancel: vi.fn(() => false),
+      });
+    } finally {
+      if (previousNoColor === undefined) delete process.env.NO_COLOR;
+      else process.env.NO_COLOR = previousNoColor;
+    }
 
     expect(io.output()).toContain("\u001b[1;35mMODEL INTERPRETATION\u001b[0m");
     expect(io.output()).toContain("\u001b[3mThe verified result follows.\u001b[0m");
@@ -916,6 +933,35 @@ describe("Synapsor Analytics shell", () => {
     expect(noQuery).toContain("\u001b[3mI can describe the reviewed boundary.\u001b[0m");
     expect(noQuery).toContain("\u001b[1;33mRUNNER STATUS\u001b[0m");
     expect(noQuery).toContain("No Runner data query was executed for this answer.");
+  });
+
+  it("honors NO_COLOR across the entire interactive answer", async () => {
+    const previousNoColor = process.env.NO_COLOR;
+    process.env.NO_COLOR = "1";
+    const io = fakeIo(["show reviewed totals", "/exit"], 100, true);
+    try {
+      await runAnalyticsShell({
+        providerLabel: "OpenAI",
+        profileLabel: "staging",
+        reviewedDataAreas: 1,
+        io,
+        ask: async () => ({
+          turn: turn("The verified result follows."),
+          analyses: [analysis("A1", 0)],
+          answer_id: "ans_no_color_evidence",
+        }),
+        listAnalyses: async () => [storedAnalysis("A1")],
+        protect: vi.fn(),
+        clearConversation: vi.fn(),
+        cancel: vi.fn(() => false),
+      });
+    } finally {
+      if (previousNoColor === undefined) delete process.env.NO_COLOR;
+      else process.env.NO_COLOR = previousNoColor;
+    }
+    expect(io.output()).toContain("RUNNER-VERIFIED DATA");
+    expect(io.output()).toMatch(/\+-+\+-+\+/);
+    expect(io.output()).not.toContain("\u001b[");
   });
 
   it("styles provider, model, boundary, and active posture without changing plain output", () => {
@@ -1819,8 +1865,11 @@ describe("Synapsor Analytics shell", () => {
     const output = io.output();
     expect(output).toContain("How many sessions are in each region?");
     expect(output).toContain("WHAT THE MODEL REQUESTED");
+    expect(output).toContain("Tool: app.explore_data");
+    expect(output).toContain("+-- Model request parameters");
     expect(output).toContain('"boundary": "reviewed_sessions"');
     expect(output).toContain("WHAT RUNNER EXECUTED");
+    expect(output).toContain("+-- Normalized validated plan");
     expect(output).toContain("Use /details --sql");
     expect(output).not.toContain('SELECT "region"');
     expect(inspectAnalysis).toHaveBeenCalledOnce();
@@ -1875,6 +1924,8 @@ describe("Synapsor Analytics shell", () => {
     }
     expect(io.output()).toContain('\u001b[1;36m"boundary"\u001b[0m');
     expect(io.output()).toContain('\u001b[1;32m"reviewed_sessions"\u001b[0m');
+    expect(io.output()).toContain("\u001b[36mapp\u001b[0m\u001b[2m.\u001b[0m\u001b[1;32mexplore_data\u001b[0m");
+    expect(io.output()).toContain("\u001b[1;36mOutcome:\u001b[0m \u001b[1;32mok\u001b[0m");
   });
 
   it("reveals only placeholder SQL and parameter types through the explicit operator detail action", async () => {

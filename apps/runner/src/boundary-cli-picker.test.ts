@@ -446,6 +446,109 @@ describe("boundary review terminal picker", () => {
     await expect(selected).resolves.toBeUndefined();
   });
 
+  it("shows only continuous derived-scope children in Add related tables", async () => {
+    const { input, output } = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const orders = summary("public.orders", 0);
+    const invoices = summary("public.invoices", 0);
+    invoices.included = false;
+    invoices.relationships = [{
+      relationship_id: "invoices_order_id_fkey",
+      target_resource: "public.orders",
+      path_depth: 1,
+      state: "available",
+    }];
+    const orderItems = summary("public.order_items", 0);
+    orderItems.included = false;
+    orderItems.relationships = [{
+      relationship_id: "order_items_order_id_fkey",
+      target_resource: "public.orders",
+      path_depth: 1,
+      state: "available",
+    }];
+    orderItems.derived_tenant_scope = derivedScopeInference(
+      oneHopDerivedScope("public.order_items", "public.orders", "order_items_order_id_fkey"),
+    );
+    const orderItemEvents = summary("public.order_item_events", 0);
+    orderItemEvents.included = false;
+    orderItemEvents.derived_tenant_scope = derivedScopeInference(twoHopDerivedScope());
+    const abandonedCarts = summary("public.abandoned_carts", 0);
+    abandonedCarts.included = false;
+    abandonedCarts.derived_tenant_scope = derivedScopeInference(
+      oneHopDerivedScope(
+        "public.abandoned_carts",
+        "public.orders",
+        "abandoned_carts_order_id_fkey",
+        true,
+      ),
+    );
+    const unrelated = summary("public.product_catalog", 0);
+    unrelated.included = false;
+    const selected = session.chooseResource([
+      orders,
+      invoices,
+      orderItems,
+      orderItemEvents,
+      abandonedCarts,
+      unrelated,
+    ], undefined, { initialView: "access" });
+    output.read();
+
+    await send(input, "a");
+    const related = stripAnsi(output.read()?.toString() ?? "");
+    expect(related).toContain("ADD RELATED TABLES (2)");
+    expect(related).toContain("public.invoices");
+    expect(related).toContain("public.order_items");
+    expect(related).not.toContain("public.order_item_events");
+    expect(related).not.toContain("public.abandoned_carts");
+    expect(related).not.toContain("public.product_catalog");
+
+    await send(input, "\u001b[B");
+    const derived = stripAnsi(output.read()?.toString() ?? "");
+    expect(derived).toContain("[linked to public.orders]");
+    expect(derived).toContain("Derived tenant scope: order_items -> orders.tenant_id");
+    expect(derived).toContain("Exact path ID: order_items_order_id_fkey");
+    expect(derived).not.toContain("Proven path: public.order_items -> public.orders");
+    await send(input, "\r");
+    await expect(selected).resolves.toEqual({
+      resource_id: "public.order_items",
+      action: "add",
+    });
+  });
+
+  it("shows a two-hop derived child only after its intermediate table is in the boundary", async () => {
+    const { input, output } = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const orders = summary("public.orders", 0);
+    const orderItems = summary("public.order_items", 0);
+    orderItems.derived_tenant_scope = derivedScopeInference(
+      oneHopDerivedScope("public.order_items", "public.orders", "order_items_order_id_fkey"),
+    );
+    const orderItemEvents = summary("public.order_item_events", 0);
+    orderItemEvents.included = false;
+    orderItemEvents.derived_tenant_scope = derivedScopeInference(twoHopDerivedScope());
+    const selected = session.chooseResource(
+      [orders, orderItems, orderItemEvents],
+      undefined,
+      { initialView: "access" },
+    );
+    output.read();
+
+    await send(input, "a");
+    const related = stripAnsi(output.read()?.toString() ?? "");
+    expect(related).toContain("ADD RELATED TABLES (1)");
+    expect(related).toContain("public.order_item_events");
+    expect(related).toContain("[linked to public.orders]");
+    expect(related).toContain(
+      "Derived tenant scope: order_item_events -> order_items -> orders.tenant_id",
+    );
+    await send(input, "\r");
+    await expect(selected).resolves.toEqual({
+      resource_id: "public.order_item_events",
+      action: "add",
+    });
+  });
+
   it("exposes boundary naming as a first-class action", async () => {
     const { input, output } = fakeTerminal();
     const session = createBoundaryReviewInteractiveSession(input, output);
@@ -1125,5 +1228,47 @@ function twoHopDerivedScope() {
       links,
       digest: `sha256:${"7".repeat(64)}` as `sha256:${string}`,
     },
+  };
+}
+
+function oneHopDerivedScope(
+  sourceResource: string,
+  ancestorResource: string,
+  constraintName: string,
+  nullable = false,
+) {
+  return {
+    mode: "derived" as const,
+    path_id: constraintName,
+    ancestor_resource: ancestorResource,
+    ancestor_column: "tenant_id",
+    proof: {
+      source: "database_catalog" as const,
+      links: [{
+        constraint_name: constraintName,
+        source_resource: sourceResource,
+        target_resource: ancestorResource,
+        source_columns: ["order_id"],
+        target_columns: ["id"],
+        target_uniqueness: {
+          kind: "primary_key" as const,
+          name: `${ancestorResource.split(".").at(-1)}_pkey`,
+          columns: ["id"],
+        },
+        nullable,
+        cardinality: "many_to_one" as const,
+        max_fan_out: 1 as const,
+      }],
+      digest: `sha256:${"8".repeat(64)}` as `sha256:${string}`,
+    },
+  };
+}
+
+function derivedScopeInference(scope: ReturnType<typeof oneHopDerivedScope> | ReturnType<typeof twoHopDerivedScope>) {
+  return {
+    candidates: [scope],
+    selected: scope,
+    confirmation_required: true as const,
+    safety_consequence: "Every row is scoped through this mandatory relationship path.",
   };
 }

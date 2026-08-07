@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  renderTerminalFact,
   renderTerminalJson,
+  renderTerminalJsonFrame,
   renderTerminalSql,
   renderTerminalSqlFrame,
+  renderTerminalToolName,
   terminalSyntaxColorEnabled,
 } from "./terminal-syntax.js";
 
@@ -28,6 +31,45 @@ describe("terminal syntax rendering", () => {
     const colored = renderTerminalJson(value, true, 0);
     expect(plain).toBe('{"ok":true,"count":3}');
     expect(stripAnsi(colored)).toBe(plain);
+  });
+
+  it("frames JSON with aligned borders while preserving syntax colors", () => {
+    const value = {
+      boundary: "reviewed_orders",
+      plan: { kind: "aggregate", top_n: 25 },
+    };
+    const plain = renderTerminalJsonFrame(value, {
+      title: "Model request parameters",
+      columns: 64,
+    });
+    const plainLines = plain.split("\n");
+    expect(plainLines[0]).toMatch(/^\+-- Model request parameters -+\+$/);
+    expect(plain).toContain('|   "boundary": "reviewed_orders",');
+    expect(new Set(plainLines.map((line) => line.length)).size).toBe(1);
+    expect(plainLines[0]!.length).toBeLessThanOrEqual(62);
+
+    const colored = renderTerminalJsonFrame(value, {
+      title: "Model request parameters",
+      color: true,
+      columns: 64,
+    });
+    expect(colored).toContain('\u001b[1;36m"boundary"\u001b[0m');
+    expect(colored).toContain('\u001b[1;32m"reviewed_orders"\u001b[0m');
+    expect(colored).toContain("\u001b[1;33m25\u001b[0m");
+    expect(stripAnsi(colored)).toBe(plain);
+  });
+
+  it("styles tool identifiers and evidence facts without changing their text", () => {
+    const tool = renderTerminalToolName("app.explore_data", true);
+    expect(tool).toContain("\u001b[36mapp\u001b[0m");
+    expect(tool).toContain("\u001b[2m.\u001b[0m");
+    expect(tool).toContain("\u001b[1;32mexplore_data\u001b[0m");
+    expect(stripAnsi(tool)).toBe("app.explore_data");
+
+    expect(renderTerminalFact("Outcome", "ok")).toBe("Outcome: ok");
+    const fact = renderTerminalFact("Outcome", "ok", { color: true, tone: "success" });
+    expect(fact).toBe("\u001b[1;36mOutcome:\u001b[0m \u001b[1;32mok\u001b[0m");
+    expect(stripAnsi(fact)).toBe("Outcome: ok");
   });
 
   it("highlights PostgreSQL diagnostics including DDL, types, comments, and placeholders", () => {
@@ -120,10 +162,13 @@ describe("terminal syntax rendering", () => {
 
     const colored = renderTerminalSqlFrame("SELECT COUNT(*) FROM `orders` WHERE `id` = ?", {
       title: "Statement 1 - mysql",
+      metadata: ["Parameter values: redacted"],
       color: true,
       columns: 48,
     });
     expect(colored).toContain("\u001b[1;36mSELECT\u001b[0m");
+    expect(colored).toContain("\u001b[1;36mParameter values:\u001b[0m");
+    expect(colored).toContain("\u001b[1m redacted\u001b[0m");
     const coloredWidths = stripAnsi(colored).split("\n").map((line) => line.length);
     expect(new Set(coloredWidths).size).toBe(1);
     expect(coloredWidths[0]).toBeLessThanOrEqual(46);
