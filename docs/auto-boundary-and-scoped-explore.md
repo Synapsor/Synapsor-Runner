@@ -76,6 +76,12 @@ input enters Auto Boundary. It scans the whole selected schema and opens the
 secured loopback Workbench. The initial npm download is not part of Runner's
 measured onboarding time.
 
+An existing guided project resumes its pinned review and does not inspect the
+database again. Add `--rescan` to the same Start command to deliberately
+re-inspect either a single-organization or multi-tenant source. The rescan
+produces a disabled boundary revision; it does not replace active authority
+until a human reviews and activates it. Do not use `--force` merely to rescan.
+
 Runner never derives a tenant or principal from a connection-string name,
 table contents, sample rows, or model input. If neither a verified credential-
 bound PostgreSQL RLS setting nor configured application identity is available
@@ -332,9 +338,16 @@ CLI. These actions update only disabled drafts.
 
 Active boundaries add reviewed choices to one authoring catalog; they do not
 create more tools or merge authority. `app.describe_data` lists each boundary
-and tags its resources. Every `app.explore_data` request routes to exactly one
+and tags its resources. The model-facing catalog exposes one canonical ID for
+each resource, field, and relationship. It does not advertise a second label or
+alias for the same plan input. The catalog still includes the reviewed
+operations, enum allowlists, time coverage, relationship paths and cardinality
+proof, scope posture, privacy limits, and suggested plan shapes the model needs
+to form a legal request. Every `app.explore_data` request routes to exactly one
 boundary. A resource that appears in only one boundary routes automatically; an
-overlapping resource requires the exact boundary name. Cross-boundary joins,
+overlapping resource requires the exact boundary name. Runner may recover an
+unambiguous bare or humanized resource name, but that is error recovery rather
+than an alternative vocabulary exposed to the model. Cross-boundary joins,
 unions, and relationship traversal are unavailable. Query, extraction, rate,
 and differencing history is shared across the stable reviewed source and
 trusted scope. Differencing variants share a root-resource pool over a rolling
@@ -357,6 +370,14 @@ Markdown file containing a readable relationship map and Mermaid ER diagram.
 Workbench uses the same catalog model and provides the same boundary selector,
 visual relationship graph, suggested cross-table questions, and download. The
 map is generated from activated metadata only; it reads no source rows.
+
+Activating access through the Analytics shell's `/access` editor immediately
+rebinds that same shell after the separate human confirmation; no restart or
+provider-key re-entry is required. If access was activated in Workbench or a
+different terminal, run `/refresh-access` in the existing shell. Runner shows
+the exact new authority and provider-egress consequence, requires one explicit
+operator confirmation, clears the old conversation, and rebinds without making
+a provider request or restarting the process.
 
 Protected named capabilities remain the default production surface. Flexible
 Scoped Explore may also be served in production only through the explicit,

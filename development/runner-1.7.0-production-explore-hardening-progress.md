@@ -721,3 +721,122 @@ Final verification completed:
 
 No Cloud-repository files, package versions, Spec/DSL versions, tags, releases,
 or published artifacts were changed.
+
+## Multi-Boundary Discovery, Live Access, and Catalog UX (Complete)
+
+This unpublished 1.7.0 follow-up fixes the first-time and smaller-model failure
+cases found while using more than one active boundary. It changes discovery,
+resource resolution, and operator presentation; it does not widen reviewed
+authority.
+
+Model-facing discovery and routing:
+
+- `app.describe_data` now advertises one canonical actionable vocabulary: exact
+  resource IDs, field IDs, and relationship IDs. Alternate human labels are no
+  longer presented beside exact identifiers, so a model is not asked to choose
+  between two names for the same operation.
+- The catalog still provides the planning metadata needed to use those IDs:
+  legal operations and operators, reviewed enum values, time coverage,
+  relationship targets and structural proof, path depth/cardinality, egress
+  posture, suggested legal plans, result bounds, and privacy posture.
+- Runtime recovery accepts an unambiguous bare, humanized, or case-insensitive
+  resource name only when it resolves to exactly one resource in active
+  reviewed authority. The canonical exact ID is substituted before validation,
+  execution, evidence projection, and provider output.
+- Ambiguous recovery remains fail-closed and lists the exact boundary/resource
+  pairs. Unknown resources return bounded valid exact IDs and a nearest reviewed
+  suggestion. No alias can resolve to an inactive or unreviewed resource.
+- Explore refusals retain their specific resource/boundary error instead of
+  collapsing the useful recovery context into a bare `MCP_TOOL_REFUSED`.
+- Local and production boundary-set runtimes refresh the activated boundary set
+  before describe and explore calls. A newly activated boundary or revision is
+  available without restarting the CLI or reconnecting an HTTP MCP client.
+
+Operator access UX:
+
+- Terminal `/access` activation rebinds the current Ask shell to the exact new
+  authority while retaining the selected provider, model, and memory-only key.
+  The old conversation is cleared so stale catalog context cannot influence the
+  new authority.
+- `/refresh-access` performs the same exact-authority rebind after activation in
+  Workbench or another terminal. It previews the authority and provider-egress
+  consequence, rechecks the digest at confirmation, and fails closed on a stale
+  race without making a provider request.
+- Pending-change notices scan all boundaries, explain whether the cause is a
+  schema/role posture change or an operator access edit, and give the exact
+  boundary-overview action: `/access`, highlight the boundary, then press `C`
+  to review and activate. The intentional first Quick Start staging review is
+  not mislabeled as an unreviewed user change.
+- Enum editing keeps staged column-access changes, Enter saves the enum and
+  staged access decision atomically after any required actor/reason review, and
+  returns to the column screen. Apply, reject, unchanged, discard, and cancel
+  outcomes are explicit.
+- Help and onboarding docs now state that `--rescan` deliberately re-inspects
+  both single-organization and multi-tenant projects. Ordinary restart resumes
+  pinned review; a rescan creates a disabled revision while the previous exact
+  authority stays active. `--force` remains overwrite/reset behavior.
+
+Catalog and diagram UX:
+
+- `/catalog` is relationship-aware and lists exact reviewed join paths,
+  cardinality, proof, path depth, available analysis, and useful single-table or
+  cross-table questions.
+- `/catalog --diagram --boundary <name>` renders exactly one active boundary.
+  Connected terminal maps include directional paths and questions; a one-table
+  boundary becomes a useful analysis map and does not pretend an empty ERD is a
+  relationship diagram.
+- Mermaid is generated from the same redacted canonical model used by CLI and
+  Workbench. Parser tests cover one-node, disconnected, multi-hop, nullable,
+  unproven, identifier-collision, special-character, and multi-boundary cases.
+  Every per-boundary export is parser-valid. Large maps favor a non-overwriting
+  project-local export.
+- Workbench provides the same boundary selector, questions, downloadable map,
+  Mermaid source, and a readable directional graph. Arrow direction and proof
+  styling are explained; hidden keys and fields remain redacted.
+- Multiword shell actions including `/catalog --diagram`,
+  `/catalog --diagram --boundary <name>`, and `/details last` are parsed as
+  commands rather than autocomplete misses.
+
+Preserved boundary and security behavior:
+
+- Direct tenant/principal scope, mandatory derived tenant/principal paths,
+  authority-dependency re-proof, single-organization scope, reviewed
+  relationship proofs, schema-declared enum allowlists and audited enum
+  narrowing, time coverage, suppression, differencing, extraction and rate
+  budgets, read-only execution, and source-mutation checks remain intact.
+- The model surface remains exactly `app.describe_data` and
+  `app.explore_data`. It gains no SQL, activation, review, Protect, approval,
+  apply, credential, tenant, or principal authority.
+- PostgreSQL, MySQL, packed, local CLI, and secured production HTTP paths use
+  the same canonical reviewed IDs and boundary resolution rules.
+
+Verification completed:
+
+- Focused changed-surface tests passed: 9 files and 211 tests, followed by the
+  Ask-authority/boundary CLI regression set at 39/39.
+- Strict MCP output-schema tests passed at 5/5 and reject removed alternate
+  label fields while accepting all retained planning and privacy metadata.
+- PostgreSQL secured production HTTP passed canonical discovery, unadvertised
+  alias recovery, direct and derived tenant/principal isolation,
+  single-organization principal-only JWT, per-principal budgets, concurrent
+  reservation, connection/session ceilings, suppression, doctor/index
+  attestation, exact two-tool exposure, and no source mutation.
+- MySQL secured production HTTP passed the corresponding multi-tenant,
+  derived-scope, fixed-organization, privacy, transport, and no-mutation gates.
+- Packed production HTTP passed through the public packed artifact with the
+  same controls and exact two-tool surface.
+- Auto Boundary Workbench visual verification passed 27 states. Workbench Ask
+  browser verification passed eight rendered states with no persisted API key,
+  no browser storage, expected refusal/auth behavior, and no source mutation.
+- A disposable real PostgreSQL human PTY run completed first-run provider
+  selection, connected `/catalog --diagram`, `/details last`, staged column and
+  enum edits with actor/reason, exact `C` activation, and same-process Ask
+  rebinding. The activated catalog reflected the new Runner-only field and
+  narrowed enum without exposing the enum values to the model. The source was
+  unchanged.
+- Final full suite with live PostgreSQL accounting enabled: 90 files and
+  1,415/1,415 tests passed. License/content, human command-surface, DSL source
+  path, and Cursor plugin checks also passed.
+
+No Cloud-repository files, package versions, Spec/DSL versions, tags, pushes,
+releases, or published artifacts were changed.

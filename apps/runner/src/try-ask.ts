@@ -279,7 +279,7 @@ export async function tryAsk(
         await gateway.close().catch(() => undefined);
         throw new AskError(
           "ASK_AUTHORITY_CHANGED",
-          "Reviewed access changed outside this Ask handoff. Your question was not sent. Run /access to review it here, or restart `synapsor-runner try ask` to confirm the new provider access before asking.",
+          "Reviewed access changed outside this Ask shell. Your question was not sent. Run /refresh-access to review the new provider access here; no restart is required.",
           409,
         );
       }
@@ -480,6 +480,78 @@ export async function tryAsk(
           deploymentProfile: profile,
         });
         return { workbenchUrl: workbench.url };
+      },
+      refreshAccess: async (confirm) => {
+        let gateway: AskToolGateway | undefined;
+        try {
+          gateway = await gatewayFactory({
+            configPath,
+            storePath,
+            projectRoot,
+            env,
+            mode: "authoring",
+          });
+          const previewTools = await gateway.listTools();
+          assertAnalyticsTools(previewTools.map((tool) => tool.name));
+          const previewAuthority = await computeAskAuthority({
+            tools: previewTools,
+            configPath,
+            projectRoot,
+            profile,
+            mode: "authoring",
+          });
+          if (previewAuthority.authority_digest === authority.authority_digest) {
+            return { status: "unchanged" as const };
+          }
+          const previewBoundary = await resolveActiveBoundarySummary(projectRoot);
+          const accepted = await confirm({
+            providerLabel: providerDisplayLabel(provider, configuration.endpoint_scope),
+            modelLabel: model,
+            boundaryLabel: previewBoundary?.name ?? "newly activated reviewed access",
+          });
+          if (!accepted) return { status: "cancelled" as const };
+
+          const recheckedTools = await gateway.listTools();
+          assertAnalyticsTools(recheckedTools.map((tool) => tool.name));
+          const recheckedAuthority = await computeAskAuthority({
+            tools: recheckedTools,
+            configPath,
+            projectRoot,
+            profile,
+            mode: "authoring",
+          });
+          if (recheckedAuthority.authority_digest !== previewAuthority.authority_digest) {
+            throw new AskError(
+              "ASK_AUTHORITY_CHANGED",
+              "Reviewed access changed while you were confirming it. No provider access was renewed. Run /refresh-access again to review the current access.",
+              409,
+            );
+          }
+          configuration = session.rebindAuthority(recheckedAuthority.authority_digest);
+          authority = recheckedAuthority;
+          const [refreshedSummary, refreshedBoundary, refreshedCatalog, refreshedPending] = await Promise.all([
+            loadReviewedAccessSummary({
+              gatewayFactory,
+              configPath,
+              storePath,
+              projectRoot,
+              env,
+            }),
+            resolveActiveBoundarySummary(projectRoot),
+            (dependencies.boundaryCatalogLoader ?? loadActiveBoundaryCatalog)(projectRoot),
+            resolvePendingBoundaryReviewSummary(projectRoot),
+          ]);
+          return {
+            status: "updated" as const,
+            boundaryLabel: refreshedBoundary?.name,
+            reviewedDataAreas: refreshedSummary.table_count,
+            accessSummary: refreshedSummary,
+            boundaryCatalog: refreshedCatalog,
+            pendingBoundaryReview: refreshedPending,
+          };
+        } finally {
+          await gateway?.close().catch(() => undefined);
+        }
       },
       clearConversation: () => session.clearConversation(),
       cancel: () => session.cancel(),

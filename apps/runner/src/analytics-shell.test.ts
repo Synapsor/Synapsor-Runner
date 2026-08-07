@@ -950,11 +950,17 @@ describe("Synapsor Analytics shell", () => {
         boundary_name: "reviewed_staging",
         pending_changes: 1,
         previous_authority_active: true,
+        changes: [{
+          boundary_name: "reviewed_staging",
+          previous_authority_active: true,
+          cause: "database_posture_changed",
+        }],
       },
     });
     expect(output).toContain("1 PENDING BOUNDARY CHANGE IS NOT ACTIVE");
-    expect(output).toContain("Ask still uses the previous exact reviewed revision");
-    expect(output).toContain("/access -> select the boundary -> C Review + activate");
+    expect(output).toContain("A rescan found a different database schema or role posture");
+    expect(output).toContain("In BOUNDARY OVERVIEW, highlight the boundary named above and press C");
+    expect(output).toContain("You do not need to open its tables");
   });
 
   it("shows a concise reviewed-access summary and only validated starter questions", () => {
@@ -1065,7 +1071,7 @@ describe("Synapsor Analytics shell", () => {
       clearConversation: vi.fn(),
       cancel: vi.fn(() => false),
     });
-    expect(io.output()).toContain("ACTIVE BOUNDARY DIAGRAM");
+    expect(io.output()).toContain("ACTIVE BOUNDARY MAP");
     expect(io.output()).toContain("Boundary reviewed_staging");
     expect(io.output()).toContain("2 tables | 1 physical join | 1 reviewed path");
     expect(io.output()).toContain("[public.orders]");
@@ -1073,6 +1079,38 @@ describe("Synapsor Analytics shell", () => {
     expect(io.output()).toContain("TRY CROSS-TABLE QUESTIONS");
     expect(io.output()).toContain("```mermaid");
     expect(io.output()).toContain("PUBLIC_ORDERS }o--|| PUBLIC_CUSTOMERS");
+  });
+
+  it("explains a one-table boundary without printing a fake relationship diagram", async () => {
+    const catalog = reviewedCatalog();
+    const boundary = catalog.boundaries[0]!;
+    boundary.tables = [boundary.tables[0]!];
+    boundary.tables[0]!.suggested_questions = ["What is total order cents by status?"];
+    boundary.relationships = [];
+    boundary.physical_relationship_count = 0;
+    catalog.table_count = 1;
+    catalog.relationship_count = 0;
+    catalog.physical_relationship_count = 0;
+    const io = fakeIo(["/catalog --diagram", "/exit"]);
+    await runAnalyticsShell({
+      providerLabel: "OpenAI",
+      profileLabel: "development",
+      reviewedDataAreas: 1,
+      boundaryLabel: "reviewed_staging",
+      boundaryCatalog: catalog,
+      io,
+      ask: vi.fn(),
+      listAnalyses: async () => [],
+      protect: vi.fn(),
+      clearConversation: vi.fn(),
+      cancel: vi.fn(() => false),
+    });
+
+    expect(io.output()).toContain("ACTIVE BOUNDARY MAP");
+    expect(io.output()).toContain("No join arrows are shown");
+    expect(io.output()).toContain("TRY SINGLE-TABLE QUESTIONS");
+    expect(io.output()).toContain("Mermaid is omitted because there is no reviewed join to draw");
+    expect(io.output()).not.toContain("MERMAID ER DIAGRAM");
   });
 
   it("requires an exact boundary for multi-boundary diagrams and exports one digest-bound map", async () => {
@@ -1785,7 +1823,61 @@ describe("Synapsor Analytics shell", () => {
     expect(io.output()).toContain("/access");
     expect(io.output()).toContain("Review, add, or edit Explore boundaries");
     expect(io.output()).toContain("http://127.0.0.1:48123/");
+    expect(io.output()).toContain("run /refresh-access");
     expect(openAccessEditor).toHaveBeenCalledOnce();
+  });
+
+  it("refreshes externally activated access only after explicit provider consent", async () => {
+    const io = fakeIo(["/refresh-access", "", "/catalog", "/exit"]);
+    const clearConversation = vi.fn();
+    const refreshAccess = vi.fn(async (confirm: (input: {
+      providerLabel: string;
+      modelLabel?: string;
+      boundaryLabel: string;
+    }) => Promise<boolean>) => {
+      const accepted = await confirm({
+        providerLabel: "OpenAI",
+        modelLabel: "gpt-5-mini",
+        boundaryLabel: "2 active boundaries",
+      });
+      return accepted
+        ? {
+            status: "updated" as const,
+            boundaryLabel: "2 active boundaries",
+            reviewedDataAreas: 2,
+            accessSummary: {
+              table_count: 2,
+              resources: [{
+                id: "public.subscriptions",
+                label: "Subscriptions",
+                capabilities: ["record counts", "grouping by Plan"],
+                suggestions: ["Which plans have the most subscriptions?"],
+              }],
+              suggestions: ["Which plans have the most subscriptions?"],
+            },
+          }
+        : { status: "cancelled" as const };
+    });
+    await runAnalyticsShell({
+      providerLabel: "OpenAI",
+      modelLabel: "gpt-5-mini",
+      boundaryLabel: "reviewed_staging",
+      profileLabel: "staging",
+      reviewedDataAreas: 1,
+      io,
+      ask: vi.fn(),
+      listAnalyses: async () => [],
+      protect: vi.fn(),
+      refreshAccess,
+      clearConversation,
+      cancel: vi.fn(() => false),
+    });
+
+    expect(io.output()).toContain("New reviewed access is active: 2 active boundaries");
+    expect(io.output()).toContain("Use the newly activated access? [Y/n]");
+    expect(io.output()).toContain("Ask access updated");
+    expect(io.output()).toContain("Subscriptions");
+    expect(clearConversation).toHaveBeenCalledOnce();
   });
 
   it("leaves chat cleanly for the terminal access editor", async () => {
@@ -2095,6 +2187,10 @@ function reviewedCatalog(): BoundaryCatalogModel {
           aggregate_measures: ["total_cents"],
           count_distinct_fields: ["id"],
           time_bucket_fields: ["created_at"],
+          suggested_questions: [
+            "What is total order cents by status?",
+            "How did total order cents change by week?",
+          ],
           runner_only_analysis: {
             groupable_fields: [],
             aggregate_measures: [],
@@ -2117,6 +2213,7 @@ function reviewedCatalog(): BoundaryCatalogModel {
           aggregate_measures: [],
           count_distinct_fields: ["id"],
           time_bucket_fields: [],
+          suggested_questions: ["How many customers are there by region?"],
           runner_only_analysis: {
             groupable_fields: [],
             aggregate_measures: [],

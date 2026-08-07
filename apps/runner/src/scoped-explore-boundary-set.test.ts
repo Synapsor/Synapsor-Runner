@@ -29,10 +29,56 @@ describe("Scoped Explore active boundary routing", () => {
     expect(() => selectActiveExploreBoundary(boundaries, undefined, "public.accounts"))
       .toThrowError(expect.objectContaining({
         code: "EXPLORE_BOUNDARY_REQUIRED",
-        details: { active_boundaries: ["finance", "support"] },
+        details: expect.objectContaining({ active_boundaries: ["finance", "support"] }),
       }));
     expect(selectActiveExploreBoundary(boundaries, "finance", "public.accounts").pack.name)
       .toBe("finance");
+  });
+
+  it("resolves display labels and bare table names only when they identify one reviewed resource", () => {
+    expect(selectActiveExploreBoundary(boundaries, undefined, "Tickets").pack.name)
+      .toBe("support");
+    expect(selectActiveExploreBoundary(boundaries, undefined, "INVOICES").pack.name)
+      .toBe("finance");
+    expect(selectActiveExploreBoundary(boundaries, "finance", "accounts").pack.name)
+      .toBe("finance");
+
+    const overlappingTables = [
+      boundary("support", ["crm.accounts"]),
+      boundary("finance", ["billing.accounts"]),
+    ];
+    expect(() => selectActiveExploreBoundary(overlappingTables, undefined, "Accounts"))
+      .toThrowError(expect.objectContaining({
+        code: "EXPLORE_BOUNDARY_REQUIRED",
+        message: expect.stringContaining("billing.accounts [finance]"),
+        details: expect.objectContaining({
+          reviewed_candidates: [
+            { boundary: "finance", resource: "billing.accounts" },
+            { boundary: "support", resource: "crm.accounts" },
+          ],
+        }),
+      }));
+  });
+
+  it("returns bounded valid resource ids and a nearest reviewed suggestion", () => {
+    expect(() => selectActiveExploreBoundary(boundaries, undefined, "subscrptions"))
+      .toThrowError(expect.objectContaining({
+        code: "EXPLORE_RESOURCE_FORBIDDEN",
+        message: expect.stringContaining("Valid reviewed resources:"),
+        details: expect.objectContaining({
+          valid_resources: expect.arrayContaining([
+            { boundary: "finance", resource: "public.invoices" },
+            { boundary: "support", resource: "public.tickets" },
+          ]),
+        }),
+      }));
+    expect(() => selectActiveExploreBoundary(
+      [boundary("billing", ["public.subscriptions"])],
+      undefined,
+      "subscrptions",
+    )).toThrowError(expect.objectContaining({
+      message: expect.stringContaining("Did you mean public.subscriptions in boundary billing?"),
+    }));
   });
 
   it("refuses unknown boundaries and resources instead of widening or combining authority", () => {
@@ -66,9 +112,10 @@ describe("Scoped Explore active boundary routing", () => {
     const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-live-boundary-set-"));
     const support = validBoundary("support", ["public.tickets"]);
     const finance = validBoundary("finance", ["public.invoices"]);
+    const exploredPlans: unknown[] = [];
     const runtimeFactory = vi.fn(async (input: { boundaryName?: string }) => {
       const selected = [support, finance].find((candidate) => candidate.pack.name === input.boundaryName)!;
-      return fakeChildRuntime(selected);
+      return fakeChildRuntime(selected, (plan) => exploredPlans.push(plan));
     });
     try {
       await writeActiveSet(projectRoot, [support], "support");
@@ -94,9 +141,13 @@ describe("Scoped Explore active boundary routing", () => {
         await expect(runtime.explore({ kind: "rows", resource: "public.tickets" }))
           .resolves.toMatchObject({ boundary_name: "support" });
         await expect(runtime.explore(
-          { kind: "rows", resource: "public.invoices" },
+          { kind: "rows", resource: "Invoices" },
           "finance",
         )).resolves.toMatchObject({ boundary_name: "finance" });
+        expect(exploredPlans.at(-1)).toMatchObject({ resource: "public.invoices" });
+        await expect(runtime.describe({ resource: "Tickets" })).resolves.toMatchObject({
+          resources: [{ id: "public.tickets", boundary_name: "support" }],
+        });
         expect(runtimeFactory).toHaveBeenCalledWith(expect.objectContaining({ boundaryName: "support" }));
         expect(runtimeFactory).toHaveBeenCalledWith(expect.objectContaining({ boundaryName: "finance" }));
       } finally {
@@ -237,7 +288,10 @@ function validBoundary(name: string, resources: string[]): ActivatedExplorationB
   } as unknown as ActivatedExplorationBoundary;
 }
 
-function fakeChildRuntime(boundary: ActivatedExplorationBoundary): ScopedExploreRuntime {
+function fakeChildRuntime(
+  boundary: ActivatedExplorationBoundary,
+  onExplore?: (plan: unknown) => void,
+): ScopedExploreRuntime {
   return {
     boundary,
     session_fingerprint: `sha256:${"3".repeat(64)}`,
@@ -257,12 +311,15 @@ function fakeChildRuntime(boundary: ActivatedExplorationBoundary): ScopedExplore
         source_database_changed: false,
       };
     },
-    explore: async () => ({
-      ok: true,
-      outcome: { type: "success" },
-      data: [],
-      source_database_changed: false,
-    }),
+    explore: async (plan) => {
+      onExplore?.(plan);
+      return {
+        ok: true,
+        outcome: { type: "success" },
+        data: [],
+        source_database_changed: false,
+      };
+    },
     close: async () => undefined,
   } as ScopedExploreRuntime;
 }

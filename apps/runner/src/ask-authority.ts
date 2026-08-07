@@ -14,8 +14,20 @@ import {
 type ActiveBoundaryAuthorityIdentity = {
   name: string;
   digest: `sha256:${string}`;
+  generation_lock_fingerprint?: `sha256:${string}`;
   deployment_profile?: unknown;
   table_count: number;
+};
+
+export type PendingBoundaryReviewSummary = {
+  boundary_name: string;
+  pending_changes: number;
+  previous_authority_active: boolean;
+  changes: Array<{
+    boundary_name: string;
+    previous_authority_active: boolean;
+    cause: "database_posture_changed" | "reviewed_access_edited";
+  }>;
 };
 
 export type AskDeploymentProfile = "development" | "staging" | "production" | "unknown";
@@ -52,37 +64,62 @@ export async function resolveActiveBoundarySummary(
 
 export async function resolvePendingBoundaryReviewSummary(
   projectRoot: string,
-): Promise<{
-  boundary_name: string;
-  pending_changes: 1;
-  previous_authority_active: boolean;
-} | undefined> {
+): Promise<PendingBoundaryReviewSummary | undefined> {
   const library = await readOptionalJson(
     path.join(projectRoot, ".synapsor/boundary-library.json"),
   );
   if (!isRecord(library) || !isRecord(library.boundaries)) return undefined;
-  const selectedName = typeof library.selected_name === "string"
-    ? library.selected_name
-    : undefined;
-  if (!selectedName || !/^[a-z][a-z0-9_.-]{0,63}$/.test(selectedName)) return undefined;
-  const progress = record(library.boundaries[selectedName]);
-  const candidate = progress.candidate;
-  if (!isRecord(candidate) || !isRecord(candidate.pack)) return undefined;
-  let candidateDigest: `sha256:${string}`;
-  try {
-    candidateDigest = explorationBoundaryCandidateDigest(
-      candidate as unknown as ExplorationBoundaryDraft,
-    );
-  } catch {
-    return undefined;
-  }
+  const guided = await readOptionalJson(
+    path.join(projectRoot, ".synapsor/guided-onboarding.json"),
+  );
+  const initialInstantBoundary = isRecord(guided)
+    && guided.instant_onboarding === true
+    && guided.status === "boundary_active";
   const active = await optionalActiveBoundaries(projectRoot);
-  const activeBoundary = active.find((boundary) => boundary.name === selectedName);
-  if (activeBoundary?.digest === candidateDigest) return undefined;
+  const changes: PendingBoundaryReviewSummary["changes"] = [];
+  for (const boundaryName of Object.keys(library.boundaries).sort()) {
+    if (!/^[a-z][a-z0-9_.-]{0,63}$/.test(boundaryName)) continue;
+    const progress = record(library.boundaries[boundaryName]);
+    const candidate = progress.candidate;
+    if (!isRecord(candidate) || !isRecord(candidate.pack)) continue;
+    let candidateDigest: `sha256:${string}`;
+    try {
+      candidateDigest = explorationBoundaryCandidateDigest(
+        candidate as unknown as ExplorationBoundaryDraft,
+      );
+    } catch {
+      continue;
+    }
+    const activeBoundary = active.find((boundary) => boundary.name === boundaryName);
+    if (activeBoundary?.digest === candidateDigest) continue;
+    const candidateGenerationLock = hash(candidate.generation_lock_fingerprint);
+    if (initialInstantBoundary
+      && progress.revision === 1
+      && activeBoundary?.deployment_profile === "development"
+      && candidate.deployment_profile === "staging"
+      && candidateGenerationLock !== undefined
+      && candidateGenerationLock === activeBoundary.generation_lock_fingerprint) {
+      // Quick Start intentionally activates a conservative development revision while
+      // leaving the generated staging review available under /access. It is not an edit.
+      continue;
+    }
+    changes.push({
+      boundary_name: boundaryName,
+      previous_authority_active: Boolean(activeBoundary),
+      cause: activeBoundary
+        && candidateGenerationLock
+        && activeBoundary.generation_lock_fingerprint
+        && candidateGenerationLock !== activeBoundary.generation_lock_fingerprint
+        ? "database_posture_changed"
+        : "reviewed_access_edited",
+    });
+  }
+  if (!changes.length) return undefined;
   return {
-    boundary_name: selectedName,
-    pending_changes: 1,
-    previous_authority_active: Boolean(activeBoundary),
+    boundary_name: changes[0]!.boundary_name,
+    pending_changes: changes.length,
+    previous_authority_active: changes.some((change) => change.previous_authority_active),
+    changes,
   };
 }
 
@@ -208,9 +245,18 @@ function activeBoundaryIdentity(
   return {
     name,
     digest: digest as `sha256:${string}`,
+    ...(hash(value.generation_lock_fingerprint)
+      ? { generation_lock_fingerprint: value.generation_lock_fingerprint as `sha256:${string}` }
+      : {}),
     deployment_profile: value.deployment_profile,
     table_count: Array.isArray(pack.resources) ? pack.resources.length : 0,
   };
+}
+
+function hash(value: unknown): `sha256:${string}` | undefined {
+  return typeof value === "string" && /^sha256:[a-f0-9]{64}$/.test(value)
+    ? value as `sha256:${string}`
+    : undefined;
 }
 
 async function readOptionalJson(filePath: string): Promise<unknown | null> {

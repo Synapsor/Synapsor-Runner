@@ -1224,7 +1224,7 @@ describe("boundary operator-plane CLI", () => {
           : view.candidate?.model_withheld_fields?.includes(field.name)
             ? "withheld_from_model"
             : "visible",
-      ])),
+      ])) as Record<string, BoundaryFieldTier>,
       promptText: async () => "alice",
       confirm: async (_prompt, options) => {
         confirmations += 1;
@@ -1418,7 +1418,7 @@ describe("boundary operator-plane CLI", () => {
             : view.candidate?.kept_out_fields.includes(field.name)
               ? "kept_out"
               : "visible",
-        ]));
+        ])) as Record<string, BoundaryFieldTier>;
       },
       promptText: async () => {
         throw new Error("Routine focused edits must not ask for repeated actor or reason input.");
@@ -1490,6 +1490,93 @@ describe("boundary operator-plane CLI", () => {
       expect(active.pack.resources.find((resource) =>
         resource.id === "public.service_visits")?.model_withheld_fields).toContain("status");
       expect(activationHandoff).toHaveBeenCalledOnce();
+    } finally {
+      if (previousUser === undefined) delete process.env.USER;
+      else process.env.USER = previousUser;
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 15_000);
+
+  it("saves an enum review with pending column edits and returns to the column screen", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-enum-columns-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const choices = [
+      { resource_id: "public.service_visits", action: "review" as const },
+      undefined,
+    ];
+    let editorVisits = 0;
+    let output = "";
+    const previousUser = process.env.USER;
+    process.env.USER = "enum-reviewer";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    const tiersFor = (
+      view: Parameters<BoundaryReviewInteractiveSession["editFieldTiers"]>[0],
+      statusTier: BoundaryFieldTier,
+    ) => Object.fromEntries(view.fields.map((field) => [
+      field.name,
+      field.name === "status"
+        ? statusTier
+        : view.candidate?.kept_out_fields.includes(field.name)
+          ? "kept_out"
+          : view.candidate?.model_withheld_fields?.includes(field.name)
+            ? "withheld_from_model"
+            : "visible",
+    ])) as Record<string, BoundaryFieldTier>;
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => choices.shift(),
+      editFieldTiers: async (view, options) => {
+        editorVisits += 1;
+        expect(options?.focusedAccess).toBe(true);
+        if (editorVisits === 1) {
+          const tiers = tiersFor(view, "withheld_from_model");
+          return { action: "enum", field: "status", tiers };
+        }
+        expect(view.candidate?.field_enums.status).toEqual(["completed"]);
+        expect(view.candidate?.model_withheld_fields).toContain("status");
+        return tiersFor(view, "withheld_from_model");
+      },
+      editFieldEnumValues: async () => ["completed"],
+      promptText: async (prompt) => {
+        expect(prompt).toContain("Required reason for this allowed-value change");
+        return "Use completed statuses and keep raw labels local.";
+      },
+      confirm: async () => {
+        throw new Error("Saving a disabled enum review must not activate authority.");
+      },
+    };
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await expect(boundaryReviewCommandInternal([
+        "--project-root", root,
+        "--access",
+      ], async () => inspection, session)).resolves.toBe(0);
+
+      expect(editorVisits).toBe(2);
+      const context = await loadBoundaryReviewContext(root);
+      const resource = context.candidate.pack.resources[0]!;
+      expect(resource.field_enums.status).toEqual(["completed"]);
+      expect(resource.model_withheld_fields).toContain("status");
+      expect(output).toContain("these column access changes will be saved with the allowed-value review");
+      expect(output).toContain("Recorded: public.service_visits.status allowed values -> completed");
+      expect(output).toContain("Saved in disabled boundary revision");
+      expect(output).toContain("Agent authority changed: no");
+      await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       if (previousUser === undefined) delete process.env.USER;
       else process.env.USER = previousUser;
@@ -1893,7 +1980,7 @@ describe("boundary operator-plane CLI", () => {
           view.generated_candidate?.kept_out_fields.includes(field.name)
             ? "kept_out"
             : "visible",
-        ]));
+        ])) as Record<string, BoundaryFieldTier>;
       },
       promptText: async () => answers.shift() ?? "",
       confirm: async () => true,

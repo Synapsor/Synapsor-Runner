@@ -34,6 +34,24 @@ const modelEgressResultSchema = z.object({
   token_scope: z.literal("this_tool_response_only"),
 }).strict();
 
+const reviewedValueControlsSchema = z.object({
+  bucketed_fields: z.array(z.object({
+    resource: z.string(),
+    field: z.string(),
+    output_field: z.string(),
+    bucket_returned: z.boolean(),
+    bucket_token: z.string()
+      .regex(/^\[outside-reviewed-values(?:-[1-9][0-9]*)?\]$/)
+      .optional(),
+  }).strict()),
+  excluded_fields: z.array(z.object({
+    resource: z.string(),
+    field: z.string(),
+    effect: z.literal("rows_outside_reviewed_values_excluded"),
+  }).strict()),
+  source_values_exposed: z.literal(false),
+}).strict();
+
 const runtimeErrorFields = {
   ok: z.literal(false),
   code: z.string().min(1),
@@ -168,6 +186,7 @@ const scopedExploreResultSchema = z.object({
     incomplete_comparison_groups: z.number().int().nonnegative(),
     suppression_aware_totals_returned: z.literal(false),
   }).strict(),
+  reviewed_value_controls: reviewedValueControlsSchema.optional(),
   returned: z.object({
     rows_or_groups: z.number().int().nonnegative(),
     cells: z.number().int().nonnegative(),
@@ -236,9 +255,7 @@ export const scopedExploreDescribeOutputSchema = z.object({
   resources: z.array(z.object({
     boundary_name: z.string().optional(),
     id: z.string(),
-    label: z.string(),
     primary_key: z.string(),
-    field_labels: z.record(z.string()),
     field_egress: fieldEgressSchema,
     selectable_fields: z.array(z.string()),
     filterable_fields: z.array(z.string()),
@@ -259,7 +276,6 @@ export const scopedExploreDescribeOutputSchema = z.object({
     kept_out_field_count: z.number().int().nonnegative(),
     relationships: z.array(z.object({
       id: z.string(),
-      label: z.string(),
       activation: z.enum(["active", "review_required"]),
       operator_review_required: z.boolean(),
       target_resource: z.string(),
@@ -282,7 +298,6 @@ export const scopedExploreDescribeOutputSchema = z.object({
         nullable: z.boolean(),
         cardinality: z.literal("many_to_one"),
       }).strict()),
-      field_labels: z.record(z.string()),
       field_egress: fieldEgressSchema,
       filterable_fields: z.array(z.string()),
       filter_operators: z.record(z.array(z.string())),
@@ -349,6 +364,7 @@ export const scopedExploreQueryOutputSchema = z.object({
     minimum_cohort_overridden: z.literal(true).optional(),
     suppressed_groups: z.number().int().nonnegative(),
     totals_returned: z.literal(false),
+    reviewed_value_controls: reviewedValueControlsSchema.optional(),
   }).strict().optional(),
   audit: z.object({
     query_fingerprint: sha256Schema,
@@ -381,6 +397,7 @@ const scopedExploreClientResultSchema = z.object({
   reporting_timezone: safeRecordSchema,
   freshness: safeRecordSchema,
   suppression: safeRecordSchema,
+  reviewed_value_controls: reviewedValueControlsSchema.optional(),
   returned: safeRecordSchema,
   remaining_budgets: safeRecordSchema,
   query_audit_handle: sha256Schema,

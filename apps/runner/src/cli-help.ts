@@ -316,6 +316,7 @@ Options:
   # Recommended interactive first run
   ${cmd} start --from-env DATABASE_URL [--schema public]
   ${cmd} start --from-env DATABASE_URL --cli [--schema public] [--verbose]
+  ${cmd} start --from-env DATABASE_URL --rescan
   ${cmd} start --from-env DATABASE_URL --cli --single-tenant --organization-id internal-finance
 
   # Canonical non-interactive read-only setup
@@ -355,6 +356,14 @@ egress review. In the Analytics shell, \`/access\` opens the terminal boundary
 editor and \`/access-workbench\` opens its visual counterpart. \`--no-open\`
 retains its established behavior: initialize or resume
 without opening a browser or starting an interactive review.
+
+Running the same Start command in an existing guided project resumes its pinned
+review and does not inspect the database again. Add \`--rescan\` when you
+deliberately want Runner to inspect the current schema and role posture for any
+single-organization or multi-tenant project. A rescan creates a disabled update;
+the previous exact boundary remains active until you review and activate the
+new revision. Use \`--force\` only for its separate overwrite/reset behavior, not
+as the ordinary way to rescan.
 
 In a terminal, selectors such as --table seed the interactive wizard instead
 of disabling its prompts. For CI, provide --table, --mode, and either

@@ -54,6 +54,11 @@ type Child = {
   runtime: ScopedExploreRuntime;
 };
 
+type ActiveExploreTarget = {
+  boundary: ActivatedExplorationBoundary;
+  resource?: ActivatedExplorationBoundary["pack"]["resources"][number];
+};
+
 export async function createScopedExploreBoundarySetRuntime(input: {
   projectRoot: string;
   transport: ScopedExploreTransport;
@@ -130,7 +135,7 @@ export async function createScopedExploreBoundarySetRuntime(input: {
   };
 
   const route = (boundaryName: string | undefined, resource: string | undefined) =>
-    selectActiveExploreBoundary(boundaries, boundaryName, resource);
+    resolveActiveExploreTarget(boundaries, boundaryName, resource);
 
   const initialRuntime = await childFor(selected);
   const runtime: ScopedExploreBoundarySetRuntime = {
@@ -154,10 +159,11 @@ export async function createScopedExploreBoundarySetRuntime(input: {
     describe: async (request = {}) => {
       await refresh();
       if (request.boundary || request.resource || boundaries.length === 1) {
-        const boundary = route(request.boundary, request.resource);
+        const target = route(request.boundary, request.resource);
+        const boundary = target.boundary;
         const child = await childFor(boundary);
         const described = await child.describe({
-          ...(request.resource ? { resource: request.resource } : {}),
+          ...(target.resource ? { resource: target.resource.id } : {}),
           ...(request.cursor === undefined ? {} : { cursor: request.cursor }),
           ...(request.limit === undefined ? {} : { limit: request.limit }),
           ...(request.include_time_coverage === undefined
@@ -203,9 +209,13 @@ export async function createScopedExploreBoundarySetRuntime(input: {
       const resource = isRecord(unknownPlan) && typeof unknownPlan.resource === "string"
         ? unknownPlan.resource
         : undefined;
-      const boundary = route(boundaryName, resource);
+      const target = route(boundaryName, resource);
+      const boundary = target.boundary;
       const child = await childFor(boundary);
-      const result = await child.explore(unknownPlan);
+      const canonicalPlan = target.resource && isRecord(unknownPlan)
+        ? { ...unknownPlan, resource: target.resource.id }
+        : unknownPlan;
+      const result = await child.explore(canonicalPlan);
       return {
         ...result,
         boundary_name: boundary.pack.name,
@@ -225,9 +235,16 @@ export async function createScopedExploreBoundarySetRuntime(input: {
         ? boundaries.find((candidate) => candidate.pack.name === name)
         : undefined;
       if (!boundary) return { value: structuredClone(result), withheld: false };
+      const rawPlan = isRecord(args.plan) ? args.plan : undefined;
+      const target = rawPlan && typeof rawPlan.resource === "string"
+        ? resolveActiveExploreTarget(boundaries, boundary.pack.name, rawPlan.resource)
+        : undefined;
+      const canonicalArguments = target?.resource && rawPlan
+        ? { ...args, plan: { ...rawPlan, resource: target.resource.id } }
+        : args;
       return projectScopedExploreResultForModel({
         tool,
-        arguments: args,
+        arguments: canonicalArguments,
         result,
         boundary,
       });
@@ -248,6 +265,14 @@ export function selectActiveExploreBoundary(
   boundaryName: string | undefined,
   resource: string | undefined,
 ): ActivatedExplorationBoundary {
+  return resolveActiveExploreTarget(boundaries, boundaryName, resource).boundary;
+}
+
+function resolveActiveExploreTarget(
+  boundaries: ActivatedExplorationBoundary[],
+  boundaryName: string | undefined,
+  resource: string | undefined,
+): ActiveExploreTarget {
   if (boundaryName) {
     const boundary = boundaries.find((candidate) => candidate.pack.name === boundaryName);
     if (!boundary) {
@@ -256,36 +281,141 @@ export function selectActiveExploreBoundary(
         `Boundary ${boundaryName} is not active reviewed Explore authority.`,
       );
     }
-    if (resource && !boundary.pack.resources.some((candidate) => candidate.id === resource)) {
-      throw new ScopedExploreError(
-        "EXPLORE_RESOURCE_FORBIDDEN",
-        `Resource ${resource} is not reviewed in boundary ${boundaryName}.`,
-      );
-    }
-    return boundary;
+    if (!resource) return { boundary };
+    const matches = matchingResources([{ boundary }], resource);
+    if (matches.length === 1) return matches[0]!;
+    throw unknownResourceError(resource, [{ boundary }], `boundary ${boundaryName}`);
   }
   if (!resource) {
-    if (boundaries.length === 1) return boundaries[0]!;
+    if (boundaries.length === 1) return { boundary: boundaries[0]! };
     throw new ScopedExploreError(
       "EXPLORE_BOUNDARY_REQUIRED",
       "Choose one active reviewed boundary before requesting boundary-specific metadata.",
       { active_boundaries: boundaries.map((boundary) => boundary.pack.name).sort() },
     );
   }
-  const matches = boundaries.filter((boundary) =>
-    boundary.pack.resources.some((candidate) => candidate.id === resource));
+  const candidates = boundaries.map((boundary) => ({ boundary }));
+  const matches = matchingResources(candidates, resource);
   if (matches.length === 1) return matches[0]!;
   if (matches.length === 0) {
-    throw new ScopedExploreError(
-      "EXPLORE_RESOURCE_FORBIDDEN",
-      `Resource ${resource} is outside every active reviewed boundary.`,
-    );
+    throw unknownResourceError(resource, candidates, "the active reviewed boundaries");
   }
+  const reviewedCandidates = matches.map((match) => ({
+    boundary: match.boundary.pack.name,
+    resource: match.resource!.id,
+  })).sort(compareResourceCandidate);
   throw new ScopedExploreError(
     "EXPLORE_BOUNDARY_REQUIRED",
-    `Resource ${resource} is reviewed in more than one active boundary. Choose the boundary explicitly.`,
-    { active_boundaries: matches.map((boundary) => boundary.pack.name).sort() },
+    `Resource ${resource} matches more than one active reviewed resource. Choose one boundary explicitly: ${formatResourceCandidates(reviewedCandidates)}.`,
+    {
+      active_boundaries: [...new Set(reviewedCandidates.map((candidate) => candidate.boundary))],
+      reviewed_candidates: reviewedCandidates,
+    },
   );
+}
+
+function matchingResources(
+  candidates: Array<{ boundary: ActivatedExplorationBoundary }>,
+  requested: string,
+): ActiveExploreTarget[] {
+  const resources = candidates.flatMap(({ boundary }) => boundary.pack.resources.map((resource) => ({
+    boundary,
+    resource,
+  })));
+  const exact = resources.filter((candidate) => candidate.resource.id === requested);
+  if (exact.length > 0) return exact;
+  const normalized = normalizeResourceAlias(requested);
+  return resources.filter((candidate) => resourceAliases(candidate.resource.id).has(normalized));
+}
+
+function resourceAliases(resourceId: string): Set<string> {
+  const table = resourceId.split(".").at(-1) ?? resourceId;
+  return new Set([
+    normalizeResourceAlias(resourceId),
+    normalizeResourceAlias(table),
+    normalizeResourceAlias(table.replaceAll("_", " ")),
+  ]);
+}
+
+function normalizeResourceAlias(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function unknownResourceError(
+  requested: string,
+  candidates: Array<{ boundary: ActivatedExplorationBoundary }>,
+  location: string,
+): ScopedExploreError {
+  const valid = candidates.flatMap(({ boundary }) => boundary.pack.resources.map((resource) => ({
+    boundary: boundary.pack.name,
+    resource: resource.id,
+  }))).sort(compareResourceCandidate);
+  const suggestion = nearestResource(requested, valid);
+  const shown = valid.slice(0, 12);
+  const remainder = valid.length - shown.length;
+  return new ScopedExploreError(
+    "EXPLORE_RESOURCE_FORBIDDEN",
+    `Resource ${requested} is not a reviewed resource in ${location}.`
+      + (suggestion ? ` Did you mean ${suggestion.resource} in boundary ${suggestion.boundary}?` : "")
+      + ` Valid reviewed resources: ${formatResourceCandidates(shown)}`
+      + (remainder > 0 ? `; ${remainder} more are available from app.describe_data.` : "."),
+    {
+      requested_resource: requested,
+      ...(suggestion ? { suggested_resource: suggestion } : {}),
+      valid_resources: shown,
+      ...(remainder > 0 ? { additional_resource_count: remainder } : {}),
+    },
+  );
+}
+
+function nearestResource(
+  requested: string,
+  candidates: Array<{ boundary: string; resource: string }>,
+): { boundary: string; resource: string } | undefined {
+  const needle = normalizeResourceAlias(requested);
+  if (!needle) return undefined;
+  const ranked = candidates.map((candidate) => {
+    const table = candidate.resource.split(".").at(-1) ?? candidate.resource;
+    return {
+      candidate,
+      distance: Math.min(
+        editDistance(needle, normalizeResourceAlias(candidate.resource)),
+        editDistance(needle, normalizeResourceAlias(table)),
+      ),
+    };
+  }).sort((left, right) => left.distance - right.distance
+    || compareResourceCandidate(left.candidate, right.candidate));
+  const closest = ranked[0];
+  if (!closest) return undefined;
+  const limit = Math.max(2, Math.floor(needle.length / 3));
+  return closest.distance <= limit ? closest.candidate : undefined;
+}
+
+function editDistance(left: string, right: string): number {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    const current = [leftIndex];
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      current[rightIndex] = Math.min(
+        current[rightIndex - 1]! + 1,
+        previous[rightIndex]! + 1,
+        previous[rightIndex - 1]! + (left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1),
+      );
+    }
+    previous.splice(0, previous.length, ...current);
+  }
+  return previous[right.length]!;
+}
+
+function compareResourceCandidate(
+  left: { boundary: string; resource: string },
+  right: { boundary: string; resource: string },
+): number {
+  return left.resource.localeCompare(right.resource) || left.boundary.localeCompare(right.boundary);
+}
+
+function formatResourceCandidates(candidates: Array<{ boundary: string; resource: string }>): string {
+  return candidates.map((candidate) => `${candidate.resource} [${candidate.boundary}]`).join(", ");
 }
 
 function addBoundaryCatalog(

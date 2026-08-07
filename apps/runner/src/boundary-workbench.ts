@@ -234,7 +234,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     .ask-boundary-row strong{color:#78867e;font-size:10px;text-transform:uppercase}.ask-boundary-row span{color:#cbd6d0;font-size:13px;overflow-wrap:anywhere}
     .ask-boundary-pagination{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px}.ask-boundary-pagination-status{color:#839189;font-size:12px}.ask-boundary-pagination-actions{display:flex;gap:7px}.ask-boundary-pagination-actions button{min-width:96px;min-height:36px;padding:6px 10px}
     .ask-boundary-examples{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}.ask-boundary-examples .question{width:auto;min-height:38px;padding:8px 11px;font-size:13px}
-	    .boundary-catalog-map{margin-top:16px;padding-top:14px;border-top:1px solid #26372f}.boundary-catalog-map>summary{color:#dce6e1;font-weight:750;cursor:pointer}.boundary-catalog-summary{margin:8px 0 14px;color:#839189;font-size:12px}.boundary-catalog-controls{display:grid;grid-template-columns:minmax(220px,360px) auto;gap:10px;align-items:end;margin:12px 0}.boundary-catalog-controls .actions{margin:0}.boundary-catalog-boundary{margin-top:14px}.boundary-catalog-boundary h4{margin:0 0 10px}.boundary-catalog-graph{width:100%;overflow:auto;border:1px solid #26372f;border-radius:6px;background:#08100c}.boundary-catalog-graph svg{display:block;min-width:100%;height:auto}.boundary-catalog-graph .node{fill:#0d1813;stroke:#75e3b7;stroke-width:1.5}.boundary-catalog-graph .node-title{fill:#eef5f1;font-size:13px;font-weight:750}.boundary-catalog-graph .node-field{fill:#91a198;font:11px ui-monospace,SFMono-Regular,Consolas,monospace}.boundary-catalog-graph .edge{fill:none;stroke:#75e3b7;stroke-width:2}.boundary-catalog-graph .edge.unproven{stroke:#f0aa68;stroke-dasharray:6 5}.boundary-catalog-graph .edge-label{fill:#9aaba2;font:10px ui-monospace,SFMono-Regular,Consolas,monospace}.boundary-catalog-nodes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.boundary-catalog-node{min-width:0;padding:12px;border:1px solid #2b3c34;border-radius:6px;background:#0a120f}.boundary-catalog-node strong,.boundary-catalog-node small{display:block}.boundary-catalog-node small{margin-top:5px;color:#839189;overflow-wrap:anywhere}.boundary-catalog-edges{display:grid;gap:7px;margin-top:10px}.boundary-catalog-edge{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:9px;padding:10px 12px;border-left:2px solid #75e3b7;background:#0b1511}.boundary-catalog-edge.unproven{border-left-color:#f0aa68}.boundary-catalog-edge code{overflow-wrap:anywhere}.boundary-catalog-edge span{text-align:center;color:#839189;font-size:11px}.boundary-catalog-mermaid{margin-top:12px}.boundary-catalog-mermaid pre{max-height:320px;margin:10px 0 0;padding:13px;overflow:auto;border:1px solid #26372f;border-radius:6px;background:#08100c;color:#bcd5c8;font-size:12px;white-space:pre}
+	    .boundary-catalog-map{margin-top:16px;padding-top:14px;border-top:1px solid #26372f}.boundary-catalog-map>summary{color:#dce6e1;font-weight:750;cursor:pointer}.boundary-catalog-summary{margin:8px 0 14px;color:#839189;font-size:12px}.boundary-catalog-controls{display:grid;grid-template-columns:minmax(220px,360px) auto;gap:10px;align-items:end;margin:12px 0}.boundary-catalog-controls .actions{margin:0}.boundary-catalog-boundary{margin-top:14px}.boundary-catalog-boundary h4{margin:0 0 10px}.boundary-catalog-graph{width:100%;overflow:auto;border:1px solid #26372f;border-radius:6px;background:#08100c}.boundary-catalog-graph svg{display:block;min-width:100%;height:auto}.boundary-catalog-graph .node{fill:#0d1813;stroke:#75e3b7;stroke-width:1.5}.boundary-catalog-graph .node-title{fill:#eef5f1;font-size:13px;font-weight:750}.boundary-catalog-graph .node-field{fill:#91a198;font:11px ui-monospace,SFMono-Regular,Consolas,monospace}.boundary-catalog-graph .edge{fill:none;stroke:#75e3b7;stroke-width:2}.boundary-catalog-graph .edge.unproven{stroke:#f0aa68;stroke-dasharray:6 5}.boundary-catalog-graph .edge-label{fill:#9aaba2;stroke:#08100c;stroke-width:5px;stroke-linejoin:round;paint-order:stroke;font:10px ui-monospace,SFMono-Regular,Consolas,monospace}.boundary-catalog-nodes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.boundary-catalog-node{min-width:0;padding:12px;border:1px solid #2b3c34;border-radius:6px;background:#0a120f}.boundary-catalog-node strong,.boundary-catalog-node small{display:block}.boundary-catalog-node small{margin-top:5px;color:#839189;overflow-wrap:anywhere}.boundary-catalog-edges{display:grid;gap:7px;margin-top:10px}.boundary-catalog-edge{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:9px;padding:10px 12px;border-left:2px solid #75e3b7;background:#0b1511}.boundary-catalog-edge.unproven{border-left-color:#f0aa68}.boundary-catalog-edge code{overflow-wrap:anywhere}.boundary-catalog-edge span{text-align:center;color:#839189;font-size:11px}.boundary-catalog-mermaid{margin-top:12px}.boundary-catalog-mermaid pre{max-height:320px;margin:10px 0 0;padding:13px;overflow:auto;border:1px solid #26372f;border-radius:6px;background:#08100c;color:#bcd5c8;font-size:12px;white-space:pre}
 	    .boundary-catalog-path{border-left:2px solid #75e3b7;background:#0b1511}.boundary-catalog-path.unproven{border-left-color:#f0aa68}.boundary-catalog-path .boundary-catalog-edge{border-left:0;background:transparent}.boundary-catalog-question{margin:0;padding:0 12px 11px;color:#cbd6d0;font-size:12px}.boundary-catalog-question strong{color:#75e3b7}.boundary-catalog-questions{margin:12px 0;padding:12px 14px;border-left:2px solid #75e3b7;background:#0b1511}.boundary-catalog-questions strong{color:#75e3b7}.boundary-catalog-questions ul{margin:8px 0 0;padding-left:20px}.boundary-catalog-questions li+li{margin-top:5px}.boundary-catalog-capabilities{color:#aab8b1!important}
 	    .boundary-proof-report{margin:0 0 18px;padding:18px;border:1px solid var(--line);border-left:3px solid var(--good);border-radius:8px;background:var(--good-soft)}.boundary-proof-report.failed{border-left-color:var(--bad);background:var(--bad-soft)}.boundary-proof-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}.boundary-proof-head h3{margin:3px 0}.boundary-proof-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:14px 0}.boundary-proof-item{padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:var(--surface)}.boundary-proof-item strong,.boundary-proof-item small{display:block}.boundary-proof-item small{margin-top:3px;color:var(--muted)}
 	    .ask-proof-actions{order:1;display:flex;justify-content:flex-end;gap:8px;margin:-6px 0 14px}#boundary-proof-result{order:1}
@@ -3105,15 +3105,21 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           return '<div class="boundary-catalog-path '+(relationship.proven?'':'unproven')+'"><div class="boundary-catalog-edge"><code>'+esc(relationship.source_table)+'</code><span>'+esc(path)+'<br>'+esc(relationship.path_depth)+' '+(relationship.path_depth===1?'join':'joins')+' · '+esc(relationship.cardinality.replaceAll('_','-'))+' · '+(relationship.proven?'catalog proven':'proof unavailable')+' →</span><code>'+esc(relationship.target_table)+'</code></div>'+(question?'<p class="boundary-catalog-question"><strong>Try asking</strong> “'+esc(question)+'”</p>':'')+'</div>';
         }).join('');
         const large=diagram.large===true||boundary.tables.length>10||(boundary.physical_relationship_count||0)>15;
-        const graph=large
-          ?'<div class="band notice"><strong>Download this large boundary map</strong><p>'+esc(boundary.tables.length)+' tables and '+esc(boundary.physical_relationship_count||0)+' physical joins would be difficult to read inline. The export includes the full readable map and Mermaid ER diagram.</p></div>'
-          :renderBoundaryGraphSvg(boundary);
-        const questions=[...new Set((boundary.relationships||[]).flatMap(relationship=>relationship.suggested_questions||[]))].slice(0,3);
-        const questionPanel=questions.length?'<div class="boundary-catalog-questions"><strong>Try cross-table questions</strong><ul>'+questions.map(question=>'<li>“'+esc(question)+'”</li>').join('')+'</ul></div>':'';
+        const hasJoins=(boundary.physical_relationship_count||0)>0;
+        const graph=!hasJoins
+          ?'<div class="band"><strong>No reviewed joins to draw</strong><p>'+(boundary.tables.length===1?'This boundary contains one reviewed table.':'These tables have no reviewed relationship path.')+' The single-table counts, totals, groupings, filters, and time trends below remain available.</p></div>'
+          :large
+            ?'<div class="band notice"><strong>Download this large boundary map</strong><p>'+esc(boundary.tables.length)+' tables and '+esc(boundary.physical_relationship_count||0)+' physical joins would be difficult to read inline. The export includes the full readable map and Mermaid ER diagram.</p></div>'
+            :renderBoundaryGraphSvg(boundary);
+        const questions=[...new Set([
+          ...(boundary.relationships||[]).flatMap(relationship=>relationship.suggested_questions||[]),
+          ...(boundary.tables||[]).flatMap(table=>table.suggested_questions||[])
+        ])].slice(0,3);
+        const questionPanel=questions.length?'<div class="boundary-catalog-questions"><strong>'+(hasJoins?'Try cross-table questions':'Try single-table questions')+'</strong><ul>'+questions.map(question=>'<li>“'+esc(question)+'”</li>').join('')+'</ul></div>':'';
         const detail=large?'':'<details><summary>Reviewed join details</summary><div class="boundary-catalog-nodes">'+nodes+'</div><div class="boundary-catalog-edges">'+(edges||'<p class="muted">No reviewed join paths in this boundary.</p>')+'</div></details>';
-        return '<section class="boundary-catalog-boundary" data-boundary-catalog-section="'+esc(boundary.name)+'" '+(boundary.name===preferred?'':'hidden')+'><h4>'+esc(boundary.name)+'</h4>'+graph+questionPanel+detail+'<details class="boundary-catalog-mermaid"><summary>Mermaid source</summary><pre>'+esc(diagram.mermaid||'erDiagram')+'</pre></details></section>';
+        return '<section class="boundary-catalog-boundary" data-boundary-catalog-section="'+esc(boundary.name)+'" '+(boundary.name===preferred?'':'hidden')+'><h4>'+esc(boundary.name)+'</h4>'+graph+questionPanel+detail+(hasJoins?'<details class="boundary-catalog-mermaid"><summary>Mermaid source</summary><pre>'+esc(diagram.mermaid||'erDiagram')+'</pre></details>':'')+'</section>';
       }).join('');
-      return '<details class="boundary-catalog-map" data-boundary-catalog-map><summary>Reviewed relationship map</summary><div class="boundary-catalog-controls"><label class="field">Boundary<select data-boundary-catalog-select>'+options+'</select></label><div class="actions"><button class="secondary" data-download-boundary-diagram type="button">Download full diagram</button><button class="quiet" data-copy-boundary-mermaid type="button">Copy Mermaid</button></div></div><p class="boundary-catalog-summary" data-boundary-catalog-summary></p><span class="status-message" data-boundary-catalog-status aria-live="polite"></span>'+sections+'</details>';
+      return '<details class="boundary-catalog-map" data-boundary-catalog-map><summary>Reviewed data map</summary><div class="boundary-catalog-controls"><label class="field">Boundary<select data-boundary-catalog-select>'+options+'</select></label><div class="actions"><button class="secondary" data-download-boundary-diagram type="button">Download full map</button><button class="quiet" data-copy-boundary-mermaid type="button">Copy Mermaid</button></div></div><p class="boundary-catalog-summary" data-boundary-catalog-summary></p><span class="status-message" data-boundary-catalog-status aria-live="polite"></span>'+sections+'</details>';
     }
 
     function renderBoundaryGraphSvg(boundary){
@@ -3158,7 +3164,11 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         column.sort((left,right)=>left.id.localeCompare(right.id));
         columns.set(value,column);
       });
-      const nodeWidth=250,nodeHeight=126,xGap=100,yGap=30,pad=28;
+      const longestNodeText=Math.max(0,...tables.flatMap(table=>[
+        table.id.length,
+        ...(table.model_visible_fields||[]).slice(0,4).map(field=>field.name.length)
+      ]));
+      const nodeWidth=Math.max(250,Math.min(420,longestNodeText*7.4+32)),nodeHeight=126,xGap=190,yGap=30,pad=28;
       const ranks=[...columns.keys()].sort((left,right)=>left-right);
       const maxRows=Math.max(...ranks.map(value=>columns.get(value).length));
       const width=pad*2+ranks.length*nodeWidth+Math.max(0,ranks.length-1)*xGap;
@@ -3177,18 +3187,19 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const edgeSvg=links.map(link=>{
         const source=positions.get(link.source_table),target=positions.get(link.target_table);
         if(!source||!target)return '';
-        const sx=source.x+nodeWidth,sy=source.y+nodeHeight/2,tx=target.x,ty=target.y+nodeHeight/2,mx=(sx+tx)/2,my=(sy+ty)/2-7;
+        const sx=source.x+nodeWidth,sy=source.y+nodeHeight/2,tx=target.x,ty=target.y+nodeHeight/2,mx=(sx+tx)/2;
         const label=link.hidden_join_key?'reviewed hidden key':link.source_key+' → '+link.target_key;
-        return '<path class="edge '+(link.proven?'':'unproven')+'" d="M '+sx+' '+sy+' C '+mx+' '+sy+', '+mx+' '+ty+', '+tx+' '+ty+'" marker-end="url(#'+marker+')"></path><text class="edge-label" x="'+mx+'" y="'+my+'" text-anchor="middle">'+esc(label.slice(0,42))+'</text>';
+        const edgeTitle=link.source_table+'.'+link.source_key+' to '+link.target_table+'.'+link.target_key+'; '+(link.proven?'catalog proven':'proof unavailable');
+        return '<path class="edge '+(link.proven?'':'unproven')+'" d="M '+sx+' '+sy+' C '+mx+' '+sy+', '+mx+' '+ty+', '+tx+' '+ty+'" marker-end="url(#'+marker+')"><title>'+esc(edgeTitle)+'</title></path><text class="edge-label" x="'+(sx+12)+'" y="'+(sy-9)+'" text-anchor="start">'+esc(label.slice(0,50))+'<title>'+esc(edgeTitle)+'</title></text>';
       }).join('');
       const nodeSvg=tables.map(table=>{
         const point=positions.get(table.id);
         const fields=(table.model_visible_fields||[]).slice(0,4).map(field=>field.name);
         const hidden=(table.runner_only_field_count||0)+(table.kept_out_field_count||0);
         const lines=[...fields,...((table.model_visible_fields||[]).length>4?['+'+((table.model_visible_fields||[]).length-4)+' more visible']:[]),...(hidden?[''+hidden+' unavailable to model']:[])].slice(0,5);
-        return '<g><rect class="node" x="'+point.x+'" y="'+point.y+'" width="'+nodeWidth+'" height="'+nodeHeight+'" rx="6"></rect><text class="node-title" x="'+(point.x+14)+'" y="'+(point.y+23)+'">'+esc(table.id.slice(0,34))+'</text>'+lines.map((line,index)=>'<text class="node-field" x="'+(point.x+14)+'" y="'+(point.y+47+index*16)+'">'+esc(line.slice(0,34))+'</text>').join('')+'</g>';
+        return '<g><title>'+esc(table.id+'; '+(table.model_visible_fields||[]).map(field=>field.name).join(', '))+'</title><rect class="node" x="'+point.x+'" y="'+point.y+'" width="'+nodeWidth+'" height="'+nodeHeight+'" rx="6"></rect><text class="node-title" x="'+(point.x+14)+'" y="'+(point.y+23)+'">'+esc(table.id.slice(0,52))+'</text>'+lines.map((line,index)=>'<text class="node-field" x="'+(point.x+14)+'" y="'+(point.y+47+index*16)+'">'+esc(line.slice(0,52))+'</text>').join('')+'</g>';
       }).join('');
-      return '<div class="boundary-catalog-graph" role="img" aria-label="Reviewed table relationship diagram for '+esc(boundary.name)+'"><svg viewBox="0 0 '+width+' '+height+'" width="'+width+'" height="'+height+'"><defs><marker id="'+marker+'" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0, 9 3.5, 0 7" fill="#75e3b7"></polygon></marker></defs>'+edgeSvg+nodeSvg+'</svg></div>';
+      return '<div class="boundary-catalog-graph" role="img" aria-label="Reviewed table relationship diagram for '+esc(boundary.name)+'"><svg viewBox="0 0 '+width+' '+height+'" width="'+width+'" height="'+height+'"><defs><marker id="'+marker+'" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0, 9 3.5, 0 7" fill="#75e3b7"></polygon></marker></defs>'+edgeSvg+nodeSvg+'</svg></div><p class="muted">Arrows point from the many-row table to the reviewed one-row ancestor. Solid lines are catalog-proven; dashed lines require proof before activation.</p>';
     }
 
     function wireBoundaryRelationshipMaps(scope=document){
@@ -3196,13 +3207,17 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         const select=root.querySelector('[data-boundary-catalog-select]');
         const summary=root.querySelector('[data-boundary-catalog-summary]');
         const status=root.querySelector('[data-boundary-catalog-status]');
+        const copyMermaid=root.querySelector('[data-copy-boundary-mermaid]');
         const update=()=>{
           const name=select.value;
           root.querySelectorAll('[data-boundary-catalog-section]').forEach(section=>{
             section.hidden=section.dataset.boundaryCatalogSection!==name;
           });
           const boundary=(boundaryCatalog.boundaries||[]).find(item=>item.name===name);
-          if(boundary)summary.textContent=boundary.tables.length+' reviewed table'+(boundary.tables.length===1?'':'s')+' · '+(boundary.physical_relationship_count||0)+' physical join'+((boundary.physical_relationship_count||0)===1?'':'s')+' · '+boundary.relationships.length+' reviewed path'+(boundary.relationships.length===1?'':'s')+'. This is one exact active boundary; it is never merged with another.';
+          if(boundary){
+            summary.textContent=boundary.tables.length+' reviewed table'+(boundary.tables.length===1?'':'s')+' · '+(boundary.physical_relationship_count||0)+' physical join'+((boundary.physical_relationship_count||0)===1?'':'s')+' · '+boundary.relationships.length+' reviewed path'+(boundary.relationships.length===1?'':'s')+'. This is one exact active boundary; it is never merged with another.';
+            copyMermaid.hidden=(boundary.physical_relationship_count||0)===0;
+          }
           status.textContent='';
         };
         select.onchange=update;
@@ -3223,7 +3238,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           status.className='status-message';
           status.textContent='Downloaded the exact '+diagram.boundary_name+' boundary map. No source rows were read.';
         };
-        root.querySelector('[data-copy-boundary-mermaid]').onclick=async()=>{
+        copyMermaid.onclick=async()=>{
           const diagram=(boundaryDiagrams||[]).find(item=>item.boundary_name===select.value);
           if(!diagram){
             status.className='status-message error';

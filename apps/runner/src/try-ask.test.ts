@@ -692,7 +692,64 @@ describe("try ask", () => {
     expect(consent).toHaveBeenCalledOnce();
     expect(requestJson).not.toHaveBeenCalled();
     expect(output.join("")).toContain("Your question was not sent");
-    expect(output.join("")).toContain("Run /access");
+    expect(output.join("")).toContain("Run /refresh-access");
+    expect(output.join("")).toContain("no restart is required");
+  });
+
+  it("rebinds an externally activated exact authority after an in-shell consent gesture", async () => {
+    const fixture = await askProject();
+    const requestJson = vi.fn();
+    const output: string[] = [];
+    const prompts: string[] = [];
+    let readCount = 0;
+
+    await expect(tryAsk([
+      "--project-root", fixture.root,
+      "--config", fixture.configPath,
+      "--store", fixture.storePath,
+      "--provider", "openai",
+      "--model", "gpt-owner-selected",
+    ], {
+      env: fixture.env,
+      gatewayFactory: testGatewayFactory([]),
+      boundaryCatalogLoader: async () => undefined,
+      confirmEgress: async () => true,
+      providerDependencies: { requestJson },
+      shellIo: {
+        read: async (prompt) => {
+          prompts.push(prompt);
+          readCount += 1;
+          if (readCount === 1) {
+            await fs.writeFile(
+              path.join(fixture.root, ".synapsor/exploration-boundary.active.json"),
+              JSON.stringify({
+                schema_version: "synapsor.exploration-boundary-active.v1",
+                deployment_profile: "development",
+                pack: { name: "new_review", resources: [] },
+                activation: {
+                  digest: `sha256:${"b".repeat(64)}`,
+                  actor: "another-reviewer@example.test",
+                  activated_at: "2026-07-26T00:10:00.000Z",
+                },
+              }, null, 2),
+            );
+            return "/refresh-access";
+          }
+          if (readCount === 2) return "";
+          return undefined;
+        },
+        write: (value) => output.push(value),
+        columns: () => 100,
+        onInterrupt: () => () => undefined,
+        close: () => undefined,
+      },
+    })).resolves.toBe(0);
+
+    expect(requestJson).not.toHaveBeenCalled();
+    expect(prompts.join("")).toContain("New reviewed access is active: new_review");
+    expect(prompts.join("")).toContain("Use the newly activated access? [Y/n]");
+    expect(output.join("")).toContain("Ask access updated");
+    expect(output.join("")).toContain("No provider request was made");
   });
 });
 

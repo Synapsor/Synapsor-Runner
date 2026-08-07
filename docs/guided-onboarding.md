@@ -193,8 +193,16 @@ choose **Use my existing AI client**. The exact-plan no-model composer remains
 a secondary fallback.
 
 Running the same command again resumes. Resume and Try do not rescan, rewrite
-files, or change a digest. Rescan and destructive Start over remain explicit
-human choices.
+files, or change a digest. To deliberately re-inspect the current database, run:
+
+```bash
+npx -y @synapsor/runner start --from-env DATABASE_URL --rescan
+```
+
+`--rescan` works for both single-organization and multi-tenant projects. It
+creates a disabled boundary update; Ask keeps using the previous exact revision
+until a human reviews and activates the update. `--force` also causes inspection
+but has separate overwrite/reset semantics, so do not use it merely to rescan.
 
 Workbench requires no additional terminal command. If you choose the CLI
 fallbacks below after the first success, install Runner once:

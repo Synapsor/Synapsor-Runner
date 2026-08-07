@@ -20,17 +20,17 @@ import {
 } from "./scoped-explore-boundary-set.js";
 
 const scalar = z.union([z.string().max(512), z.number().finite(), z.boolean(), z.null()]);
-const fieldId = z.string().min(1).max(256).describe("Exact field alias from app.describe_data. Do not prefix it; put any related-table path in relationship.");
+const fieldId = z.string().min(1).max(256).describe("Copy the exact field id from app.describe_data. Do not prefix it; put any related-table path in relationship.");
 const resourceId = z.string().min(1).max(256)
-  .describe("Root resource alias from app.describe_data that owns the counted entity or measure.");
+  .describe("Copy the exact resource id from app.describe_data for the root table that owns the counted entity or measure.");
 const optionalBoundarySelector = z.string()
   .regex(/^(?:[a-z][a-z0-9_.-]{0,63})?$/)
   .describe("An active reviewed boundary name; empty means omitted.")
   .optional();
 const optionalResourceSelector = z.string().max(256)
-  .describe("A reviewed resource alias; empty means omitted.")
+  .describe("Copy the exact resource id from app.describe_data. Empty means omitted.")
   .optional();
-const relationshipId = z.string().min(1).max(256).describe("Exact active relationship alias from app.describe_data; keep it separate from field.");
+const relationshipId = z.string().min(1).max(256).describe("Copy the exact active relationship id from app.describe_data; keep it separate from field.");
 const filter = z.object({
   field: fieldId,
   op: z.enum(["eq", "neq", "lt", "lte", "gt", "gte", "in"]),
@@ -107,7 +107,7 @@ export function createScopedExploreMcpServer(
   );
   server.registerTool(SCOPED_EXPLORE_DESCRIBE_TOOL, {
     title: "Describe reviewed data",
-    description: "Lists the active reviewed boundaries and a bounded page of their exact resources, fields, aggregate dimensions, measures, time buckets, relationships, and privacy limits. Use boundary when the same resource appears in more than one boundary. It returns metadata only, never source rows.",
+    description: "Lists the active reviewed boundaries and a bounded page of their exact resource ids, field ids, aggregate dimensions, measures, time buckets, relationship ids, and privacy limits. Copy the exact ids into app.explore_data. Use boundary when the same resource appears in more than one boundary. It returns metadata only, never source rows.",
     inputSchema: z.object({
       boundary: optionalBoundarySelector,
       resource: optionalResourceSelector,
@@ -137,7 +137,7 @@ export function createScopedExploreMcpServer(
   })));
   server.registerTool(SCOPED_EXPLORE_QUERY_TOOL, {
     title: "Explore reviewed data",
-    description: `Runs one bounded row or descriptive aggregate plan against exactly one active reviewed ${production ? "production" : "local"} boundary. Choose the root resource that owns the counted entity or measure. For a related dimension, measure, filter, or time field, pass the target field alias in field and its exact active path alias separately in relationship; never concatenate them. Choose boundary from app.describe_data when required. Plans cannot join or combine separate boundaries. Raw SQL, arbitrary identifiers, model-selected tenant/principal, mutation, approval, and commit are unavailable.`,
+    description: `Runs one bounded row or descriptive aggregate plan against exactly one active reviewed ${production ? "production" : "local"} boundary. Copy the exact resource id from app.describe_data into plan.resource. Choose the root resource that owns the counted entity or measure. For a related dimension, measure, filter, or time field, pass the exact target field id in field and its exact active relationship id separately in relationship; never concatenate them. Choose boundary from app.describe_data when required. Plans cannot join or combine separate boundaries. Raw SQL, arbitrary identifiers, model-selected tenant/principal, mutation, approval, and commit are unavailable.`,
     inputSchema: z.object({
       boundary: optionalBoundarySelector,
       plan: z.discriminatedUnion("kind", [rowPlan, aggregatePlan]),

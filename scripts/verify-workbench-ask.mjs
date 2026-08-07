@@ -528,7 +528,7 @@ try {
         && /account (region|status)/i.test(String(relationshipMap.questions))
         && /erDiagram/.test(String(relationshipMap.mermaid))
         && /PUBLIC_(INVOICES|ORDERS).*PUBLIC_ACCOUNTS/s.test(String(relationshipMap.mermaid))
-        && /download full diagram/i.test(String(relationshipMap.downloadLabel)),
+        && /download full map/i.test(String(relationshipMap.downloadLabel)),
       "Workbench did not render the exact active-boundary relationship graph and export",
       relationshipMap,
     );

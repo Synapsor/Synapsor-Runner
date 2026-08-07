@@ -13,6 +13,11 @@ import {
 export type BoundaryFieldTier = "visible" | "withheld_from_model" | "kept_out";
 export type BoundaryFieldTierEditResult =
   | Record<string, BoundaryFieldTier>
+  | {
+      action: "enum";
+      field: string;
+      tiers: Record<string, BoundaryFieldTier>;
+    }
   | `enum:${string}`
   | "back"
   | "privacy"
@@ -70,7 +75,10 @@ export type BoundaryReviewInteractiveSession = {
   ): Promise<BoundaryResourceSelection | undefined>;
   editFieldTiers(
     view: BoundaryResourceReviewView,
-    options?: { focusedAccess?: boolean },
+    options?: {
+      focusedAccess?: boolean;
+      initialTiers?: Record<string, BoundaryFieldTier>;
+    },
   ): Promise<BoundaryFieldTierEditResult>;
   editFieldEnumValues?(
     view: BoundaryResourceReviewView,
@@ -895,7 +903,10 @@ async function chooseResource(
 
 async function editFieldTiers(
   view: BoundaryResourceReviewView,
-  options: { focusedAccess?: boolean } | undefined,
+  options: {
+    focusedAccess?: boolean;
+    initialTiers?: Record<string, BoundaryFieldTier>;
+  } | undefined,
   input: ReadStream,
   output: WriteStream,
 ): Promise<BoundaryFieldTierEditResult> {
@@ -909,7 +920,7 @@ async function editFieldTiers(
   if (!fields.length) throw new Error(`${view.resource_id} has no inspected columns.`);
   const tiers = Object.fromEntries(fields.map((field) => [
     field.name,
-    currentFieldTier(view, field.name),
+    options?.initialTiers?.[field.name] ?? currentFieldTier(view, field.name),
   ])) as Record<string, BoundaryFieldTier>;
   const theme = terminalTheme(output.isTTY && !("NO_COLOR" in process.env));
   let selected = 0;
@@ -951,7 +962,7 @@ async function editFieldTiers(
           (view.candidate ?? view.generated_candidate)!.minimum_cohort_size
         } (${(view.candidate ?? view.generated_candidate)!.minimum_cohort_size === 1 ? "suppression off" : "small groups withheld"})`,
         ...(enumValues
-          ? [`${theme.key("E")} Allowed values for selected column: ${reviewedEnumValues!.length} of ${enumValues.length}`]
+          ? [`${theme.key("E")} Edit allowed values for selected column: ${reviewedEnumValues!.length} of ${enumValues.length}`]
           : []),
         "Space cycles: MODEL + RUNNER -> RUNNER ONLY -> KEPT OUT",
         "",
@@ -995,7 +1006,11 @@ async function editFieldTiers(
       }
       if (key.name === "p") return "privacy";
       if (key.name === "e" && enumValues) {
-        return `enum:${highlighted.name}`;
+        return {
+          action: "enum",
+          field: highlighted.name,
+          tiers: { ...tiers },
+        };
       }
       if (key.name === "up") selected = (selected - 1 + fields.length) % fields.length;
       if (key.name === "down") selected = (selected + 1) % fields.length;
@@ -1039,7 +1054,8 @@ async function editFieldEnumValues(
         "",
         `${theme.key("Up/Down")} Navigate   ${theme.key("Space")} Toggle value   ` +
           `${theme.key("A")} Keep all   ${theme.key("N")} Keep none`,
-        `${theme.key("Enter")} Continue to recorded review   ${theme.key("B/Esc")} Back   ${theme.key("Q")} Quit`,
+        `${theme.key("Enter")} Save allowed values and return to columns   ` +
+          `${theme.key("B/Esc")} Back without saving   ${theme.key("Q")} Quit`,
         "",
         ...visible.map((value, index) => {
           const absolute = start + index;

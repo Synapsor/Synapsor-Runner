@@ -86,8 +86,12 @@ the local ledger, and starts the secured loopback Workbench. It prints one
 local URL if a browser cannot be opened.
 
 For an existing guided project, the same command resumes it. Resume and Try do
-not rescan the database, rewrite files, or change a digest. Do not add
-`--force`. A schema rescan or reset is a separate human choice in Workbench.
+not rescan the database, rewrite files, or change a digest. To inspect the live
+schema and role posture again, use `start --from-env DATABASE_URL --rescan`.
+That flag is universal: it works for single-organization and multi-tenant
+projects and produces a disabled update that still requires human review and
+activation. Do not add `--force` unless the operator also intends its separate
+overwrite/reset behavior.
 
 Report:
 

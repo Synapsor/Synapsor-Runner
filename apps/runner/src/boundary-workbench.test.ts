@@ -98,8 +98,8 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("Ask naturally. Runner holds the boundary.");
     expect(html).toContain("Your model can reason freely. Its database requests cannot.");
     expect(html).toContain("What can I ask?");
-    expect(html).toContain("Reviewed relationship map");
-    expect(html).toContain("Download full diagram");
+    expect(html).toContain("Reviewed data map");
+    expect(html).toContain("Download full map");
     expect(html).toContain("Copy Mermaid");
     expect(html).toContain("data-boundary-catalog-select");
     expect(html).toContain("data-boundary-catalog-section");

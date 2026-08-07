@@ -2212,13 +2212,13 @@ function describeBoundary(
         ...resource.count_distinct_fields,
         ...Object.keys(resource.time_bucket_fields),
       ]);
-      const fieldLabels = Object.fromEntries(reviewedFields.map((field) => [field, businessLabel(field)]));
+      const fieldLabels = Object.fromEntries(
+        reviewedFields.map((field) => [field, businessLabel(field)]),
+      );
       const modelWithheld = new Set(resource.model_withheld_fields ?? []);
       return {
         id: resource.id,
-        label: businessLabel(resource.table),
         primary_key: resource.primary_key,
-        field_labels: fieldLabels,
         field_egress: Object.fromEntries(reviewedFields.map((field) => [
           field,
           { model_egress: modelWithheld.has(field) ? "withheld" : "visible" },
@@ -2256,7 +2256,6 @@ function describeBoundary(
           const targetModelWithheld = new Set(target.model_withheld_fields ?? []);
           return {
             id: relationship.id,
-            label: businessLabel(target.table),
             activation,
             operator_review_required: activation === "review_required",
             target_resource: relationship.target_resource,
@@ -2275,7 +2274,6 @@ function describeBoundary(
               nullable: link.nullable,
               cardinality: link.cardinality,
             })) ?? [],
-            field_labels: Object.fromEntries(targetFields.map((field) => [field, businessLabel(field)])),
             field_egress: Object.fromEntries(targetFields.map((field) => [
               field,
               { model_egress: targetModelWithheld.has(field) ? "withheld" : "visible" },

@@ -49,7 +49,7 @@ describe("active boundary catalog", () => {
           }),
         ],
         suggested_questions: expect.arrayContaining([
-          "What is total invoice amount cents by customer region?",
+          "What is the total invoice amount cents by customer region?",
         ]),
       }),
     ]));
@@ -77,7 +77,7 @@ describe("active boundary catalog", () => {
     expect(ascii).toContain("[public.customers]");
     expect(ascii).toContain("[many-to-one, proven, 2 joins]");
     expect(ascii).toContain("TRY CROSS-TABLE QUESTIONS");
-    expect(ascii).toContain('"What is total invoice amount cents by customer region?"');
+    expect(ascii).toContain('"What is the total invoice amount cents by customer region?"');
     expect(ascii).not.toContain("secret_join");
     expect(ascii.split("\n").every((line) => line.length <= 88)).toBe(true);
 
@@ -137,6 +137,79 @@ describe("active boundary catalog", () => {
     expect(ascii).toContain("group by risk_band");
     expect(ascii).toContain("(labels tokenized)");
     expect(renderBoundaryCatalogMermaid(model)).not.toContain("risk_band");
+  });
+
+  it("turns a one-table boundary into a useful analysis map instead of an empty join diagram", async () => {
+    const boundary = activeBoundary();
+    const orders = boundary.pack.resources.find((resource) => resource.id === "public.orders")!;
+    orders.relationships = [];
+    boundary.pack.resources = [orders];
+    const model = buildBoundaryCatalogModel([boundary]);
+    const ascii = renderBoundaryCatalogAscii(model);
+
+    expect(ascii).toContain("1 table | 0 physical joins | 0 reviewed paths");
+    expect(ascii).toContain("No join arrows are shown because this reviewed boundary contains one table");
+    expect(ascii).toContain("TRY SINGLE-TABLE QUESTIONS");
+    expect(ascii).toContain('"What is the total cents by status?"');
+    expect(ascii).toContain("/access -> highlight reviewed_staging -> Enter -> A Add related tables -> C Review + activate");
+    expect(ascii).not.toContain("no outgoing reviewed path");
+    expect(ascii).not.toContain('"undefined"');
+    expect(ascii).not.toContain("total id");
+
+    const mermaidDiagram = renderBoundaryCatalogMermaid(model);
+    expect(mermaidDiagram).not.toContain("--");
+    mermaid.initialize({ startOnLoad: false });
+    await expect(mermaid.parse(mermaidDiagram)).resolves.toBeTruthy();
+    const exported = buildBoundaryCatalogDiagramExports(model)[0]!;
+    expect(exported.markdown).toContain("## Relationships");
+    expect(exported.markdown).toContain("no reviewed join to draw");
+    expect(exported.markdown).not.toContain("```mermaid");
+  });
+
+  it("emits parser-valid Mermaid for collisions, special identifiers, disconnected nodes, and nullable links", async () => {
+    const first = activeBoundary();
+    const second = structuredClone(first);
+    first.pack.name = "north-prod";
+    second.pack.name = "north_prod";
+    const model = buildBoundaryCatalogModel([first, second]);
+    const firstBoundary = model.boundaries[0]!;
+    const firstTable = firstBoundary.tables[0]!;
+    firstTable.id = "billing.order-items";
+    firstTable.model_visible_fields = [
+      { name: "status-code", data_type: "character varying(255)" },
+      { name: "status code", data_type: "text" },
+      { name: "2fa", data_type: "boolean" },
+    ];
+    firstBoundary.relationships = [{
+      ...firstBoundary.relationships[0]!,
+      source_table: firstBoundary.tables[1]!.id,
+      target_table: firstTable.id,
+      source_key: "customer \"key\"",
+      target_key: "order:id",
+      nullable: true,
+      links: [{
+        source_table: firstBoundary.tables[1]!.id,
+        target_table: firstTable.id,
+        source_key: "customer \"key\"",
+        target_key: "order:id",
+        hidden_join_key: false,
+        proven: false,
+        nullable: true,
+      }],
+    }];
+    firstBoundary.physical_relationship_count = 1;
+    model.relationship_count = model.boundaries.reduce((total, boundary) => total + boundary.relationships.length, 0);
+    model.physical_relationship_count = model.boundaries.reduce((total, boundary) => total + boundary.physical_relationship_count, 0);
+
+    mermaid.initialize({ startOnLoad: false });
+    const combined = renderBoundaryCatalogMermaid(model);
+    await expect(mermaid.parse(combined)).resolves.toBeTruthy();
+    expect(combined).toContain("status_code");
+    expect(combined).toContain("status_code_2");
+    expect(combined).toContain("}o--o|");
+    for (const item of buildBoundaryCatalogDiagramExports(model)) {
+      await expect(mermaid.parse(item.mermaid)).resolves.toBeTruthy();
+    }
   });
 });
 

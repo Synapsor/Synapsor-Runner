@@ -23,6 +23,7 @@ export type BoundaryCatalogTable = {
   aggregate_measures: string[];
   count_distinct_fields: string[];
   time_bucket_fields: string[];
+  suggested_questions: string[];
   runner_only_analysis: {
     groupable_fields: string[];
     aggregate_measures: string[];
@@ -157,6 +158,7 @@ export function buildBoundaryCatalogModel(
             Object.keys(resource.time_bucket_fields),
             resource,
           ),
+          suggested_questions: reviewedTableQuestions(resource),
           runner_only_analysis: {
             groupable_fields: runnerOnlyOperationFields(resource.groupable_fields, resource),
             aggregate_measures: runnerOnlyOperationFields(resource.aggregate_measures, resource),
@@ -243,43 +245,55 @@ export function renderBoundaryCatalogAscii(
       lines.push("");
     }
 
-    lines.push("REVIEWED RELATIONSHIP MAP");
-    for (const table of boundary.tables) {
-      const outgoing = boundary.relationships.filter((relationship) =>
-        relationship.source_table === table.id);
-      lines.push(`[${table.id}]`);
-      if (!outgoing.length) {
-        lines.push("  `-- no outgoing reviewed path");
-        continue;
-      }
-      outgoing.forEach((relationship, index) => {
-        const last = index === outgoing.length - 1;
-        const branch = last ? "`--" : "|--";
-        const continuation = last ? "    " : "|   ";
-        lines.push(...wrapWithPrefixes(
-          `${relationshipPathLabel(relationship)} `
-          + `[many-to-one, ${relationship.proven ? "proven" : "proof unavailable"}, `
-          + `${relationship.path_depth} ${plural(relationship.path_depth, "join")}]`,
-          width,
-          `  ${branch} `,
-          `  ${continuation}`,
-        ));
-        for (const question of relationship.suggested_questions.slice(0, 1)) {
+    if (!boundary.relationships.length) {
+      lines.push(
+        "RELATIONSHIPS",
+        boundary.tables.length === 1
+          ? "No join arrows are shown because this reviewed boundary contains one table."
+          : "No join arrows are shown because no relationship path is reviewed in this boundary.",
+        "Ask can still run the single-table counts, totals, groupings, filters, and time trends listed above.",
+        `To add a join: /access -> highlight ${boundary.name} -> Enter -> A Add related tables -> C Review + activate.`,
+      );
+    } else {
+      lines.push("REVIEWED RELATIONSHIP MAP");
+      for (const table of boundary.tables) {
+        const outgoing = boundary.relationships.filter((relationship) =>
+          relationship.source_table === table.id);
+        if (!outgoing.length) continue;
+        lines.push(`[${table.id}]`);
+        outgoing.forEach((relationship, index) => {
+          const last = index === outgoing.length - 1;
+          const branch = last ? "`--" : "|--";
+          const continuation = last ? "    " : "|   ";
           lines.push(...wrapWithPrefixes(
-            `Ask: "${question}"`,
+            `${relationshipPathLabel(relationship)} `
+            + `[many-to-one, ${relationship.proven ? "proven" : "proof unavailable"}, `
+            + `${relationship.path_depth} ${plural(relationship.path_depth, "join")}]`,
             width,
+            `  ${branch} `,
             `  ${continuation}`,
-            `  ${continuation}     `,
           ));
-        }
-      });
-      lines.push("");
+          for (const question of relationship.suggested_questions.slice(0, 1)) {
+            lines.push(...wrapWithPrefixes(
+              `Ask: "${question}"`,
+              width,
+              `  ${continuation}`,
+              `  ${continuation}     `,
+            ));
+          }
+        });
+        lines.push("");
+      }
     }
 
-    const questions = unique(boundary.relationships.flatMap((relationship) =>
-      relationship.suggested_questions));
+    const questions = unique([
+      ...boundary.relationships.flatMap((relationship) => relationship.suggested_questions),
+      ...boundary.tables.flatMap((table) => table.suggested_questions ?? []),
+    ]);
     if (questions.length) {
-      lines.push("", "TRY CROSS-TABLE QUESTIONS");
+      lines.push("", boundary.relationships.length
+        ? "TRY CROSS-TABLE QUESTIONS"
+        : "TRY SINGLE-TABLE QUESTIONS");
       questions.slice(0, 6).forEach((question, index) => {
         lines.push(...wrapWithPrefixes(
           `"${question}"`,
@@ -385,6 +399,19 @@ export function renderBoundaryCatalogMarkdown(
     throw new Error("A boundary diagram export must contain exactly one reviewed boundary.");
   }
   const boundary = model.boundaries[0]!;
+  const relationshipSection = boundary.physical_relationship_count > 0
+    ? [
+        "## Mermaid ER Diagram",
+        "",
+        "```mermaid",
+        options.mermaid ?? renderBoundaryCatalogMermaid(model),
+        "```",
+      ]
+    : [
+        "## Relationships",
+        "",
+        "No Mermaid ER diagram is included because this boundary has no reviewed join to draw.",
+      ];
   return [
     `# Reviewed Boundary: ${boundary.name}`,
     "",
@@ -399,11 +426,7 @@ export function renderBoundaryCatalogMarkdown(
     renderBoundaryCatalogAscii(model, { width: options.width ?? 96 }),
     "```",
     "",
-    "## Mermaid ER Diagram",
-    "",
-    "```mermaid",
-    options.mermaid ?? renderBoundaryCatalogMermaid(model),
-    "```",
+    ...relationshipSection,
     "",
   ].join("\n");
 }
@@ -456,6 +479,7 @@ function reviewedRelationshipQuestions(source: BoundaryResource, target: Boundar
   if (!group) return [];
   const measure = source.aggregate_measures
     .filter((field) => !source.kept_out_fields.includes(field))
+    .filter((field) => measureUsefulness(field) > 0)
     .sort((left, right) => measureUsefulness(right) - measureUsefulness(left)
       || left.localeCompare(right))[0];
   const time = Object.keys(source.time_bucket_fields).find((field) =>
@@ -472,10 +496,32 @@ function reviewedRelationshipQuestions(source: BoundaryResource, target: Boundar
     : `number of ${sourcePlural}`;
   return unique([
     measure
-      ? `What is ${metric} by ${groupPhrase}?`
+      ? `What is the ${metric} by ${groupPhrase}?`
       : `How many ${sourcePlural} are there by ${groupPhrase}?`,
     ...(time ? [`How did ${metric} change by month for each ${groupPhrase}?`] : []),
   ]);
+}
+
+function reviewedTableQuestions(resource: BoundaryResource): string[] {
+  const hidden = hiddenFields(resource);
+  const groups = resource.groupable_fields.filter((field) => !hidden.has(field));
+  const measures = resource.aggregate_measures
+    .filter((field) => !hidden.has(field) && measureUsefulness(field) > 0)
+    .sort((left, right) => measureUsefulness(right) - measureUsefulness(left)
+      || left.localeCompare(right));
+  const times = Object.keys(resource.time_bucket_fields).filter((field) => !hidden.has(field));
+  const pluralNoun = humanizeIdentifier(resource.table).toLowerCase();
+  const group = groups[0];
+  const measure = measures[0];
+  const metric = measure
+    ? `total ${humanizeIdentifier(measure).toLowerCase().replace(/^total\s+/, "")}`
+    : `number of ${pluralNoun}`;
+  return unique([
+    ...(group ? [`What is the ${metric} by ${humanizeIdentifier(group).toLowerCase()}?`] : []),
+    ...(group && measure ? [`How many ${pluralNoun} are there by ${humanizeIdentifier(group).toLowerCase()}?`] : []),
+    ...(times.length ? [`How did ${metric} change by week?`] : []),
+    ...(!group && !times ? [`How many ${pluralNoun} are there?`] : []),
+  ]).slice(0, 3);
 }
 
 function hiddenFields(resource: BoundaryResource): Set<string> {

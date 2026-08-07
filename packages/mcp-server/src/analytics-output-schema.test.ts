@@ -50,6 +50,44 @@ describe("analytical MCP output schemas", () => {
       outcome: { type: "success", code: "EXPLORE_DISABLED" },
     }).success).toBe(false);
     expect(JSON.stringify(schemaAsJsonSchema(scopedExploreDescribeOutputSchema))).toContain("\"const\":\"refusal\"");
+
+    const canonicalResource = {
+      id: "public.orders",
+      primary_key: "id",
+      field_egress: {
+        id: { model_egress: "visible" },
+        status: { model_egress: "visible" },
+      },
+      selectable_fields: ["id", "status"],
+      filterable_fields: ["status"],
+      filter_operators: { status: ["eq", "neq", "in"] },
+      sortable_fields: [],
+      groupable_fields: ["status"],
+      aggregate_measures: [],
+      count_distinct_fields: ["id"],
+      time_bucket_fields: {},
+      time_coverage: {},
+      field_types: { id: "text", status: "text" },
+      field_enums: { status: ["open", "paid"] },
+      kept_out_field_count: 0,
+      relationships: [],
+      minimum_cohort_size: 5,
+      maximum_rows: 25,
+      maximum_groups: 25,
+      suggested_questions: [],
+    };
+    expect(scopedExploreDescribeOutputSchema.safeParse({
+      ...success,
+      resources: [canonicalResource],
+    }).success).toBe(true);
+    expect(scopedExploreDescribeOutputSchema.safeParse({
+      ...success,
+      resources: [{ ...canonicalResource, label: "Orders" }],
+    }).success).toBe(false);
+    expect(scopedExploreDescribeOutputSchema.safeParse({
+      ...success,
+      resources: [{ ...canonicalResource, plan_resource: "public.orders" }],
+    }).success).toBe(false);
   });
 
   it("validates success, suppression, empty, comparison, and refusal variants from one schema", () => {
@@ -106,6 +144,56 @@ describe("analytical MCP output schemas", () => {
     expect(clientBytes).toBeLessThan(fullBytes);
     expect(JSON.stringify(schemaAsJsonSchema(scopedExploreQueryToolOutputSchema)))
       .toContain("query_audit_handle");
+  });
+
+  it("accepts complete reviewed-value controls without allowing source values", () => {
+    const success = queryResult("ok");
+    const controls = {
+      bucketed_fields: [{
+        resource: "public.subscriptions",
+        field: "plan",
+        output_field: "plan",
+        bucket_returned: true,
+        bucket_token: "[outside-reviewed-values]",
+      }],
+      excluded_fields: [{
+        resource: "public.subscriptions",
+        field: "plan",
+        effect: "rows_outside_reviewed_values_excluded",
+      }],
+      source_values_exposed: false,
+    } as const;
+    const outcome = success.outcome as Record<string, unknown>;
+    const result = outcome.result as Record<string, unknown>;
+    result.reviewed_value_controls = controls;
+    const privacy = success.privacy as Record<string, unknown>;
+    privacy.reviewed_value_controls = controls;
+
+    expect(scopedExploreQueryOutputSchema.safeParse(success).success).toBe(true);
+    expect(scopedExploreQueryToolOutputSchema.safeParse(success).success).toBe(true);
+    expect(scopedExploreQueryToolOutputSchema.safeParse({
+      ...success,
+      privacy: {
+        ...privacy,
+        reviewed_value_controls: {
+          ...controls,
+          source_values_exposed: true,
+        },
+      },
+    }).success).toBe(false);
+    expect(scopedExploreQueryToolOutputSchema.safeParse({
+      ...success,
+      privacy: {
+        ...privacy,
+        reviewed_value_controls: {
+          ...controls,
+          bucketed_fields: [{
+            ...controls.bucketed_fields[0],
+            bucket_token: "south",
+          }],
+        },
+      },
+    }).success).toBe(false);
   });
 
   it("covers protected rows, protected aggregates, and legacy aggregates in v1 and v2", () => {

@@ -1429,13 +1429,15 @@ describe("Scoped Explore", () => {
       expect(resource.relationships).toEqual([
         expect.objectContaining({
           id: "subscriptions_region_id_fkey",
-          label: "Regions",
           target_resource: "public.regions",
           cardinality: "many_to_one",
           groupable_fields: expect.arrayContaining(["name"]),
-          field_labels: expect.objectContaining({ name: "Name" }),
         }),
       ]);
+      expect(resource).not.toHaveProperty("label");
+      expect(resource).not.toHaveProperty("field_labels");
+      expect(resource.relationships[0]).not.toHaveProperty("label");
+      expect(resource.relationships[0]).not.toHaveProperty("field_labels");
       expect(resource.suggested_questions).toEqual(expect.arrayContaining([
         expect.objectContaining({
           text: "Which reviewed regions have the most subscriptions?",

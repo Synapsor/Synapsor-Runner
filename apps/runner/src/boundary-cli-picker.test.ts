@@ -7,6 +7,7 @@ import {
   formatBoundaryResourceMap,
   packTerminalActions,
   terminalTheme,
+  type BoundaryFieldTier,
 } from "./boundary-cli-picker.js";
 import type {
   BoundaryResourceReviewSummary,
@@ -738,11 +739,29 @@ describe("boundary review terminal picker", () => {
     const first = fakeTerminal();
     const firstSession = createBoundaryReviewInteractiveSession(first.input, first.output);
     const action = firstSession.editFieldTiers(view, { focusedAccess: true });
+    await send(first.input, "w");
     await send(first.input, "e");
-    await expect(action).resolves.toBe("enum:outcome");
+    const enumAction = await action;
+    expect(enumAction).toMatchObject({
+      action: "enum",
+      field: "outcome",
+      tiers: { outcome: "withheld_from_model" },
+    });
     expect(stripAnsi(first.output.read()?.toString() ?? "")).toContain(
-      "E Allowed values for selected column: 2 of 2",
+      "E Edit allowed values for selected column: 2 of 2",
     );
+
+    const resumed = fakeTerminal();
+    const resumedSession = createBoundaryReviewInteractiveSession(resumed.input, resumed.output);
+    const stagedTiers = typeof enumAction === "object" && "tiers" in enumAction
+      ? enumAction.tiers as Record<string, BoundaryFieldTier>
+      : undefined;
+    const resumedEdit = resumedSession.editFieldTiers(view, {
+      focusedAccess: true,
+      initialTiers: stagedTiers,
+    });
+    await send(resumed.input, "\r");
+    await expect(resumedEdit).resolves.toMatchObject({ outcome: "withheld_from_model" });
 
     const second = fakeTerminal();
     const secondSession = createBoundaryReviewInteractiveSession(second.input, second.output);
@@ -754,6 +773,7 @@ describe("boundary review terminal picker", () => {
     expect(rendered).toContain("No source rows were sampled");
     expect(rendered).toContain("Removed values are refused even if guessed");
     expect(rendered).toContain("Selecting none disables filtering and grouping");
+    expect(rendered).toContain("Save allowed values and return to columns");
   });
 
   it("resolves blocked identity and tenant choices without leaving the terminal editor", async () => {

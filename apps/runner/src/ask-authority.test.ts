@@ -27,6 +27,11 @@ describe("Ask authority summaries", () => {
       boundary_name: "reviewed_staging",
       pending_changes: 1,
       previous_authority_active: false,
+      changes: [{
+        boundary_name: "reviewed_staging",
+        previous_authority_active: false,
+        cause: "reviewed_access_edited",
+      }],
     });
 
     const activeDigest = explorationBoundaryCandidateDigest(candidate);
@@ -47,6 +52,90 @@ describe("Ask authority summaries", () => {
       boundary_name: "reviewed_staging",
       pending_changes: 1,
       previous_authority_active: true,
+      changes: [{
+        boundary_name: "reviewed_staging",
+        previous_authority_active: true,
+        cause: "reviewed_access_edited",
+      }],
+    });
+  });
+
+  it("finds unselected pending boundaries and identifies a changed database posture", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-ask-authority-all-"));
+    roots.push(root);
+    await fs.mkdir(path.join(root, ".synapsor"), { recursive: true });
+    const selected = boundaryCandidate();
+    const other = boundaryCandidate();
+    other.pack.name = "subscription_boundary";
+    other.generation_lock_fingerprint = `sha256:${"c".repeat(64)}`;
+    await fs.writeFile(
+      path.join(root, ".synapsor/boundary-library.json"),
+      JSON.stringify({
+        selected_name: "reviewed_staging",
+        boundaries: {
+          reviewed_staging: { candidate: selected },
+          subscription_boundary: { candidate: other },
+        },
+      }),
+    );
+    await fs.writeFile(
+      path.join(root, ".synapsor/exploration-boundaries.active.json"),
+      JSON.stringify({
+        schema_version: "synapsor.active-exploration-boundaries.v1",
+        selected_name: "reviewed_staging",
+        boundaries: [{
+          ...selected,
+          activation: { digest: explorationBoundaryCandidateDigest(selected) },
+        }, {
+          ...other,
+          generation_lock_fingerprint: `sha256:${"d".repeat(64)}`,
+          activation: { digest: `sha256:${"e".repeat(64)}` },
+        }],
+      }),
+    );
+
+    await expect(resolvePendingBoundaryReviewSummary(root)).resolves.toEqual({
+      boundary_name: "subscription_boundary",
+      pending_changes: 1,
+      previous_authority_active: true,
+      changes: [{
+        boundary_name: "subscription_boundary",
+        previous_authority_active: true,
+        cause: "database_posture_changed",
+      }],
+    });
+  });
+
+  it("does not mislabel the initial Quick Start staging review as a user edit", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-ask-authority-instant-"));
+    roots.push(root);
+    await fs.mkdir(path.join(root, ".synapsor"), { recursive: true });
+    const candidate = boundaryCandidate();
+    candidate.deployment_profile = "staging";
+    await writeLibrary(root, candidate, 1);
+    await fs.writeFile(
+      path.join(root, ".synapsor/guided-onboarding.json"),
+      JSON.stringify({
+        status: "boundary_active",
+        instant_onboarding: true,
+      }),
+    );
+    await fs.writeFile(
+      path.join(root, ".synapsor/exploration-boundary.active.json"),
+      JSON.stringify({
+        ...candidate,
+        deployment_profile: "development",
+        generation_lock_fingerprint: candidate.generation_lock_fingerprint,
+        activation: { digest: `sha256:${"c".repeat(64)}` },
+      }),
+    );
+
+    await expect(resolvePendingBoundaryReviewSummary(root)).resolves.toBeUndefined();
+
+    await writeLibrary(root, candidate, 2);
+    await expect(resolvePendingBoundaryReviewSummary(root)).resolves.toMatchObject({
+      pending_changes: 1,
+      changes: [{ cause: "reviewed_access_edited" }],
     });
   });
 });
@@ -54,13 +143,14 @@ describe("Ask authority summaries", () => {
 async function writeLibrary(
   root: string,
   candidate: ExplorationBoundaryDraft,
+  revision?: number,
 ): Promise<void> {
   await fs.writeFile(
     path.join(root, ".synapsor/boundary-library.json"),
     JSON.stringify({
       selected_name: "reviewed_staging",
       boundaries: {
-        reviewed_staging: { candidate },
+        reviewed_staging: { candidate, ...(revision === undefined ? {} : { revision }) },
       },
     }),
   );

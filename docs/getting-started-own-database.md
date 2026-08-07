@@ -56,6 +56,13 @@ The browserless route is one continuous command:
 synapsor-runner start --from-env DATABASE_URL --cli
 ```
 
+On later runs, that command resumes the pinned review without inspecting the
+database again. Add `--rescan` to that Start command only when you deliberately
+want a fresh schema and role-posture
+inspection. `--rescan` applies to both single-organization and multi-tenant
+projects; it leaves the current authority active and creates a disabled update
+that must be reviewed and activated. `--force` is not required for a rescan.
+
 On a fresh project, Runner first shows one conservative one-table,
 zero-relationship boundary. Pressing Enter once records its human review,
 rechecks schema and read-only role posture, and activates only that exact local

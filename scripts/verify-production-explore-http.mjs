@@ -469,9 +469,13 @@ async function verifySingleOrganizationProductionExplore(input) {
     assert(describedText.includes("single_organization")
       && !describedText.includes("internal-finance"),
     "Model-facing catalog did not report the fixed posture safely.", described);
+    assert(described.resources?.[0]?.id === "single_org_http.activity"
+      && !("label" in described.resources[0])
+      && !("plan_resource" in described.resources[0]),
+    "Production describe_data did not publish one canonical resource id.", described);
     const plan = {
       kind: "aggregate",
-      resource: "single_org_http.activity",
+      resource: "activity",
       measures: [{ function: "count" }, { function: "sum", field: "amount_cents" }],
       dimensions: [{ field: "category" }],
       order_by: { kind: "measure", index: 0, direction: "desc" },
@@ -485,7 +489,7 @@ async function verifySingleOrganizationProductionExplore(input) {
       && aliceResult.source_database_changed === false
       && aliceResult.data.length === 2
       && aliceResult.data.reduce((sum, row) => sum + row.count, 0) === 12,
-    "Principal-only JWT production Explore did not return whole-organization analytics.", aliceResult);
+    "Principal-only JWT production Explore did not resolve an unambiguous table alias.", aliceResult);
     const exhausted = await alice.client.callTool({ name: "app.explore_data", arguments: { plan } });
     assert(exhausted.isError === true && JSON.stringify(exhausted).includes("authenticated principal"),
       "The single-organization principal did not exhaust only its own reviewed budget.", exhausted);

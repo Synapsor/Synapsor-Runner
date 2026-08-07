@@ -17,6 +17,7 @@ import {
 import type {
   AskTurnResult,
 } from "./model-ask.js";
+import type { PendingBoundaryReviewSummary } from "./ask-authority.js";
 import type {
   AskAccessGuidance,
   ReviewedAskAccessSummary,
@@ -60,6 +61,7 @@ const COMMANDS = [
   "/attempts",
   "/access",
   "/access-workbench",
+  "/refresh-access",
   "/clear",
   "/exit",
 ];
@@ -73,6 +75,7 @@ const COMMAND_DESCRIPTIONS: Record<string, string> = {
   "/attempts": "Inspect refused model attempts",
   "/access": "Add or edit reviewed boundaries",
   "/access-workbench": "Open the visual access editor",
+  "/refresh-access": "Use access activated outside this shell",
   "/clear": "Clear this model conversation",
   "/exit": "Close the analytics shell",
 };
@@ -444,11 +447,7 @@ export type AnalyticsShellInput = {
   reviewedDataAreas: number;
   accessSummary?: ReviewedAskAccessSummary;
   boundaryCatalog?: BoundaryCatalogModel;
-  pendingBoundaryReview?: {
-    boundary_name: string;
-    pending_changes: number;
-    previous_authority_active: boolean;
-  };
+  pendingBoundaryReview?: PendingBoundaryReviewSummary;
   operatorLabel?: string;
   verboseAttempts?: boolean;
   io: AnalyticsShellIo;
@@ -484,6 +483,18 @@ export type AnalyticsShellInput = {
     record: ShellAnalysisRecord;
   }): Promise<OperatorCompiledExploreEvidence>;
   openAccessEditor?(): Promise<{ workbenchUrl: string }>;
+  refreshAccess?(confirm: (input: {
+    providerLabel: string;
+    modelLabel?: string;
+    boundaryLabel: string;
+  }) => Promise<boolean>): Promise<{
+    status: "unchanged" | "cancelled" | "updated";
+    boundaryLabel?: string;
+    reviewedDataAreas?: number;
+    accessSummary?: ReviewedAskAccessSummary;
+    boundaryCatalog?: BoundaryCatalogModel;
+    pendingBoundaryReview?: PendingBoundaryReviewSummary;
+  }>;
   clearConversation(): void;
   cancel(): boolean;
 };
@@ -603,11 +614,7 @@ export function renderAnalyticsShellBanner(input: {
   profileLabel: string;
   reviewedDataAreas: number;
   accessSummary?: ReviewedAskAccessSummary;
-  pendingBoundaryReview?: {
-    boundary_name: string;
-    pending_changes: number;
-    previous_authority_active: boolean;
-  };
+  pendingBoundaryReview?: PendingBoundaryReviewSummary;
 }, color = false): string {
   const theme = terminalTheme(color);
   const tableCount = `${input.reviewedDataAreas} ${input.reviewedDataAreas === 1 ? "table" : "tables"}`;
@@ -637,11 +644,16 @@ export function renderAnalyticsShellBanner(input: {
           `${input.pendingBoundaryReview.pending_changes} PENDING BOUNDARY ` +
           `${input.pendingBoundaryReview.pending_changes === 1 ? "CHANGE IS" : "CHANGES ARE"} NOT ACTIVE`,
         ),
-        `Boundary: ${theme.scope(safeTerminalText(input.pendingBoundaryReview.boundary_name))}`,
-        input.pendingBoundaryReview.previous_authority_active
-          ? "Ask still uses the previous exact reviewed revision."
-          : "This disabled boundary does not grant Ask access yet.",
-        `${theme.key("/access")} -> select the boundary -> ${theme.key("C")} Review + activate.`,
+        ...input.pendingBoundaryReview.changes.flatMap((change) => [
+          `Boundary: ${theme.scope(safeTerminalText(change.boundary_name))}`,
+          change.cause === "database_posture_changed"
+            ? "A rescan found a different database schema or role posture. The updated review is still disabled."
+            : change.previous_authority_active
+              ? "Reviewed access was edited, but Ask still uses the previous exact revision."
+              : "This new reviewed boundary is still disabled and grants no Ask access.",
+        ]),
+        `To activate: run ${theme.key("/access")}. In ${theme.key("BOUNDARY OVERVIEW")}, highlight the boundary named above and press ${theme.key("C")} (${theme.key("Review + activate")}).`,
+        "You do not need to open its tables unless you want to inspect the pending changes first.",
       ]
       : []),
     "Ask a question. /catalog shows reviewed access; /access manages boundaries; /help lists actions; Ctrl+D exits.",
@@ -901,6 +913,7 @@ async function handleShellCommand(
       "  /attempts                    Show refused attempts from the latest answer",
       "  /access                      Add or edit reviewed boundaries",
       "  /access-workbench            Open the visual access editor",
+      "  /refresh-access              Use access activated in Workbench or another terminal",
       "  /clear                       Clear this model conversation",
       "  /exit                        Close the shell",
       "  Ctrl+D                       Close the shell (Ctrl+C twice also exits)",
@@ -980,6 +993,53 @@ async function handleShellCommand(
       opened.workbenchUrl,
       "",
       "Changes remain disabled until a human reviews and activates the new exact fingerprint.",
+      "After activation, return here and run /refresh-access. You do not need to restart this shell.",
+      "",
+    ].join("\n"));
+    return "continue";
+  }
+  if (line === "/refresh-access") {
+    if (!input.refreshAccess) {
+      input.io.write("Access refresh is unavailable in this shell. Restart `synapsor-runner try ask` to load newly activated access.\n\n");
+      return "continue";
+    }
+    let refreshed: Awaited<ReturnType<NonNullable<AnalyticsShellInput["refreshAccess"]>>>;
+    try {
+      refreshed = await input.refreshAccess(async (change) => {
+        const answer = await (input.io.readWithEscape ?? input.io.read)([
+          "",
+          `New reviewed access is active: ${safeTerminalText(change.boundaryLabel)}`,
+          `${safeTerminalText(change.providerLabel)}${change.modelLabel ? ` / ${safeTerminalText(change.modelLabel)}` : ""} may receive model-visible data inside that exact reviewed access.`,
+          "Refreshing clears this conversation. It makes no provider request.",
+          "Use the newly activated access? [Y/n] [Esc Back]: ",
+        ].join("\n"));
+        return answer !== undefined && (answer.trim() === "" || /^y(?:es)?$/i.test(answer.trim()));
+      });
+    } catch (error) {
+      input.io.write(`${safeShellError(error)}\n\n`);
+      return "continue";
+    }
+    if (refreshed.status === "unchanged") {
+      input.io.write("Reviewed Ask access is already current.\n\n");
+      return "continue";
+    }
+    if (refreshed.status === "cancelled") {
+      input.io.write("Refresh cancelled. This shell remains bound to its previous reviewed access.\n\n");
+      return "continue";
+    }
+    if (refreshed.boundaryLabel) input.boundaryLabel = refreshed.boundaryLabel;
+    if (refreshed.reviewedDataAreas !== undefined) {
+      input.reviewedDataAreas = refreshed.reviewedDataAreas;
+    }
+    input.accessSummary = refreshed.accessSummary;
+    input.boundaryCatalog = refreshed.boundaryCatalog;
+    input.pendingBoundaryReview = refreshed.pendingBoundaryReview;
+    input.clearConversation();
+    input.io.write([
+      "Ask access updated.",
+      `This shell now uses ${safeTerminalText(input.boundaryLabel ?? "the newly activated reviewed access")}.`,
+      "Conversation context was cleared. No provider request was made.",
+      "",
       "",
     ].join("\n"));
     return "continue";
@@ -1048,16 +1108,24 @@ export function renderReviewedAccessCatalog(input: {
     const width = Math.max(48, Math.min(120, input.columns ?? 96));
     return [
       "",
-      theme.title("ACTIVE BOUNDARY DIAGRAM"),
-      theme.dim("This is the exact reviewed table and join map available to Ask."),
+      theme.title("ACTIVE BOUNDARY MAP"),
+      theme.dim("This is the exact reviewed table, analysis, and join map available to Ask."),
       "",
       renderBoundaryCatalogAscii(selectedCatalog, { width }),
-      "",
-      theme.title("MERMAID ER DIAGRAM"),
-      theme.dim("Copy this block into any Mermaid renderer."),
-      "```mermaid",
-      renderBoundaryCatalogMermaid(selectedCatalog),
-      "```",
+      ...(selectedBoundary.physical_relationship_count > 0
+        ? [
+            "",
+            theme.title("MERMAID ER DIAGRAM"),
+            theme.dim("The arrows below are the physical joins used by the reviewed paths."),
+            theme.dim("Copy this block into any Mermaid renderer."),
+            "```mermaid",
+            renderBoundaryCatalogMermaid(selectedCatalog),
+            "```",
+          ]
+        : [
+            "",
+            theme.dim("Mermaid is omitted because there is no reviewed join to draw. The table map above is complete."),
+          ]),
       "",
       "",
     ].join("\n");

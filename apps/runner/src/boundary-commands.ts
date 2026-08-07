@@ -2003,6 +2003,7 @@ async function interactiveBoundaryResourceReview(input: {
   schemaInspector: typeof inspectDatabase;
   session: BoundaryReviewInteractiveSession;
   focusedAccess?: boolean;
+  initialTiers?: Record<string, BoundaryFieldTier>;
 }): Promise<number | "back" | "review"> {
   if (!input.view.candidate && !input.view.generated_candidate) {
     const resolved = await resolveBlockedBoundaryResource({
@@ -2017,12 +2018,44 @@ async function interactiveBoundaryResourceReview(input: {
   }
   const selected = await input.session.editFieldTiers(input.view, {
     focusedAccess: input.focusedAccess === true,
+    ...(input.initialTiers ? { initialTiers: input.initialTiers } : {}),
   });
   if (selected === "back") return "back";
   if (selected === "privacy") return interactiveMinimumCohortReview(input);
+  if (isEnumFieldTierAction(selected)) {
+    const enumResult = await interactiveBoundaryEnumReview({
+      ...input,
+      field: selected.field,
+      stagedTiers: selected.tiers,
+    });
+    if (enumResult === "saved") {
+      const updatedView = await inspectBoundaryResourceReview(input.projectRoot, input.resourceId);
+      return interactiveBoundaryResourceReview({
+        ...input,
+        view: updatedView,
+        initialTiers: undefined,
+      });
+    }
+    if (enumResult === "columns") {
+      return interactiveBoundaryResourceReview({
+        ...input,
+        initialTiers: selected.tiers,
+      });
+    }
+    return enumResult;
+  }
   if (typeof selected === "string") {
     if (selected.startsWith("enum:")) {
-      return interactiveBoundaryEnumReview({ ...input, field: selected.slice("enum:".length) });
+      const enumResult = await interactiveBoundaryEnumReview({
+        ...input,
+        field: selected.slice("enum:".length),
+      });
+      if (enumResult === "saved") {
+        const updatedView = await inspectBoundaryResourceReview(input.projectRoot, input.resourceId);
+        return interactiveBoundaryResourceReview({ ...input, view: updatedView });
+      }
+      if (enumResult === "columns") return interactiveBoundaryResourceReview(input);
+      return enumResult;
     }
     throw new Error(`Unsupported column review action: ${selected}.`);
   }
@@ -2030,7 +2063,8 @@ async function interactiveBoundaryResourceReview(input: {
     process.stdout.write("Cancelled - no column access change was made or activated.\n");
     return 0;
   }
-  const changed = changedFieldTiers(input.view, selected);
+  const selectedTiers = selected as Record<string, BoundaryFieldTier>;
+  const changed = changedFieldTiers(input.view, selectedTiers);
   const includeResource = !input.view.candidate && Boolean(input.view.generated_candidate);
   if (!changed.length && !includeResource) {
     if (input.focusedAccess) {
@@ -2183,6 +2217,21 @@ async function interactiveBoundaryResourceReview(input: {
   return input.focusedAccess ? "back" : 0;
 }
 
+function isEnumFieldTierAction(value: unknown): value is {
+  action: "enum";
+  field: string;
+  tiers: Record<string, BoundaryFieldTier>;
+} {
+  return Boolean(value)
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && (value as { action?: unknown }).action === "enum"
+    && typeof (value as { field?: unknown }).field === "string"
+    && Boolean((value as { tiers?: unknown }).tiers)
+    && typeof (value as { tiers?: unknown }).tiers === "object"
+    && !Array.isArray((value as { tiers?: unknown }).tiers);
+}
+
 async function interactiveBoundaryEnumReview(input: {
   projectRoot: string;
   resourceId: string;
@@ -2191,7 +2240,8 @@ async function interactiveBoundaryEnumReview(input: {
   schemaInspector: typeof inspectDatabase;
   session: BoundaryReviewInteractiveSession;
   focusedAccess?: boolean;
-}): Promise<number | "back" | "review"> {
+  stagedTiers?: Record<string, BoundaryFieldTier>;
+}): Promise<number | "columns" | "saved"> {
   const inspectedField = input.view.fields.find((field) => field.name === input.field);
   const schemaValues = inspectedField?.enum_values;
   const candidate = input.view.candidate ?? input.view.generated_candidate;
@@ -2199,16 +2249,16 @@ async function interactiveBoundaryEnumReview(input: {
     process.stdout.write(
       `Unchanged: ${input.resourceId}.${input.field} has no bounded database-declared value list to review.\n`,
     );
-    return "back";
+    return "columns";
   }
   if (!input.session.editFieldEnumValues) {
     throw new Error("This terminal session cannot edit reviewed categorical values.");
   }
   const selected = await input.session.editFieldEnumValues(input.view, input.field);
-  if (selected === "back") return "back";
+  if (selected === "back") return "columns";
   if (!selected) {
     process.stdout.write("Cancelled - no allowed-value change was made or activated.\n");
-    return "back";
+    return "columns";
   }
   const current = Object.hasOwn(candidate.field_enums, input.field)
     ? candidate.field_enums[input.field] ?? []
@@ -2221,20 +2271,31 @@ async function interactiveBoundaryEnumReview(input: {
       "Agent authority is unchanged.",
       "",
     ].join("\n"));
-    return "back";
+    return "columns";
   }
+
+  const changedTiers = input.stagedTiers
+    ? changedFieldTiers(input.view, input.stagedTiers)
+    : [];
 
   const actor = input.focusedAccess
     ? localInteractiveActor()
     : await input.session.promptText("Human reviewer identity (audit label, not a password): ");
   if (!actor) {
     process.stdout.write("Cancelled - no allowed-value change was made or activated.\n");
-    return "back";
+    return "columns";
   }
   process.stdout.write([
     `Reviewing allowed values for ${input.resourceId}.${input.field}.`,
     `Database-declared maximum: ${schemaValues.join(", ")}`,
     `Values to keep: ${selected.length ? selected.join(", ") : "none"}`,
+    ...(changedTiers.length
+      ? [
+          "After you enter the required reason, these column access changes will be saved with the allowed-value review:",
+          ...changedTiers.map(({ field, tier }) =>
+            `  ${input.resourceId}.${field} -> ${focusedTierOutcome(tier)}`),
+        ]
+      : []),
     selected.length
       ? "Removed values will be refused before a source query, even if an AI guesses them."
       : "Keeping none disables filtering and grouping for this column; it does not enable free-text access.",
@@ -2247,7 +2308,7 @@ async function interactiveBoundaryEnumReview(input: {
     const entered = await input.session.promptText("Required reason for this allowed-value change: ");
     if (entered === undefined) {
       process.stdout.write("Cancelled - no allowed-value change was made or activated.\n");
-      return "back";
+      return "columns";
     }
     if (!entered.trim()) {
       process.stdout.write([
@@ -2265,6 +2326,15 @@ async function interactiveBoundaryEnumReview(input: {
     {
       resource_id: input.resourceId,
       ...(!input.view.candidate && input.view.generated_candidate ? { include: true } : {}),
+      keep_out_fields: changedTiers
+        .filter((item) => item.tier === "kept_out")
+        .map((item) => item.field),
+      withhold_from_model_fields: changedTiers
+        .filter((item) => item.tier === "withheld_from_model")
+        .map((item) => item.field),
+      allow_reviewed_fields: changedTiers
+        .filter((item) => item.tier === "visible")
+        .map((item) => item.field),
       field_enum: { field: input.field, values: selected },
       actor,
       reason,
@@ -2274,14 +2344,14 @@ async function interactiveBoundaryEnumReview(input: {
   const committed = await commitBoundaryResourceReviewMutation(input.projectRoot, preview);
   process.stdout.write([
     `Recorded: ${input.resourceId}.${input.field} allowed values -> ${selected.length ? selected.join(" | ") : "none (filtering and grouping disabled)"}.`,
+    ...changedTiers.map(({ field, tier }) =>
+      `Recorded: ${input.resourceId}.${field} -> ${focusedTierOutcome(tier)}.`),
     `Actor: ${actor}. Reason: ${reason}`,
     `Saved in disabled boundary revision ${committed.review_revision}. Agent authority changed: no.`,
     "The active Ask session keeps using the previous boundary until this revision is reviewed and activated.",
     "",
   ].join("\n"));
-  return input.focusedAccess
-    ? offerImmediateBoundaryActivation(input.session)
-    : "back";
+  return "saved";
 }
 
 async function interactiveMinimumCohortReview(input: {
