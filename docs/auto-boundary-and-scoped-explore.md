@@ -360,13 +360,16 @@ changing the model-facing tools:
 ```text
 /catalog
 /catalog --diagram --boundary reviewed_staging
+/catalog --diagram --boundary reviewed_staging --mermaid
 /catalog --diagram --boundary reviewed_staging --export
 ```
 
 Each diagram represents exactly one active boundary. If only one boundary is
 active, `--boundary` may be omitted. With several active boundaries Runner asks
 for the name rather than merging them. Large maps export to a digest-bound
-Markdown file containing a readable relationship map and Mermaid ER diagram.
+Markdown file containing a readable relationship topology, reviewed analysis,
+and a directional Mermaid flowchart. The default `--diagram` view is the
+terminal topology; raw Mermaid source appears only when explicitly requested.
 Workbench uses the same catalog model and provides the same boundary selector,
 visual relationship graph, suggested cross-table questions, and download. The
 map is generated from activated metadata only; it reads no source rows.

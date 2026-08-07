@@ -14,6 +14,7 @@ import {
   saveBoundaryReviewProgress,
   type BoundaryReviewProgress,
 } from "./boundary-review-domain.js";
+import { resolveBoundaryRevisionState } from "./boundary-revision-state.js";
 
 const BOUNDARY_LIBRARY_VERSION = "synapsor.boundary-library.v1" as const;
 
@@ -68,7 +69,7 @@ export async function synchronizeBoundaryLibrary(
     await saveBoundaryReviewProgress(input.projectRoot, selected);
   }
   await writeBoundaryLibrary(input.projectRoot, library);
-  return snapshot(library, active);
+  return snapshot(input.projectRoot, library, active);
 }
 
 export async function createSavedBoundary(input: BoundaryLibraryContext & {
@@ -543,27 +544,42 @@ function relationshipTargetResources(
     ?? [relationship.target_resource];
 }
 
-function snapshot(
+async function snapshot(
+  projectRoot: string,
   library: BoundaryLibraryFile,
-  active: Array<{ name: string; digest: `sha256:${string}` }>,
-): BoundaryLibrarySnapshot {
-  const activeByName = new Map(active.map((identity) => [identity.name, identity.digest]));
+  active: Array<{
+    name: string;
+    digest: `sha256:${string}`;
+    boundary: ActivatedExplorationBoundary;
+  }>,
+): Promise<BoundaryLibrarySnapshot> {
+  const activeByName = new Map(active.map((identity) => [identity.name, identity]));
+  const entries: BoundaryLibraryEntry[] = [];
+  for (const [name, progress] of Object.entries(library.boundaries)) {
+    const activeIdentity = activeByName.get(name);
+    const revisionState = activeIdentity
+      ? await resolveBoundaryRevisionState({
+          projectRoot,
+          candidate: progress.candidate,
+          active: activeIdentity.boundary,
+        })
+      : undefined;
+    entries.push({
+      name,
+      selected: name === library.selected_name,
+      active: Boolean(activeIdentity),
+      matches_active_digest: revisionState?.matches_active_authority ?? false,
+      table_count: progress.candidate.pack.resources.length,
+      candidate_digest: explorationBoundaryCandidateDigest(progress.candidate),
+      outstanding_decisions: progress.candidate.unresolved_decisions.length
+        - progress.confirmed_decisions.length,
+    });
+  }
   return {
     selected_name: library.selected_name,
-    entries: Object.entries(library.boundaries)
-      .map(([name, progress]) => ({
-        name,
-        selected: name === library.selected_name,
-        active: activeByName.has(name),
-        matches_active_digest: activeByName.get(name) === explorationBoundaryCandidateDigest(progress.candidate),
-        table_count: progress.candidate.pack.resources.length,
-        candidate_digest: explorationBoundaryCandidateDigest(progress.candidate),
-        outstanding_decisions: progress.candidate.unresolved_decisions.length
-          - progress.confirmed_decisions.length,
-      }))
-      .sort((left, right) => Number(right.selected) - Number(left.selected)
-        || Number(right.active) - Number(left.active)
-        || left.name.localeCompare(right.name)),
+    entries: entries.sort((left, right) => Number(right.selected) - Number(left.selected)
+      || Number(right.active) - Number(left.active)
+      || left.name.localeCompare(right.name)),
   };
 }
 

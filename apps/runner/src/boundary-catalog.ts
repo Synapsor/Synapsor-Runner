@@ -82,6 +82,11 @@ export type BoundaryCatalogDiagramExport = {
   markdown: string;
 };
 
+type BoundaryCatalogTopologyRoute = {
+  tables: string[];
+  links: BoundaryCatalogPathLink[];
+};
+
 type BoundaryResource = ActivatedExplorationBoundary["pack"]["resources"][number];
 
 export function buildBoundaryCatalogModel(
@@ -308,44 +313,117 @@ export function renderBoundaryCatalogAscii(
   return lines.join("\n").trimEnd();
 }
 
+export function renderBoundaryCatalogTopologyAscii(
+  model: BoundaryCatalogModel,
+  options: { width?: number } = {},
+): string {
+  const width = Math.max(48, Math.min(120, options.width ?? 96));
+  if (!model.boundaries.length) return "No active reviewed boundary diagram is available.";
+  const lines: string[] = [];
+  for (const boundary of model.boundaries) {
+    const links = physicalLinks(boundary.relationships);
+    lines.push(
+      ...wrapWithPrefixes(`Boundary ${boundary.name}`, width, "", "  "),
+      ...wrapWithPrefixes(
+        `${boundary.tables.length} ${plural(boundary.tables.length, "table")} | `
+        + `${links.length} physical ${plural(links.length, "join")} | `
+        + `${boundary.relationships.length} reviewed ${plural(boundary.relationships.length, "path")}`,
+        width,
+        "",
+        "  ",
+      ),
+      "",
+    );
+    if (!links.length) {
+      lines.push("ANALYSIS NODE", "");
+      for (const table of boundary.tables) {
+        lines.push(...renderTopologyNode(table.id, width), "");
+      }
+      lines.push(...wrapLine(
+        boundary.tables.length === 1
+          ? "No arrow is drawn because this boundary contains one reviewed table."
+          : "No arrow is drawn because this boundary has no reviewed physical join.",
+        width,
+      ));
+      lines.push(...wrapLine(
+        "Use /catalog to inspect the fields and operations available on each table.",
+        width,
+      ));
+    } else {
+      const routes = topologyRoutes(links);
+      lines.push(
+        "REVIEWED JOIN TOPOLOGY",
+      );
+      lines.push(...wrapLine(
+        "Arrows point from the many-row table to its reviewed one-row parent.",
+        width,
+      ), "");
+      routes.forEach((route, index) => {
+        if (routes.length > 1) lines.push(`Route ${index + 1} of ${routes.length}`, "");
+        lines.push(...renderTopologyRoute(route, width));
+        if (index < routes.length - 1) lines.push("");
+      });
+      const linkedTables = new Set(links.flatMap((link) => [link.source_table, link.target_table]));
+      const disconnected = boundary.tables.filter((table) => !linkedTables.has(table.id));
+      if (disconnected.length > 0) {
+        lines.push("", "REVIEWED TABLES WITHOUT A JOIN PATH", "");
+        disconnected.forEach((table, index) => {
+          lines.push(...renderTopologyNode(table.id, width));
+          if (index < disconnected.length - 1) lines.push("");
+        });
+      }
+      const composedPaths = Math.max(0, boundary.relationships.length - links.length);
+      if (composedPaths > 0) {
+        lines.push("");
+        lines.push(...wrapLine(
+          `${composedPaths} reviewed multi-join ${plural(composedPaths, "path")} `
+          + `${composedPaths === 1 ? "is" : "are"} composed from the arrows above; `
+          + "no duplicate shortcut is drawn.",
+          width,
+        ));
+      }
+    }
+
+    const questions = catalogQuestions(boundary);
+    if (questions.length) {
+      lines.push("", links.length ? "QUESTIONS ACROSS THIS MAP" : "QUESTIONS FOR THIS TABLE");
+      questions.slice(0, 6).forEach((question, index) => {
+        lines.push(...wrapWithPrefixes(`"${question}"`, width, `${index + 1}. `, "   "));
+      });
+    }
+    lines.push("");
+  }
+  return lines.join("\n").trimEnd();
+}
+
 export function renderBoundaryCatalogMermaid(model: BoundaryCatalogModel): string {
-  const lines = ["erDiagram"];
+  const lines = ["flowchart LR"];
   const identifiers = mermaidIdentifiers(model);
   for (const boundary of model.boundaries) {
     lines.push(`  %% Boundary: ${mermaidComment(boundary.name)}`);
     for (const table of boundary.tables) {
       const identifier = identifiers.get(tableKey(boundary.name, table.id))!;
-      lines.push(`  %% ${identifier} = ${mermaidComment(table.id)}`);
-      lines.push(`  ${identifier} {`);
-      const usedFields = new Set<string>();
-      if (!table.model_visible_fields.length) {
-        lines.push('    int model_visible_fields "0 model-visible fields"');
-      } else {
-        for (const field of table.model_visible_fields) {
-          const fieldName = uniqueMermaidField(field.name, usedFields);
-          lines.push(
-            `    ${mermaidDataType(field.data_type)} ${fieldName} "model visible"`,
-          );
-        }
-      }
-      if (table.runner_only_field_count > 0) {
-        lines.push(
-          `    int runner_only_fields "${table.runner_only_field_count} hidden from model"`,
-        );
-      }
-      if (table.kept_out_field_count > 0) {
-        lines.push(`    int kept_out_fields "${table.kept_out_field_count} unavailable"`);
-      }
-      lines.push("  }");
+      const nodeLines = [
+        table.id,
+        ...table.model_visible_fields.map((field) => field.name),
+        ...(table.runner_only_field_count > 0
+          ? [`${table.runner_only_field_count} Runner-only ${plural(table.runner_only_field_count, "field")}`]
+          : []),
+        ...(table.kept_out_field_count > 0
+          ? [`${table.kept_out_field_count} kept-out ${plural(table.kept_out_field_count, "field")}`]
+          : []),
+      ];
+      lines.push(`  ${identifier}["${nodeLines.map(mermaidFlowLabel).join("<br/>")}"]`);
     }
     for (const link of physicalLinks(boundary.relationships)) {
       const source = identifiers.get(tableKey(boundary.name, link.source_table))!;
       const target = identifiers.get(tableKey(boundary.name, link.target_table))!;
-      const targetCardinality = link.nullable ? "o|" : "||";
-      const label = mermaidLabel(
-        `${link.source_key} to ${link.target_key} | reviewed ${link.proven ? "proven" : "unproven"}`,
-      );
-      lines.push(`  ${source} }o--${targetCardinality} ${target} : "${label}"`);
+      const label = [
+        `${link.source_key} -> ${link.target_key}`,
+        `many-to-one; ${link.proven ? "catalog proven" : "proof unavailable"}`
+          + (link.nullable ? "; nullable" : ""),
+      ].map(mermaidFlowLabel).join("<br/>");
+      lines.push(`  ${source} ${link.proven ? "-->" : "-.->"}|"${label}"| ${target}`);
     }
   }
   return lines.join("\n");
@@ -401,7 +479,7 @@ export function renderBoundaryCatalogMarkdown(
   const boundary = model.boundaries[0]!;
   const relationshipSection = boundary.physical_relationship_count > 0
     ? [
-        "## Mermaid ER Diagram",
+        "## Mermaid Relationship Diagram",
         "",
         "```mermaid",
         options.mermaid ?? renderBoundaryCatalogMermaid(model),
@@ -410,7 +488,7 @@ export function renderBoundaryCatalogMarkdown(
     : [
         "## Relationships",
         "",
-        "No Mermaid ER diagram is included because this boundary has no reviewed join to draw.",
+        "No Mermaid relationship diagram is included because this boundary has no reviewed join to draw.",
       ];
   return [
     `# Reviewed Boundary: ${boundary.name}`,
@@ -421,6 +499,12 @@ export function renderBoundaryCatalogMarkdown(
     "It was generated from activated boundary metadata; no source rows were read.",
     "",
     "## Readable Map",
+    "",
+    "```text",
+    renderBoundaryCatalogTopologyAscii(model, { width: options.width ?? 96 }),
+    "```",
+    "",
+    "## Reviewed Analysis",
     "",
     "```text",
     renderBoundaryCatalogAscii(model, { width: options.width ?? 96 }),
@@ -484,21 +568,14 @@ function reviewedRelationshipQuestions(source: BoundaryResource, target: Boundar
       || left.localeCompare(right))[0];
   const time = Object.keys(source.time_bucket_fields).find((field) =>
     !source.kept_out_fields.includes(field));
-  const sourceNoun = singularize(humanizeIdentifier(source.table).toLowerCase());
   const sourcePlural = humanizeIdentifier(source.table).toLowerCase();
-  const targetNoun = singularize(humanizeIdentifier(target.table).toLowerCase());
-  const groupPhrase = `${targetNoun} ${humanizeIdentifier(group).toLowerCase()}`;
-  const measurePhrase = measure
-    ? humanizeIdentifier(measure).toLowerCase().replace(/^total\s+/, "")
-    : undefined;
-  const metric = measure
-    ? `total ${sourceNoun} ${measurePhrase}`
-    : `number of ${sourcePlural}`;
+  const groupPhrase = reviewedDimensionPhrase(target, group);
+  const metric = reviewedMetricPhrase(source, measure);
   return unique([
     measure
       ? `What is the ${metric} by ${groupPhrase}?`
       : `How many ${sourcePlural} are there by ${groupPhrase}?`,
-    ...(time ? [`How did ${metric} change by month for each ${groupPhrase}?`] : []),
+    ...(time ? [`How did ${metricForTrend(metric)} change by month for each ${groupPhrase}?`] : []),
   ]);
 }
 
@@ -513,15 +590,53 @@ function reviewedTableQuestions(resource: BoundaryResource): string[] {
   const pluralNoun = humanizeIdentifier(resource.table).toLowerCase();
   const group = groups[0];
   const measure = measures[0];
-  const metric = measure
-    ? `total ${humanizeIdentifier(measure).toLowerCase().replace(/^total\s+/, "")}`
-    : `number of ${pluralNoun}`;
+  const metric = reviewedMetricPhrase(resource, measure);
   return unique([
-    ...(group ? [`What is the ${metric} by ${humanizeIdentifier(group).toLowerCase()}?`] : []),
-    ...(group && measure ? [`How many ${pluralNoun} are there by ${humanizeIdentifier(group).toLowerCase()}?`] : []),
-    ...(times.length ? [`How did ${metric} change by week?`] : []),
+    ...(group
+      ? [measure
+          ? `What is the ${metric} by ${reviewedDimensionPhrase(resource, group)}?`
+          : `How many ${pluralNoun} are there by ${reviewedDimensionPhrase(resource, group)}?`]
+      : []),
+    ...(group && measure ? [`How many ${pluralNoun} are there by ${reviewedDimensionPhrase(resource, group)}?`] : []),
+    ...(times.length ? [`How did ${metricForTrend(metric)} change by week?`] : []),
     ...(!group && !times ? [`How many ${pluralNoun} are there?`] : []),
   ]).slice(0, 3);
+}
+
+function reviewedMetricPhrase(resource: BoundaryResource, measure?: string): string {
+  const pluralNoun = humanizeIdentifier(resource.table).toLowerCase();
+  if (!measure) return `number of ${pluralNoun}`;
+  const sourceNoun = singularize(pluralNoun);
+  const normalized = humanizeIdentifier(measure)
+    .toLowerCase()
+    .replace(/\s+cents?$/, "")
+    .trim();
+  const metric = normalized === "total"
+    ? "value"
+    : normalized.replace(/^total\s+/, "") || "value";
+  return `total ${sourceNoun} ${metric}`;
+}
+
+function reviewedDimensionPhrase(resource: BoundaryResource, field: string): string {
+  const resourceWords = singularize(humanizeIdentifier(resource.table).toLowerCase()).split(/\s+/);
+  const fieldWords = humanizeIdentifier(field).toLowerCase().split(/\s+/);
+  if (/^(?:name|title|label|display name)$/.test(fieldWords.join(" "))) {
+    return resourceWords.join(" ");
+  }
+  let overlap = Math.min(resourceWords.length, fieldWords.length);
+  while (overlap > 0) {
+    const resourceSuffix = resourceWords.slice(resourceWords.length - overlap).join(" ");
+    const fieldPrefix = fieldWords.slice(0, overlap).join(" ");
+    if (resourceSuffix === fieldPrefix) break;
+    overlap -= 1;
+  }
+  if (overlap > 0) return [...resourceWords, ...fieldWords.slice(overlap)].join(" ");
+  if (fieldWords.length > 1) return fieldWords.join(" ");
+  return [...resourceWords, ...fieldWords].join(" ");
+}
+
+function metricForTrend(metric: string): string {
+  return metric.startsWith("number of ") ? `the ${metric}` : metric;
 }
 
 function hiddenFields(resource: BoundaryResource): Set<string> {
@@ -608,6 +723,115 @@ function relationshipPathLabel(relationship: BoundaryCatalogRelationship): strin
     .join(" -> ");
 }
 
+function catalogQuestions(boundary: BoundaryCatalogBoundary): string[] {
+  return unique([
+    ...boundary.relationships.flatMap((relationship) => relationship.suggested_questions),
+    ...boundary.tables.flatMap((table) => table.suggested_questions),
+  ]);
+}
+
+function topologyRoutes(links: BoundaryCatalogPathLink[]): BoundaryCatalogTopologyRoute[] {
+  const remaining = new Map(links.map((link) => [physicalLinkKey(link), link]));
+  const routes: BoundaryCatalogTopologyRoute[] = [];
+  while (remaining.size > 0) {
+    const available = [...remaining.values()];
+    const targets = new Set(available.map((link) => link.target_table));
+    const first = available.find((link) => !targets.has(link.source_table)) ?? available[0]!;
+    const route: BoundaryCatalogTopologyRoute = {
+      tables: [first.source_table],
+      links: [],
+    };
+    let current = first.source_table;
+    while (true) {
+      const next = [...remaining.values()].find((link) => link.source_table === current);
+      if (!next) break;
+      remaining.delete(physicalLinkKey(next));
+      route.links.push(next);
+      route.tables.push(next.target_table);
+      current = next.target_table;
+    }
+    routes.push(route);
+  }
+  return routes;
+}
+
+function renderTopologyRoute(route: BoundaryCatalogTopologyRoute, width: number): string[] {
+  const insideWidth = Math.max(
+    18,
+    Math.min(width - 6, Math.max(...route.tables.map((table) => table.length))),
+  );
+  const boxWidth = insideWidth + 4;
+  const connectorColumn = 2 + Math.floor(boxWidth / 2);
+  const lines = renderTopologyNode(route.tables[0]!, width, insideWidth);
+  route.links.forEach((link, index) => {
+    lines.push(" ".repeat(connectorColumn) + "|");
+    lines.push(...renderTopologyConnectorLine(
+      `${link.source_key} -> ${link.target_key}`,
+      connectorColumn,
+      width,
+    ));
+    lines.push(...renderTopologyConnectorLine(
+      `many-to-one; ${link.proven ? "catalog proven" : "proof unavailable"}`
+        + (link.nullable ? "; nullable" : ""),
+      connectorColumn,
+      width,
+    ));
+    lines.push(" ".repeat(connectorColumn) + "v");
+    lines.push(...renderTopologyNode(route.tables[index + 1]!, width, insideWidth));
+  });
+  return lines;
+}
+
+function renderTopologyNode(
+  table: string,
+  width: number,
+  requestedInsideWidth?: number,
+): string[] {
+  const insideWidth = requestedInsideWidth ?? Math.max(18, Math.min(width - 6, table.length));
+  const chunks = hardWrapText(table, insideWidth);
+  const border = `  +${"-".repeat(insideWidth + 2)}+`;
+  return [
+    border,
+    ...chunks.map((chunk) => `  | ${chunk.padEnd(insideWidth)} |`),
+    border,
+  ];
+}
+
+function renderTopologyConnectorLine(
+  value: string,
+  connectorColumn: number,
+  width: number,
+): string[] {
+  const prefix = `${" ".repeat(connectorColumn)}| `;
+  return wrapHardLine(value, Math.max(12, width - prefix.length)).map((line) => `${prefix}${line}`);
+}
+
+function hardWrapText(value: string, width: number): string[] {
+  if (!value) return [""];
+  const chunks: string[] = [];
+  for (let index = 0; index < value.length; index += width) {
+    chunks.push(value.slice(index, index + width));
+  }
+  return chunks;
+}
+
+function wrapHardLine(value: string, width: number): string[] {
+  const words = value.split(/\s+/).flatMap((word) => hardWrapText(word, width));
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word;
+    if (next.length <= width) {
+      current = next;
+      continue;
+    }
+    if (current) lines.push(current);
+    current = word;
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
 function physicalLinks(relationships: BoundaryCatalogRelationship[]): BoundaryCatalogPathLink[] {
   const links = new Map<string, BoundaryCatalogPathLink>();
   for (const relationship of relationships) {
@@ -626,6 +850,15 @@ function physicalLinks(relationships: BoundaryCatalogRelationship[]): BoundaryCa
     left.source_table.localeCompare(right.source_table)
     || left.target_table.localeCompare(right.target_table)
     || left.source_key.localeCompare(right.source_key));
+}
+
+function physicalLinkKey(link: BoundaryCatalogPathLink): string {
+  return [
+    link.source_table,
+    link.target_table,
+    link.source_key,
+    link.target_key,
+  ].join("\u0000");
 }
 
 function wrapLine(value: string, width: number, continuation = ""): string[] {
@@ -695,21 +928,14 @@ function mermaidIdentifier(value: string, fallback: string): string {
   return prefixed || fallback;
 }
 
-function uniqueMermaidField(value: string, used: Set<string>): string {
-  const base = mermaidIdentifier(value, "field");
-  let field = base;
-  let suffix = 2;
-  while (used.has(field)) field = `${base}_${suffix++}`;
-  used.add(field);
-  return field;
-}
-
-function mermaidDataType(value: string): string {
-  return mermaidIdentifier(value.toLowerCase(), "reviewed_type");
-}
-
-function mermaidLabel(value: string): string {
-  return value.replace(/["\r\n]/g, "'");
+function mermaidFlowLabel(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/\|/g, "&#124;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/[\r\n]/g, " ");
 }
 
 function mermaidComment(value: string): string {

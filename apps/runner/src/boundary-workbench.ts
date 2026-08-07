@@ -682,7 +682,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     let guidedActionDraft=null;
     let askStatus=null;
 	    let boundaryCatalog={schema_version:"synapsor.boundary-catalog.v1",table_count:0,relationship_count:0,boundaries:[]};
-	    let boundaryMermaid="erDiagram";
+	    let boundaryMermaid="flowchart LR";
 	    let boundaryDiagrams=[];
 	    let boundaryGraphSequence=0;
     let askConsentOnSubmit=false;
@@ -3109,7 +3109,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         const graph=!hasJoins
           ?'<div class="band"><strong>No reviewed joins to draw</strong><p>'+(boundary.tables.length===1?'This boundary contains one reviewed table.':'These tables have no reviewed relationship path.')+' The single-table counts, totals, groupings, filters, and time trends below remain available.</p></div>'
           :large
-            ?'<div class="band notice"><strong>Download this large boundary map</strong><p>'+esc(boundary.tables.length)+' tables and '+esc(boundary.physical_relationship_count||0)+' physical joins would be difficult to read inline. The export includes the full readable map and Mermaid ER diagram.</p></div>'
+            ?'<div class="band notice"><strong>Download this large boundary map</strong><p>'+esc(boundary.tables.length)+' tables and '+esc(boundary.physical_relationship_count||0)+' physical joins would be difficult to read inline. The export includes the full readable map and directional Mermaid relationship diagram.</p></div>'
             :renderBoundaryGraphSvg(boundary);
         const questions=[...new Set([
           ...(boundary.relationships||[]).flatMap(relationship=>relationship.suggested_questions||[]),
@@ -3117,7 +3117,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         ])].slice(0,3);
         const questionPanel=questions.length?'<div class="boundary-catalog-questions"><strong>'+(hasJoins?'Try cross-table questions':'Try single-table questions')+'</strong><ul>'+questions.map(question=>'<li>“'+esc(question)+'”</li>').join('')+'</ul></div>':'';
         const detail=large?'':'<details><summary>Reviewed join details</summary><div class="boundary-catalog-nodes">'+nodes+'</div><div class="boundary-catalog-edges">'+(edges||'<p class="muted">No reviewed join paths in this boundary.</p>')+'</div></details>';
-        return '<section class="boundary-catalog-boundary" data-boundary-catalog-section="'+esc(boundary.name)+'" '+(boundary.name===preferred?'':'hidden')+'><h4>'+esc(boundary.name)+'</h4>'+graph+questionPanel+detail+(hasJoins?'<details class="boundary-catalog-mermaid"><summary>Mermaid source</summary><pre>'+esc(diagram.mermaid||'erDiagram')+'</pre></details>':'')+'</section>';
+        return '<section class="boundary-catalog-boundary" data-boundary-catalog-section="'+esc(boundary.name)+'" '+(boundary.name===preferred?'':'hidden')+'><h4>'+esc(boundary.name)+'</h4>'+graph+questionPanel+detail+(hasJoins?'<details class="boundary-catalog-mermaid"><summary>Mermaid source</summary><pre>'+esc(diagram.mermaid||'flowchart LR')+'</pre></details>':'')+'</section>';
       }).join('');
       return '<details class="boundary-catalog-map" data-boundary-catalog-map><summary>Reviewed data map</summary><div class="boundary-catalog-controls"><label class="field">Boundary<select data-boundary-catalog-select>'+options+'</select></label><div class="actions"><button class="secondary" data-download-boundary-diagram type="button">Download full map</button><button class="quiet" data-copy-boundary-mermaid type="button">Copy Mermaid</button></div></div><p class="boundary-catalog-summary" data-boundary-catalog-summary></p><span class="status-message" data-boundary-catalog-status aria-live="polite"></span>'+sections+'</details>';
     }
@@ -5065,7 +5065,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      activeBoundary=payload.active;
 	      activeBoundaries=payload.active_boundaries||[];
 	      boundaryCatalog=payload.boundary_catalog||{schema_version:"synapsor.boundary-catalog.v1",table_count:0,relationship_count:0,boundaries:[]};
-	      boundaryMermaid=payload.boundary_mermaid||"erDiagram";
+	      boundaryMermaid=payload.boundary_mermaid||"flowchart LR";
 	      boundaryDiagrams=payload.boundary_diagrams||[];
 	      journey=payload.journey;
       instantOnboarding=payload.instant_onboarding;

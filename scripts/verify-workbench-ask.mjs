@@ -26,6 +26,10 @@ import {
 } from "./demo-video/cdp-client.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const mermaidBrowserSource = await fs.readFile(
+  fileURLToPath(import.meta.resolve("mermaid/dist/mermaid.min.js")),
+  "utf8",
+);
 const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-workbench-ask-"));
 const chromeProfile = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-workbench-ask-chrome-"));
 const outputRoot = path.resolve(
@@ -526,11 +530,44 @@ try {
         && relationshipMap.nodes >= 2
         && /try cross-table questions/i.test(String(relationshipMap.questions))
         && /account (region|status)/i.test(String(relationshipMap.questions))
-        && /erDiagram/.test(String(relationshipMap.mermaid))
+        && /flowchart LR/.test(String(relationshipMap.mermaid))
         && /PUBLIC_(INVOICES|ORDERS).*PUBLIC_ACCOUNTS/s.test(String(relationshipMap.mermaid))
         && /download full map/i.test(String(relationshipMap.downloadLabel)),
       "Workbench did not render the exact active-boundary relationship graph and export",
       relationshipMap,
+    );
+    const mermaidLoaded = await page.send("Runtime.evaluate", {
+      expression: `${mermaidBrowserSource}; typeof mermaid`,
+      returnByValue: true,
+    });
+    assert(
+      mermaidLoaded.result?.value === "object" && !mermaidLoaded.exceptionDetails,
+      "The real Mermaid browser bundle did not load for diagram verification",
+      mermaidLoaded,
+    );
+    const renderedMermaid = await evaluate(page, `(async()=>{
+      mermaid.initialize({startOnLoad:false,securityLevel:"strict"});
+      const rendered=await mermaid.render("synapsor-boundary-mermaid-check",${JSON.stringify(String(relationshipMap.mermaid))});
+      const host=document.createElement("div");
+      host.setAttribute("aria-hidden","true");
+      host.style.cssText="position:fixed;left:-10000px;top:0;width:1200px;height:800px;overflow:hidden";
+      host.innerHTML=rendered.svg;
+      document.body.append(host);
+      const svg=host.querySelector("svg");
+      const result={
+        nodes:host.querySelectorAll("g.node").length,
+        edges:host.querySelectorAll("path.flowchart-link").length,
+        nonblank:Boolean(svg && rendered.svg.length>1000 && svg.getBoundingClientRect().width>0 && svg.getBoundingClientRect().height>0)
+      };
+      host.remove();
+      return result;
+    })()`);
+    assert(
+      renderedMermaid.nonblank === true
+        && renderedMermaid.nodes === relationshipMap.nodes
+        && renderedMermaid.edges === relationshipMap.arrows,
+      "Generated Mermaid did not render as the same nonblank reviewed relationship graph",
+      { renderedMermaid, relationshipMap },
     );
     await evaluate(page, "document.querySelector('#ask-boundary-body [data-boundary-catalog-map]').scrollIntoView({behavior:'auto',block:'start'})");
     await screenshot(page, "workbench-ask-relationship-map-desktop.png");

@@ -840,3 +840,189 @@ Verification completed:
 
 No Cloud-repository files, package versions, Spec/DSL versions, tags, pushes,
 releases, or published artifacts were changed.
+
+## Resume Checkpoint - Catalog Topology and False Drift (2026-08-06)
+
+Branch and release posture:
+
+- Work remains on `feature/production-scoped-explore-http` for the unpublished
+  Runner 1.7.0 release.
+- The last committed checkpoint is `d966527` (`Polish multi-boundary Explore
+  discovery and live access UX`). The branch was eight commits ahead of
+  `origin/main` when this checkpoint was recorded.
+- The catalog/topology and false-drift work below is intentionally uncommitted.
+  Nothing was pushed, published, tagged, merged, or version-bumped.
+
+Implemented catalog and diagram changes:
+
+- `/catalog --diagram` now renders a generic terminal topology built entirely
+  from the active boundary metadata. It draws deduplicated physical joins with
+  direction, exact join keys, cardinality, proof status, composed-path notes,
+  disconnected nodes, and useful questions. There is no domain/schema
+  hardcoding.
+- One-table boundaries render one useful analysis node and explicitly explain
+  why no arrow exists instead of presenting an empty relationship diagram.
+- Mermaid output moved from the unsuitable `erDiagram` form to a directional
+  `flowchart LR`. `/catalog --diagram --mermaid` exposes the source explicitly;
+  ordinary diagram output is readable terminal UI rather than a raw code dump.
+- `/catalog` completion now proposes pages, `--diagram`, `--mermaid`, `--export`,
+  and `--boundary <name>`, including nested partial-command completion.
+- Workbench uses the same canonical model and renders the graph visually. Its
+  browser gate now loads Mermaid itself, inserts the resulting SVG, and asserts
+  a nonblank graph with the exact expected node and edge counts.
+- The real read-only test fixture currently renders the generic chain
+  `public.deal_attachments -> public.deal_events -> public.deals -> public.reps`
+  with the correct keys and a separate one-node `public.subscriptions` boundary.
+
+Implemented false-drift correction:
+
+- Root cause was confirmed in the read-only project at
+  `/home/sandesh-tiwari/Desktop/C++/Synapsor-runner-test`: activating or saving
+  another boundary rebased saved candidates onto the newest global generation
+  lock. The old and current locks had byte-identical schema and role-posture
+  fingerprints; only review/evidence digests and resource ordering differed.
+  The UI incorrectly treated the generation-lock digest mismatch itself as
+  database drift.
+- New `boundary-revision-state.ts` compares the live lock's schema and role
+  fingerprints with the exact lock snapshot bound to the active boundary. It
+  first verifies that the disabled candidate is bound to the current lock.
+- Identical reviewed authority is normalized for resource/relationship ordering.
+  Unrelated evidence changes remain clean; actual reviewed authority edits are
+  labeled `reviewed_access_edited`; actual schema or role changes remain
+  `database_posture_changed` and fail closed.
+- Drift clears when the live schema and role posture revert to the reviewed
+  fingerprints. The current Ask banner and boundary-library status both use the
+  same classifier.
+- The exact read-only reproducer now returns no pending summary (`null`) and its
+  files were not modified.
+
+Verification completed after these edits:
+
+- Typecheck passed.
+- Focused drift, Ask-authority, analytics-shell, and boundary CLI regression
+  set: 106/106.
+- Catalog, shell, Workbench, revision-state, and Ask-authority focused tests
+  passed; isolated `local-ui.test.ts`: 43/43.
+- Workbench Ask browser gate passed all eight states. The relationship-map SVG
+  was rendered by real Mermaid in Chrome with exact node/edge checks; no API key
+  or browser storage was persisted and the source database was unchanged.
+- Secured production PostgreSQL HTTP gate passed, including direct/derived
+  tenant and principal scope, per-principal budgets, concurrency, ceilings,
+  single-organization mode, exact two-tool surface, and no mutation.
+- Secured production MySQL HTTP gate passed the equivalent controls.
+- Packed production HTTP gate passed through the public artifact.
+- Live PostgreSQL accounting and native-enum integration tests passed 9/9 after
+  the dedicated test database was started.
+- `git diff --check` was clean before this checkpoint.
+
+Full-suite status (do not misreport as complete):
+
+- The first current full-suite attempt ran after the packed gate had removed the
+  shared Postgres fixture. It reached 1,411 passing tests, then the two live
+  integration files failed only with `ECONNREFUSED 127.0.0.1:55460` (nine tests).
+- The fixture was restarted and those exact nine tests then passed 9/9.
+- A second full 1,420-test run was in progress and showing green tests when the
+  operator asked to stop for the night. It was terminated deliberately; no test
+  worker remains. The dedicated Docker fixture was also stopped cleanly.
+  Therefore the current uncommitted tree still needs one final, uninterrupted
+  full-suite result.
+
+Resume commands and remaining work:
+
+1. Start and prove the dedicated live fixture:
+
+   ```bash
+   cd "/home/sandesh-tiwari/Desktop/C++/synapsor-runner-production-explore/examples/auto-boundary-churn"
+   docker compose up -d --wait
+   docker exec auto-boundary-churn-postgres-1 psql -U synapsor_admin -d synapsor_auto_boundary -tAc 'SELECT current_database(), current_user, count(*) FROM public.accounts;'
+   ```
+
+2. Run the uninterrupted full gate:
+
+   ```bash
+   cd "/home/sandesh-tiwari/Desktop/C++/synapsor-runner-production-explore"
+   SYNAPSOR_TEST_POSTGRES_URL='postgresql://synapsor_admin:synapsor_admin_password@127.0.0.1:55460/synapsor_auto_boundary' corepack pnpm test
+   ```
+
+3. Perform the final disposable human CLI pass: verify `/catalog` follow-on
+   suggestions, `/catalog --diagram`, `/catalog --diagram --mermaid`, boundary
+   selection/export, and no phantom pending banner after activating unrelated
+   boundary B. Do not edit the user's `Synapsor-runner-test` project.
+4. Review the complete diff and generated Workbench screenshot, rerun
+   `git diff --check`, update this checkpoint with final counts, then commit the
+   verified 1.7.0 work on the current feature branch. Do not push or publish.
+
+Uncommitted source/test/doc surfaces at this checkpoint include:
+
+- `apps/runner/src/analytics-shell.ts` and test
+- `apps/runner/src/boundary-catalog.ts` and test
+- `apps/runner/src/boundary-workbench.ts`
+- `apps/runner/src/local-ui.test.ts`
+- `apps/runner/src/ask-authority.ts` and test
+- `apps/runner/src/boundary-library.ts`
+- new `apps/runner/src/boundary-revision-state.ts` and test
+- `scripts/verify-workbench-ask.mjs`
+- `docs/auto-boundary-and-scoped-explore.md`
+- the regenerated Workbench completed-state screenshot
+
+No Cloud-repository files, package versions, Spec/DSL versions, tags, pushes,
+releases, or published artifacts were changed in this checkpoint.
+
+## Final Verification - Catalog, Live Refresh, and Drift UX (2026-08-07)
+
+The work in the previous checkpoint is complete on the unpublished 1.7.0
+feature branch.
+
+Final behavior:
+
+- `/catalog` offers contextual completions for pages, topology, Mermaid,
+  boundary selection, and export. Suggestions clear correctly when input is
+  erased.
+- `/catalog --diagram` renders a terminal-native, metadata-derived topology.
+  Mermaid is explicit through `--mermaid`, renders as a directional flowchart,
+  and is verified in real Chrome. One-table boundaries show useful analytical
+  questions without drawing a fake relationship.
+- Workbench renders the same canonical relationship model and provides boundary
+  selection, a visual graph, reviewed questions, Mermaid source, and download.
+- Active boundary sets refresh before describe and Explore calls. A boundary
+  activated during an Ask session becomes available without restarting the
+  provider session; stale child runtimes are closed and recreated by digest.
+- Exact resource IDs remain canonical. Human labels and bare table names are
+  accepted only when they resolve to exactly one active reviewed resource.
+  Ambiguity fails closed with boundary/resource candidates; unknown names return
+  a bounded valid-ID list and nearest reviewed suggestion.
+- The friendly `try explore` CLI uses the same resolver. A real query using
+  `--resource Subscriptions` canonicalized to `public.subscriptions`, executed
+  inside `subscription_boundary`, preserved reviewed enum bucketing, and
+  reported `source_database_changed: false`.
+- Pending-review state compares exact schema and role-posture fingerprints.
+  Activating unrelated boundary B no longer creates phantom drift on boundary A;
+  real schema/role drift still fails closed and clears only when posture reverts.
+- Model-facing starter questions no longer suggest summing numeric identifiers.
+  Useful reviewed measures are preferred; identifier-only resources use an
+  explicit record-count question.
+
+Final human verification used a disposable copy under `/tmp`; the user's
+`/home/sandesh-tiwari/Desktop/C++/Synapsor-runner-test` project was not edited.
+The real packaged CLI was exercised rather than only TypeScript modules.
+
+Final gates on the exact post-fix tree:
+
+- Focused catalog, shell, revision-state, Ask-authority, local-UI, Explore,
+  boundary-set, and direct CLI regression suites passed.
+- PostgreSQL secured production HTTP passed direct/derived scope, principal
+  budgets, concurrent reservation, connection/session ceilings,
+  single-organization mode, exact two-tool exposure, and no source mutation.
+- MySQL secured production HTTP passed the equivalent controls.
+- Packed production HTTP passed through the npm-style public artifact.
+- Auto Boundary Workbench visual verification passed 27 states.
+- Workbench Ask passed eight browser states. Real Mermaid produced a nonblank
+  graph with the exact expected node/edge counts; no provider key or browser
+  storage persisted and the source database did not change.
+- Final uninterrupted root suite with live PostgreSQL integration enabled:
+  91 files and 1,423/1,423 tests passed. License/content, human command-surface,
+  DSL source-path compatibility, and Cursor packaging checks also passed.
+- `git diff --check` was clean before final commit preparation.
+
+No package or Spec/DSL version changed. Nothing was merged, pushed, tagged,
+published, or released as part of this work.

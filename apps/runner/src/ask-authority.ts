@@ -8,8 +8,10 @@ import {
 } from "./model-ask.js";
 import {
   explorationBoundaryCandidateDigest,
+  type ActivatedExplorationBoundary,
   type ExplorationBoundaryDraft,
 } from "./auto-boundary.js";
+import { resolveBoundaryRevisionState } from "./boundary-revision-state.js";
 
 type ActiveBoundaryAuthorityIdentity = {
   name: string;
@@ -17,6 +19,7 @@ type ActiveBoundaryAuthorityIdentity = {
   generation_lock_fingerprint?: `sha256:${string}`;
   deployment_profile?: unknown;
   table_count: number;
+  authority: ActivatedExplorationBoundary;
 };
 
 export type PendingBoundaryReviewSummary = {
@@ -91,7 +94,19 @@ export async function resolvePendingBoundaryReviewSummary(
       continue;
     }
     const activeBoundary = active.find((boundary) => boundary.name === boundaryName);
-    if (activeBoundary?.digest === candidateDigest) continue;
+    let revisionState;
+    try {
+      revisionState = activeBoundary
+        ? await resolveBoundaryRevisionState({
+            projectRoot,
+            candidate: candidate as unknown as ExplorationBoundaryDraft,
+            active: activeBoundary.authority,
+          })
+        : undefined;
+    } catch {
+      revisionState = undefined;
+    }
+    if (revisionState?.matches_active_authority || activeBoundary?.digest === candidateDigest) continue;
     const candidateGenerationLock = hash(candidate.generation_lock_fingerprint);
     if (initialInstantBoundary
       && progress.revision === 1
@@ -106,12 +121,7 @@ export async function resolvePendingBoundaryReviewSummary(
     changes.push({
       boundary_name: boundaryName,
       previous_authority_active: Boolean(activeBoundary),
-      cause: activeBoundary
-        && candidateGenerationLock
-        && activeBoundary.generation_lock_fingerprint
-        && candidateGenerationLock !== activeBoundary.generation_lock_fingerprint
-        ? "database_posture_changed"
-        : "reviewed_access_edited",
+      cause: revisionState?.cause ?? "reviewed_access_edited",
     });
   }
   if (!changes.length) return undefined;
@@ -250,6 +260,7 @@ function activeBoundaryIdentity(
       : {}),
     deployment_profile: value.deployment_profile,
     table_count: Array.isArray(pack.resources) ? pack.resources.length : 0,
+    authority: value as unknown as ActivatedExplorationBoundary,
   };
 }
 

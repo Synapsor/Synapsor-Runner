@@ -1015,7 +1015,7 @@ describe("Synapsor Analytics shell", () => {
       line: "/catalog all",
       summary: { table_count: resources.length, resources, suggestions: [] },
     })).toContain(
-      "Usage: /catalog [page] or /catalog --diagram [--boundary <name>] [--export [path]]",
+      "Usage: /catalog [page] or /catalog --diagram [--boundary <name>] [--mermaid | --export [path]]",
     );
   });
 
@@ -1056,8 +1056,8 @@ describe("Synapsor Analytics shell", () => {
     expect(io.output()).toContain("/catalog --diagram");
   });
 
-  it("renders the shared active-boundary model as ASCII and Mermaid", async () => {
-    const io = fakeIo(["/catalog --diagram", "/exit"], 72);
+  it("renders a real terminal topology and keeps Mermaid source explicit", async () => {
+    const io = fakeIo(["/catalog --diagram", "/catalog --diagram --mermaid", "/exit"], 72);
     await runAnalyticsShell({
       providerLabel: "Anthropic",
       boundaryLabel: "reviewed_staging",
@@ -1071,14 +1071,21 @@ describe("Synapsor Analytics shell", () => {
       clearConversation: vi.fn(),
       cancel: vi.fn(() => false),
     });
-    expect(io.output()).toContain("ACTIVE BOUNDARY MAP");
+    expect(io.output()).toContain("ACTIVE BOUNDARY RELATIONSHIP DIAGRAM");
     expect(io.output()).toContain("Boundary reviewed_staging");
     expect(io.output()).toContain("2 tables | 1 physical join | 1 reviewed path");
-    expect(io.output()).toContain("[public.orders]");
-    expect(io.output()).toContain("customer_id -> [public.customers].id");
-    expect(io.output()).toContain("TRY CROSS-TABLE QUESTIONS");
+    expect(io.output()).toContain("| public.orders");
+    expect(io.output()).toContain("customer_id -> id");
+    expect(io.output()).toContain("| public.customers");
+    expect(io.output()).toContain("QUESTIONS ACROSS THIS MAP");
+    expect(io.output()).toContain("MERMAID RELATIONSHIP DIAGRAM");
     expect(io.output()).toContain("```mermaid");
-    expect(io.output()).toContain("PUBLIC_ORDERS }o--|| PUBLIC_CUSTOMERS");
+    expect(io.output()).toContain("flowchart LR");
+    expect(io.output()).toContain("PUBLIC_ORDERS -->");
+    expect(renderReviewedAccessCatalog({
+      line: "/catalog --diagram",
+      catalog: reviewedCatalog(),
+    })).not.toContain("```mermaid");
   });
 
   it("explains a one-table boundary without printing a fake relationship diagram", async () => {
@@ -1106,11 +1113,10 @@ describe("Synapsor Analytics shell", () => {
       cancel: vi.fn(() => false),
     });
 
-    expect(io.output()).toContain("ACTIVE BOUNDARY MAP");
-    expect(io.output()).toContain("No join arrows are shown");
-    expect(io.output()).toContain("TRY SINGLE-TABLE QUESTIONS");
-    expect(io.output()).toContain("Mermaid is omitted because there is no reviewed join to draw");
-    expect(io.output()).not.toContain("MERMAID ER DIAGRAM");
+    expect(io.output()).toContain("ACTIVE BOUNDARY RELATIONSHIP DIAGRAM");
+    expect(io.output()).toContain("No arrow is drawn because this boundary contains one reviewed table");
+    expect(io.output()).toContain("QUESTIONS FOR THIS TABLE");
+    expect(io.output()).not.toContain("MERMAID RELATIONSHIP DIAGRAM");
   });
 
   it("requires an exact boundary for multi-boundary diagrams and exports one digest-bound map", async () => {
@@ -1154,9 +1160,9 @@ describe("Synapsor Analytics shell", () => {
       );
       const content = await fs.readFile(exported, "utf8");
       expect(content).toContain("# Reviewed Boundary: support_review");
-      expect(content).toContain("## Mermaid ER Diagram");
-      expect(content).toContain("PUBLIC_ORDERS }o--|| PUBLIC_CUSTOMERS");
-      expect(content).toContain("TRY CROSS-TABLE QUESTIONS");
+      expect(content).toContain("## Mermaid Relationship Diagram");
+      expect(content).toContain("PUBLIC_ORDERS -->");
+      expect(content).toContain("QUESTIONS ACROSS THIS MAP");
     } finally {
       await fs.rm(projectRoot, { recursive: true, force: true });
     }
@@ -1207,11 +1213,22 @@ describe("Synapsor Analytics shell", () => {
     expect(slashCommandSuggestions("/")).toContain("/access");
     expect(slashCommandSuggestions("/ac")).toEqual(["/access", "/access-workbench"]);
     expect(slashCommandSuggestions("/catalog --d")).toEqual(["/catalog --diagram"]);
-    expect(slashCommandSuggestions("/catalog --diagram ")).toEqual(["/catalog --diagram"]);
+    expect(slashCommandSuggestions("/catalog --m")).toEqual(["/catalog --diagram --mermaid"]);
+    expect(slashCommandSuggestions("/catalog --e")).toEqual(["/catalog --diagram --export"]);
+    expect(slashCommandSuggestions("/catalog --diagram ")).toEqual([
+      "/catalog --diagram",
+      "/catalog --diagram --boundary <name>",
+      "/catalog --diagram --export [path]",
+      "/catalog --diagram --mermaid",
+    ]);
     expect(slashCommandSuggestions("question")).toEqual([]);
     expect(renderSlashCommandMenu("/ac")).toContain("/access-workbench");
+    expect(renderSlashCommandMenu("/catalog")).toContain("/catalog <page>");
+    expect(renderSlashCommandMenu("/catalog")).toContain("/catalog --diagram --mermaid");
+    expect(renderSlashCommandMenu("/catalog")).toContain("/catalog --diagram --export");
+    expect(renderSlashCommandMenu("/catalog")).toContain("/catalog --diagram --boundary <name>");
     expect(renderSlashCommandMenu("/catalog --diagram")).toContain(
-      "Show connected reviewed paths and Mermaid",
+      "Show the terminal relationship topology",
     );
     expect(renderSlashCommandMenu("/catalog --diagram")).not.toContain("No matching action");
     expect(renderSlashCommandMenu("/missing")).toContain("No matching action");
@@ -1219,6 +1236,7 @@ describe("Synapsor Analytics shell", () => {
     for (const command of [
       "/catalog 2",
       "/catalog --diagram --boundary reviewed_staging",
+      "/catalog --diagram --boundary reviewed_staging --mermaid",
       "/catalog --diagram --boundary reviewed_staging --export",
       "/details last",
       "/details --sql",
@@ -1306,7 +1324,7 @@ describe("Synapsor Analytics shell", () => {
     await new Promise<void>((resolve) => setImmediate(resolve));
     const rendered = chunks.join("");
     expect(rendered).toContain("/catalog --diagram");
-    expect(rendered).toContain("Show connected reviewed paths and Mermaid");
+    expect(rendered).toContain("Show the terminal relationship topology");
     expect(rendered).not.toContain("No matching action");
 
     readable.write("\r");

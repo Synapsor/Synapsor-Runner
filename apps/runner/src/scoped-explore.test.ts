@@ -1463,6 +1463,61 @@ describe("Scoped Explore", () => {
     }
   });
 
+  it("does not suggest summing numeric identifiers when forming model-facing questions", async () => {
+    const inspection = churnInspection();
+    inspection.tables[0]!.columns.find((field) => field.name === "id")!.data_type = "integer";
+    const fixture = await activatedFixture(undefined, inspection);
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([]),
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    try {
+      const description = await runtime.describe({ resource: "public.subscriptions" }) as {
+        resources: Array<{ suggested_questions: Array<Record<string, any>> }>;
+      };
+      const questions = description.resources[0]!.suggested_questions;
+      expect(questions).not.toContainEqual(expect.objectContaining({
+        measure: { function: "sum", field: "id" },
+      }));
+      expect(questions).toContainEqual(expect.objectContaining({
+        text: "How did total monthly revenue change by week across region?",
+        measure: { function: "sum", field: "monthly_revenue_cents" },
+      }));
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("suggests an explicit record-count trend when identifiers are the only numeric measures", async () => {
+    const inspection = churnInspection();
+    inspection.tables[0]!.columns.find((field) => field.name === "id")!.data_type = "integer";
+    const fixture = await activatedFixture((candidate) => {
+      candidate.pack.resources[0]!.aggregate_measures = ["id"];
+    }, inspection);
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([]),
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    try {
+      const description = await runtime.describe({ resource: "public.subscriptions" }) as {
+        resources: Array<{ suggested_questions: Array<Record<string, any>> }>;
+      };
+      expect(description.resources[0]!.suggested_questions).toContainEqual(expect.objectContaining({
+        text: "How did the number of subscriptions change by week across region?",
+        measure: { function: "count" },
+      }));
+      expect(JSON.stringify(description.resources[0]!.suggested_questions)).not.toMatch(/total (?:id|subscription id)/i);
+    } finally {
+      await runtime.close();
+    }
+  });
+
   it("compiles reviewed star dimensions with independent trusted scope on every relation", async () => {
     const { boundary } = await activatedFixture(undefined, starRelationshipInspection());
     const plan = validateExplorePlan({

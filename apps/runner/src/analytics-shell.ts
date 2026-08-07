@@ -45,8 +45,8 @@ import {
   boundaryCatalogDiagramIsLarge,
   boundaryCatalogModelFor,
   buildBoundaryCatalogDiagramExports,
-  renderBoundaryCatalogAscii,
   renderBoundaryCatalogMermaid,
+  renderBoundaryCatalogTopologyAscii,
   type BoundaryCatalogModel,
 } from "./boundary-catalog.js";
 
@@ -115,6 +115,7 @@ type CatalogCommandRequest =
       boundary?: string;
       export_requested: boolean;
       export_path?: string;
+      mermaid_requested: boolean;
     };
 
 function parseCatalogCommand(line: string): CatalogCommandRequest | { error: string } {
@@ -131,6 +132,7 @@ function parseCatalogCommand(line: string): CatalogCommandRequest | { error: str
   let boundary: string | undefined;
   let exportRequested = false;
   let exportPath: string | undefined;
+  let mermaidRequested = false;
   for (let index = 1; index < tokens.length; index += 1) {
     const token = tokens[index]!;
     if (token === "--boundary") {
@@ -151,13 +153,22 @@ function parseCatalogCommand(line: string): CatalogCommandRequest | { error: str
       }
       continue;
     }
+    if (token === "--mermaid") {
+      if (mermaidRequested) return { error: "--mermaid may be supplied only once." };
+      mermaidRequested = true;
+      continue;
+    }
     return { error: `Unknown catalog diagram option ${token}.` };
+  }
+  if (exportRequested && mermaidRequested) {
+    return { error: "Choose --mermaid to print source or --export to write the complete map, not both." };
   }
   return {
     kind: "diagram",
     ...(boundary ? { boundary } : {}),
     export_requested: exportRequested,
     ...(exportPath ? { export_path: exportPath } : {}),
+    mermaid_requested: mermaidRequested,
   };
 }
 
@@ -201,17 +212,53 @@ function argumentCommandSuggestions(line: string): SlashCommandSuggestion[] | un
   const normalized = line.toLowerCase();
 
   if (normalized === "/catalog" || normalized.startsWith("/catalog ")) {
-    const rest = line.slice("/catalog".length).trim();
+    const rawRest = line.slice("/catalog".length);
+    const rest = rawRest.trim();
     if (!rest) {
       return [
-        suggestion("/catalog --diagram", "Show connected reviewed paths and Mermaid"),
+        suggestion("/catalog --diagram", "Show the terminal relationship topology"),
+        suggestion("/catalog --diagram --mermaid", "Print copyable Mermaid source for the sole boundary"),
+        suggestion("/catalog --diagram --export", "Export the sole boundary map"),
+        syntaxSuggestion(
+          "/catalog --diagram --boundary <name>",
+          "Choose one boundary when several are active",
+        ),
         syntaxSuggestion("/catalog <page>", "Show another catalog page"),
       ];
     }
-    if (startsWithToken("--diagram", rest) && !rest.includes(" ")) {
-      return [suggestion("/catalog --diagram", "Show connected reviewed paths and Mermaid")];
+    if (startsWithToken("--diagram", rest) && !rest.includes(" ") && !/\s$/.test(rawRest)) {
+      return [suggestion("/catalog --diagram", "Show the terminal relationship topology")];
+    }
+    if (startsWithToken("--mermaid", rest) && !rest.includes(" ")) {
+      return [suggestion("/catalog --diagram --mermaid", "Print copyable Mermaid source")];
+    }
+    if (startsWithToken("--export", rest) && !rest.includes(" ")) {
+      return [suggestion("/catalog --diagram --export", "Export the complete boundary map")];
+    }
+    if (startsWithToken("--boundary", rest) && !rest.includes(" ")) {
+      return [syntaxSuggestion(
+        "/catalog --diagram --boundary <name>",
+        "Type one active boundary name",
+      )];
     }
     if (rest.startsWith("--diagram")) {
+      const partialOption = rest.match(/^--diagram\s+(--[^\s]*)$/)?.[1]?.toLowerCase();
+      if (partialOption) {
+        return [
+          ...(startsWithToken("--mermaid", partialOption)
+            ? [suggestion("/catalog --diagram --mermaid", "Print copyable Mermaid source")]
+            : []),
+          ...(startsWithToken("--export", partialOption)
+            ? [suggestion("/catalog --diagram --export", "Export the complete boundary map")]
+            : []),
+          ...(startsWithToken("--boundary", partialOption)
+            ? [syntaxSuggestion(
+                "/catalog --diagram --boundary <name>",
+                "Type one active boundary name",
+              )]
+            : []),
+        ];
+      }
       const parsed = parseCatalogCommand(line);
       if (!("error" in parsed) && parsed.kind === "diagram") {
         return [
@@ -224,10 +271,17 @@ function argumentCommandSuggestions(line: string): SlashCommandSuggestion[] | un
               "Choose one boundary when several are active",
             )]
             : []),
-          ...(!parsed.export_requested
-            ? [syntaxSuggestion(
+          ...(!parsed.export_requested && !parsed.mermaid_requested
+            ? [suggestion(
               `${line.trimEnd()} --export [path]`,
-              "Export a large diagram as Markdown and Mermaid",
+              "Export the complete map as Markdown and Mermaid",
+              `${line.trimEnd()} --export`,
+            )]
+            : []),
+          ...(!parsed.export_requested && !parsed.mermaid_requested
+            ? [suggestion(
+              `${line.trimEnd()} --mermaid`,
+              "Print copyable Mermaid source explicitly",
             )]
             : []),
         ];
@@ -903,8 +957,10 @@ async function handleShellCommand(
       "  /catalog --diagram           Diagram the sole active boundary",
       "  /catalog --diagram --boundary <name>",
       "                               Diagram one of several active boundaries",
+      "  /catalog --diagram --boundary <name> --mermaid",
+      "                               Print copyable Mermaid source",
       "  /catalog --diagram --boundary <name> --export [path]",
-      "                               Export a large diagram as Markdown and Mermaid",
+      "                               Export the complete map as Markdown and Mermaid",
       "  /analyses                    List recent protectable analyses",
       "  /protect                     Protect the latest eligible analysis",
       "  /protect A2 as <name>        Protect one explicit analysis",
@@ -1065,7 +1121,7 @@ export function renderReviewedAccessCatalog(input: {
   const pageSize = Math.max(1, Math.min(10, input.pageSize ?? 5));
   const request = parseCatalogCommand(input.line);
   if ("error" in request) {
-    return `\n${theme.warning("Usage: /catalog [page] or /catalog --diagram [--boundary <name>] [--export [path]]")} ` +
+    return `\n${theme.warning("Usage: /catalog [page] or /catalog --diagram [--boundary <name>] [--mermaid | --export [path]]")} ` +
       `${theme.dim(request.error)}\n\n`;
   }
   if (request.kind === "diagram") {
@@ -1106,26 +1162,43 @@ export function renderReviewedAccessCatalog(input: {
       ].join("\n");
     }
     const width = Math.max(48, Math.min(120, input.columns ?? 96));
+    if (request.mermaid_requested) {
+      if (selectedBoundary.physical_relationship_count === 0) {
+        return [
+          "",
+          theme.title("MERMAID RELATIONSHIP DIAGRAM"),
+          `${theme.scope(safeTerminalText(selectedBoundary.name))} has no reviewed physical join to draw.`,
+          `Use ${theme.key("/catalog")} to inspect its reviewed fields and operations.`,
+          "",
+          "",
+        ].join("\n");
+      }
+      return [
+        "",
+        theme.title("MERMAID RELATIONSHIP DIAGRAM"),
+        theme.dim("Explicit source view. Arrows point from many rows to the reviewed one-row parent."),
+        "```mermaid",
+        renderBoundaryCatalogMermaid(selectedCatalog),
+        "```",
+        "",
+        "",
+      ].join("\n");
+    }
+    const scopedDiagramCommand = `/catalog --diagram --boundary ${selectedBoundary.name}`;
     return [
       "",
-      theme.title("ACTIVE BOUNDARY MAP"),
-      theme.dim("This is the exact reviewed table, analysis, and join map available to Ask."),
+      theme.title("ACTIVE BOUNDARY RELATIONSHIP DIAGRAM"),
+      theme.dim("This is the exact reviewed table and physical join topology available to Ask."),
       "",
-      renderBoundaryCatalogAscii(selectedCatalog, { width }),
+      renderBoundaryCatalogTopologyAscii(selectedCatalog, { width }),
+      "",
+      `Fields and operations: ${theme.key("/catalog")}`,
       ...(selectedBoundary.physical_relationship_count > 0
         ? [
-            "",
-            theme.title("MERMAID ER DIAGRAM"),
-            theme.dim("The arrows below are the physical joins used by the reviewed paths."),
-            theme.dim("Copy this block into any Mermaid renderer."),
-            "```mermaid",
-            renderBoundaryCatalogMermaid(selectedCatalog),
-            "```",
+            `Mermaid source: ${theme.key(`${scopedDiagramCommand} --mermaid`)}`,
+            `Downloadable map: ${theme.key(`${scopedDiagramCommand} --export`)}`,
           ]
-        : [
-            "",
-            theme.dim("Mermaid is omitted because there is no reviewed join to draw. The table map above is complete."),
-          ]),
+        : []),
       "",
       "",
     ].join("\n");
@@ -1322,7 +1395,7 @@ async function exportReviewedBoundaryCatalog(input: {
     theme.title("BOUNDARY DIAGRAM EXPORTED"),
     `Boundary: ${theme.scope(safeTerminalText(boundary.name))}`,
     `File: ${theme.value(safeTerminalText(outputPath))}`,
-    "Includes the readable relationship map, cross-table question prompts, and Mermaid ERD.",
+    "Includes the readable relationship map, reviewed analysis, question prompts, and directional Mermaid source.",
     "Source database changed: no.",
     "",
     "",

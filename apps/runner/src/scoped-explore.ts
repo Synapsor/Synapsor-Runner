@@ -2428,7 +2428,11 @@ function suggestedAggregateQuestions(
   reviewableRelationships: BoundaryResource["relationships"] = [],
 ): Array<Record<string, unknown>> {
   const dimension = suggestedDimension(resource.groupable_fields);
-  const measure = resource.aggregate_measures[0];
+  const measure = [...resource.aggregate_measures]
+    .filter((field) => suggestedMeasureUsefulness(resource, field) >= 0)
+    .sort((left, right) => suggestedMeasureUsefulness(resource, right)
+      - suggestedMeasureUsefulness(resource, left)
+      || left.localeCompare(right))[0];
   const resourceLabel = businessLabel(resource.table).toLowerCase();
   const measureLabel = measure
     ? labels[measure]?.toLowerCase().replace(/\s+cents$/, "")
@@ -2469,7 +2473,7 @@ function suggestedAggregateQuestions(
   }
   if (timeField && dimension) {
     questions.push({
-      text: `How did ${measureQuestionSubject ?? resourceLabel} change by week across ${labels[dimension]?.toLowerCase()}?`,
+      text: `How did ${measureQuestionSubject ?? `the number of ${resourceLabel}`} change by week across ${labels[dimension]?.toLowerCase()}?`,
       measure: measure ? { function: "sum", field: measure } : { function: "count" },
       dimension,
       time_field: timeField,
@@ -2502,6 +2506,23 @@ function suggestedAggregateQuestions(
       question.relationship_review_required === true
       || suggestedAggregateQuestionIsExecutable(resource, question, boundary))
     .slice(0, 3);
+}
+
+function suggestedMeasureUsefulness(resource: BoundaryResource, field: string): number {
+  const normalized = field.toLowerCase();
+  if (field === resource.primary_key
+    || normalized === "id"
+    || normalized.endsWith("_id")
+    || normalized === "version"
+    || normalized.endsWith("_version")
+    || normalized.endsWith("_key")
+    || normalized.endsWith("_code")) {
+    return -1;
+  }
+  if (/(amount|revenue|price|cost|balance|fee|discount|total|subtotal|tax|quantity|duration|usage|count)/.test(normalized)) {
+    return 100;
+  }
+  return 10;
 }
 
 function suggestedAggregateQuestionIsExecutable(

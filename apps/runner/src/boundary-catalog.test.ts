@@ -1,4 +1,3 @@
-import mermaid from "mermaid";
 import { describe, expect, it } from "vitest";
 import type {
   ActivatedExplorationBoundary,
@@ -9,10 +8,11 @@ import {
   buildBoundaryCatalogModel,
   renderBoundaryCatalogAscii,
   renderBoundaryCatalogMermaid,
+  renderBoundaryCatalogTopologyAscii,
 } from "./boundary-catalog.js";
 
 describe("active boundary catalog", () => {
-  it("renders redacted connected paths and parser-valid physical Mermaid joins", async () => {
+  it("renders redacted connected paths and directional physical Mermaid joins", async () => {
     const model = buildBoundaryCatalogModel([activeBoundary()]);
 
     expect(model.table_count).toBe(3);
@@ -49,7 +49,7 @@ describe("active boundary catalog", () => {
           }),
         ],
         suggested_questions: expect.arrayContaining([
-          "What is the total invoice amount cents by customer region?",
+          "What is the total invoice amount by customer region?",
         ]),
       }),
     ]));
@@ -77,23 +77,31 @@ describe("active boundary catalog", () => {
     expect(ascii).toContain("[public.customers]");
     expect(ascii).toContain("[many-to-one, proven, 2 joins]");
     expect(ascii).toContain("TRY CROSS-TABLE QUESTIONS");
-    expect(ascii).toContain('"What is the total invoice amount cents by customer region?"');
+    expect(ascii).toContain('"What is the total invoice amount by customer region?"');
     expect(ascii).not.toContain("secret_join");
     expect(ascii.split("\n").every((line) => line.length <= 88)).toBe(true);
 
+    const topology = renderBoundaryCatalogTopologyAscii(model, { width: 88 });
+    expect(topology).toContain("REVIEWED JOIN TOPOLOGY");
+    expect(topology).toContain("public.invoices");
+    expect(topology).toContain("order_id -> id");
+    expect(topology).toContain("public.orders");
+    expect(topology).toContain("[reviewed hidden join key] -> [reviewed hidden join key]");
+    expect(topology).toContain("public.customers");
+    expect(topology).toContain("1 reviewed multi-join path is composed from the arrows above");
+    expect(topology).not.toContain("secret_join");
+    expect(topology.split("\n").every((line) => line.length <= 88)).toBe(true);
+
     const diagram = renderBoundaryCatalogMermaid(model);
-    expect(diagram).toContain("erDiagram");
-    expect(diagram).toContain("PUBLIC_INVOICES }o--|| PUBLIC_ORDERS");
-    expect(diagram).toContain("PUBLIC_ORDERS }o--|| PUBLIC_CUSTOMERS");
-    expect(diagram).not.toMatch(/PUBLIC_INVOICES\s+}o--\|\|\s+PUBLIC_CUSTOMERS/);
-    expect(diagram).toContain('int runner_only_fields "1 hidden from model"');
-    expect(diagram).toContain('int kept_out_fields "1 unavailable"');
+    expect(diagram).toContain("flowchart LR");
+    expect(diagram).toContain("PUBLIC_INVOICES -->");
+    expect(diagram).toContain("PUBLIC_ORDERS -->");
+    expect(diagram).not.toMatch(/PUBLIC_INVOICES\s+-->[^\n]+PUBLIC_CUSTOMERS/);
+    expect(diagram).toContain("1 Runner-only field");
+    expect(diagram).toContain("1 kept-out field");
     expect(diagram).not.toContain("customer_email");
     expect(diagram).not.toContain("secret_join");
     expect(diagram).not.toContain("public.outside");
-
-    mermaid.initialize({ startOnLoad: false });
-    await expect(mermaid.parse(diagram)).resolves.toBeTruthy();
 
     const exports = buildBoundaryCatalogDiagramExports(model, { width: 88 });
     expect(exports).toEqual([
@@ -107,7 +115,7 @@ describe("active boundary catalog", () => {
     ]);
     expect(exports[0]!.markdown).toContain("# Reviewed Boundary: reviewed_staging");
     expect(exports[0]!.markdown).toContain("## Readable Map");
-    expect(exports[0]!.markdown).toContain("## Mermaid ER Diagram");
+    expect(exports[0]!.markdown).toContain("## Mermaid Relationship Diagram");
     expect(exports[0]!.markdown).not.toContain("customer_email");
   });
 
@@ -150,7 +158,7 @@ describe("active boundary catalog", () => {
     expect(ascii).toContain("1 table | 0 physical joins | 0 reviewed paths");
     expect(ascii).toContain("No join arrows are shown because this reviewed boundary contains one table");
     expect(ascii).toContain("TRY SINGLE-TABLE QUESTIONS");
-    expect(ascii).toContain('"What is the total cents by status?"');
+    expect(ascii).toContain('"What is the total order value by order status?"');
     expect(ascii).toContain("/access -> highlight reviewed_staging -> Enter -> A Add related tables -> C Review + activate");
     expect(ascii).not.toContain("no outgoing reviewed path");
     expect(ascii).not.toContain('"undefined"');
@@ -158,15 +166,13 @@ describe("active boundary catalog", () => {
 
     const mermaidDiagram = renderBoundaryCatalogMermaid(model);
     expect(mermaidDiagram).not.toContain("--");
-    mermaid.initialize({ startOnLoad: false });
-    await expect(mermaid.parse(mermaidDiagram)).resolves.toBeTruthy();
     const exported = buildBoundaryCatalogDiagramExports(model)[0]!;
     expect(exported.markdown).toContain("## Relationships");
     expect(exported.markdown).toContain("no reviewed join to draw");
     expect(exported.markdown).not.toContain("```mermaid");
   });
 
-  it("emits parser-valid Mermaid for collisions, special identifiers, disconnected nodes, and nullable links", async () => {
+  it("emits safe directional Mermaid for collisions, special identifiers, disconnected nodes, and nullable links", () => {
     const first = activeBoundary();
     const second = structuredClone(first);
     first.pack.name = "north-prod";
@@ -201,15 +207,79 @@ describe("active boundary catalog", () => {
     model.relationship_count = model.boundaries.reduce((total, boundary) => total + boundary.relationships.length, 0);
     model.physical_relationship_count = model.boundaries.reduce((total, boundary) => total + boundary.physical_relationship_count, 0);
 
-    mermaid.initialize({ startOnLoad: false });
     const combined = renderBoundaryCatalogMermaid(model);
-    await expect(mermaid.parse(combined)).resolves.toBeTruthy();
-    expect(combined).toContain("status_code");
-    expect(combined).toContain("status_code_2");
-    expect(combined).toContain("}o--o|");
+    expect(combined).toContain("flowchart LR");
+    expect(combined).toContain("billing.order-items");
+    expect(combined).toContain("status-code");
+    expect(combined).toContain("status code");
+    expect(combined).toContain("-.->");
+    expect(combined).toContain("nullable");
+    expect(new Set([...combined.matchAll(/^\s{2}([A-Z0-9_]+)\["/gm)].map((match) => match[1])).size)
+      .toBe(model.table_count);
     for (const item of buildBoundaryCatalogDiagramExports(model)) {
-      await expect(mermaid.parse(item.mermaid)).resolves.toBeTruthy();
+      expect(item.mermaid).toContain("flowchart LR");
+      expect(item.mermaid).not.toMatch(/[\r\n].*(?:<script|javascript:)/i);
     }
+  });
+
+  it("lays out arbitrary schemas with chains, fan-in, disconnected tables, and narrow terminals", () => {
+    const model = buildBoundaryCatalogModel([activeBoundary()]);
+    const boundary = model.boundaries[0]!;
+    const tableTemplate = boundary.tables[0]!;
+    boundary.tables = [
+      "audit.activity_log",
+      "crm.accounts",
+      "ops.unrelated_snapshots",
+      "warehouse.line_items_with_a_deliberately_long_name",
+      "warehouse.orders",
+    ].map((id) => ({ ...structuredClone(tableTemplate), id, label: id }));
+    const relationshipTemplate = boundary.relationships[0]!;
+    const makeRelationship = (
+      id: string,
+      source: string,
+      target: string,
+      sourceKey: string,
+      targetKey: string,
+    ) => ({
+      ...structuredClone(relationshipTemplate),
+      id,
+      source_table: source,
+      target_table: target,
+      source_key: sourceKey,
+      target_key: targetKey,
+      path_depth: 1 as const,
+      links: [{
+        source_table: source,
+        target_table: target,
+        source_key: sourceKey,
+        target_key: targetKey,
+        hidden_join_key: false,
+        proven: true,
+        nullable: false,
+      }],
+      suggested_questions: [],
+    });
+    boundary.relationships = [
+      makeRelationship("activity_account", "audit.activity_log", "crm.accounts", "account_ref", "account_key"),
+      makeRelationship("line_order", "warehouse.line_items_with_a_deliberately_long_name", "warehouse.orders", "order_ref", "order_key"),
+      makeRelationship("order_account", "warehouse.orders", "crm.accounts", "account_ref", "account_key"),
+    ];
+    boundary.physical_relationship_count = 3;
+    model.table_count = boundary.tables.length;
+    model.relationship_count = boundary.relationships.length;
+    model.physical_relationship_count = 3;
+
+    const topology = renderBoundaryCatalogTopologyAscii(model, { width: 48 });
+    expect(topology).toContain("Route 1 of 2");
+    expect(topology).toContain("Route 2 of 2");
+    expect(topology.replace(/[\s|+\-]/g, ""))
+      .toContain("warehouse.line_items_with_a_deliberately_long_name");
+    expect(topology).toContain("warehouse.orders");
+    expect(topology).toContain("crm.accounts");
+    expect(topology).toContain("audit.activity_log");
+    expect(topology).toContain("REVIEWED TABLES WITHOUT A JOIN PATH");
+    expect(topology).toContain("ops.unrelated_snapshots");
+    expect(topology.split("\n").every((line) => line.length <= 48)).toBe(true);
   });
 });
 

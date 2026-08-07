@@ -2897,7 +2897,7 @@ export default defineCapability({
           })]),
         })],
       });
-      expect(updatedAskStatus.boundary_mermaid).toContain("erDiagram");
+      expect(updatedAskStatus.boundary_mermaid).toContain("flowchart LR");
       expect(updatedAskStatus.boundary_mermaid).toContain("PUBLIC_MEMBERS");
       expect(updatedAskStatus.boundary_mermaid).toContain("PUBLIC_TEAMS");
       expect(updatedAskStatus.boundary_diagrams).toEqual([
@@ -2907,7 +2907,7 @@ export default defineCapability({
           file_name: expect.stringMatching(/\.boundary-diagram\.md$/),
           large: false,
           mermaid: expect.stringContaining("PUBLIC_MEMBERS"),
-          markdown: expect.stringContaining("## Mermaid ER Diagram"),
+          markdown: expect.stringContaining("## Mermaid Relationship Diagram"),
         }),
       ]);
 

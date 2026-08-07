@@ -54,7 +54,7 @@ type Child = {
   runtime: ScopedExploreRuntime;
 };
 
-type ActiveExploreTarget = {
+export type ActiveExploreTarget = {
   boundary: ActivatedExplorationBoundary;
   resource?: ActivatedExplorationBoundary["pack"]["resources"][number];
 };
@@ -268,7 +268,7 @@ export function selectActiveExploreBoundary(
   return resolveActiveExploreTarget(boundaries, boundaryName, resource).boundary;
 }
 
-function resolveActiveExploreTarget(
+export function resolveActiveExploreTarget(
   boundaries: ActivatedExplorationBoundary[],
   boundaryName: string | undefined,
   resource: string | undefined,

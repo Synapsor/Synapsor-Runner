@@ -2,9 +2,12 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
   explorationBoundaryCandidateDigest,
+  type ActivatedExplorationBoundary,
   type ExplorationBoundaryDraft,
+  type GenerationLock,
 } from "./auto-boundary.js";
 import { resolvePendingBoundaryReviewSummary } from "./ask-authority.js";
 
@@ -60,7 +63,7 @@ describe("Ask authority summaries", () => {
     });
   });
 
-  it("finds unselected pending boundaries and identifies a changed database posture", async () => {
+  it("finds unselected pending boundaries without inferring database drift from a lock digest alone", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-ask-authority-all-"));
     roots.push(root);
     await fs.mkdir(path.join(root, ".synapsor"), { recursive: true });
@@ -101,9 +104,62 @@ describe("Ask authority summaries", () => {
       changes: [{
         boundary_name: "subscription_boundary",
         previous_authority_active: true,
-        cause: "database_posture_changed",
+        cause: "reviewed_access_edited",
       }],
     });
+  });
+
+  it("keeps boundary A clean when activating B changes only lock evidence and clears reverted drift", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-ask-authority-multi-boundary-"));
+    roots.push(root);
+    await fs.mkdir(path.join(root, ".synapsor/exploration-locks"), { recursive: true });
+
+    const lockA = generationLock("1", "a", "b", "c");
+    const lockB = generationLock("1", "a", "d", "e");
+    const lockADigest = canonicalJsonDigest(lockA);
+    const lockBDigest = canonicalJsonDigest(lockB);
+    const reviewedA = boundaryCandidate();
+    reviewedA.generation_lock_fingerprint = lockADigest;
+    const activeA = activateBoundary(reviewedA);
+    const rebasedA = structuredClone(reviewedA);
+    rebasedA.generation_lock_fingerprint = lockBDigest;
+    const boundaryB = boundaryCandidate();
+    boundaryB.pack.name = "subscription_boundary";
+    boundaryB.pack.resources[0]!.id = "public.subscriptions";
+    boundaryB.pack.resources[0]!.schema = "public";
+    boundaryB.pack.resources[0]!.table = "subscriptions";
+    boundaryB.generation_lock_fingerprint = lockBDigest;
+    const activeB = activateBoundary(boundaryB);
+
+    await writeGenerationLock(root, lockA);
+    await writeGenerationLock(root, lockB);
+    await writeActiveSet(root, [activeA, activeB]);
+    await writeMultiBoundaryLibrary(root, rebasedA, boundaryB);
+    await expect(resolvePendingBoundaryReviewSummary(root)).resolves.toBeUndefined();
+
+    const driftedLock = generationLock("2", "a", "f", "0");
+    const driftedDigest = canonicalJsonDigest(driftedLock);
+    const driftedA = structuredClone(rebasedA);
+    const driftedB = structuredClone(boundaryB);
+    driftedA.generation_lock_fingerprint = driftedDigest;
+    driftedB.generation_lock_fingerprint = driftedDigest;
+    await writeGenerationLock(root, driftedLock);
+    await writeMultiBoundaryLibrary(root, driftedA, driftedB);
+    await expect(resolvePendingBoundaryReviewSummary(root)).resolves.toMatchObject({
+      pending_changes: 2,
+      changes: [
+        { boundary_name: "reviewed_staging", cause: "database_posture_changed" },
+        { boundary_name: "subscription_boundary", cause: "database_posture_changed" },
+      ],
+    });
+
+    await fs.writeFile(
+      path.join(root, ".synapsor/generation-lock.json"),
+      `${JSON.stringify(lockB, null, 2)}\n`,
+      "utf8",
+    );
+    await writeMultiBoundaryLibrary(root, rebasedA, boundaryB);
+    await expect(resolvePendingBoundaryReviewSummary(root)).resolves.toBeUndefined();
   });
 
   it("does not mislabel the initial Quick Start staging review as a user edit", async () => {
@@ -214,4 +270,89 @@ function boundaryCandidate(): ExplorationBoundaryDraft {
     },
     unresolved_decisions: [],
   };
+}
+
+function generationLock(
+  schemaMarker: string,
+  roleMarker: string,
+  evidenceMarker: string,
+  overrideMarker: string,
+): GenerationLock {
+  return {
+    schema_version: "synapsor.generation-lock.v1",
+    compiler_version: "test",
+    spec_version: "test",
+    engine: "postgres",
+    source_env: "DATABASE_URL",
+    inspected_schema: "public",
+    schema_fingerprint: `sha256:${schemaMarker.repeat(64)}`,
+    role_posture_fingerprint: `sha256:${roleMarker.repeat(64)}`,
+    evidence_fingerprint: `sha256:${evidenceMarker.repeat(64)}`,
+    generated_contract_digest: `sha256:${"9".repeat(64)}`,
+    reviewed_overrides_digest: `sha256:${overrideMarker.repeat(64)}`,
+    protected_authority: [],
+  };
+}
+
+function activateBoundary(candidate: ExplorationBoundaryDraft): ActivatedExplorationBoundary {
+  const { activation: _activation, unresolved_decisions: _unresolved, ...authority } = candidate;
+  return {
+    ...authority,
+    activation: {
+      state: "active",
+      digest: explorationBoundaryCandidateDigest(candidate),
+      actor: "operator",
+      activated_at: "2026-08-07T00:00:00.000Z",
+      generation_lock_fingerprint: candidate.generation_lock_fingerprint,
+      reviewed_decisions: [],
+    },
+  } as ActivatedExplorationBoundary;
+}
+
+async function writeGenerationLock(root: string, lock: GenerationLock): Promise<void> {
+  const digest = canonicalJsonDigest(lock);
+  await fs.writeFile(
+    path.join(root, ".synapsor/generation-lock.json"),
+    `${JSON.stringify(lock, null, 2)}\n`,
+    "utf8",
+  );
+  await fs.writeFile(
+    path.join(root, `.synapsor/exploration-locks/${digest.slice("sha256:".length)}.json`),
+    `${JSON.stringify(lock, null, 2)}\n`,
+    "utf8",
+  );
+}
+
+async function writeActiveSet(
+  root: string,
+  boundaries: ActivatedExplorationBoundary[],
+): Promise<void> {
+  await fs.writeFile(
+    path.join(root, ".synapsor/exploration-boundaries.active.json"),
+    `${JSON.stringify({
+      schema_version: "synapsor.active-exploration-boundaries.v1",
+      selected_name: boundaries.at(-1)!.pack.name,
+      boundaries,
+      updated_at: "2026-08-07T00:00:00.000Z",
+    }, null, 2)}\n`,
+    "utf8",
+  );
+}
+
+async function writeMultiBoundaryLibrary(
+  root: string,
+  boundaryA: ExplorationBoundaryDraft,
+  boundaryB: ExplorationBoundaryDraft,
+): Promise<void> {
+  await fs.writeFile(
+    path.join(root, ".synapsor/boundary-library.json"),
+    `${JSON.stringify({
+      selected_name: boundaryB.pack.name,
+      boundaries: {
+        [boundaryA.pack.name]: { candidate: boundaryA },
+        [boundaryB.pack.name]: { candidate: boundaryB },
+      },
+    }, null, 2)}\n`,
+    "utf8",
+  );
 }
