@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   renderTerminalJson,
   renderTerminalSql,
-  safeTerminalText,
   terminalSyntaxColorEnabled,
 } from "./terminal-syntax.js";
 
@@ -60,10 +59,51 @@ describe("terminal syntax rendering", () => {
     expect(stripAnsi(colored)).toBe(sql);
   });
 
+  it("formats compiled PostgreSQL aggregates without splitting protected tokens", () => {
+    const sql = 'SELECT t0."feature" AS "dimension_0", SUM(t0."event_count") AS "measure_0", COUNT(*) AS "__cohort_size" FROM "public"."usage_events" t0 WHERE t0."organization_id" = $1 AND t0."note" = \'FROM, AND\' GROUP BY t0."feature" ORDER BY "measure_0" DESC LIMIT $2';
+    const formatted = [
+      "SELECT",
+      '  t0."feature" AS "dimension_0",',
+      '  SUM(t0."event_count") AS "measure_0",',
+      '  COUNT(*) AS "__cohort_size"',
+      "FROM",
+      '  "public"."usage_events" t0',
+      "WHERE",
+      '  t0."organization_id" = $1',
+      '  AND t0."note" = \'FROM, AND\'',
+      "GROUP BY",
+      '  t0."feature"',
+      "ORDER BY",
+      '  "measure_0" DESC',
+      "LIMIT $2",
+    ].join("\n");
+
+    expect(renderTerminalSql(sql)).toBe(formatted);
+    expect(stripAnsi(renderTerminalSql(sql, true))).toBe(formatted);
+  });
+
+  it("formats MySQL SELECT diagnostics while preserving quoted identifiers and placeholders", () => {
+    const sql = "SELECT `status`, COUNT(*) FROM `app`.`orders` WHERE `tenant_id` = ? GROUP BY `status` ORDER BY COUNT(*) DESC LIMIT ?";
+    expect(renderTerminalSql(sql)).toBe([
+      "SELECT",
+      "  `status`,",
+      "  COUNT(*)",
+      "FROM",
+      "  `app`.`orders`",
+      "WHERE",
+      "  `tenant_id` = ?",
+      "GROUP BY",
+      "  `status`",
+      "ORDER BY",
+      "  COUNT(*) DESC",
+      "LIMIT ?",
+    ].join("\n"));
+  });
+
   it("escapes terminal controls before adding trusted syntax colors", () => {
     const unsafe = "SELECT '\u001b[31mspoof' -- \u202eright-to-left";
     const colored = renderTerminalSql(unsafe, true);
-    expect(stripAnsi(colored)).toBe(safeTerminalText(unsafe));
+    expect(stripAnsi(colored)).toBe(renderTerminalSql(unsafe));
     expect(stripAnsi(colored)).toContain("\\u001b[31mspoof");
     expect(stripAnsi(colored)).toContain("\\u202e");
     expect(stripAnsi(colored)).not.toContain("\u202e");

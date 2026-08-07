@@ -117,6 +117,14 @@ describe("active boundary catalog", () => {
     expect(exports[0]!.markdown).toContain("## Readable Map");
     expect(exports[0]!.markdown).toContain("## Mermaid Relationship Diagram");
     expect(exports[0]!.markdown).not.toContain("customer_email");
+
+    const terminalExport = buildBoundaryCatalogDiagramExports(model, {
+      width: 88,
+      includeMermaid: false,
+    })[0]!;
+    expect(terminalExport.markdown).toContain("## Readable Map");
+    expect(terminalExport.markdown).toContain("The reviewed joins are shown in the readable map above.");
+    expect(terminalExport.markdown).not.toMatch(/mermaid/i);
   });
 
   it("separates Runner-only analytical fields from ordinary model-visible capabilities", () => {

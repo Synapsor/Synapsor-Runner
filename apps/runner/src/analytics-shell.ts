@@ -45,7 +45,6 @@ import {
   boundaryCatalogDiagramIsLarge,
   boundaryCatalogModelFor,
   buildBoundaryCatalogDiagramExports,
-  renderBoundaryCatalogMermaid,
   renderBoundaryCatalogTopologyAscii,
   type BoundaryCatalogModel,
 } from "./boundary-catalog.js";
@@ -115,7 +114,6 @@ type CatalogCommandRequest =
       boundary?: string;
       export_requested: boolean;
       export_path?: string;
-      mermaid_requested: boolean;
     };
 
 function parseCatalogCommand(line: string): CatalogCommandRequest | { error: string } {
@@ -132,7 +130,6 @@ function parseCatalogCommand(line: string): CatalogCommandRequest | { error: str
   let boundary: string | undefined;
   let exportRequested = false;
   let exportPath: string | undefined;
-  let mermaidRequested = false;
   for (let index = 1; index < tokens.length; index += 1) {
     const token = tokens[index]!;
     if (token === "--boundary") {
@@ -153,22 +150,13 @@ function parseCatalogCommand(line: string): CatalogCommandRequest | { error: str
       }
       continue;
     }
-    if (token === "--mermaid") {
-      if (mermaidRequested) return { error: "--mermaid may be supplied only once." };
-      mermaidRequested = true;
-      continue;
-    }
     return { error: `Unknown catalog diagram option ${token}.` };
-  }
-  if (exportRequested && mermaidRequested) {
-    return { error: "Choose --mermaid to print source or --export to write the complete map, not both." };
   }
   return {
     kind: "diagram",
     ...(boundary ? { boundary } : {}),
     export_requested: exportRequested,
     ...(exportPath ? { export_path: exportPath } : {}),
-    mermaid_requested: mermaidRequested,
   };
 }
 
@@ -217,7 +205,6 @@ function argumentCommandSuggestions(line: string): SlashCommandSuggestion[] | un
     if (!rest) {
       return [
         suggestion("/catalog --diagram", "Show the terminal relationship topology"),
-        suggestion("/catalog --diagram --mermaid", "Print copyable Mermaid source for the sole boundary"),
         suggestion("/catalog --diagram --export", "Export the sole boundary map"),
         syntaxSuggestion(
           "/catalog --diagram --boundary <name>",
@@ -228,9 +215,6 @@ function argumentCommandSuggestions(line: string): SlashCommandSuggestion[] | un
     }
     if (startsWithToken("--diagram", rest) && !rest.includes(" ") && !/\s$/.test(rawRest)) {
       return [suggestion("/catalog --diagram", "Show the terminal relationship topology")];
-    }
-    if (startsWithToken("--mermaid", rest) && !rest.includes(" ")) {
-      return [suggestion("/catalog --diagram --mermaid", "Print copyable Mermaid source")];
     }
     if (startsWithToken("--export", rest) && !rest.includes(" ")) {
       return [suggestion("/catalog --diagram --export", "Export the complete boundary map")];
@@ -245,9 +229,6 @@ function argumentCommandSuggestions(line: string): SlashCommandSuggestion[] | un
       const partialOption = rest.match(/^--diagram\s+(--[^\s]*)$/)?.[1]?.toLowerCase();
       if (partialOption) {
         return [
-          ...(startsWithToken("--mermaid", partialOption)
-            ? [suggestion("/catalog --diagram --mermaid", "Print copyable Mermaid source")]
-            : []),
           ...(startsWithToken("--export", partialOption)
             ? [suggestion("/catalog --diagram --export", "Export the complete boundary map")]
             : []),
@@ -271,17 +252,11 @@ function argumentCommandSuggestions(line: string): SlashCommandSuggestion[] | un
               "Choose one boundary when several are active",
             )]
             : []),
-          ...(!parsed.export_requested && !parsed.mermaid_requested
+          ...(!parsed.export_requested
             ? [suggestion(
               `${line.trimEnd()} --export [path]`,
-              "Export the complete map as Markdown and Mermaid",
+              "Export the complete terminal map as Markdown",
               `${line.trimEnd()} --export`,
-            )]
-            : []),
-          ...(!parsed.export_requested && !parsed.mermaid_requested
-            ? [suggestion(
-              `${line.trimEnd()} --mermaid`,
-              "Print copyable Mermaid source explicitly",
             )]
             : []),
         ];
@@ -849,7 +824,7 @@ export function createTerminalAnalyticsShellIo(input: {
     }
     if (slashMenuRenderQueued) return;
     slashMenuRenderQueued = true;
-    queueMicrotask(() => {
+    setImmediate(() => {
       slashMenuRenderQueued = false;
       renderSlashMenu();
     });
@@ -857,8 +832,8 @@ export function createTerminalAnalyticsShellIo(input: {
   if (terminal) {
     readlineCore.emitKeypressEvents(readable as NodeJS.ReadStream);
     // Run before readline's own key handler. Enter must clear the transient
-    // menu while the cursor is still on the input row; ordinary keys schedule
-    // their redraw in a microtask after readline has updated rl.line.
+    // menu while the cursor is still on the input row. Deferred redraw also
+    // waits for readline to apply Tab completion before choosing subcommands.
     readable.prependListener("keypress", onKeypress);
   }
   const choose = async (choice: Parameters<NonNullable<AnalyticsShellIo["choose"]>>[0]) => {
@@ -1083,10 +1058,8 @@ async function handleShellCommand(
       "  /catalog --diagram           Choose and diagram one active boundary",
       "  /catalog --diagram --boundary <name>",
       "                               Select one directly for scripts or automation",
-      "  /catalog --diagram --boundary <name> --mermaid",
-      "                               Print copyable Mermaid source",
       "  /catalog --diagram --boundary <name> --export [path]",
-      "                               Export the complete map as Markdown and Mermaid",
+      "                               Export the complete terminal map as Markdown",
       "  /analyses                    List recent protectable analyses",
       "  /protect                     Protect the latest eligible analysis",
       "  /protect A2 as <name>        Protect one explicit analysis",
@@ -1277,7 +1250,7 @@ export function renderReviewedAccessCatalog(input: {
   const pageSize = Math.max(1, Math.min(10, input.pageSize ?? 5));
   const request = parseCatalogCommand(input.line);
   if ("error" in request) {
-    return `\n${theme.warning("Usage: /catalog [page] or /catalog --diagram [--boundary <name>] [--mermaid | --export [path]]")} ` +
+    return `\n${theme.warning("Usage: /catalog [page] or /catalog --diagram [--boundary <name>] [--export [path]]")} ` +
       `${theme.dim(request.error)}\n\n`;
   }
   if (request.kind === "diagram") {
@@ -1318,28 +1291,6 @@ export function renderReviewedAccessCatalog(input: {
       ].join("\n");
     }
     const width = Math.max(48, Math.min(120, input.columns ?? 96));
-    if (request.mermaid_requested) {
-      if (selectedBoundary.physical_relationship_count === 0) {
-        return [
-          "",
-          theme.title("MERMAID RELATIONSHIP DIAGRAM"),
-          `${theme.scope(safeTerminalText(selectedBoundary.name))} has no reviewed physical join to draw.`,
-          `Use ${theme.key("/catalog")} to inspect its reviewed fields and operations.`,
-          "",
-          "",
-        ].join("\n");
-      }
-      return [
-        "",
-        theme.title("MERMAID RELATIONSHIP DIAGRAM"),
-        theme.dim("Explicit source view. Arrows point from many rows to the reviewed one-row parent."),
-        "```mermaid",
-        renderBoundaryCatalogMermaid(selectedCatalog),
-        "```",
-        "",
-        "",
-      ].join("\n");
-    }
     const scopedDiagramCommand = `/catalog --diagram --boundary ${selectedBoundary.name}`;
     return [
       "",
@@ -1501,7 +1452,10 @@ async function exportReviewedBoundaryCatalog(input: {
   const boundary = selection.catalog.boundaries[0]!;
   const projectRoot = path.resolve(input.projectRoot ?? process.cwd());
   const width = Math.max(72, Math.min(120, input.columns));
-  const diagram = buildBoundaryCatalogDiagramExports(selection.catalog, { width })[0]!;
+  const diagram = buildBoundaryCatalogDiagramExports(selection.catalog, {
+    width,
+    includeMermaid: false,
+  })[0]!;
   const outputPath = input.request.export_path
     ? path.resolve(projectRoot, input.request.export_path)
     : path.join(projectRoot, ".synapsor", "catalog", diagram.file_name);
@@ -1550,7 +1504,7 @@ async function exportReviewedBoundaryCatalog(input: {
     theme.title("BOUNDARY DIAGRAM EXPORTED"),
     `Boundary: ${theme.scope(safeTerminalText(boundary.name))}`,
     `File: ${theme.value(safeTerminalText(outputPath))}`,
-    "Includes the readable relationship map, reviewed analysis, question prompts, and directional Mermaid source.",
+    "Includes the readable relationship map, reviewed analysis, and question prompts.",
     "Source database changed: no.",
     "",
     "",

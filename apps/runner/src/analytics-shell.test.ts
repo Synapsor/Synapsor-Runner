@@ -1015,7 +1015,7 @@ describe("Synapsor Analytics shell", () => {
       line: "/catalog all",
       summary: { table_count: resources.length, resources, suggestions: [] },
     })).toContain(
-      "Usage: /catalog [page] or /catalog --diagram [--boundary <name>] [--mermaid | --export [path]]",
+      "Usage: /catalog [page] or /catalog --diagram [--boundary <name>] [--export [path]]",
     );
   });
 
@@ -1056,8 +1056,8 @@ describe("Synapsor Analytics shell", () => {
     expect(io.output()).toContain("/catalog --diagram");
   });
 
-  it("renders a real terminal topology and keeps Mermaid source explicit", async () => {
-    const io = fakeIo(["/catalog --diagram", "/catalog --diagram --mermaid", "/exit"], 72);
+  it("renders a real terminal topology without exposing Mermaid in the CLI", async () => {
+    const io = fakeIo(["/catalog --diagram", "/exit"], 72);
     await runAnalyticsShell({
       providerLabel: "Anthropic",
       boundaryLabel: "reviewed_staging",
@@ -1078,10 +1078,7 @@ describe("Synapsor Analytics shell", () => {
     expect(io.output()).toContain("customer_id -> id");
     expect(io.output()).toContain("| public.customers");
     expect(io.output()).toContain("QUESTIONS ACROSS THIS MAP");
-    expect(io.output()).toContain("MERMAID RELATIONSHIP DIAGRAM");
-    expect(io.output()).toContain("```mermaid");
-    expect(io.output()).toContain("flowchart LR");
-    expect(io.output()).toContain("PUBLIC_ORDERS -->");
+    expect(io.output()).not.toMatch(/mermaid/i);
     expect(renderReviewedAccessCatalog({
       line: "/catalog --diagram",
       catalog: reviewedCatalog(),
@@ -1160,9 +1157,10 @@ describe("Synapsor Analytics shell", () => {
       );
       const content = await fs.readFile(exported, "utf8");
       expect(content).toContain("# Reviewed Boundary: support_review");
-      expect(content).toContain("## Mermaid Relationship Diagram");
-      expect(content).toContain("PUBLIC_ORDERS -->");
+      expect(content).toContain("## Readable Map");
+      expect(content).toContain("The reviewed joins are shown in the readable map above.");
       expect(content).toContain("QUESTIONS ACROSS THIS MAP");
+      expect(content).not.toMatch(/mermaid/i);
     } finally {
       await fs.rm(projectRoot, { recursive: true, force: true });
     }
@@ -1267,19 +1265,34 @@ describe("Synapsor Analytics shell", () => {
   it("shows, filters, and fully clears transient slash actions while editing", async () => {
     expect(slashCommandSuggestions("/")).toContain("/access");
     expect(slashCommandSuggestions("/ac")).toEqual(["/access", "/access-workbench"]);
+    expect(slashCommandSuggestions("/catalog")).toEqual([
+      "/catalog --diagram",
+      "/catalog --diagram --export",
+      "/catalog --diagram --boundary <name>",
+      "/catalog <page>",
+    ]);
+    expect(slashCommandSuggestions("/details")).toEqual([
+      "/details last",
+      "/details last --sql",
+      "/details <A#>",
+      "/details <A#> --sql",
+    ]);
+    expect(slashCommandSuggestions("/protect")).toEqual([
+      "/protect last",
+      "/protect <A#>",
+      "/protect <A#> as <name>",
+    ]);
     expect(slashCommandSuggestions("/catalog --d")).toEqual(["/catalog --diagram"]);
-    expect(slashCommandSuggestions("/catalog --m")).toEqual(["/catalog --diagram --mermaid"]);
+    expect(slashCommandSuggestions("/catalog --m")).toEqual([]);
     expect(slashCommandSuggestions("/catalog --e")).toEqual(["/catalog --diagram --export"]);
     expect(slashCommandSuggestions("/catalog --diagram ")).toEqual([
       "/catalog --diagram",
       "/catalog --diagram --boundary <name>",
       "/catalog --diagram --export [path]",
-      "/catalog --diagram --mermaid",
     ]);
     expect(slashCommandSuggestions("question")).toEqual([]);
     expect(renderSlashCommandMenu("/ac")).toContain("/access-workbench");
     expect(renderSlashCommandMenu("/catalog")).toContain("/catalog <page>");
-    expect(renderSlashCommandMenu("/catalog")).toContain("/catalog --diagram --mermaid");
     expect(renderSlashCommandMenu("/catalog")).toContain("/catalog --diagram --export");
     expect(renderSlashCommandMenu("/catalog")).toContain("/catalog --diagram --boundary <name>");
     expect(renderSlashCommandMenu("/catalog --diagram")).toContain(
@@ -1291,7 +1304,6 @@ describe("Synapsor Analytics shell", () => {
     for (const command of [
       "/catalog 2",
       "/catalog --diagram --boundary reviewed_staging",
-      "/catalog --diagram --boundary reviewed_staging --mermaid",
       "/catalog --diagram --boundary reviewed_staging --export",
       "/details last",
       "/details --sql",
@@ -1384,6 +1396,52 @@ describe("Synapsor Analytics shell", () => {
 
     readable.write("\r");
     await expect(answer).resolves.toBe("/catalog --diagram");
+    io.close();
+  });
+
+  it("shows nested actions as soon as a base command is complete", async () => {
+    for (const scenario of [
+      { input: "/catalog", expected: "/catalog --diagram" },
+      { input: "/details", expected: "/details last --sql" },
+      { input: "/protect", expected: "/protect <A#> as <name>" },
+    ]) {
+      const readable = new PassThrough();
+      const writable = new PassThrough();
+      const chunks: string[] = [];
+      writable.on("data", (chunk) => chunks.push(String(chunk)));
+      const io = createTerminalAnalyticsShellIo({ readable, writable, terminal: true });
+      const answer = io.read("synapsor> ");
+
+      readable.write(scenario.input);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      const rendered = chunks.join("");
+      expect(rendered, scenario.input).toContain(scenario.expected);
+      expect(rendered, scenario.input).not.toContain("No matching action");
+
+      readable.write("\r");
+      await expect(answer).resolves.toBe(scenario.input);
+      io.close();
+    }
+  });
+
+  it("refreshes nested actions after Tab completes a base command", async () => {
+    const readable = new PassThrough();
+    const writable = new PassThrough();
+    const chunks: string[] = [];
+    writable.on("data", (chunk) => chunks.push(String(chunk)));
+    const io = createTerminalAnalyticsShellIo({ readable, writable, terminal: true });
+    const answer = io.read("synapsor> ");
+
+    readable.write("/cat\t");
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const rendered = chunks.join("");
+    expect(rendered).toContain("/catalog --diagram");
+    expect(rendered).toContain("/catalog --diagram --export");
+    expect(rendered).not.toContain("No matching action");
+
+    readable.write("\r");
+    await expect(answer).resolves.toBe("/catalog");
     io.close();
   });
 
@@ -1788,7 +1846,16 @@ describe("Synapsor Analytics shell", () => {
     const output = io.output();
     expect(output).toContain("COMPILED DATABASE STATEMENT");
     expect(output).toContain("Operator diagnostic only. The model never received this SQL.");
-    expect(output).toContain('SELECT "region", COUNT(*) FROM "public"."sessions" WHERE "tenant_id" = $1');
+    expect(output).toContain([
+      "SELECT",
+      '  "region",',
+      "  COUNT(*)",
+      "FROM",
+      '  "public"."sessions"',
+      "WHERE",
+      '  "tenant_id" = $1',
+      "LIMIT $2",
+    ].join("\n"));
     expect(output).toContain("Parameter types: string, integer");
     expect(output).toContain("Parameter values: redacted");
     expect(output).not.toContain("tenant-secret-value");
@@ -1796,8 +1863,12 @@ describe("Synapsor Analytics shell", () => {
 
   it("syntax-highlights compiled SQL only for interactive color terminals", () => {
     const statement = 'SELECT t0."feature", SUM(t0."event_count") FROM "public"."usage_events" t0 WHERE t0."organization_id" = $1 ORDER BY "measure_0" DESC LIMIT $2';
-    expect(renderTerminalSql(statement)).toBe(statement);
-    expect(renderTerminalSql(statement)).not.toContain("\u001b[");
+    const formatted = renderTerminalSql(statement);
+    expect(formatted).toContain('SELECT\n  t0."feature",\n  SUM(t0."event_count")');
+    expect(formatted).toContain('FROM\n  "public"."usage_events" t0');
+    expect(formatted).toContain('WHERE\n  t0."organization_id" = $1');
+    expect(formatted).toContain('ORDER BY\n  "measure_0" DESC\nLIMIT $2');
+    expect(formatted).not.toContain("\u001b[");
 
     const colored = renderTerminalSql(statement, true);
     expect(colored).toContain("\u001b[1;36mSELECT\u001b[0m");
@@ -1807,6 +1878,7 @@ describe("Synapsor Analytics shell", () => {
     expect(colored).toContain("\u001b[1;36mORDER\u001b[0m");
     expect(colored).toContain("\u001b[1;36mDESC\u001b[0m");
     expect(colored).toContain("\u001b[1;33m$2\u001b[0m");
+    expect(stripAnsi(colored)).toBe(formatted);
   });
 
   it("does not mislabel a derived number as absent from the verified result", async () => {
@@ -2213,6 +2285,10 @@ function operatorEvidence() {
     model_received_sql: false as const,
     persisted: false as const,
   };
+}
+
+function stripAnsi(value: string): string {
+  return value.replace(/\u001b\[[0-9;]*m/g, "");
 }
 
 function dummyDraft() {

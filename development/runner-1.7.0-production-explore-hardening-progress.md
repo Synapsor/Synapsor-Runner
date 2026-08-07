@@ -1060,8 +1060,9 @@ Diagram DX correction:
   restores the shell input listeners afterward. Repeated selection, Escape,
   subsequent `/help`, and shell exit were exercised in a real PTY.
 - Normal diagram output contains only the terminal-native topology and reviewed
-  questions. It does not embed or advertise Mermaid source. Explicit Mermaid
-  and project-confined Markdown export remain available as advanced forms.
+  questions. It does not embed or advertise Mermaid source. At this checkpoint
+  an explicit Mermaid command still existed; the later CLI presentation
+  checkpoint below removes that command and Mermaid from CLI exports entirely.
 - Help now describes the selector instead of claiming the command works only
   when one boundary is active.
 
@@ -1084,3 +1085,53 @@ Post-fix verification on the exact source tree:
 The user's test project was copied to a disposable `/tmp` directory and was not
 edited. No package version, Spec/DSL version, release metadata, push, publish,
 or deployment was performed.
+
+## CLI Completion, Terminal Diagram, and SQL Readability (2026-08-07)
+
+This unpublished 1.7.0 checkpoint closes the remaining Analytics-shell
+presentation issues without changing Explore authority or model-facing tools.
+
+Completed behavior:
+
+- Completing `/catalog`, `/details`, or `/protect` now immediately redraws the
+  nested action menu. A trailing space is not required, including when the base
+  command was completed with Tab.
+- `/catalog --diagram` is terminal-native. CLI parsing, completion, help,
+  normal output, and CLI-created Markdown exports no longer expose Mermaid.
+- Workbench retains the canonical visual graph, boundary selector, download,
+  and Mermaid copy/source path. Its renderer still consumes the same redacted,
+  activated boundary catalog model; no source rows or outside-boundary metadata
+  are added.
+- `/details [last|A#] --sql` formats compiled PostgreSQL and MySQL `SELECT`
+  diagnostics by clause and top-level expression. Formatting is lexical and
+  preserves quoted identifiers, string literals, comments, placeholders,
+  function expressions, and nested predicates before applying the existing
+  syntax highlighting. The executed statement is unchanged.
+- Non-SELECT operator SQL previews retain their previous display shape, which
+  avoids unrelated writeback/setup presentation churn.
+
+Hands-on verification used the packaged `apps/runner/dist/cli.js` against a
+disposable copy of the user test project. The original project was not edited.
+The real TTY flow proved exact-command menus, `/cat` plus Tab, multi-boundary
+Up/Down selection, a four-table terminal topology with no Mermaid text, and a
+real read-only Explore followed by multiline `/details A11 --sql`. The source
+query reported `source_database_changed: false`; no provider request was made.
+
+Post-change gates:
+
+- Focused shell, catalog, syntax, Workbench, and local-UI suites: 124/124.
+- Typecheck and packaged Runner build passed.
+- Auto Boundary Workbench visual gate passed 27 states.
+- Workbench Ask browser gate passed eight states; the relationship graph was
+  also inspected from the generated desktop screenshot. No provider key or
+  browser storage persisted, and the source database did not change.
+- Secured PostgreSQL HTTP, secured MySQL HTTP, and packed npm-style production
+  HTTP gates passed with exact two-tool exposure, principal isolation, direct
+  and derived scope, concurrent budget reservations, connection/session
+  ceilings, and no source mutation.
+- Final uninterrupted root suite with live PostgreSQL integration enabled:
+  91 files and 1,430/1,430 tests passed. License/content, human command-surface,
+  DSL source-path compatibility, and Cursor package checks also passed.
+
+No package or Spec/DSL version changed. Nothing was merged, pushed, tagged,
+published, or released in this checkpoint.

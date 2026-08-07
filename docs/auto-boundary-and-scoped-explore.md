@@ -360,19 +360,19 @@ changing the model-facing tools:
 ```text
 /catalog
 /catalog --diagram --boundary reviewed_staging
-/catalog --diagram --boundary reviewed_staging --mermaid
 /catalog --diagram --boundary reviewed_staging --export
 ```
 
 Each diagram represents exactly one active boundary. If only one boundary is
-active, `--boundary` may be omitted. With several active boundaries Runner asks
-for the name rather than merging them. Large maps export to a digest-bound
-Markdown file containing a readable relationship topology, reviewed analysis,
-and a directional Mermaid flowchart. The default `--diagram` view is the
-terminal topology; raw Mermaid source appears only when explicitly requested.
+active, `--boundary` may be omitted. With several active boundaries an
+interactive shell opens an Up/Down selector rather than merging them; scripts
+may pass the exact boundary name. Large maps export to a digest-bound Markdown
+file containing the readable relationship topology, reviewed analysis, and
+question prompts. The CLI remains terminal-native and does not print Mermaid.
 Workbench uses the same catalog model and provides the same boundary selector,
-visual relationship graph, suggested cross-table questions, and download. The
-map is generated from activated metadata only; it reads no source rows.
+a rendered visual relationship graph, suggested cross-table questions,
+Mermaid source, and download. The map is generated from activated metadata
+only; it reads no source rows.
 
 Activating access through the Analytics shell's `/access` editor immediately
 rebinds that same shell after the separate human confirmation; no restart or

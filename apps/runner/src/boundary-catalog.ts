@@ -431,7 +431,7 @@ export function renderBoundaryCatalogMermaid(model: BoundaryCatalogModel): strin
 
 export function buildBoundaryCatalogDiagramExports(
   model: BoundaryCatalogModel,
-  options: { width?: number } = {},
+  options: { width?: number; includeMermaid?: boolean } = {},
 ): BoundaryCatalogDiagramExport[] {
   return model.boundaries.map((boundary) => {
     const scoped = boundaryCatalogModelFor(model, boundary);
@@ -447,6 +447,7 @@ export function buildBoundaryCatalogDiagramExports(
       markdown: renderBoundaryCatalogMarkdown(scoped, {
         width: options.width,
         mermaid,
+        includeMermaid: options.includeMermaid,
       }),
     };
   });
@@ -471,13 +472,13 @@ export function boundaryCatalogDiagramIsLarge(boundary: BoundaryCatalogBoundary)
 
 export function renderBoundaryCatalogMarkdown(
   model: BoundaryCatalogModel,
-  options: { width?: number; mermaid?: string } = {},
+  options: { width?: number; mermaid?: string; includeMermaid?: boolean } = {},
 ): string {
   if (model.boundaries.length !== 1) {
     throw new Error("A boundary diagram export must contain exactly one reviewed boundary.");
   }
   const boundary = model.boundaries[0]!;
-  const relationshipSection = boundary.physical_relationship_count > 0
+  const relationshipSection = boundary.physical_relationship_count > 0 && options.includeMermaid !== false
     ? [
         "## Mermaid Relationship Diagram",
         "",
@@ -485,10 +486,18 @@ export function renderBoundaryCatalogMarkdown(
         options.mermaid ?? renderBoundaryCatalogMermaid(model),
         "```",
       ]
-    : [
+    : boundary.physical_relationship_count > 0
+      ? [
         "## Relationships",
         "",
-        "No Mermaid relationship diagram is included because this boundary has no reviewed join to draw.",
+        "The reviewed joins are shown in the readable map above.",
+      ]
+      : [
+        "## Relationships",
+        "",
+        options.includeMermaid === false
+          ? "This boundary has no reviewed join to draw."
+          : "No Mermaid relationship diagram is included because this boundary has no reviewed join to draw.",
       ];
   return [
     `# Reviewed Boundary: ${boundary.name}`,
