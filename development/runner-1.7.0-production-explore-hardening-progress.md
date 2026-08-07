@@ -1026,3 +1026,61 @@ Final gates on the exact post-fix tree:
 
 No package or Spec/DSL version changed. Nothing was merged, pushed, tagged,
 published, or released as part of this work.
+
+## Single-Organization Relationship and Diagram Selector Fix (2026-08-07)
+
+The post-checkpoint single-organization relationship refusal was reproduced and
+fixed on the same unpublished 1.7.0 branch.
+
+Runtime correction:
+
+- The base-resource scope compiler already allowed an activated
+  `organization_scope` to replace per-resource tenant columns, but the parallel
+  relationship validator still required every joined target to carry a
+  `tenant_key` or derived `tenant_scope`.
+- Reviewed relationships now skip that tenant-only requirement solely when the
+  exact activated boundary has `organization_scope`. Relationship activation,
+  catalog proof, continuous many-to-one cardinality, uniqueness, depth, nullable
+  semantics, principal scope, generation-lock checks, and all other validation
+  remain unchanged.
+- A paired regression runs the same unscoped relationship target in both
+  postures: single-organization succeeds for PostgreSQL and MySQL compilation;
+  multi-tenant still refuses with `EXPLORE_RELATIONSHIP_FORBIDDEN`.
+- The real packaged CLI ran `public.deal_attachments` grouped by
+  `public.deal_events.event_type` through the reviewed FK. It returned five
+  bounded groups and reported `source_database_changed: false`.
+
+Diagram DX correction:
+
+- In a real terminal, `/catalog --diagram` now opens an Up/Down selector when
+  several active boundaries exist. Enter displays one exact boundary; Escape
+  cancels without changing authority. Explicit `--boundary` remains available
+  for scripts and automation.
+- The selector uses a bounded scrolling viewport for larger boundary sets and
+  restores the shell input listeners afterward. Repeated selection, Escape,
+  subsequent `/help`, and shell exit were exercised in a real PTY.
+- Normal diagram output contains only the terminal-native topology and reviewed
+  questions. It does not embed or advertise Mermaid source. Explicit Mermaid
+  and project-confined Markdown export remain available as advanced forms.
+- Help now describes the selector instead of claiming the command works only
+  when one boundary is active.
+
+Post-fix verification on the exact source tree:
+
+- Focused Scoped Explore and Analytics shell suites: 121/121.
+- Typecheck and packaged Runner build passed.
+- Human PTY checks passed for Up/Down, Enter, Escape, repeated selection,
+  one-table and four-table diagrams, corrected help, and continued shell input.
+- Auto Boundary Workbench visual gate passed 27 states.
+- Workbench Ask browser gate passed eight states with no key persistence,
+  browser storage, or source mutation.
+- Secured PostgreSQL HTTP, secured MySQL HTTP, and packed npm-style production
+  HTTP gates passed with the exact two-tool surface, principal isolation,
+  derived scope, concurrency/connection ceilings, and no source mutation.
+- Final uninterrupted root suite with live PostgreSQL integration enabled:
+  91 files and 1,426/1,426 tests passed. License/content, human command-surface,
+  DSL source-path compatibility, and Cursor package checks also passed.
+
+The user's test project was copied to a disposable `/tmp` directory and was not
+edited. No package version, Spec/DSL version, release metadata, push, publish,
+or deployment was performed.

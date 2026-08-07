@@ -3648,7 +3648,7 @@ function reviewedRelationship(root: BoundaryResource, id: string, boundary: Acti
       throw relationshipError(`Relationship ${id} does not contain continuous many-to-one uniqueness proof.`);
     }
     const target = resourceFor(boundary, link.target_resource);
-    if (!target.tenant_key && !target.tenant_scope) {
+    if (!boundary.organization_scope && !target.tenant_key && !target.tenant_scope) {
       throw relationshipError(`Relationship ${id} target ${target.id} has no independently reviewed tenant scope.`);
     }
     expectedSource = target.id;

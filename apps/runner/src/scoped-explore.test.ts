@@ -1568,6 +1568,56 @@ describe("Scoped Explore", () => {
     }
   });
 
+  it("allows proven relationship analysis without fake tenant scope only in single-organization mode", async () => {
+    const { boundary: activated } = await activatedFixture(undefined, relationshipInspection());
+    const relationshipPlan = {
+      kind: "aggregate" as const,
+      resource: "public.subscriptions",
+      measures: [{ function: "count" as const }],
+      dimensions: [{ field: "name", relationship: "subscriptions_region_id_fkey" }],
+      top_n: 10,
+    };
+
+    const multiTenant = structuredClone(activated);
+    const unscopedTarget = multiTenant.pack.resources.find((resource) =>
+      resource.id === "public.regions")!;
+    delete unscopedTarget.tenant_key;
+    delete unscopedTarget.tenant_scope;
+    expect(() => validateExplorePlan(relationshipPlan, multiTenant)).toThrowError(
+      expect.objectContaining({
+        code: "EXPLORE_RELATIONSHIP_FORBIDDEN",
+        message: expect.stringMatching(/public\.regions has no independently reviewed tenant scope/i),
+      }),
+    );
+
+    const singleOrganization = structuredClone(activated);
+    singleOrganization.organization_scope = {
+      mode: "single_organization",
+      organization_id: "internal-finance",
+      acknowledgement: "all_rows_belong_to_one_organization",
+    };
+    for (const resource of singleOrganization.pack.resources) {
+      delete resource.tenant_key;
+      delete resource.tenant_scope;
+    }
+    const validated = validateExplorePlan(relationshipPlan, singleOrganization);
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [compiled] = compileExplorePlan(validated, singleOrganization, {
+        tenant: "internal-finance",
+        principal: "",
+      }, engine);
+      expect(compiled?.sql).toContain(engine === "postgres"
+        ? 'JOIN "public"."regions" t1'
+        : "JOIN `public`.`regions` t1");
+      expect(compiled?.sql).not.toContain("tenant_id");
+      expect(compiled?.params).not.toContain("internal-finance");
+      expect(compiled?.resources.map((resource) => resource.id).sort()).toEqual([
+        "public.regions",
+        "public.subscriptions",
+      ]);
+    }
+  });
+
   it("injects mandatory derived tenant scope for every root plan shape without aggregate fan-out", async () => {
     const fixture = await activatedFixture();
     const boundary = derivedScopeBoundary(fixture.boundary);

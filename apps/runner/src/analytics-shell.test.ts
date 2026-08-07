@@ -1168,6 +1168,61 @@ describe("Synapsor Analytics shell", () => {
     }
   });
 
+  it("uses a terminal picker for a multi-boundary diagram without requiring a typed boundary name", async () => {
+    const catalog = reviewedCatalog();
+    const second = structuredClone(catalog.boundaries[0]!);
+    second.name = "support_review";
+    second.digest = `sha256:${"b".repeat(64)}`;
+    catalog.boundaries.push(second);
+    catalog.table_count = 4;
+    catalog.relationship_count = 2;
+    catalog.physical_relationship_count = 2;
+    const io = fakeIo([
+      "/catalog --diagram",
+      "/exit",
+    ], 100, true, ["support_review"]);
+
+    await runAnalyticsShell({
+      providerLabel: "OpenAI",
+      boundaryLabel: "2 active boundaries",
+      profileLabel: "development",
+      reviewedDataAreas: 4,
+      boundaryCatalog: catalog,
+      io,
+      ask: vi.fn(),
+      listAnalyses: async () => [],
+      protect: vi.fn(),
+      clearConversation: vi.fn(),
+      cancel: vi.fn(() => false),
+    });
+
+    expect(io.output()).toContain("CHOOSE BOUNDARY TO DIAGRAM");
+    expect(io.output()).toContain("reviewed_staging  2 tables | 1 join");
+    expect(io.output()).toContain("support_review  2 tables | 1 join");
+    expect(io.output()).toContain("ACTIVE BOUNDARY RELATIONSHIP DIAGRAM");
+    expect(io.output()).toContain("Boundary support_review");
+    expect(io.output()).not.toContain("```mermaid");
+  });
+
+  it("documents the diagram picker instead of claiming only one boundary may be active", async () => {
+    const io = fakeIo(["/help", "/exit"]);
+    await runAnalyticsShell({
+      providerLabel: "OpenAI",
+      boundaryLabel: "2 active boundaries",
+      profileLabel: "development",
+      reviewedDataAreas: 4,
+      io,
+      ask: vi.fn(),
+      listAnalyses: async () => [],
+      protect: vi.fn(),
+      clearConversation: vi.fn(),
+      cancel: vi.fn(() => false),
+    });
+    expect(io.output()).toContain("Choose and diagram one active boundary");
+    expect(io.output()).toContain("Select one directly for scripts or automation");
+    expect(io.output()).not.toContain("Diagram the sole active boundary");
+  });
+
   it("refuses explicit diagram exports outside the project, including symlink escapes", async () => {
     const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-catalog-confined-"));
     const outsideRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-catalog-outside-"));
@@ -2269,7 +2324,12 @@ function reviewedCatalog(): BoundaryCatalogModel {
   };
 }
 
-function fakeIo(inputs: string[], columns = 100, terminal = false): AnalyticsShellIo & {
+function fakeIo(
+  inputs: string[],
+  columns = 100,
+  terminal = false,
+  choices: string[] = [],
+): AnalyticsShellIo & {
   output(): string;
   statuses(): string[];
   currentStatus(): string;
@@ -2281,6 +2341,16 @@ function fakeIo(inputs: string[], columns = 100, terminal = false): AnalyticsShe
     read: async (prompt) => {
       chunks.push(prompt);
       return inputs.shift();
+    },
+    choose: async (choice) => {
+      chunks.push([
+        choice.title,
+        choice.message,
+        ...choice.options.map((option) =>
+          `${option.label}${option.detail ? `  ${option.detail}` : ""}`),
+        "",
+      ].join("\n"));
+      return choices.shift();
     },
     write: (value) => {
       chunks.push(value);

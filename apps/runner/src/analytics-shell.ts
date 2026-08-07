@@ -483,6 +483,16 @@ export type ShellAnalysisRecord = {
 export type AnalyticsShellIo = {
   read(prompt: string): Promise<string | undefined>;
   readWithEscape?(prompt: string): Promise<string | undefined>;
+  choose?(input: {
+    title: string;
+    message: string;
+    initialValue?: string;
+    options: Array<{
+      value: string;
+      label: string;
+      detail?: string;
+    }>;
+  }): Promise<string | undefined>;
   write(value: string): void;
   setStatus?(value: string): void;
   clearStatus?(): void;
@@ -851,6 +861,121 @@ export function createTerminalAnalyticsShellIo(input: {
     // their redraw in a microtask after readline has updated rl.line.
     readable.prependListener("keypress", onKeypress);
   }
+  const choose = async (choice: Parameters<NonNullable<AnalyticsShellIo["choose"]>>[0]) => {
+    const ttyInput = readable as Readable & {
+      isRaw?: boolean;
+      setRawMode?: (enabled: boolean) => void;
+    };
+    if (!terminal || typeof ttyInput.setRawMode !== "function" || !choice.options.length) {
+      return undefined;
+    }
+    if (questionActive) throw new Error("A terminal choice cannot open while a question prompt is active.");
+
+    clearStatus();
+    let selected = Math.max(0, choice.options.findIndex((option) =>
+      option.value === choice.initialValue));
+    let renderedLines = 0;
+    const queuedKeys: Array<{ name?: string; ctrl?: boolean }> = [];
+    const keyWaiters: Array<(key: { name?: string; ctrl?: boolean }) => void> = [];
+    const keyHandler = (_text: string, key: { name?: string; ctrl?: boolean }) => {
+      const waiter = keyWaiters.shift();
+      if (waiter) waiter(key);
+      else queuedKeys.push(key);
+    };
+    const existingKeypressListeners = readable.listeners("keypress");
+    const wasRaw = ttyInput.isRaw === true;
+    const wasPaused = readable.isPaused();
+    const color = !("NO_COLOR" in process.env);
+    const theme = terminalTheme(color);
+
+    const nextKey = () => {
+      const queued = queuedKeys.shift();
+      if (queued) return Promise.resolve(queued);
+      return new Promise<{ name?: string; ctrl?: boolean }>((resolve) => keyWaiters.push(resolve));
+    };
+    const fit = (value: string, width: number) => value.length <= width
+      ? value
+      : `${value.slice(0, Math.max(1, width - 3))}...`;
+    const render = () => {
+      const width = Math.max(36, terminalContentWidth(terminalColumns()));
+      const terminalRows = (writable as NodeJS.WriteStream).rows;
+      const windowSize = Math.min(
+        choice.options.length,
+        Math.max(3, Math.min(10, (terminalRows ?? 16) - 8)),
+      );
+      const windowStart = choice.options.length <= windowSize
+        ? 0
+        : Math.min(
+          Math.max(0, selected - Math.floor(windowSize / 2)),
+          choice.options.length - windowSize,
+        );
+      const visibleOptions = choice.options.slice(windowStart, windowStart + windowSize);
+      const labelWidth = Math.min(
+        36,
+        Math.max(12, ...visibleOptions.map((option) => safeTerminalText(option.label).length)),
+      );
+      const lines = [
+        theme.title(safeTerminalText(choice.title)),
+        theme.dim(safeTerminalText(choice.message)),
+        ...(choice.options.length > windowSize
+          ? [theme.dim(
+            `Showing ${windowStart + 1}-${windowStart + visibleOptions.length} of ${choice.options.length}`,
+          )]
+          : []),
+        "",
+        ...visibleOptions.map((option, visibleIndex) => {
+          const optionIndex = windowStart + visibleIndex;
+          const marker = optionIndex === selected ? ">" : " ";
+          const label = safeTerminalText(option.label).padEnd(labelWidth);
+          const detail = option.detail ? `  ${safeTerminalText(option.detail)}` : "";
+          const line = fit(`${marker} ${label}${detail}`, width);
+          return optionIndex === selected ? theme.focus(line) : line;
+        }),
+        "",
+        `${theme.key("Up/Down")} Select   ${theme.key("Enter")} Show diagram   ${theme.key("Esc")} Cancel`,
+      ].map((line) => padTerminalLine(line));
+      if (renderedLines) writable.write(`\u001b[${renderedLines}F`);
+      const target = Math.max(renderedLines, lines.length);
+      for (let index = 0; index < target; index += 1) {
+        writable.write(`\u001b[2K${lines[index] ?? ""}\n`);
+      }
+      renderedLines = target;
+    };
+
+    readable.removeAllListeners("keypress");
+    readable.on("keypress", keyHandler);
+    ttyInput.setRawMode(true);
+    readable.resume();
+    writable.write("\u001b[?25l");
+    try {
+      while (true) {
+        render();
+        const key = await nextKey();
+        if (key.name === "up") {
+          selected = (selected - 1 + choice.options.length) % choice.options.length;
+        } else if (key.name === "down") {
+          selected = (selected + 1) % choice.options.length;
+        } else if (key.name === "home") {
+          selected = 0;
+        } else if (key.name === "end") {
+          selected = choice.options.length - 1;
+        } else if (key.name === "return" || key.name === "enter") {
+          return choice.options[selected]!.value;
+        } else if (key.name === "escape" || (key.ctrl && key.name === "c")) {
+          return undefined;
+        }
+      }
+    } finally {
+      readable.off("keypress", keyHandler);
+      if (renderedLines) writable.write(`\u001b[${renderedLines}F\u001b[0J`);
+      writable.write("\u001b[?25h");
+      ttyInput.setRawMode(wasRaw);
+      if (wasPaused) readable.pause();
+      for (const listener of existingKeypressListeners) {
+        readable.on("keypress", listener as (...args: unknown[]) => void);
+      }
+    }
+  };
   const clearStatus = () => {
     if (statusTimer) {
       clearInterval(statusTimer);
@@ -900,6 +1025,7 @@ export function createTerminalAnalyticsShellIo(input: {
   return {
     read: (prompt) => readQuestion(prompt, false),
     readWithEscape: (prompt) => readQuestion(prompt, true),
+    choose,
     write: (value) => {
       writable.write(terminal ? padTerminalBlock(value) : value);
     },
@@ -954,9 +1080,9 @@ async function handleShellCommand(
       "",
       "Actions",
       "  /catalog [page]              Show tables, reviewed joins, and available analysis",
-      "  /catalog --diagram           Diagram the sole active boundary",
+      "  /catalog --diagram           Choose and diagram one active boundary",
       "  /catalog --diagram --boundary <name>",
-      "                               Diagram one of several active boundaries",
+      "                               Select one directly for scripts or automation",
       "  /catalog --diagram --boundary <name> --mermaid",
       "                               Print copyable Mermaid source",
       "  /catalog --diagram --boundary <name> --export [path]",
@@ -978,7 +1104,37 @@ async function handleShellCommand(
     return "continue";
   }
   if (line === "/catalog" || line.startsWith("/catalog ")) {
-    const catalogRequest = parseCatalogCommand(line);
+    let catalogLine = line;
+    let catalogRequest = parseCatalogCommand(catalogLine);
+    if (!("error" in catalogRequest)
+      && catalogRequest.kind === "diagram"
+      && !catalogRequest.boundary
+      && input.boundaryCatalog
+      && input.boundaryCatalog.boundaries.length > 1
+      && input.io.isTerminal?.() === true
+      && input.io.choose) {
+      const selectedBoundary = await input.io.choose({
+        title: "CHOOSE BOUNDARY TO DIAGRAM",
+        message: "Each diagram shows one exact active reviewed authority.",
+        initialValue: input.boundaryCatalog.boundaries.some((boundary) =>
+          boundary.name === input.boundaryLabel)
+          ? input.boundaryLabel
+          : undefined,
+        options: input.boundaryCatalog.boundaries.map((boundary) => ({
+          value: boundary.name,
+          label: boundary.name,
+          detail: `${boundary.tables.length} ${boundary.tables.length === 1 ? "table" : "tables"} | ` +
+            `${boundary.physical_relationship_count} ` +
+            `${boundary.physical_relationship_count === 1 ? "join" : "joins"}`,
+        })),
+      });
+      if (!selectedBoundary) {
+        input.io.write("Diagram selection cancelled. No boundary was changed.\n\n");
+        return "continue";
+      }
+      catalogLine = `${catalogLine} --boundary ${selectedBoundary}`;
+      catalogRequest = { ...catalogRequest, boundary: selectedBoundary };
+    }
     if (!("error" in catalogRequest)
       && catalogRequest.kind === "diagram"
       && catalogRequest.export_requested) {
@@ -992,7 +1148,7 @@ async function handleShellCommand(
       return "continue";
     }
     input.io.write(renderReviewedAccessCatalog({
-      line,
+      line: catalogLine,
       boundaryLabel: input.boundaryLabel,
       summary: input.accessSummary,
       catalog: input.boundaryCatalog,
@@ -1195,7 +1351,6 @@ export function renderReviewedAccessCatalog(input: {
       `Fields and operations: ${theme.key("/catalog")}`,
       ...(selectedBoundary.physical_relationship_count > 0
         ? [
-            `Mermaid source: ${theme.key(`${scopedDiagramCommand} --mermaid`)}`,
             `Downloadable map: ${theme.key(`${scopedDiagramCommand} --export`)}`,
           ]
         : []),
