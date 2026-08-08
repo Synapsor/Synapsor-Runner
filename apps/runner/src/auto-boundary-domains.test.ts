@@ -10,6 +10,7 @@ import type {
 import { describe, expect, it } from "vitest";
 import {
   buildAutoBoundary,
+  EXPLORATION_TIME_BUCKETS,
   loadStructuredProjectEvidence,
 } from "./auto-boundary.js";
 import {
@@ -180,7 +181,7 @@ describe("Auto Boundary cross-domain evidence matrix", () => {
       expect(boundary?.selectable_fields, fixture.name).toContain(fixture.falsePositive);
       expect(boundary?.aggregate_measures, fixture.name).toContain("amount_cents");
       expect(boundary?.groupable_fields, fixture.name).toContain("status");
-      expect(boundary?.time_bucket_fields.occurred_at, fixture.name).toEqual(["day", "week", "month"]);
+      expect(boundary?.time_bucket_fields.occurred_at, fixture.name).toEqual([...EXPLORATION_TIME_BUCKETS]);
       if (fixture.competingTenant) {
         expect(resource?.tenant_key.alternatives_considered, fixture.name)
           .toEqual(expect.arrayContaining([

@@ -65,6 +65,41 @@ describe("boundary review terminal picker", () => {
     await expect(confirmed).resolves.toBe(true);
   });
 
+  it("requires an explicit activation key and restores terminal state", async () => {
+    const acceptedTerminal = fakeTerminal();
+    const acceptedSession = createBoundaryReviewInteractiveSession(
+      acceptedTerminal.input,
+      acceptedTerminal.output,
+    );
+    const accepted = acceptedSession.confirmActivation!("Activate reviewed access?");
+    await send(acceptedTerminal.input, "\r");
+    expect(stripAnsi(acceptedTerminal.output.read()?.toString() ?? ""))
+      .toContain("Enter alone does not activate");
+    await send(acceptedTerminal.input, "y");
+    await expect(accepted).resolves.toBe(true);
+    expect(acceptedTerminal.input.isRaw).toBe(false);
+
+    const declinedTerminal = fakeTerminal();
+    const declinedSession = createBoundaryReviewInteractiveSession(
+      declinedTerminal.input,
+      declinedTerminal.output,
+    );
+    const declined = declinedSession.confirmActivation!("Activate reviewed access?");
+    await send(declinedTerminal.input, "n");
+    await expect(declined).resolves.toBe(false);
+    expect(declinedTerminal.input.isRaw).toBe(false);
+
+    const cancelledTerminal = fakeTerminal();
+    const cancelledSession = createBoundaryReviewInteractiveSession(
+      cancelledTerminal.input,
+      cancelledTerminal.output,
+    );
+    const cancelled = cancelledSession.confirmActivation!("Activate reviewed access?");
+    await emitKey(cancelledTerminal.input, { name: "d", sequence: "\u0004", ctrl: true });
+    await expect(cancelled).resolves.toBeUndefined();
+    expect(cancelledTerminal.input.isRaw).toBe(false);
+  });
+
   it("explains why a nullable tenant relationship cannot make a blocked table addable", async () => {
     const { input, output } = fakeTerminal();
     const session = createBoundaryReviewInteractiveSession(input, output);
@@ -1178,7 +1213,7 @@ async function send(input: ReadStream, value: string): Promise<void> {
 
 async function emitKey(
   input: ReadStream,
-  key: { name?: string; sequence: string },
+  key: { name?: string; sequence: string; ctrl?: boolean },
 ): Promise<void> {
   input.emit("keypress", key.sequence, key);
   await new Promise<void>((resolve) => setImmediate(resolve));

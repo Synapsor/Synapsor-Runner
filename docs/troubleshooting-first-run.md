@@ -28,7 +28,7 @@ what state remains, and one next action. Do not delete the project or add
 | Row identifier is missing/composite/ambiguous | Resource remains blocked | Select a source-proven single-column primary/unique identity or keep the resource blocked. |
 | Trusted context environment is missing | Boundary and ledger remain intact; query did not run | Export the named tenant/principal variable locally, then rerun the displayed Try action. |
 | Generated output already exists | Existing files are not overwritten | Rerun the original `start` command and choose **Resume existing review**. |
-| Generation lock is stale | Existing active named capability and review history | Run `synapsor-runner boundary diff --json`, then choose **Rescan and review changes**. |
+| Generation lock is stale | Existing active named capability and review history | Run `synapsor-runner boundary rescan`, inspect the reconciliation report, then review and activate only the disabled changed revision. |
 | Config JSON is malformed | Config and source database are unchanged | Correct the reported file/line/column, then run `synapsor-runner config validate --config ./synapsor.runner.json --json`. |
 | Config mode is missing/invalid | Config and source database are unchanged | Set `mode` to `read_only`, `shadow`, `review`, or `cloud`, then rerun `synapsor-runner config validate --json`. |
 | Config contains an unknown field | Config and source database are unchanged | Remove or correct the reported JSON path, then rerun `synapsor-runner config validate --json`. |

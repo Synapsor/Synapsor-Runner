@@ -213,6 +213,121 @@ describe("Scoped Explore", () => {
     expect(compiled?.sql).toContain('AVG(t0."monthly_revenue_cents")');
   });
 
+  it("compiles contributor-aware dispersion on PostgreSQL and MySQL", async () => {
+    const fixture = await activatedFixture();
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [
+        { function: "stddev_samp", field: "monthly_revenue_cents" },
+        { function: "var_pop", field: "monthly_revenue_cents" },
+      ],
+      top_n: 1,
+    }, fixture.boundary);
+
+    const [postgres] = compileExplorePlan(plan, fixture.boundary, {
+      tenant: "tenant-acme",
+      principal: "pm-1",
+    }, "postgres");
+    const [mysql] = compileExplorePlan(plan, fixture.boundary, {
+      tenant: "tenant-acme",
+      principal: "pm-1",
+    }, "mysql");
+
+    expect(postgres?.sql).toContain('STDDEV_SAMP(t0."monthly_revenue_cents")');
+    expect(postgres?.sql).toContain('VAR_POP(t0."monthly_revenue_cents")');
+    expect(postgres?.sql).toContain('COUNT(t0."monthly_revenue_cents") AS "__measure_cohort_0"');
+    expect(mysql?.sql).toContain("STDDEV_SAMP(t0.`monthly_revenue_cents`)");
+    expect(mysql?.sql).toContain("VAR_POP(t0.`monthly_revenue_cents`)");
+    expect(mysql?.sql).toContain("COUNT(t0.`monthly_revenue_cents`) AS `__measure_cohort_1`");
+  });
+
+  it("suppresses field aggregates by non-null contributors and keeps a fixed dispersion floor of five", async () => {
+    const fixture = await activatedFixture(undefined, churnInspection(), 4);
+    const responses = [
+      [{ measure_0: 0, __measure_cohort_0: 4, __cohort_size: 12 }],
+      [{ measure_0: 11.5, __measure_cohort_0: 1, __cohort_size: 12 }],
+      [{ measure_0: 3.25, __measure_cohort_0: 5, __cohort_size: 12 }],
+    ];
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+      executor: {
+        execute: async () => [],
+        executeBatch: async () => [responses.shift()!],
+        close: async () => undefined,
+      },
+    });
+    try {
+      const dispersionPlan = {
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ function: "stddev_pop", field: "monthly_revenue_cents" }],
+        top_n: 1,
+      };
+      const belowDispersionFloor = await runtime.explore(dispersionPlan) as any;
+      expect(belowDispersionFloor.data).toEqual([]);
+      expect(belowDispersionFloor.privacy).toMatchObject({
+        minimum_cohort_size: 4,
+        effective_minimum_cohort_size: 5,
+        suppressed_groups: 1,
+      });
+
+      const sparseAverage = await runtime.explore({
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ function: "avg", field: "monthly_revenue_cents" }],
+        top_n: 1,
+      }) as any;
+      expect(sparseAverage.data).toEqual([]);
+      expect(sparseAverage.privacy.suppressed_groups).toBe(1);
+
+      const released = await runtime.explore(dispersionPlan) as any;
+      expect(released.data).toEqual([{ stddev_pop_monthly_revenue_cents: 3.25 }]);
+      expect(released.privacy.effective_minimum_cohort_size).toBe(5);
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("compiles all reviewed calendar grains portably", async () => {
+    const fixture = await activatedFixture((candidate) => {
+      candidate.pack.resources[0]!.time_bucket_fields.churned_at = [
+        "hour", "day", "week", "month", "quarter", "year", "day_of_week",
+      ];
+    });
+    const expected = {
+      postgres: {
+        hour: "date_trunc('hour'",
+        quarter: "date_trunc('quarter'",
+        day_of_week: "EXTRACT(ISODOW FROM",
+      },
+      mysql: {
+        hour: "DATE_FORMAT(",
+        quarter: "CONCAT(YEAR(",
+        day_of_week: "WEEKDAY(",
+      },
+    } as const;
+    for (const engine of ["postgres", "mysql"] as const) {
+      for (const bucket of ["hour", "quarter", "day_of_week"] as const) {
+        const plan = validateExplorePlan({
+          kind: "aggregate",
+          resource: "public.subscriptions",
+          measures: [{ function: "count" }],
+          time_bucket: { field: "churned_at", bucket },
+          top_n: 10,
+        }, fixture.boundary);
+        const [compiled] = compileExplorePlan(plan, fixture.boundary, {
+          tenant: "tenant-acme",
+          principal: "pm-1",
+        }, engine);
+        expect(compiled?.sql).toContain(expected[engine][bucket]);
+      }
+    }
+  });
+
   it("emits no tenant predicate only for an explicit single-organization boundary", async () => {
     const fixture = await activatedFixture();
     const boundary = structuredClone(fixture.boundary);
@@ -1300,18 +1415,18 @@ describe("Scoped Explore", () => {
     const fixture = await activatedFixture();
     const periodRows: Record<"period_1" | "period_2", Array<Record<string, unknown>>> = {
       period_1: [
-        { dimension_0: "steady-growth", measure_0: 100, __cohort_size: 100 },
-        { dimension_0: "fast-growth", measure_0: 10, __cohort_size: 10 },
-        { dimension_0: "decline", measure_0: 100, __cohort_size: 100 },
-        { dimension_0: "new", measure_0: 0, __cohort_size: 10 },
-        { dimension_0: "private", measure_0: 1, __cohort_size: 1 },
+        { dimension_0: "steady-growth", measure_0: 100, __measure_cohort_0: 100, __cohort_size: 100 },
+        { dimension_0: "fast-growth", measure_0: 10, __measure_cohort_0: 10, __cohort_size: 10 },
+        { dimension_0: "decline", measure_0: 100, __measure_cohort_0: 100, __cohort_size: 100 },
+        { dimension_0: "new", measure_0: 0, __measure_cohort_0: 10, __cohort_size: 10 },
+        { dimension_0: "private", measure_0: 1, __measure_cohort_0: 1, __cohort_size: 1 },
       ],
       period_2: [
-        { dimension_0: "steady-growth", measure_0: 120, __cohort_size: 120 },
-        { dimension_0: "fast-growth", measure_0: 20, __cohort_size: 20 },
-        { dimension_0: "decline", measure_0: 50, __cohort_size: 50 },
-        { dimension_0: "new", measure_0: 5, __cohort_size: 10 },
-        { dimension_0: "private", measure_0: 1_000, __cohort_size: 1 },
+        { dimension_0: "steady-growth", measure_0: 120, __measure_cohort_0: 120, __cohort_size: 120 },
+        { dimension_0: "fast-growth", measure_0: 20, __measure_cohort_0: 20, __cohort_size: 20 },
+        { dimension_0: "decline", measure_0: 50, __measure_cohort_0: 50, __cohort_size: 50 },
+        { dimension_0: "new", measure_0: 5, __measure_cohort_0: 10, __cohort_size: 10 },
+        { dimension_0: "private", measure_0: 1_000, __measure_cohort_0: 1, __cohort_size: 1 },
       ],
     };
     const runtime = await createScopedExploreRuntime({
@@ -2197,7 +2312,7 @@ describe("Scoped Explore", () => {
       })).rejects.toMatchObject({
         code: "EXPLORE_LOCK_STALE",
         message: expect.stringMatching(
-          /Reviewed field public\.subscriptions\.region changed type from text to integer[\s\S]*boundary draft --from-env DATABASE_URL --force/,
+          /Reviewed field public\.subscriptions\.region changed type from text to integer[\s\S]*boundary rescan --from-env DATABASE_URL/,
         ),
       });
       expect(changedExecutions).toBe(0);
@@ -2351,7 +2466,7 @@ describe("Scoped Explore", () => {
     })).rejects.toMatchObject({
       code: "EXPLORE_LOCK_STALE",
       message: expect.stringContaining(
-        "synapsor-runner boundary draft --from-env DATABASE_URL --force",
+        "synapsor-runner boundary rescan --from-env DATABASE_URL",
       ),
     });
 
@@ -2386,7 +2501,7 @@ describe("Scoped Explore", () => {
       projectRoot: budgetFixture.root,
       transport: "stdio",
       env: budgetFixture.env,
-      executor: fixedExecutor([{ dimension_0: "a", measure_0: 10, __cohort_size: 10 }]),
+      executor: fixedExecutor([{ dimension_0: "a", measure_0: 10, __measure_cohort_0: 10, __cohort_size: 10 }]),
       inspectDatabaseFn: async () => budgetFixture.inspection,
       clock: () => Date.parse("2026-07-24T12:00:00.000Z"),
     });
@@ -2396,7 +2511,12 @@ describe("Scoped Explore", () => {
       projectRoot: budgetFixture.root,
       transport: "stdio",
       env: budgetFixture.env,
-      executor: fixedExecutor([{ dimension_0: "a", measure_0: 10, __cohort_size: 10 }]),
+      executor: fixedExecutor([{
+        dimension_0: "a",
+        measure_0: 10,
+        __measure_cohort_0: 10,
+        __cohort_size: 10,
+      }]),
       inspectDatabaseFn: async () => budgetFixture.inspection,
       clock: () => Date.parse("2026-07-24T12:00:00.000Z"),
     });
@@ -2463,7 +2583,12 @@ describe("Scoped Explore", () => {
       projectRoot: fixture.root,
       transport: "stdio",
       env: fixture.env,
-      executor: fixedExecutor([{ dimension_0: "a", measure_0: 10, __cohort_size: 10 }]),
+      executor: fixedExecutor([{
+        dimension_0: "a",
+        measure_0: 10,
+        __measure_cohort_0: 10,
+        __cohort_size: 10,
+      }]),
       inspectDatabaseFn: async () => fixture.inspection,
       clock: () => Date.parse("2026-07-24T12:00:00.000Z"),
     });

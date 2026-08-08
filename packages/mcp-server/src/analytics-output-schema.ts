@@ -34,6 +34,26 @@ const modelEgressResultSchema = z.object({
   token_scope: z.literal("this_tool_response_only"),
 }).strict();
 
+const scopedExploreMeasureFunctionSchema = z.enum([
+  "count",
+  "count_distinct",
+  "sum",
+  "avg",
+  "stddev_samp",
+  "stddev_pop",
+  "var_samp",
+  "var_pop",
+]);
+const scopedExploreTimeBucketSchema = z.enum([
+  "hour",
+  "day",
+  "week",
+  "month",
+  "quarter",
+  "year",
+  "day_of_week",
+]);
+
 const reviewedValueControlsSchema = z.object({
   bucketed_fields: z.array(z.object({
     resource: z.string(),
@@ -116,7 +136,7 @@ const scopedExploreResultSchema = z.object({
       kind: z.literal("aggregate_groups"),
       time_bucket: z.object({
         field: z.string(),
-        bucket: z.enum(["day", "week", "month"]),
+        bucket: scopedExploreTimeBucketSchema,
         relationship: z.string().nullable(),
         output_alias: z.string(),
       }).strict().nullable(),
@@ -124,7 +144,7 @@ const scopedExploreResultSchema = z.object({
     z.object({
       kind: z.literal("period_comparison"),
       reviewed_time_field: z.string(),
-      reviewed_time_bucket: z.enum(["day", "week", "month"]).nullable(),
+      reviewed_time_bucket: scopedExploreTimeBucketSchema.nullable(),
       periods: z.array(z.object({
         id: z.enum(["period_1", "period_2"]),
         start_inclusive: z.string().datetime(),
@@ -134,9 +154,13 @@ const scopedExploreResultSchema = z.object({
   ]),
   measures: z.array(z.object({
     alias: z.string(),
-    function: z.enum(["count", "count_distinct", "sum", "avg"]),
+    function: scopedExploreMeasureFunctionSchema,
     field: z.string().nullable(),
     relationship: z.string().nullable(),
+    contributor_cohort: z.enum([
+      "non-null values for this reviewed field",
+      "reviewed root rows",
+    ]),
     comparison_outputs: z.object({
       period_1: z.string(),
       period_2: z.string(),
@@ -180,6 +204,8 @@ const scopedExploreResultSchema = z.object({
   }).strict(),
   suppression: z.object({
     minimum_cohort_size: z.number().int().positive().nullable(),
+    effective_minimum_cohort_size: z.number().int().positive().nullable(),
+    contributor_aware: z.boolean(),
     minimum_cohort_overridden: z.literal(true).optional(),
     outcome: z.enum(["ok", "empty", "fully_suppressed", "incomplete_comparison"]),
     suppressed_groups: z.number().int().nonnegative(),
@@ -263,6 +289,7 @@ export const scopedExploreDescribeOutputSchema = z.object({
     sortable_fields: z.array(z.string()),
     groupable_fields: z.array(z.string()),
     aggregate_measures: z.array(z.string()),
+    aggregate_measure_functions: z.record(z.array(scopedExploreMeasureFunctionSchema)),
     count_distinct_fields: z.array(z.string()),
     time_bucket_fields: z.record(z.array(z.string())),
     time_coverage: z.record(z.object({
@@ -303,6 +330,7 @@ export const scopedExploreDescribeOutputSchema = z.object({
       filter_operators: z.record(z.array(z.string())),
       groupable_fields: z.array(z.string()),
       aggregate_measures: z.array(z.string()),
+      aggregate_measure_functions: z.record(z.array(scopedExploreMeasureFunctionSchema)),
       count_distinct_fields: z.array(z.string()),
       time_bucket_fields: z.record(z.array(z.string())),
       field_types: z.record(z.string()),
@@ -314,7 +342,7 @@ export const scopedExploreDescribeOutputSchema = z.object({
     suggested_questions: z.array(z.object({
       text: z.string(),
       measure: z.object({
-        function: z.enum(["count", "count_distinct", "sum", "avg"]),
+        function: scopedExploreMeasureFunctionSchema,
         field: z.string().optional(),
         relationship: z.string().optional(),
       }).strict(),
@@ -326,7 +354,7 @@ export const scopedExploreDescribeOutputSchema = z.object({
         }).strict(),
       ]).optional(),
       time_field: z.string().optional(),
-      time_bucket: z.enum(["day", "week", "month"]).optional(),
+      time_bucket: scopedExploreTimeBucketSchema.optional(),
       relationship_review_required: z.boolean().optional(),
     }).strict()),
   }).strict()).optional(),
@@ -361,6 +389,8 @@ export const scopedExploreQueryOutputSchema = z.object({
   }).strict().optional(),
   privacy: z.object({
     minimum_cohort_size: z.number().int().positive().nullable(),
+    effective_minimum_cohort_size: z.number().int().positive().nullable(),
+    contributor_aware_measures: z.array(z.number().int().nonnegative()),
     minimum_cohort_overridden: z.literal(true).optional(),
     suppressed_groups: z.number().int().nonnegative(),
     totals_returned: z.literal(false),

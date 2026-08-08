@@ -40,6 +40,7 @@ import {
   type ExplorationBoundaryDraft,
   type GenerationAuthorityDependencies,
   type GenerationLock,
+  type ExplorationTimeBucket,
   type RelationshipLinkProof,
 } from "./auto-boundary.js";
 import {
@@ -66,8 +67,43 @@ const MAX_PROTECT_ITEMS = 32;
 type Scalar = string | number | boolean | null;
 type Operator = "eq" | "neq" | "lt" | "lte" | "gt" | "gte" | "in";
 type Direction = "asc" | "desc";
-type TimeBucket = "day" | "week" | "month";
+type TimeBucket = ExplorationTimeBucket;
 type BoundaryResource = ActivatedExplorationBoundary["pack"]["resources"][number];
+
+export const AGGREGATE_MEASURE_FUNCTIONS = [
+  "count",
+  "count_distinct",
+  "sum",
+  "avg",
+  "stddev_samp",
+  "stddev_pop",
+  "var_samp",
+  "var_pop",
+] as const;
+export type AggregateMeasureFunction = typeof AGGREGATE_MEASURE_FUNCTIONS[number];
+const CONTRIBUTOR_AWARE_MEASURE_FUNCTIONS = new Set<AggregateMeasureFunction>([
+  "sum",
+  "avg",
+  "stddev_samp",
+  "stddev_pop",
+  "var_samp",
+  "var_pop",
+]);
+const DISPERSION_MEASURE_FUNCTIONS = new Set<AggregateMeasureFunction>([
+  "stddev_samp",
+  "stddev_pop",
+  "var_samp",
+  "var_pop",
+]);
+const NUMERIC_AGGREGATE_MEASURE_FUNCTIONS = [
+  "sum",
+  "avg",
+  "stddev_samp",
+  "stddev_pop",
+  "var_samp",
+  "var_pop",
+] as const satisfies readonly AggregateMeasureFunction[];
+export const MINIMUM_DISPERSION_COHORT_SIZE = 5;
 
 export type ExploreFilter = {
   field: string;
@@ -86,7 +122,7 @@ export type RowExplorePlan = {
 };
 
 export type AggregateMeasure = {
-  function: "count" | "count_distinct" | "sum" | "avg";
+  function: AggregateMeasureFunction;
   field?: string;
   relationship?: string;
 };
@@ -849,6 +885,14 @@ export async function createScopedExploreRuntime(input: {
         data: response.data,
         privacy: {
           minimum_cohort_size: plan.kind === "aggregate" ? resourceFor(prepared.boundary, plan.resource).minimum_cohort_size : null,
+          effective_minimum_cohort_size: plan.kind === "aggregate"
+            ? effectiveMinimumCohortSize(plan, resourceFor(prepared.boundary, plan.resource))
+            : null,
+          contributor_aware_measures: plan.kind === "aggregate"
+            ? plan.measures
+              .map((measure, index) => CONTRIBUTOR_AWARE_MEASURE_FUNCTIONS.has(measure.function) ? index : -1)
+              .filter((index) => index >= 0)
+            : [],
           ...(plan.kind === "aggregate"
             && resourceFor(prepared.boundary, plan.resource).minimum_cohort_overridden
             ? { minimum_cohort_overridden: true }
@@ -1287,14 +1331,19 @@ function validateAggregatePlan(input: Record<string, unknown>, boundary: Activat
   const measures = recordArray(input.measures, "measures", 1, boundary.budgets.max_measures).map((measure): AggregateMeasure => {
     assertKeys(measure, ["function", "field", "relationship"], "measure");
     const fn = requiredString(measure.function, "measure.function");
-    if (!["count", "count_distinct", "sum", "avg"].includes(fn)) throw planError("measure.function must be count, count_distinct, sum, or avg");
+    if (!AGGREGATE_MEASURE_FUNCTIONS.includes(fn as AggregateMeasureFunction)) {
+      throw planError(`measure.function must be one of ${AGGREGATE_MEASURE_FUNCTIONS.join(", ")}`);
+    }
     const relation = optionalString(measure.relationship, "measure.relationship");
     const target = relation ? relationshipResource(resource, relation, boundary) : resource;
     const field = optionalString(measure.field, "measure.field");
     if (fn === "count" && field !== undefined) throw planError("count does not accept a field");
     if (fn === "count" && relation !== undefined) throw planError("count measures the reviewed subject entity and cannot switch counted entity through a relationship");
     if (fn === "count_distinct" && (!field || !target.count_distinct_fields.includes(field))) throw fieldError(target, field ?? "(missing)", "count_distinct");
-    if ((fn === "sum" || fn === "avg") && (!field || !target.aggregate_measures.includes(field))) throw fieldError(target, field ?? "(missing)", fn);
+    if (CONTRIBUTOR_AWARE_MEASURE_FUNCTIONS.has(fn as AggregateMeasureFunction)
+      && (!field || !target.aggregate_measures.includes(field))) {
+      throw fieldError(target, field ?? "(missing)", fn);
+    }
     return {
       function: fn as AggregateMeasure["function"],
       ...(field ? { field } : {}),
@@ -1610,12 +1659,18 @@ function compileAggregatePlan(
     const alias = measure.relationship
       ? joined.targets.get(measure.relationship)!.alias
       : "t0";
+    const fieldExpression = measure.field
+      ? `${alias}.${quote(measure.field, engine)}`
+      : undefined;
     const expression = measure.function === "count"
       ? "COUNT(*)"
       : measure.function === "count_distinct"
-        ? `COUNT(DISTINCT ${alias}.${quote(measure.field!, engine)})`
-        : `${measure.function.toUpperCase()}(${alias}.${quote(measure.field!, engine)})`;
+        ? `COUNT(DISTINCT ${fieldExpression})`
+        : `${measure.function.toUpperCase()}(${fieldExpression})`;
     select.push(`${expression} AS ${quote(`measure_${index}`, engine)}`);
+    if (CONTRIBUTOR_AWARE_MEASURE_FUNCTIONS.has(measure.function)) {
+      select.push(`COUNT(${fieldExpression}) AS ${quote(`__measure_cohort_${index}`, engine)}`);
+    }
   });
   select.push(`COUNT(*) AS ${quote("__cohort_size", engine)}`);
   const parametersAfterSelect = params.length;
@@ -1759,7 +1814,15 @@ function shapeExploreResponse(
     ...(plan.comparison ? ["__period"] : []),
   ];
   const normalized = rows.map((row) => {
-    const output: Record<string, unknown> = { __cohort_size: row.__cohort_size };
+    const contributorCounts = plan.measures.flatMap((measure, index) =>
+      CONTRIBUTOR_AWARE_MEASURE_FUNCTIONS.has(measure.function)
+        ? [numberOrInvalid(row[`__measure_cohort_${index}`])]
+        : []);
+    const rowCohort = numberOrInvalid(row.__cohort_size);
+    const effectiveCohort = contributorCounts.length
+      ? Math.min(rowCohort, ...contributorCounts)
+      : rowCohort;
+    const output: Record<string, unknown> = { __cohort_size: effectiveCohort };
     (plan.dimensions ?? []).forEach((_dimension, index) => {
       output[`dimension_${index}`] = safeDatabaseValue(row[`dimension_${index}`]);
     });
@@ -1772,11 +1835,12 @@ function shapeExploreResponse(
   });
   try {
     const underlyingGroupLimit = aggregateUnderlyingGroupLimit(plan, boundary);
+    const minimumCohortSize = effectiveMinimumCohortSize(plan, resource);
     const shaped = shapePrivacySuppressedGroups({
       rows: normalized,
       output_fields: outputFields,
       cohort_field: "__cohort_size",
-      minimum_cohort_size: resource.minimum_cohort_size,
+      minimum_cohort_size: minimumCohortSize,
       maximum_groups: underlyingGroupLimit,
       // Ranked and comparison plans must suppress and pair the complete
       // reviewed candidate set before final ordering and top-N selection.
@@ -1989,6 +2053,15 @@ function isRankedAggregatePlan(plan: AggregateExplorePlan): boolean {
   return plan.order_by?.kind === "measure" || plan.order_by?.kind === "comparison_change";
 }
 
+function effectiveMinimumCohortSize(
+  plan: AggregateExplorePlan,
+  resource: BoundaryResource,
+): number {
+  return plan.measures.some((measure) => DISPERSION_MEASURE_FUNCTIONS.has(measure.function))
+    ? Math.max(resource.minimum_cohort_size, MINIMUM_DISPERSION_COHORT_SIZE)
+    : resource.minimum_cohort_size;
+}
+
 function aggregateUnderlyingGroupLimit(
   plan: AggregateExplorePlan,
   boundary: ActivatedExplorationBoundary,
@@ -2045,6 +2118,9 @@ function describeExploreResult(input: {
       function: measure.function,
       field: measure.field ?? null,
       relationship: measure.relationship ?? null,
+      contributor_cohort: CONTRIBUTOR_AWARE_MEASURE_FUNCTIONS.has(measure.function)
+        ? "non-null values for this reviewed field"
+        : "reviewed root rows",
       ...(aggregatePlan.comparison
         ? {
           comparison_outputs: {
@@ -2136,6 +2212,12 @@ function describeExploreResult(input: {
     },
     suppression: {
       minimum_cohort_size: input.plan.kind === "aggregate" ? resource.minimum_cohort_size : null,
+      effective_minimum_cohort_size: input.plan.kind === "aggregate"
+        ? effectiveMinimumCohortSize(input.plan, resource)
+        : null,
+      contributor_aware: input.plan.kind === "aggregate"
+        ? input.plan.measures.some((measure) => CONTRIBUTOR_AWARE_MEASURE_FUNCTIONS.has(measure.function))
+        : false,
       ...(input.plan.kind === "aggregate" && resource.minimum_cohort_overridden
         ? { minimum_cohort_overridden: true }
         : {}),
@@ -2234,6 +2316,10 @@ function describeBoundary(
         sortable_fields: resource.sortable_fields,
         groupable_fields: resource.groupable_fields,
         aggregate_measures: resource.aggregate_measures,
+        aggregate_measure_functions: Object.fromEntries(resource.aggregate_measures.map((field) => [
+          field,
+          NUMERIC_AGGREGATE_MEASURE_FUNCTIONS,
+        ])),
         count_distinct_fields: resource.count_distinct_fields,
         time_bucket_fields: resource.time_bucket_fields,
         time_coverage: timeCoverage[resource.id] ?? {},
@@ -2287,6 +2373,10 @@ function describeBoundary(
             filter_operators: target.filterable_fields,
             groupable_fields: target.groupable_fields,
             aggregate_measures: target.aggregate_measures,
+            aggregate_measure_functions: Object.fromEntries(target.aggregate_measures.map((field) => [
+              field,
+              NUMERIC_AGGREGATE_MEASURE_FUNCTIONS,
+            ])),
             count_distinct_fields: target.count_distinct_fields,
             time_bucket_fields: target.time_bucket_fields,
             field_types: Object.fromEntries(targetFields.map((field) => [field, target.field_types[field]])),
@@ -3813,10 +3903,17 @@ function placeholder(index: number, engine: "postgres" | "mysql"): string {
 }
 
 function timeBucketSql(column: string, bucket: TimeBucket, engine: "postgres" | "mysql"): string {
-  if (engine === "postgres") return `date_trunc('${bucket}', ${column})`;
+  if (engine === "postgres") {
+    if (bucket === "day_of_week") return `EXTRACT(ISODOW FROM ${column})`;
+    return `date_trunc('${bucket}', ${column})`;
+  }
+  if (bucket === "hour") return `DATE_FORMAT(${column}, '%Y-%m-%d %H:00:00')`;
   if (bucket === "day") return `DATE(${column})`;
   if (bucket === "week") return `DATE_SUB(DATE(${column}), INTERVAL WEEKDAY(${column}) DAY)`;
-  return `DATE_FORMAT(${column}, '%Y-%m-01')`;
+  if (bucket === "month") return `DATE_FORMAT(${column}, '%Y-%m-01')`;
+  if (bucket === "quarter") return `CONCAT(YEAR(${column}), '-Q', QUARTER(${column}))`;
+  if (bucket === "year") return `YEAR(${column})`;
+  return `(WEEKDAY(${column}) + 1)`;
 }
 
 async function loadAuditKey(projectRoot: string): Promise<Buffer> {
@@ -3951,6 +4048,11 @@ function finiteNumberOrNull(value: unknown): number | null {
   if (value === null || value === undefined) return null;
   const number = typeof value === "number" ? value : Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+function numberOrInvalid(value: unknown): number {
+  const number = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(number) ? number : Number.NaN;
 }
 
 function safeDatabaseValue(value: unknown): Scalar {

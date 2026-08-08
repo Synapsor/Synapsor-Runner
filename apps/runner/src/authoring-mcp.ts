@@ -7,7 +7,9 @@ import {
 } from "@synapsor-runner/mcp-server";
 import { z } from "zod";
 import runnerPackage from "../package.json" with { type: "json" };
+import { EXPLORATION_TIME_BUCKETS } from "./auto-boundary.js";
 import {
+  AGGREGATE_MEASURE_FUNCTIONS,
   projectScopedExploreResultForModel,
   SCOPED_EXPLORE_DESCRIBE_TOOL,
   SCOPED_EXPLORE_QUERY_TOOL,
@@ -71,7 +73,7 @@ export function createScopedExploreMcpServer(
     resource: resourceId,
     relationship: optionalModelArgument(relationshipId),
     measures: modelArray(z.array(z.object({
-      function: z.enum(["count", "count_distinct", "sum", "avg"]),
+      function: z.enum(AGGREGATE_MEASURE_FUNCTIONS),
       field: optionalModelArgument(fieldId),
       relationship: optionalModelArgument(relationshipId),
     }).strict()).min(1)),
@@ -81,7 +83,7 @@ export function createScopedExploreMcpServer(
     }).strict()))),
     time_bucket: optionalModelArgument(modelObject(z.object({
       field: fieldId,
-      bucket: z.enum(["day", "week", "month"]),
+      bucket: z.enum(EXPLORATION_TIME_BUCKETS),
       relationship: optionalModelArgument(relationshipId),
     }).strict())),
     where: optionalModelArgument(modelArray(z.array(filter).max(8))),

@@ -496,15 +496,12 @@ describe("boundary operator-plane CLI", () => {
       })).resolves.toBe(0);
       expect(JSON.parse(output)).toMatchObject({
         ok: true,
-        activation: "disabled_unreviewed",
-        guided_project_created: false,
-        config_path: path.join(root, "synapsor.runner.json"),
-        store_path: path.join(root, ".synapsor/local.db"),
-        next_action: `synapsor-runner boundary review --project-root '${root}'`,
-        visual_alternative:
-          `synapsor-runner ui --boundary-root '${path.join(root, "synapsor/generated")}' ` +
-          `--config '${path.join(root, "synapsor.runner.json")}' ` +
-          `--store '${path.join(root, ".synapsor/local.db")}' --open`,
+        reconciled: true,
+        destructive_regeneration: false,
+        report: {
+          changed: false,
+          source_database_changed: false,
+        },
       });
     } finally {
       await fs.rm(root, { recursive: true, force: true });
@@ -936,9 +933,51 @@ describe("boundary operator-plane CLI", () => {
 
       expect(output).toContain("Generation lock is stale:");
       expect(output).toContain(
-        "synapsor-runner boundary draft --from-env WAREHOUSE_DATABASE_URL --force && synapsor-runner boundary review",
+        "synapsor-runner boundary rescan --from-env WAREHOUSE_DATABASE_URL",
       );
-      expect(output).toContain("Review and activation are still required");
+      expect(output).toContain("preserves unchanged review decisions");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("routes boundary rescan and force-draft through the same non-destructive reconciliation", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-rescan-command-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: [],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+    });
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await expect(boundaryCommand([
+        "rescan",
+        "--from-env", "DATABASE_URL",
+        "--project-root", root,
+      ], async () => structuredClone(inspection))).resolves.toBe(0);
+      expect(output).toContain("schema and database-role posture are unchanged");
+
+      output = "";
+      await expect(boundaryCommand([
+        "draft",
+        "--from-env", "DATABASE_URL",
+        "--project-root", root,
+        "--force",
+      ], async () => structuredClone(inspection))).resolves.toBe(0);
+      expect(output).toContain("boundary draft used the reconciling rescan path");
+      expect(output).toContain("No curated review state was discarded");
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -1429,9 +1468,11 @@ describe("boundary operator-plane CLI", () => {
       promptText: async () => {
         throw new Error("Routine focused edits must not ask for repeated actor or reason input.");
       },
-      confirm: async (prompt, options) => {
+      confirm: async () => {
+        throw new Error("Focused activation must use the raw-key activation prompt.");
+      },
+      confirmActivation: async (prompt) => {
         confirmationPrompts.push(prompt);
-        expect(options?.defaultValue).toBe(true);
         return true;
       },
     };
@@ -2404,7 +2445,7 @@ describe("boundary operator-plane CLI", () => {
         "Review and activate this boundary change now?",
         `Activate "${build.exploration_boundary.pack.name}" exactly as shown now? You will stay in /access.`,
       ]);
-      expect(confirmationDefaults).toEqual([true, true, true]);
+      expect(confirmationDefaults).toEqual([true, true, false]);
       expect(chooseCalls).toBe(2);
       expect(activationHandoff).toHaveBeenCalledOnce();
       expect(output).toContain("/access is still open.");
@@ -2498,7 +2539,7 @@ describe("boundary operator-plane CLI", () => {
         "Review and activate this boundary change now?",
         `Activate "${build.exploration_boundary.pack.name}" exactly as shown now? You will stay in /access.`,
       ]);
-      expect(confirmationDefaults).toEqual([true, true, true]);
+      expect(confirmationDefaults).toEqual([true, true, false]);
       expect(confirmations).toHaveLength(0);
       expect(chooseCalls).toBe(2);
       expect(activationHandoff).toHaveBeenCalledOnce();

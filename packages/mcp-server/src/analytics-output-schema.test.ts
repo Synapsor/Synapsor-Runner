@@ -64,6 +64,7 @@ describe("analytical MCP output schemas", () => {
       sortable_fields: [],
       groupable_fields: ["status"],
       aggregate_measures: [],
+      aggregate_measure_functions: {},
       count_distinct_fields: ["id"],
       time_bucket_fields: {},
       time_coverage: {},
@@ -316,6 +317,7 @@ function queryResult(
       function: "count",
       field: null,
       relationship: null,
+      contributor_cohort: "reviewed root rows",
       comparison_outputs: {
         period_1: "count_period_1",
         period_2: "count_period_2",
@@ -346,6 +348,8 @@ function queryResult(
     },
     suppression: {
       minimum_cohort_size: 5,
+      effective_minimum_cohort_size: 5,
+      contributor_aware: false,
       outcome: status,
       suppressed_groups: status === "fully_suppressed" ? 1 : 0,
       incomplete_comparison_groups: status === "incomplete_comparison" ? 1 : 0,
@@ -389,6 +393,8 @@ function queryResult(
       : [],
     privacy: {
       minimum_cohort_size: 5,
+      effective_minimum_cohort_size: 5,
+      contributor_aware_measures: [],
       suppressed_groups: status === "fully_suppressed" ? 1 : 0,
       totals_returned: false,
     },

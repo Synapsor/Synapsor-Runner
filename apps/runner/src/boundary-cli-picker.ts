@@ -8,7 +8,10 @@ import {
   SHARED_REFERENCE_ACKNOWLEDGEMENT,
   type DerivedScopePath,
 } from "./auto-boundary.js";
-import { readTerminalTextWithEscape } from "./terminal-prompt.js";
+import {
+  readTerminalActivationConfirmation,
+  readTerminalTextWithEscape,
+} from "./terminal-prompt.js";
 import {
   padTerminalLine,
   terminalContentWidth,
@@ -101,6 +104,7 @@ export type BoundaryReviewInteractiveSession = {
   ): Promise<BoundaryBlockedResolution>;
   promptText(prompt: string): Promise<string | undefined>;
   confirm(prompt: string, options?: { defaultValue?: boolean }): Promise<boolean | undefined>;
+  confirmActivation?(prompt: string): Promise<boolean | undefined>;
 };
 
 type Keypress = {
@@ -155,6 +159,11 @@ export function createBoundaryReviewInteractiveSession(
       if (!answer) return defaultValue;
       return answer.toLowerCase() === "y" || answer.toLowerCase() === "yes";
     },
+    confirmActivation: (prompt) => readTerminalActivationConfirmation(
+      theme.bold(prompt),
+      input,
+      output,
+    ),
   };
 }
 

@@ -702,6 +702,56 @@ export async function boundaryCommand(
   if (subcommand === "rename") return boundaryRenameCommand(rest);
   if (subcommand === "delete") return boundaryDeleteCommand(rest);
   if (subcommand === "disable") return boundaryDisableCommand(rest);
+  if (subcommand === "rescan") {
+    assertKnownOptions(rest, new Set(["--from-env", "--project-root", "--json"]), "boundary rescan");
+    const projectRoot = path.resolve(optionalArg(rest, "--project-root") ?? process.cwd());
+    const journey = await readGuidedOnboardingState(projectRoot);
+    const boundaryRoot = path.join(
+      projectRoot,
+      journey?.artifacts.boundary_root ?? "synapsor/generated",
+    );
+    const prepared = await prepareBoundaryRescan({
+      projectRoot,
+      boundaryRoot,
+      schemaInspector,
+    });
+    const requestedSourceEnv = optionalArg(rest, "--from-env");
+    if (requestedSourceEnv && requestedSourceEnv !== prepared.report.source_env) {
+      throw new Error(
+        `This reviewed project uses ${prepared.report.source_env}, not ${requestedSourceEnv}. `
+        + `Run boundary rescan --from-env ${prepared.report.source_env}.`,
+      );
+    }
+    await commitBoundaryRescan(prepared);
+    if (journey) {
+      const activeBoundaryExists = await guidedActiveBoundaryExists(projectRoot);
+      await recordGuidedBoundaryRescan({
+        projectRoot,
+        schemaFingerprint: prepared.selectedBuild.lock.schema_fingerprint,
+        rolePostureFingerprint: prepared.selectedBuild.lock.role_posture_fingerprint,
+        pendingReview: prepared.report.changed,
+        authorityActive: activeBoundaryExists,
+      });
+    }
+    if (rest.includes("--json")) {
+      process.stdout.write(`${JSON.stringify({
+        ok: true,
+        reconciled: true,
+        report: prepared.report,
+        ...(prepared.report.changed
+          ? { next: `${cliCommandName()} boundary review --project-root ${shellQuote(displayPath(projectRoot))} --access` }
+          : {}),
+      }, null, 2)}\n`);
+    } else {
+      process.stdout.write(`${formatBoundaryRescanReport(prepared.report)}\n`);
+      if (prepared.report.changed) {
+        process.stdout.write(
+          `\nNext: ${cliCommandName()} boundary review --project-root ${shellQuote(displayPath(projectRoot))} --access\n`,
+        );
+      }
+    }
+    return 0;
+  }
   if (subcommand === "draft") {
     assertKnownOptions(rest, new Set([
       "--from-env", "--engine", "--schema", "--project-root", "--force", "--json",
@@ -737,6 +787,66 @@ export async function boundaryCommand(
       throw new Error("--tenant-claim and --principal-claim are only valid with --profile production.");
     }
     const projectRoot = path.resolve(optionalArg(rest, "--project-root") ?? process.cwd());
+    const existingJourney = await readGuidedOnboardingState(projectRoot);
+    const existingBoundaryRoot = path.join(
+      projectRoot,
+      existingJourney?.artifacts.boundary_root ?? "synapsor/generated",
+    );
+    if (await fileExists(path.join(existingBoundaryRoot, "exploration-boundary.draft.json"))) {
+      const authorityChangingFlags = [
+        "--engine",
+        "--schema",
+        "--tenant-claim",
+        "--principal-claim",
+        "--single-tenant",
+        "--organization-id",
+      ].filter((flag) => rest.includes(flag));
+      if (authorityChangingFlags.length) {
+        throw new Error(
+          `An existing reviewed project cannot change ${authorityChangingFlags.join(", ")} through boundary draft. `
+          + "Use /access to create or edit an independently reviewed boundary.",
+        );
+      }
+      const prepared = await prepareBoundaryRescan({
+        projectRoot,
+        boundaryRoot: existingBoundaryRoot,
+        schemaInspector,
+      });
+      if (sourceEnv !== prepared.report.source_env) {
+        throw new Error(
+          `This reviewed project uses ${prepared.report.source_env}, not ${sourceEnv}. `
+          + `Run boundary rescan --from-env ${prepared.report.source_env}.`,
+        );
+      }
+      if (rest.includes("--profile")
+        && deploymentProfile !== prepared.selectedProgress.candidate.deployment_profile) {
+        throw new Error(
+          `The existing boundary uses profile ${prepared.selectedProgress.candidate.deployment_profile}. `
+          + "Create a separate boundary to review a different deployment profile.",
+        );
+      }
+      await commitBoundaryRescan(prepared);
+      if (rest.includes("--json")) {
+        process.stdout.write(`${JSON.stringify({
+          ok: true,
+          reconciled: true,
+          destructive_regeneration: false,
+          report: prepared.report,
+        }, null, 2)}\n`);
+      } else {
+        process.stdout.write([
+          "An existing reviewed project was found; boundary draft used the reconciling rescan path.",
+          "No curated review state was discarded, including when --force was supplied.",
+          "",
+          formatBoundaryRescanReport(prepared.report),
+          ...(prepared.report.changed
+            ? ["", `Next: ${cliCommandName()} boundary review --project-root ${shellQuote(displayPath(projectRoot))} --access`]
+            : []),
+          "",
+        ].join("\n"));
+      }
+      return 0;
+    }
     const project = await detectProjectContext(projectRoot);
     const inspection = await schemaInspector({
       engine: (optionalArg(rest, "--engine") ?? "auto") as InspectEngine,
@@ -758,7 +868,6 @@ export async function boundaryCommand(
         : {}),
       ...(singleOrganization ? { singleOrganization: { organizationId: organizationId! } } : {}),
     });
-    const existingJourney = await readGuidedOnboardingState(projectRoot);
     const existingProject = await resolveSynapsorProject(projectRoot, process.env);
     const shouldInitializeProject = deploymentProfile !== "production"
       && !existingJourney

@@ -61,6 +61,7 @@ describe("Protect This Query", () => {
         dimension_1: "Home",
         time_bucket: "2026-07-06T00:00:00.000Z",
         measure_0: 45_000,
+        __measure_cohort_0: 8,
         __cohort_size: 8,
       }]),
       inspectDatabaseFn: async () => fixture.inspection,
@@ -135,8 +136,8 @@ describe("Protect This Query", () => {
       executor: {
         execute: async () => [],
         executeBatch: async ({ queries }) => queries.map((query) => query.period === "period_1"
-          ? [{ dimension_0: "west", measure_0: 100, __cohort_size: 100 }]
-          : [{ dimension_0: "west", measure_0: 125, __cohort_size: 125 }]),
+          ? [{ dimension_0: "west", measure_0: 100, __measure_cohort_0: 100, __cohort_size: 100 }]
+          : [{ dimension_0: "west", measure_0: 125, __measure_cohort_0: 125, __cohort_size: 125 }]),
         close: async () => undefined,
       },
       inspectDatabaseFn: async () => fixture.inspection,

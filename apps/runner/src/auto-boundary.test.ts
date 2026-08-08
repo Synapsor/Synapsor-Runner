@@ -1682,7 +1682,7 @@ describe("Auto Boundary compiler", () => {
         confirmedDecisions: candidate.unresolved_decisions,
         currentInspection: privileged,
       })).rejects.toThrow(
-        /generation lock is stale[\s\S]*boundary draft --from-env DATABASE_URL --force && synapsor-runner boundary review/i,
+        /generation lock is stale[\s\S]*boundary rescan --from-env DATABASE_URL/i,
       );
     } finally {
       await fs.rm(projectRoot, { recursive: true, force: true });

@@ -45,6 +45,17 @@ const ACTIVE_EXPLORATION_BOUNDARY_SET_FILE = "exploration-boundaries.active.json
 const AUTO_BOUNDARY_POLICY_BASELINE_FILE = "auto-boundary-policy-baseline.json";
 const AUTO_BOUNDARY_POLICY_BASELINE_VERSION = "synapsor.auto-boundary-policy-baseline.v1";
 
+export const EXPLORATION_TIME_BUCKETS = [
+  "hour",
+  "day",
+  "week",
+  "month",
+  "quarter",
+  "year",
+  "day_of_week",
+] as const;
+export type ExplorationTimeBucket = typeof EXPLORATION_TIME_BUCKETS[number];
+
 const MAX_STATIC_INPUT_BYTES = 2 * 1024 * 1024;
 const MAX_DIRECT_RELATIONSHIP_CANDIDATES_PER_RESOURCE = 4;
 const MAX_DEPTH_TWO_RELATIONSHIP_CANDIDATES_PER_RESOURCE = 3;
@@ -341,7 +352,7 @@ export type ExplorationBoundaryDraft = {
       groupable_fields: string[];
       aggregate_measures: string[];
       count_distinct_fields: string[];
-      time_bucket_fields: Record<string, Array<"day" | "week" | "month">>;
+      time_bucket_fields: Record<string, ExplorationTimeBucket[]>;
       kept_out_fields: string[];
       /**
        * Optional so boundaries created before this egress tier retain their
@@ -1084,16 +1095,16 @@ export function compareGenerationLock(
 export function generationLockRemediationCommand(
   lock: Pick<GenerationLock, "source_env">,
 ): string {
-  return `synapsor-runner boundary draft --from-env ${lock.source_env} --force && synapsor-runner boundary review`;
+  return `synapsor-runner boundary rescan --from-env ${lock.source_env}`;
 }
 
 export function generationLockRemediation(
   lock: Pick<GenerationLock, "source_env">,
 ): string {
   return [
-    "The reviewed boundary must be regenerated against the current database posture.",
+    "The reviewed boundary must be reconciled against the current database posture.",
     `Run from the project directory: ${generationLockRemediationCommand(lock)}`,
-    "Review and activation are still required; stale authority remains unavailable.",
+    "Runner preserves unchanged review decisions, invalidates only affected authority, and never activates the reconciled draft automatically.",
   ].join("\n");
 }
 
@@ -3563,7 +3574,7 @@ function buildExplorationBoundaryDraft(
         && !keptOutSet.has(field.name)
         && !trustedScopeFields.has(field.name)).map((field) => [
         field.name,
-        ["day", "week", "month"] as Array<"day" | "week" | "month">,
+        [...EXPLORATION_TIME_BUCKETS],
       ])),
       kept_out_fields: keptOut,
       ...(modelWithheld.length ? { model_withheld_fields: modelWithheld } : {}),

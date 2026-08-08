@@ -389,6 +389,7 @@ the local reviewed contract and proposal before writeback.
   ${cmd} boundary draft --from-env DATABASE_URL --single-tenant --organization-id internal-finance [--project-root .]
   ${cmd} boundary draft --from-env DATABASE_URL --profile production --tenant-claim tenant_id --principal-claim sub [--project-root .]
   ${cmd} boundary draft --from-env DATABASE_URL --profile production --single-tenant --organization-id internal-finance --principal-claim sub [--project-root .]
+  ${cmd} boundary rescan [--from-env DATABASE_URL] [--project-root .] [--json]
   ${cmd} boundary review [--project-root .] [--output boundary-review.json] [--json]
   ${cmd} boundary review --access [--project-root .]  # focused table/column/path editor
   ${cmd} boundary review --map [--all] [--project-root .]
@@ -418,10 +419,14 @@ the current schema and exact database role/grant/RLS posture. Interactive review
 uses development/staging by default. Production Explore requires a separate
 production draft whose tenant and principal claim names match the verified JWT
 session contract; claim values never enter the draft or model arguments.
-from a fresh directory also prepares the validated local Runner config, SQLite
+From a fresh directory it also prepares the validated local Runner config, SQLite
 ledger, and MCP snippets needed by the eventual Ask handoff; it writes
 environment-variable names but no credential values. An established config is
-never replaced. The review groups the exact digest-bound decisions into one
+never replaced. On an existing reviewed project, both \`boundary rescan\` and
+\`boundary draft\` use the same reconciliation path: unchanged decisions and
+manually included tables are preserved, only affected authority is invalidated,
+and no reconciled draft is activated automatically. \`--force\` never discards
+curated review state. The review groups the exact digest-bound decisions into one
 sign-off per table plus one
 boundary-wide sign-off. Stable decision IDs remain available in JSON for audit
 and automation. After final sign-off, the interactive flow shows the complete

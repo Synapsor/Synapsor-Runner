@@ -1525,10 +1525,22 @@ async function confirmActivateAndKeepAccessOpen(input: {
   activationHandoff?: BoundaryActivationHandoff;
   activationReviewNotice?: BoundaryReviewCommandOptions["activationReviewNotice"];
 }): Promise<number> {
-  const result = await confirmAndActivateFocusedBoundary({
-    ...input,
-    keepAccessOpen: true,
-  });
+  let result: number;
+  try {
+    result = await confirmAndActivateFocusedBoundary({
+      ...input,
+      keepAccessOpen: true,
+    });
+  } catch (error) {
+    process.stdout.write([
+      "Boundary activation did not complete.",
+      redactCliErrorMessage(error instanceof Error ? error.message : String(error)),
+      "Any completed review remains saved, but the previously active authority is unchanged.",
+      "You are still in /access. Correct the reported issue, then press C to review and activate again.",
+      "",
+    ].join("\n"));
+    return 0;
+  }
   if (result !== 0) return result;
   process.stdout.write([
     "/access is still open.",
@@ -1645,18 +1657,21 @@ async function confirmAndActivateFocusedBoundary(input: {
     );
   }
   const actor = localInteractiveActor();
-  const accepted = await input.session.confirm(
-    context.candidate.deployment_profile === "production"
-      ? input.keepAccessOpen
-        ? `Activate "${context.candidate.pack.name}" exactly as shown for secured production HTTP Explore now? You will stay in /access.`
-        : `Activate "${context.candidate.pack.name}" exactly as shown for secured production HTTP Explore?`
-      : input.keepAccessOpen
-        ? `Activate "${context.candidate.pack.name}" exactly as shown now? You will stay in /access.`
-        : `Activate "${context.candidate.pack.name}" exactly as shown and continue to Ask?`,
-    { defaultValue: true },
-  );
+  const activationPrompt = context.candidate.deployment_profile === "production"
+    ? input.keepAccessOpen
+      ? `Activate "${context.candidate.pack.name}" exactly as shown for secured production HTTP Explore now? You will stay in /access.`
+      : `Activate "${context.candidate.pack.name}" exactly as shown for secured production HTTP Explore?`
+    : input.keepAccessOpen
+      ? `Activate "${context.candidate.pack.name}" exactly as shown now? You will stay in /access.`
+      : `Activate "${context.candidate.pack.name}" exactly as shown and continue to Ask?`;
+  const accepted = input.keepAccessOpen && input.session.confirmActivation
+    ? await input.session.confirmActivation(activationPrompt)
+    : await input.session.confirm(activationPrompt, { defaultValue: input.keepAccessOpen !== true });
   if (!accepted) {
     process.stdout.write([
+      accepted === undefined
+        ? "Activation confirmation was cancelled or unavailable. No change was made."
+        : "Activation was declined. No change was made.",
       "The edited boundary remains disabled. Current agent authority is unchanged.",
       input.keepAccessOpen
         ? "Continue reviewing access, or press Q/Esc when finished to return to Ask."

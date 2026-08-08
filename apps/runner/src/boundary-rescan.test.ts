@@ -18,8 +18,14 @@ import {
 } from "./boundary-review-domain.js";
 import {
   createSavedBoundary,
+  switchSavedBoundary,
   synchronizeBoundaryLibrary,
 } from "./boundary-library.js";
+import {
+  boundaryReviewCommand as boundaryReviewCommandInternal,
+  loadBoundaryReviewContext,
+} from "./boundary-commands.js";
+import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
 import {
   commitBoundaryRescan,
   formatBoundaryRescanReport,
@@ -473,7 +479,158 @@ describe("boundary rescan reconciliation", () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   });
+
+  it("activates a reconciled boundary over a stale revision without disturbing another active boundary", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-reconciled-activation-"));
+    try {
+      const setup = await writeReviewedDirectCommerceProject(root);
+      const primary = await loadBoundaryReviewContext(root);
+      const support = await createSavedBoundary({
+        projectRoot: root,
+        draft: primary.draft,
+        currentCandidate: primary.candidate,
+        ...(primary.progress ? { currentProgress: primary.progress } : {}),
+        name: "support_boundary",
+        resourceId: "public.orders",
+        actor: "support-reviewer",
+      });
+      const supportDigest = explorationBoundaryCandidateDigest(support.candidate);
+      expect(support.candidate.generation_lock_fingerprint)
+        .toBe(primary.draft.generation_lock_fingerprint);
+      await activateExplorationBoundary({
+        projectRoot: root,
+        candidate: support.candidate,
+        expectedDigest: supportDigest,
+        actor: "support-reviewer",
+        confirmation: `ACTIVATE ${supportDigest}`,
+        confirmedDecisions: support.candidate.unresolved_decisions,
+        currentInspection: setup.inspection,
+        activeSetMode: "add",
+      });
+      await switchSavedBoundary({
+        projectRoot: root,
+        draft: primary.draft,
+        currentCandidate: support.candidate,
+        currentProgress: support,
+        name: "reviewed_staging",
+      });
+
+      const changed = structuredClone(setup.inspection);
+      const orders = changed.tables.find((table) => table.name === "orders")!;
+      orders.columns.push(column("display_rank", "integer", false, orders.columns.length + 1));
+      orders.suggestions.default_visible_columns.push("display_rank");
+      const preview = await prepareBoundaryRescan({ projectRoot: root, inspection: changed });
+      expect(preview.report.changed).toBe(true);
+      await commitBoundaryRescan(preview);
+
+      const staleActive = await loadActivatedExplorationBoundaries(root);
+      expect(staleActive).toHaveLength(2);
+      expect(staleActive.find((boundary) => boundary.pack.name === "reviewed_staging")
+        ?.activation.digest).toBe(setup.activeDigest);
+      const reconciledDigest = explorationBoundaryCandidateDigest(preview.selectedProgress.candidate);
+      let pickerCalls = 0;
+      let refreshedOverview: Parameters<BoundaryReviewInteractiveSession["chooseResource"]>[1];
+      const session: BoundaryReviewInteractiveSession = {
+        chooseResource: async (_resources, overview) => {
+          pickerCalls += 1;
+          if (pickerCalls === 2) refreshedOverview = overview;
+          return pickerCalls === 1 ? { action: "confirm" } : undefined;
+        },
+        editFieldTiers: async () => undefined,
+        promptText: async () => {
+          throw new Error("Reconciled activation already has an audited operator identity.");
+        },
+        confirm: async () => {
+          throw new Error("Focused activation must use the explicit raw-key confirmation.");
+        },
+        confirmActivation: async () => true,
+      };
+
+      await expect(boundaryReviewCommandInternal(
+        ["--project-root", root, "--access"],
+        async () => changed,
+        session,
+        async () => 0,
+        { startAtBoundaryList: true },
+      )).resolves.toBe(0);
+
+      expect(pickerCalls).toBe(2);
+      const activeSet = await loadActivatedExplorationBoundaries(root);
+      expect(activeSet).toHaveLength(2);
+      expect(activeSet.find((boundary) => boundary.pack.name === "reviewed_staging")
+        ?.activation.digest).toBe(reconciledDigest);
+      expect(activeSet.find((boundary) => boundary.pack.name === "support_boundary")
+        ?.activation.digest).toBe(supportDigest);
+      const legacySelected = JSON.parse(await fs.readFile(
+        path.join(root, ".synapsor/exploration-boundary.active.json"),
+        "utf8",
+      ));
+      expect(legacySelected.pack.name).toBe("reviewed_staging");
+      expect(legacySelected.activation.digest).toBe(reconciledDigest);
+      const persistedSet = JSON.parse(await fs.readFile(
+        path.join(root, ".synapsor/exploration-boundaries.active.json"),
+        "utf8",
+      ));
+      expect(persistedSet.boundaries).toHaveLength(2);
+      expect(persistedSet.boundaries.find((boundary: { pack: { name: string } }) =>
+        boundary.pack.name === "reviewed_staging")?.activation.digest).toBe(reconciledDigest);
+      expect(refreshedOverview?.boundaries?.find((boundary) =>
+        boundary.name === "reviewed_staging")).toMatchObject({
+        active: true,
+        matches_active_digest: true,
+      });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 30_000);
 });
+
+async function writeReviewedDirectCommerceProject(root: string): Promise<{
+  inspection: SchemaInspection;
+  activeDigest: `sha256:${string}`;
+}> {
+  const inspection = normalizedCommerceInspection();
+  const build = buildAutoBoundary({
+    inspection,
+    project: {
+      root,
+      package_manager: "npm",
+      frameworks: ["node"],
+      schema_inputs: [],
+      database_env_names: ["DATABASE_URL"],
+    },
+    sourceEnv: "DATABASE_URL",
+    inspectedSchema: "public",
+  });
+  await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+  const progress = createBoundaryReviewProgress({
+    draft: build.exploration_boundary,
+    candidate: build.exploration_boundary,
+    confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+    actor: "owner@example.test",
+    reason: "Initial exact direct-scope boundary review.",
+    revision: 1,
+    now: "2026-08-08T00:00:00.000Z",
+  });
+  await saveBoundaryReviewProgress(root, progress);
+  await synchronizeBoundaryLibrary({
+    projectRoot: root,
+    draft: build.exploration_boundary,
+    currentCandidate: progress.candidate,
+    currentProgress: progress,
+  });
+  const activeDigest = explorationBoundaryCandidateDigest(progress.candidate);
+  await activateExplorationBoundary({
+    projectRoot: root,
+    candidate: progress.candidate,
+    expectedDigest: activeDigest,
+    actor: "owner@example.test",
+    confirmation: `ACTIVATE ${activeDigest}`,
+    confirmedDecisions: progress.candidate.unresolved_decisions,
+    currentInspection: inspection,
+  });
+  return { inspection, activeDigest };
+}
 
 async function writeReviewedCommerceProject(root: string, activate = false): Promise<{
   inspection: SchemaInspection;
