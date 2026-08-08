@@ -1934,12 +1934,17 @@ function protectedPlanReviewLines(
       `${theme.dim("Maximum rows:")} ${theme.value(String(plan.limit))}`,
     ];
   }
-  const measures = plan.measures.map((measure) =>
-    measure.function === "count"
+  const measures = plan.measures.map((measure) => {
+    if ("derived_measure" in measure) {
+      return `reviewed ${safeTerminalText(measure.derived_measure)}`;
+    }
+    return measure.function === "count"
       ? "record count"
-      : `${measure.function}(${safeTerminalText(measure.field ?? "value")})`);
+      : `${measure.function}(${safeTerminalText(measure.field ?? "value")})`;
+  });
   const groups = [
-    ...(plan.dimensions ?? []).map((dimension) => safeTerminalText(dimension.field)),
+    ...(plan.dimensions ?? []).map((dimension) =>
+      safeTerminalText("numeric_band" in dimension ? `reviewed band ${dimension.numeric_band}` : dimension.field)),
     ...(plan.time_bucket
       ? [`${plan.time_bucket.bucket}(${safeTerminalText(plan.time_bucket.field)})`]
       : []),

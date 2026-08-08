@@ -97,8 +97,11 @@ const PROTECTED_AGGREGATE_KEYS = new Set([
   "top_n",
   "minimum_group_size",
 ]);
-const PROTECTED_MEASURE_KEYS = new Set(["name", "function", "field", "relationship"]);
-const PROTECTED_DIMENSION_KEYS = new Set(["name", "field", "relationship"]);
+const PROTECTED_MEASURE_KEYS = new Set(["name", "function", "field", "relationship", "derived"]);
+const PROTECTED_DERIVED_MEASURE_KEYS = new Set(["shape", "numerator", "denominator", "null_policy"]);
+const PROTECTED_DERIVED_OPERAND_KEYS = new Set(["function", "field", "relationship"]);
+const PROTECTED_DIMENSION_KEYS = new Set(["name", "field", "relationship", "numeric_band"]);
+const PROTECTED_NUMERIC_BAND_KEYS = new Set(["edges", "bucket_labels"]);
 const PROTECTED_TIME_BUCKET_KEYS = new Set(["name", "field", "bucket", "relationship"]);
 const PROTECTED_COMPARISON_KEYS = new Set(["field", "relationship", "ranges"]);
 const PROTECTED_RANGE_KEYS = new Set(["start", "end"]);
@@ -764,15 +767,32 @@ function validateProtectedAggregate(
       }
       checkUnknownKeys(measure, PROTECTED_MEASURE_KEYS, measurePath, errors);
       validateUniqueIdentifier(measure.name, measureNames, `${measurePath}.name`, "DUPLICATE_PROTECTED_MEASURE_NAME", errors);
-      if (!["count", "count_distinct", "sum", "avg"].includes(String(measure.function))) errors.push({ path: `${measurePath}.function`, code: "INVALID_PROTECTED_MEASURE_FUNCTION", message: "measure function must be count, count_distinct, sum, or avg." });
-      validateProtectedRelationshipReference(measure.relationship, input.relationshipNames, `${measurePath}.relationship`, errors);
+      if (!["count", "count_distinct", "sum", "avg", "stddev_samp", "stddev_pop", "var_samp", "var_pop", "null_count", "non_null_count", "completion_rate", "reviewed_derived"].includes(String(measure.function))) errors.push({ path: `${measurePath}.function`, code: "INVALID_PROTECTED_MEASURE_FUNCTION", message: "measure function is not in the reviewed fixed aggregate allowlist." });
+      if (measure.function === "reviewed_derived") {
+        if (measure.field !== undefined || measure.relationship !== undefined) {
+          errors.push({ path: measurePath, code: "PROTECTED_DERIVED_DIRECT_FIELD_FORBIDDEN", message: "a reviewed derived measure freezes its fields inside derived operands." });
+        }
+        validateProtectedDerivedMeasure(measure.derived, measurePath, input, errors);
+      } else {
+        if (measure.derived !== undefined) errors.push({ path: `${measurePath}.derived`, code: "PROTECTED_DERIVED_SHAPE_FORBIDDEN", message: "only reviewed_derived measures may declare a fixed derived shape." });
+        validateProtectedRelationshipReference(measure.relationship, input.relationshipNames, `${measurePath}.relationship`, errors);
+      }
       if (measure.function === "count") {
         if (measure.field !== undefined) errors.push({ path: `${measurePath}.field`, code: "PROTECTED_COUNT_FIELD_FORBIDDEN", message: "count measures count scoped subject rows and must not declare a field." });
         if (measure.relationship !== undefined) errors.push({ path: `${measurePath}.relationship`, code: "PROTECTED_COUNT_RELATIONSHIP_FORBIDDEN", message: "count measures count the scoped subject entity, not a joined relation." });
-      } else {
+      } else if (measure.function !== "reviewed_derived") {
         validateProtectedFieldReference(measure.field, measure.relationship, input.relationshipNames, input.keptOut, input.trustedScopeFields, measurePath, errors);
       }
     });
+    if (value.measures.some((measure) => isRecord(measure)
+      && ["stddev_samp", "stddev_pop", "var_samp", "var_pop", "reviewed_derived"].includes(String(measure.function)))
+      && (!Number.isSafeInteger(value.minimum_group_size) || Number(value.minimum_group_size) < 5)) {
+      errors.push({
+        path: `${path}.minimum_group_size`,
+        code: "PROTECTED_DISPERSION_COHORT_TOO_SMALL",
+        message: "dispersion measures require a minimum group size of at least 5 non-null contributors.",
+      });
+    }
   }
 
   const dimensionNames = new Set<string>();
@@ -789,6 +809,9 @@ function validateProtectedAggregate(
         checkUnknownKeys(dimension, PROTECTED_DIMENSION_KEYS, dimensionPath, errors);
         validateUniqueIdentifier(dimension.name, dimensionNames, `${dimensionPath}.name`, "DUPLICATE_PROTECTED_DIMENSION_NAME", errors);
         validateProtectedFieldReference(dimension.field, dimension.relationship, input.relationshipNames, input.keptOut, input.trustedScopeFields, dimensionPath, errors);
+        if (dimension.numeric_band !== undefined) {
+          validateProtectedNumericBand(dimension.numeric_band, `${dimensionPath}.numeric_band`, errors);
+        }
       });
     }
   }
@@ -800,7 +823,7 @@ function validateProtectedAggregate(
     } else {
       checkUnknownKeys(value.time_bucket, PROTECTED_TIME_BUCKET_KEYS, bucketPath, errors);
       if (!isSafeIdentifier(value.time_bucket.name)) errors.push({ path: `${bucketPath}.name`, code: "INVALID_PROTECTED_TIME_BUCKET_NAME", message: "time bucket name must be a safe identifier." });
-      if (value.time_bucket.bucket !== "day" && value.time_bucket.bucket !== "week" && value.time_bucket.bucket !== "month") errors.push({ path: `${bucketPath}.bucket`, code: "INVALID_PROTECTED_TIME_BUCKET", message: "time bucket must be day, week, or month." });
+      if (!["hour", "day", "week", "month", "quarter", "year", "day_of_week"].includes(String(value.time_bucket.bucket))) errors.push({ path: `${bucketPath}.bucket`, code: "INVALID_PROTECTED_TIME_BUCKET", message: "time bucket must be hour, day, week, month, quarter, year, or day_of_week." });
       validateProtectedFieldReference(value.time_bucket.field, value.time_bucket.relationship, input.relationshipNames, input.keptOut, input.trustedScopeFields, bucketPath, errors);
     }
   }
@@ -868,6 +891,97 @@ function validateProtectedAggregate(
   if (!Number.isSafeInteger(value.minimum_group_size) || Number(value.minimum_group_size) < 1 || Number(value.minimum_group_size) > 1_000_000) {
     errors.push({ path: `${path}.minimum_group_size`, code: "INVALID_PROTECTED_MINIMUM_GROUP_SIZE", message: "minimum_group_size must be from 1 through 1000000." });
   }
+}
+
+function validateProtectedNumericBand(
+  value: unknown,
+  path: string,
+  errors: ValidationIssue[],
+): void {
+  if (!isRecord(value)) {
+    errors.push({ path, code: "PROTECTED_NUMERIC_BAND_NOT_OBJECT", message: "reviewed numeric band must be an object." });
+    return;
+  }
+  checkUnknownKeys(value, PROTECTED_NUMERIC_BAND_KEYS, path, errors);
+  const edges = Array.isArray(value.edges) ? value.edges : [];
+  if (edges.length < 1 || edges.length > 16
+    || edges.some((edge) => typeof edge !== "number" || !Number.isFinite(edge))
+    || edges.some((edge, index) => index > 0 && Number(edge) <= Number(edges[index - 1]))) {
+    errors.push({ path: `${path}.edges`, code: "INVALID_PROTECTED_NUMERIC_BAND_EDGES", message: "reviewed numeric band requires 1 through 16 finite, strictly increasing edges." });
+  }
+  const labels = Array.isArray(value.bucket_labels) ? value.bucket_labels : [];
+  if (labels.length !== edges.length + 1
+    || labels.some((label) => typeof label !== "string" || !label.trim() || [...label].length > 64 || /[\u0000-\u001f\u007f]/.test(label))
+    || new Set(labels).size !== labels.length
+    || new TextEncoder().encode(JSON.stringify(labels)).byteLength > 2_048) {
+    errors.push({ path: `${path}.bucket_labels`, code: "INVALID_PROTECTED_NUMERIC_BAND_LABELS", message: "reviewed numeric band requires one unique bounded label per bucket and at most 2048 UTF-8 bytes total." });
+  }
+}
+
+function validateProtectedDerivedMeasure(
+  value: unknown,
+  measurePath: string,
+  input: {
+    relationshipNames: Set<string>;
+    keptOut: Set<string>;
+    trustedScopeFields: Set<string>;
+  },
+  errors: ValidationIssue[],
+): void {
+  const path = `${measurePath}.derived`;
+  if (!isRecord(value)) {
+    errors.push({ path, code: "PROTECTED_DERIVED_REQUIRED", message: "reviewed_derived requires one frozen ratio, percentage, or per-unit definition." });
+    return;
+  }
+  checkUnknownKeys(value, PROTECTED_DERIVED_MEASURE_KEYS, path, errors);
+  if (!["ratio", "percentage", "per_unit_average"].includes(String(value.shape))) {
+    errors.push({ path: `${path}.shape`, code: "INVALID_PROTECTED_DERIVED_SHAPE", message: "derived shape must be ratio, percentage, or per_unit_average." });
+  }
+  if (value.null_policy !== "null_on_zero_or_null_denominator") {
+    errors.push({ path: `${path}.null_policy`, code: "INVALID_PROTECTED_DERIVED_NULL_POLICY", message: "derived denominator behavior must be null_on_zero_or_null_denominator." });
+  }
+  const numerator = validateProtectedDerivedOperand(value.numerator, `${path}.numerator`, input, errors);
+  const denominator = validateProtectedDerivedOperand(value.denominator, `${path}.denominator`, input, errors);
+  if (numerator && denominator && numerator.relationship !== denominator.relationship) {
+    errors.push({ path, code: "PROTECTED_DERIVED_RELATIONSHIP_MISMATCH", message: "derived operands must use the same reviewed relationship path." });
+  }
+  if (value.shape === "per_unit_average"
+    && (numerator?.function !== "sum"
+      || !["count", "count_distinct"].includes(denominator?.function ?? ""))) {
+    errors.push({ path, code: "INVALID_PROTECTED_PER_UNIT_SHAPE", message: "per_unit_average requires SUM divided by COUNT or COUNT DISTINCT." });
+  }
+}
+
+function validateProtectedDerivedOperand(
+  value: unknown,
+  path: string,
+  input: {
+    relationshipNames: Set<string>;
+    keptOut: Set<string>;
+    trustedScopeFields: Set<string>;
+  },
+  errors: ValidationIssue[],
+): { function: string; relationship?: string } | undefined {
+  if (!isRecord(value)) {
+    errors.push({ path, code: "PROTECTED_DERIVED_OPERAND_REQUIRED", message: "a derived operand must be a fixed reviewed aggregate." });
+    return undefined;
+  }
+  checkUnknownKeys(value, PROTECTED_DERIVED_OPERAND_KEYS, path, errors);
+  if (!["count", "count_distinct", "sum", "avg"].includes(String(value.function))) {
+    errors.push({ path: `${path}.function`, code: "INVALID_PROTECTED_DERIVED_OPERAND", message: "derived operands permit only count, count_distinct, sum, or avg." });
+  }
+  validateProtectedRelationshipReference(value.relationship, input.relationshipNames, `${path}.relationship`, errors);
+  if (value.function === "count") {
+    if (value.field !== undefined || value.relationship !== undefined) {
+      errors.push({ path, code: "PROTECTED_DERIVED_COUNT_SHAPE_INVALID", message: "a derived COUNT operand counts scoped root rows and has no field or relationship." });
+    }
+  } else {
+    validateProtectedFieldReference(value.field, value.relationship, input.relationshipNames, input.keptOut, input.trustedScopeFields, path, errors);
+  }
+  return {
+    function: String(value.function),
+    ...(typeof value.relationship === "string" ? { relationship: value.relationship } : {}),
+  };
 }
 
 function validateProtectedReadLimits(value: unknown, path: string, errors: ValidationIssue[]): void {

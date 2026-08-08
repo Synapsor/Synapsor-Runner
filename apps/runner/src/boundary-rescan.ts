@@ -6,6 +6,8 @@ import {
 } from "@synapsor-runner/schema-inspector";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
+  assertReviewedDerivedMeasureForBoundary,
+  assertReviewedNumericBandForBoundary,
   buildAutoBoundary,
   explorationBoundaryCandidateDigest,
   generationLockSharedFactsDigest,
@@ -208,7 +210,28 @@ export async function prepareBoundaryRescan(input: {
       }));
       continue;
     }
-    const build = buildAutoBoundary({ ...buildInput, overrides: pruned.overrides });
+    const foundationBuild = buildAutoBoundary({
+      ...buildInput,
+      overrides: withoutAdvancedAggregateOverrides(pruned.overrides),
+    });
+    const previousFoundation = withoutAdvancedAggregates(previous.candidate);
+    const foundationCandidate = previousFoundation.pack.resources.length === 0
+      ? rebaseEmptyDisabledBoundary(
+          foundationBuild.exploration_boundary,
+          previousFoundation,
+          boundaryName,
+        )
+      : rebaseSavedBoundaryForRescan({
+          generatedDraft: foundationBuild.exploration_boundary,
+          previousCandidate: previousFoundation,
+          boundaryName,
+        });
+    const reviewedAggregates = pruneInvalidAdvancedAggregateOverrides(
+      foundationCandidate,
+      pruned.overrides,
+    );
+    pruned.removed.push(...reviewedAggregates.removed);
+    const build = buildAutoBoundary({ ...buildInput, overrides: reviewedAggregates.overrides });
     builds.set(boundaryName, build);
     const candidate = previous.candidate.pack.resources.length === 0
       ? rebaseEmptyDisabledBoundary(
@@ -227,7 +250,7 @@ export async function prepareBoundaryRescan(input: {
       candidate,
       confirmedDecisions: retained.decisions,
       previous,
-      reviewOverrides: pruned.overrides,
+      reviewOverrides: reviewedAggregates.overrides,
       actor: "synapsor-rescan-reconciliation",
       reason: retained.safelyCarried.length
         ? "Preserved unchanged reviewed authority; newly inspected fields remain unavailable until separately reviewed."
@@ -641,6 +664,65 @@ function rescanReport(input: {
     totals,
     source_database_changed: false,
   };
+}
+
+function withoutAdvancedAggregateOverrides(
+  input: AutoBoundaryReviewOverrides,
+): AutoBoundaryReviewOverrides {
+  const result = structuredClone(input);
+  for (const [resourceId, resource] of Object.entries(result.resources)) {
+    delete resource.derived_measures;
+    delete resource.numeric_bands;
+    if (Object.keys(resource).length === 0) delete result.resources[resourceId];
+  }
+  return result;
+}
+
+function withoutAdvancedAggregates(input: ExplorationBoundaryDraft): ExplorationBoundaryDraft {
+  const result = structuredClone(input);
+  result.pack.resources.forEach((resource) => {
+    delete resource.derived_measures;
+    delete resource.numeric_bands;
+  });
+  return result;
+}
+
+function pruneInvalidAdvancedAggregateOverrides(
+  boundary: ExplorationBoundaryDraft,
+  input: AutoBoundaryReviewOverrides,
+): { overrides: AutoBoundaryReviewOverrides; removed: string[] } {
+  const overrides = structuredClone(input);
+  const removed: string[] = [];
+  for (const [resourceId, resource] of Object.entries(overrides.resources)) {
+    for (const [name, decision] of Object.entries(resource.derived_measures ?? {})) {
+      try {
+        assertReviewedDerivedMeasureForBoundary(boundary, resourceId, decision.definition);
+      } catch (error) {
+        delete resource.derived_measures![name];
+        removed.push(
+          `${resourceId}.${name}: reviewed derived measure no longer validates against current authority (${safeTerminalText(error instanceof Error ? error.message : String(error))})`,
+        );
+      }
+    }
+    if (resource.derived_measures && Object.keys(resource.derived_measures).length === 0) {
+      delete resource.derived_measures;
+    }
+    for (const [name, decision] of Object.entries(resource.numeric_bands ?? {})) {
+      try {
+        assertReviewedNumericBandForBoundary(boundary, resourceId, decision.definition);
+      } catch (error) {
+        delete resource.numeric_bands![name];
+        removed.push(
+          `${resourceId}.${name}: reviewed numeric band no longer validates against current authority (${safeTerminalText(error instanceof Error ? error.message : String(error))})`,
+        );
+      }
+    }
+    if (resource.numeric_bands && Object.keys(resource.numeric_bands).length === 0) {
+      delete resource.numeric_bands;
+    }
+    if (Object.keys(resource).length === 0) delete overrides.resources[resourceId];
+  }
+  return { overrides, removed: removed.sort() };
 }
 
 async function optionalOldPolicyBaseline(

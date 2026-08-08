@@ -18,6 +18,7 @@ export type {
   ProposalActionSpec,
   ProposalSpec,
   ProtectedReadAggregateSpec,
+  ProtectedReadBaseMeasureSpec,
   ProtectedReadDimensionSpec,
   ProtectedReadLimitsSpec,
   ProtectedReadMeasureSpec,

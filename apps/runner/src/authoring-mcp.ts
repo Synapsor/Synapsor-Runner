@@ -45,6 +45,9 @@ const optionalBoundarySelector = optionalModelArgument(z.string()
 const optionalResourceSelector = optionalModelArgument(z.string().max(256)
   .describe("Copy the exact resource id from app.describe_data. Empty means omitted."));
 const relationshipId = z.string().min(1).max(256).describe("Copy the exact active relationship id from app.describe_data; keep it separate from field.");
+const numericBandId = z.string().min(1).max(64).describe(
+  "Copy one exact reviewed numeric-band name from app.describe_data. Never send bucket edges or labels.",
+);
 const filter = z.object({
   field: fieldId,
   op: z.enum(["eq", "neq", "lt", "lte", "gt", "gte", "in"]),
@@ -72,15 +75,27 @@ export function createScopedExploreMcpServer(
     kind: z.literal("aggregate"),
     resource: resourceId,
     relationship: optionalModelArgument(relationshipId),
-    measures: modelArray(z.array(z.object({
-      function: z.enum(AGGREGATE_MEASURE_FUNCTIONS),
-      field: optionalModelArgument(fieldId),
-      relationship: optionalModelArgument(relationshipId),
-    }).strict()).min(1)),
-    dimensions: optionalModelArgument(modelArray(z.array(z.object({
-      field: fieldId,
-      relationship: optionalModelArgument(relationshipId),
-    }).strict()))),
+    measures: modelArray(z.array(z.union([
+      z.object({
+        function: z.enum(AGGREGATE_MEASURE_FUNCTIONS),
+        field: optionalModelArgument(fieldId),
+        relationship: optionalModelArgument(relationshipId),
+      }).strict(),
+      z.object({
+        derived_measure: fieldId.describe(
+          "Copy one exact reviewed derived-measure name from app.describe_data. Do not send a formula or operands.",
+        ),
+      }).strict(),
+    ])).min(1)),
+    dimensions: optionalModelArgument(modelArray(z.array(z.union([
+      z.object({
+        field: fieldId,
+        relationship: optionalModelArgument(relationshipId),
+      }).strict(),
+      z.object({
+        numeric_band: numericBandId,
+      }).strict(),
+    ])))),
     time_bucket: optionalModelArgument(modelObject(z.object({
       field: fieldId,
       bucket: z.enum(EXPLORATION_TIME_BUCKETS),
@@ -229,7 +244,9 @@ function exploreToolDescription(production: boolean): string {
     'Aggregate: {"plan":{"kind":"aggregate","resource":"<exact resource id>","measures":[{"function":"sum","field":"<numeric field id>"}],"dimensions":[{"field":"<group field id>"}],"top_n":25}}.',
     'Related aggregate: {"plan":{"kind":"aggregate","resource":"<exact root resource id>","measures":[{"function":"count"}],"dimensions":[{"field":"<target field id>","relationship":"<exact relationship id>"}],"top_n":25}}.',
     'Rows: {"plan":{"kind":"rows","resource":"<exact resource id>","select":["<field id>"],"limit":50}}.',
-    "Keep relationship separate from field; never concatenate them. Separate boundaries cannot be joined. SQL, arbitrary ids, model-selected tenant/principal, mutation, approval, and commit are unavailable.",
+    'Reviewed derived measure: {"plan":{"kind":"aggregate","resource":"<exact resource id>","measures":[{"derived_measure":"<exact reviewed derived-measure name>"}],"top_n":25}}. Never invent or send its formula.',
+    'Reviewed numeric band: {"plan":{"kind":"aggregate","resource":"<exact resource id>","measures":[{"function":"count"}],"dimensions":[{"numeric_band":"<exact reviewed numeric-band name>"}],"top_n":25}}. Never send bucket edges or labels.',
+    "Keep relationship separate from field; never concatenate them. Separate boundaries cannot be joined. SQL, formulas, arbitrary ids, model-selected tenant/principal, mutation, approval, and commit are unavailable.",
   ].join(" ");
 }
 

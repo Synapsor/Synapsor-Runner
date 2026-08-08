@@ -11,9 +11,13 @@ import {
   generationLockSharedFactsDigest,
   loadGenerationLockSnapshot,
   normalizeAutoBoundaryReviewOverrides,
+  normalizeExplorationDerivedMeasure,
+  normalizeExplorationNumericBand,
   reviewExplorationBoundaryCandidate,
   type AutoBoundaryReviewOverrides,
   type ExplorationBoundaryDraft,
+  type ExplorationDerivedMeasure,
+  type ExplorationNumericBand,
 } from "./auto-boundary.js";
 import {
   BOUNDARY_REVIEW_PROGRESS_VERSION,
@@ -92,6 +96,26 @@ export type ManagedBoundaryReviewDecision =
       actor: string;
       reason: string;
       decided_at?: string;
+    }
+  | {
+      kind: "derived_measure";
+      resource_id: string;
+      name: string;
+      definition: ExplorationDerivedMeasure | null;
+      remove?: true;
+      actor: string;
+      reason: string;
+      decided_at?: string;
+    }
+  | {
+      kind: "numeric_band";
+      resource_id: string;
+      name: string;
+      definition: ExplorationNumericBand | null;
+      remove?: true;
+      actor: string;
+      reason: string;
+      decided_at?: string;
     };
 
 export function normalizeManagedBoundaryReviewDecision(
@@ -140,6 +164,50 @@ export function normalizeManagedBoundaryReviewDecision(
       resource_id: resourceId,
       field: requiredText(input.field, "field"),
       values: input.values.map(String),
+      actor,
+      reason,
+      decided_at: decidedAt,
+    };
+  }
+  if (kind === "derived_measure") {
+    const name = requiredText(input.name, "name");
+    if (!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name)) {
+      throw new Error("derived_measure review requires a safe name of at most 64 characters.");
+    }
+    const definition = input.definition === null
+      ? null
+      : normalizeExplorationDerivedMeasure(input.definition, `${resourceId}.${name} derived measure`);
+    if (definition && definition.name !== name) {
+      throw new Error("derived_measure review name must match its fixed definition name.");
+    }
+    return {
+      kind,
+      resource_id: resourceId,
+      name,
+      definition,
+      ...(input.remove === true ? { remove: true } : {}),
+      actor,
+      reason,
+      decided_at: decidedAt,
+    };
+  }
+  if (kind === "numeric_band") {
+    const name = requiredText(input.name, "name");
+    if (!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name)) {
+      throw new Error("numeric_band review requires a safe name of at most 64 characters.");
+    }
+    const definition = input.definition === null
+      ? null
+      : normalizeExplorationNumericBand(input.definition, `${resourceId}.${name} numeric band`);
+    if (definition && definition.name !== name) {
+      throw new Error("numeric_band review name must match its fixed definition name.");
+    }
+    return {
+      kind,
+      resource_id: resourceId,
+      name,
+      definition,
+      ...(input.remove === true ? { remove: true } : {}),
       actor,
       reason,
       decided_at: decidedAt,
@@ -194,7 +262,7 @@ export function normalizeManagedBoundaryReviewDecision(
     };
   }
   throw new Error(
-    "Managed boundary review kind must be field_exposure, field_enum, row_identity, tenant_key, tenant_scope_path, shared_reference_scope, principal_key, principal_scope_path, or minimum_cohort.",
+    "Managed boundary review kind must be field_exposure, field_enum, derived_measure, numeric_band, row_identity, tenant_key, tenant_scope_path, shared_reference_scope, principal_key, principal_scope_path, or minimum_cohort.",
   );
 }
 
@@ -229,6 +297,40 @@ export function applyManagedBoundaryReviewDecision(
         decided_at: decidedAt,
       },
     };
+  } else if (input.kind === "derived_measure") {
+    if (input.remove || input.definition === null) {
+      if (resource.derived_measures) {
+        delete resource.derived_measures[input.name];
+        if (Object.keys(resource.derived_measures).length === 0) delete resource.derived_measures;
+      }
+    } else {
+      resource.derived_measures = {
+        ...(resource.derived_measures ?? {}),
+        [input.name]: {
+          definition: structuredClone(input.definition),
+          actor: input.actor,
+          reason: input.reason,
+          decided_at: decidedAt,
+        },
+      };
+    }
+  } else if (input.kind === "numeric_band") {
+    if (input.remove || input.definition === null) {
+      if (resource.numeric_bands) {
+        delete resource.numeric_bands[input.name];
+        if (Object.keys(resource.numeric_bands).length === 0) delete resource.numeric_bands;
+      }
+    } else {
+      resource.numeric_bands = {
+        ...(resource.numeric_bands ?? {}),
+        [input.name]: {
+          definition: structuredClone(input.definition),
+          actor: input.actor,
+          reason: input.reason,
+          decided_at: decidedAt,
+        },
+      };
+    }
   } else if (input.kind === "row_identity") {
     resource.row_identity = {
       value: input.value,
@@ -725,6 +827,15 @@ export function boundaryReviewDecisions(candidate: ExplorationBoundaryDraft): Bo
         sortable_fields: resource.sortable_fields,
         groupable_fields: resource.groupable_fields,
         aggregate_measures: resource.aggregate_measures,
+        ...(resource.aggregate_measure_functions
+          ? { aggregate_measure_functions: resource.aggregate_measure_functions }
+          : {}),
+        ...(resource.presence_measure_fields
+          ? { presence_measure_fields: resource.presence_measure_fields }
+          : {}),
+        ...(resource.derived_measures?.length
+          ? { derived_measures: resource.derived_measures }
+          : {}),
         count_distinct_fields: resource.count_distinct_fields,
         time_bucket_fields: resource.time_bucket_fields,
         field_enums: resource.field_enums,

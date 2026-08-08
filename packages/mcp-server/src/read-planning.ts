@@ -3,7 +3,11 @@ import {
   canonicalJsonDigest,
 } from "@synapsor-runner/protocol";
 import type {
+  ProtectedReadAggregateSpec,
+  ProtectedReadBaseMeasureSpec,
+  ProtectedReadMeasureSpec,
   ProtectedReadSpec,
+  ProtectedReadTimeBucketSpec,
   ProtectedReadValueSpec,
 } from "@synapsor/spec";
 import type {
@@ -186,19 +190,15 @@ export function buildProtectedReadQuery(
     range?: { start: ProtectedReadValueSpec; end: ProtectedReadValueSpec },
     period?: "period_1" | "period_2",
   ): string => {
-    const from = fromClause();
-    const where = scopedWhere();
-    if (range && aggregate.comparison) {
-      const reference = field(aggregate.comparison.field, aggregate.comparison.relationship);
-      where.push(`${reference} >= ${bind(protectedReadValue(range.start, args))}`);
-      where.push(`${reference} < ${bind(protectedReadValue(range.end, args))}`);
-    }
     const select: string[] = [];
     const groups: string[] = [];
     for (const dimension of aggregate.dimensions ?? []) {
-      const expression = field(dimension.field, dimension.relationship);
+      const reviewedField = field(dimension.field, dimension.relationship);
+      const expression = dimension.numeric_band
+        ? protectedNumericBandSql(reviewedField, dimension.numeric_band, bind)
+        : reviewedField;
       select.push(`${expression} AS ${quoteIdentifier(dimension.name, placeholderStyle)}`);
-      groups.push(expression);
+      groups.push(dimension.numeric_band ? String(select.length) : expression);
     }
     if (aggregate.time_bucket && (!range || !periodMover)) {
       const expression = protectedTimeBucket(
@@ -209,16 +209,38 @@ export function buildProtectedReadQuery(
       select.push(`${expression} AS ${quoteIdentifier(aggregate.time_bucket.name, placeholderStyle)}`);
       groups.push(expression);
     }
-    for (const measure of aggregate.measures) {
-      const expression = measure.function === "count"
-        ? "COUNT(*)"
-        : measure.function === "count_distinct"
-          ? `COUNT(DISTINCT ${field(measure.field!, measure.relationship)})`
-          : `${measure.function.toUpperCase()}(${field(measure.field!, measure.relationship)})`;
+    aggregate.measures.forEach((measure, index) => {
+      if (measure.function === "reviewed_derived") {
+        const derived = measure.derived;
+        if (!derived) {
+          throw new McpRuntimeError("PROTECTED_DERIVED_REQUIRED", "Reviewed derived measure authority is missing its frozen definition.");
+        }
+        const numerator = protectedDerivedOperandSql(derived.numerator, field);
+        const denominator = protectedDerivedOperandSql(derived.denominator, field);
+        const scale = derived.shape === "percentage" ? "100.0" : "1.0";
+        const expression = `CASE WHEN ${denominator.value} IS NULL OR ${denominator.value} = 0 THEN NULL ELSE (${scale} * ${numerator.value} / ${denominator.value}) END`;
+        select.push(`${expression} AS ${quoteIdentifier(measure.name, placeholderStyle)}`);
+        select.push(`LEAST(COUNT(*), ${numerator.contributors}, ${denominator.contributors}) AS ${quoteIdentifier(`__measure_cohort_${index}`, placeholderStyle)}`);
+        return;
+      }
+      const measuredField = measure.field
+        ? field(measure.field, measure.relationship)
+        : undefined;
+      const expression = protectedAggregateMeasureSql(measure.function, measuredField);
       select.push(`${expression} AS ${quoteIdentifier(measure.name, placeholderStyle)}`);
-    }
+      if (["sum", "avg", "stddev_samp", "stddev_pop", "var_samp", "var_pop"].includes(measure.function)) {
+        select.push(`COUNT(${measuredField}) AS ${quoteIdentifier(`__measure_cohort_${index}`, placeholderStyle)}`);
+      }
+    });
     select.push(`COUNT(*) AS ${quoteIdentifier("__cohort_size", placeholderStyle)}`);
     if (period) select.push(`'${period}' AS ${quoteIdentifier("__period", placeholderStyle)}`);
+    const from = fromClause();
+    const where = scopedWhere();
+    if (range && aggregate.comparison) {
+      const reference = field(aggregate.comparison.field, aggregate.comparison.relationship);
+      where.push(`${reference} >= ${bind(protectedReadValue(range.start, args))}`);
+      where.push(`${reference} < ${bind(protectedReadValue(range.end, args))}`);
+    }
     const order = aggregate.order_by?.kind === "measure"
       ? ` ORDER BY ${quoteIdentifier(aggregate.order_by.measure, placeholderStyle)} ${aggregate.order_by.direction.toUpperCase()}`
       : aggregate.order_by?.kind === "time_bucket" && !range
@@ -242,6 +264,32 @@ export function buildProtectedReadQuery(
   };
 }
 
+function protectedNumericBandSql(
+  field: string,
+  band: NonNullable<ProtectedReadAggregateSpec["dimensions"]>[number]["numeric_band"],
+  bind: (value: unknown) => string,
+): string {
+  if (!band) throw new McpRuntimeError("PROTECTED_NUMERIC_BAND_REQUIRED", "Reviewed numeric band authority is missing.");
+  const clauses = band.edges.map((edge, index) =>
+    `WHEN ${field} < ${bind(edge)} THEN ${bind(band.bucket_labels[index])}`);
+  return `CASE WHEN ${field} IS NULL THEN NULL ${clauses.join(" ")} ELSE ${bind(band.bucket_labels.at(-1))} END`;
+}
+
+function protectedDerivedOperandSql(
+  operand: ProtectedReadBaseMeasureSpec,
+  field: (name: string, relationship?: string) => string,
+): { value: string; contributors: string } {
+  if (operand.function === "count") return { value: "COUNT(*)", contributors: "COUNT(*)" };
+  if (!operand.field) {
+    throw new McpRuntimeError("PROTECTED_DERIVED_FIELD_REQUIRED", `${operand.function} requires a frozen reviewed field.`);
+  }
+  const reference = field(operand.field, operand.relationship);
+  return {
+    value: protectedAggregateMeasureSql(operand.function, reference),
+    contributors: `COUNT(${reference})`,
+  };
+}
+
 export function protectedReadValue(value: ProtectedReadValueSpec, args: Record<string, unknown>): unknown {
   if ("fixed" in value) return value.fixed;
   const resolved = args[value.from_arg];
@@ -249,11 +297,36 @@ export function protectedReadValue(value: ProtectedReadValueSpec, args: Record<s
   return resolved;
 }
 
-export function protectedTimeBucket(column: string, bucket: "day" | "week" | "month", placeholderStyle: "$" | "?"): string {
-  if (placeholderStyle === "$") return `date_trunc('${bucket}', ${column})`;
+export function protectedTimeBucket(
+  column: string,
+  bucket: ProtectedReadTimeBucketSpec["bucket"],
+  placeholderStyle: "$" | "?",
+): string {
+  if (placeholderStyle === "$") {
+    return bucket === "day_of_week"
+      ? `EXTRACT(ISODOW FROM ${column})`
+      : `date_trunc('${bucket}', ${column})`;
+  }
+  if (bucket === "hour") return `DATE_FORMAT(${column}, '%Y-%m-%d %H:00:00')`;
   if (bucket === "day") return `DATE(${column})`;
   if (bucket === "week") return `DATE_SUB(DATE(${column}), INTERVAL WEEKDAY(${column}) DAY)`;
-  return `DATE_FORMAT(${column}, '%Y-%m-01')`;
+  if (bucket === "month") return `DATE_FORMAT(${column}, '%Y-%m-01')`;
+  if (bucket === "quarter") return `CONCAT(YEAR(${column}), '-Q', QUARTER(${column}))`;
+  if (bucket === "year") return `YEAR(${column})`;
+  return `(WEEKDAY(${column}) + 1)`;
+}
+
+function protectedAggregateMeasureSql(
+  fn: Exclude<ProtectedReadMeasureSpec["function"], "reviewed_derived">,
+  field: string | undefined,
+): string {
+  if (fn === "count") return "COUNT(*)";
+  if (!field) throw new McpRuntimeError("PROTECTED_AGGREGATE_FIELD_REQUIRED", `${fn} requires a reviewed field.`);
+  if (fn === "count_distinct") return `COUNT(DISTINCT ${field})`;
+  if (fn === "non_null_count") return `COUNT(${field})`;
+  if (fn === "null_count") return `(COUNT(*) - COUNT(${field}))`;
+  if (fn === "completion_rate") return `(100.0 * COUNT(${field}) / NULLIF(COUNT(*), 0))`;
+  return `${fn.toUpperCase()}(${field})`;
 }
 
 export function protectedStatementTimeout(capability: RuntimeCapabilityConfig, sourceTimeout: number | undefined): number | undefined {

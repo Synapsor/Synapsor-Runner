@@ -23,6 +23,8 @@ import {
   AUTHORITY_DEPENDENCIES_VERSION,
   AUTO_BOUNDARY_COMPILER_VERSION,
   AUTO_BOUNDARY_SPEC_VERSION,
+  SUPPORTED_AUTO_BOUNDARY_SPEC_VERSIONS,
+  EXPLORATION_NUMERIC_AGGREGATE_FUNCTIONS,
   SHARED_REFERENCE_ACKNOWLEDGEMENT,
   assertSingleOrganizationInspectionSafe,
   compareGenerationLock,
@@ -38,6 +40,9 @@ import {
   rolePostureFingerprint,
   type ActivatedExplorationBoundary,
   type ExplorationBoundaryDraft,
+  type ExplorationDerivedBaseMeasure,
+  type ExplorationDerivedMeasure,
+  type ExplorationNumericBand,
   type GenerationAuthorityDependencies,
   type GenerationLock,
   type ExplorationTimeBucket,
@@ -79,6 +84,9 @@ export const AGGREGATE_MEASURE_FUNCTIONS = [
   "stddev_pop",
   "var_samp",
   "var_pop",
+  "null_count",
+  "non_null_count",
+  "completion_rate",
 ] as const;
 export type AggregateMeasureFunction = typeof AGGREGATE_MEASURE_FUNCTIONS[number];
 const CONTRIBUTOR_AWARE_MEASURE_FUNCTIONS = new Set<AggregateMeasureFunction>([
@@ -95,14 +103,12 @@ const DISPERSION_MEASURE_FUNCTIONS = new Set<AggregateMeasureFunction>([
   "var_samp",
   "var_pop",
 ]);
-const NUMERIC_AGGREGATE_MEASURE_FUNCTIONS = [
-  "sum",
-  "avg",
-  "stddev_samp",
-  "stddev_pop",
-  "var_samp",
-  "var_pop",
-] as const satisfies readonly AggregateMeasureFunction[];
+const PRESENCE_MEASURE_FUNCTIONS = new Set<AggregateMeasureFunction>([
+  "null_count",
+  "non_null_count",
+  "completion_rate",
+]);
+const LEGACY_NUMERIC_AGGREGATE_FUNCTIONS = ["sum", "avg"] as const;
 export const MINIMUM_DISPERSION_COHORT_SIZE = 5;
 
 export type ExploreFilter = {
@@ -121,16 +127,21 @@ export type RowExplorePlan = {
   limit: number;
 };
 
-export type AggregateMeasure = {
+export type BaseAggregateMeasure = {
   function: AggregateMeasureFunction;
   field?: string;
   relationship?: string;
 };
+export type AggregateMeasure = BaseAggregateMeasure | { derived_measure: string };
 
-export type AggregateDimension = {
-  field: string;
-  relationship?: string;
-};
+export type AggregateDimension =
+  | {
+      field: string;
+      relationship?: string;
+    }
+  | {
+      numeric_band: string;
+    };
 
 export type AggregateExplorePlan = {
   kind: "aggregate";
@@ -282,7 +293,8 @@ export async function prepareScopedExplore(input: {
     && boundary.deployment_profile !== "staging") {
     throw new ScopedExploreError("EXPLORE_PROFILE_FORBIDDEN", "A production boundary cannot be served by the local authoring Explore runtime.");
   }
-  if (boundary.compiler_version !== AUTO_BOUNDARY_COMPILER_VERSION || boundary.spec_version !== AUTO_BOUNDARY_SPEC_VERSION) {
+  if (boundary.compiler_version !== AUTO_BOUNDARY_COMPILER_VERSION
+    || !SUPPORTED_AUTO_BOUNDARY_SPEC_VERSIONS.has(boundary.spec_version)) {
     throw new ScopedExploreError("EXPLORE_BOUNDARY_MISMATCH", "The active exploration boundary was compiled by a different compiler or Spec version.");
   }
   const lock = await loadGenerationLockForActivatedBoundary(projectRoot, boundary).catch((error) => {
@@ -890,7 +902,10 @@ export async function createScopedExploreRuntime(input: {
             : null,
           contributor_aware_measures: plan.kind === "aggregate"
             ? plan.measures
-              .map((measure, index) => CONTRIBUTOR_AWARE_MEASURE_FUNCTIONS.has(measure.function) ? index : -1)
+              .map((measure, index) =>
+                "derived_measure" in measure || CONTRIBUTOR_AWARE_MEASURE_FUNCTIONS.has(measure.function)
+                  ? index
+                  : -1)
               .filter((index) => index >= 0)
             : [],
           ...(plan.kind === "aggregate"
@@ -1163,6 +1178,7 @@ export function modelWithheldExploreOutputColumns(
   const aliases = aggregateOutputAliases(plan, boundary);
   const columns = new Set<string>();
   for (const [index, dimension] of (plan.dimensions ?? []).entries()) {
+    if ("numeric_band" in dimension) continue;
     if (isWithheld(dimension.field, dimension.relationship)) {
       columns.add(aliases.dimensions[index]!);
     }
@@ -1329,6 +1345,14 @@ function validateAggregatePlan(input: Record<string, unknown>, boundary: Activat
   const relationship = optionalString(input.relationship, "relationship");
   if (relationship) reviewedRelationship(resource, relationship, boundary);
   const measures = recordArray(input.measures, "measures", 1, boundary.budgets.max_measures).map((measure): AggregateMeasure => {
+    if (measure.derived_measure !== undefined) {
+      assertKeys(measure, ["derived_measure"], "reviewed derived measure");
+      const name = requiredString(measure.derived_measure, "measure.derived_measure");
+      if (!resource.derived_measures?.some((definition) => definition.name === name)) {
+        throw fieldError(resource, name, "reviewed derived measure");
+      }
+      return { derived_measure: name };
+    }
     assertKeys(measure, ["function", "field", "relationship"], "measure");
     const fn = requiredString(measure.function, "measure.function");
     if (!AGGREGATE_MEASURE_FUNCTIONS.includes(fn as AggregateMeasureFunction)) {
@@ -1341,16 +1365,30 @@ function validateAggregatePlan(input: Record<string, unknown>, boundary: Activat
     if (fn === "count" && relation !== undefined) throw planError("count measures the reviewed subject entity and cannot switch counted entity through a relationship");
     if (fn === "count_distinct" && (!field || !target.count_distinct_fields.includes(field))) throw fieldError(target, field ?? "(missing)", "count_distinct");
     if (CONTRIBUTOR_AWARE_MEASURE_FUNCTIONS.has(fn as AggregateMeasureFunction)
-      && (!field || !target.aggregate_measures.includes(field))) {
+      && (!field
+        || !target.aggregate_measures.includes(field)
+        || !reviewedNumericAggregateFunctions(target, field).includes(
+          fn as Exclude<AggregateMeasureFunction, "count" | "count_distinct">,
+        ))) {
+      throw fieldError(target, field ?? "(missing)", fn);
+    }
+    if (PRESENCE_MEASURE_FUNCTIONS.has(fn as AggregateMeasureFunction)
+      && (!field || !target.presence_measure_fields?.includes(field))) {
       throw fieldError(target, field ?? "(missing)", fn);
     }
     return {
-      function: fn as AggregateMeasure["function"],
+      function: fn as BaseAggregateMeasure["function"],
       ...(field ? { field } : {}),
       ...(relation ? { relationship: relation } : {}),
     };
   });
   const dimensions = input.dimensions === undefined ? [] : recordArray(input.dimensions, "dimensions", 0, boundary.budgets.max_dimensions).map((dimension): AggregateDimension => {
+    if (dimension.numeric_band !== undefined) {
+      assertKeys(dimension, ["numeric_band"], "reviewed numeric-band dimension");
+      const name = requiredString(dimension.numeric_band, "dimension.numeric_band");
+      reviewedNumericBand(resource, name);
+      return { numeric_band: name };
+    }
     assertKeys(dimension, ["field", "relationship"], "dimension");
     const relation = optionalString(dimension.relationship, "dimension.relationship");
     const target = relation ? relationshipResource(resource, relation, boundary) : resource;
@@ -1388,8 +1426,8 @@ function validateAggregatePlan(input: Record<string, unknown>, boundary: Activat
   }
   const relationships = unique([
     relationship,
-    ...measures.map((measure) => measure.relationship),
-    ...dimensions.map((dimension) => dimension.relationship),
+    ...measures.flatMap((measure) => measureRelationships(measure, resource)),
+    ...dimensions.flatMap((dimension) => dimensionRelationships(dimension, resource)),
     timeBucket?.relationship,
     ...where.map((filter) => filter.relationship),
     comparison?.relationship,
@@ -1548,8 +1586,8 @@ function compileAggregatePlan(
   const root = resourceFor(boundary, plan.resource);
   const relationshipIds = unique([
     plan.relationship,
-    ...plan.measures.map((measure) => measure.relationship),
-    ...(plan.dimensions ?? []).map((dimension) => dimension.relationship),
+    ...plan.measures.flatMap((measure) => measureRelationships(measure, root)),
+    ...(plan.dimensions ?? []).flatMap((dimension) => dimensionRelationships(dimension, root)),
     plan.time_bucket?.relationship,
     ...(plan.where ?? []).map((filter) => filter.relationship),
     plan.comparison?.relationship,
@@ -1610,6 +1648,17 @@ function compileAggregatePlan(
   const select: string[] = [];
   const groupBy: string[] = [];
   (plan.dimensions ?? []).forEach((dimension, index) => {
+    if ("numeric_band" in dimension) {
+      const definition = reviewedNumericBand(root, dimension.numeric_band);
+      const target = definition.relationship
+        ? joined.targets.get(definition.relationship)!
+        : undefined;
+      const alias = target?.alias ?? "t0";
+      const expression = reviewedNumericBandSql(definition, alias, params, engine);
+      select.push(`${expression} AS ${quote(`dimension_${index}`, engine)}`);
+      groupBy.push(String(select.length));
+      return;
+    }
     const target = dimension.relationship
       ? joined.targets.get(dimension.relationship)!
       : undefined;
@@ -1656,17 +1705,20 @@ function compileAggregatePlan(
     groupBy.push(expression);
   }
   plan.measures.forEach((measure, index) => {
+    if ("derived_measure" in measure) {
+      const definition = reviewedDerivedMeasure(root, measure.derived_measure);
+      const expression = compiledDerivedMeasureSql(definition, root, joined, engine);
+      select.push(`${expression.value} AS ${quote(`measure_${index}`, engine)}`);
+      select.push(`${expression.contributorCohort} AS ${quote(`__measure_cohort_${index}`, engine)}`);
+      return;
+    }
     const alias = measure.relationship
       ? joined.targets.get(measure.relationship)!.alias
       : "t0";
     const fieldExpression = measure.field
       ? `${alias}.${quote(measure.field, engine)}`
       : undefined;
-    const expression = measure.function === "count"
-      ? "COUNT(*)"
-      : measure.function === "count_distinct"
-        ? `COUNT(DISTINCT ${fieldExpression})`
-        : `${measure.function.toUpperCase()}(${fieldExpression})`;
+    const expression = aggregateMeasureSql(measure.function, fieldExpression);
     select.push(`${expression} AS ${quote(`measure_${index}`, engine)}`);
     if (CONTRIBUTOR_AWARE_MEASURE_FUNCTIONS.has(measure.function)) {
       select.push(`COUNT(${fieldExpression}) AS ${quote(`__measure_cohort_${index}`, engine)}`);
@@ -1815,7 +1867,7 @@ function shapeExploreResponse(
   ];
   const normalized = rows.map((row) => {
     const contributorCounts = plan.measures.flatMap((measure, index) =>
-      CONTRIBUTOR_AWARE_MEASURE_FUNCTIONS.has(measure.function)
+      ("derived_measure" in measure || CONTRIBUTOR_AWARE_MEASURE_FUNCTIONS.has(measure.function))
         ? [numberOrInvalid(row[`__measure_cohort_${index}`])]
         : []);
     const rowCohort = numberOrInvalid(row.__cohort_size);
@@ -1961,9 +2013,13 @@ function aggregateOutputAliases(
     return `${target}_${field}`;
   };
   const dimensions = (plan.dimensions ?? []).map((dimension) =>
-    claim(reviewedFieldAlias(dimension.field, dimension.relationship)));
+    claim("numeric_band" in dimension
+      ? dimension.numeric_band
+      : reviewedFieldAlias(dimension.field, dimension.relationship)));
   const measures = plan.measures.map((measure) => claim(
-    measure.function === "count"
+    "derived_measure" in measure
+      ? measure.derived_measure
+      : measure.function === "count"
       ? "count"
       : `${measure.function}_${reviewedFieldAlias(measure.field!, measure.relationship)}`,
   ));
@@ -2053,11 +2109,104 @@ function isRankedAggregatePlan(plan: AggregateExplorePlan): boolean {
   return plan.order_by?.kind === "measure" || plan.order_by?.kind === "comparison_change";
 }
 
+function reviewedNumericAggregateFunctions(
+  resource: BoundaryResource,
+  field: string,
+): readonly Exclude<AggregateMeasureFunction, "count" | "count_distinct">[] {
+  const reviewed = resource.aggregate_measure_functions?.[field];
+  if (reviewed) {
+    return reviewed.every((fn) => EXPLORATION_NUMERIC_AGGREGATE_FUNCTIONS.includes(fn))
+      ? reviewed
+      : [];
+  }
+  return resource.aggregate_measure_functions
+    ? []
+    : LEGACY_NUMERIC_AGGREGATE_FUNCTIONS;
+}
+
+function reviewedDerivedMeasure(
+  resource: BoundaryResource,
+  name: string,
+): ExplorationDerivedMeasure {
+  const definition = resource.derived_measures?.find((candidate) => candidate.name === name);
+  if (!definition) throw fieldError(resource, name, "reviewed derived measure");
+  return definition;
+}
+
+function reviewedNumericBand(
+  resource: BoundaryResource,
+  name: string,
+): ExplorationNumericBand {
+  const definition = resource.numeric_bands?.find((candidate) => candidate.name === name);
+  if (definition) return definition;
+  const available = (resource.numeric_bands ?? []).map((candidate) => candidate.name).sort();
+  throw new ScopedExploreError(
+    "EXPLORE_FIELD_FORBIDDEN",
+    `${JSON.stringify(name)} is not a reviewed numeric band for ${resource.id}. ` +
+      `Reviewed numeric bands: ${available.join(", ") || "none"}. No source query was executed.`,
+    {
+      reason: "numeric_band_not_reviewed",
+      resource: resource.id,
+      numeric_band: name,
+      reviewed_numeric_bands: available,
+      source_query_executed: false,
+    },
+  );
+}
+
+function dimensionRelationships(
+  dimension: AggregateDimension,
+  root: BoundaryResource,
+): string[] {
+  if ("numeric_band" in dimension) {
+    const relationship = reviewedNumericBand(root, dimension.numeric_band).relationship;
+    return relationship ? [relationship] : [];
+  }
+  return dimension.relationship ? [dimension.relationship] : [];
+}
+
+function measureRelationships(measure: AggregateMeasure, root: BoundaryResource): string[] {
+  if (!("derived_measure" in measure)) return measure.relationship ? [measure.relationship] : [];
+  const definition = reviewedDerivedMeasure(root, measure.derived_measure);
+  const relationship = "relationship" in definition.numerator
+    ? definition.numerator.relationship
+    : undefined;
+  return relationship ? [relationship] : [];
+}
+
+function compiledDerivedMeasureSql(
+  definition: ExplorationDerivedMeasure,
+  root: BoundaryResource,
+  joined: {
+    targets: Map<string, { resource: BoundaryResource; alias: string }>;
+  },
+  engine: "postgres" | "mysql",
+): { value: string; contributorCohort: string } {
+  const operand = (measure: ExplorationDerivedBaseMeasure): { value: string; contributors: string } => {
+    if (measure.function === "count") return { value: "COUNT(*)", contributors: "COUNT(*)" };
+    const target = measure.relationship ? joined.targets.get(measure.relationship) : undefined;
+    const alias = target?.alias ?? "t0";
+    const field = `${alias}.${quote(measure.field, engine)}`;
+    return {
+      value: aggregateMeasureSql(measure.function, field),
+      contributors: `COUNT(${field})`,
+    };
+  };
+  const numerator = operand(definition.numerator);
+  const denominator = operand(definition.denominator);
+  const scale = definition.shape === "percentage" ? "100.0" : "1.0";
+  return {
+    value: `CASE WHEN ${denominator.value} IS NULL OR ${denominator.value} = 0 THEN NULL ELSE (${scale} * ${numerator.value} / ${denominator.value}) END`,
+    contributorCohort: `LEAST(COUNT(*), ${numerator.contributors}, ${denominator.contributors})`,
+  };
+}
+
 function effectiveMinimumCohortSize(
   plan: AggregateExplorePlan,
   resource: BoundaryResource,
 ): number {
-  return plan.measures.some((measure) => DISPERSION_MEASURE_FUNCTIONS.has(measure.function))
+  return plan.measures.some((measure) =>
+    "derived_measure" in measure || DISPERSION_MEASURE_FUNCTIONS.has(measure.function))
     ? Math.max(resource.minimum_cohort_size, MINIMUM_DISPERSION_COHORT_SIZE)
     : resource.minimum_cohort_size;
 }
@@ -2095,8 +2244,8 @@ function describeExploreResult(input: {
   const relationships = input.plan.kind === "aggregate"
     ? unique([
       input.plan.relationship,
-      ...input.plan.measures.map((measure) => measure.relationship),
-      ...(input.plan.dimensions ?? []).map((dimension) => dimension.relationship),
+      ...input.plan.measures.flatMap((measure) => measureRelationships(measure, resource)),
+      ...(input.plan.dimensions ?? []).flatMap((dimension) => dimensionRelationships(dimension, resource)),
       input.plan.time_bucket?.relationship,
       ...(input.plan.where ?? []).map((filter) => filter.relationship),
       input.plan.comparison?.relationship,
@@ -2115,10 +2264,12 @@ function describeExploreResult(input: {
   const measures = aggregatePlan
     ? aggregatePlan.measures.map((measure, index) => ({
       alias: aliases!.measures[index],
-      function: measure.function,
-      field: measure.field ?? null,
-      relationship: measure.relationship ?? null,
-      contributor_cohort: CONTRIBUTOR_AWARE_MEASURE_FUNCTIONS.has(measure.function)
+      function: "derived_measure" in measure ? "reviewed_derived" : measure.function,
+      field: "derived_measure" in measure ? null : measure.field ?? null,
+      relationship: "derived_measure" in measure ? null : measure.relationship ?? null,
+      ...( "derived_measure" in measure ? { derived_measure: measure.derived_measure } : {}),
+      contributor_cohort: "derived_measure" in measure
+        || CONTRIBUTOR_AWARE_MEASURE_FUNCTIONS.has(measure.function)
         ? "non-null values for this reviewed field"
         : "reviewed root rows",
       ...(aggregatePlan.comparison
@@ -2136,12 +2287,24 @@ function describeExploreResult(input: {
     }))
     : [];
   const dimensions = input.plan.kind === "aggregate"
-    ? (input.plan.dimensions ?? []).map((dimension, index) => ({
-      alias: aliases!.dimensions[index],
-      field: dimension.field,
-      relationship: dimension.relationship ?? null,
-      null_label: "Not set (database null)",
-    }))
+    ? (input.plan.dimensions ?? []).map((dimension, index) => {
+      if ("numeric_band" in dimension) {
+        const definition = reviewedNumericBand(resource, dimension.numeric_band);
+        return {
+          alias: aliases!.dimensions[index],
+          field: definition.field,
+          relationship: definition.relationship ?? null,
+          numeric_band: definition.name,
+          null_label: "Not set (database null)" as const,
+        };
+      }
+      return {
+        alias: aliases!.dimensions[index],
+        field: dimension.field,
+        relationship: dimension.relationship ?? null,
+        null_label: "Not set (database null)" as const,
+      };
+    })
     : [];
   const filters = (input.plan.where ?? []).map((filter) => ({
     field: filter.field,
@@ -2216,7 +2379,8 @@ function describeExploreResult(input: {
         ? effectiveMinimumCohortSize(input.plan, resource)
         : null,
       contributor_aware: input.plan.kind === "aggregate"
-        ? input.plan.measures.some((measure) => CONTRIBUTOR_AWARE_MEASURE_FUNCTIONS.has(measure.function))
+        ? input.plan.measures.some((measure) =>
+          "derived_measure" in measure || CONTRIBUTOR_AWARE_MEASURE_FUNCTIONS.has(measure.function))
         : false,
       ...(input.plan.kind === "aggregate" && resource.minimum_cohort_overridden
         ? { minimum_cohort_overridden: true }
@@ -2296,6 +2460,7 @@ function describeBoundary(
         ...resource.sortable_fields,
         ...resource.groupable_fields,
         ...resource.aggregate_measures,
+        ...(resource.presence_measure_fields ?? []),
         ...resource.count_distinct_fields,
         ...Object.keys(resource.time_bucket_fields),
       ]);
@@ -2318,8 +2483,30 @@ function describeBoundary(
         aggregate_measures: resource.aggregate_measures,
         aggregate_measure_functions: Object.fromEntries(resource.aggregate_measures.map((field) => [
           field,
-          NUMERIC_AGGREGATE_MEASURE_FUNCTIONS,
+          reviewedNumericAggregateFunctions(resource, field),
         ])),
+        presence_measure_fields: resource.presence_measure_fields ?? [],
+        presence_measure_functions: resource.presence_measure_fields?.length
+          ? ["null_count", "non_null_count", "completion_rate"]
+          : [],
+        derived_measures: (resource.derived_measures ?? []).map((measure) => ({
+          name: measure.name,
+          label: measure.label,
+          shape: measure.shape,
+          null_behavior: "null when the reviewed denominator is zero or null",
+          effective_minimum_cohort_size: Math.max(
+            resource.minimum_cohort_size,
+            MINIMUM_DISPERSION_COHORT_SIZE,
+          ),
+        })),
+        numeric_bands: (resource.numeric_bands ?? []).map((band) => ({
+          name: band.name,
+          label: band.label,
+          field: band.field,
+          relationship: band.relationship ?? null,
+          edges: [...band.edges],
+          bucket_labels: [...band.bucket_labels],
+        })),
         count_distinct_fields: resource.count_distinct_fields,
         time_bucket_fields: resource.time_bucket_fields,
         time_coverage: timeCoverage[resource.id] ?? {},
@@ -2341,6 +2528,7 @@ function describeBoundary(
             ...Object.keys(target.filterable_fields),
             ...target.groupable_fields,
             ...target.aggregate_measures,
+            ...(target.presence_measure_fields ?? []),
             ...target.count_distinct_fields,
             ...Object.keys(target.time_bucket_fields),
           ]);
@@ -2375,8 +2563,22 @@ function describeBoundary(
             aggregate_measures: target.aggregate_measures,
             aggregate_measure_functions: Object.fromEntries(target.aggregate_measures.map((field) => [
               field,
-              NUMERIC_AGGREGATE_MEASURE_FUNCTIONS,
+              reviewedNumericAggregateFunctions(target, field),
             ])),
+            presence_measure_fields: target.presence_measure_fields ?? [],
+            presence_measure_functions: target.presence_measure_fields?.length
+              ? ["null_count", "non_null_count", "completion_rate"]
+              : [],
+            derived_measures: (target.derived_measures ?? []).map((measure) => ({
+              name: measure.name,
+              label: measure.label,
+              shape: measure.shape,
+              null_behavior: "null when the reviewed denominator is zero or null",
+              effective_minimum_cohort_size: Math.max(
+                target.minimum_cohort_size,
+                MINIMUM_DISPERSION_COHORT_SIZE,
+              ),
+            })),
             count_distinct_fields: target.count_distinct_fields,
             time_bucket_fields: target.time_bucket_fields,
             field_types: Object.fromEntries(targetFields.map((field) => [field, target.field_types[field]])),
@@ -2699,7 +2901,7 @@ function assertExploreComplexity(
   plan: ExplorePlan,
   boundary: ActivatedExplorationBoundary,
 ): void {
-  const complexity = exploreComplexity(plan);
+  const complexity = exploreComplexity(plan, boundary);
   if (complexity > boundary.budgets.max_complexity) {
     throw new ScopedExploreError(
       "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
@@ -2918,15 +3120,17 @@ function privacyComplementFingerprints(
   };
   return [...new Set(plan.measures.map((measure) => canonicalJsonDigest({
     cohort,
-    measure: {
-      function: measure.function,
-      field: measure.field ?? null,
-      relationship: measure.relationship ?? null,
-    },
+    measure: "derived_measure" in measure
+      ? { derived_measure: measure.derived_measure }
+      : {
+        function: measure.function,
+        field: measure.field ?? null,
+        relationship: measure.relationship ?? null,
+      },
   })))].sort();
 }
 
-function exploreComplexity(plan: ExplorePlan): number {
+function exploreComplexity(plan: ExplorePlan, boundary: ActivatedExplorationBoundary): number {
   if (plan.kind === "rows") {
     return 1
       + plan.select.length
@@ -2935,8 +3139,9 @@ function exploreComplexity(plan: ExplorePlan): number {
   }
   const relationships = unique([
     plan.relationship,
-    ...plan.measures.map((measure) => measure.relationship),
-    ...(plan.dimensions ?? []).map((dimension) => dimension.relationship),
+    ...plan.measures.flatMap((measure) =>
+      measureRelationships(measure, resourceFor(boundary, plan.resource))),
+    ...(plan.dimensions ?? []).flatMap((dimension) => dimensionRelationships(dimension, resourceFor(boundary, plan.resource))),
     plan.time_bucket?.relationship,
     ...(plan.where ?? []).map((filter) => filter.relationship),
     plan.comparison?.relationship,
@@ -3573,7 +3778,7 @@ function assertPlanAuthorityDependenciesCurrent(
 ): void {
   const root = resourceFor(boundary, plan.resource);
   const resourceIds = new Set([root.id]);
-  for (const relationshipId of relationshipIdsForPlan(plan)) {
+  for (const relationshipId of relationshipIdsForPlan(plan, boundary)) {
     const relationship = reviewedRelationship(root, relationshipId, boundary);
     const key = relationshipDependencyKey(root.id, relationshipId);
     const dependency = dependencies.relationships[key];
@@ -3701,12 +3906,16 @@ function describeReviewedResourceDrift(
   return `Reviewed table or view ${resource.id} changed in authority-bearing schema, RLS, grant, ownership, or column semantics. No query was executed.`;
 }
 
-function relationshipIdsForPlan(plan: ExplorePlan): string[] {
+function relationshipIdsForPlan(
+  plan: ExplorePlan,
+  boundary: ActivatedExplorationBoundary,
+): string[] {
   if (plan.kind !== "aggregate") return [];
+  const root = resourceFor(boundary, plan.resource);
   return unique([
     plan.relationship,
-    ...plan.measures.map((measure) => measure.relationship),
-    ...(plan.dimensions ?? []).map((dimension) => dimension.relationship),
+    ...plan.measures.flatMap((measure) => measureRelationships(measure, root)),
+    ...(plan.dimensions ?? []).flatMap((dimension) => dimensionRelationships(dimension, root)),
     plan.time_bucket?.relationship,
     ...(plan.where ?? []).map((filter) => filter.relationship),
     plan.comparison?.relationship,
@@ -3873,6 +4082,24 @@ function reviewedEnumBucketSql(
   return `CASE WHEN ${column} IS NULL THEN NULL WHEN ${textColumn} IN (${placeholders.join(", ")}) THEN ${textColumn} ELSE ${placeholder(params.length, engine)} END`;
 }
 
+function reviewedNumericBandSql(
+  definition: ExplorationNumericBand,
+  alias: string,
+  params: Scalar[],
+  engine: "postgres" | "mysql",
+): string {
+  const column = `${alias}.${quote(definition.field, engine)}`;
+  const clauses = definition.edges.map((edge, index) => {
+    params.push(edge);
+    const edgePlaceholder = placeholder(params.length, engine);
+    params.push(definition.bucket_labels[index]!);
+    const labelPlaceholder = placeholder(params.length, engine);
+    return `WHEN ${column} < ${edgePlaceholder} THEN ${labelPlaceholder}`;
+  });
+  params.push(definition.bucket_labels.at(-1)!);
+  return `CASE WHEN ${column} IS NULL THEN NULL ${clauses.join(" ")} ELSE ${placeholder(params.length, engine)} END`;
+}
+
 function uniqueReviewedValueControls(
   controls: CompiledReviewedValueControl[],
 ): CompiledReviewedValueControl[] {
@@ -3900,6 +4127,19 @@ function quote(identifier: string, engine: "postgres" | "mysql"): string {
 
 function placeholder(index: number, engine: "postgres" | "mysql"): string {
   return engine === "postgres" ? `$${index}` : "?";
+}
+
+function aggregateMeasureSql(
+  fn: AggregateMeasureFunction,
+  field: string | undefined,
+): string {
+  if (fn === "count") return "COUNT(*)";
+  if (!field) throw planError(`${fn} requires a reviewed field`);
+  if (fn === "count_distinct") return `COUNT(DISTINCT ${field})`;
+  if (fn === "non_null_count") return `COUNT(${field})`;
+  if (fn === "null_count") return `(COUNT(*) - COUNT(${field}))`;
+  if (fn === "completion_rate") return `(100.0 * COUNT(${field}) / NULLIF(COUNT(*), 0))`;
+  return `${fn.toUpperCase()}(${field})`;
 }
 
 function timeBucketSql(column: string, bucket: TimeBucket, engine: "postgres" | "mysql"): string {

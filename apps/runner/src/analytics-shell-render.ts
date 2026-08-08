@@ -489,7 +489,9 @@ function minimumCohortQuestionShapeHint(
   if (analysis.plan?.kind !== "aggregate" || analysis.plan.dimensions?.length !== 1) {
     return undefined;
   }
-  const field = analysis.plan.dimensions[0]!.field;
+  const dimension = analysis.plan.dimensions[0]!;
+  if ("numeric_band" in dimension) return undefined;
+  const field = dimension.field;
   if (!/(^id$|_id$|(^|_)name$)/i.test(field)) return undefined;
   const label = businessLabel(field).toLowerCase();
   return `This question groups records into one row per ${label}; any entity with fewer than ${minimumCohort ?? "the reviewed minimum"} records is withheld. Try a coarser reviewed grouping, or review this table's minimum group size.`;
@@ -671,7 +673,8 @@ function analysisDisplayTitle(analysis: AnalyticsAnalysis): string {
   if (!plan) return analysis.description;
   const resource = businessLabel(plan.resource.split(".").at(-1) ?? plan.resource);
   if (plan.kind === "rows") return `${resource} rows`;
-  const dimensions = (plan.dimensions ?? []).map((dimension) => businessLabel(dimension.field));
+  const dimensions = (plan.dimensions ?? []).map((dimension) =>
+    businessLabel("numeric_band" in dimension ? dimension.numeric_band : dimension.field));
   const time = plan.time_bucket?.bucket;
   const groups = [...dimensions, ...(time ? [time] : [])];
   return groups.length ? `${resource} by ${naturalList(groups)}` : `${resource} summary`;

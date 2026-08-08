@@ -585,6 +585,48 @@ function rebaseBoundaryResource(current: BoundaryResource, stored: BoundaryResou
     current.aggregate_measures,
     selectable,
   );
+  if (stored.aggregate_measure_functions) {
+    resource.aggregate_measure_functions = intersectStoredMap(
+      stored.aggregate_measure_functions,
+      current.aggregate_measure_functions ?? {},
+      new Set(resource.aggregate_measures),
+    );
+  } else {
+    delete resource.aggregate_measure_functions;
+  }
+  if (stored.presence_measure_fields) {
+    resource.presence_measure_fields = intersectStoredList(
+      stored.presence_measure_fields,
+      current.presence_measure_fields ?? [],
+      new Set([...selectable].filter((field) => !(resource.model_withheld_fields ?? []).includes(field))),
+    );
+  } else {
+    delete resource.presence_measure_fields;
+  }
+  if (stored.derived_measures?.length && current.derived_measures?.length) {
+    const currentlyValid = new Map(current.derived_measures.map((definition) => [
+      definition.name,
+      definition,
+    ]));
+    resource.derived_measures = stored.derived_measures
+      .filter((definition) => JSON.stringify(currentlyValid.get(definition.name)) === JSON.stringify(definition))
+      .map((definition) => structuredClone(definition));
+    if (!resource.derived_measures.length) delete resource.derived_measures;
+  } else {
+    delete resource.derived_measures;
+  }
+  if (stored.numeric_bands?.length && current.numeric_bands?.length) {
+    const currentlyValid = new Map(current.numeric_bands.map((definition) => [
+      definition.name,
+      definition,
+    ]));
+    resource.numeric_bands = stored.numeric_bands
+      .filter((definition) => JSON.stringify(currentlyValid.get(definition.name)) === JSON.stringify(definition))
+      .map((definition) => structuredClone(definition));
+    if (!resource.numeric_bands.length) delete resource.numeric_bands;
+  } else {
+    delete resource.numeric_bands;
+  }
   resource.count_distinct_fields = intersectStoredList(
     stored.count_distinct_fields,
     current.count_distinct_fields,

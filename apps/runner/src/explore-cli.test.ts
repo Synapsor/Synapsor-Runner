@@ -78,6 +78,59 @@ describe("friendly Scoped Explore CLI", () => {
     });
   });
 
+  it("builds advanced reviewed measures and every reviewed calendar grain without plan JSON", () => {
+    expect(buildFriendlyAggregatePlan(boundary(), {
+      resource: "public.check_ins",
+      measures: [
+        "stddev_samp:duration_ms",
+        "completion_rate:member_id",
+        "derived:attendance_rate",
+      ],
+      timeBucket: "checked_in_at:quarter",
+    })).toMatchObject({
+      measures: [
+        { function: "stddev_samp", field: "duration_ms" },
+        { function: "completion_rate", field: "member_id" },
+        { derived_measure: "attendance_rate" },
+      ],
+      time_bucket: { field: "checked_in_at", bucket: "quarter" },
+    });
+
+    for (const bucket of ["hour", "day", "week", "month", "quarter", "year", "day_of_week"]) {
+      expect(buildFriendlyAggregatePlan(boundary(), {
+        resource: "public.check_ins",
+        count: true,
+        timeBucket: `checked_in_at:${bucket}`,
+      }).time_bucket?.bucket).toBe(bucket);
+    }
+  });
+
+  it("keeps the friendly advanced-measure grammar fixed and rejects formulas", () => {
+    expect(() => buildFriendlyAggregatePlan(boundary(), {
+      resource: "public.check_ins",
+      measures: ["sum:duration_ms / count"],
+    })).toThrow(/Invalid field reference|--measure must use/);
+    expect(() => buildFriendlyAggregatePlan(boundary(), {
+      resource: "public.check_ins",
+      measures: ["derived:attendance-rate"],
+    })).toThrow(/--measure must use/);
+  });
+
+  it("selects only a saved numeric-band name and binds its reviewed relationship", () => {
+    expect(buildFriendlyAggregatePlan(boundary(), {
+      resource: "public.check_ins",
+      count: true,
+      groupBands: ["member_duration_band"],
+    })).toMatchObject({
+      relationship: "check_ins_member_id_fkey",
+      dimensions: [{ numeric_band: "member_duration_band" }],
+    });
+    expect(() => buildFriendlyAggregatePlan(boundary(), {
+      resource: "public.check_ins",
+      groupBands: ["invented_edges"],
+    })).toThrow(/not reviewed.*Reviewed bands: member_duration_band/);
+  });
+
   it("requires complete and ordered comparison periods", () => {
     expect(() => buildFriendlyAggregatePlan(boundary(), {
       resource: "public.check_ins",
@@ -153,6 +206,14 @@ function boundary(): ActivatedExplorationBoundary {
       name: "fitflow",
       resources: [
         resource("public.check_ins", {
+          numeric_bands: [{
+            name: "member_duration_band",
+            label: "Member duration band",
+            field: "duration_ms",
+            relationship: "check_ins_member_id_fkey",
+            edges: [1_000, 5_000],
+            bucket_labels: ["short", "medium", "long"],
+          }],
           relationships: [
             {
               id: "check_ins_location_id_fkey",

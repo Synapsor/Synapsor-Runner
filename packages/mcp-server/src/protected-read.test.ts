@@ -213,6 +213,102 @@ describe("protected named reads", () => {
     ]);
   });
 
+  it("compiles protected dispersion and missing-data measures portably", () => {
+    const capability = aggregateConfig().capabilities?.[0];
+    if (!capability?.protected_read?.aggregate) throw new Error("protected aggregate fixture is incomplete");
+    capability.protected_read.aggregate.measures = [
+      { name: "spread", function: "stddev_pop", field: "monthly_revenue_cents" },
+      { name: "missing", function: "null_count", field: "monthly_revenue_cents" },
+      { name: "completion", function: "completion_rate", field: "monthly_revenue_cents" },
+    ];
+    delete capability.protected_read.aggregate.comparison;
+    delete capability.protected_read.aggregate.order_by;
+    for (const placeholderStyle of ["$", "?"] as const) {
+      const query = buildProtectedReadQuery(capability, placeholderStyle, {}, {
+        tenant_id: "tenant-acme",
+        principal: "principal-1",
+        provenance: "environment",
+      });
+      const field = placeholderStyle === "$"
+        ? 't0."monthly_revenue_cents"'
+        : "t0.`monthly_revenue_cents`";
+      expect(query.sql).toContain(`STDDEV_POP(${field})`);
+      expect(query.sql).toContain(`COUNT(*) - COUNT(${field})`);
+      expect(query.sql).toContain(`100.0 * COUNT(${field}) / NULLIF(COUNT(*), 0)`);
+      expect(query.sql).toContain(`COUNT(${field})`);
+    }
+  });
+
+  it("compiles a fixed reviewed derived measure portably with contributor evidence", () => {
+    const capability = aggregateConfig().capabilities?.[0];
+    if (!capability?.protected_read?.aggregate) throw new Error("protected aggregate fixture is incomplete");
+    capability.protected_read.aggregate.measures = [{
+      name: "revenue_per_customer",
+      function: "reviewed_derived",
+      derived: {
+        shape: "per_unit_average",
+        numerator: { function: "sum", field: "monthly_revenue_cents" },
+        denominator: { function: "count_distinct", field: "customer_id" },
+        null_policy: "null_on_zero_or_null_denominator",
+      },
+    }];
+    delete capability.protected_read.aggregate.comparison;
+    delete capability.protected_read.aggregate.order_by;
+    for (const placeholderStyle of ["$", "?"] as const) {
+      const query = buildProtectedReadQuery(capability, placeholderStyle, {}, {
+        tenant_id: "tenant-acme",
+        principal: "principal-1",
+        provenance: "environment",
+      });
+      const revenue = placeholderStyle === "$"
+        ? 't0."monthly_revenue_cents"'
+        : "t0.`monthly_revenue_cents`";
+      const customer = placeholderStyle === "$" ? 't0."customer_id"' : "t0.`customer_id`";
+      expect(query.sql).toContain(`SUM(${revenue}) / COUNT(DISTINCT ${customer})`);
+      expect(query.sql).toContain(`LEAST(COUNT(*), COUNT(${revenue}), COUNT(${customer}))`);
+    }
+  });
+
+  it("compiles a frozen reviewed numeric band with bound edges and labels on both engines", () => {
+    const capability = aggregateConfig().capabilities?.[0];
+    if (!capability?.protected_read?.aggregate) throw new Error("protected aggregate fixture is incomplete");
+    capability.protected_read.aggregate.dimensions = [{
+      name: "balance_band",
+      field: "monthly_revenue_cents",
+      numeric_band: {
+        edges: [1_000, 5_000],
+        bucket_labels: ["under 10", "10 to 49", "50 or more"],
+      },
+    }];
+    delete capability.protected_read.aggregate.time_bucket;
+    delete capability.protected_read.aggregate.comparison;
+    delete capability.protected_read.aggregate.order_by;
+
+    for (const placeholderStyle of ["$", "?"] as const) {
+      const query = buildProtectedReadQuery(capability, placeholderStyle, {}, {
+        tenant_id: "tenant-acme",
+        principal: "principal-1",
+        provenance: "environment",
+      });
+      const field = placeholderStyle === "$"
+        ? 't0."monthly_revenue_cents"'
+        : "t0.`monthly_revenue_cents`";
+      expect(query.sql).toContain(`CASE WHEN ${field} IS NULL THEN NULL`);
+      expect(query.sql).toContain(`WHEN ${field} < ${placeholderStyle === "$" ? "$1" : "?"} THEN ${placeholderStyle === "$" ? "$2" : "?"}`);
+      expect(query.sql).toContain("GROUP BY 1");
+      expect(query.values).toEqual([
+        1_000,
+        "under 10",
+        5_000,
+        "10 to 49",
+        "50 or more",
+        "tenant-acme",
+        "principal-1",
+        "churned",
+      ]);
+    }
+  });
+
   it("keeps RLS principal preflight requirements relation-specific", () => {
     const capability = aggregateConfig().capabilities?.[0];
     if (!capability?.protected_read) throw new Error("protected aggregate fixture is incomplete");

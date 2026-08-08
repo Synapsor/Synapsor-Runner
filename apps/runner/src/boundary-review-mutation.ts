@@ -12,6 +12,8 @@ import {
   explorationBoundaryCandidateDigest,
   loadActivatedExplorationBoundary,
   loadStructuredProjectEvidence,
+  normalizeExplorationDerivedMeasure,
+  normalizeExplorationNumericBand,
   reviewExplorationBoundaryCandidate,
   writeAutoBoundaryArtifacts,
   type AutoBoundaryField,
@@ -75,6 +77,31 @@ export type BoundaryResourceReviewRequest = {
   field_enum?: {
     field: string;
     values: string[];
+  };
+  derived_measure?: {
+    name: string;
+    label: string;
+    shape: "ratio" | "percentage" | "per_unit_average";
+    numerator: {
+      function: "count" | "count_distinct" | "sum" | "avg";
+      field?: string;
+      relationship?: string;
+    };
+    denominator: {
+      function: "count" | "count_distinct" | "sum" | "avg";
+      field?: string;
+      relationship?: string;
+    };
+    remove?: boolean;
+  };
+  numeric_band?: {
+    name: string;
+    label: string;
+    field: string;
+    relationship?: string;
+    edges: number[];
+    bucket_labels: string[];
+    remove?: boolean;
   };
   minimum_cohort_size?: number;
   max_ranked_groups?: number;
@@ -905,6 +932,42 @@ function managedDecisionsForRequest(
       values: request.field_enum.values,
     }));
   }
+  if (request.derived_measure) {
+    const reviewed = request.derived_measure;
+    decisions.push(normalizeManagedBoundaryReviewDecision({
+      ...common,
+      kind: "derived_measure",
+      name: reviewed.name,
+      definition: reviewed.remove
+        ? null
+        : normalizeExplorationDerivedMeasure({
+          name: reviewed.name,
+          label: reviewed.label,
+          shape: reviewed.shape,
+          numerator: reviewed.numerator,
+          denominator: reviewed.denominator,
+          null_policy: "null_on_zero_or_null_denominator",
+        }, `${request.resource_id}.${reviewed.name} derived measure`),
+    }));
+  }
+  if (request.numeric_band) {
+    const reviewed = request.numeric_band;
+    decisions.push(normalizeManagedBoundaryReviewDecision({
+      ...common,
+      kind: "numeric_band",
+      name: reviewed.name,
+      definition: reviewed.remove
+        ? null
+        : normalizeExplorationNumericBand({
+          name: reviewed.name,
+          label: reviewed.label,
+          field: reviewed.field,
+          ...(reviewed.relationship ? { relationship: reviewed.relationship } : {}),
+          edges: reviewed.edges,
+          bucket_labels: reviewed.bucket_labels,
+        }, `${request.resource_id}.${reviewed.name} numeric band`),
+    }));
+  }
   if (request.minimum_cohort_size !== undefined) {
     decisions.push(normalizeManagedBoundaryReviewDecision({
       ...common,
@@ -995,6 +1058,38 @@ function buildReviewedCandidate(input: {
       Object.entries(resource.time_bucket_fields).filter(([field]) => allowed.has(field)),
     );
   }
+  if (input.request.derived_measure) {
+    const reviewed = input.request.derived_measure;
+    const retained = (resource.derived_measures ?? []).filter((measure) => measure.name !== reviewed.name);
+    resource.derived_measures = reviewed.remove
+      ? retained
+      : [...retained, normalizeExplorationDerivedMeasure({
+        name: reviewed.name,
+        label: reviewed.label,
+        shape: reviewed.shape,
+        numerator: reviewed.numerator,
+        denominator: reviewed.denominator,
+        null_policy: "null_on_zero_or_null_denominator",
+      }, `${input.request.resource_id}.${reviewed.name} derived measure`)]
+        .sort((left, right) => left.name.localeCompare(right.name));
+    if (!resource.derived_measures.length) delete resource.derived_measures;
+  }
+  if (input.request.numeric_band) {
+    const reviewed = input.request.numeric_band;
+    const retained = (resource.numeric_bands ?? []).filter((band) => band.name !== reviewed.name);
+    resource.numeric_bands = reviewed.remove
+      ? retained
+      : [...retained, normalizeExplorationNumericBand({
+        name: reviewed.name,
+        label: reviewed.label,
+        field: reviewed.field,
+        ...(reviewed.relationship ? { relationship: reviewed.relationship } : {}),
+        edges: reviewed.edges,
+        bucket_labels: reviewed.bucket_labels,
+      }, `${input.request.resource_id}.${reviewed.name} numeric band`)]
+        .sort((left, right) => left.name.localeCompare(right.name));
+    if (!resource.numeric_bands.length) delete resource.numeric_bands;
+  }
   if (input.request.relationship_ids) {
     const allowed = new Set(input.request.relationship_ids);
     resource.relationships = resource.relationships.filter((relationship) => allowed.has(relationship.id));
@@ -1049,6 +1144,32 @@ function preserveBoundaryResourcePolicy(
     generated.aggregate_measures,
     previous.aggregate_measures,
   );
+  if (previous.aggregate_measure_functions) {
+    generated.aggregate_measure_functions = preserveReviewedMap(
+      generated.aggregate_measure_functions ?? {},
+      previous.aggregate_measure_functions,
+    );
+  } else {
+    delete generated.aggregate_measure_functions;
+  }
+  if (previous.presence_measure_fields) {
+    generated.presence_measure_fields = preserveReviewedList(
+      generated.presence_measure_fields ?? [],
+      previous.presence_measure_fields,
+    ).filter((field) => !(generated.model_withheld_fields ?? []).includes(field));
+  } else {
+    delete generated.presence_measure_fields;
+  }
+  if (previous.derived_measures?.length) {
+    generated.derived_measures = structuredClone(previous.derived_measures);
+  } else {
+    delete generated.derived_measures;
+  }
+  if (previous.numeric_bands?.length) {
+    generated.numeric_bands = structuredClone(previous.numeric_bands);
+  } else {
+    delete generated.numeric_bands;
+  }
   generated.count_distinct_fields = preserveReviewedList(
     generated.count_distinct_fields,
     previous.count_distinct_fields,
@@ -1225,6 +1346,8 @@ function hasAuthorityNarrowing(request: BoundaryResourceReviewRequest): boolean 
     request.relationship_ids,
     request.withhold_from_model_fields,
     request.field_enum ? [request.field_enum.field] : undefined,
+    request.derived_measure ? [request.derived_measure.name] : undefined,
+    request.numeric_band ? [request.numeric_band.name] : undefined,
   ].some((value) => value !== undefined)
     || request.minimum_cohort_size !== undefined
     || request.max_ranked_groups !== undefined
@@ -1253,6 +1376,8 @@ function canStageIncompleteScopeResolution(
     request.time_bucket_fields,
     request.relationship_ids,
     request.field_enum ? [request.field_enum.field] : undefined,
+    request.derived_measure ? [request.derived_measure.name] : undefined,
+    request.numeric_band ? [request.numeric_band.name] : undefined,
   ].some((value) => value !== undefined)
     || request.minimum_cohort_size !== undefined
     || request.max_ranked_groups !== undefined
@@ -1486,6 +1611,29 @@ function validateBoundaryResourceRequest(request: BoundaryResourceReviewRequest)
       "Reviewed categorical values must contain at most 64 unique values of at most 64 characters and 2048 bytes total.",
     );
   }
+  if (request.derived_measure) {
+    const measure = request.derived_measure;
+    if (!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(measure.name)) {
+      throw new Error("A reviewed derived-measure name must be a safe identifier of at most 64 characters.");
+    }
+    if (!measure.label.trim() || measure.label.length > 120
+      || /[\u0000-\u001f\u007f]/.test(measure.label)) {
+      throw new Error("A reviewed derived measure requires a plain-language label of at most 120 characters.");
+    }
+    if (!["ratio", "percentage", "per_unit_average"].includes(measure.shape)) {
+      throw new Error("Derived-measure shape must be ratio, percentage, or per_unit_average.");
+    }
+  }
+  if (request.numeric_band) {
+    normalizeExplorationNumericBand({
+      name: request.numeric_band.name,
+      label: request.numeric_band.label,
+      field: request.numeric_band.field,
+      ...(request.numeric_band.relationship ? { relationship: request.numeric_band.relationship } : {}),
+      edges: request.numeric_band.edges,
+      bucket_labels: request.numeric_band.bucket_labels,
+    }, `${request.resource_id}.${request.numeric_band.name} numeric band`);
+  }
   const values = [
     request.resource_id,
     request.actor,
@@ -1645,6 +1793,23 @@ function assertRequestedExposureState(
       );
     }
   }
+  if (request.derived_measure) {
+    const actual = resource.derived_measures?.find((measure) =>
+      measure.name === request.derived_measure!.name);
+    if (request.derived_measure.remove ? actual !== undefined : actual === undefined) {
+      throw new Error(
+        `Reviewed derived-measure decision for ${request.resource_id}.${request.derived_measure.name} was not reflected in the disabled candidate.`,
+      );
+    }
+  }
+  if (request.numeric_band) {
+    const actual = resource.numeric_bands?.find((band) => band.name === request.numeric_band!.name);
+    if (request.numeric_band.remove ? actual !== undefined : actual === undefined) {
+      throw new Error(
+        `Reviewed numeric-band decision for ${request.resource_id}.${request.numeric_band.name} was not reflected in the disabled candidate.`,
+      );
+    }
+  }
 }
 
 function canonicalReviewRequest(request: BoundaryResourceReviewRequest): JsonRecord {
@@ -1675,6 +1840,20 @@ function canonicalReviewRequest(request: BoundaryResourceReviewRequest): JsonRec
     field_enum: request.field_enum
       ? { field: request.field_enum.field, values: [...request.field_enum.values] }
       : null,
+    derived_measure: request.derived_measure
+      ? {
+        ...request.derived_measure,
+        numerator: { ...request.derived_measure.numerator },
+        denominator: { ...request.derived_measure.denominator },
+      }
+      : null,
+    numeric_band: request.numeric_band
+      ? {
+        ...request.numeric_band,
+        edges: [...request.numeric_band.edges],
+        bucket_labels: [...request.numeric_band.bucket_labels],
+      }
+      : null,
     minimum_cohort_size: request.minimum_cohort_size ?? null,
     max_ranked_groups: request.max_ranked_groups ?? null,
     relationship_ids: sortedOrNull(request.relationship_ids),
@@ -1701,6 +1880,21 @@ function requestArrays(request: BoundaryResourceReviewRequest): string[] {
     ...(request.count_distinct_fields ?? []),
     ...(request.time_bucket_fields ?? []),
     ...(request.field_enum ? [request.field_enum.field, ...request.field_enum.values] : []),
+    ...(request.derived_measure ? [
+      request.derived_measure.name,
+      request.derived_measure.label,
+      ...(request.derived_measure.numerator.field ? [request.derived_measure.numerator.field] : []),
+      ...(request.derived_measure.numerator.relationship ? [request.derived_measure.numerator.relationship] : []),
+      ...(request.derived_measure.denominator.field ? [request.derived_measure.denominator.field] : []),
+      ...(request.derived_measure.denominator.relationship ? [request.derived_measure.denominator.relationship] : []),
+    ] : []),
+    ...(request.numeric_band ? [
+      request.numeric_band.name,
+      request.numeric_band.label,
+      request.numeric_band.field,
+      ...(request.numeric_band.relationship ? [request.numeric_band.relationship] : []),
+      ...request.numeric_band.bucket_labels,
+    ] : []),
     ...(request.relationship_ids ?? []),
   ];
 }

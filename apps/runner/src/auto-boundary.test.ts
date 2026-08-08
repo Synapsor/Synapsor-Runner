@@ -49,7 +49,7 @@ describe("Auto Boundary compiler", () => {
     expect(first.exploration_boundary.activation).toBe("disabled_unreviewed");
     expect(first.exploration_boundary.spec_version).toBe(AUTO_BOUNDARY_SPEC_VERSION);
     expect(first.lock.spec_version).toBe(AUTO_BOUNDARY_SPEC_VERSION);
-    expect(AUTO_BOUNDARY_SPEC_VERSION).toBe("1.8.0");
+    expect(AUTO_BOUNDARY_SPEC_VERSION).toBe("1.9.0");
     expect(first.contract).toEqual(compileAgentDsl(first.dsl));
     expect(first.contract_digest).toBe(canonicalJsonDigest(first.contract));
     expect(first.contract_digest).toBe(second.contract_digest);
@@ -58,6 +58,10 @@ describe("Auto Boundary compiler", () => {
     expect(second.exploration_boundary.budgets.max_differencing_queries).toBe(16);
     expect(first.exploration_boundary.pack.resources[0]?.groupable_fields).not.toContain("id");
     expect(first.exploration_boundary.pack.resources[0]?.groupable_fields).not.toContain("tenant_id");
+    expect(first.exploration_boundary.pack.resources[0]?.aggregate_measure_functions?.monthly_revenue_cents)
+      .toEqual(["sum", "avg", "stddev_samp", "stddev_pop", "var_samp", "var_pop"]);
+    expect(first.exploration_boundary.pack.resources[0]?.presence_measure_fields)
+      .toContain("monthly_revenue_cents");
     expect(JSON.stringify(first.exploration_boundary.pack.resources[0])).not.toContain("tenant_scope");
     expect(JSON.stringify(first)).not.toContain("postgres://");
     expect(JSON.stringify(first)).not.toContain("tenant-acme");
@@ -107,6 +111,127 @@ describe("Auto Boundary compiler", () => {
       .toEqual({ region: ["north"] });
     expect(explorationBoundaryCandidateDigest(narrowed.exploration_boundary))
       .not.toBe(explorationBoundaryCandidateDigest(generated.exploration_boundary));
+  });
+
+  it("stores reviewed derived measures as audited boundary policy and prunes invalidated inputs", () => {
+    const inspection = churnInspection();
+    const input = {
+      inspection,
+      project: projectSummary("/workspace/derived-policy"),
+      sourceEnv: "DATABASE_URL",
+    };
+    const baseline = buildAutoBoundary(input);
+    const definition = {
+      name: "revenue_per_subscription",
+      label: "Revenue per subscription",
+      shape: "per_unit_average" as const,
+      numerator: { function: "sum" as const, field: "monthly_revenue_cents" },
+      denominator: { function: "count" as const },
+      null_policy: "null_on_zero_or_null_denominator" as const,
+    };
+    const overrides = applyManagedBoundaryReviewDecision(
+      { schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION, resources: {} },
+      {
+        kind: "derived_measure",
+        resource_id: "public.subscriptions",
+        name: definition.name,
+        definition,
+        actor: "analytics-owner@example.test",
+        reason: "Expose one fixed reviewed business metric without model-authored formulas.",
+        decided_at: "2026-08-08T12:00:00.000Z",
+      },
+    );
+    const reviewed = buildAutoBoundary({ ...input, overrides });
+
+    expect(reviewed.exploration_boundary.pack.resources[0]!.derived_measures).toEqual([definition]);
+    expect(reviewed.overrides.resources["public.subscriptions"]?.derived_measures)
+      .toMatchObject({
+        revenue_per_subscription: {
+          definition,
+          actor: "analytics-owner@example.test",
+        },
+      });
+    expect(reviewed.lock.reviewed_overrides_digest)
+      .not.toBe(baseline.lock.reviewed_overrides_digest);
+
+    const reconstructed = reconstructBoundaryReviewOverrides({
+      baseline: baseline.exploration_boundary,
+      candidate: reviewed.exploration_boundary,
+      actor: "boundary-policy-migration",
+      decidedAt: "2026-08-08T13:00:00.000Z",
+    });
+    expect(buildAutoBoundary({ ...input, overrides: reconstructed }).exploration_boundary)
+      .toEqual(reviewed.exploration_boundary);
+
+    const drifted = structuredClone(inspection);
+    drifted.tables[0]!.columns = drifted.tables[0]!.columns.filter(
+      (column) => column.name !== "monthly_revenue_cents",
+    );
+    const pruned = pruneAutoBoundaryReviewOverrides(drifted, overrides);
+    expect(pruned.overrides.resources["public.subscriptions"]?.derived_measures).toBeUndefined();
+    expect(pruned.removed).toContain(
+      "public.subscriptions.revenue_per_subscription: reviewed derived measure field monthly_revenue_cents no longer exists",
+    );
+  });
+
+  it("stores reviewed numeric bands per boundary and prunes a band when its fixed field disappears", () => {
+    const inspection = churnInspection();
+    const input = {
+      inspection,
+      project: projectSummary("/workspace/numeric-band-policy"),
+      sourceEnv: "DATABASE_URL",
+    };
+    const baseline = buildAutoBoundary(input);
+    const definition = {
+      name: "monthly_revenue_band",
+      label: "Monthly revenue band",
+      field: "monthly_revenue_cents",
+      edges: [1_000, 5_000],
+      bucket_labels: ["under 10", "10 to 49", "50 or more"],
+    };
+    const overrides = applyManagedBoundaryReviewDecision(
+      { schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION, resources: {} },
+      {
+        kind: "numeric_band",
+        resource_id: "public.subscriptions",
+        name: definition.name,
+        definition,
+        actor: "analytics-owner@example.test",
+        reason: "Use fixed reviewed bands rather than model-selected histogram edges.",
+        decided_at: "2026-08-08T12:00:00.000Z",
+      },
+    );
+    const reviewed = buildAutoBoundary({ ...input, overrides });
+
+    expect(reviewed.exploration_boundary.pack.resources[0]!.numeric_bands).toEqual([definition]);
+    expect(reviewed.overrides.resources["public.subscriptions"]?.numeric_bands)
+      .toMatchObject({
+        monthly_revenue_band: {
+          definition,
+          actor: "analytics-owner@example.test",
+        },
+      });
+    expect(reviewed.lock.reviewed_overrides_digest)
+      .not.toBe(baseline.lock.reviewed_overrides_digest);
+
+    const reconstructed = reconstructBoundaryReviewOverrides({
+      baseline: baseline.exploration_boundary,
+      candidate: reviewed.exploration_boundary,
+      actor: "boundary-policy-migration",
+      decidedAt: "2026-08-08T13:00:00.000Z",
+    });
+    expect(buildAutoBoundary({ ...input, overrides: reconstructed }).exploration_boundary)
+      .toEqual(reviewed.exploration_boundary);
+
+    const drifted = structuredClone(inspection);
+    drifted.tables[0]!.columns = drifted.tables[0]!.columns.filter(
+      (column) => column.name !== "monthly_revenue_cents",
+    );
+    const pruned = pruneAutoBoundaryReviewOverrides(drifted, overrides);
+    expect(pruned.overrides.resources["public.subscriptions"]?.numeric_bands).toBeUndefined();
+    expect(pruned.removed).toContain(
+      "public.subscriptions.monthly_revenue_band: reviewed numeric-band field monthly_revenue_cents no longer exists",
+    );
   });
 
   it("proposes only catalog-proven many-to-one paths, caps chains at two links, and requires nullable semantics", () => {
@@ -1630,6 +1755,7 @@ describe("Auto Boundary compiler", () => {
       resource.sortable_fields = resource.sortable_fields.filter((field) => field !== "monthly_revenue_cents");
       resource.groupable_fields = resource.groupable_fields.filter((field) => field !== "monthly_revenue_cents");
       resource.aggregate_measures = resource.aggregate_measures.filter((field) => field !== "monthly_revenue_cents");
+      delete resource.aggregate_measure_functions?.monthly_revenue_cents;
       resource.count_distinct_fields = resource.count_distinct_fields.filter((field) => field !== "monthly_revenue_cents");
       delete resource.time_bucket_fields.monthly_revenue_cents;
       const digest = explorationBoundaryCandidateDigest(candidate);

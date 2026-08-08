@@ -95,6 +95,28 @@ export function reconstructBoundaryReviewOverrides(input: {
     if (Object.keys(fields).length) resource.fields = fields;
     const fieldEnums = reconstructFieldEnumOverrides(baseline, candidate, input);
     if (Object.keys(fieldEnums).length) resource.field_enums = fieldEnums;
+    if (candidate.derived_measures?.length) {
+      resource.derived_measures = Object.fromEntries(candidate.derived_measures.map((definition) => [
+        definition.name,
+        {
+          definition: structuredClone(definition),
+          actor: boundedMigrationText(input.actor, "migration actor", 128),
+          reason: `Reconstructed from exact saved boundary ${input.candidate.pack.name}; no project-wide derived-measure policy was assigned.`,
+          decided_at: input.decidedAt,
+        },
+      ]));
+    }
+    if (candidate.numeric_bands?.length) {
+      resource.numeric_bands = Object.fromEntries(candidate.numeric_bands.map((definition) => [
+        definition.name,
+        {
+          definition: structuredClone(definition),
+          actor: boundedMigrationText(input.actor, "migration actor", 128),
+          reason: `Reconstructed from exact saved boundary ${input.candidate.pack.name}; no project-wide numeric-band policy was assigned.`,
+          decided_at: input.decidedAt,
+        },
+      ]));
+    }
     if (Object.keys(resource).length) overrides.resources[candidate.id] = resource;
   }
   return normalizeAutoBoundaryReviewOverrides({

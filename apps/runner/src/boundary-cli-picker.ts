@@ -50,7 +50,7 @@ export type BoundaryBlockedResolution =
 export type BoundaryResourceSelection =
   | {
       resource_id: string;
-      action: "add" | "review" | "remove" | "signoff" | "privacy";
+      action: "add" | "review" | "remove" | "signoff" | "privacy" | "analytics";
     }
   | {
       action: "create" | "rename" | "confirm" | "limits" | "privacy_all";
@@ -813,6 +813,9 @@ async function chooseResource(
             highlighted.minimum_cohort_size ?? 5
           }${highlighted.minimum_cohort_overridden ? ", owner override" : ""})`]
           : []),
+        ...(focusedAccess && resourceView === "boundary" && highlighted.included
+          ? [`${theme.key("G")} Reviewed metrics and numeric bands`]
+          : []),
       ];
       const boundaryActions = [
         `${theme.key("B/Esc")} ${resourceView === "boundary"
@@ -947,6 +950,9 @@ async function chooseResource(
         }
         showReviewItems = true;
         continue;
+      }
+      if (key.name === "g" && focusedAccess && resourceView === "boundary" && highlighted.included) {
+        return { resource_id: highlighted.resource_id, action: "analytics" };
       }
       if (key.name === "n") return { action: "rename" };
       if (key.name === "l") return { action: "limits" };

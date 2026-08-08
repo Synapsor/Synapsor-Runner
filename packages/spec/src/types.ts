@@ -230,23 +230,51 @@ export type ProtectedReadRelationshipPathSpec = ExtensionFields & {
   links: ProtectedReadRelationshipLinkSpec[];
 };
 
-export type ProtectedReadMeasureSpec = ExtensionFields & {
-  name: string;
+export type ProtectedReadBaseMeasureSpec = ExtensionFields & {
   function: "count" | "count_distinct" | "sum" | "avg";
   field?: string;
   relationship?: string;
+};
+
+export type ProtectedReadMeasureSpec = ExtensionFields & {
+  name: string;
+  function:
+    | "count"
+    | "count_distinct"
+    | "sum"
+    | "avg"
+    | "stddev_samp"
+    | "stddev_pop"
+    | "var_samp"
+    | "var_pop"
+    | "null_count"
+    | "non_null_count"
+    | "completion_rate"
+    | "reviewed_derived";
+  field?: string;
+  relationship?: string;
+  derived?: {
+    shape: "ratio" | "percentage" | "per_unit_average";
+    numerator: ProtectedReadBaseMeasureSpec;
+    denominator: ProtectedReadBaseMeasureSpec;
+    null_policy: "null_on_zero_or_null_denominator";
+  };
 };
 
 export type ProtectedReadDimensionSpec = ExtensionFields & {
   name: string;
   field: string;
   relationship?: string;
+  numeric_band?: {
+    edges: number[];
+    bucket_labels: string[];
+  };
 };
 
 export type ProtectedReadTimeBucketSpec = ExtensionFields & {
   name: string;
   field: string;
-  bucket: "day" | "week" | "month";
+  bucket: "hour" | "day" | "week" | "month" | "quarter" | "year" | "day_of_week";
   relationship?: string;
 };
 

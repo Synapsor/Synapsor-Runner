@@ -1241,6 +1241,16 @@ async function interactiveBoundaryReviewLoop(input: {
       if (result !== "back" && result !== 0) return result;
       continue;
     }
+    if (selected.action === "analytics") {
+      const result = await interactiveReviewedAnalyticsReview({
+        projectRoot: input.projectRoot,
+        resourceId: selected.resource_id,
+        schemaInspector: input.schemaInspector,
+        session: input.session,
+      });
+      if (result !== 0) return result;
+      continue;
+    }
     if (selected.action === "signoff") {
       await confirmBoundaryResourceInteractively({
         projectRoot: input.projectRoot,
@@ -1359,6 +1369,383 @@ async function interactiveRankedGroupReview(input: {
     "",
   ].join("\n"));
   return 0;
+}
+
+type ReviewedAnalyticsOperand = NonNullable<
+  NonNullable<BoundaryResourceReviewRequest["derived_measure"]>["numerator"]
+>;
+
+type ReviewedAnalyticsFieldChoice = {
+  label: string;
+  field: string;
+  relationship?: string;
+};
+
+type ReviewedAnalyticsOperandChoice = {
+  label: string;
+  value: ReviewedAnalyticsOperand;
+};
+
+async function interactiveReviewedAnalyticsReview(input: {
+  projectRoot: string;
+  resourceId: string;
+  schemaInspector: typeof inspectDatabase;
+  session: BoundaryReviewInteractiveSession;
+}): Promise<number> {
+  const context = await loadBoundaryReviewContext(input.projectRoot);
+  const resource = context.candidate.pack.resources.find((item) => item.id === input.resourceId);
+  if (!resource) {
+    process.stdout.write(`${input.resourceId} is not in this disabled boundary. No change was made.\n`);
+    return 0;
+  }
+  process.stdout.write([
+    `\nREVIEWED ANALYTICS - ${input.resourceId}`,
+    "These definitions are fixed human-reviewed authority. The AI may select a saved name, but cannot send formulas, bucket edges, fields, or joins.",
+    "1  Add a numeric band",
+    "2  Remove a numeric band",
+    "3  Add a named derived measure",
+    "4  Remove a named derived measure",
+    "",
+  ].join("\n"));
+  const entered = await input.session.promptText("Choose 1-4; Esc returns without changes");
+  if (entered === undefined || !entered.trim()) {
+    process.stdout.write("Returned to boundary tables. No analytics setting changed.\n\n");
+    return 0;
+  }
+  try {
+    if (entered.trim() === "1") {
+      return addReviewedNumericBand(input, context.candidate, resource);
+    }
+    if (entered.trim() === "2") {
+      return removeReviewedNumericBand(input, resource);
+    }
+    if (entered.trim() === "3") {
+      return addReviewedDerivedMeasure(input, context.candidate, resource);
+    }
+    if (entered.trim() === "4") {
+      return removeReviewedDerivedMeasure(input, resource);
+    }
+    process.stdout.write("Choose 1, 2, 3, or 4. No analytics setting changed.\n\n");
+    return 0;
+  } catch (error) {
+    process.stdout.write([
+      `Analytics setting was not saved: ${redactCliErrorMessage(error instanceof Error ? error.message : String(error))}`,
+      "You are still in /access. No authority was activated.",
+      "",
+    ].join("\n"));
+    return 0;
+  }
+}
+
+async function addReviewedNumericBand(
+  input: Parameters<typeof interactiveReviewedAnalyticsReview>[0],
+  boundary: ExplorationBoundaryDraft,
+  resource: ExplorationBoundaryDraft["pack"]["resources"][number],
+): Promise<number> {
+  const fields = reviewedAnalyticsFieldChoices(boundary, resource);
+  if (!fields.length) {
+    process.stdout.write("No reviewed numeric measure field is available for a band. No change was made.\n\n");
+    return 0;
+  }
+  process.stdout.write([
+    "Choose the reviewed numeric field to group. Related fields include the exact reviewed path:",
+    ...fields.map((item, index) => `  ${index + 1}  ${item.label}`),
+    "",
+  ].join("\n"));
+  const selected = await chooseNumberedReviewOption(input.session, "Field number", fields);
+  if (!selected) return cancelledAnalyticsEdit();
+  const edgesInput = await input.session.promptText(
+    "Ordered bucket edges, comma-separated (example: 1000, 5000)",
+  );
+  if (edgesInput === undefined) return cancelledAnalyticsEdit();
+  const edges = edgesInput.split(",").map((value) => Number(value.trim()));
+  if (!edgesInput.trim()
+    || edges.length > 16
+    || edges.some((value) => !Number.isFinite(value))
+    || edges.some((value, index) => index > 0 && value <= edges[index - 1]!)) {
+    throw new Error("Enter one through 16 finite numeric edges in strictly increasing order, separated by commas.");
+  }
+  const labelsInput = await input.session.promptText(
+    `Bucket labels separated by | (${edges.length + 1} required, from lowest to highest)`,
+  );
+  if (labelsInput === undefined) return cancelledAnalyticsEdit();
+  const bucketLabels = labelsInput.split("|").map((value) => value.trim());
+  if (bucketLabels.length !== edges.length + 1
+    || bucketLabels.some((value) => !value || value.length > 64)
+    || new Set(bucketLabels).size !== bucketLabels.length
+    || new TextEncoder().encode(JSON.stringify(bucketLabels)).byteLength > 2_048) {
+    throw new Error(
+      `Enter exactly ${edges.length + 1} unique, non-empty labels (64 characters each; 2 KB total).`,
+    );
+  }
+  const suggestedName = reviewedAnalyticsIdentifier(
+    `${selected.relationship ? `${selected.relationship}_` : ""}${selected.field}_band`,
+  );
+  const nameInput = await input.session.promptText(`Saved band name [${suggestedName}]`);
+  if (nameInput === undefined) return cancelledAnalyticsEdit();
+  const name = nameInput.trim() || suggestedName;
+  const suggestedLabel = humanReviewedAnalyticsLabel(name);
+  const labelInput = await input.session.promptText(`Plain-language label [${suggestedLabel}]`);
+  if (labelInput === undefined) return cancelledAnalyticsEdit();
+  const reason = await requiredReviewedAnalyticsReason(input.session);
+  if (reason === undefined) return cancelledAnalyticsEdit();
+  const preview = await prepareBoundaryResourceReviewMutation(input.projectRoot, {
+    resource_id: input.resourceId,
+    numeric_band: {
+      name,
+      label: labelInput.trim() || suggestedLabel,
+      field: selected.field,
+      ...(selected.relationship ? { relationship: selected.relationship } : {}),
+      edges,
+      bucket_labels: bucketLabels,
+    },
+    actor: localInteractiveActor(),
+    reason,
+  }, input.schemaInspector);
+  const committed = await commitBoundaryResourceReviewMutation(input.projectRoot, preview);
+  process.stdout.write([
+    `Saved reviewed numeric band ${name} for ${input.resourceId} in disabled boundary revision ${committed.review_revision}.`,
+    `Field: ${selected.label}; ${edges.length + 1} fixed buckets. The AI may select only the saved name.`,
+    "Press C in /access to review and activate this exact boundary revision.",
+    "",
+  ].join("\n"));
+  return 0;
+}
+
+async function removeReviewedNumericBand(
+  input: Parameters<typeof interactiveReviewedAnalyticsReview>[0],
+  resource: ExplorationBoundaryDraft["pack"]["resources"][number],
+): Promise<number> {
+  const definitions = resource.numeric_bands ?? [];
+  if (!definitions.length) {
+    process.stdout.write("This table has no reviewed numeric bands to remove.\n\n");
+    return 0;
+  }
+  process.stdout.write(["Choose the numeric band to remove:", ...definitions.map(
+    (item, index) => `  ${index + 1}  ${item.name} - ${item.label}`,
+  ), ""].join("\n"));
+  const selected = await chooseNumberedReviewOption(input.session, "Band number", definitions);
+  if (!selected) return cancelledAnalyticsEdit();
+  const reason = await requiredReviewedAnalyticsReason(input.session);
+  if (reason === undefined) return cancelledAnalyticsEdit();
+  const preview = await prepareBoundaryResourceReviewMutation(input.projectRoot, {
+    resource_id: input.resourceId,
+    numeric_band: { ...structuredClone(selected), remove: true },
+    actor: localInteractiveActor(),
+    reason,
+  }, input.schemaInspector);
+  const committed = await commitBoundaryResourceReviewMutation(input.projectRoot, preview);
+  process.stdout.write([
+    `Removed reviewed numeric band ${selected.name} in disabled boundary revision ${committed.review_revision}.`,
+    "Press C in /access to review and activate this exact boundary revision.",
+    "",
+  ].join("\n"));
+  return 0;
+}
+
+async function addReviewedDerivedMeasure(
+  input: Parameters<typeof interactiveReviewedAnalyticsReview>[0],
+  boundary: ExplorationBoundaryDraft,
+  resource: ExplorationBoundaryDraft["pack"]["resources"][number],
+): Promise<number> {
+  const choices = reviewedAnalyticsOperandChoices(boundary, resource);
+  process.stdout.write([
+    "Choose the fixed numerator. Only existing reviewed aggregate permissions are listed:",
+    ...choices.map((item, index) => `  ${index + 1}  ${item.label}`),
+    "",
+  ].join("\n"));
+  const numerator = await chooseNumberedReviewOption(input.session, "Numerator number", choices);
+  if (!numerator) return cancelledAnalyticsEdit();
+  const relationship = numerator.value.relationship;
+  const denominators = choices.filter((item) => item.value.relationship === relationship);
+  process.stdout.write([
+    "Choose the fixed denominator. Both operands must use the same reviewed table path:",
+    ...denominators.map((item, index) => `  ${index + 1}  ${item.label}`),
+    "",
+  ].join("\n"));
+  const denominator = await chooseNumberedReviewOption(input.session, "Denominator number", denominators);
+  if (!denominator) return cancelledAnalyticsEdit();
+  process.stdout.write([
+    "Choose the released result:",
+    "  1  Ratio",
+    "  2  Percentage (ratio x 100)",
+    "  3  Per-unit average (SUM divided by COUNT or COUNT DISTINCT)",
+    "",
+  ].join("\n"));
+  const shapeInput = await input.session.promptText("Shape number");
+  if (shapeInput === undefined) return cancelledAnalyticsEdit();
+  const shape = ({ "1": "ratio", "2": "percentage", "3": "per_unit_average" } as const)[shapeInput.trim() as "1" | "2" | "3"];
+  if (!shape) throw new Error("Choose shape 1, 2, or 3.");
+  const suggestedName = reviewedAnalyticsIdentifier(
+    shape === "percentage"
+      ? `${reviewedOperandName(numerator.value)}_percentage`
+      : `${reviewedOperandName(numerator.value)}_per_${reviewedOperandName(denominator.value)}`,
+  );
+  const nameInput = await input.session.promptText(`Saved measure name [${suggestedName}]`);
+  if (nameInput === undefined) return cancelledAnalyticsEdit();
+  const name = nameInput.trim() || suggestedName;
+  const suggestedLabel = humanReviewedAnalyticsLabel(name);
+  const labelInput = await input.session.promptText(`Plain-language label [${suggestedLabel}]`);
+  if (labelInput === undefined) return cancelledAnalyticsEdit();
+  const reason = await requiredReviewedAnalyticsReason(input.session);
+  if (reason === undefined) return cancelledAnalyticsEdit();
+  const preview = await prepareBoundaryResourceReviewMutation(input.projectRoot, {
+    resource_id: input.resourceId,
+    derived_measure: {
+      name,
+      label: labelInput.trim() || suggestedLabel,
+      shape,
+      numerator: structuredClone(numerator.value),
+      denominator: structuredClone(denominator.value),
+    },
+    actor: localInteractiveActor(),
+    reason,
+  }, input.schemaInspector);
+  const committed = await commitBoundaryResourceReviewMutation(input.projectRoot, preview);
+  process.stdout.write([
+    `Saved reviewed derived measure ${name} for ${input.resourceId} in disabled boundary revision ${committed.review_revision}.`,
+    "The AI may select only this name; its operands and shape are fixed. Its effective minimum cohort is at least 5.",
+    "Press C in /access to review and activate this exact boundary revision.",
+    "",
+  ].join("\n"));
+  return 0;
+}
+
+async function removeReviewedDerivedMeasure(
+  input: Parameters<typeof interactiveReviewedAnalyticsReview>[0],
+  resource: ExplorationBoundaryDraft["pack"]["resources"][number],
+): Promise<number> {
+  const definitions = resource.derived_measures ?? [];
+  if (!definitions.length) {
+    process.stdout.write("This table has no reviewed derived measures to remove.\n\n");
+    return 0;
+  }
+  process.stdout.write(["Choose the derived measure to remove:", ...definitions.map(
+    (item, index) => `  ${index + 1}  ${item.name} - ${item.label}`,
+  ), ""].join("\n"));
+  const selected = await chooseNumberedReviewOption(input.session, "Measure number", definitions);
+  if (!selected) return cancelledAnalyticsEdit();
+  const reason = await requiredReviewedAnalyticsReason(input.session);
+  if (reason === undefined) return cancelledAnalyticsEdit();
+  const preview = await prepareBoundaryResourceReviewMutation(input.projectRoot, {
+    resource_id: input.resourceId,
+    derived_measure: { ...structuredClone(selected), remove: true },
+    actor: localInteractiveActor(),
+    reason,
+  }, input.schemaInspector);
+  const committed = await commitBoundaryResourceReviewMutation(input.projectRoot, preview);
+  process.stdout.write([
+    `Removed reviewed derived measure ${selected.name} in disabled boundary revision ${committed.review_revision}.`,
+    "Press C in /access to review and activate this exact boundary revision.",
+    "",
+  ].join("\n"));
+  return 0;
+}
+
+function reviewedAnalyticsFieldChoices(
+  boundary: ExplorationBoundaryDraft,
+  root: ExplorationBoundaryDraft["pack"]["resources"][number],
+): ReviewedAnalyticsFieldChoice[] {
+  const choices: ReviewedAnalyticsFieldChoice[] = root.aggregate_measures.map((field) => ({
+    label: `${root.id}.${field}`,
+    field,
+  }));
+  for (const relationship of root.relationships) {
+    const target = boundary.pack.resources.find((item) => item.id === relationship.target_resource);
+    if (!target) continue;
+    for (const field of target.aggregate_measures) {
+      choices.push({
+        label: `${relationship.id} -> ${target.id}.${field}`,
+        field,
+        relationship: relationship.id,
+      });
+    }
+  }
+  return choices;
+}
+
+function reviewedAnalyticsOperandChoices(
+  boundary: ExplorationBoundaryDraft,
+  root: ExplorationBoundaryDraft["pack"]["resources"][number],
+): ReviewedAnalyticsOperandChoice[] {
+  const choices: ReviewedAnalyticsOperandChoice[] = [{
+    label: `COUNT rows in ${root.id}`,
+    value: { function: "count" },
+  }];
+  const resources = [{ resource: root, relationship: undefined as string | undefined }, ...root.relationships.flatMap((relationship) => {
+    const target = boundary.pack.resources.find((item) => item.id === relationship.target_resource);
+    return target ? [{ resource: target, relationship: relationship.id }] : [];
+  })];
+  for (const item of resources) {
+    const prefix = item.relationship ? `${item.relationship} -> ${item.resource.id}` : item.resource.id;
+    for (const field of item.resource.aggregate_measures) {
+      const reviewedFunctions = item.resource.aggregate_measure_functions?.[field] ?? ["sum", "avg"];
+      for (const fn of (["sum", "avg"] as const).filter((candidate) => reviewedFunctions.includes(candidate))) {
+        choices.push({
+          label: `${fn.toUpperCase()} ${prefix}.${field}`,
+          value: { function: fn, field, ...(item.relationship ? { relationship: item.relationship } : {}) },
+        });
+      }
+    }
+    for (const field of item.resource.count_distinct_fields) {
+      choices.push({
+        label: `COUNT DISTINCT ${prefix}.${field}`,
+        value: { function: "count_distinct", field, ...(item.relationship ? { relationship: item.relationship } : {}) },
+      });
+    }
+  }
+  return choices;
+}
+
+async function chooseNumberedReviewOption<T>(
+  session: BoundaryReviewInteractiveSession,
+  prompt: string,
+  options: T[],
+): Promise<T | undefined> {
+  const entered = await session.promptText(prompt);
+  if (entered === undefined) return undefined;
+  const index = Number(entered.trim());
+  if (!Number.isSafeInteger(index) || index < 1 || index > options.length) {
+    throw new Error(`Choose a number from 1 through ${options.length}.`);
+  }
+  return options[index - 1];
+}
+
+async function requiredReviewedAnalyticsReason(
+  session: BoundaryReviewInteractiveSession,
+): Promise<string | undefined> {
+  while (true) {
+    const reason = await session.promptText(
+      "Why is this fixed analytics definition appropriate for this boundary? A concrete reason is required",
+    );
+    if (reason === undefined) return undefined;
+    if (reason.trim()) return reason.trim();
+    process.stdout.write("A reason is required; no change was made.\n");
+  }
+}
+
+function cancelledAnalyticsEdit(): 0 {
+  process.stdout.write("Cancelled - no analytics setting changed. You are still in /access.\n\n");
+  return 0;
+}
+
+function reviewedAnalyticsIdentifier(value: string): string {
+  const normalized = value.toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
+  const safe = /^[a-z_]/.test(normalized) ? normalized : `metric_${normalized}`;
+  return (safe || "reviewed_metric").slice(0, 64);
+}
+
+function humanReviewedAnalyticsLabel(value: string): string {
+  const words = value.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  return words ? `${words[0]!.toUpperCase()}${words.slice(1)}` : "Reviewed metric";
+}
+
+function reviewedOperandName(value: ReviewedAnalyticsOperand): string {
+  return reviewedAnalyticsIdentifier(
+    value.function === "count"
+      ? "rows"
+      : `${value.relationship ? `${value.relationship}_` : ""}${value.field ?? value.function}`,
+  );
 }
 
 async function interactiveBoundaryResourceAddition(input: {

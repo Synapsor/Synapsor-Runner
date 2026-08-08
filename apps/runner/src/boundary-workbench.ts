@@ -2075,6 +2075,175 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       }
     }
 
+    function reviewedAnalyticsFieldChoices(resource){
+      const choices=(resource.aggregate_measures||[]).map(field=>({
+        field,
+        label:resource.id+"."+field
+      }));
+      for(const relationship of resource.relationships||[]){
+        const target=candidate.pack.resources.find(item=>item.id===relationship.target_resource);
+        if(!target)continue;
+        for(const field of target.aggregate_measures||[]){
+          choices.push({
+            field,
+            relationship:relationship.id,
+            label:relationship.id+" -> "+target.id+"."+field
+          });
+        }
+      }
+      return choices;
+    }
+
+    function reviewedAnalyticsOperandChoices(resource){
+      const choices=[{value:{function:"count"},label:"COUNT rows in "+resource.id,relationship:""}];
+      const resources=[{resource,relationship:""}];
+      for(const relationship of resource.relationships||[]){
+        const target=candidate.pack.resources.find(item=>item.id===relationship.target_resource);
+        if(target)resources.push({resource:target,relationship:relationship.id});
+      }
+      for(const item of resources){
+        const prefix=item.relationship?item.relationship+" -> "+item.resource.id:item.resource.id;
+        for(const field of item.resource.aggregate_measures||[]){
+          const functions=item.resource.aggregate_measure_functions?.[field]||["sum","avg"];
+          ["sum","avg"].filter(fn=>functions.includes(fn)).forEach(fn=>choices.push({
+            value:{function:fn,field,...(item.relationship?{relationship:item.relationship}:{})},
+            label:fn.toUpperCase()+" "+prefix+"."+field,
+            relationship:item.relationship
+          }));
+        }
+        for(const field of item.resource.count_distinct_fields||[]){
+          choices.push({
+            value:{function:"count_distinct",field,...(item.relationship?{relationship:item.relationship}:{})},
+            label:"COUNT DISTINCT "+prefix+"."+field,
+            relationship:item.relationship
+          });
+        }
+      }
+      return choices;
+    }
+
+    function reviewedAnalyticsPanel(resource){
+      const bands=resource.numeric_bands||[];
+      const measures=resource.derived_measures||[];
+      const fields=reviewedAnalyticsFieldChoices(resource);
+      const operands=reviewedAnalyticsOperandChoices(resource);
+      const actor=esc(byId("actor").value.trim());
+      const option=value=>esc(JSON.stringify(value));
+      const bandRows=bands.length?bands.map(band=>'<div class="risk"><strong>'+esc(band.label)+'</strong><p><code>'+esc(band.name)+'</code> groups '+esc(band.relationship?band.relationship+" -> "+band.field:band.field)+' into '+esc(band.bucket_labels.length)+' fixed buckets: '+esc(band.bucket_labels.join(" | "))+'</p><button class="quiet" data-remove-numeric-band="'+esc(band.name)+'" type="button">Remove this band</button></div>').join(""):'<p>No numeric bands are reviewed for this table.</p>';
+      const measureRows=measures.length?measures.map(measure=>'<div class="risk"><strong>'+esc(measure.label)+'</strong><p><code>'+esc(measure.name)+'</code> is a fixed '+esc(measure.shape.replace(/_/g," "))+'. The AI can select its name but cannot change its formula.</p><button class="quiet" data-remove-derived-measure="'+esc(measure.name)+'" type="button">Remove this metric</button></div>').join(""):'<p>No named derived metrics are reviewed for this table.</p>';
+      const commonReview='<div class="form-grid"><label class="field">Human reviewer<input id="analytics-review-actor" type="text" maxlength="128" value="'+actor+'"></label><label class="field">Reason for this analytics definition<textarea id="analytics-review-reason" maxlength="500" rows="2" placeholder="Explain why this fixed metric or grouping is appropriate for this boundary."></textarea></label></div>';
+      const bandForm=fields.length
+        ?'<div class="review-form"><h4>Add a fixed numeric band</h4><p>Choose a reviewed numeric field and fixed bucket boundaries. The AI receives only the saved name and labels; it cannot supply edges.</p><div class="form-grid"><label class="field">Numeric field<select id="analytics-band-field">'+fields.map(item=>'<option value="'+option(item)+'">'+esc(item.label)+'</option>').join("")+'</select></label><label class="field">Saved name<input id="analytics-band-name" type="text" maxlength="64" placeholder="order_value_band"></label><label class="field">Plain-language label<input id="analytics-band-label" type="text" maxlength="120" placeholder="Order value band"></label><label class="field">Bucket edges<input id="analytics-band-edges" type="text" maxlength="512" placeholder="1000, 5000"></label><label class="field">Labels, lowest to highest<input id="analytics-band-labels" type="text" maxlength="2048" placeholder="Under 10 | 10 to 49 | 50 or more"></label></div><div class="actions"><button id="save-numeric-band" type="button">Save numeric band</button></div></div>'
+        :'<div class="risk high"><strong>No reviewed numeric field is available.</strong><p>Review a numeric aggregate field before defining a band.</p></div>';
+      const derivedForm=operands.length
+        ?'<div class="review-form"><h4>Add a named derived metric</h4><p>Choose two existing reviewed aggregates. Runner fixes the calculation; there is no formula or SQL input.</p><div class="form-grid"><label class="field">Numerator<select id="analytics-derived-numerator">'+operands.map(item=>'<option data-relationship="'+esc(item.relationship)+'" value="'+option(item.value)+'">'+esc(item.label)+'</option>').join("")+'</select></label><label class="field">Denominator<select id="analytics-derived-denominator">'+operands.map(item=>'<option data-relationship="'+esc(item.relationship)+'" value="'+option(item.value)+'">'+esc(item.label)+'</option>').join("")+'</select></label><label class="field">Released result<select id="analytics-derived-shape"><option value="ratio">Ratio</option><option value="percentage">Percentage (ratio x 100)</option><option value="per_unit_average">Per-unit average</option></select></label><label class="field">Saved name<input id="analytics-derived-name" type="text" maxlength="64" placeholder="average_order_value"></label><label class="field">Plain-language label<input id="analytics-derived-label" type="text" maxlength="120" placeholder="Average order value"></label></div><div class="actions"><button id="save-derived-measure" type="button">Save named metric</button></div></div>'
+        :'<div class="risk high"><strong>No reviewed aggregate is available.</strong><p>Review aggregate operations before defining a metric.</p></div>';
+      return '<details class="access-secondary" data-access-secondary data-reviewed-analytics><summary>Reviewed metrics and numeric bands · '+esc(measures.length+bands.length)+'</summary><p>These are fixed, digest-bound human decisions. Saving creates a disabled revision; press <strong>Review and activate</strong> after checking the complete boundary.</p><div class="risk-list">'+measureRows+bandRows+'</div>'+commonReview+bandForm+derivedForm+'<span id="analytics-review-status" class="status-message"></span></details>';
+    }
+
+    function safeAnalyticsName(value){
+      return String(value||"").trim().toLowerCase().replace(/[^a-z0-9_]+/g,"_").replace(/^_+|_+$/g,"").replace(/^[0-9]/,"metric_$&").slice(0,64);
+    }
+
+    function analyticsReviewIdentity(){
+      const actor=byId("analytics-review-actor")?.value.trim();
+      const reason=byId("analytics-review-reason")?.value.trim();
+      if(!actor||!reason)throw new Error("Enter the human reviewer identity and a concrete reason. No change was made.");
+      return {actor,reason};
+    }
+
+    async function saveReviewedAnalyticsDecision(body,statusText){
+      const status=byId("analytics-review-status");
+      try{
+        status.className="status-message";
+        status.textContent="Saving this reviewed definition in the disabled boundary...";
+        await post("/api/boundary/regenerate",body);
+        candidateDigest=undefined;
+        focusedAccessReview=true;
+        document.body.classList.remove("quick-start-mode");
+        await load();
+        offerStagedActivation();
+        byId("access-staged-summary").textContent=statusText+" Review the complete boundary, then activate it.";
+      }catch(error){
+        status.className="status-message error";
+        status.textContent=error.message;
+      }
+    }
+
+    function wireReviewedAnalytics(resource){
+      const field=byId("analytics-band-field");
+      const bandName=byId("analytics-band-name");
+      const bandLabel=byId("analytics-band-label");
+      const suggestBand=()=>{
+        if(!field||!bandName||bandName.value.trim())return;
+        const selected=JSON.parse(field.value);
+        bandName.value=safeAnalyticsName((selected.relationship?selected.relationship+"_":"")+selected.field+"_band");
+        if(bandLabel&&!bandLabel.value.trim())bandLabel.value=bandName.value.replace(/_/g," ").replace(/\b\w/g,value=>value.toUpperCase());
+      };
+      field?.addEventListener("change",suggestBand);
+      suggestBand();
+      const numerator=byId("analytics-derived-numerator");
+      const denominator=byId("analytics-derived-denominator");
+      const refreshDenominators=()=>{
+        if(!numerator||!denominator)return;
+        const relationship=numerator.selectedOptions[0]?.dataset.relationship||"";
+        [...denominator.options].forEach(option=>option.disabled=(option.dataset.relationship||"")!==relationship);
+        if(denominator.selectedOptions[0]?.disabled)denominator.value=[...denominator.options].find(option=>!option.disabled)?.value||"";
+      };
+      numerator?.addEventListener("change",refreshDenominators);
+      refreshDenominators();
+      byId("save-numeric-band")?.addEventListener("click",()=>{
+        try{
+          const review=analyticsReviewIdentity();
+          const selected=JSON.parse(field.value);
+          const name=bandName.value.trim();
+          const label=bandLabel.value.trim();
+          const edges=byId("analytics-band-edges").value.split(",").map(value=>Number(value.trim()));
+          const labels=byId("analytics-band-labels").value.split("|").map(value=>value.trim());
+          if(!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name))throw new Error("Use a saved name that starts with a letter or underscore and contains only letters, numbers, and underscores.");
+          if(!label)throw new Error("Enter a plain-language label.");
+          if(!edges.length||edges.length>16||edges.some((value,index)=>!Number.isFinite(value)||(index>0&&value<=edges[index-1])))throw new Error("Enter 1-16 finite bucket edges in strictly increasing order.");
+          if(labels.length!==edges.length+1||labels.some(value=>!value||value.length>64)||new Set(labels).size!==labels.length||new TextEncoder().encode(JSON.stringify(labels)).byteLength>2048)throw new Error("Enter exactly one unique label per bucket, at most 64 characters each and 2 KB total.");
+          saveReviewedAnalyticsDecision({kind:"numeric_band",resource_id:selectedResource,name,definition:{name,label,field:selected.field,...(selected.relationship?{relationship:selected.relationship}:{}),edges,bucket_labels:labels},...review},"Saved numeric band "+name+" for "+selectedResource+".");
+        }catch(error){
+          const status=byId("analytics-review-status");status.className="status-message error";status.textContent=error.message;
+        }
+      });
+      byId("save-derived-measure")?.addEventListener("click",()=>{
+        try{
+          const review=analyticsReviewIdentity();
+          const numeratorValue=JSON.parse(numerator.value);
+          const denominatorValue=JSON.parse(denominator.value);
+          if((numeratorValue.relationship||"")!==(denominatorValue.relationship||""))throw new Error("Both aggregates must use the same reviewed table path.");
+          const name=byId("analytics-derived-name").value.trim();
+          const label=byId("analytics-derived-label").value.trim();
+          const shape=byId("analytics-derived-shape").value;
+          if(!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name))throw new Error("Use a saved name that starts with a letter or underscore and contains only letters, numbers, and underscores.");
+          if(!label)throw new Error("Enter a plain-language label.");
+          if(shape==="per_unit_average"&&(numeratorValue.function!=="sum"||!["count","count_distinct"].includes(denominatorValue.function)))throw new Error("A per-unit average requires SUM divided by COUNT or COUNT DISTINCT.");
+          saveReviewedAnalyticsDecision({kind:"derived_measure",resource_id:selectedResource,name,definition:{name,label,shape,numerator:numeratorValue,denominator:denominatorValue,null_policy:"null_on_zero_or_null_denominator"},...review},"Saved named metric "+name+" for "+selectedResource+".");
+        }catch(error){
+          const status=byId("analytics-review-status");status.className="status-message error";status.textContent=error.message;
+        }
+      });
+      document.querySelectorAll("[data-remove-numeric-band]").forEach(button=>button.onclick=()=>{
+        try{
+          const review=analyticsReviewIdentity();
+          const definition=(resource.numeric_bands||[]).find(item=>item.name===button.dataset.removeNumericBand);
+          if(!definition)throw new Error("That numeric band is no longer in this disabled revision.");
+          saveReviewedAnalyticsDecision({kind:"numeric_band",resource_id:selectedResource,name:definition.name,definition,remove:true,...review},"Removed numeric band "+definition.name+" from "+selectedResource+".");
+        }catch(error){const status=byId("analytics-review-status");status.className="status-message error";status.textContent=error.message;}
+      });
+      document.querySelectorAll("[data-remove-derived-measure]").forEach(button=>button.onclick=()=>{
+        try{
+          const review=analyticsReviewIdentity();
+          const definition=(resource.derived_measures||[]).find(item=>item.name===button.dataset.removeDerivedMeasure);
+          if(!definition)throw new Error("That named metric is no longer in this disabled revision.");
+          saveReviewedAnalyticsDecision({kind:"derived_measure",resource_id:selectedResource,name:definition.name,definition,remove:true,...review},"Removed named metric "+definition.name+" from "+selectedResource+".");
+        }catch(error){const status=byId("analytics-review-status");status.className="status-message error";status.textContent=error.message;}
+      });
+    }
+
     function inferenceExplanation(label,inference){
       if(!inference)return "";
       const selected=inference.selected;
@@ -2404,6 +2573,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         +(cohortDecision?'<p>Reviewed by '+esc(cohortDecision.actor)+' at '+esc(cohortDecision.decided_at)+': '+esc(cohortDecision.reason)+'</p>':"")
         +cohortWarning
         +'<div class="review-form" data-cohort-review-form><div class="form-grid"><label class="field">Minimum group size<select data-cohort-review-value><option value="5" '+(cohortValue===5?"selected":"")+'>5 — default; hide groups with 1–4 rows</option><option value="4" '+(cohortValue===4?"selected":"")+'>4 — hide groups with 1–3 rows</option><option value="3" '+(cohortValue===3?"selected":"")+'>3 — hide groups with 1–2 rows</option><option value="2" '+(cohortValue===2?"selected":"")+'>2 — hide groups with 1 row</option><option value="1" '+(cohortValue===1?"selected":"")+'>1 — show every non-empty group; suppression off</option></select></label><label class="field">Human reviewer<input data-cohort-review-actor type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><label class="field">Reason for this privacy setting<textarea data-cohort-review-reason maxlength="500" rows="2" placeholder="Explain why this minimum group size is appropriate for this table."></textarea></label></div><div class="actions"><button data-submit-cohort-review type="button">Save privacy change</button></div><span data-cohort-review-status class="status-message"></span></div></details>':"";
+      const reviewedAnalytics=resource?reviewedAnalyticsPanel(resource):"";
       const unresolvedRelationship=resource?.relationships.some(relationship=>relationship.unmatched_rows==="review_required");
       const relationshipReview=resource?.relationships.length
         ?'<details class="access-secondary" data-access-secondary '+(focusedAccessReview&&unresolvedRelationship?"open":"")+'><summary>Reviewed related data'+(unresolvedRelationship?" · choice required":"")+'</summary><p>Only database foreign keys that cannot multiply '+esc(source.table)+' records are available. The AI cannot invent another join.</p><div class="risk-list">'+resource.relationships.map(relationship=>{
@@ -2419,7 +2589,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      const resourceSignoff=focusedAccessReview
 	        ?'<div class="band notice"><strong>One final confirmation, not one checkbox per table.</strong><p>Step 2 shows this table together with the complete boundary, then records every exact digest-bound decision at once.</p></div>'
 	        :'<div class="actions"><label class="check"><input id="resource-signoff" type="checkbox" data-review-decision="'+esc(selectedResource)+'" '+(resourceConfirmed?"checked":"")+(resource&&!unresolvedRelationship?"":" disabled")+'><span>I reviewed which records and fields this agent may use, including privacy limits and related data.</span></label></div>';
-		      byId("resource-detail").innerHTML=header+columnList+scopeReview+relationshipReview+cohortReview+advanced+resourceSignoff;
+	      byId("resource-detail").innerHTML=header+columnList+scopeReview+relationshipReview+cohortReview+reviewedAnalytics+advanced+resourceSignoff;
 	      byId("back-resources").onclick=backFromResourceDetail;
 	      if(byId("open-resource-privacy"))byId("open-resource-privacy").onclick=()=>{
 	        const section=document.querySelector("[data-cohort-review-section]");
@@ -2460,6 +2630,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      document.querySelectorAll("[data-submit-enum-review]").forEach(button=>button.onclick=()=>submitManagedEnumReview(button.dataset.submitEnumReview,button.closest("[data-enum-review-form]")));
       document.querySelectorAll("[data-submit-scope-review]").forEach(button=>button.onclick=()=>submitManagedScopeReview(button.dataset.submitScopeReview,button.closest("[data-scope-review-form]")));
       document.querySelectorAll("[data-submit-cohort-review]").forEach(button=>button.onclick=()=>submitManagedCohortReview(button.closest("[data-cohort-review-form]")));
+      if(resource)wireReviewedAnalytics(resource);
       document.querySelectorAll("[data-permission-field]").forEach(input=>input.onchange=()=>setPermission(selectedResource,input.dataset.permissionField,input.dataset.permissionKey,input.checked));
       document.querySelectorAll("[data-relationship-semantics]").forEach(input=>input.onchange=()=>setRelationshipSemantics(selectedResource,input.dataset.relationshipSemantics,input.value));
       if(byId("resource-signoff"))byId("resource-signoff").onchange=async event=>{
@@ -3981,17 +4152,28 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       if(!question||typeof question.text!=="string"||question.relationship_review_required)return false;
       const measure=question.measure;
       if(!measure||typeof measure!=="object")return false;
-      if(measure.function==="count"){
+      if(typeof measure.derived_measure==="string"){
+        if(!(resource.derived_measures||[]).some(item=>item.name===measure.derived_measure))return false;
+      }else if(measure.function==="count"){
         if(measure.field||measure.relationship)return false;
       }else if(measure.function==="count_distinct"){
         if(!activeQuestionField(resource,"count_distinct_fields",measure))return false;
-      }else if(measure.function==="sum"||measure.function==="avg"){
+      }else if(["null_count","non_null_count","completion_rate"].includes(measure.function)){
+        if(!activeQuestionField(resource,"presence_measure_fields",measure))return false;
+      }else if(["sum","avg","stddev_samp","stddev_pop","var_samp","var_pop"].includes(measure.function)){
         if(!activeQuestionField(resource,"aggregate_measures",measure))return false;
+        const target=measure.relationship
+          ?(resource.relationships||[]).find(item=>item.id===measure.relationship&&item.activation==="active")
+          :resource;
+        const functions=target?.aggregate_measure_functions?.[measure.field]||["sum","avg"];
+        if(!functions.includes(measure.function))return false;
       }else{
         return false;
       }
       const dimensions=(Array.isArray(question.dimensions)?question.dimensions:[question.dimension]).filter(Boolean);
-      if(!dimensions.every(dimension=>activeQuestionField(resource,"groupable_fields",dimension)))return false;
+      if(!dimensions.every(dimension=>typeof dimension.numeric_band==="string"
+        ?(resource.numeric_bands||[]).some(item=>item.name===dimension.numeric_band)
+        :activeQuestionField(resource,"groupable_fields",dimension)))return false;
       if(question.time_field){
         const time=normalizedSuggestedField(question.time_field);
         if(!activeQuestionField(resource,"time_bucket_fields",time))return false;
@@ -4096,7 +4278,12 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         ];
       }
       const measure=plan.measures[0];
-      const measureText=measure.function==="count"
+      const derived=measure.derived_measure
+        ?(resource.derived_measures||[]).find(item=>item.name===measure.derived_measure)
+        :null;
+      const measureText=derived
+        ?"Calculate "+(derived.label||derived.name)
+        :measure.function==="count"
         ?"Count "+resourceLabel(resource).toLowerCase()
         :(measure.function==="count_distinct"?"Count unique ":"Calculate "+measure.function+" of ")+fieldReferenceLabel(resource,measure).toLowerCase();
       const groups=(plan.dimensions||[]).map(dimension=>fieldReferenceLabel(resource,dimension)).join(", ");
@@ -4126,7 +4313,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         label:fieldLabel(resource,field),
         field_types:resource.field_types||{},
         filter_operators:resource.filter_operators||{},
-        time_bucket_fields:resource.time_bucket_fields||{}
+        time_bucket_fields:resource.time_bucket_fields||{},
+        aggregate_measure_functions:resource.aggregate_measure_functions?.[field]||["sum","avg"]
       }));
       for(const relationship of resource?.relationships||[]){
         const related=key==="filterable_fields"||key==="time_bucket_fields"
@@ -4139,7 +4327,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
             +(relationship.operator_review_required?" — human relationship review required":""),
           field_types:relationship.field_types||{},
           filter_operators:relationship.filter_operators||{},
-          time_bucket_fields:relationship.time_bucket_fields||{}
+          time_bucket_fields:relationship.time_bucket_fields||{},
+          aggregate_measure_functions:relationship.aggregate_measure_functions?.[field]||["sum","avg"]
         }));
       }
       return choices;
@@ -4150,6 +4339,30 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         field:choice.field,
         ...(choice.relationship?{relationship:choice.relationship}:{})
       });
+    }
+
+    function dimensionChoices(resource){
+      return [
+        ...fieldChoices(resource,"groupable_fields"),
+        ...(resource.numeric_bands||[]).map(band=>({
+          numeric_band:band.name,
+          label:(band.label||band.name)+" — reviewed fixed buckets"
+        }))
+      ];
+    }
+
+    function dimensionChoiceValue(choice){
+      return choice.numeric_band
+        ?JSON.stringify({numeric_band:choice.numeric_band})
+        :fieldChoiceValue(choice);
+    }
+
+    function parseDimensionChoice(value){
+      if(!value)return null;
+      const parsed=JSON.parse(value);
+      if(parsed&&typeof parsed.numeric_band==="string"&&Object.keys(parsed).length===1)return parsed;
+      if(parsed&&typeof parsed.field==="string")return parsed;
+      throw new Error("The selected reviewed grouping is invalid.");
     }
 
     function parseFieldChoice(value){
@@ -4166,6 +4379,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 
     function fieldReferenceLabel(resource,reference){
       if(!reference)return "";
+      if(reference.numeric_band){
+        const band=(resource.numeric_bands||[]).find(item=>item.name===reference.numeric_band);
+        return band?.label||reference.numeric_band;
+      }
       if(!reference.relationship)return fieldLabel(resource,reference.field);
       const relationship=(resource.relationships||[]).find(item=>item.id===reference.relationship);
       return fieldLabel(relationship,reference.field)+" from "+(relationship?.label||relationship?.target_resource||"reviewed related data");
@@ -4176,12 +4393,33 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     }
 
     function measureOptions(resource){
+      const numericLabels={
+        sum:"Total ",
+        avg:"Average ",
+        stddev_samp:"Sample standard deviation of ",
+        stddev_pop:"Population standard deviation of ",
+        var_samp:"Sample variance of ",
+        var_pop:"Population variance of "
+      };
+      const presenceLabels={
+        null_count:"Missing values in ",
+        non_null_count:"Present values in ",
+        completion_rate:"Completion rate for "
+      };
       return [
         {value:JSON.stringify({function:"count"}),label:"Number of "+resourceLabel(resource).toLowerCase()},
-        ...fieldChoices(resource,"aggregate_measures").flatMap(choice=>[
-          {value:JSON.stringify({function:"sum",field:choice.field,...(choice.relationship?{relationship:choice.relationship}:{})}),label:"Total "+choice.label.toLowerCase()},
-          {value:JSON.stringify({function:"avg",field:choice.field,...(choice.relationship?{relationship:choice.relationship}:{})}),label:"Average "+choice.label.toLowerCase()}
-        ]),
+        ...(resource.derived_measures||[]).map(measure=>({
+          value:JSON.stringify({derived_measure:measure.name}),
+          label:measure.label+" (reviewed definition)"
+        })),
+        ...fieldChoices(resource,"aggregate_measures").flatMap(choice=>(choice.aggregate_measure_functions||["sum","avg"]).map(fn=>({
+          value:JSON.stringify({function:fn,field:choice.field,...(choice.relationship?{relationship:choice.relationship}:{})}),
+          label:(numericLabels[fn]||fn+" of ")+choice.label.toLowerCase()
+        }))),
+        ...fieldChoices(resource,"presence_measure_fields").flatMap(choice=>(resource.presence_measure_functions||[]).map(fn=>({
+          value:JSON.stringify({function:fn,field:choice.field,...(choice.relationship?{relationship:choice.relationship}:{})}),
+          label:(presenceLabels[fn]||fn+" of ")+choice.label.toLowerCase()
+        }))),
         ...fieldChoices(resource,"count_distinct_fields").map(choice=>({
           value:JSON.stringify({function:"count_distinct",field:choice.field,...(choice.relationship?{relationship:choice.relationship}:{})}),
           label:"Number of unique "+choice.label.toLowerCase()
@@ -4208,7 +4446,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     function populateAggregateBuilder(resourceKey,suggestion){
       const resources=resourcesFromDescription();
       const resource=describedResourceFromKey(resourceKey)||resources[0];
-      const dimensions=fieldChoices(resource,"groupable_fields");
+      const dimensions=dimensionChoices(resource);
       const timeFields=fieldChoices(resource,"time_bucket_fields");
       const filters=fieldChoices(resource,"filterable_fields");
       const measures=measureOptions(resource);
@@ -4219,9 +4457,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         .map(normalizedSuggestedField)
         .filter(Boolean);
       const suggestedDimensionValues=[
-        suggestedDimensions[0]?fieldChoiceValue(suggestedDimensions[0]):"",
-        suggestedDimensions[1]?fieldChoiceValue(suggestedDimensions[1]):"",
-        suggestedDimensions[2]?fieldChoiceValue(suggestedDimensions[2]):""
+        suggestedDimensions[0]?dimensionChoiceValue(suggestedDimensions[0]):"",
+        suggestedDimensions[1]?dimensionChoiceValue(suggestedDimensions[1]):"",
+        suggestedDimensions[2]?dimensionChoiceValue(suggestedDimensions[2]):""
       ];
       const suggestedTime=normalizedSuggestedField(suggestion?.time_field);
       const suggestedTimeValue=suggestedTime?fieldChoiceValue(suggestedTime):"";
@@ -4241,9 +4479,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       resourceSelect.value=selectedResourceKey;
       byId("aggregate-controls").innerHTML=
         '<label class="field">What should Runner calculate?<select id="aggregate-measure">'+measures.map(item=>'<option value="'+esc(item.value)+'" '+(item.value===suggestedMeasure?"selected":"")+'>'+esc(item.label)+'</option>').join("")+'</select></label>'+
-        '<label class="field">Compare groups by<select id="aggregate-dimension"><option value="">No grouping</option>'+optionList(dimensions.map(fieldChoiceValue),suggestedDimensionValues[0],value=>dimensions.find(choice=>fieldChoiceValue(choice)===value)?.label||value)+'</select></label>'+
-        '<label id="aggregate-dimension-2-wrap" class="field '+(suggestedDimensions[1]?"":"hidden")+'">And optionally by<select id="aggregate-dimension-2"><option value="">No second group</option>'+optionList(dimensions.map(fieldChoiceValue),suggestedDimensionValues[1],value=>dimensions.find(choice=>fieldChoiceValue(choice)===value)?.label||value)+'</select></label>'+
-        '<label id="aggregate-dimension-3-wrap" class="field '+(suggestedDimensions[2]?"":"hidden")+'">And optionally by<select id="aggregate-dimension-3"><option value="">No third group</option>'+optionList(dimensions.map(fieldChoiceValue),suggestedDimensionValues[2],value=>dimensions.find(choice=>fieldChoiceValue(choice)===value)?.label||value)+'</select></label>'+
+        '<label class="field">Compare groups by<select id="aggregate-dimension"><option value="">No grouping</option>'+optionList(dimensions.map(dimensionChoiceValue),suggestedDimensionValues[0],value=>dimensions.find(choice=>dimensionChoiceValue(choice)===value)?.label||value)+'</select></label>'+
+        '<label id="aggregate-dimension-2-wrap" class="field '+(suggestedDimensions[1]?"":"hidden")+'">And optionally by<select id="aggregate-dimension-2"><option value="">No second group</option>'+optionList(dimensions.map(dimensionChoiceValue),suggestedDimensionValues[1],value=>dimensions.find(choice=>dimensionChoiceValue(choice)===value)?.label||value)+'</select></label>'+
+        '<label id="aggregate-dimension-3-wrap" class="field '+(suggestedDimensions[2]?"":"hidden")+'">And optionally by<select id="aggregate-dimension-3"><option value="">No third group</option>'+optionList(dimensions.map(dimensionChoiceValue),suggestedDimensionValues[2],value=>dimensions.find(choice=>dimensionChoiceValue(choice)===value)?.label||value)+'</select></label>'+
         '<div id="aggregate-add-group-wrap" class="actions"><button id="aggregate-add-group" class="quiet" type="button">Add another grouping</button></div>'+
         '<label class="field">Show change over time using<select id="aggregate-time"><option value="">No time grouping</option>'+optionList(timeFields.map(fieldChoiceValue),suggestedTimeValue,value=>timeFields.find(choice=>fieldChoiceValue(choice)===value)?.label||value)+'</select></label>'+
         '<label id="aggregate-bucket-wrap" class="field '+(suggestedTime?"":"hidden")+'">Time interval<select id="aggregate-bucket"><option value="week" '+(suggestedBucket==="week"?"selected":"")+'>Week</option><option value="day" '+(suggestedBucket==="day"?"selected":"")+'>Day</option><option value="month" '+(suggestedBucket==="month"?"selected":"")+'>Month</option></select></label>'+
@@ -4379,9 +4617,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const resourceId=resource.id;
       const measure=JSON.parse(byId("aggregate-measure").value);
       const dimensions=["aggregate-dimension","aggregate-dimension-2","aggregate-dimension-3"]
-        .map(id=>parseFieldChoice(byId(id).value))
+        .map(id=>parseDimensionChoice(byId(id).value))
         .filter(Boolean);
-      const dimensionKeys=dimensions.map(fieldChoiceValue);
+      const dimensionKeys=dimensions.map(dimensionChoiceValue);
       if(new Set(dimensionKeys).size!==dimensionKeys.length){
         throw new Error("Choose each reviewed grouping field only once.");
       }
@@ -4419,10 +4657,15 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const resource=describedResourceForPlan(plan,boundaryName);
       if(plan.kind==="rows")return "Read one exact "+resourceLabel(resource).toLowerCase()+" record and return only "+plan.select.map(field=>fieldLabel(resource,field)).join(", ")+".";
       const measures=plan.measures.map(measure=>{
+        if(measure.derived_measure){
+          const derived=(resource.derived_measures||[]).find(item=>item.name===measure.derived_measure);
+          return (derived?.label||measure.derived_measure).toLowerCase();
+        }
         if(measure.function==="count")return "the number of records";
         if(measure.function==="count_distinct")return "the number of unique "+fieldReferenceLabel(resource,measure).toLowerCase();
         const field=fieldReferenceLabel(resource,measure).toLowerCase();
-        return measure.function==="sum"&&field.startsWith("total ")?field:(measure.function==="sum"?"total ":"average ")+field;
+        const labels={sum:"total ",avg:"average ",stddev_samp:"sample standard deviation of ",stddev_pop:"population standard deviation of ",var_samp:"sample variance of ",var_pop:"population variance of ",null_count:"missing values in ",non_null_count:"present values in ",completion_rate:"completion rate for "};
+        return measure.function==="sum"&&field.startsWith("total ")?field:(labels[measure.function]||measure.function+" of ")+field;
       }).join(", ");
       const groups=(plan.dimensions||[]).map(item=>fieldReferenceLabel(resource,item)).join(", ");
       const filters=(plan.where||[]).map(item=>fieldReferenceLabel(resource,item)+" "+(item.op==="eq"?"equals":item.op)+" "+JSON.stringify(item.value)).join(", ");
@@ -4432,11 +4675,16 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     function resultColumnLabel(plan,key,semantics,boundaryName){
       const resource=describedResourceForPlan(plan,boundaryName);
       const measureLabel=measure=>{
+        if(measure.function==="reviewed_derived"||measure.derived_measure){
+          const name=measure.derived_measure||measure.alias;
+          return (resource.derived_measures||[]).find(item=>item.name===name)?.label||name||"Reviewed derived measure";
+        }
         if(measure.function==="count")return "Record count";
         const field=fieldReferenceLabel(resource,measure);
         if(measure.function==="count_distinct")return "Unique "+field;
         if(measure.function==="avg")return "Average "+field;
-        return measure.function==="sum"&&field.toLowerCase().startsWith("total ")?field:"Total "+field;
+        const labels={sum:"Total ",avg:"Average ",stddev_samp:"Sample standard deviation of ",stddev_pop:"Population standard deviation of ",var_samp:"Sample variance of ",var_pop:"Population variance of ",null_count:"Missing values in ",non_null_count:"Present values in ",completion_rate:"Completion rate for "};
+        return measure.function==="sum"&&field.toLowerCase().startsWith("total ")?field:(labels[measure.function]||measure.function+" of ")+field;
       };
       if(plan.kind==="rows")return fieldLabel(resource,key);
       const reviewedDimension=(semantics?.dimensions||[]).find(item=>item.alias===key);
@@ -4465,9 +4713,11 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       if(measure){
         const value=plan.measures?.[Number(measure[1])];
         if(!value)return "Reviewed measure";
+        if(value.derived_measure)return (resource.derived_measures||[]).find(item=>item.name===value.derived_measure)?.label||value.derived_measure;
         if(value.function==="count")return "Record count";
         if(value.function==="count_distinct")return "Unique "+fieldReferenceLabel(resource,value);
-        return (value.function==="sum"?"Total ":"Average ")+fieldReferenceLabel(resource,value);
+        const labels={sum:"Total ",avg:"Average ",stddev_samp:"Sample standard deviation of ",stddev_pop:"Population standard deviation of ",var_samp:"Sample variance of ",var_pop:"Population variance of ",null_count:"Missing values in ",non_null_count:"Present values in ",completion_rate:"Completion rate for "};
+        return (labels[value.function]||value.function+" of ")+fieldReferenceLabel(resource,value);
       }
       if(key==="time_bucket")return (plan.time_bucket?.bucket||"Time")+" · "+fieldReferenceLabel(resource,plan.time_bucket);
       if(key==="period_index")return "Comparison period";

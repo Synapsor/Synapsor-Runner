@@ -224,12 +224,14 @@ export function describeProtectableAnalysis(plan: ExplorePlan): string {
     return `Reviewed ${resource} rows with ${plan.select.length} visible field${plan.select.length === 1 ? "" : "s"}`;
   }
   const measures = plan.measures.map((measure) => {
+    if ("derived_measure" in measure) return `reviewed ${humanWords(measure.derived_measure)}`;
     if (measure.function === "count") return resource;
     const field = humanWords(measure.field ?? "value");
     return `${measure.function.replace("_", " ")} ${field}`;
   }).join(" and ");
   const groups = [
-    ...(plan.dimensions ?? []).map((dimension) => humanWords(dimension.field)),
+    ...(plan.dimensions ?? []).map((dimension) =>
+      humanWords("numeric_band" in dimension ? dimension.numeric_band : dimension.field)),
     ...(plan.time_bucket ? [`${plan.time_bucket.bucket} ${humanWords(plan.time_bucket.field)}`] : []),
   ];
   const comparison = plan.comparison ? " across two reviewed periods" : "";
@@ -240,11 +242,14 @@ export function suggestProtectedCapabilityName(plan: ExplorePlan): string {
   const resource = safeCapabilitySegment(plan.resource.split(".").pop() ?? "analysis");
   if (plan.kind === "rows") return `analytics.${resource}_rows`;
   const measure = plan.measures[0];
-  const measureSegment = measure?.function === "count"
+  const measureSegment = measure && "derived_measure" in measure
+    ? safeCapabilitySegment(measure.derived_measure)
+    : measure?.function === "count"
     ? "count"
     : safeCapabilitySegment(`${measure?.function ?? "measure"}_${measure?.field ?? "value"}`);
   const groupSegments = [
-    ...(plan.dimensions ?? []).map((dimension) => safeCapabilitySegment(dimension.field)),
+    ...(plan.dimensions ?? []).map((dimension) =>
+      safeCapabilitySegment("numeric_band" in dimension ? dimension.numeric_band : dimension.field)),
     ...(plan.time_bucket ? [safeCapabilitySegment(plan.time_bucket.bucket)] : []),
   ];
   const candidate = `analytics.${resource}_${measureSegment}${groupSegments.length ? `_by_${groupSegments.join("_and_")}` : ""}`;
@@ -600,7 +605,7 @@ function emitProtectedQueryDsl(input: {
       ...(input.plan.order_by ?? []).map((order) => `  ROW ORDER BY ${safeIdentifier(order.field)} ${order.direction.toUpperCase()}`),
     );
   } else {
-    lines.push(...aggregateDsl(input.plan, input.selections, root.minimum_cohort_size));
+    lines.push(...aggregateDsl(input.plan, input.selections, root.minimum_cohort_size, root));
   }
   if (root.kept_out_fields.length) lines.push(`  KEEP OUT ${root.kept_out_fields.map(safeIdentifier).join(", ")}`);
   const modelWithheldFields = modelWithheldExploreOutputColumns(input.plan, input.boundary);
@@ -615,16 +620,33 @@ function emitProtectedQueryDsl(input: {
   return `${formatAgentDsl(lines.join("\n"))}\n`;
 }
 
-function aggregateDsl(plan: AggregateExplorePlan, selections: Map<string, ProtectArgumentSelection>, minimumGroupSize: number): string[] {
+function aggregateDsl(
+  plan: AggregateExplorePlan,
+  selections: Map<string, ProtectArgumentSelection>,
+  minimumGroupSize: number,
+  root: BoundaryResource,
+): string[] {
   const aliases = aggregateAliases(plan);
   const lines = plan.measures.map((measure, index) => {
+    if ("derived_measure" in measure) {
+      const definition = protectedDerivedMeasure(root, measure.derived_measure);
+      return `  MEASURE ${aliases.measures[index]} DERIVED ${definition.shape.toUpperCase()} NUMERATOR ${protectedDerivedOperandDsl(definition.numerator)} DENOMINATOR ${protectedDerivedOperandDsl(definition.denominator)}`;
+    }
     if (measure.function === "count") return `  MEASURE ${aliases.measures[index]} COUNT ROWS`;
     const target = protectedFieldName(measure.field, measure.relationship);
     if (measure.function === "count_distinct") return `  MEASURE ${aliases.measures[index]} COUNT DISTINCT ${target}`;
     return `  MEASURE ${aliases.measures[index]} ${measure.function.toUpperCase()} ${target}`;
   });
   for (const [index, dimension] of (plan.dimensions ?? []).entries()) {
-    lines.push(`  GROUP DIMENSION ${aliases.dimensions[index]} BY ${protectedFieldName(dimension.field, dimension.relationship)}`);
+    if ("numeric_band" in dimension) {
+      const band = protectedNumericBand(root, dimension.numeric_band);
+      lines.push(
+        `  GROUP DIMENSION ${aliases.dimensions[index]} BY BAND OF ${protectedFieldName(band.field, band.relationship)} ` +
+        `EDGES (${band.edges.join(", ")}) LABELS (${band.bucket_labels.map(dslLiteral).join(", ")})`,
+      );
+    } else {
+      lines.push(`  GROUP DIMENSION ${aliases.dimensions[index]} BY ${protectedFieldName(dimension.field, dimension.relationship)}`);
+    }
   }
   if (plan.time_bucket) {
     lines.push(`  TIME DIMENSION ${aliases.timeBucket} BY ${plan.time_bucket.bucket.toUpperCase()} OF ${protectedFieldName(plan.time_bucket.field, plan.time_bucket.relationship)}`);
@@ -640,7 +662,12 @@ function aggregateDsl(plan: AggregateExplorePlan, selections: Map<string, Protec
     lines.push(`  AGGREGATE ORDER BY TIME BUCKET ${plan.order_by.direction.toUpperCase()}`);
   }
   lines.push(`  TOP ${plan.top_n} GROUPS`);
-  lines.push(`  MIN GROUP SIZE ${minimumGroupSize}`);
+  const effectiveMinimumGroupSize = plan.measures.some((measure) =>
+    "derived_measure" in measure
+      || ["stddev_samp", "stddev_pop", "var_samp", "var_pop"].includes(measure.function))
+    ? Math.max(minimumGroupSize, 5)
+    : minimumGroupSize;
+  lines.push(`  MIN GROUP SIZE ${effectiveMinimumGroupSize}`);
   return lines;
 }
 
@@ -697,8 +724,21 @@ function relationshipsForPlan(
   if (plan.kind === "aggregate" && plan.relationship) names.add(plan.relationship);
   for (const filter of plan.where ?? []) if (filter.relationship) names.add(filter.relationship);
   if (plan.kind === "aggregate") {
-    for (const measure of plan.measures) if (measure.relationship) names.add(measure.relationship);
-    for (const dimension of plan.dimensions ?? []) if (dimension.relationship) names.add(dimension.relationship);
+    for (const measure of plan.measures) {
+      if ("derived_measure" in measure) {
+        const definition = protectedDerivedMeasure(root, measure.derived_measure);
+        const relationship = "relationship" in definition.numerator
+          ? definition.numerator.relationship
+          : undefined;
+        if (relationship) names.add(relationship);
+      } else if (measure.relationship) names.add(measure.relationship);
+    }
+    for (const dimension of plan.dimensions ?? []) {
+      const relationship = "numeric_band" in dimension
+        ? protectedNumericBand(root, dimension.numeric_band).relationship
+        : dimension.relationship;
+      if (relationship) names.add(relationship);
+    }
     if (plan.time_bucket?.relationship) names.add(plan.time_bucket.relationship);
     if (plan.comparison?.relationship) names.add(plan.comparison.relationship);
   }
@@ -825,12 +865,46 @@ function aggregateAliases(plan: AggregateExplorePlan): {
     return value;
   };
   return {
-    measures: plan.measures.map((measure) => uniqueAlias(measure.function === "count"
+    measures: plan.measures.map((measure) => uniqueAlias("derived_measure" in measure
+      ? measure.derived_measure
+      : measure.function === "count"
       ? "row_count"
       : `${measure.function}_${measure.relationship ? `${measure.relationship}_` : ""}${measure.field}`)),
-    dimensions: (plan.dimensions ?? []).map((dimension) => uniqueAlias(`${dimension.relationship ? `${dimension.relationship}_` : ""}${dimension.field}`)),
+    dimensions: (plan.dimensions ?? []).map((dimension) => uniqueAlias(
+      "numeric_band" in dimension
+        ? dimension.numeric_band
+        : `${dimension.relationship ? `${dimension.relationship}_` : ""}${dimension.field}`,
+    )),
     timeBucket: uniqueAlias(`${plan.time_bucket?.relationship ? `${plan.time_bucket.relationship}_` : ""}${plan.time_bucket?.field ?? "time"}_${plan.time_bucket?.bucket ?? "bucket"}`),
   };
+}
+
+function protectedDerivedMeasure(
+  root: BoundaryResource,
+  name: string,
+): NonNullable<BoundaryResource["derived_measures"]>[number] {
+  const definition = root.derived_measures?.find((candidate) => candidate.name === name);
+  if (!definition) throw new Error(`Reviewed derived measure ${root.id}.${name} is no longer active.`);
+  return definition;
+}
+
+function protectedNumericBand(
+  root: BoundaryResource,
+  name: string,
+): NonNullable<BoundaryResource["numeric_bands"]>[number] {
+  const definition = root.numeric_bands?.find((candidate) => candidate.name === name);
+  if (!definition) throw new Error(`Reviewed numeric band ${root.id}.${name} is no longer active.`);
+  return definition;
+}
+
+function protectedDerivedOperandDsl(
+  operand: NonNullable<BoundaryResource["derived_measures"]>[number]["numerator"],
+): string {
+  if (operand.function === "count") return "COUNT ROWS";
+  const target = protectedFieldName(operand.field, operand.relationship);
+  return operand.function === "count_distinct"
+    ? `COUNT DISTINCT ${target}`
+    : `${operand.function.toUpperCase()} ${target}`;
 }
 
 function validateArgumentSelections(

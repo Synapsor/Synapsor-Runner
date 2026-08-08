@@ -242,6 +242,191 @@ describe("Scoped Explore", () => {
     expect(mysql?.sql).toContain("COUNT(t0.`monthly_revenue_cents`) AS `__measure_cohort_1`");
   });
 
+  it("compiles reviewed missing-data measures without exposing source values", async () => {
+    const fixture = await activatedFixture();
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [
+        { function: "null_count", field: "monthly_revenue_cents" },
+        { function: "non_null_count", field: "monthly_revenue_cents" },
+        { function: "completion_rate", field: "monthly_revenue_cents" },
+      ],
+      top_n: 1,
+    }, fixture.boundary);
+
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [compiled] = compileExplorePlan(plan, fixture.boundary, {
+        tenant: "tenant-acme",
+        principal: "pm-1",
+      }, engine);
+      const field = engine === "postgres"
+        ? 't0."monthly_revenue_cents"'
+        : "t0.`monthly_revenue_cents`";
+      expect(compiled?.sql).toContain(`COUNT(*) - COUNT(${field})`);
+      expect(compiled?.sql).toContain(`COUNT(${field})`);
+      expect(compiled?.sql).toContain(`100.0 * COUNT(${field}) / NULLIF(COUNT(*), 0)`);
+      expect(compiled?.params).toEqual(["tenant-acme", 51]);
+    }
+  });
+
+  it("selects a digest-bound derived measure by name and never accepts a model formula", async () => {
+    const fixture = await activatedFixture((candidate) => {
+      candidate.pack.resources[0]!.derived_measures = [{
+        name: "average_revenue_per_subscription",
+        label: "Average revenue per subscription",
+        shape: "per_unit_average",
+        numerator: { function: "sum", field: "monthly_revenue_cents" },
+        denominator: { function: "count" },
+        null_policy: "null_on_zero_or_null_denominator",
+      }];
+    });
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ derived_measure: "average_revenue_per_subscription" }],
+      top_n: 1,
+    }, fixture.boundary);
+
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [compiled] = compileExplorePlan(plan, fixture.boundary, {
+        tenant: "tenant-acme",
+        principal: "pm-1",
+      }, engine);
+      const field = engine === "postgres"
+        ? 't0."monthly_revenue_cents"'
+        : "t0.`monthly_revenue_cents`";
+      expect(compiled?.sql).toContain(`SUM(${field}) / COUNT(*)`);
+      expect(compiled?.sql).toContain(`LEAST(COUNT(*), COUNT(${field}), COUNT(*))`);
+    }
+
+    expect(() => validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{
+        derived_measure: "average_revenue_per_subscription",
+        formula: "SUM(monthly_revenue_cents) / COUNT(*)",
+      }],
+      top_n: 1,
+    }, fixture.boundary)).toThrow(/unsupported fields: formula/i);
+
+    const description = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([]),
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    try {
+      await expect(description.describe({ resource: "public.subscriptions" })).resolves.toMatchObject({
+        resources: [{
+          derived_measures: [{
+            name: "average_revenue_per_subscription",
+            shape: "per_unit_average",
+            effective_minimum_cohort_size: 5,
+          }],
+        }],
+      });
+    } finally {
+      await description.close();
+    }
+  });
+
+  it("selects a reviewed numeric band by name and parameterizes its fixed definition on both engines", async () => {
+    const fixture = await activatedFixture((candidate) => {
+      candidate.pack.resources[0]!.numeric_bands = [{
+        name: "monthly_revenue_band",
+        label: "Monthly revenue band",
+        field: "monthly_revenue_cents",
+        edges: [1_000, 5_000],
+        bucket_labels: ["under 10", "10 to 49", "50 or more"],
+      }];
+    });
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ numeric_band: "monthly_revenue_band" }],
+      top_n: 10,
+    }, fixture.boundary);
+
+    const [postgres] = compileExplorePlan(plan, fixture.boundary, {
+      tenant: "tenant-acme",
+      principal: "pm-1",
+    }, "postgres");
+    expect(postgres?.sql).toContain('CASE WHEN t0."monthly_revenue_cents" IS NULL THEN NULL');
+    expect(postgres?.sql).toContain('WHEN t0."monthly_revenue_cents" < $2 THEN $3');
+    expect(postgres?.sql).toContain('WHEN t0."monthly_revenue_cents" < $4 THEN $5 ELSE $6 END AS "dimension_0"');
+    expect(postgres?.sql).toContain("GROUP BY 1");
+    expect(postgres?.params).toEqual([
+      "tenant-acme",
+      1_000,
+      "under 10",
+      5_000,
+      "10 to 49",
+      "50 or more",
+      51,
+    ]);
+
+    const [mysql] = compileExplorePlan(plan, fixture.boundary, {
+      tenant: "tenant-acme",
+      principal: "pm-1",
+    }, "mysql");
+    expect(mysql?.sql).toContain("CASE WHEN t0.`monthly_revenue_cents` IS NULL THEN NULL");
+    expect(mysql?.sql).toContain("WHEN t0.`monthly_revenue_cents` < ? THEN ?");
+    expect(mysql?.sql).toContain("GROUP BY 1");
+    expect(mysql?.params).toEqual([
+      1_000,
+      "under 10",
+      5_000,
+      "10 to 49",
+      "50 or more",
+      "tenant-acme",
+      51,
+    ]);
+
+    expect(() => validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{
+        numeric_band: "monthly_revenue_band",
+        edges: [0],
+      }],
+      top_n: 10,
+    }, fixture.boundary)).toThrow(/unsupported fields: edges/i);
+    expect(() => validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ numeric_band: "invented_band" }],
+      top_n: 10,
+    }, fixture.boundary)).toThrow(/reviewed numeric bands: monthly_revenue_band/i);
+
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([]),
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    try {
+      await expect(runtime.describe({ resource: "public.subscriptions" })).resolves.toMatchObject({
+        resources: [{
+          numeric_bands: [{
+            name: "monthly_revenue_band",
+            field: "monthly_revenue_cents",
+            relationship: null,
+            edges: [1_000, 5_000],
+            bucket_labels: ["under 10", "10 to 49", "50 or more"],
+          }],
+        }],
+      });
+    } finally {
+      await runtime.close();
+    }
+  });
+
   it("suppresses field aggregates by non-null contributors and keeps a fixed dispersion floor of five", async () => {
     const fixture = await activatedFixture(undefined, churnInspection(), 4);
     const responses = [
@@ -4091,6 +4276,7 @@ function derivedScopeBoundary(
     sortable_fields: ["id", "order_id", "quantity", "status", "created_at"],
     groupable_fields: ["status"],
     aggregate_measures: ["quantity"],
+    aggregate_measure_functions: { quantity: ["sum", "avg"] as Array<"sum" | "avg"> },
     count_distinct_fields: ["id", "order_id"],
     time_bucket_fields: { created_at: ["day", "week", "month"] as Array<"day" | "week" | "month"> },
     kept_out_fields: [],

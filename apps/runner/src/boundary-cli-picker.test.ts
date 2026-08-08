@@ -252,6 +252,23 @@ describe("boundary review terminal picker", () => {
     expect(tableView).toContain("minimum group 5");
   });
 
+  it("makes fixed reviewed analytics available for the selected included table", async () => {
+    const { input, output } = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const selected = session.chooseResource(
+      [summary("public.orders", 0)],
+      undefined,
+      { initialView: "access" },
+    );
+    const rendered = stripAnsi(output.read()?.toString() ?? "");
+    expect(rendered).toContain("G Reviewed metrics and numeric bands");
+    await send(input, "g");
+    await expect(selected).resolves.toEqual({
+      resource_id: "public.orders",
+      action: "analytics",
+    });
+  });
+
   it("keeps focused access tables alphabetical and restores the highlighted table", async () => {
     const { input, output } = fakeTerminal();
     const session = createBoundaryReviewInteractiveSession(input, output);

@@ -13,6 +13,12 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("Writes create proposals and cannot be approved or applied by the model.");
     expect(html).toContain("The model also cannot activate new authority.");
     expect(html).toContain("Advanced field operations");
+    expect(html).toContain("Reviewed metrics and numeric bands");
+    expect(html).toContain("Add a fixed numeric band");
+    expect(html).toContain("Add a named derived metric");
+    expect(html).toContain('kind:"numeric_band"');
+    expect(html).toContain('kind:"derived_measure"');
+    expect(html).toContain("The AI receives only the saved name and labels; it cannot supply edges.");
     expect(html).toContain("Review security exceptions");
     expect(html).toContain("Pick a table. Set each column's access.");
     expect(html).toContain("Step 1 of 2 · Edit access");
@@ -238,6 +244,8 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("Optional filter");
     expect(html).toContain('id="aggregate-dimension-2"');
     expect(html).toContain('id="aggregate-dimension-3"');
+    expect(html).toContain("reviewed fixed buckets");
+    expect(html).toContain("parseDimensionChoice");
     expect(html).toContain("Choose each reviewed grouping field only once.");
     expect(html).toContain("One record");
     expect(html).toContain("Make this analysis reusable");

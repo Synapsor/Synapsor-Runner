@@ -492,6 +492,27 @@
       },
       "properties": {
         "name": { "$ref": "#/$defs/safeIdentifier" },
+        "function": { "enum": ["count", "count_distinct", "sum", "avg", "stddev_samp", "stddev_pop", "var_samp", "var_pop", "null_count", "non_null_count", "completion_rate", "reviewed_derived"] },
+        "field": { "$ref": "#/$defs/safeIdentifier" },
+        "relationship": { "$ref": "#/$defs/safeIdentifier" },
+        "derived": {
+          "type": "object",
+          "required": ["shape", "numerator", "denominator", "null_policy"],
+          "additionalProperties": false,
+          "properties": {
+            "shape": { "enum": ["ratio", "percentage", "per_unit_average"] },
+            "numerator": { "$ref": "#/$defs/protectedReadDerivedOperand" },
+            "denominator": { "$ref": "#/$defs/protectedReadDerivedOperand" },
+            "null_policy": { "const": "null_on_zero_or_null_denominator" }
+          }
+        }
+      }
+    },
+    "protectedReadDerivedOperand": {
+      "type": "object",
+      "required": ["function"],
+      "additionalProperties": false,
+      "properties": {
         "function": { "enum": ["count", "count_distinct", "sum", "avg"] },
         "field": { "$ref": "#/$defs/safeIdentifier" },
         "relationship": { "$ref": "#/$defs/safeIdentifier" }
@@ -507,7 +528,27 @@
       "properties": {
         "name": { "$ref": "#/$defs/safeIdentifier" },
         "field": { "$ref": "#/$defs/safeIdentifier" },
-        "relationship": { "$ref": "#/$defs/safeIdentifier" }
+        "relationship": { "$ref": "#/$defs/safeIdentifier" },
+        "numeric_band": {
+          "type": "object",
+          "required": ["edges", "bucket_labels"],
+          "additionalProperties": false,
+          "properties": {
+            "edges": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 16,
+              "items": { "type": "number" }
+            },
+            "bucket_labels": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 17,
+              "items": { "type": "string", "minLength": 1, "maxLength": 64 },
+              "uniqueItems": true
+            }
+          }
+        }
       }
     },
     "protectedReadTimeBucket": {
@@ -520,7 +561,7 @@
       "properties": {
         "name": { "$ref": "#/$defs/safeIdentifier" },
         "field": { "$ref": "#/$defs/safeIdentifier" },
-        "bucket": { "enum": ["day", "week", "month"] },
+        "bucket": { "enum": ["hour", "day", "week", "month", "quarter", "year", "day_of_week"] },
         "relationship": { "$ref": "#/$defs/safeIdentifier" }
       }
     },

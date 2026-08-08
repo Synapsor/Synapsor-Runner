@@ -213,12 +213,27 @@ export async function recordProtectedRead(input: {
       ...aggregate.measures.map((measure) => measure.name),
       ...(aggregate.comparison ? ["__period"] : []),
     ];
+    const minimumGroupSize = effectiveProtectedMinimumGroupSize(aggregate);
     const normalized = rows.map((row) => {
       const output: Record<string, unknown> = {};
-      output.__cohort_size = row.__cohort_size;
+      const rowCohort = finiteAggregateNumber(row.__cohort_size, "PROTECTED_COHORT_INVALID");
+      const contributorCounts = aggregate.measures.flatMap((measure, index) =>
+        ["sum", "avg", "stddev_samp", "stddev_pop", "var_samp", "var_pop", "reviewed_derived"].includes(measure.function)
+          ? [finiteAggregateNumber(row[`__measure_cohort_${index}`], "PROTECTED_COHORT_INVALID")]
+          : []);
+      const effectiveCohort = contributorCounts.length
+        ? Math.min(rowCohort, ...contributorCounts)
+        : rowCohort;
+      output.__cohort_size = effectiveCohort;
       for (const dimension of aggregate.dimensions ?? []) output[dimension.name] = scalar(row[dimension.name]);
       if (aggregate.time_bucket && !periodMover) output[aggregate.time_bucket.name] = scalar(row[aggregate.time_bucket.name]);
-      for (const measure of aggregate.measures) output[measure.name] = finiteAggregateNumber(row[measure.name], "PROTECTED_AGGREGATE_VALUE_INVALID");
+      for (const measure of aggregate.measures) {
+        output[measure.name] = effectiveCohort < minimumGroupSize
+          ? null
+          : measure.function === "reviewed_derived"
+            ? nullableFiniteAggregateNumber(row[measure.name], "PROTECTED_AGGREGATE_VALUE_INVALID")
+            : finiteAggregateNumber(row[measure.name], "PROTECTED_AGGREGATE_VALUE_INVALID");
+      }
       if (aggregate.comparison) output.__period = scalar(row.__period);
       return output;
     });
@@ -231,7 +246,7 @@ export async function recordProtectedRead(input: {
         rows: normalized,
         output_fields: outputFields,
         cohort_field: "__cohort_size",
-        minimum_cohort_size: aggregate.minimum_group_size,
+        minimum_cohort_size: minimumGroupSize,
         maximum_groups: underlyingGroupLimit,
         top_n: periodMover || (ranked && !aggregate.comparison)
           ? underlyingGroupLimit
@@ -268,7 +283,7 @@ export async function recordProtectedRead(input: {
     data = {
       groups: boundedGroups,
       suppression: {
-        minimum_cohort_size: aggregate.minimum_group_size,
+        minimum_cohort_size: minimumGroupSize,
         suppressed_groups: suppressedGroups,
         totals_returned: false,
       },
@@ -338,6 +353,13 @@ export async function recordProtectedRead(input: {
   };
 }
 
+function effectiveProtectedMinimumGroupSize(aggregate: ProtectedReadAggregateSpec): number {
+  return aggregate.measures.some((measure) =>
+    ["stddev_samp", "stddev_pop", "var_samp", "var_pop", "reviewed_derived"].includes(measure.function))
+    ? Math.max(aggregate.minimum_group_size, 5)
+    : aggregate.minimum_group_size;
+}
+
 function shapeProtectedPeriodComparison(
   groups: Array<Record<string, unknown>>,
   aggregate: ProtectedReadAggregateSpec,
@@ -345,8 +367,8 @@ function shapeProtectedPeriodComparison(
   const dimensions = aggregate.dimensions ?? [];
   type PeriodPair = {
     values: unknown[];
-    period_1?: number[];
-    period_2?: number[];
+    period_1?: Array<number | null>;
+    period_2?: Array<number | null>;
   };
   const pairs = new Map<string, PeriodPair>();
   for (const group of groups) {
@@ -354,7 +376,9 @@ function shapeProtectedPeriodComparison(
     const key = JSON.stringify(values);
     const pair: PeriodPair = pairs.get(key) ?? { values };
     const measures = aggregate.measures.map((measure) =>
-      finiteAggregateNumber(group[measure.name], "PROTECTED_AGGREGATE_VALUE_INVALID"));
+      measure.function === "reviewed_derived"
+        ? nullableFiniteAggregateNumber(group[measure.name], "PROTECTED_AGGREGATE_VALUE_INVALID")
+        : finiteAggregateNumber(group[measure.name], "PROTECTED_AGGREGATE_VALUE_INVALID"));
     if (group.__period === "period_1") pair.period_1 = measures;
     if (group.__period === "period_2") pair.period_2 = measures;
     pairs.set(key, pair);
@@ -369,11 +393,11 @@ function shapeProtectedPeriodComparison(
     aggregate.measures.forEach((measure, index) => {
       const earlier = pair.period_1![index]!;
       const later = pair.period_2![index]!;
-      const change = later - earlier;
       output[`${measure.name}_period_1`] = earlier;
       output[`${measure.name}_period_2`] = later;
+      const change = earlier === null || later === null ? null : later - earlier;
       output[`${measure.name}_absolute_change`] = change;
-      output[`${measure.name}_percentage_change`] = earlier === 0
+      output[`${measure.name}_percentage_change`] = change === null || earlier === null || earlier === 0
         ? null
         : (change / Math.abs(earlier)) * 100;
     });
@@ -713,4 +737,8 @@ export function finiteAggregateNumber(value: unknown, code: string): number {
   const number = typeof value === "bigint" ? Number(value) : typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : Number.NaN;
   if (!Number.isFinite(number)) throw new McpRuntimeError(code, "Aggregate adapter returned a non-finite scalar.");
   return number;
+}
+
+function nullableFiniteAggregateNumber(value: unknown, code: string): number | null {
+  return value === null || value === undefined ? null : finiteAggregateNumber(value, code);
 }

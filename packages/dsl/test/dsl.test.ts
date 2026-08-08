@@ -856,6 +856,76 @@ END
     expect(compileAgentDsl(formatAgentDsl(protectedAggregateSource()))).toEqual(contract);
   });
 
+  it("compiles reviewed dispersion, missing-data measures, and expanded calendar buckets", () => {
+    const source = protectedAggregateSource()
+      .replace(
+        "MEASURE churned_accounts COUNT ROWS",
+        [
+          "MEASURE spread STDDEV_SAMP balance_cents",
+          "  MEASURE missing NULL_COUNT balance_cents",
+          "  MEASURE completion COMPLETION_RATE balance_cents",
+        ].join("\n"),
+      )
+      .replace("MEASURE affected_customers COUNT DISTINCT customer_id\n", "")
+      .replace("TIME DIMENSION churn_week BY WEEK OF churned_at", "TIME DIMENSION churn_quarter BY QUARTER OF churned_at")
+      .replace("AGGREGATE ORDER BY MEASURE churned_accounts DESC", "AGGREGATE ORDER BY MEASURE spread DESC");
+    const aggregate = compileAgentDsl(source).capabilities[0]?.protected_read?.aggregate;
+    expect(aggregate).toMatchObject({
+      measures: [
+        { name: "spread", function: "stddev_samp", field: "balance_cents" },
+        { name: "missing", function: "null_count", field: "balance_cents" },
+        { name: "completion", function: "completion_rate", field: "balance_cents" },
+      ],
+      time_bucket: { name: "churn_quarter", bucket: "quarter", field: "churned_at" },
+    });
+  });
+
+  it("compiles a fixed reviewed derived measure without accepting an expression", () => {
+    const source = protectedAggregateSource()
+      .replace(
+        "MEASURE churned_accounts COUNT ROWS",
+        "MEASURE revenue_per_customer DERIVED PER_UNIT_AVERAGE NUMERATOR SUM balance_cents DENOMINATOR COUNT DISTINCT customer_id",
+      )
+      .replace("MEASURE affected_customers COUNT DISTINCT customer_id\n", "")
+      .replace("AGGREGATE ORDER BY MEASURE churned_accounts DESC", "AGGREGATE ORDER BY MEASURE revenue_per_customer DESC");
+    const aggregate = compileAgentDsl(source).capabilities[0]?.protected_read?.aggregate;
+    expect(aggregate?.measures).toEqual([{
+      name: "revenue_per_customer",
+      function: "reviewed_derived",
+      derived: {
+        shape: "per_unit_average",
+        numerator: { function: "sum", field: "balance_cents" },
+        denominator: { function: "count_distinct", field: "customer_id" },
+        null_policy: "null_on_zero_or_null_denominator",
+      },
+    }]);
+    expect(() => compileAgentDsl(source.replace(
+      "NUMERATOR SUM balance_cents",
+      "NUMERATOR SUM(balance_cents)",
+    ))).toThrow(/UNSUPPORTED_DSL_CLAUSE/);
+  });
+
+  it("compiles a fixed reviewed numeric-band dimension without accepting expressions", () => {
+    const source = protectedAggregateSource()
+      .replace(
+        "GROUP DIMENSION region BY region",
+        "GROUP DIMENSION balance_band BY BAND OF balance_cents EDGES (1000, 5000) LABELS ('under 10', '10 to 49', '50 or more')",
+      );
+    const dimension = compileAgentDsl(source).capabilities[0]?.protected_read?.aggregate?.dimensions?.[0];
+    expect(dimension).toEqual({
+      name: "balance_band",
+      field: "balance_cents",
+      numeric_band: {
+        edges: [1_000, 5_000],
+        bucket_labels: ["under 10", "10 to 49", "50 or more"],
+      },
+    });
+    expect(compileAgentDsl(formatAgentDsl(source)).capabilities[0]?.protected_read?.aggregate?.dimensions?.[0])
+      .toEqual(dimension);
+    expect(() => compileAgentDsl(source.replace("EDGES (1000, 5000)", "EDGES (balance_cents)")))
+      .toThrow(/PROTECTED_NUMERIC_BAND_EDGE_INVALID|FIXED_LITERAL_REQUIRED/);
+  });
+
   it("compiles a reviewed ranked period mover and its separate underlying-group limit", () => {
     const source = protectedAggregateSource()
       .replace(

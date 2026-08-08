@@ -39,6 +39,8 @@ import {
   loadActivatedExplorationBoundary,
   loadActivatedExplorationBoundaries,
   loadStructuredProjectEvidence,
+  normalizeExplorationDerivedMeasure,
+  normalizeExplorationNumericBand,
   pruneAutoBoundaryReviewOverrides,
   reviewExplorationBoundaryCandidate,
   writeAutoBoundaryArtifacts,
@@ -7905,6 +7907,41 @@ function managedReviewMutationRequest(
       },
     };
   }
+  if (decision.kind === "derived_measure") {
+    if (decision.definition === null) {
+      throw new Error("Workbench derived-measure removal requires the reviewed resource editor.");
+    }
+    return {
+      ...common,
+      derived_measure: {
+        name: decision.name,
+        label: decision.definition.label,
+        shape: decision.definition.shape,
+        numerator: structuredClone(decision.definition.numerator),
+        denominator: structuredClone(decision.definition.denominator),
+        ...(decision.remove ? { remove: true } : {}),
+      },
+    };
+  }
+  if (decision.kind === "numeric_band") {
+    if (decision.definition === null) {
+      throw new Error("Workbench numeric-band removal requires the reviewed resource editor.");
+    }
+    return {
+      ...common,
+      numeric_band: {
+        name: decision.name,
+        label: decision.definition.label,
+        field: decision.definition.field,
+        ...(decision.definition.relationship
+          ? { relationship: decision.definition.relationship }
+          : {}),
+        edges: [...decision.definition.edges],
+        bucket_labels: [...decision.definition.bucket_labels],
+        ...(decision.remove ? { remove: true } : {}),
+      },
+    };
+  }
   if (decision.kind === "row_identity") {
     return { ...common, include: true, row_identity: decision.value };
   }
@@ -7927,7 +7964,10 @@ function managedReviewMutationRequest(
   if (decision.kind === "principal_scope_path") {
     return { ...common, principal_scope_path: decision.value };
   }
-  return { ...common, minimum_cohort_size: Number(decision.value) };
+  if (decision.kind === "minimum_cohort") {
+    return { ...common, minimum_cohort_size: decision.value };
+  }
+  throw new Error(`Unsupported managed review decision ${decision.kind}.`);
 }
 
 function applyManagedBoundaryReviewDecision(
@@ -7983,6 +8023,52 @@ function applyManagedBoundaryReviewDecision(
         decided_at: decidedAt,
       },
     };
+  } else if (kind === "derived_measure") {
+    const name = requiredReviewText(body.name, "name");
+    if (!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name)) {
+      throw new Error("derived_measure review requires a safe name of at most 64 characters.");
+    }
+    if (body.remove === true || body.definition === null) {
+      if (resource.derived_measures) {
+        delete resource.derived_measures[name];
+        if (Object.keys(resource.derived_measures).length === 0) delete resource.derived_measures;
+      }
+    } else {
+      const definition = normalizeExplorationDerivedMeasure(
+        body.definition,
+        `${resourceId}.${name} derived measure`,
+      );
+      if (definition.name !== name) {
+        throw new Error("derived_measure review name must match its fixed definition name.");
+      }
+      resource.derived_measures = {
+        ...(resource.derived_measures ?? {}),
+        [name]: { definition, actor, reason, decided_at: decidedAt },
+      };
+    }
+  } else if (kind === "numeric_band") {
+    const name = requiredReviewText(body.name, "name");
+    if (!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name)) {
+      throw new Error("numeric_band review requires a safe name of at most 64 characters.");
+    }
+    if (body.remove === true || body.definition === null) {
+      if (resource.numeric_bands) {
+        delete resource.numeric_bands[name];
+        if (Object.keys(resource.numeric_bands).length === 0) delete resource.numeric_bands;
+      }
+    } else {
+      const definition = normalizeExplorationNumericBand(
+        body.definition,
+        `${resourceId}.${name} numeric band`,
+      );
+      if (definition.name !== name) {
+        throw new Error("numeric_band review name must match its fixed definition name.");
+      }
+      resource.numeric_bands = {
+        ...(resource.numeric_bands ?? {}),
+        [name]: { definition, actor, reason, decided_at: decidedAt },
+      };
+    }
   } else if (kind === "row_identity" || kind === "tenant_key" || kind === "tenant_scope_path") {
     const decision = {
       value: requiredReviewText(body.value, "value"),
@@ -8039,7 +8125,7 @@ function applyManagedBoundaryReviewDecision(
     }
   } else {
     throw new Error(
-      "Managed boundary review kind must be field_exposure, field_enum, row_identity, tenant_key, tenant_scope_path, shared_reference_scope, principal_key, principal_scope_path, or minimum_cohort.",
+      "Managed boundary review kind must be field_exposure, field_enum, derived_measure, numeric_band, row_identity, tenant_key, tenant_scope_path, shared_reference_scope, principal_key, principal_scope_path, or minimum_cohort.",
     );
   }
 

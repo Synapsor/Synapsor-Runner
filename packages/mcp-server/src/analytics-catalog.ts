@@ -28,7 +28,19 @@ export type AnalyticsCatalogScalarType = "integer" | "number" | "string" | "scal
 
 export type AnalyticsCatalogMeasure = {
   name: string;
-  function: "count" | "count_distinct" | "sum" | "avg";
+  function:
+    | "count"
+    | "count_distinct"
+    | "sum"
+    | "avg"
+    | "stddev_samp"
+    | "stddev_pop"
+    | "var_samp"
+    | "var_pop"
+    | "null_count"
+    | "non_null_count"
+    | "completion_rate"
+    | "reviewed_derived";
   scalar_type: AnalyticsCatalogScalarType;
 };
 
@@ -39,7 +51,7 @@ export type AnalyticsCatalogDimension = {
 
 export type AnalyticsCatalogTimeField = {
   name: string;
-  bucket: "day" | "week" | "month";
+  bucket: "hour" | "day" | "week" | "month" | "quarter" | "year" | "day_of_week";
   scalar_type: "string";
 };
 
@@ -223,7 +235,7 @@ function analyticsCatalogCapability(
         }
         : {}),
       suppression: {
-        minimum_cohort_size: protectedAggregate.minimum_group_size,
+        minimum_cohort_size: effectiveProtectedMinimumGroupSize(protectedAggregate),
         ...(minimumCohortOverride
           && minimumCohortOverride.contract_digest === capability.contract_provenance.digest
           && minimumCohortOverride.minimum_cohort_size === protectedAggregate.minimum_group_size
@@ -277,7 +289,18 @@ function analyticsCatalogCapability(
 }
 
 function measureScalarType(
-  fn: "count" | "count_distinct" | "sum" | "avg",
+  fn: AnalyticsCatalogMeasure["function"],
 ): AnalyticsCatalogScalarType {
-  return fn === "count" || fn === "count_distinct" ? "integer" : "number";
+  return fn === "count" || fn === "count_distinct" || fn === "null_count" || fn === "non_null_count"
+    ? "integer"
+    : "number";
+}
+
+function effectiveProtectedMinimumGroupSize(
+  aggregate: NonNullable<NonNullable<RuntimeCapabilityConfig["protected_read"]>["aggregate"]>,
+): number {
+  return aggregate.measures.some((measure) =>
+    ["stddev_samp", "stddev_pop", "var_samp", "var_pop", "reviewed_derived"].includes(measure.function))
+    ? Math.max(aggregate.minimum_group_size, 5)
+    : aggregate.minimum_group_size;
 }

@@ -36,7 +36,8 @@ export const EXPLORATION_BOUNDARY_VERSION = "synapsor.exploration-boundary.v1";
 export const AUTO_BOUNDARY_OVERRIDES_VERSION = "synapsor.auto-boundary-overrides.v1";
 export const ACTIVE_EXPLORATION_BOUNDARY_SET_VERSION = "synapsor.active-exploration-boundaries.v1";
 export const AUTO_BOUNDARY_COMPILER_VERSION = "1.6.6";
-export const AUTO_BOUNDARY_SPEC_VERSION = "1.8.0";
+export const AUTO_BOUNDARY_SPEC_VERSION = "1.9.0";
+export const SUPPORTED_AUTO_BOUNDARY_SPEC_VERSIONS = new Set(["1.8.0", AUTO_BOUNDARY_SPEC_VERSION]);
 export const SHARED_REFERENCE_ACKNOWLEDGEMENT = "table_has_no_per_tenant_rows";
 export const DEFAULT_GENERATED_DIR = "synapsor/generated";
 export const MAX_ACTIVE_EXPLORATION_BOUNDARIES = 8;
@@ -55,6 +56,44 @@ export const EXPLORATION_TIME_BUCKETS = [
   "day_of_week",
 ] as const;
 export type ExplorationTimeBucket = typeof EXPLORATION_TIME_BUCKETS[number];
+export const EXPLORATION_NUMERIC_AGGREGATE_FUNCTIONS = [
+  "sum",
+  "avg",
+  "stddev_samp",
+  "stddev_pop",
+  "var_samp",
+  "var_pop",
+] as const;
+export type ExplorationNumericAggregateFunction =
+  typeof EXPLORATION_NUMERIC_AGGREGATE_FUNCTIONS[number];
+export const EXPLORATION_PRESENCE_MEASURE_FUNCTIONS = [
+  "null_count",
+  "non_null_count",
+  "completion_rate",
+] as const;
+export type ExplorationDerivedBaseMeasure =
+  | { function: "count" }
+  | {
+    function: "count_distinct" | "sum" | "avg";
+    field: string;
+    relationship?: string;
+  };
+export type ExplorationDerivedMeasure = {
+  name: string;
+  label: string;
+  shape: "ratio" | "percentage" | "per_unit_average";
+  numerator: ExplorationDerivedBaseMeasure;
+  denominator: ExplorationDerivedBaseMeasure;
+  null_policy: "null_on_zero_or_null_denominator";
+};
+export type ExplorationNumericBand = {
+  name: string;
+  label: string;
+  field: string;
+  relationship?: string;
+  edges: number[];
+  bucket_labels: string[];
+};
 
 const MAX_STATIC_INPUT_BYTES = 2 * 1024 * 1024;
 const MAX_DIRECT_RELATIONSHIP_CANDIDATES_PER_RESOURCE = 4;
@@ -351,6 +390,14 @@ export type ExplorationBoundaryDraft = {
       sortable_fields: string[];
       groupable_fields: string[];
       aggregate_measures: string[];
+      /** Absent on legacy boundaries, where aggregate measures mean sum/avg only. */
+      aggregate_measure_functions?: Record<string, ExplorationNumericAggregateFunction[]>;
+      /** Model-visible fields whose missingness may be released only as suppressed aggregates. */
+      presence_measure_fields?: string[];
+      /** Fixed reviewed cross-measure definitions; plans may select only by name. */
+      derived_measures?: ExplorationDerivedMeasure[];
+      /** Fixed reviewed numeric buckets; plans select one by name and cannot choose edges. */
+      numeric_bands?: ExplorationNumericBand[];
       count_distinct_fields: string[];
       time_bucket_fields: Record<string, ExplorationTimeBucket[]>;
       kept_out_fields: string[];
@@ -520,6 +567,8 @@ export type AutoBoundaryReviewOverrides = {
     principal_scope_path?: Omit<ReviewedValueDecision, "value"> & { value: string | null };
     minimum_cohort?: ReviewedMinimumCohortDecision;
     field_enums?: Record<string, ReviewedEnumValuesDecision>;
+    derived_measures?: Record<string, ReviewedDerivedMeasureDecision>;
+    numeric_bands?: Record<string, ReviewedNumericBandDecision>;
     fields?: Record<string, {
       exposure: "keep_out" | "withhold_from_model" | "allow_reviewed_use";
       actor: string;
@@ -545,6 +594,20 @@ export type ReviewedMinimumCohortDecision = {
 
 export type ReviewedEnumValuesDecision = {
   values: string[];
+  actor: string;
+  reason: string;
+  decided_at: string;
+};
+
+export type ReviewedDerivedMeasureDecision = {
+  definition: ExplorationDerivedMeasure;
+  actor: string;
+  reason: string;
+  decided_at: string;
+};
+
+export type ReviewedNumericBandDecision = {
+  definition: ExplorationNumericBand;
   actor: string;
   reason: string;
   decided_at: string;
@@ -644,6 +707,31 @@ export function pruneAutoBoundaryReviewOverrides(
     }
     if (decision.principal_scope_path) retained.principal_scope_path = decision.principal_scope_path;
     if (decision.minimum_cohort) retained.minimum_cohort = decision.minimum_cohort;
+    const derivedMeasures: NonNullable<
+      AutoBoundaryReviewOverrides["resources"][string]["derived_measures"]
+    > = {};
+    for (const [name, derivedDecision] of Object.entries(decision.derived_measures ?? {})) {
+      const operands = [derivedDecision.definition.numerator, derivedDecision.definition.denominator];
+      const missingLocalField = operands.find((operand) =>
+        "field" in operand && !operand.relationship && !columns.has(operand.field));
+      if (missingLocalField && "field" in missingLocalField) {
+        removed.push(`${resourceId}.${name}: reviewed derived measure field ${missingLocalField.field} no longer exists`);
+        continue;
+      }
+      derivedMeasures[name] = derivedDecision;
+    }
+    if (Object.keys(derivedMeasures).length) retained.derived_measures = derivedMeasures;
+    const numericBands: NonNullable<
+      AutoBoundaryReviewOverrides["resources"][string]["numeric_bands"]
+    > = {};
+    for (const [name, bandDecision] of Object.entries(decision.numeric_bands ?? {})) {
+      if (!bandDecision.definition.relationship && !columns.has(bandDecision.definition.field)) {
+        removed.push(`${resourceId}.${name}: reviewed numeric-band field ${bandDecision.definition.field} no longer exists`);
+        continue;
+      }
+      numericBands[name] = bandDecision;
+    }
+    if (Object.keys(numericBands).length) retained.numeric_bands = numericBands;
     const fieldEnums: NonNullable<
       AutoBoundaryReviewOverrides["resources"][string]["field_enums"]
     > = {};
@@ -821,6 +909,8 @@ function buildAutoBoundaryOnce(input: BuildAutoBoundaryInput): AutoBoundaryBuild
       ...(organizationScope ? { organizationScope } : {}),
     },
   );
+  applyReviewedDerivedMeasureOverrides(provisionalBoundary, overrides);
+  applyReviewedNumericBandOverrides(provisionalBoundary, overrides);
   const lock: GenerationLock = {
     ...baseLock,
     authority_dependencies: buildGenerationAuthorityDependencies(input.inspection, provisionalBoundary),
@@ -883,6 +973,20 @@ function reviewOverrideAuthority(overrides: AutoBoundaryReviewOverrides): Record
               ? { principal_scope_path: resource.principal_scope_path.value }
               : {}),
             ...(resource.minimum_cohort ? { minimum_cohort: resource.minimum_cohort.value } : {}),
+            ...(resource.derived_measures ? {
+              derived_measures: Object.fromEntries(
+                Object.entries(resource.derived_measures)
+                  .sort(([left], [right]) => left.localeCompare(right))
+                  .map(([name, decision]) => [name, decision.definition]),
+              ),
+            } : {}),
+            ...(resource.numeric_bands ? {
+              numeric_bands: Object.fromEntries(
+                Object.entries(resource.numeric_bands)
+                  .sort(([left], [right]) => left.localeCompare(right))
+                  .map(([name, decision]) => [name, decision.definition]),
+              ),
+            } : {}),
             ...(resource.field_enums ? {
               field_enums: Object.fromEntries(
                 Object.entries(resource.field_enums)
@@ -1082,7 +1186,7 @@ export function compareGenerationLock(
     ...(schemaFingerprint !== lock.schema_fingerprint ? ["schema metadata changed"] : []),
     ...(roleFingerprint !== lock.role_posture_fingerprint ? ["database role, grants, ownership, or RLS posture changed"] : []),
     ...(lock.compiler_version !== AUTO_BOUNDARY_COMPILER_VERSION ? ["Auto Boundary compiler version changed"] : []),
-    ...(lock.spec_version !== AUTO_BOUNDARY_SPEC_VERSION ? ["canonical Spec version changed"] : []),
+    ...(!SUPPORTED_AUTO_BOUNDARY_SPEC_VERSIONS.has(lock.spec_version) ? ["canonical Spec version is unsupported"] : []),
   ];
   return {
     current: changes.length === 0,
@@ -1460,19 +1564,72 @@ export function assertCurrentExplorationBoundaryAuthority(input: {
 }
 
 export function explorationBoundaryCandidateDigest(candidate: ExplorationBoundaryDraft): `sha256:${string}` {
-  return canonicalJsonDigest(boundaryAuthority(candidate));
+  return canonicalJsonDigest(boundaryAuthority(normalizeDependentAggregateAuthority(candidate)));
 }
 
 export function reviewExplorationBoundaryCandidate(
   draft: ExplorationBoundaryDraft,
   candidate: ExplorationBoundaryDraft,
 ): { digest: `sha256:${string}`; candidate: ExplorationBoundaryDraft } {
-  assertBoundaryCandidateNarrowsDraft(draft, candidate);
+  const coherentCandidate = normalizeDependentAggregateAuthority(candidate);
+  assertBoundaryCandidateNarrowsDraft(draft, coherentCandidate);
   const normalized = {
-    ...candidate,
-    unresolved_decisions: requiredReviewDecisionsForCandidate(draft, candidate),
+    ...coherentCandidate,
+    unresolved_decisions: requiredReviewDecisionsForCandidate(draft, coherentCandidate),
   };
   return { digest: explorationBoundaryCandidateDigest(normalized), candidate: normalized };
+}
+
+function normalizeDependentAggregateAuthority(
+  candidate: ExplorationBoundaryDraft,
+): ExplorationBoundaryDraft {
+  const normalized = structuredClone(candidate);
+  for (const resource of normalized.pack.resources) {
+    if (resource.aggregate_measure_functions) {
+      const aggregateFields = new Set(resource.aggregate_measures);
+      resource.aggregate_measure_functions = Object.fromEntries(
+        Object.entries(resource.aggregate_measure_functions)
+          .filter(([field]) => aggregateFields.has(field)),
+      );
+    }
+    if (resource.presence_measure_fields) {
+      const selectable = new Set(resource.selectable_fields);
+      const unavailable = new Set([
+        ...resource.kept_out_fields,
+        ...(resource.model_withheld_fields ?? []),
+        ...(resource.tenant_key ? [resource.tenant_key] : []),
+        ...(resource.principal_key ? [resource.principal_key] : []),
+      ]);
+      resource.presence_measure_fields = resource.presence_measure_fields.filter(
+        (field) => selectable.has(field) && !unavailable.has(field),
+      );
+    }
+  }
+  for (const resource of normalized.pack.resources) {
+    if (resource.derived_measures) {
+      resource.derived_measures = resource.derived_measures.filter((definition) => {
+        try {
+          assertReviewedDerivedMeasureForBoundary(normalized, resource.id, definition);
+          return true;
+        } catch {
+          return false;
+        }
+      });
+      if (!resource.derived_measures.length) delete resource.derived_measures;
+    }
+    if (resource.numeric_bands) {
+      resource.numeric_bands = resource.numeric_bands.filter((definition) => {
+        try {
+          assertReviewedNumericBandForBoundary(normalized, resource.id, definition);
+          return true;
+        } catch {
+          return false;
+        }
+      });
+      if (!resource.numeric_bands.length) delete resource.numeric_bands;
+    }
+  }
+  return normalized;
 }
 
 export async function loadActivatedExplorationBoundary(
@@ -1881,6 +2038,8 @@ export function normalizeAutoBoundaryReviewOverrides(input: unknown): AutoBounda
         "principal_scope_path",
         "minimum_cohort",
         "field_enums",
+        "derived_measures",
+        "numeric_bands",
         "fields",
       ],
       `${resourceId} review overrides`,
@@ -1940,6 +2099,44 @@ export function normalizeAutoBoundaryReviewOverrides(input: unknown): AutoBounda
         );
       }
       resource.field_enums = fieldEnums;
+    }
+    if (rawResource.derived_measures !== undefined) {
+      if (!isRecord(rawResource.derived_measures)) {
+        throw new Error(`${resourceId} derived-measure review overrides must be an object.`);
+      }
+      const derivedMeasures: NonNullable<
+        AutoBoundaryReviewOverrides["resources"][string]["derived_measures"]
+      > = {};
+      for (const name of Object.keys(rawResource.derived_measures).sort()) {
+        assertSafeMapKey(name, "reviewed derived measure");
+        derivedMeasures[name] = normalizeReviewedDerivedMeasureDecision(
+          rawResource.derived_measures[name],
+          `${resourceId}.${name} reviewed derived measure`,
+        );
+        if (derivedMeasures[name]!.definition.name !== name) {
+          throw new Error(`${resourceId}.${name} reviewed derived-measure key must match its definition name.`);
+        }
+      }
+      resource.derived_measures = derivedMeasures;
+    }
+    if (rawResource.numeric_bands !== undefined) {
+      if (!isRecord(rawResource.numeric_bands)) {
+        throw new Error(`${resourceId} numeric-band review overrides must be an object.`);
+      }
+      const numericBands: NonNullable<
+        AutoBoundaryReviewOverrides["resources"][string]["numeric_bands"]
+      > = {};
+      for (const name of Object.keys(rawResource.numeric_bands).sort()) {
+        assertSafeMapKey(name, "reviewed numeric band");
+        numericBands[name] = normalizeReviewedNumericBandDecision(
+          rawResource.numeric_bands[name],
+          `${resourceId}.${name} reviewed numeric band`,
+        );
+        if (numericBands[name]!.definition.name !== name) {
+          throw new Error(`${resourceId}.${name} reviewed numeric-band key must match its definition name.`);
+        }
+      }
+      resource.numeric_bands = numericBands;
     }
     if (rawResource.fields !== undefined) {
       if (!isRecord(rawResource.fields)) throw new Error(`${resourceId} field review overrides must be an object.`);
@@ -2029,6 +2226,159 @@ function normalizeReviewedEnumValuesDecision(
     reason: reviewedText(value.reason, `${label} reason`, 500),
     decided_at: reviewedTimestamp(value.decided_at, `${label} decided_at`),
   };
+}
+
+function normalizeReviewedDerivedMeasureDecision(
+  value: unknown,
+  label: string,
+): ReviewedDerivedMeasureDecision {
+  if (!isRecord(value)) throw new Error(`${label} decision must be an object.`);
+  assertOnlyKeys(value, ["definition", "actor", "reason", "decided_at"], `${label} decision`);
+  return {
+    definition: normalizeExplorationDerivedMeasure(value.definition, `${label} definition`),
+    actor: reviewedText(value.actor, `${label} actor`, 128),
+    reason: reviewedText(value.reason, `${label} reason`, 500),
+    decided_at: reviewedTimestamp(value.decided_at, `${label} decided_at`),
+  };
+}
+
+function normalizeReviewedNumericBandDecision(
+  value: unknown,
+  label: string,
+): ReviewedNumericBandDecision {
+  if (!isRecord(value)) throw new Error(`${label} decision must be an object.`);
+  assertOnlyKeys(value, ["definition", "actor", "reason", "decided_at"], `${label} decision`);
+  return {
+    definition: normalizeExplorationNumericBand(value.definition, `${label} definition`),
+    actor: reviewedText(value.actor, `${label} actor`, 128),
+    reason: reviewedText(value.reason, `${label} reason`, 500),
+    decided_at: reviewedTimestamp(value.decided_at, `${label} decided_at`),
+  };
+}
+
+export function normalizeExplorationNumericBand(
+  value: unknown,
+  label: string,
+): ExplorationNumericBand {
+  if (!isRecord(value)) throw new Error(`${label} must be an object.`);
+  assertOnlyKeys(value, ["name", "label", "field", "relationship", "edges", "bucket_labels"], label);
+  const name = reviewedText(value.name, `${label} name`, 64);
+  if (!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name)) {
+    throw new Error(`${label} name must be a safe identifier of at most 64 characters.`);
+  }
+  if (!Array.isArray(value.edges) || value.edges.length < 1 || value.edges.length > 16
+    || value.edges.some((edge) => typeof edge !== "number" || !Number.isFinite(edge))) {
+    throw new Error(`${label} requires 1 through 16 finite numeric edges.`);
+  }
+  const edges = value.edges.map(Number);
+  if (edges.some((edge, index) => index > 0 && edge <= edges[index - 1]!)) {
+    throw new Error(`${label} edges must be strictly increasing and unique.`);
+  }
+  if (!Array.isArray(value.bucket_labels)
+    || value.bucket_labels.length !== edges.length + 1
+    || value.bucket_labels.some((item) => typeof item !== "string" || !item.trim() || [...item].length > 64)
+    || new Set(value.bucket_labels).size !== value.bucket_labels.length
+    || Buffer.byteLength(JSON.stringify(value.bucket_labels), "utf8") > 2_048) {
+    throw new Error(`${label} requires one unique label per bucket, each at most 64 characters and 2048 bytes total.`);
+  }
+  return {
+    name,
+    label: reviewedText(value.label, `${label} label`, 120),
+    field: reviewedText(value.field, `${label} field`, 256),
+    ...(value.relationship === undefined
+      ? {}
+      : { relationship: reviewedText(value.relationship, `${label} relationship`, 256) }),
+    edges,
+    bucket_labels: value.bucket_labels.map((item) => item.trim()),
+  };
+}
+
+export function normalizeExplorationDerivedMeasure(
+  value: unknown,
+  label: string,
+): ExplorationDerivedMeasure {
+  if (!isRecord(value)) throw new Error(`${label} must be an object.`);
+  assertOnlyKeys(
+    value,
+    ["name", "label", "shape", "numerator", "denominator", "null_policy"],
+    label,
+  );
+  const name = reviewedText(value.name, `${label} name`, 64);
+  if (!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name)) {
+    throw new Error(`${label} name must be a safe identifier of at most 64 characters.`);
+  }
+  if (value.shape !== "ratio" && value.shape !== "percentage" && value.shape !== "per_unit_average") {
+    throw new Error(`${label} shape must be ratio, percentage, or per_unit_average.`);
+  }
+  if (value.null_policy !== "null_on_zero_or_null_denominator") {
+    throw new Error(`${label} must use null_on_zero_or_null_denominator.`);
+  }
+  return {
+    name,
+    label: reviewedText(value.label, `${label} label`, 120),
+    shape: value.shape,
+    numerator: normalizeExplorationDerivedBaseMeasure(value.numerator, `${label} numerator`),
+    denominator: normalizeExplorationDerivedBaseMeasure(value.denominator, `${label} denominator`),
+    null_policy: "null_on_zero_or_null_denominator",
+  };
+}
+
+function normalizeExplorationDerivedBaseMeasure(
+  value: unknown,
+  label: string,
+): ExplorationDerivedBaseMeasure {
+  if (!isRecord(value)) throw new Error(`${label} must be an object.`);
+  if (value.function === "count") {
+    assertOnlyKeys(value, ["function"], label);
+    return { function: "count" };
+  }
+  assertOnlyKeys(value, ["function", "field", "relationship"], label);
+  if (value.function !== "count_distinct" && value.function !== "sum" && value.function !== "avg") {
+    throw new Error(`${label} function must be count, count_distinct, sum, or avg.`);
+  }
+  return {
+    function: value.function,
+    field: reviewedText(value.field, `${label} field`, 256),
+    ...(value.relationship === undefined
+      ? {}
+      : { relationship: reviewedText(value.relationship, `${label} relationship`, 256) }),
+  };
+}
+
+function applyReviewedDerivedMeasureOverrides(
+  boundary: ExplorationBoundaryDraft,
+  overrides: AutoBoundaryReviewOverrides,
+): void {
+  const resources = new Map(boundary.pack.resources.map((resource) => [resource.id, resource]));
+  for (const [resourceId, review] of Object.entries(overrides.resources)) {
+    if (!review.derived_measures) continue;
+    const resource = resources.get(resourceId);
+    if (!resource) throw new Error(`Derived-measure review override references unavailable resource ${resourceId}.`);
+    resource.derived_measures = Object.values(review.derived_measures)
+      .map((decision) => structuredClone(decision.definition))
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }
+  for (const resource of boundary.pack.resources) {
+    assertReviewedDerivedMeasures(resource, boundary.pack.resources);
+  }
+}
+
+function applyReviewedNumericBandOverrides(
+  boundary: ExplorationBoundaryDraft,
+  overrides: AutoBoundaryReviewOverrides,
+): void {
+  const resources = new Map(boundary.pack.resources.map((resource) => [resource.id, resource]));
+  for (const [resourceId, review] of Object.entries(overrides.resources)) {
+    if (!review.numeric_bands) continue;
+    const resource = resources.get(resourceId);
+    if (!resource) throw new Error(`Numeric-band review override references unavailable resource ${resourceId}.`);
+    resource.numeric_bands = Object.values(review.numeric_bands)
+      .map((decision) => structuredClone(decision.definition))
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }
+  for (const resource of boundary.pack.resources) {
+    assertReviewedNumericBands(resource, boundary.pack.resources);
+  }
 }
 
 function applyReviewOverrides(
@@ -2634,6 +2984,39 @@ function assertBoundaryCandidateNarrowsDraft(
     assertSubset(resource.sortable_fields, original.sortable_fields, `${resource.id} sortable fields`);
     assertSubset(resource.groupable_fields, original.groupable_fields, `${resource.id} groupable fields`);
     assertSubset(resource.aggregate_measures, original.aggregate_measures, `${resource.id} aggregate measures`);
+    if (resource.aggregate_measure_functions) {
+      assertSubset(
+        Object.keys(resource.aggregate_measure_functions),
+        resource.aggregate_measures,
+        `${resource.id} aggregate-function fields with reviewed aggregate access`,
+      );
+      assertSubset(
+        Object.keys(resource.aggregate_measure_functions),
+        Object.keys(original.aggregate_measure_functions ?? {}),
+        `${resource.id} aggregate-function fields`,
+      );
+      for (const [field, functions] of Object.entries(resource.aggregate_measure_functions)) {
+        assertSubset(
+          functions,
+          original.aggregate_measure_functions?.[field] ?? [],
+          `${resource.id}.${field} aggregate functions`,
+        );
+      }
+    }
+    if (resource.presence_measure_fields) {
+      assertSubset(
+        resource.presence_measure_fields,
+        original.presence_measure_fields ?? [],
+        `${resource.id} missing-data measure fields`,
+      );
+      assertSubset(
+        resource.presence_measure_fields,
+        resource.selectable_fields.filter((field) => !(resource.model_withheld_fields ?? []).includes(field)),
+        `${resource.id} model-visible missing-data measure fields`,
+      );
+    }
+    assertReviewedDerivedMeasures(resource, candidate.pack.resources);
+    assertReviewedNumericBands(resource, candidate.pack.resources);
     assertSubset(resource.count_distinct_fields, original.count_distinct_fields, `${resource.id} count-distinct fields`);
     assertSubset(original.kept_out_fields, resource.kept_out_fields, `${resource.id} generated kept-out fields`);
     assertSubset(resource.kept_out_fields, Object.keys(original.field_types), `${resource.id} kept-out fields`);
@@ -2716,6 +3099,139 @@ function assertBoundaryCandidateNarrowsDraft(
       throw new Error(`${resource.id} minimum cohort override marker must match the reviewed owner decision.`);
     }
     if (resource.suppression_aware_totals !== true) throw new Error(`${resource.id} suppression-aware totals cannot be disabled.`);
+  }
+}
+
+function assertReviewedDerivedMeasures(
+  resource: ExplorationBoundaryDraft["pack"]["resources"][number],
+  resources: ExplorationBoundaryDraft["pack"]["resources"],
+): void {
+  const definitions = resource.derived_measures ?? [];
+  if (definitions.length > 16) throw new Error(`${resource.id} may review at most 16 named derived measures.`);
+  const names = new Set<string>();
+  for (const definition of definitions) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(definition.name) || names.has(definition.name)) {
+      throw new Error(`${resource.id} derived-measure names must be unique safe identifiers.`);
+    }
+    names.add(definition.name);
+    if (!definition.label.trim() || definition.label.length > 120
+      || /[\u0000-\u001f\u007f]/.test(definition.label)) {
+      throw new Error(`${resource.id}.${definition.name} requires a bounded plain-language label.`);
+    }
+    if (!["ratio", "percentage", "per_unit_average"].includes(definition.shape)
+      || definition.null_policy !== "null_on_zero_or_null_denominator") {
+      throw new Error(`${resource.id}.${definition.name} has an unsupported fixed derived-measure shape or null policy.`);
+    }
+    const numeratorRelationship = derivedBaseMeasureRelationship(definition.numerator);
+    const denominatorRelationship = derivedBaseMeasureRelationship(definition.denominator);
+    if (numeratorRelationship !== denominatorRelationship) {
+      throw new Error(`${resource.id}.${definition.name} operands must use the same reviewed relationship path.`);
+    }
+    assertDerivedBaseMeasure(resource, definition.name, definition.numerator, resources);
+    assertDerivedBaseMeasure(resource, definition.name, definition.denominator, resources);
+    if (definition.shape === "per_unit_average"
+      && (definition.numerator.function !== "sum"
+        || !["count", "count_distinct"].includes(definition.denominator.function))) {
+      throw new Error(`${resource.id}.${definition.name} per_unit_average requires SUM divided by COUNT or COUNT DISTINCT.`);
+    }
+  }
+}
+
+export function assertReviewedDerivedMeasureForBoundary(
+  boundary: ExplorationBoundaryDraft,
+  resourceId: string,
+  definition: ExplorationDerivedMeasure,
+): void {
+  const resource = boundary.pack.resources.find((candidate) => candidate.id === resourceId);
+  if (!resource) throw new Error(`${resourceId} is no longer in the reviewed boundary.`);
+  assertReviewedDerivedMeasures(
+    { ...resource, derived_measures: [structuredClone(definition)] },
+    boundary.pack.resources,
+  );
+}
+
+function assertReviewedNumericBands(
+  resource: ExplorationBoundaryDraft["pack"]["resources"][number],
+  resources: ExplorationBoundaryDraft["pack"]["resources"],
+): void {
+  const definitions = resource.numeric_bands ?? [];
+  if (definitions.length > 16) throw new Error(`${resource.id} may review at most 16 named numeric bands.`);
+  const names = new Set<string>();
+  for (const definition of definitions) {
+    const normalized = normalizeExplorationNumericBand(
+      definition,
+      `${resource.id}.${definition.name || "numeric_band"}`,
+    );
+    if (names.has(normalized.name)) {
+      throw new Error(`${resource.id} numeric-band names must be unique.`);
+    }
+    names.add(normalized.name);
+    const relationship = normalized.relationship
+      ? resource.relationships.find((candidate) => candidate.id === normalized.relationship)
+      : undefined;
+    if (normalized.relationship && !relationship) {
+      throw new Error(`${resource.id}.${normalized.name} references an unreviewed relationship ${normalized.relationship}.`);
+    }
+    const targetId = relationship?.target_resource ?? resource.id;
+    const target = resources.find((candidate) => candidate.id === targetId);
+    if (!target || !target.aggregate_measures.includes(normalized.field)) {
+      throw new Error(`${resource.id}.${normalized.name} uses an unreviewed numeric field ${targetId}.${normalized.field}.`);
+    }
+  }
+}
+
+export function assertReviewedNumericBandForBoundary(
+  boundary: ExplorationBoundaryDraft,
+  resourceId: string,
+  definition: ExplorationNumericBand,
+): void {
+  const resource = boundary.pack.resources.find((candidate) => candidate.id === resourceId);
+  if (!resource) throw new Error(`${resourceId} is no longer in the reviewed boundary.`);
+  assertReviewedNumericBands(
+    { ...resource, numeric_bands: [structuredClone(definition)] },
+    boundary.pack.resources,
+  );
+}
+
+function derivedBaseMeasureRelationship(
+  measure: ExplorationDerivedBaseMeasure,
+): string | undefined {
+  return "relationship" in measure ? measure.relationship : undefined;
+}
+
+function assertDerivedBaseMeasure(
+  root: ExplorationBoundaryDraft["pack"]["resources"][number],
+  name: string,
+  operand: ExplorationDerivedBaseMeasure,
+  resources: ExplorationBoundaryDraft["pack"]["resources"],
+): void {
+  if (!["count", "count_distinct", "sum", "avg"].includes(operand.function)) {
+    throw new Error(`${root.id}.${name} contains an unsupported base measure.`);
+  }
+  if (operand.function === "count") {
+    if ("field" in operand || "relationship" in operand) {
+      throw new Error(`${root.id}.${name} COUNT operand must count the reviewed root entity.`);
+    }
+    return;
+  }
+  const relationship = operand.relationship
+    ? root.relationships.find((candidate) => candidate.id === operand.relationship)
+    : undefined;
+  if (operand.relationship && !relationship) {
+    throw new Error(`${root.id}.${name} references an unreviewed relationship ${operand.relationship}.`);
+  }
+  const targetId = relationship?.target_resource ?? root.id;
+  const target = resources.find((candidate) => candidate.id === targetId);
+  if (!target) throw new Error(`${root.id}.${name} operand target ${targetId} is not in this boundary.`);
+  if (operand.function === "count_distinct") {
+    if (!target.count_distinct_fields.includes(operand.field)) {
+      throw new Error(`${root.id}.${name} uses an unreviewed count-distinct field ${target.id}.${operand.field}.`);
+    }
+    return;
+  }
+  if (!target.aggregate_measures.includes(operand.field)
+    || !(target.aggregate_measure_functions?.[operand.field] ?? ["sum", "avg"]).includes(operand.function)) {
+    throw new Error(`${root.id}.${name} uses an unreviewed ${operand.function} field ${target.id}.${operand.field}.`);
   }
 }
 
@@ -3567,6 +4083,13 @@ function buildExplorationBoundaryDraft(
       aggregate_measures: resource.fields.filter((field) => field.aggregate_measure_suggestion
         && !keptOutSet.has(field.name)
         && !trustedScopeFields.has(field.name)).map((field) => field.name),
+      aggregate_measure_functions: Object.fromEntries(resource.fields
+        .filter((field) => field.aggregate_measure_suggestion
+          && !keptOutSet.has(field.name)
+          && !trustedScopeFields.has(field.name))
+        .map((field) => [field.name, [...EXPLORATION_NUMERIC_AGGREGATE_FUNCTIONS]])),
+      presence_measure_fields: selectable.filter((field) =>
+        !modelWithheld.includes(field) && !trustedScopeFields.has(field)),
       count_distinct_fields: resource.fields.filter((field) => field.count_distinct_suggestion
         && !keptOutSet.has(field.name)
         && !trustedScopeFields.has(field.name)).map((field) => field.name),

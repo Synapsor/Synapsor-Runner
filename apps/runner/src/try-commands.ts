@@ -220,7 +220,9 @@ async function tryScopedExplore(
       "--count-distinct",
       "--sum",
       "--avg",
+      "--measure",
       "--group-by",
+      "--group-band",
       "--time-bucket",
       "--compare",
       "--period",
@@ -248,7 +250,9 @@ async function tryScopedExplore(
       || repeatedArgs(args, "--count-distinct").length > 0
       || repeatedArgs(args, "--sum").length > 0
       || repeatedArgs(args, "--avg").length > 0
+      || repeatedArgs(args, "--measure").length > 0
       || repeatedArgs(args, "--group-by").length > 0
+      || repeatedArgs(args, "--group-band").length > 0
       || repeatedArgs(args, "--where").length > 0
       || Boolean(optionalArg(args, "--time-bucket"))
       || Boolean(optionalArg(args, "--compare"))
@@ -296,7 +300,9 @@ async function tryScopedExplore(
             countDistinct: repeatedArgs(args, "--count-distinct"),
             sums: repeatedArgs(args, "--sum"),
             averages: repeatedArgs(args, "--avg"),
+            measures: repeatedArgs(args, "--measure"),
             groupBy: repeatedArgs(args, "--group-by"),
+            groupBands: repeatedArgs(args, "--group-band"),
             timeBucket: optionalArg(args, "--time-bucket"),
             compareField: optionalArg(args, "--compare"),
             period: optionalArg(args, "--period"),

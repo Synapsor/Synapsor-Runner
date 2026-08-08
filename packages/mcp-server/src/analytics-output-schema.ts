@@ -43,7 +43,26 @@ const scopedExploreMeasureFunctionSchema = z.enum([
   "stddev_pop",
   "var_samp",
   "var_pop",
+  "null_count",
+  "non_null_count",
+  "completion_rate",
+  "reviewed_derived",
 ]);
+const scopedDerivedMeasureSchema = z.object({
+  name: z.string(),
+  label: z.string(),
+  shape: z.enum(["ratio", "percentage", "per_unit_average"]),
+  null_behavior: z.literal("null when the reviewed denominator is zero or null"),
+  effective_minimum_cohort_size: z.number().int().min(5),
+}).strict();
+const scopedNumericBandSchema = z.object({
+  name: z.string(),
+  label: z.string(),
+  field: z.string(),
+  relationship: z.string().nullable(),
+  edges: z.array(z.number().finite()).min(1).max(16),
+  bucket_labels: z.array(z.string()).min(2).max(17),
+}).strict();
 const scopedExploreTimeBucketSchema = z.enum([
   "hour",
   "day",
@@ -157,6 +176,7 @@ const scopedExploreResultSchema = z.object({
     function: scopedExploreMeasureFunctionSchema,
     field: z.string().nullable(),
     relationship: z.string().nullable(),
+    derived_measure: z.string().optional(),
     contributor_cohort: z.enum([
       "non-null values for this reviewed field",
       "reviewed root rows",
@@ -174,6 +194,7 @@ const scopedExploreResultSchema = z.object({
     alias: z.string(),
     field: z.string(),
     relationship: z.string().nullable(),
+    numeric_band: z.string().optional(),
     null_label: z.literal("Not set (database null)"),
   }).strict()),
   filters: z.array(z.object({
@@ -290,6 +311,10 @@ export const scopedExploreDescribeOutputSchema = z.object({
     groupable_fields: z.array(z.string()),
     aggregate_measures: z.array(z.string()),
     aggregate_measure_functions: z.record(z.array(scopedExploreMeasureFunctionSchema)),
+    presence_measure_fields: z.array(z.string()),
+    presence_measure_functions: z.array(scopedExploreMeasureFunctionSchema),
+    derived_measures: z.array(scopedDerivedMeasureSchema),
+    numeric_bands: z.array(scopedNumericBandSchema),
     count_distinct_fields: z.array(z.string()),
     time_bucket_fields: z.record(z.array(z.string())),
     time_coverage: z.record(z.object({
@@ -331,6 +356,9 @@ export const scopedExploreDescribeOutputSchema = z.object({
       groupable_fields: z.array(z.string()),
       aggregate_measures: z.array(z.string()),
       aggregate_measure_functions: z.record(z.array(scopedExploreMeasureFunctionSchema)),
+      presence_measure_fields: z.array(z.string()),
+      presence_measure_functions: z.array(scopedExploreMeasureFunctionSchema),
+      derived_measures: z.array(scopedDerivedMeasureSchema),
       count_distinct_fields: z.array(z.string()),
       time_bucket_fields: z.record(z.array(z.string())),
       field_types: z.record(z.string()),

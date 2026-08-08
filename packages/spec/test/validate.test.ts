@@ -155,6 +155,33 @@ describe("@synapsor/spec validation", () => {
       .toContain("INVALID_PROTECTED_MINIMUM_GROUP_SIZE");
   });
 
+  it("accepts reviewed dispersion and missing-data measures with a fixed dispersion floor", () => {
+    for (const fn of ["stddev_samp", "stddev_pop", "var_samp", "var_pop"] as const) {
+      const contract = protectedAggregateContract();
+      contract.capabilities[0].protected_read.aggregate.measures = [{
+        name: "spread",
+        function: fn,
+        field: "balance_cents",
+      }];
+      delete contract.capabilities[0].protected_read.aggregate.order_by;
+      expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+      contract.capabilities[0].protected_read.aggregate.minimum_group_size = 4;
+      expect(validateContract(contract).errors.map((error) => error.code))
+        .toContain("PROTECTED_DISPERSION_COHORT_TOO_SMALL");
+    }
+
+    for (const fn of ["null_count", "non_null_count", "completion_rate"] as const) {
+      const contract = protectedAggregateContract();
+      contract.capabilities[0].protected_read.aggregate.measures = [{
+        name: "completeness",
+        function: fn,
+        field: "balance_cents",
+      }];
+      delete contract.capabilities[0].protected_read.aggregate.order_by;
+      expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+    }
+  });
+
   it("accepts a digest-bound protected PM aggregate with reviewed dimensions and bounded arguments", () => {
     const contract = protectedAggregateContract();
 
@@ -221,6 +248,53 @@ describe("@synapsor/spec validation", () => {
     invalidLimit.capabilities[0].protected_read.limits.max_ranked_groups = 49;
     expect(validateContract(invalidLimit).errors.map((error) => error.code))
       .toContain("INVALID_PROTECTED_RANKED_GROUP_LIMIT");
+  });
+
+  it("accepts only fixed contributor-safe reviewed derived measures", () => {
+    const contract = protectedAggregateContract();
+    contract.capabilities[0].protected_read.aggregate.measures = [{
+      name: "revenue_per_customer",
+      function: "reviewed_derived",
+      derived: {
+        shape: "per_unit_average",
+        numerator: { function: "sum", field: "balance_cents" },
+        denominator: { function: "count_distinct", field: "customer_id" },
+        null_policy: "null_on_zero_or_null_denominator",
+      },
+    }];
+    delete contract.capabilities[0].protected_read.aggregate.order_by;
+    expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+
+    const formula = structuredClone(contract);
+    formula.capabilities[0].protected_read.aggregate.measures[0].derived.formula = "SUM(balance_cents) / COUNT(DISTINCT customer_id)";
+    expect(validateContract(formula).errors.map((error) => error.code)).toContain("UNKNOWN_CORE_FIELD");
+
+    const lowCohort = structuredClone(contract);
+    lowCohort.capabilities[0].protected_read.aggregate.minimum_group_size = 1;
+    expect(validateContract(lowCohort).errors.map((error) => error.code)).toContain("PROTECTED_DISPERSION_COHORT_TOO_SMALL");
+  });
+
+  it("accepts only complete bounded numeric-band dimensions", () => {
+    const contract = protectedAggregateContract();
+    contract.capabilities[0].protected_read.aggregate.dimensions = [{
+      name: "balance_band",
+      field: "balance_cents",
+      numeric_band: {
+        edges: [1_000, 5_000],
+        bucket_labels: ["under 10", "10 to 49", "50 or more"],
+      },
+    }];
+    expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+
+    const unordered = structuredClone(contract);
+    unordered.capabilities[0].protected_read.aggregate.dimensions[0].numeric_band.edges = [5_000, 1_000];
+    expect(validateContract(unordered).errors.map((error) => error.code))
+      .toContain("INVALID_PROTECTED_NUMERIC_BAND_EDGES");
+
+    const partial = structuredClone(contract);
+    partial.capabilities[0].protected_read.aggregate.dimensions[0].numeric_band.bucket_labels = ["under 10"];
+    expect(validateContract(partial).errors.map((error) => error.code))
+      .toContain("INVALID_PROTECTED_NUMERIC_BAND_LABELS");
   });
 
   it("accepts additive reviewed star paths without rewriting the legacy relationship form", () => {
