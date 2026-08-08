@@ -1474,8 +1474,9 @@ describe("boundary operator-plane CLI", () => {
       })).resolves.toBe(0);
 
       expect(confirmationPrompts).toEqual([
-        `Activate "${build.exploration_boundary.pack.name}" exactly as shown and continue to Ask?`,
+        `Activate "${build.exploration_boundary.pack.name}" exactly as shown now? You will stay in /access.`,
       ]);
+      expect(resourceSelections).toBe(3);
       expect(output).toContain("Draft updated: public.service_visits");
       expect(output).toContain("REVIEW EXACT BOUNDARY");
       expect(output).toContain("Runner only");
@@ -1486,6 +1487,8 @@ describe("boundary operator-plane CLI", () => {
       expect(output.indexOf("MODEL CONTINUATION TEST")).toBeLessThan(
         output.indexOf(`Reviewed boundary "${build.exploration_boundary.pack.name}" is active`),
       );
+      expect(output).toContain("/access is still open.");
+      expect(output).toContain("press Q/Esc when finished to return to Ask");
       expect(output).not.toContain("TABLE SIGN-OFF");
       const styledReviewContext = await loadBoundaryReviewContext(root);
       const plainReview = formatFocusedBoundaryActivationReview(
@@ -2259,6 +2262,7 @@ describe("boundary operator-plane CLI", () => {
     const text = ["1", "Owner-reviewed local analysis may show groups of one."];
     const confirmationPrompts: string[] = [];
     const confirmationDefaults: Array<boolean | undefined> = [];
+    const activationHandoff = vi.fn(async () => 0);
     let chooseCalls = 0;
     const session: BoundaryReviewInteractiveSession = {
       chooseResource: async (_resources, _overview, options) => {
@@ -2275,7 +2279,7 @@ describe("boundary operator-plane CLI", () => {
       confirm: async (prompt, options) => {
         confirmationPrompts.push(prompt);
         confirmationDefaults.push(options?.defaultValue);
-        return confirmationDefaults.length === 1;
+        return true;
       },
     };
     let output = "";
@@ -2288,7 +2292,7 @@ describe("boundary operator-plane CLI", () => {
       await expect(boundaryReviewCommandInternal([
         "--project-root", root,
         "--access",
-      ], async () => inspection, session)).resolves.toBe(0);
+      ], async () => inspection, session, activationHandoff)).resolves.toBe(0);
       const progress = JSON.parse(await fs.readFile(
         path.join(root, ".synapsor/boundary-review-progress.json"),
         "utf8",
@@ -2296,19 +2300,27 @@ describe("boundary operator-plane CLI", () => {
       expect(progress.candidate.pack.resources[0].minimum_cohort_size).toBe(1);
       expect(output).toContain("PRIVACY - public.service_visits");
       expect(output).toContain("Current minimum group size: 5");
-      expect(output).toContain("press C (Review + activate)");
       expect(confirmationPrompts).toEqual([
         "Save this privacy change for public.service_visits?",
         "Review and activate this boundary change now?",
+        `Activate "${build.exploration_boundary.pack.name}" exactly as shown now? You will stay in /access.`,
       ]);
-      expect(confirmationDefaults).toEqual([true, true]);
+      expect(confirmationDefaults).toEqual([true, true, true]);
       expect(chooseCalls).toBe(2);
+      expect(activationHandoff).toHaveBeenCalledOnce();
+      expect(output).toContain("/access is still open.");
+      expect(output).toContain("press Q/Esc when finished to return to Ask");
+      const active = JSON.parse(await fs.readFile(
+        path.join(root, ".synapsor/exploration-boundary.active.json"),
+        "utf8",
+      ));
+      expect(active.pack.resources[0].minimum_cohort_size).toBe(1);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
   }, 20_000);
 
-  it("sets one cohort threshold across the boundary and makes pending activation explicit", async () => {
+  it("sets one cohort threshold across the boundary, activates it, and keeps access open", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-cohort-all-"));
     const inspection = boundaryInspection();
     const second = structuredClone(inspection.tables[0]!);
@@ -2330,12 +2342,17 @@ describe("boundary operator-plane CLI", () => {
     });
     const choices = [{ action: "privacy_all" as const }, undefined];
     const text = ["1", "Local owner review for this non-production demonstration."];
-    const confirmations = [true, false];
+    const confirmations = [true, true, true];
     const prompts: string[] = [];
     const confirmationPrompts: string[] = [];
     const confirmationDefaults: Array<boolean | undefined> = [];
+    const activationHandoff = vi.fn(async () => 0);
+    let chooseCalls = 0;
     const session: BoundaryReviewInteractiveSession = {
-      chooseResource: async () => choices.shift(),
+      chooseResource: async () => {
+        chooseCalls += 1;
+        return choices.shift();
+      },
       editFieldTiers: async () => {
         throw new Error("Boundary-wide privacy must not open one table's column editor.");
       },
@@ -2359,7 +2376,7 @@ describe("boundary operator-plane CLI", () => {
       await expect(boundaryReviewCommandInternal([
         "--project-root", root,
         "--access",
-      ], async () => inspection, session)).resolves.toBe(0);
+      ], async () => inspection, session, activationHandoff)).resolves.toBe(0);
       const progress = JSON.parse(await fs.readFile(
         path.join(root, ".synapsor/boundary-review-progress.json"),
         "utf8",
@@ -2371,8 +2388,8 @@ describe("boundary operator-plane CLI", () => {
       expect(output).toContain("Enter a whole number from 1 through 5");
       expect(output).toContain("Consequence: aggregate output may contain groups with one person or record");
       expect(output).toContain("Saved minimum group size 1 (small-group suppression off) for 2 tables");
-      expect(output).toContain("1 pending boundary change is not active");
-      expect(output).toContain("press C (Review + activate)");
+      expect(output).toContain("/access is still open.");
+      expect(output).toContain("press Q/Esc when finished to return to Ask");
       expect(prompts).toEqual([
         "New minimum group size for all tables [current 5]: ",
         "Reason for setting 2 tables to minimum group size 1 (recorded with this decision): ",
@@ -2380,11 +2397,19 @@ describe("boundary operator-plane CLI", () => {
       expect(confirmationPrompts).toEqual([
         "Save this privacy change for 2 tables?",
         "Review and activate this boundary change now?",
+        `Activate "${build.exploration_boundary.pack.name}" exactly as shown now? You will stay in /access.`,
       ]);
-      expect(confirmationDefaults).toEqual([true, true]);
+      expect(confirmationDefaults).toEqual([true, true, true]);
       expect(confirmations).toHaveLength(0);
-      await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
-        .rejects.toMatchObject({ code: "ENOENT" });
+      expect(chooseCalls).toBe(2);
+      expect(activationHandoff).toHaveBeenCalledOnce();
+      const active = JSON.parse(await fs.readFile(
+        path.join(root, ".synapsor/exploration-boundary.active.json"),
+        "utf8",
+      ));
+      expect(active.pack.resources).toHaveLength(2);
+      expect(active.pack.resources.every((resource: { minimum_cohort_size: number }) =>
+        resource.minimum_cohort_size === 1)).toBe(true);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

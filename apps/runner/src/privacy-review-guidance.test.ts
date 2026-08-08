@@ -13,6 +13,8 @@ describe("CLI privacy review guidance", () => {
     expect(guidance).toContain("Press P (Privacy) for the highlighted table");
     expect(guidance).toContain("minimum group size from 1 through 5");
     expect(guidance).toContain("Save this privacy change? [Y/n]");
+    expect(guidance).toContain("/access stays open after activation");
+    expect(guidance).toContain("Q/Escape");
     expect(guidance).toContain("press C later from the boundary screen");
   });
 

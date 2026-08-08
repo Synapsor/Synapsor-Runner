@@ -482,7 +482,9 @@ Run \`${cmd} boundary review --access\`, press E from \`start --cli\`, or use
 table and column tier in one screen. Routine choices save directly to the
 selected disabled boundary while current active boundaries remain available. Then C
 shows one complete boundary summary and one default-yes activation confirmation
-before returning to Ask. The provider/model/key remain in memory; authority
+before returning to the same access editor. Continue configuring that boundary or
+another boundary, then press Q or Escape when finished to return to Ask. The
+provider/model/key remain in memory; authority
 changes clear conversation state and renew the egress decision. Sensitive-field widening still requires
 a reviewer and reason. A nullable reviewed path asks explicitly whether
 unmatched counted rows remain under an empty group or are excluded; there is no
@@ -502,6 +504,8 @@ To change aggregate privacy for one table in the focused editor:
 5. At \`Review and activate this boundary change now? [Y/n]\`, press Enter to
    review and activate it. If you choose No or Escape, return to the boundary
    screen later and press C (**Review + activate**).
+6. The access editor stays open after activation. Continue reviewing settings,
+   or press Q/Escape when finished to return to Ask.
 
 Press P while the boundary itself is highlighted to set one minimum group size
 for every included table atomically. The same save and activation steps apply.

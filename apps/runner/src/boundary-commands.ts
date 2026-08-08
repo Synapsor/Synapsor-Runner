@@ -977,7 +977,10 @@ async function interactiveBoundaryReviewLoop(input: {
         focusedAccess: input.initialView === "access",
       });
       if (result === "review") {
-        if (input.initialView === "access") return confirmAndActivateFocusedBoundary(input);
+        if (input.initialView === "access") {
+          const activationResult = await confirmActivateAndKeepAccessOpen(input);
+          if (activationResult !== 0) return activationResult;
+        }
         continue;
       }
       if (result !== "back" && result !== 0) return result;
@@ -1108,7 +1111,11 @@ async function interactiveBoundaryReviewLoop(input: {
         session: input.session,
         focusedAccess: true,
       });
-      if (editResult === "review") return confirmAndActivateFocusedBoundary(input);
+      if (editResult === "review") {
+        const activationResult = await confirmActivateAndKeepAccessOpen(input);
+        if (activationResult !== 0) return activationResult;
+        continue;
+      }
       if (editResult !== "back" && editResult !== 0) return editResult;
       continue;
     }
@@ -1152,7 +1159,9 @@ async function interactiveBoundaryReviewLoop(input: {
     }
     if (selected.action === "confirm") {
       if (input.initialView === "access") {
-        return confirmAndActivateFocusedBoundary(input);
+        const activationResult = await confirmActivateAndKeepAccessOpen(input);
+        if (activationResult !== 0) return activationResult;
+        continue;
       }
       const context = await loadBoundaryReviewContext(input.projectRoot);
       const reviewed = await confirmBoundaryReviewInteractively({
@@ -1199,7 +1208,10 @@ async function interactiveBoundaryReviewLoop(input: {
         focusedAccess: input.initialView === "access",
       });
       if (result === "review") {
-        if (input.initialView === "access") return confirmAndActivateFocusedBoundary(input);
+        if (input.initialView === "access") {
+          const activationResult = await confirmActivateAndKeepAccessOpen(input);
+          if (activationResult !== 0) return activationResult;
+        }
         continue;
       }
       if (result !== "back" && result !== 0) return result;
@@ -1223,7 +1235,10 @@ async function interactiveBoundaryReviewLoop(input: {
         focusedAccess: input.initialView === "access",
       });
       if (result === "review") {
-        if (input.initialView === "access") return confirmAndActivateFocusedBoundary(input);
+        if (input.initialView === "access") {
+          const activationResult = await confirmActivateAndKeepAccessOpen(input);
+          if (activationResult !== 0) return activationResult;
+        }
         continue;
       }
       if (result !== "back" && result !== 0) return result;
@@ -1249,7 +1264,10 @@ async function interactiveBoundaryReviewLoop(input: {
       focusedAccess: input.initialView === "access",
     });
     if (result === "review") {
-      if (input.initialView === "access") return confirmAndActivateFocusedBoundary(input);
+      if (input.initialView === "access") {
+        const activationResult = await confirmActivateAndKeepAccessOpen(input);
+        if (activationResult !== 0) return activationResult;
+      }
       continue;
     }
     if (result !== "back" && result !== 0) return result;
@@ -1446,12 +1464,33 @@ async function resolveBlockedBoundaryResource(input: {
   }
 }
 
+async function confirmActivateAndKeepAccessOpen(input: {
+  projectRoot: string;
+  schemaInspector: typeof inspectDatabase;
+  session: BoundaryReviewInteractiveSession;
+  activationHandoff?: BoundaryActivationHandoff;
+  activationReviewNotice?: BoundaryReviewCommandOptions["activationReviewNotice"];
+}): Promise<number> {
+  const result = await confirmAndActivateFocusedBoundary({
+    ...input,
+    keepAccessOpen: true,
+  });
+  if (result !== 0) return result;
+  process.stdout.write([
+    "/access is still open.",
+    "Continue setting up this boundary, switch boundaries, or press Q/Esc when finished to return to Ask.",
+    "",
+  ].join("\n"));
+  return 0;
+}
+
 async function confirmAndActivateFocusedBoundary(input: {
   projectRoot: string;
   schemaInspector: typeof inspectDatabase;
   session: BoundaryReviewInteractiveSession;
   activationHandoff?: BoundaryActivationHandoff;
   activationReviewNotice?: BoundaryReviewCommandOptions["activationReviewNotice"];
+  keepAccessOpen?: boolean;
 }): Promise<number> {
   let context = await loadBoundaryReviewContext(input.projectRoot);
   const boundaryLibrary = await synchronizeBoundaryLibrary({
@@ -1465,7 +1504,9 @@ async function confirmAndActivateFocusedBoundary(input: {
     process.stdout.write([
       `Boundary "${selectedBoundary.name}" has no access changes to review.`,
       "Reviewed authority and provider egress are unchanged.",
-      "Returning to Ask.",
+      input.keepAccessOpen
+        ? "Continue reviewing access, or press Q/Esc when finished to return to Ask."
+        : "Returning to Ask.",
       "",
     ].join("\n"));
     return 0;
@@ -1502,7 +1543,9 @@ async function confirmAndActivateFocusedBoundary(input: {
     if (answer === "q" || answer === "quit") {
       process.stdout.write([
         "The edited boundary remains disabled. Current agent authority is unchanged.",
-        `Resume: ${cliCommandName()} boundary review --access`,
+        input.keepAccessOpen
+          ? "Continue reviewing access, or press Q/Esc when finished to return to Ask."
+          : `Resume: ${cliCommandName()} boundary review --access`,
         "",
       ].join("\n"));
       return 0;
@@ -1550,14 +1593,20 @@ async function confirmAndActivateFocusedBoundary(input: {
   const actor = localInteractiveActor();
   const accepted = await input.session.confirm(
     context.candidate.deployment_profile === "production"
-      ? `Activate "${context.candidate.pack.name}" exactly as shown for secured production HTTP Explore?`
-      : `Activate "${context.candidate.pack.name}" exactly as shown and continue to Ask?`,
+      ? input.keepAccessOpen
+        ? `Activate "${context.candidate.pack.name}" exactly as shown for secured production HTTP Explore now? You will stay in /access.`
+        : `Activate "${context.candidate.pack.name}" exactly as shown for secured production HTTP Explore?`
+      : input.keepAccessOpen
+        ? `Activate "${context.candidate.pack.name}" exactly as shown now? You will stay in /access.`
+        : `Activate "${context.candidate.pack.name}" exactly as shown and continue to Ask?`,
     { defaultValue: true },
   );
   if (!accepted) {
     process.stdout.write([
       "The edited boundary remains disabled. Current agent authority is unchanged.",
-      `Resume: ${cliCommandName()} boundary review --access`,
+      input.keepAccessOpen
+        ? "Continue reviewing access, or press Q/Esc when finished to return to Ask."
+        : `Resume: ${cliCommandName()} boundary review --access`,
       "",
     ].join("\n"));
     return 0;
