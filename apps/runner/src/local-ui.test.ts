@@ -4492,6 +4492,7 @@ export default defineCapability({
         requestJson: async (input) => {
           providerRequests += 1;
           expect(input.headers.authorization).toBe(`Bearer ${secret}`);
+          expect(input.timeoutMs).toBe(90_000);
           if (JSON.stringify(input.body).includes("Simulate provider outage")) {
             throw new Error(`provider unavailable: ${secret}`);
           }
@@ -4571,6 +4572,7 @@ export default defineCapability({
         provider: "openai",
         model: "gpt-5-mini",
         api_key: secret,
+        request_timeout_seconds: 90,
         authority_digest: status.authority_digest,
         egress_acknowledged: true,
       });
@@ -4580,6 +4582,7 @@ export default defineCapability({
           provider: "openai",
           model: "gpt-5-mini",
           credential_source: "session_paste",
+          request_timeout_seconds: 90,
           authority_digest: status.authority_digest,
         },
         model_can_activate: false,

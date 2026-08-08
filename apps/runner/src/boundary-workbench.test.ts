@@ -212,6 +212,9 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).not.toContain("Runner validated and refused this call before granting data access.");
     expect(html).toContain("BOUNDARY_REFUSED");
     expect(html).toContain('id="ask-key" type="password"');
+    expect(html).toContain('id="ask-timeout" type="number" min="1" max="600"');
+    expect(html).toContain("request_timeout_seconds=Number(requestTimeout)");
+    expect(html).toContain("s per model request");
     expect(html).toContain('maxlength="4000"');
     expect(html).toContain('post("/api/ask/run",{question})');
     expect(html).toContain("activeQuestionIsExecutable");

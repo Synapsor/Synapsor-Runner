@@ -30,6 +30,7 @@ import { redactCliErrorMessage } from "./cli-logging.js";
 import { startLocalUiServer } from "./local-ui.js";
 import {
   AskError,
+  resolveAskRequestTimeoutSeconds,
   WorkbenchAskSession,
   type AskProviderDependencies,
   type AskProvider,
@@ -108,6 +109,7 @@ export async function tryAsk(
       "--api-key-env",
       "--mode",
       "--consent",
+      "--timeout",
       "--verbose",
       "--json",
     ]),
@@ -129,6 +131,7 @@ export async function tryAsk(
   }
   const provider = providerValue(optionalArg(args, "--provider"));
   const model = resolveAskModel(provider, optionalArg(args, "--model"));
+  const requestTimeoutSeconds = parseAskTimeoutSeconds(optionalArg(args, "--timeout"));
   const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
   const guidedState = await readGuidedOnboardingState(projectRoot);
   const boundaryArtifactsRoot = path.resolve(
@@ -196,6 +199,9 @@ export async function tryAsk(
       provider,
       model,
       ...(optionalArg(args, "--base-url") ? { base_url: optionalArg(args, "--base-url") } : {}),
+      ...(requestTimeoutSeconds === undefined
+        ? {}
+        : { request_timeout_seconds: requestTimeoutSeconds }),
       ...(pastedSecret
         ? { api_key: pastedSecret }
         : apiKeyEnv
@@ -690,6 +696,7 @@ async function requireEgressConsent(input: {
       provider: providerDisplayLabel(input.provider, input.configuration.endpoint_scope),
       model: input.model,
       endpointOrigin: input.configuration.endpoint_origin,
+      requestTimeoutSeconds: input.configuration.request_timeout_seconds,
       tools: input.tools,
     };
     writeInteractiveStdout(formatProviderEgressReview(
@@ -721,6 +728,7 @@ export function formatProviderEgressReview(input: {
   provider: string;
   model: string;
   endpointOrigin: string;
+  requestTimeoutSeconds?: number;
 }, color = false): string {
   const theme = terminalTheme(color);
   return [
@@ -728,11 +736,19 @@ export function formatProviderEgressReview(input: {
     `  ${theme.key(input.provider)} will receive your question and only data allowed by the active reviewed boundaries.`,
     `  Model: ${theme.key(input.model)}`,
     `  Endpoint: ${theme.scope(input.endpointOrigin)}`,
+    ...(input.requestTimeoutSeconds === undefined
+      ? []
+      : [`  Model request timeout: ${theme.key(`${input.requestTimeoutSeconds} seconds`)} per provider call`]),
     "  Model-withheld and kept-out raw values are never sent.",
     "  Trusted scope stays fixed outside model arguments; its raw column value is sent only when reviewed as Model + Runner.",
     "  The model cannot activate, approve, apply, or change this authority.",
     "",
   ].join("\n");
+}
+
+export function parseAskTimeoutSeconds(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  return resolveAskRequestTimeoutSeconds(Number(value), "official_remote");
 }
 
 export function formatProviderEgressActivationNotice(input: {

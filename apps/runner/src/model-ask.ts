@@ -6,7 +6,10 @@ import net from "node:net";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { openaiToolNameAlias, toolNameExposures } from "@synapsor-runner/mcp-server";
 
-const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_REMOTE_TIMEOUT_SECONDS = 30;
+const DEFAULT_LOOPBACK_TIMEOUT_SECONDS = 120;
+const MIN_PROVIDER_TIMEOUT_SECONDS = 1;
+const MAX_PROVIDER_TIMEOUT_SECONDS = 600;
 const MAX_QUESTION_CHARS = 4_000;
 const MAX_MODEL_CHARS = 128;
 const MAX_BASE_URL_CHARS = 2_048;
@@ -42,6 +45,7 @@ export type AskProviderConfigurationInput = {
   base_url?: string;
   api_key?: string;
   api_key_env?: string;
+  request_timeout_seconds?: number;
   authority_digest: `sha256:${string}`;
   egress_acknowledged: boolean;
 };
@@ -52,6 +56,7 @@ export type AskProviderPublicConfiguration = {
   endpoint_origin: string;
   endpoint_scope: "official_remote" | "custom_remote" | "custom_loopback";
   credential_source: "session_paste" | "environment" | "none";
+  request_timeout_seconds: number;
   authority_digest: `sha256:${string}`;
   consent_fingerprint: `sha256:${string}`;
   configured_at: string;
@@ -388,6 +393,10 @@ export function resolveAskProviderConfiguration(
   }
   const endpoint = providerEndpoint(input.provider, input.base_url);
   const endpointScope = providerEndpointScope(input.provider, endpoint);
+  const requestTimeoutSeconds = resolveAskRequestTimeoutSeconds(
+    input.request_timeout_seconds,
+    endpointScope,
+  );
   const apiKeyEnv = input.api_key_env?.trim();
   if (apiKeyEnv && !/^[A-Z_][A-Z0-9_]{0,127}$/.test(apiKeyEnv)) {
     throw new AskError("ASK_KEY_ENV_INVALID", "The provider credential environment variable name is invalid.");
@@ -427,6 +436,7 @@ export function resolveAskProviderConfiguration(
     endpoint_origin: endpointOrigin,
     endpoint_scope: endpointScope,
     credential_source: pasted ? "session_paste" : fromEnvironment ? "environment" : "none",
+    request_timeout_seconds: requestTimeoutSeconds,
     authority_digest: input.authority_digest,
     consent_fingerprint: consentFingerprint,
     configured_at: now.toISOString(),
@@ -472,13 +482,19 @@ export async function secureAskJsonRequest(input: ProviderHttpInput): Promise<Pr
   }
   const destination = await resolveAskDestination(input.endpoint, input.scope);
   const transport = input.endpoint.protocol === "https:" ? https : http;
-  const timeoutMs = boundedInteger(input.timeoutMs ?? DEFAULT_TIMEOUT_MS, 1_000, 60_000);
+  const timeoutMs = boundedInteger(
+    input.timeoutMs ?? DEFAULT_REMOTE_TIMEOUT_SECONDS * 1_000,
+    MIN_PROVIDER_TIMEOUT_SECONDS * 1_000,
+    MAX_PROVIDER_TIMEOUT_SECONDS * 1_000,
+  );
 
   return new Promise<ProviderHttpResult>((resolve, reject) => {
     let settled = false;
+    let deadline: NodeJS.Timeout | undefined;
     const finishReject = (error: unknown) => {
       if (settled) return;
       settled = true;
+      if (deadline) clearTimeout(deadline);
       reject(safeProviderError(error, input.signal.aborted));
     };
     const request = transport.request({
@@ -547,12 +563,21 @@ export async function secureAskJsonRequest(input: ProviderHttpInput): Promise<Pr
           return;
         }
         settled = true;
+        if (deadline) clearTimeout(deadline);
         resolve({ body: parsed, status });
       });
     });
 
     const abort = () => request.destroy(new AskError("ASK_CANCELLED", "The Ask request was cancelled.", 499));
     input.signal.addEventListener("abort", abort, { once: true });
+    deadline = setTimeout(
+      () => request.destroy(new AskError(
+        "ASK_PROVIDER_TIMEOUT",
+        `The provider did not respond within ${Math.ceil(timeoutMs / 1_000)} seconds. Increase the model request timeout for a slower local model.`,
+        504,
+      )),
+      timeoutMs,
+    );
     request.setTimeout(timeoutMs, () => request.destroy(new AskError("ASK_PROVIDER_TIMEOUT", "The provider did not respond within the Ask timeout.", 504)));
     request.on("error", finishReject);
     request.on("close", () => input.signal.removeEventListener("abort", abort));
@@ -611,6 +636,7 @@ async function runOpenAiCompatibleTurn(input: {
         max_completion_tokens: 1_200,
       },
       signal: input.signal,
+      timeoutMs: input.configuration.request_timeout_seconds * 1_000,
     });
     if (input.authorityGuard) {
       await assertAskAuthorityCurrent(input.authorityDigest, input.authorityGuard);
@@ -747,6 +773,7 @@ async function runAnthropicTurn(input: {
         })),
       },
       signal: input.signal,
+      timeoutMs: input.configuration.request_timeout_seconds * 1_000,
     });
     if (input.authorityGuard) {
       await assertAskAuthorityCurrent(input.authorityDigest, input.authorityGuard);
@@ -875,6 +902,7 @@ async function requestOpenAiFinalAnswer(input: {
       max_completion_tokens: FINAL_ANSWER_MAX_COMPLETION_TOKENS,
     },
     signal: input.signal,
+    timeoutMs: input.configuration.request_timeout_seconds * 1_000,
   });
   if (input.authorityGuard) {
     await assertAskAuthorityCurrent(input.authorityDigest, input.authorityGuard);
@@ -924,6 +952,7 @@ async function requestAnthropicFinalAnswer(input: {
       messages,
     },
     signal: input.signal,
+    timeoutMs: input.configuration.request_timeout_seconds * 1_000,
   });
   if (input.authorityGuard) {
     await assertAskAuthorityCurrent(input.authorityDigest, input.authorityGuard);
@@ -1712,10 +1741,31 @@ function publicAskConfiguration(configuration: ResolvedAskProviderConfiguration)
     endpoint_origin: configuration.endpoint_origin,
     endpoint_scope: configuration.endpoint_scope,
     credential_source: configuration.credential_source,
+    request_timeout_seconds: configuration.request_timeout_seconds,
     authority_digest: configuration.authority_digest,
     consent_fingerprint: configuration.consent_fingerprint,
     configured_at: configuration.configured_at,
   };
+}
+
+export function resolveAskRequestTimeoutSeconds(
+  value: number | undefined,
+  endpointScope: AskProviderPublicConfiguration["endpoint_scope"],
+): number {
+  if (value === undefined) {
+    return endpointScope === "custom_loopback"
+      ? DEFAULT_LOOPBACK_TIMEOUT_SECONDS
+      : DEFAULT_REMOTE_TIMEOUT_SECONDS;
+  }
+  if (!Number.isInteger(value)
+    || value < MIN_PROVIDER_TIMEOUT_SECONDS
+    || value > MAX_PROVIDER_TIMEOUT_SECONDS) {
+    throw new AskError(
+      "ASK_TIMEOUT_INVALID",
+      `Model request timeout must be a whole number from ${MIN_PROVIDER_TIMEOUT_SECONDS} through ${MAX_PROVIDER_TIMEOUT_SECONDS} seconds.`,
+    );
+  }
+  return value;
 }
 
 function providerLabel(provider: AskProvider): string {

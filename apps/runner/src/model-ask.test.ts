@@ -7,6 +7,7 @@ import {
   resolveAskProviderConfiguration,
   secureAskJsonRequest,
   WorkbenchAskSession,
+  type AskProviderDependencies,
   type AskToolCallResult,
   type AskToolDefinition,
   type AskToolGateway,
@@ -136,6 +137,72 @@ describe("Workbench BYOM Ask", () => {
       authority_digest: authorityDigest,
       egress_acknowledged: true,
     }, { OPENAI_API_KEY: "sk-test-environment" })).toThrowError(expect.objectContaining({ code: "ASK_KEY_SOURCE_AMBIGUOUS" }));
+  });
+
+  it("uses endpoint-aware request timeout defaults and validates explicit overrides", () => {
+    const authorityDigest = askToolSurfaceDigest(tools);
+    const remote = resolveAskProviderConfiguration({
+      provider: "openai",
+      model: "gpt-5-mini",
+      api_key: "sk-test-credential",
+      authority_digest: authorityDigest,
+      egress_acknowledged: true,
+    }, {}, new Date());
+    const loopback = resolveAskProviderConfiguration({
+      provider: "openai_compatible",
+      model: "local-model",
+      base_url: "http://127.0.0.1:11434/v1",
+      authority_digest: authorityDigest,
+      egress_acknowledged: true,
+    }, {}, new Date());
+    const overridden = resolveAskProviderConfiguration({
+      provider: "openai_compatible",
+      model: "local-model",
+      base_url: "http://127.0.0.1:11434/v1",
+      request_timeout_seconds: 600,
+      authority_digest: authorityDigest,
+      egress_acknowledged: true,
+    }, {}, new Date());
+
+    expect(remote.request_timeout_seconds).toBe(30);
+    expect(loopback.request_timeout_seconds).toBe(120);
+    expect(overridden.request_timeout_seconds).toBe(600);
+    for (const request_timeout_seconds of [0, 1.5, 601, Number.NaN]) {
+      expect(() => resolveAskProviderConfiguration({
+        provider: "openai_compatible",
+        model: "local-model",
+        base_url: "http://127.0.0.1:11434/v1",
+        request_timeout_seconds,
+        authority_digest: authorityDigest,
+        egress_acknowledged: true,
+      }, {}, new Date())).toThrowError(expect.objectContaining({ code: "ASK_TIMEOUT_INVALID" }));
+    }
+  });
+
+  it("applies the configured timeout to every generic OpenAI-compatible request", async () => {
+    const authorityDigest = askToolSurfaceDigest(tools);
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai_compatible",
+      model: "local-model",
+      base_url: "http://127.0.0.1:11434/v1",
+      request_timeout_seconds: 180,
+      authority_digest: authorityDigest,
+      egress_acknowledged: true,
+    });
+    const requests: Array<Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0]> = [];
+    const requestJson = vi.fn(async (request: Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0]) => {
+      requests.push(request);
+      return {
+        status: 200,
+        body: { choices: [{ message: { role: "assistant", content: "Ready." } }] },
+      };
+    });
+
+    await session.run("Count reviewed records.", testGateway().gateway, { requestJson });
+
+    expect(requestJson).toHaveBeenCalledWith(expect.objectContaining({ timeoutMs: 180_000 }));
+    expect(requests[0]?.body).not.toHaveProperty("keep_alive");
   });
 
   it("rejects .env assignments and quoted values instead of sending malformed provider credentials", () => {
@@ -1516,13 +1583,19 @@ describe("Workbench BYOM Ask", () => {
     });
   });
 
-  it("times out and refuses an oversized provider HTTP response without exposing response contents", async () => {
-    const hanging = createServer(() => undefined);
-    servers.push(hanging);
-    await new Promise<void>((resolve) => hanging.listen(0, "127.0.0.1", resolve));
-    const hangingPort = (hanging.address() as AddressInfo).port;
+  it("enforces a wall-clock timeout and refuses an oversized response without exposing provider contents", async () => {
+    const trickling = createServer((_request, response) => {
+      response.statusCode = 200;
+      response.setHeader("content-type", "application/json");
+      response.write("{");
+      const interval = setInterval(() => response.write(" "), 100);
+      response.on("close", () => clearInterval(interval));
+    });
+    servers.push(trickling);
+    await new Promise<void>((resolve) => trickling.listen(0, "127.0.0.1", resolve));
+    const tricklingPort = (trickling.address() as AddressInfo).port;
     await expect(secureAskJsonRequest({
-      endpoint: new URL(`http://127.0.0.1:${hangingPort}/v1/chat/completions`),
+      endpoint: new URL(`http://127.0.0.1:${tricklingPort}/v1/chat/completions`),
       scope: "custom_loopback",
       headers: { authorization: "Bearer timeout-canary" },
       body: { model: "local", messages: [] },

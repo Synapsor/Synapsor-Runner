@@ -26,6 +26,17 @@ const resourceId = z.string().min(1).max(256)
 // Smaller models often serialize an omitted optional JSON field as null.
 const optionalModelArgument = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess((value) => value === null ? undefined : value, schema.optional());
+const modelInteger = <T extends z.ZodNumber>(schema: T) => z.preprocess((value) => {
+  if (typeof value !== "string") return value;
+  const normalized = value.trim();
+  if (!/^-?(?:0|[1-9][0-9]*)$/.test(normalized)) return value;
+  return Number(normalized);
+}, schema);
+const modelArray = <T extends z.ZodTypeAny>(schema: T) => modelJsonContainer(schema, Array.isArray);
+const modelObject = <T extends z.ZodTypeAny>(schema: T) => modelJsonContainer(
+  schema,
+  (value) => typeof value === "object" && value !== null && !Array.isArray(value),
+);
 const optionalBoundarySelector = optionalModelArgument(z.string()
   .regex(/^(?:[a-z][a-z0-9_.-]{0,63})?$/)
   .describe("An active reviewed boundary name; empty means omitted."));
@@ -47,42 +58,42 @@ export function createScopedExploreMcpServer(
   const rowPlan = z.object({
     kind: z.literal("rows"),
     resource: resourceId,
-    select: z.array(fieldId).min(1).max(20),
-    where: optionalModelArgument(z.array(filter).max(8)),
-    order_by: optionalModelArgument(z.array(z.object({
+    select: modelArray(z.array(fieldId).min(1).max(20)),
+    where: optionalModelArgument(modelArray(z.array(filter).max(8))),
+    order_by: optionalModelArgument(modelArray(z.array(z.object({
       field: fieldId,
       direction: z.enum(["asc", "desc"]),
-    }).strict()).max(3)),
-    limit: z.number().int().positive(),
+    }).strict()).max(3))),
+    limit: modelInteger(z.number().int().positive()),
   }).strict();
   const aggregatePlan = z.object({
     kind: z.literal("aggregate"),
     resource: resourceId,
     relationship: optionalModelArgument(relationshipId),
-    measures: z.array(z.object({
+    measures: modelArray(z.array(z.object({
       function: z.enum(["count", "count_distinct", "sum", "avg"]),
       field: optionalModelArgument(fieldId),
       relationship: optionalModelArgument(relationshipId),
-    }).strict()).min(1),
-    dimensions: optionalModelArgument(z.array(z.object({
+    }).strict()).min(1)),
+    dimensions: optionalModelArgument(modelArray(z.array(z.object({
       field: fieldId,
       relationship: optionalModelArgument(relationshipId),
-    }).strict())),
-    time_bucket: optionalModelArgument(z.object({
+    }).strict()))),
+    time_bucket: optionalModelArgument(modelObject(z.object({
       field: fieldId,
       bucket: z.enum(["day", "week", "month"]),
       relationship: optionalModelArgument(relationshipId),
-    }).strict()),
-    where: optionalModelArgument(z.array(filter).max(8)),
-    order_by: optionalModelArgument(z.union([
+    }).strict())),
+    where: optionalModelArgument(modelArray(z.array(filter).max(8))),
+    order_by: optionalModelArgument(modelObject(z.union([
       z.object({
         kind: z.literal("measure"),
-        index: z.number().int().nonnegative(),
+        index: modelInteger(z.number().int().nonnegative()),
         direction: z.enum(["asc", "desc"]),
       }).strict(),
       z.object({
         kind: z.literal("comparison_change"),
-        index: z.number().int().nonnegative(),
+        index: modelInteger(z.number().int().nonnegative()),
         change: z.enum(["absolute", "percentage"]),
         direction: z.enum(["asc", "desc"]),
       }).strict().describe("Rank a reviewed two-period comparison by its signed absolute or percentage change; desc finds growth and asc finds decline."),
@@ -90,16 +101,25 @@ export function createScopedExploreMcpServer(
         kind: z.literal("time_bucket"),
         direction: z.enum(["asc", "desc"]),
       }).strict(),
-    ])),
-    top_n: z.number().int().positive().describe("Maximum aggregate rows; dimension-by-time uses one row per dimension/time combination; comparisons need both periods."),
-    comparison: optionalModelArgument(z.object({
+    ]))),
+    top_n: modelInteger(z.number().int().positive().describe("Maximum aggregate rows; dimension-by-time uses one row per dimension/time combination; comparisons need both periods.")),
+    comparison: optionalModelArgument(modelObject(z.object({
       field: fieldId,
       relationship: optionalModelArgument(relationshipId),
-      ranges: z.array(z.object({
+      ranges: modelArray(z.array(z.object({
         start: z.string().datetime(),
         end: z.string().datetime(),
-      }).strict()).length(2).describe("Two non-overlapping half-open ranges, earlier then later; change is period_2 minus period_1."),
-    }).strict()),
+      }).strict()).length(2).describe("Two non-overlapping half-open ranges, earlier then later; change is period_2 minus period_1.")),
+    }).strict())),
+  }).strict();
+  const plan = z.discriminatedUnion("kind", [rowPlan, aggregatePlan], {
+    errorMap: (issue, context) => issue.code === z.ZodIssueCode.invalid_union_discriminator
+      ? { message: invalidExploreKindMessage() }
+      : { message: context.defaultError },
+  });
+  const exploreInput = z.object({
+    boundary: optionalBoundarySelector,
+    plan,
   }).strict();
 
   const server = new McpServer(
@@ -138,11 +158,8 @@ export function createScopedExploreMcpServer(
   })));
   server.registerTool(SCOPED_EXPLORE_QUERY_TOOL, {
     title: "Explore reviewed data",
-    description: `Runs one bounded row or descriptive aggregate plan against exactly one active reviewed ${production ? "production" : "local"} boundary. Copy the exact resource id from app.describe_data into plan.resource. Choose the root resource that owns the counted entity or measure. For a related dimension, measure, filter, or time field, pass the exact target field id in field and its exact active relationship id separately in relationship; never concatenate them. Choose boundary from app.describe_data when required. Plans cannot join or combine separate boundaries. Raw SQL, arbitrary identifiers, model-selected tenant/principal, mutation, approval, and commit are unavailable.`,
-    inputSchema: z.object({
-      boundary: optionalBoundarySelector,
-      plan: z.discriminatedUnion("kind", [rowPlan, aggregatePlan]),
-    }).strict(),
+    description: exploreToolDescription(production),
+    inputSchema: exploreInput,
     outputSchema: scopedExploreQueryToolOutputSchema,
     annotations: {
       readOnlyHint: true,
@@ -181,6 +198,37 @@ export function createScopedExploreMcpServer(
     );
   });
   return server;
+}
+
+function modelJsonContainer<T extends z.ZodTypeAny>(
+  schema: T,
+  expected: (value: unknown) => boolean,
+): z.ZodEffects<T> {
+  return z.preprocess((value) => {
+    if (typeof value !== "string") return value;
+    try {
+      const parsed: unknown = JSON.parse(value);
+      return expected(parsed) ? parsed : value;
+    } catch {
+      return value;
+    }
+  }, schema);
+}
+
+function invalidExploreKindMessage(): string {
+  return "plan.kind must be exactly rows or aggregate. Example: " +
+    '{"plan":{"kind":"aggregate","resource":"<exact resource id from app.describe_data>","measures":[{"function":"count"}],"top_n":25}}';
+}
+
+function exploreToolDescription(production: boolean): string {
+  return [
+    `Runs one bounded plan against one active reviewed ${production ? "production" : "local"} boundary.`,
+    "Always nest plan fields under plan; kind is exactly rows or aggregate. First call app.describe_data and copy its exact resource, field, relationship, and boundary ids.",
+    'Aggregate: {"plan":{"kind":"aggregate","resource":"<exact resource id>","measures":[{"function":"sum","field":"<numeric field id>"}],"dimensions":[{"field":"<group field id>"}],"top_n":25}}.',
+    'Related aggregate: {"plan":{"kind":"aggregate","resource":"<exact root resource id>","measures":[{"function":"count"}],"dimensions":[{"field":"<target field id>","relationship":"<exact relationship id>"}],"top_n":25}}.',
+    'Rows: {"plan":{"kind":"rows","resource":"<exact resource id>","select":["<field id>"],"limit":50}}.',
+    "Keep relationship separate from field; never concatenate them. Separate boundaries cannot be joined. SQL, arbitrary ids, model-selected tenant/principal, mutation, approval, and commit are unavailable.",
+  ].join(" ");
 }
 
 function omitUndefinedModelArguments<T>(value: T): T {

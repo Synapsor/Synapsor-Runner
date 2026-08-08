@@ -2751,6 +2751,9 @@ async function handleRequest(input: {
         ...(body.base_url === undefined ? {} : { base_url: askStringValue(body.base_url) }),
         ...(body.api_key === undefined ? {} : { api_key: askStringValue(body.api_key) }),
         ...(body.api_key_env === undefined ? {} : { api_key_env: askStringValue(body.api_key_env) }),
+        ...(body.request_timeout_seconds === undefined
+          ? {}
+          : { request_timeout_seconds: askNumberValue(body.request_timeout_seconds) }),
         authority_digest: authorityDigest,
         egress_acknowledged: body.egress_acknowledged === true,
       }, process.env);
@@ -5871,6 +5874,13 @@ function askStringValue(value: unknown): string {
     throw new AskError("ASK_INPUT_INVALID", "A required Ask field is missing.");
   }
   return value.trim();
+}
+
+function askNumberValue(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new AskError("ASK_TIMEOUT_INVALID", "Model request timeout must be a number of seconds.");
+  }
+  return value;
 }
 
 function askProviderDisplayName(provider: AskProvider): string {

@@ -94,6 +94,7 @@ export async function runPostActivationAskHandoff(
     projectRoot: string;
     autoStartConfiguredProvider?: boolean;
     consentOnFirstQuestion?: boolean;
+    requestTimeoutSeconds?: number;
     selection?: PostActivationAskSelection;
   },
   dependencies: PostActivationAskDependencies = {},
@@ -149,6 +150,9 @@ export async function runPostActivationAskHandoff(
       "--base-url", selection.baseUrl,
     );
   }
+  if (input.requestTimeoutSeconds !== undefined) {
+    askArgs.push("--timeout", String(input.requestTimeoutSeconds));
+  }
 
   const routeLabel = route === "openai"
     ? "OpenAI"
@@ -163,6 +167,9 @@ export async function runPostActivationAskHandoff(
   write([
     `Starting Synapsor Analytics with ${theme.key(routeLabel)}.`,
     `Selected model: ${theme.key(selection.model)}`,
+    ...(input.requestTimeoutSeconds === undefined
+      ? []
+      : [`Model request timeout: ${theme.key(`${input.requestTimeoutSeconds} seconds`)} per provider call`]),
     "",
   ].join("\n"));
   const runAsk = dependencies.runAsk
@@ -197,6 +204,7 @@ export async function runPostActivationAskHandoff(
       return runPostActivationAskHandoff({
         projectRoot: input.projectRoot,
         consentOnFirstQuestion: input.consentOnFirstQuestion,
+        requestTimeoutSeconds: input.requestTimeoutSeconds,
       }, dependencies);
     }
     stderr.write([

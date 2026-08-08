@@ -113,7 +113,8 @@ synapsor-runner try ask \
 synapsor-runner try ask \
   --provider openai-compatible \
   --model local-model \
-  --base-url http://127.0.0.1:11434/v1
+  --base-url http://127.0.0.1:11434/v1 \
+  --timeout 180
 ```
 
 Without a positional question, the command opens the conversational
@@ -462,7 +463,7 @@ The current release enforces:
 | Reserved OpenAI-compatible final pass | 4,096 completion tokens, no tools |
 | Conversation history | 4 completed turns, 16 KiB |
 | Final answer | 16 KiB |
-| Provider request timeout | 30 seconds |
+| Provider request timeout | 30 seconds remote; 120 seconds loopback; operator override 1-600 seconds |
 | Reported session token usage | 50,000 tokens |
 
 One Workbench Ask session runs one request at a time. Runner does not
@@ -470,6 +471,17 @@ automatically retry provider calls in this release. A developer may retry a
 known safe failure from the UI; every retry begins with current authority
 validation. Token accounting depends on usage reported by the provider and is
 not a monetary spend guarantee.
+
+The timeout applies separately to each provider call in the bounded tool loop,
+not to the complete question. Set it with CLI `--timeout <seconds>`, with
+`start --cli --timeout <seconds>`, or in Workbench provider settings. Runner
+keeps a 600-second wall-clock ceiling even for local endpoints.
+
+Runner does not inject vendor-specific request fields into a generic
+OpenAI-compatible endpoint. For Ollama, keep a model resident with the Ollama
+server setting before starting it, for example
+`OLLAMA_KEEP_ALIVE=10m ollama serve`; warming the model can reduce its first-call
+latency but does not replace a suitable Runner request timeout.
 
 ## Tested Provider Matrix
 

@@ -210,6 +210,11 @@ describe("Scoped Explore active boundary routing", () => {
         && !Object.hasOwn(tool._meta ?? {}, "synapsor.boundary_digest")))
         .toBe(true);
       const exploreTool = tools.tools.find((tool) => tool.name === "app.explore_data")!;
+      expect(exploreTool.description).toContain("kind is exactly rows or aggregate");
+      expect(exploreTool.description).toContain('"plan":{"kind":"aggregate"');
+      expect(exploreTool.description).toContain('"plan":{"kind":"rows"');
+      expect(exploreTool.description).toContain("<exact resource id>");
+      expect(exploreTool.description).not.toContain("public.invoices");
       expect(exploreTool.inputSchema).toMatchObject({
         properties: {
           boundary: expect.objectContaining({
@@ -303,6 +308,66 @@ describe("Scoped Explore active boundary routing", () => {
         comparison: expect.objectContaining({ field: "created_at" }),
       }), undefined);
 
+      const beforeCoercedAggregate = explore.mock.calls.length;
+      await client.callTool({
+        name: "app.explore_data",
+        arguments: {
+          plan: {
+            kind: "aggregate",
+            resource: "public.invoices",
+            measures: JSON.stringify([{ function: "sum", field: "amount_cents" }]),
+            dimensions: JSON.stringify([{ field: "status" }]),
+            where: JSON.stringify([{ field: "status", op: "eq", value: "open" }]),
+            order_by: JSON.stringify({ kind: "measure", index: "0", direction: "desc" }),
+            top_n: "25",
+          },
+        },
+      });
+      expect(explore).toHaveBeenCalledTimes(beforeCoercedAggregate + 1);
+      expect(explore).toHaveBeenLastCalledWith({
+        kind: "aggregate",
+        resource: "public.invoices",
+        measures: [{ function: "sum", field: "amount_cents" }],
+        dimensions: [{ field: "status" }],
+        where: [{ field: "status", op: "eq", value: "open" }],
+        order_by: { kind: "measure", index: 0, direction: "desc" },
+        top_n: 25,
+      }, undefined);
+
+      const beforeCoercedRows = explore.mock.calls.length;
+      await client.callTool({
+        name: "app.explore_data",
+        arguments: {
+          plan: {
+            kind: "rows",
+            resource: "public.invoices",
+            select: JSON.stringify(["id", "status"]),
+            order_by: JSON.stringify([{ field: "status", direction: "asc" }]),
+            limit: "100",
+          },
+        },
+      });
+      expect(explore).toHaveBeenCalledTimes(beforeCoercedRows + 1);
+      expect(explore).toHaveBeenLastCalledWith({
+        kind: "rows",
+        resource: "public.invoices",
+        select: ["id", "status"],
+        order_by: [{ field: "status", direction: "asc" }],
+        limit: 100,
+      }, undefined);
+
+      const flatPlan = await client.callTool({
+        name: "app.explore_data",
+        arguments: {
+          boundary: "finance",
+          kind: "aggregate",
+          resource: "public.invoices",
+          measures: [{ function: "count" }],
+          top_n: "25",
+        },
+      });
+      expect(flatPlan.isError).toBe(true);
+
       const callCount = explore.mock.calls.length;
       const requiredResourceNull = await client.callTool({
         name: "app.explore_data",
@@ -352,11 +417,50 @@ describe("Scoped Explore active boundary routing", () => {
         name: "app.describe_data",
         arguments: { hallucinated_scope: null },
       });
+      const unknownFlatKey = await client.callTool({
+        name: "app.explore_data",
+        arguments: {
+          kind: "aggregate",
+          resource: "public.invoices",
+          measures: [{ function: "count" }],
+          top_n: 25,
+          tenant: "model-selected-tenant",
+        },
+      });
+      const malformedContainer = await client.callTool({
+        name: "app.explore_data",
+        arguments: {
+          plan: {
+            kind: "rows",
+            resource: "public.invoices",
+            select: "not-json",
+            limit: "1",
+          },
+        },
+      });
+      const invalidKind = await client.callTool({
+        name: "app.explore_data",
+        arguments: {
+          plan: {
+            kind: "plan",
+            resource: "public.invoices",
+            measures: [{ function: "count" }],
+            top_n: 25,
+          },
+        },
+      });
       expect(requiredResourceNull.isError).toBe(true);
       expect(requiredKindNull.isError).toBe(true);
       expect(requiredTopNNull.isError).toBe(true);
       expect(requiredLimitNull.isError).toBe(true);
       expect(unknownKey.isError).toBe(true);
+      expect(unknownFlatKey.isError).toBe(true);
+      expect(malformedContainer.isError).toBe(true);
+      expect(invalidKind.isError).toBe(true);
+      const invalidKindContent = invalidKind.content as Array<{ type: string; text?: string }>;
+      const invalidKindText = invalidKindContent.find((entry) => entry.type === "text")?.text ?? "";
+      expect(invalidKindText).toContain("plan.kind must be exactly rows or aggregate");
+      expect(invalidKindText).toContain('{\\"plan\\":{\\"kind\\":\\"aggregate\\"');
       expect(explore).toHaveBeenCalledTimes(callCount);
     } finally {
       await Promise.allSettled([client.close(), server.close()]);

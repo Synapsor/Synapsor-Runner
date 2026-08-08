@@ -14,6 +14,7 @@ import {
   formatProviderEgressActivationNotice,
   formatProviderEgressReview,
   parseEgressConfirmation,
+  parseAskTimeoutSeconds,
   providerDisplayLabel,
   resolveAskModel,
   tryAsk,
@@ -74,6 +75,17 @@ describe("try ask", () => {
       .toThrow("requires --model <value> for an OpenAI-compatible endpoint");
   });
 
+  it("accepts only bounded whole-second model request timeouts", () => {
+    expect(parseAskTimeoutSeconds(undefined)).toBeUndefined();
+    expect(parseAskTimeoutSeconds("1")).toBe(1);
+    expect(parseAskTimeoutSeconds("600")).toBe(600);
+    for (const value of ["0", "1.5", "601", "slow"]) {
+      expect(() => parseAskTimeoutSeconds(value)).toThrowError(expect.objectContaining({
+        code: "ASK_TIMEOUT_INVALID",
+      }));
+    }
+  });
+
   it("runs the OpenAI flag path without --model using the documented default", async () => {
     const fixture = await askProject();
     const consent = vi.fn(async () => true);
@@ -90,6 +102,7 @@ describe("try ask", () => {
       "--config", fixture.configPath,
       "--store", fixture.storePath,
       "--provider", "openai",
+      "--timeout", "75",
     ], {
       env: fixture.env,
       gatewayFactory: testGatewayFactory([]),
@@ -101,6 +114,7 @@ describe("try ask", () => {
     expect(consent).toHaveBeenCalledWith(expect.objectContaining({ model: "gpt-5-mini" }));
     expect(requestJson).toHaveBeenCalledWith(expect.objectContaining({
       body: expect.objectContaining({ model: "gpt-5-mini" }),
+      timeoutMs: 75_000,
     }));
   });
 

@@ -114,7 +114,7 @@ describe("post-activation Ask handoff", () => {
     const prompts: Array<[string, string]> = [];
     const runAsk = vi.fn(async () => 0);
     await expect(runPostActivationAskHandoff(
-      { projectRoot: "/tmp/reviewed-project" },
+      { projectRoot: "/tmp/reviewed-project", requestTimeoutSeconds: 180 },
       {
         chooseRoute: async () => "openai-compatible",
         promptWithDefault: async (prompt, defaultValue) => {
@@ -136,6 +136,7 @@ describe("post-activation Ask handoff", () => {
       "--provider", "openai-compatible",
       "--model", "llama3.2",
       "--base-url", "http://127.0.0.1:11434/v1",
+      "--timeout", "180",
     ]);
   });
 

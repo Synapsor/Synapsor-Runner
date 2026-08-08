@@ -115,9 +115,9 @@ Global options:
   ${cmd} try explore --resource public.check_ins --count-distinct member_id --group-by outcome --time-bucket checked_in_at:week
   ${cmd} try explore --resource public.orders --sum total_cents --group-by channel --time-bucket created_at:week --compare created_at --period 2026-06-01T00:00:00Z..2026-06-08T00:00:00Z --vs-period 2026-06-08T00:00:00Z..2026-06-15T00:00:00Z
   ${cmd} try explore --plan '{"kind":"aggregate",...}'
-  ${cmd} try ask --provider openai [--model <model>]
-  ${cmd} try ask --provider anthropic [--model <model>]
-  ${cmd} try ask --provider openai-compatible --model <model> --base-url http://127.0.0.1:11434/v1
+  ${cmd} try ask --provider openai [--model <model>] [--timeout 30]
+  ${cmd} try ask --provider anthropic [--model <model>] [--timeout 30]
+  ${cmd} try ask --provider openai-compatible --model <model> --base-url http://127.0.0.1:11434/v1 [--timeout 120]
   ${cmd} try ask "Which reviewed regions changed most by week?" --provider openai
   ${cmd} try protect --last --name analytics.protected_analysis
   ${cmd} try protect --from A2 --name analytics.protected_analysis
@@ -131,7 +131,9 @@ Choose the intended path:
     reviewed project boundary. OpenAI defaults to gpt-5-mini and Anthropic
     defaults to Claude Sonnet; --model overrides either choice. A loopback
     OpenAI-compatible provider still requires an explicit model. This command
-    does not open the demo UI.
+    does not open the demo UI. --timeout is the whole-number timeout in seconds
+    for each provider call (1-600). Remote providers default to 30 seconds;
+    loopback OpenAI-compatible endpoints default to 120 seconds.
 
 Run the complete Synapsor commit-boundary proof without Docker, a database,
 signup, API key, MCP client, or LLM call. A deterministic simulated agent uses
@@ -315,7 +317,7 @@ Options:
     start: `Usage:
   # Recommended interactive first run
   ${cmd} start --from-env DATABASE_URL [--schema public]
-  ${cmd} start --from-env DATABASE_URL --cli [--schema public] [--verbose]
+  ${cmd} start --from-env DATABASE_URL --cli [--schema public] [--verbose] [--timeout 120]
   ${cmd} start --from-env DATABASE_URL --rescan
   ${cmd} start --from-env DATABASE_URL --cli --single-tenant --organization-id internal-finance
 
@@ -351,6 +353,9 @@ one-table, zero-relationship local digest. The same screen displays the
 selected provider and exact model. Enter accepts that default without adding a
 step; M chooses OpenAI, Anthropic, a loopback OpenAI-compatible model, an
 existing MCP client, or Later; E opens detailed multi-table/column review.
+For the terminal model handoff, \`--timeout <seconds>\` sets the per-provider-call
+timeout from 1 through 600 seconds. Without an override, hosted and remote
+providers use 30 seconds while a loopback OpenAI-compatible model uses 120.
 Submitting the first question confirms the displayed provider/model/origin
 egress review. In the Analytics shell, \`/access\` opens the terminal boundary
 editor and \`/access-workbench\` opens its visual counterpart. \`--no-open\`

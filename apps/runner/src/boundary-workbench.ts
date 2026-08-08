@@ -518,6 +518,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
                 <label id="ask-base-url-wrap" class="field hidden">Provider base URL
                   <input id="ask-base-url" type="text" maxlength="2048" value="http://127.0.0.1:11434/v1" autocomplete="url" spellcheck="false">
                 </label>
+                <label class="field">Model request timeout (seconds)
+                  <input id="ask-timeout" type="number" min="1" max="600" step="1" placeholder="Automatic">
+                </label>
               </div>
               <details id="ask-credential-details">
                 <summary>Credential options</summary>
@@ -2845,9 +2848,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       if(session.configuration){
         byId("ask-provider").value=session.configuration.provider;
         byId("ask-model").value=session.configuration.model;
+        byId("ask-timeout").value=String(session.configuration.request_timeout_seconds||"");
         updateAskProviderFields(false);
         byId("ask-configured-model").textContent=providerLabel(session.configuration.provider)+" · "+session.configuration.model;
-        byId("ask-configured-detail").textContent="Direct to "+session.configuration.endpoint_origin+" · "+credentialSourceLabel(session.configuration.credential_source)+" · no Synapsor relay or saved conversation.";
+        byId("ask-configured-detail").textContent="Direct to "+session.configuration.endpoint_origin+" · "+session.configuration.request_timeout_seconds+"s per model request · "+credentialSourceLabel(session.configuration.credential_source)+" · no Synapsor relay or saved conversation.";
         byId("ask-config-status").className="status-message";
         byId("ask-config-status").textContent=consentCurrent
           ?"Ready. Provider key and conversation remain in this Workbench process only."
@@ -3388,6 +3392,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           :provider==="anthropic"
             ?"ANTHROPIC_API_KEY"
             :"MODEL_API_KEY";
+        byId("ask-timeout").value="";
       }
       updateAskCredentialFields();
       if(!askStatus?.credential_environment?.[provider])byId("ask-credential-details").open=true;
@@ -3431,6 +3436,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           egress_acknowledged:byId("ask-egress").checked
         };
         if(provider==="openai_compatible")body.base_url=byId("ask-base-url").value.trim();
+        const requestTimeout=byId("ask-timeout").value.trim();
+        if(requestTimeout)body.request_timeout_seconds=Number(requestTimeout);
         if(keySource==="session"){
           const pastedKey=byId("ask-key").value.trim();
           const looksLikeAssignment=/^(?:export\\s+)?[A-Za-z_][A-Za-z0-9_]*\\s*=/.test(pastedKey);

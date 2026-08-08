@@ -44,7 +44,7 @@ describe("guided start surfaces", () => {
 
     try {
       await expect(start(
-        ["--from-env", "DATABASE_URL", "--cli"],
+        ["--from-env", "DATABASE_URL", "--cli", "--timeout", "180"],
         {
           interactive: true,
           schemaInspector,
@@ -60,6 +60,7 @@ describe("guided start surfaces", () => {
       expect(runBoundaryReview).not.toHaveBeenCalled();
       expect(runPostActivationHandoff).toHaveBeenCalledWith({
         projectRoot,
+        requestTimeoutSeconds: 180,
         selection: {
           route: "openai",
           model: "gpt-5-mini",
@@ -729,6 +730,10 @@ describe("guided start surfaces", () => {
         ["--from-env", "DATABASE_URL", "--cli"],
         { interactive: false },
       )).rejects.toThrow(/interactive terminal/i);
+      await expect(start(
+        ["--from-env", "DATABASE_URL", "--timeout", "120"],
+        { interactive: false },
+      )).rejects.toThrow(/requires --cli/i);
     } finally {
       process.chdir(suiteCwd);
       await fs.rm(projectRoot, { recursive: true, force: true });
