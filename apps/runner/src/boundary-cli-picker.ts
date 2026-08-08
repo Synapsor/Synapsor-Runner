@@ -14,6 +14,7 @@ import {
   terminalContentWidth,
 } from "./terminal-layout.js";
 import { formatDerivedScopePath } from "./derived-scope-display.js";
+import { blockedTenantScopeGuidance } from "./boundary-scope-guidance.js";
 
 export type BoundaryFieldTier = "visible" | "withheld_from_model" | "kept_out";
 export type BoundaryFieldTierEditResult =
@@ -184,6 +185,9 @@ async function resolveBlockedResource(
     }] : []),
   ];
   const theme = terminalTheme(output.isTTY && !("NO_COLOR" in process.env));
+  const scopeGuidance = tenantOptions.length === 0
+    ? blockedTenantScopeGuidance(view)
+    : undefined;
   let selectedDecision = view.row_identity.selected ? 1 : 0;
   let rowIndex = Math.max(0, rowCandidates.indexOf(view.row_identity.selected ?? rowCandidates[0] ?? ""));
   let tenantIndex = Math.max(0, tenantOptions.findIndex((option) => option.selected));
@@ -244,7 +248,19 @@ async function resolveBlockedResource(
             ]
           : [
               "",
-              theme.warning("This table cannot be added until the missing database structure is available."),
+              theme.warning(scopeGuidance
+                ? "This table is unavailable for the reviewed reasons below."
+                : "This table cannot be added until the missing database structure is available."),
+              ...(scopeGuidance
+                ? [
+                    "",
+                    theme.bold("Why tenant isolation is unavailable"),
+                    ...scopeGuidance.why.map((line) => `  - ${safeTerminalText(line)}`),
+                    "",
+                    theme.bold("What makes this table addable"),
+                    ...scopeGuidance.remediation.map((line) => `  - ${safeTerminalText(line)}`),
+                  ]
+                : []),
               `${theme.key("B/Esc")} Back   ${theme.key("Q")} Quit`,
             ]),
       ]);
@@ -398,7 +414,11 @@ async function chooseResource(
               continue;
             }
             startingTableNotice = `${safeTerminalText(highlighted.resource_id)} cannot start a boundary: ` +
-              safeTerminalText(highlighted.blockers[0] ?? "structural review is required first.");
+              safeTerminalText(
+                highlighted.scope_resolution_guidance?.why[0]
+                  ?? highlighted.blockers[0]
+                  ?? "structural review is required first.",
+              );
             continue;
           }
           return { resource_id: highlighted.resource_id, action: "add" };
@@ -878,6 +898,17 @@ async function chooseResource(
         ...(resourceView === "related"
           ? relationshipConnectionDetail(highlighted, boundaryResources, theme)
           : []),
+        ...(highlighted.scope_resolution_guidance
+          ? [
+              "",
+              theme.danger("Why this table is unavailable"),
+              ...highlighted.scope_resolution_guidance.why.map((line) =>
+                `  - ${safeTerminalText(line)}`),
+              theme.bold("What makes it addable"),
+              ...highlighted.scope_resolution_guidance.remediation.map((line) =>
+                `  - ${safeTerminalText(line)}`),
+            ]
+          : []),
         "",
         theme.bold("SELECTED TABLE"),
         ...packTerminalActions(selectedTableActions, actionWidth),
@@ -1251,9 +1282,20 @@ function boundaryResourceMapLines(
 ): string[] {
   const candidate = view.candidate ?? view.generated_candidate;
   if (!candidate) {
+    const scopeGuidance = blockedTenantScopeGuidance(view);
     return [
       theme.title(`TABLE ACCESS MAP - ${safeTerminalText(view.resource_id)}`),
       theme.warning("Blocked: record identity or trusted scope is unresolved."),
+      ...(scopeGuidance
+        ? [
+            "",
+            theme.bold("Why tenant isolation is unavailable"),
+            ...scopeGuidance.why.map((line) => `  - ${safeTerminalText(line)}`),
+            "",
+            theme.bold("What makes this table addable"),
+            ...scopeGuidance.remediation.map((line) => `  - ${safeTerminalText(line)}`),
+          ]
+        : []),
     ];
   }
   const hasStagedChanges = view.fields.some(
@@ -1515,9 +1557,17 @@ function resourceNamePreview(
   theme: TerminalTheme,
   limit: number,
 ): string[] {
-  const lines = resources.slice(0, limit).map(
-    (resource) => `  ${safeTerminalText(resource.resource_id)}`,
-  );
+  const lines = resources.slice(0, limit).flatMap((resource) => [
+    `  ${safeTerminalText(resource.resource_id)}`,
+    ...(resource.scope_resolution_guidance
+      ? [theme.dim(
+          `    Why: ${safeTerminalText(
+            resource.scope_resolution_guidance.why[0]
+              ?? "trusted tenant scope is unresolved",
+          )}`,
+        )]
+      : []),
+  ]);
   if (resources.length > limit) {
     lines.push(theme.dim(`  +${resources.length - limit} more`));
   }
@@ -1862,6 +1912,14 @@ function boundaryOverviewMapLines(
     ];
     if (resource.status !== "draft_read") {
       lines.push(`  \`-- ${theme.danger(safeTerminalText(resource.blockers[0] ?? "review blocked"))}`);
+      if (resource.scope_resolution_guidance) {
+        lines.push(
+          ...resource.scope_resolution_guidance.why.map((line) =>
+            `      why: ${safeTerminalText(line)}`),
+          ...resource.scope_resolution_guidance.remediation.slice(0, 2).map((line) =>
+            `      next: ${safeTerminalText(line)}`),
+        );
+      }
       return lines;
     }
     if (!resource.relationships.length) {

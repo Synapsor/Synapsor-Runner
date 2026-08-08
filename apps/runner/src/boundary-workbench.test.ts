@@ -38,6 +38,9 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("resource.derived_principal_scope?.selected");
     expect(html).toContain("unavailable tables remain visible with their reason");
     expect(html).toContain("resource.blockers?.[0]");
+    expect(html).toContain("Why unavailable");
+    expect(html).toContain("What makes it addable");
+    expect(html).toContain("scope_resolution_guidance");
     expect(html).toContain("Choose table and edit");
     expect(html).toContain('post("/api/boundary/library/create"');
     expect(html).toContain("resource_id:resourceId");
@@ -67,6 +70,9 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain('id="boundary-pack-name"');
     expect(html).toContain('id="save-boundary-name"');
     expect(html).toContain("The name is included in its final review fingerprint.");
+    expect(html).toContain("boundary_rescan_report");
+    expect(html).toContain("new column is kept out until reviewed");
+    expect(html).toContain("new relationship is available to review");
     expect(html).toContain("Active authority did not change.");
     expect(html).toContain('id="disable-active-boundary"');
     expect(html).toContain("Deactivate selected boundary");

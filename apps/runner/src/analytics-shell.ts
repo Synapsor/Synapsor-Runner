@@ -699,6 +699,18 @@ export function renderAnalyticsShellBanner(input: {
             : change.previous_authority_active
               ? "Reviewed access was edited, but Ask still uses the previous exact revision."
               : "This new reviewed boundary is still disabled and grants no Ask access.",
+          ...(change.reconciliation
+            ? [
+                `Rescan kept ${change.reconciliation.kept_decisions} prior decisions; `
+                  + `${change.reconciliation.decisions_requiring_review} `
+                  + `${change.reconciliation.decisions_requiring_review === 1 ? "was" : "were"} invalidated.`,
+                ...change.reconciliation.details.slice(0, 8).map((detail) =>
+                  `  - ${safeTerminalText(detail)}`),
+                ...(change.reconciliation.details.length > 8
+                  ? [`  - +${change.reconciliation.details.length - 8} more; open /access to inspect them.`]
+                  : []),
+              ]
+            : []),
         ]),
         `To activate: run ${theme.key("/access")}. In ${theme.key("BOUNDARY OVERVIEW")}, highlight the boundary named above and press ${theme.key("C")} (${theme.key("Review + activate")}).`,
         "You do not need to open its tables unless you want to inspect the pending changes first.",

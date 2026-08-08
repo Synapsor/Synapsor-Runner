@@ -126,9 +126,14 @@ measured onboarding time.
 
 An existing guided project resumes its pinned review and does not inspect the
 database again. Add `--rescan` to the same Start command to deliberately
-re-inspect either a single-organization or multi-tenant source. The rescan
-produces a disabled boundary revision; it does not replace active authority
-until a human reviews and activates it. Do not use `--force` merely to rescan.
+re-inspect either a single-organization or multi-tenant source. Runner
+reconciles every saved boundary: manual tables and reviewed settings whose
+exact inputs are unchanged stay intact, while only decisions affected by real
+schema or role-posture drift are invalidated. New columns stay kept out and new
+relationships stay unused until reviewed. The itemized result is a disabled
+boundary revision; it does not replace active authority until a human reviews
+and activates it. On this Start path, `--force` performs the same guarded
+reconciliation; prefer `--rescan` because it states the intent clearly.
 
 Runner never derives a tenant or principal from a connection-string name,
 table contents, sample rows, or model input. If neither a verified credential-

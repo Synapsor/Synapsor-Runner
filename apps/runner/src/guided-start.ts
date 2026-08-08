@@ -43,9 +43,15 @@ import { doctor } from "./first-run-doctor.js";
 import {
   initializeGuidedProject,
   preflightGuidedProjectInitialization,
+  recordGuidedBoundaryRescan,
   readGuidedOnboardingState,
   resetGuidedOnboardingForBoundaryReview
 } from "./guided-project.js";
+import {
+  commitBoundaryRescan,
+  formatBoundaryRescanReport,
+  prepareBoundaryRescan,
+} from "./boundary-rescan.js";
 import {
   discoverProjectEnvFiles,
   readDatabaseUrlFromProjectEnv,
@@ -221,7 +227,6 @@ async function shouldEnterAutoBoundary(
   interactive = process.stdin.isTTY === true && process.stdout.isTTY === true,
 ): Promise<boolean> {
   if (!optionalArg(args, "--from-env")) return false;
-  if (!interactive) return false;
   const establishedRoutingFlags = [
     "--table",
     "--answers",
@@ -242,6 +247,8 @@ async function shouldEnterAutoBoundary(
     "--tenant-key",
   ];
   if (establishedRoutingFlags.some((flag) => args.includes(flag))) return false;
+  if (args.includes("--no-open")) return true;
+  if (!interactive) return false;
   if (await fileExists(path.resolve(".synapsor/guided-onboarding.json"))) return true;
   if (await fileExists(path.resolve("synapsor.runner.json"))) return false;
   if (await fileExists(path.resolve("synapsor.contract.json"))) return false;
@@ -295,40 +302,29 @@ async function startAutoBoundary(
   }
   const project = await detectProjectContext(process.cwd());
   const regenerateInstantBoundary: NonNullable<InstantCliBoundaryActivationInput["regenerateBoundary"]> =
-    async ({ inspection, draft, lock }) => {
-      const evidence = await loadStructuredProjectEvidence(project);
-      const regenerated = buildAutoBoundary({
+    async ({ inspection }) => {
+      const journey = await readGuidedOnboardingState(project.root);
+      const boundaryRoot = path.join(
+        project.root,
+        journey?.artifacts.boundary_root ?? "synapsor/generated",
+      );
+      const prepared = await prepareBoundaryRescan({
+        projectRoot: project.root,
+        boundaryRoot,
         inspection,
-        project,
-        parsedEvidence: evidence.parsed,
-        existingContracts: evidence.existingContracts,
-        sourceEnv: lock.source_env,
-        sourceName: draft.source,
-        inspectedSchema: lock.inspected_schema,
-        deploymentProfile: draft.deployment_profile,
-        ...(draft.trusted_context.provider === "http_claims" ? {
-          httpClaims: {
-            tenantClaim: draft.trusted_context.tenant_claim,
-            principalClaim: draft.trusted_context.principal_claim,
-          },
-        } : {}),
-        ...(draft.organization_scope ? {
-          singleOrganization: { organizationId: draft.organization_scope.organization_id },
-        } : {}),
       });
-      await writeAutoBoundaryArtifacts({
+      await commitBoundaryRescan(prepared);
+      const activeBoundaryExists = await guidedActiveBoundaryExists(project.root);
+      await recordGuidedBoundaryRescan({
         projectRoot: project.root,
-        build: regenerated,
-        force: true,
-      });
-      await resetGuidedOnboardingForBoundaryReview({
-        projectRoot: project.root,
-        schemaFingerprint: regenerated.lock.schema_fingerprint,
-        rolePostureFingerprint: regenerated.lock.role_posture_fingerprint,
+        schemaFingerprint: prepared.selectedBuild.lock.schema_fingerprint,
+        rolePostureFingerprint: prepared.selectedBuild.lock.role_posture_fingerprint,
+        pendingReview: prepared.report.changed,
+        authorityActive: activeBoundaryExists,
       });
       return {
-        draft: regenerated.exploration_boundary,
-        lock: regenerated.lock,
+        draft: prepared.selectedBuild.exploration_boundary,
+        lock: prepared.selectedBuild.lock,
         inspection,
       };
     };
@@ -399,6 +395,56 @@ async function startAutoBoundary(
           });
         }
         if (instant.reason === "operator_cancelled") return 0;
+      }
+      return runBoundaryReview(
+        ["--project-root", project.root, "--access"],
+        schemaInspector,
+        activationHandoff,
+      );
+    }
+    if (args.includes("--no-open")) return 0;
+    return openWorkbench([
+      "--open",
+      "--boundary-root",
+      boundaryRoot,
+      "--config",
+      path.join(project.root, existingJourney.artifacts.runner_config),
+      "--store",
+      path.join(project.root, existingJourney.artifacts.local_store),
+      ...(existingJourney.instant_onboarding ? ["--instant-onboarding"] : []),
+      ...(existingJourney.graduation_tip_suppressed ? ["--no-graduation-tip"] : []),
+    ]);
+  }
+  if (existingJourney && shouldRescan) {
+    if (existingJourney.source.environment_variable !== sourceEnv) {
+      throw new Error(
+        `This guided project uses ${existingJourney.source.environment_variable}, not ${sourceEnv}. `
+        + `Rescan with --from-env ${existingJourney.source.environment_variable}.`,
+      );
+    }
+    const boundaryRoot = path.join(project.root, existingJourney.artifacts.boundary_root);
+    writeGuidedOutput("Connecting and reconciling current schema metadata with every saved boundary...\n");
+    const prepared = await prepareBoundaryRescan({
+      projectRoot: project.root,
+      boundaryRoot,
+      schemaInspector,
+    });
+    await commitBoundaryRescan(prepared);
+    const activeBoundaryExists = await guidedActiveBoundaryExists(project.root);
+    await recordGuidedBoundaryRescan({
+      projectRoot: project.root,
+      schemaFingerprint: prepared.selectedBuild.lock.schema_fingerprint,
+      rolePostureFingerprint: prepared.selectedBuild.lock.role_posture_fingerprint,
+      pendingReview: prepared.report.changed,
+      authorityActive: activeBoundaryExists,
+    });
+    writeGuidedOutput(`${formatBoundaryRescanReport(prepared.report)}\n\n`);
+    if (cliMode) {
+      if (!prepared.report.changed && activeBoundaryExists) {
+        return runPostActivationHandoff({
+          projectRoot: project.root,
+          ...(requestTimeoutSeconds === undefined ? {} : { requestTimeoutSeconds }),
+        });
       }
       return runBoundaryReview(
         ["--project-root", project.root, "--access"],
@@ -524,6 +570,11 @@ async function startAutoBoundary(
     "--instant-onboarding",
     ...(args.includes("--no-graduation-tip") ? ["--no-graduation-tip"] : []),
   ]);
+}
+
+async function guidedActiveBoundaryExists(projectRoot: string): Promise<boolean> {
+  return await fileExists(path.join(projectRoot, ".synapsor/exploration-boundaries.active.json"))
+    || await fileExists(path.join(projectRoot, ".synapsor/exploration-boundary.active.json"));
 }
 
 

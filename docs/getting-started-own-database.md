@@ -60,8 +60,12 @@ On later runs, that command resumes the pinned review without inspecting the
 database again. Add `--rescan` to that Start command only when you deliberately
 want a fresh schema and role-posture
 inspection. `--rescan` applies to both single-organization and multi-tenant
-projects; it leaves the current authority active and creates a disabled update
-that must be reviewed and activated. `--force` is not required for a rescan.
+projects. It preserves manual tables, derived/shared-reference scope, privacy
+settings, and other decisions whose exact reviewed inputs did not change. It
+invalidates only affected decisions, reports the concrete diff, leaves current
+authority active, and creates a disabled update that must be reviewed and
+activated. `--force` is not required; on this Start path it uses the same
+reconciliation behavior.
 
 On a fresh project, Runner first shows one conservative one-table,
 zero-relationship boundary. Pressing Enter once records its human review,

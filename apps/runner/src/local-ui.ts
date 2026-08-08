@@ -79,10 +79,17 @@ import {
 } from "./boundary-catalog.js";
 import {
   consumeGuidedGraduationTip,
+  recordGuidedBoundaryRescan,
   readGuidedOnboardingState,
   resetGuidedOnboardingForBoundaryReview,
   updateGuidedOnboardingState,
 } from "./guided-project.js";
+import {
+  commitBoundaryRescan,
+  prepareBoundaryRescan,
+  readBoundaryRescanReport,
+} from "./boundary-rescan.js";
+import { blockedTenantScopeGuidance } from "./boundary-scope-guidance.js";
 import { buildInstantFirstValue } from "./instant-first-value.js";
 import {
   derivedScopeStartSequence,
@@ -678,7 +685,17 @@ async function handleRequest(input: {
       return;
     }
     const draft = JSON.parse(await fs.readFile(path.join(boundaryRoot, "exploration-boundary.draft.json"), "utf8")) as ExplorationBoundaryDraft;
-    const review = JSON.parse(await fs.readFile(path.join(boundaryRoot, "generation-review.json"), "utf8")) as Record<string, unknown>;
+    const review = JSON.parse(await fs.readFile(
+      path.join(boundaryRoot, "generation-review.json"),
+      "utf8",
+    )) as AutoBoundaryBuild["review"];
+    const reviewForDisplay = {
+      ...review,
+      resources: review.resources.map((resource) => {
+        const guidance = blockedTenantScopeGuidance(resource);
+        return guidance ? { ...resource, scope_resolution_guidance: guidance } : resource;
+      }),
+    };
     let progress = await readBoundaryReviewProgress(projectRoot, draft);
     const hasReviewableResource = draft.pack.resources.length > 0;
     let candidate = progress?.candidate
@@ -775,9 +792,10 @@ async function handleRequest(input: {
         outstanding_decisions: reviewDecisions
           .filter((decision) => !confirmedDecisions.includes(decision.decision)),
       },
-      review,
+      review: reviewForDisplay,
       candidate_digest: explorationBoundaryCandidateDigest(candidate),
       boundary_library: boundaryLibrary,
+      boundary_rescan_report: await readBoundaryRescanReport(projectRoot),
       active,
       active_boundaries: activeBoundaries,
       boundary_catalog: boundaryCatalog,
@@ -1473,16 +1491,15 @@ async function handleRequest(input: {
       sendJson(response, 403, { ok: false, error: "CSRF token required to preview schema drift." });
       return;
     }
-    const prepared = await prepareAutoBoundaryRescan({
+    const prepared = await prepareBoundaryRescan({
       projectRoot,
       boundaryRoot,
       schemaInspector,
-      resetOverrides: false,
     });
     sendJson(response, 200, {
       ok: true,
       preview_digest: prepared.previewDigest,
-      diff: prepared.diff,
+      diff: prepared.report,
       source_database_changed: false,
       message: "Rescan preview completed. No generated file, active boundary, protected capability, ledger record, or source row was changed.",
     });
@@ -1502,11 +1519,10 @@ async function handleRequest(input: {
     if (typeof body.expected_digest !== "string" || typeof body.confirmation !== "string") {
       throw new Error("Applying a rescan requires the exact preview digest and confirmation.");
     }
-    const prepared = await prepareAutoBoundaryRescan({
+    const prepared = await prepareBoundaryRescan({
       projectRoot,
       boundaryRoot,
       schemaInspector,
-      resetOverrides: false,
     });
     if (body.expected_digest !== prepared.previewDigest || body.confirmation !== `RESCAN ${prepared.previewDigest}`) {
       throw new Error("Schema or review inputs changed after preview; preview the rescan again.");
@@ -1514,37 +1530,23 @@ async function handleRequest(input: {
     const previousActive = activeBoundaryEventMetadata(
       await readOptionalJson(path.join(projectRoot, ".synapsor/exploration-boundary.active.json")),
     );
-    const previousDraft = JSON.parse(
-      await fs.readFile(path.join(boundaryRoot, "exploration-boundary.draft.json"), "utf8"),
-    ) as ExplorationBoundaryDraft;
-    const previousProgress = await readBoundaryReviewProgress(projectRoot, previousDraft);
-    const progress = reconcileBoundaryReviewProgress(
-      previousProgress,
-      prepared.build.exploration_boundary,
-      prepared.build.overrides,
-    );
-    if (!previousProgress || previousProgress.policy_migration.status === "review_required") {
-      await backupLegacyBoundaryReviewOverrides(projectRoot);
-    }
-    await writeAutoBoundaryArtifacts({
+    await commitBoundaryRescan(prepared);
+    const progress = prepared.selectedProgress;
+    const authorityActive = previousActive !== undefined
+      || await readOptionalJson(path.join(projectRoot, ".synapsor/exploration-boundaries.active.json")) !== null;
+    const journey = await recordGuidedBoundaryRescan({
       projectRoot,
-      outputRoot: path.relative(projectRoot, boundaryRoot),
-      build: prepared.build,
-      force: true,
-      preserveReviewProgress: true,
-      ...(progress ? { reviewProgress: progress } : {}),
-    });
-    const journey = await resetGuidedOnboardingForBoundaryReview({
-      projectRoot,
-      schemaFingerprint: prepared.build.lock.schema_fingerprint,
-      rolePostureFingerprint: prepared.build.lock.role_posture_fingerprint,
+      schemaFingerprint: prepared.selectedBuild.lock.schema_fingerprint,
+      rolePostureFingerprint: prepared.selectedBuild.lock.role_posture_fingerprint,
+      pendingReview: prepared.report.changed,
+      authorityActive,
     }).catch(() => undefined);
-    const candidateDigest = explorationBoundaryCandidateDigest(prepared.build.exploration_boundary);
-    if (prepared.diff.schema_changed === true) {
+    const candidateDigest = progress.candidate_digest;
+    if (prepared.report.schema_changed || prepared.report.role_posture_changed) {
       await recordWorkbenchAttention(storeAccess, {
         event_type: "schema.drift_detected",
         severity: "critical",
-        environment: deploymentProfile ?? prepared.build.exploration_boundary.deployment_profile,
+        environment: deploymentProfile ?? prepared.selectedBuild.exploration_boundary.deployment_profile,
         capability: "app.explore_data",
         ...(previousActive ? { contract_digest: previousActive.digest } : {}),
         attention_key: `schema-drift:${prepared.previewDigest}`,
@@ -1552,51 +1554,48 @@ async function handleRequest(input: {
         immediate_default: true,
         summary: "Schema drift invalidated generated authoring authority",
         workbench_path: "/",
-        details: schemaDriftAttentionDetails(prepared.diff),
+        details: schemaDriftAttentionDetails(prepared.report as unknown as JsonRecord),
         source_event_key: `workbench-schema-drift:${prepared.previewDigest}`,
       });
     }
-    await recordWorkbenchAttention(storeAccess, {
-      event_type: "capability.review_required",
-      severity: "warning",
-      environment: deploymentProfile ?? prepared.build.exploration_boundary.deployment_profile,
-      capability: "app.explore_data",
-      contract_digest: candidateDigest,
-      attention_key: `boundary-review:${candidateDigest}`,
-      attention_required: true,
-      immediate_default: false,
-      summary: "The rescanned authoring boundary requires review",
-      workbench_path: "/",
-      details: {
-        authority_type: "scoped_explore",
-        reason_code: prepared.diff.schema_changed === true ? "schema_drift" : "operator_rescan",
-        source_database_changed: false,
-      },
-      source_event_key: `workbench-boundary-review:rescan:${candidateDigest}`,
-    });
-    if (previousActive) {
-      await recordWorkbenchAttention(storeAccess, capabilityRevokedAttention({
-        environment: deploymentProfile ?? prepared.build.exploration_boundary.deployment_profile,
+    if (prepared.report.changed) {
+      await recordWorkbenchAttention(storeAccess, {
+        event_type: "capability.review_required",
+        severity: "warning",
+        environment: deploymentProfile ?? prepared.selectedBuild.exploration_boundary.deployment_profile,
         capability: "app.explore_data",
-        digest: previousActive.digest,
-        reasonCode: prepared.diff.schema_changed === true ? "schema_drift" : "operator_rescan",
-        sourceEventKey: `workbench-boundary-revoked:rescan:${previousActive.digest}:${prepared.previewDigest}`,
-      }));
+        contract_digest: candidateDigest,
+        attention_key: `boundary-review:${candidateDigest}`,
+        attention_required: true,
+        immediate_default: false,
+        summary: "The rescanned authoring boundary requires review",
+        workbench_path: "/",
+        details: {
+          authority_type: "scoped_explore",
+          reason_code: prepared.report.schema_changed || prepared.report.role_posture_changed
+            ? "schema_drift"
+            : "operator_rescan",
+          source_database_changed: false,
+        },
+        source_event_key: `workbench-boundary-review:rescan:${candidateDigest}`,
+      });
     }
     sendJson(response, 200, {
       ok: true,
-      diff: prepared.diff,
+      diff: prepared.report,
       journey,
-      confirmed_decisions: progress?.confirmed_decisions ?? [],
+      confirmed_decisions: progress.confirmed_decisions,
       review_progress: {
-        revision: progress?.revision ?? 0,
-        invalidated_decisions: progress?.invalidated_decisions ?? [],
-        outstanding_decisions: boundaryReviewDecisions(prepared.build.exploration_boundary)
-          .filter((decision) => !(progress?.confirmed_decisions ?? []).includes(decision.decision)),
+        revision: progress.revision,
+        invalidated_decisions: progress.invalidated_decisions,
+        outstanding_decisions: boundaryReviewDecisions(progress.candidate)
+          .filter((decision) => !progress.confirmed_decisions.includes(decision.decision)),
       },
-      active: null,
+      active: previousActive ?? null,
       source_database_changed: false,
-      message: "The rescanned boundary is disabled and ready for review. Protected named capabilities and ledger history were preserved.",
+      message: prepared.report.changed
+        ? "The reconciled boundary revision is disabled and ready for review. Existing exact authority, protected capabilities, and ledger history were preserved."
+        : "The schema and role posture are unchanged. No boundary revision was created.",
     });
     return;
   }
@@ -4707,14 +4706,24 @@ function sensitiveFieldOverrideEvent(
 
 function schemaDriftAttentionDetails(diff: JsonRecord): Record<string, string | number | boolean | null> {
   const count = (value: unknown): number => Array.isArray(value) ? value.length : 0;
+  const totals = isRecord(diff.totals) ? diff.totals : {};
   return {
     reason_code: "generation_lock_schema_changed",
-    resources_before: typeof diff.resources_before === "number" ? diff.resources_before : 0,
-    resources_after: typeof diff.resources_after === "number" ? diff.resources_after : 0,
-    resources_added: count(diff.added_resources),
-    resources_removed: count(diff.removed_resources),
-    resources_changed: count(diff.changed_resources),
-    review_inputs_pruned: count(diff.pruned_review_inputs),
+    boundaries_checked: typeof totals.boundaries === "number" ? totals.boundaries : 0,
+    decisions_kept: typeof totals.kept_confirmations === "number" ? totals.kept_confirmations : 0,
+    decisions_requiring_review: typeof totals.invalidated_decisions === "number"
+      ? totals.invalidated_decisions
+      : 0,
+    resources_added: typeof totals.newly_available_resources === "number"
+      ? totals.newly_available_resources
+      : count(diff.added_resources),
+    resources_removed: typeof totals.removed_resources === "number"
+      ? totals.removed_resources
+      : count(diff.removed_resources),
+    fields_added: typeof totals.newly_available_fields === "number" ? totals.newly_available_fields : 0,
+    relationships_added: typeof totals.newly_available_relationships === "number"
+      ? totals.newly_available_relationships
+      : 0,
     source_database_changed: false,
   };
 }

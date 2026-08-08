@@ -89,9 +89,11 @@ For an existing guided project, the same command resumes it. Resume and Try do
 not rescan the database, rewrite files, or change a digest. To inspect the live
 schema and role posture again, use `start --from-env DATABASE_URL --rescan`.
 That flag is universal: it works for single-organization and multi-tenant
-projects and produces a disabled update that still requires human review and
-activation. Do not add `--force` unless the operator also intends its separate
-overwrite/reset behavior.
+projects. It preserves unchanged reviewed decisions, invalidates only inputs
+affected by real schema or role-posture drift, and prints an itemized diff. The
+result remains a disabled update that requires human review and activation. On
+this Start path, `--force` uses the same guarded reconciliation; prefer
+`--rescan` for clarity.
 
 Report:
 

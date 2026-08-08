@@ -45,6 +45,10 @@ import {
   formatDerivedScopePath,
   formatDerivedScopePathWithId,
 } from "./derived-scope-display.js";
+import {
+  blockedTenantScopeGuidance,
+  type BlockedTenantScopeGuidance,
+} from "./boundary-scope-guidance.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -163,6 +167,7 @@ export type BoundaryResourceReviewView = {
   status: string;
   included: boolean;
   blockers: string[];
+  scope_resolution_guidance?: BlockedTenantScopeGuidance;
   row_identity: BoundaryInference<string>;
   tenant_key: BoundaryInference<string>;
   derived_tenant_scope?: DerivedScopeInference;
@@ -195,6 +200,7 @@ export type BoundaryResourceReviewSummary = {
   included: boolean;
   active: boolean;
   blockers: string[];
+  scope_resolution_guidance?: BlockedTenantScopeGuidance;
   pending_decisions: string[];
   risk_count: number;
   model_visible_fields: number;
@@ -298,6 +304,7 @@ export async function listBoundaryResourceReviews(
       );
       const pendingDecisions = state.candidate.unresolved_decisions
         .filter((decision) => decision.startsWith(`${resource.id}:`) && !confirmed.has(decision));
+      const scopeResolutionGuidance = blockedTenantScopeGuidance(resource);
       return {
         candidate_boundary_name: state.candidate.pack.name,
         ...(activeBoundary?.pack.name
@@ -309,6 +316,9 @@ export async function listBoundaryResourceReviews(
         included: Boolean(candidate),
         active: Boolean(active),
         blockers: [...resource.blockers],
+        ...(scopeResolutionGuidance
+          ? { scope_resolution_guidance: scopeResolutionGuidance }
+          : {}),
         pending_decisions: pendingDecisions,
         risk_count: pendingDecisions.length + resource.blockers.length,
         model_visible_fields: display

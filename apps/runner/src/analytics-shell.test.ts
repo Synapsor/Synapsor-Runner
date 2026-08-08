@@ -1071,11 +1071,22 @@ describe("Synapsor Analytics shell", () => {
           boundary_name: "reviewed_staging",
           previous_authority_active: true,
           cause: "database_posture_changed",
+          reconciliation: {
+            kept_decisions: 8,
+            decisions_requiring_review: 1,
+            details: [
+              "public.orders.status: reviewed column type changed",
+              "public.orders.channel: new column is kept out until reviewed",
+            ],
+          },
         }],
       },
     });
     expect(output).toContain("1 PENDING BOUNDARY CHANGE IS NOT ACTIVE");
     expect(output).toContain("A rescan found a different database schema or role posture");
+    expect(output).toContain("Rescan kept 8 prior decisions; 1 was invalidated.");
+    expect(output).toContain("public.orders.status: reviewed column type changed");
+    expect(output).toContain("public.orders.channel: new column is kept out until reviewed");
     expect(output).toContain("In BOUNDARY OVERVIEW, highlight the boundary named above and press C");
     expect(output).toContain("You do not need to open its tables");
   });

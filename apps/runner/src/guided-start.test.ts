@@ -713,7 +713,19 @@ describe("guided start surfaces", () => {
       await expect(start(
         ["--from-env", "DATABASE_URL", "--no-open"],
         {
-          interactive: true,
+          interactive: false,
+          schemaInspector: async () => inspection(),
+          runBoundaryReview,
+          openWorkbench,
+        },
+      )).resolves.toBe(0);
+      expect(runBoundaryReview).not.toHaveBeenCalled();
+      expect(openWorkbench).not.toHaveBeenCalled();
+
+      await expect(start(
+        ["--from-env", "DATABASE_URL", "--rescan", "--no-open"],
+        {
+          interactive: false,
           schemaInspector: async () => inspection(),
           runBoundaryReview,
           openWorkbench,

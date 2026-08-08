@@ -2596,8 +2596,36 @@ export default defineCapability({
       });
       expect(applied).toMatchObject({
         ok: true,
-        active: null,
+        active: {
+          digest: activeBeforeReview.activation.digest,
+          activatedAt: activeBeforeReview.activation.activated_at,
+        },
         source_database_changed: false,
+      });
+      await expect(fs.readFile(
+        path.join(tempDir, ".synapsor/exploration-boundary.active.json"),
+        "utf8",
+      )).resolves.toBe(`${JSON.stringify(activeBeforeReview, null, 2)}\n`);
+      const reconciledBoundary = await getJson(
+        `http://${server.host}:${server.port}/api/boundary`,
+        { "x-synapsor-ui-token": "boundary-regenerate-token" },
+      );
+      expect(reconciledBoundary).toMatchObject({
+        candidate: {
+          pack: {
+            resources: [{
+              id: "public.members",
+              kept_out_fields: expect.arrayContaining(["member_since"]),
+            }],
+          },
+        },
+        boundary_rescan_report: {
+          changed: true,
+          totals: {
+            invalidated_decisions: 0,
+            newly_available_fields: 1,
+          },
+        },
       });
 
       const reset = await postJson(`http://${server.host}:${server.port}/api/project/start-over`, mutationHeaders, {

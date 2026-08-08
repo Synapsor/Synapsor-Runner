@@ -12,6 +12,10 @@ import {
   type ExplorationBoundaryDraft,
 } from "./auto-boundary.js";
 import { resolveBoundaryRevisionState } from "./boundary-revision-state.js";
+import {
+  readBoundaryRescanReport,
+  type BoundaryRescanEntry,
+} from "./boundary-rescan.js";
 
 type ActiveBoundaryAuthorityIdentity = {
   name: string;
@@ -30,6 +34,11 @@ export type PendingBoundaryReviewSummary = {
     boundary_name: string;
     previous_authority_active: boolean;
     cause: "database_posture_changed" | "reviewed_access_edited";
+    reconciliation?: {
+      kept_decisions: number;
+      decisions_requiring_review: number;
+      details: string[];
+    };
   }>;
 };
 
@@ -79,6 +88,7 @@ export async function resolvePendingBoundaryReviewSummary(
     && guided.instant_onboarding === true
     && guided.status === "boundary_active";
   const active = await optionalActiveBoundaries(projectRoot);
+  const rescanReport = await readBoundaryRescanReport(projectRoot);
   const changes: PendingBoundaryReviewSummary["changes"] = [];
   for (const boundaryName of Object.keys(library.boundaries).sort()) {
     if (!/^[a-z][a-z0-9_.-]{0,63}$/.test(boundaryName)) continue;
@@ -122,6 +132,13 @@ export async function resolvePendingBoundaryReviewSummary(
       boundary_name: boundaryName,
       previous_authority_active: Boolean(activeBoundary),
       cause: revisionState?.cause ?? "reviewed_access_edited",
+      ...(matchingRescanEntry(rescanReport?.boundaries, boundaryName, candidateDigest)
+        ? {
+            reconciliation: reconciliationSummary(
+              matchingRescanEntry(rescanReport?.boundaries, boundaryName, candidateDigest)!,
+            ),
+          }
+        : {}),
     });
   }
   if (!changes.length) return undefined;
@@ -130,6 +147,45 @@ export async function resolvePendingBoundaryReviewSummary(
     pending_changes: changes.length,
     previous_authority_active: changes.some((change) => change.previous_authority_active),
     changes,
+  };
+}
+
+function matchingRescanEntry(
+  entries: BoundaryRescanEntry[] | undefined,
+  boundaryName: string,
+  candidateDigest: `sha256:${string}`,
+): BoundaryRescanEntry | undefined {
+  return entries?.find((entry) =>
+    entry.boundary_name === boundaryName && entry.candidate_digest === candidateDigest);
+}
+
+function reconciliationSummary(entry: BoundaryRescanEntry): NonNullable<
+  PendingBoundaryReviewSummary["changes"][number]["reconciliation"]
+> {
+  const details = [
+    ...entry.invalidated_decisions.map((decision) =>
+      `${decision.id}: ${decision.reason === "decision_removed"
+        ? "the reviewed input no longer exists"
+        : "the reviewed input changed"}`),
+    ...entry.changed_field_types.map((field) =>
+      `${field.resource_id}.${field.field}: reviewed column type changed`),
+    ...entry.removed_fields.map((field) =>
+      `${field.resource_id}.${field.field}: reviewed column was removed`),
+    ...entry.removed_relationships.map((relationship) =>
+      `${relationship.resource_id}.${relationship.relationship_id}: reviewed relationship was removed`),
+    ...entry.removed_resources.map((resource) => `${resource}: reviewed table was removed`),
+    ...entry.newly_available_fields.map((field) =>
+      `${field.resource_id}.${field.field}: new column is kept out until reviewed`),
+    ...entry.newly_available_relationships.map((relationship) =>
+      `${relationship.resource_id}.${relationship.relationship_id}: new relationship is available to review`),
+    ...entry.newly_available_resources.map((resource) =>
+      `${resource}: new table is available to review`),
+    ...entry.pruned_review_inputs,
+  ];
+  return {
+    kept_decisions: entry.kept_confirmations,
+    decisions_requiring_review: entry.invalidated_decisions.length,
+    details,
   };
 }
 

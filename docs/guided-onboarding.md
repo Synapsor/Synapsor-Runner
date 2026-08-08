@@ -200,9 +200,12 @@ npx -y @synapsor/runner start --from-env DATABASE_URL --rescan
 ```
 
 `--rescan` works for both single-organization and multi-tenant projects. It
-creates a disabled boundary update; Ask keeps using the previous exact revision
-until a human reviews and activates the update. `--force` also causes inspection
-but has separate overwrite/reset semantics, so do not use it merely to rescan.
+reconciles all saved boundaries, preserves decisions whose exact reviewed
+inputs are unchanged, and itemizes new, removed, or invalidated inputs. New
+fields remain kept out and new relationships remain unused. Ask keeps using the
+previous exact revision until a human reviews and activates the disabled update.
+On this Start path, `--force` performs the same guarded reconciliation; prefer
+`--rescan` because it states the intent clearly.
 
 Workbench requires no additional terminal command. If you choose the CLI
 fallbacks below after the first success, install Runner once:

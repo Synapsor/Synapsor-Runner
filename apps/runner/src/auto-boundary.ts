@@ -1810,7 +1810,7 @@ function assertGenerationLockFingerprint(
   }
 }
 
-async function persistGenerationLockSnapshot(
+export async function persistGenerationLockSnapshot(
   projectRoot: string,
   fingerprint: `sha256:${string}`,
   lock: GenerationLock,

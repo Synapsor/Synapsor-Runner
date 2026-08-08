@@ -194,6 +194,75 @@ describe("Ask authority summaries", () => {
       changes: [{ cause: "reviewed_access_edited" }],
     });
   });
+
+  it("attaches only the rescan report for the exact pending candidate digest", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-ask-authority-rescan-"));
+    roots.push(root);
+    await fs.mkdir(path.join(root, ".synapsor"), { recursive: true });
+    const activeCandidate = boundaryCandidate();
+    const pendingCandidate = structuredClone(activeCandidate);
+    pendingCandidate.pack.resources[0]!.field_types.new_status = "text";
+    pendingCandidate.pack.resources[0]!.kept_out_fields.push("new_status");
+    await writeLibrary(root, pendingCandidate);
+    await fs.writeFile(
+      path.join(root, ".synapsor/exploration-boundary.active.json"),
+      JSON.stringify(activateBoundary(activeCandidate)),
+    );
+    const pendingDigest = explorationBoundaryCandidateDigest(pendingCandidate);
+    await fs.writeFile(
+      path.join(root, ".synapsor/boundary-rescan-report.json"),
+      JSON.stringify({
+        schema_version: "synapsor.boundary-rescan-report.v1",
+        generated_at: "2026-08-08T00:00:00.000Z",
+        engine: "postgres",
+        source_env: "DATABASE_URL",
+        previous_schema_fingerprint: `sha256:${"1".repeat(64)}`,
+        schema_fingerprint: `sha256:${"2".repeat(64)}`,
+        previous_role_posture_fingerprint: `sha256:${"3".repeat(64)}`,
+        role_posture_fingerprint: `sha256:${"3".repeat(64)}`,
+        schema_changed: true,
+        role_posture_changed: false,
+        changed: true,
+        source_database_changed: false,
+        totals: {},
+        boundaries: [{
+          boundary_id: "bnd_test",
+          boundary_name: "reviewed_staging",
+          deployment_profile: "development",
+          previous_candidate_digest: explorationBoundaryCandidateDigest(activeCandidate),
+          candidate_digest: pendingDigest,
+          kept_confirmations: 6,
+          safely_carried_confirmations: [],
+          invalidated_decisions: [],
+          retained_resources: ["public.orders"],
+          removed_resources: [],
+          newly_available_resources: [],
+          newly_available_fields: [{ resource_id: "public.orders", field: "new_status" }],
+          removed_fields: [],
+          changed_field_types: [],
+          newly_available_relationships: [],
+          removed_relationships: [],
+          pruned_review_inputs: [],
+        }],
+      }),
+    );
+
+    await expect(resolvePendingBoundaryReviewSummary(root)).resolves.toMatchObject({
+      changes: [{
+        reconciliation: {
+          kept_decisions: 6,
+          decisions_requiring_review: 0,
+          details: ["public.orders.new_status: new column is kept out until reviewed"],
+        },
+      }],
+    });
+
+    pendingCandidate.pack.resources[0]!.kept_out_fields.push("another_field");
+    pendingCandidate.pack.resources[0]!.field_types.another_field = "text";
+    await writeLibrary(root, pendingCandidate);
+    const laterSummary = await resolvePendingBoundaryReviewSummary(root);
+    expect(laterSummary).not.toHaveProperty("changes.0.reconciliation");
+  });
 });
 
 async function writeLibrary(

@@ -31,6 +31,12 @@ type BoundaryLibraryFile = {
   updated_at: string;
 };
 
+export type BoundaryLibraryReconciliationState = {
+  selected_name: string;
+  boundaries: Record<string, BoundaryReviewProgress>;
+  updated_at: string;
+};
+
 export type BoundaryLibraryEntry = {
   name: string;
   selected: boolean;
@@ -77,6 +83,55 @@ export async function synchronizeBoundaryLibrary(
   }
   await writeBoundaryLibrary(input.projectRoot, library);
   return snapshot(input.projectRoot, library, active);
+}
+
+export async function loadBoundaryLibraryForReconciliation(
+  input: BoundaryLibraryContext,
+): Promise<BoundaryLibraryReconciliationState> {
+  const library = await readOrCreateLibrary(input);
+  return {
+    selected_name: library.selected_name,
+    boundaries: structuredClone(library.boundaries),
+    updated_at: library.updated_at,
+  };
+}
+
+export async function saveBoundaryLibraryAfterReconciliation(input: {
+  projectRoot: string;
+  state: BoundaryLibraryReconciliationState;
+}): Promise<void> {
+  if (!input.state.boundaries[input.state.selected_name]) {
+    throw new Error("A reconciled boundary library must retain its selected boundary.");
+  }
+  const boundaryIds = new Set<string>();
+  for (const [name, progress] of Object.entries(input.state.boundaries)) {
+    assertBoundaryName(name);
+    if (progress.candidate.pack.name !== name) {
+      throw new Error(`Reconciled boundary ${name} has a mismatched internal name.`);
+    }
+    if (boundaryIds.has(progress.boundary_id)) {
+      throw new Error(`Reconciled boundary identity ${progress.boundary_id} is duplicated.`);
+    }
+    boundaryIds.add(progress.boundary_id);
+  }
+  await writeBoundaryLibrary(input.projectRoot, {
+    schema_version: BOUNDARY_LIBRARY_VERSION,
+    selected_name: input.state.selected_name,
+    boundaries: structuredClone(input.state.boundaries),
+    updated_at: input.state.updated_at,
+  });
+}
+
+export function rebaseSavedBoundaryForRescan(input: {
+  generatedDraft: ExplorationBoundaryDraft;
+  previousCandidate: ExplorationBoundaryDraft;
+  boundaryName: string;
+}): ExplorationBoundaryDraft {
+  return rebaseDisabledBoundary(
+    input.generatedDraft,
+    input.previousCandidate,
+    input.boundaryName,
+  );
 }
 
 export async function createSavedBoundary(input: BoundaryLibraryContext & {
@@ -538,6 +593,11 @@ function rebaseBoundaryResource(current: BoundaryResource, stored: BoundaryResou
   resource.filterable_fields = intersectStoredMap(
     stored.filterable_fields,
     current.filterable_fields,
+    selectable,
+  );
+  resource.field_enums = intersectStoredMap(
+    stored.field_enums,
+    current.field_enums,
     selectable,
   );
   resource.time_bucket_fields = intersectStoredMap(

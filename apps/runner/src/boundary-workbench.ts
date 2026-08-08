@@ -658,6 +658,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     let activeBoundary;
     let activeBoundaries=[];
     let boundaryLibrary={selected_name:"",entries:[]};
+    let boundaryRescanReport=null;
     let candidateDigest;
 	    let currentView="overview";
 	    const validViews=new Set(["overview","exceptions","activate","explore","protect","action"]);
@@ -1146,6 +1147,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           :"Add a single-column primary or unique key, then rescan "+review.id+".";
       }
       if(!candidate?.organization_scope&&!review.tenant_key?.selected&&!review.derived_tenant_scope?.selected){
+        const guidance=review.scope_resolution_guidance;
+        if(guidance?.remediation?.length)return guidance.remediation.join(" ");
         const candidates=review.tenant_key?.candidates||[];
         const paths=review.derived_tenant_scope?.candidates||[];
         if(review.shared_reference_scope?.eligible){
@@ -1291,12 +1294,27 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		          :'';
 		        return '<tr class="'+(entry.selected?'selected-boundary':'')+'"><td><strong>'+esc(entry.name)+'</strong>'+(entry.selected?'<small>Selected for editing</small>':'')+'</td><td>'+esc(status)+'</td><td>'+esc(entry.table_count)+'</td><td>'+(entry.active?'<span class="badge good">Active Explore</span>':'<span class="badge">No authority</span>')+'</td><td><div class="actions boundary-row-actions">'+action+deletion+'</div></td></tr>';
 		      }).join("");
-			      const selectedEntry=entries.find(entry=>entry.name===boundaryLibrary.selected_name);
-			      const pendingBoundaryChange=Boolean(selectedEntry&&(selectedEntry.policy_review_required||!selectedEntry.active||!selectedEntry.matches_active_digest));
+		      const selectedEntry=entries.find(entry=>entry.name===boundaryLibrary.selected_name);
+		      const selectedRescanEntry=(boundaryRescanReport?.boundaries||[]).find(entry=>
+		        entry.boundary_name===selectedEntry?.name&&entry.candidate_digest===selectedEntry?.candidate_digest);
+		      const rescanDetails=selectedRescanEntry
+		        ?[
+		          ...(selectedRescanEntry.invalidated_decisions||[]).map(item=>item.id+": "+(item.reason==="decision_removed"?"reviewed input no longer exists":"reviewed input changed")),
+		          ...(selectedRescanEntry.changed_field_types||[]).map(item=>item.resource_id+"."+item.field+": reviewed column type changed"),
+		          ...(selectedRescanEntry.removed_fields||[]).map(item=>item.resource_id+"."+item.field+": reviewed column was removed"),
+		          ...(selectedRescanEntry.newly_available_fields||[]).map(item=>item.resource_id+"."+item.field+": new column is kept out until reviewed"),
+		          ...(selectedRescanEntry.newly_available_relationships||[]).map(item=>item.resource_id+"."+item.relationship_id+": new relationship is available to review"),
+		          ...(selectedRescanEntry.pruned_review_inputs||[])
+		        ]
+		        :[];
+		      const rescanExplanation=selectedRescanEntry
+		        ?'<p>Rescan kept '+esc(selectedRescanEntry.kept_confirmations)+' prior decisions; '+esc((selectedRescanEntry.invalidated_decisions||[]).length)+' '+((selectedRescanEntry.invalidated_decisions||[]).length===1?'was':'were')+' invalidated. Review and activate this new exact revision separately.</p>'+(rescanDetails.length?'<ul>'+rescanDetails.slice(0,8).map(detail=>'<li>'+esc(detail)+'</li>').join("")+(rescanDetails.length>8?'<li>+'+esc(rescanDetails.length-8)+' more changes are available in this review.</li>':'')+'</ul>':'')
+		        :'';
+		      const pendingBoundaryChange=Boolean(selectedEntry&&(selectedEntry.policy_review_required||!selectedEntry.active||!selectedEntry.matches_active_digest));
 			      const pendingBoundaryBanner=pendingBoundaryChange
 			        ?selectedEntry.policy_review_required
 			          ?'<div class="band notice"><strong>Legacy boundary policy needs review</strong><p>Runner preserved this boundary&apos;s exact revision and did not assign ambiguous project-wide settings to it. Open and save a reviewed setting, or Rescan, before activation.</p></div>'
-			          :'<div class="band notice"><strong>1 pending boundary change is not active</strong><p>'+(selectedEntry.active?'Ask still uses the previous exact reviewed revision.':'This disabled boundary grants no Ask access yet.')+'</p><button id="review-pending-boundary" type="button">Review and activate now</button></div>'
+		          :'<div class="band notice"><strong>1 pending boundary change is not active</strong><p>'+(selectedEntry.active?'Ask still uses the previous exact reviewed revision.':'This disabled boundary grants no Ask access yet.')+'</p>'+rescanExplanation+'<button id="review-pending-boundary" type="button">Review and activate now</button></div>'
 			        :'';
 			      const lifecycleControls='<div class="actions"><button id="edit-boundary-tables" '+(pendingBoundaryChange?'class="secondary" ':'')+'type="button">Edit selected boundary</button><button id="new-boundary" class="secondary" type="button">New boundary</button>'+(selectedEntry?.active?'<button id="disable-active-boundary" class="quiet" type="button">Deactivate selected boundary</button>':'<button id="disable-active-boundary" class="quiet" type="button" disabled title="The selected boundary is not active.">Selected boundary inactive</button>')+'</div>';
 		      const rankedMinimum=candidate.budgets.max_groups;
@@ -1534,7 +1552,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	        const blocked=review.status!=="draft_read";
 	          const badgeText=blocked?"Blocked":!included?"Available to add":risks?"Table sign-off needed":"Reviewed";
 	          const badgeClass=blocked?"bad":!included?"":risks?"warn":"good";
-		        return '<article class="resource" data-risk="'+risks+'"><div class="resource-head"><div><h3 class="resource-name">'+esc(review.id)+'</h3><p>'+esc(blocked?"Unavailable: "+(review.blockers||[]).join("; "):included?"Included in the agent data set":"Excluded from the agent data set")+'</p></div><span class="badge '+badgeClass+'">'+esc(badgeText)+'</span></div><div class="badges"><span class="badge">'+esc(raw)+' visible</span><span class="badge">'+esc(kept)+' hidden</span>'+(sensitiveKeptOut?'<span class="badge good">'+esc(sensitiveKeptOut)+' sensitive kept out</span>':'')+'<span class="badge">record ID: '+esc(primary)+'</span></div><p>Customer isolation: <code>'+esc(tenant)+'</code> · User/owner limit: <code>'+esc(principal)+'</code></p>'+(blocked?'<p><strong>Next:</strong> '+esc(blockedResourceNextAction(review))+'</p>':'')+'<div class="actions"><button class="secondary" data-open-resource="'+esc(review.id)+'" type="button">'+esc(risks?"Review access":"Inspect access")+'</button>'+(source?'<label class="check"><input type="checkbox" data-resource-toggle="'+esc(review.id)+'" '+(included?"checked":"")+'> Include</label>':'')+'</div></article>';
+	        const scopeWhy=blocked&&review.scope_resolution_guidance?.why?.length?'<div class="risk-list">'+review.scope_resolution_guidance.why.map(reason=>'<div class="risk unresolved"><strong>Why unavailable</strong><p>'+esc(reason)+'</p></div>').join("")+'</div>':'';
+	        return '<article class="resource" data-risk="'+risks+'"><div class="resource-head"><div><h3 class="resource-name">'+esc(review.id)+'</h3><p>'+esc(blocked?"Unavailable: "+(review.blockers||[]).join("; "):included?"Included in the agent data set":"Excluded from the agent data set")+'</p></div><span class="badge '+badgeClass+'">'+esc(badgeText)+'</span></div><div class="badges"><span class="badge">'+esc(raw)+' visible</span><span class="badge">'+esc(kept)+' hidden</span>'+(sensitiveKeptOut?'<span class="badge good">'+esc(sensitiveKeptOut)+' sensitive kept out</span>':'')+'<span class="badge">record ID: '+esc(primary)+'</span></div><p>Customer isolation: <code>'+esc(tenant)+'</code> · User/owner limit: <code>'+esc(principal)+'</code></p>'+scopeWhy+(blocked?'<p><strong>Next:</strong> '+esc(blockedResourceNextAction(review))+'</p>':'')+'<div class="actions"><button class="secondary" data-open-resource="'+esc(review.id)+'" type="button">'+esc(risks?"Review access":"Inspect access")+'</button>'+(source?'<label class="check"><input type="checkbox" data-resource-toggle="'+esc(review.id)+'" '+(included?"checked":"")+'> Include</label>':'')+'</div></article>';
 	      }).join("")||'<div class="band notice"><strong>No '+esc(reviewedCollectionLabel())+' match this view.</strong><p>The inspected resources are still available; this filter did not change authority.</p><button id="reset-resource-filter" class="secondary" type="button">Show all '+esc(reviewedCollectionLabel())+'</button></div>';
       document.querySelectorAll("[data-open-resource]").forEach(button=>button.onclick=()=>openResource(button.dataset.openResource));
       document.querySelectorAll("[data-resource-toggle]").forEach(input=>input.onchange=()=>toggleResource(input.dataset.resourceToggle,input.checked));
@@ -2339,7 +2358,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
               review.shared_reference_scope?.selected
             );
 	        const derivedTenantCandidates=(review.derived_tenant_scope?.candidates||[]).map(derivedScopePathLabel);
-	        const blockedDetails='<details class="access-secondary" data-access-secondary open><summary>Resolve blocked access</summary><div class="risk-list">'+(review.blockers||[]).map(blocker=>'<div class="risk high"><strong>'+esc(blocker)+'</strong><p>This object stays unavailable; unrelated safe resources can continue.</p></div>').join("")+'</div><div class="scope-grid" style="margin-top:12px"><div><strong>Row identity candidates</strong><p>'+esc((review.primary_key?.candidates||[]).join(", ")||"none")+'</p></div><div><strong>Direct tenant columns</strong><p>'+esc((review.tenant_key?.candidates||[]).join(", ")||"none")+'</p></div><div><strong>Mandatory proven tenant paths</strong><p>'+esc(derivedTenantCandidates.join("; ")||"none")+'</p></div></div>'+resolution+'<p>Sensitive or unresolved fields kept unavailable: '+esc(kept.join(", ")||"none detected")+'.</p></details>';
+	        const scopeGuidance=review.scope_resolution_guidance;
+	        const scopeExplanation=scopeGuidance?'<div class="risk-list">'+scopeGuidance.why.map(reason=>'<div class="risk unresolved"><strong>Why this table is unavailable</strong><p>'+esc(reason)+'</p></div>').join("")+'</div><div class="band notice"><strong>What makes it addable</strong><ul>'+scopeGuidance.remediation.map(action=>'<li>'+esc(action)+'</li>').join("")+'</ul></div>':'';
+	        const blockedDetails='<details class="access-secondary" data-access-secondary open><summary>Resolve blocked access</summary><div class="risk-list">'+(review.blockers||[]).map(blocker=>'<div class="risk high"><strong>'+esc(blocker)+'</strong><p>This object stays unavailable; unrelated safe resources can continue.</p></div>').join("")+'</div>'+scopeExplanation+'<div class="scope-grid" style="margin-top:12px"><div><strong>Row identity candidates</strong><p>'+esc((review.primary_key?.candidates||[]).join(", ")||"none")+'</p></div><div><strong>Direct tenant columns</strong><p>'+esc((review.tenant_key?.candidates||[]).join(", ")||"none")+'</p></div><div><strong>Mandatory proven tenant paths</strong><p>'+esc(derivedTenantCandidates.join("; ")||"none")+'</p></div></div>'+resolution+'<p>Sensitive or unresolved fields kept unavailable: '+esc(kept.join(", ")||"none detected")+'.</p></details>';
 	        byId("resource-detail").innerHTML=header+blockedDetails+columnList;
 		      byId("back-resources").onclick=backFromResourceDetail;
 		      if(byId("open-resource-privacy"))byId("open-resource-privacy").onclick=()=>{
@@ -5143,6 +5164,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		        selected_name:candidate.pack.name,
 		        entries:[]
 		      };
+	      boundaryRescanReport=payload.boundary_rescan_report||null;
 	      if(accessBaselineColumns===null)accessBaselineColumns=accessColumnSnapshot(candidate);
 	      reviewReport=payload.review;
 	      activeBoundary=payload.active;

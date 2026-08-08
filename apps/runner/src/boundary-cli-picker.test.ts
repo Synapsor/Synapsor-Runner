@@ -65,6 +65,58 @@ describe("boundary review terminal picker", () => {
     await expect(confirmed).resolves.toBe(true);
   });
 
+  it("explains why a nullable tenant relationship cannot make a blocked table addable", async () => {
+    const { input, output } = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const view = reviewView();
+    view.resource_id = "public.abandoned_carts";
+    view.status = "blocked";
+    view.tenant_key = {
+      candidates: [],
+      evidence: [],
+      alternatives_considered: [],
+      confidence: "low",
+      confirmation_required: true,
+      safety_consequence: "Rows cannot be tenant scoped.",
+      blocked_reason: "no reviewed tenant column is available",
+    };
+    view.derived_tenant_scope = {
+      candidates: [],
+      confirmation_required: true,
+      safety_consequence: "No proven path is available.",
+    };
+    view.shared_reference_scope = {
+      eligible: false,
+      confirmation_required: true,
+      safety_consequence: "Shared rows require review.",
+      blockers: [
+        "relationship abandoned_carts_order_id_fkey reaches tenant-scoped resource public.orders",
+      ],
+    };
+    view.relationships = [{
+      name: "abandoned_carts_order_id_fkey",
+      columns: ["order_id"],
+      referenced_resource: "public.orders",
+      referenced_columns: ["id"],
+      reviewed_cardinality: "many_to_one_candidate",
+      review_required: true,
+      nullable: true,
+      cardinality_proven: true,
+    }];
+
+    const result = session.resolveBlockedResource!(view);
+    const rendered = stripAnsi(output.read()?.toString() ?? "");
+    expect(rendered).toContain("Why tenant isolation is unavailable");
+    expect(rendered).toContain("order_id -> public.orders.id is nullable");
+    expect(rendered).toContain("relationship abandoned_carts_order_id_fkey reaches");
+    expect(rendered).toContain("tenant-scoped resource public.orders");
+    expect(rendered).toContain("What makes this table addable");
+    expect(rendered).toContain("public.abandoned_carts.order_id NOT NULL");
+    expect(rendered).toContain("Runner will not change the database schema for you.");
+    await send(input, "b");
+    await expect(result).resolves.toBe("back");
+  });
+
   it("labels a fully reviewed candidate as reviewed but not active", async () => {
     const { input, output } = fakeTerminal();
     const session = createBoundaryReviewInteractiveSession(input, output);

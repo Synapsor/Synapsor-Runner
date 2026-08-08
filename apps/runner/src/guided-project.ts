@@ -321,6 +321,36 @@ export async function resetGuidedOnboardingForBoundaryReview(input: {
   return next;
 }
 
+export async function recordGuidedBoundaryRescan(input: {
+  projectRoot: string;
+  schemaFingerprint: `sha256:${string}`;
+  rolePostureFingerprint: `sha256:${string}`;
+  pendingReview: boolean;
+  authorityActive: boolean;
+  now?: string;
+}): Promise<GuidedOnboardingState> {
+  const projectRoot = path.resolve(input.projectRoot);
+  const current = await readGuidedOnboardingState(projectRoot);
+  if (!current) throw new Error("Guided onboarding state is unavailable.");
+  const next: GuidedOnboardingState = {
+    ...current,
+    status: input.authorityActive ? "boundary_active" : "review_boundary",
+    source: {
+      ...current.source,
+      schema_fingerprint: input.schemaFingerprint,
+      role_posture_fingerprint: input.rolePostureFingerprint,
+    },
+    authority_active: input.authorityActive,
+    source_database_changed: false,
+    updated_at: input.now ?? new Date().toISOString(),
+    recommended_next_action: input.pendingReview
+      ? "Review the reconciled boundary changes; existing exact authority was not replaced."
+      : current.recommended_next_action,
+  };
+  await writeAtomic(path.join(projectRoot, ".synapsor/guided-onboarding.json"), json(next));
+  return next;
+}
+
 function environmentExample(build: GuidedBuild): string {
   const trustedContext = build.exploration_boundary.trusted_context;
   const principalRequired = build.exploration_boundary.pack.resources
