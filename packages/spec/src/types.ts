@@ -236,6 +236,29 @@ export type ProtectedReadBaseMeasureSpec = ExtensionFields & {
   relationship?: string;
 };
 
+export type ProtectedReadPostAggregateOperation =
+  | "running_total"
+  | "rank"
+  | "lag_absolute_change"
+  | "lag_percentage_change"
+  | "moving_average"
+  | "share_of_released_total";
+
+export type ProtectedReadDerivedMeasureSpec = ExtensionFields & (
+  | {
+    shape: "ratio" | "percentage" | "per_unit_average";
+    numerator: ProtectedReadBaseMeasureSpec;
+    denominator: ProtectedReadBaseMeasureSpec;
+    null_policy: "null_on_zero_or_null_denominator";
+  }
+  | {
+    shape: ProtectedReadPostAggregateOperation;
+    base_measure: ProtectedReadBaseMeasureSpec;
+    direction?: "asc" | "desc";
+    window_size?: number;
+  }
+);
+
 export type ProtectedReadMeasureSpec = ExtensionFields & {
   name: string;
   function:
@@ -253,12 +276,7 @@ export type ProtectedReadMeasureSpec = ExtensionFields & {
     | "reviewed_derived";
   field?: string;
   relationship?: string;
-  derived?: {
-    shape: "ratio" | "percentage" | "per_unit_average";
-    numerator: ProtectedReadBaseMeasureSpec;
-    denominator: ProtectedReadBaseMeasureSpec;
-    null_policy: "null_on_zero_or_null_denominator";
-  };
+  derived?: ProtectedReadDerivedMeasureSpec;
 };
 
 export type ProtectedReadDimensionSpec = ExtensionFields & {

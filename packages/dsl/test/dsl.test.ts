@@ -905,6 +905,36 @@ END
     ))).toThrow(/UNSUPPORTED_DSL_CLAUSE/);
   });
 
+  it("compiles fixed post-suppression calculations without accepting window SQL", () => {
+    const runningSource = protectedAggregateSource()
+      .replace(
+        "MEASURE churned_accounts COUNT ROWS",
+        "MEASURE running_churn POST RUNNING_TOTAL OF COUNT ROWS",
+      )
+      .replace("MEASURE affected_customers COUNT DISTINCT customer_id\n", "")
+      .replace("AGGREGATE ORDER BY MEASURE churned_accounts DESC", "AGGREGATE ORDER BY TIME BUCKET ASC")
+      .replace("  PROTECTED LIMITS ROWS 50 GROUPS 50", "  PROTECTED LIMITS ROWS 50 GROUPS 50 RANKED GROUPS 500");
+    expect(compileAgentDsl(runningSource).capabilities[0]?.protected_read?.aggregate?.measures).toEqual([{
+      name: "running_churn",
+      function: "reviewed_derived",
+      derived: {
+        shape: "running_total",
+        base_measure: { function: "count" },
+      },
+    }]);
+
+    const rankSource = runningSource
+      .replace("POST RUNNING_TOTAL", "POST RANK DESC")
+      .replace("AGGREGATE ORDER BY TIME BUCKET ASC", "AGGREGATE ORDER BY MEASURE running_churn ASC")
+      .replace("  TIME DIMENSION churn_week BY WEEK OF churned_at\n", "");
+    expect(compileAgentDsl(formatAgentDsl(rankSource)).capabilities[0]?.protected_read?.aggregate?.measures?.[0])
+      .toMatchObject({ derived: { shape: "rank", direction: "desc" } });
+    expect(() => compileAgentDsl(runningSource.replace(
+      "OF COUNT ROWS",
+      "OF SUM(balance_cents)",
+    ))).toThrow(/UNSUPPORTED_DSL_CLAUSE/);
+  });
+
   it("compiles a fixed reviewed numeric-band dimension without accepting expressions", () => {
     const source = protectedAggregateSource()
       .replace(

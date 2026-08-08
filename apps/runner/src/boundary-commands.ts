@@ -16,6 +16,7 @@ import {
   explorationBoundaryCandidateDigest,
   loadActivatedExplorationBoundary,
   reviewExplorationBoundaryCandidate,
+  type ExplorationDerivedBaseMeasure,
   type ExplorationBoundaryDraft,
   type GenerationLock
 } from "./auto-boundary.js";
@@ -1371,9 +1372,7 @@ async function interactiveRankedGroupReview(input: {
   return 0;
 }
 
-type ReviewedAnalyticsOperand = NonNullable<
-  NonNullable<BoundaryResourceReviewRequest["derived_measure"]>["numerator"]
->;
+type ReviewedAnalyticsOperand = ExplorationDerivedBaseMeasure;
 
 type ReviewedAnalyticsFieldChoice = {
   label: string;
@@ -1403,11 +1402,12 @@ async function interactiveReviewedAnalyticsReview(input: {
     "These definitions are fixed human-reviewed authority. The AI may select a saved name, but cannot send formulas, bucket edges, fields, or joins.",
     "1  Add a numeric band",
     "2  Remove a numeric band",
-    "3  Add a named derived measure",
-    "4  Remove a named derived measure",
+    "3  Add a named ratio or per-unit metric",
+    "4  Add a post-suppression calculation",
+    "5  Remove a named reviewed metric",
     "",
   ].join("\n"));
-  const entered = await input.session.promptText("Choose 1-4; Esc returns without changes");
+  const entered = await input.session.promptText("Choose 1-5; Esc returns without changes");
   if (entered === undefined || !entered.trim()) {
     process.stdout.write("Returned to boundary tables. No analytics setting changed.\n\n");
     return 0;
@@ -1423,9 +1423,12 @@ async function interactiveReviewedAnalyticsReview(input: {
       return addReviewedDerivedMeasure(input, context.candidate, resource);
     }
     if (entered.trim() === "4") {
+      return addReviewedPostAggregateMeasure(input, context.candidate, resource);
+    }
+    if (entered.trim() === "5") {
       return removeReviewedDerivedMeasure(input, resource);
     }
-    process.stdout.write("Choose 1, 2, 3, or 4. No analytics setting changed.\n\n");
+    process.stdout.write("Choose 1, 2, 3, 4, or 5. No analytics setting changed.\n\n");
     return 0;
   } catch (error) {
     process.stdout.write([
@@ -1556,8 +1559,9 @@ async function addReviewedDerivedMeasure(
   ].join("\n"));
   const numerator = await chooseNumberedReviewOption(input.session, "Numerator number", choices);
   if (!numerator) return cancelledAnalyticsEdit();
-  const relationship = numerator.value.relationship;
-  const denominators = choices.filter((item) => item.value.relationship === relationship);
+  const relationship = "relationship" in numerator.value ? numerator.value.relationship : undefined;
+  const denominators = choices.filter((item) =>
+    ("relationship" in item.value ? item.value.relationship : undefined) === relationship);
   process.stdout.write([
     "Choose the fixed denominator. Both operands must use the same reviewed table path:",
     ...denominators.map((item, index) => `  ${index + 1}  ${item.label}`),
@@ -1636,6 +1640,90 @@ async function removeReviewedDerivedMeasure(
   const committed = await commitBoundaryResourceReviewMutation(input.projectRoot, preview);
   process.stdout.write([
     `Removed reviewed derived measure ${selected.name} in disabled boundary revision ${committed.review_revision}.`,
+    "Press C in /access to review and activate this exact boundary revision.",
+    "",
+  ].join("\n"));
+  return 0;
+}
+
+async function addReviewedPostAggregateMeasure(
+  input: Parameters<typeof interactiveReviewedAnalyticsReview>[0],
+  boundary: ExplorationBoundaryDraft,
+  resource: ExplorationBoundaryDraft["pack"]["resources"][number],
+): Promise<number> {
+  const choices = reviewedAnalyticsOperandChoices(boundary, resource);
+  process.stdout.write([
+    "Choose the reviewed base aggregate. Runner calculates only from groups that pass small-group privacy:",
+    ...choices.map((item, index) => `  ${index + 1}  ${item.label}`),
+    "",
+  ].join("\n"));
+  const base = await chooseNumberedReviewOption(input.session, "Base aggregate number", choices);
+  if (!base) return cancelledAnalyticsEdit();
+  process.stdout.write([
+    "Choose the fixed calculation:",
+    "  1  Running total by time",
+    "  2  Rank across released groups",
+    "  3  Change from the previous time bucket",
+    "  4  Percentage change from the previous time bucket",
+    "  5  Moving average by time",
+    "  6  Percentage of the released-group total",
+    "",
+    "Time calculations require a reviewed time bucket when asked. Rank and percentage of total require a reviewed group and no time bucket.",
+  ].join("\n"));
+  const operationInput = await input.session.promptText("Calculation number");
+  if (operationInput === undefined) return cancelledAnalyticsEdit();
+  const shape = ({
+    "1": "running_total",
+    "2": "rank",
+    "3": "lag_absolute_change",
+    "4": "lag_percentage_change",
+    "5": "moving_average",
+    "6": "share_of_released_total",
+  } as const)[operationInput.trim() as "1" | "2" | "3" | "4" | "5" | "6"];
+  if (!shape) throw new Error("Choose a calculation from 1 through 6.");
+  let direction: "asc" | "desc" | undefined;
+  if (shape === "rank") {
+    const directionInput = await input.session.promptText("Rank direction: 1 highest first, 2 lowest first [1]");
+    if (directionInput === undefined) return cancelledAnalyticsEdit();
+    const choice = directionInput.trim() || "1";
+    if (choice !== "1" && choice !== "2") throw new Error("Choose 1 for highest first or 2 for lowest first.");
+    direction = choice === "1" ? "desc" : "asc";
+  }
+  let windowSize: number | undefined;
+  if (shape === "moving_average") {
+    const windowInput = await input.session.promptText("Number of time buckets in the moving window (2-12) [3]");
+    if (windowInput === undefined) return cancelledAnalyticsEdit();
+    windowSize = Number(windowInput.trim() || "3");
+    if (!Number.isSafeInteger(windowSize) || windowSize < 2 || windowSize > 12) {
+      throw new Error("Choose a whole-number moving window from 2 through 12.");
+    }
+  }
+  const suggestedName = reviewedAnalyticsIdentifier(`${reviewedOperandName(base.value)}_${shape}`);
+  const nameInput = await input.session.promptText(`Saved metric name [${suggestedName}]`);
+  if (nameInput === undefined) return cancelledAnalyticsEdit();
+  const name = nameInput.trim() || suggestedName;
+  const suggestedLabel = humanReviewedAnalyticsLabel(name);
+  const labelInput = await input.session.promptText(`Plain-language label [${suggestedLabel}]`);
+  if (labelInput === undefined) return cancelledAnalyticsEdit();
+  const reason = await requiredReviewedAnalyticsReason(input.session);
+  if (reason === undefined) return cancelledAnalyticsEdit();
+  const preview = await prepareBoundaryResourceReviewMutation(input.projectRoot, {
+    resource_id: input.resourceId,
+    derived_measure: {
+      name,
+      label: labelInput.trim() || suggestedLabel,
+      shape,
+      base_measure: structuredClone(base.value),
+      ...(direction ? { direction } : {}),
+      ...(windowSize !== undefined ? { window_size: windowSize } : {}),
+    },
+    actor: localInteractiveActor(),
+    reason,
+  }, input.schemaInspector);
+  const committed = await commitBoundaryResourceReviewMutation(input.projectRoot, preview);
+  process.stdout.write([
+    `Saved reviewed ${humanReviewedAnalyticsLabel(shape).toLowerCase()} ${name} for ${input.resourceId} in disabled boundary revision ${committed.review_revision}.`,
+    "Runner will calculate it only after small-group suppression. The AI may select only this saved name.",
     "Press C in /access to review and activate this exact boundary revision.",
     "",
   ].join("\n"));

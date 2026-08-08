@@ -198,6 +198,62 @@ describe("Protect This Query", () => {
     expect(created.draft.state).toBe("disabled");
   });
 
+  it("freezes a post-suppression running total without emitting model-authored formulas or SQL", async () => {
+    const fixture = await activatedFixture(churnInspection(), undefined, undefined, (candidate) => {
+      candidate.pack.resources[0]!.derived_measures = [{
+        name: "revenue_running_total",
+        label: "Revenue running total",
+        shape: "running_total",
+        base_measure: { function: "sum", field: "monthly_revenue_cents" },
+      }];
+    });
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([{
+        time_bucket: "2026-07-06T00:00:00.000Z",
+        measure_0: 45_000,
+        __measure_cohort_0: 8,
+        __cohort_size: 8,
+      }]),
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => Date.parse("2026-07-22T12:00:00.000Z"),
+    });
+    const result = await runtime.explore({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ derived_measure: "revenue_running_total" }],
+      time_bucket: { field: "churned_at", bucket: "week" },
+      order_by: { kind: "time_bucket", direction: "asc" },
+      top_n: 10,
+    });
+    await runtime.close();
+
+    const created = await createProtectedQueryDraft({
+      projectRoot: fixture.root,
+      token: (result.protect as { token: string }).token,
+      capabilityName: "analytics.revenue_running_total",
+      description: "Show the reviewed running revenue total after suppression.",
+      returnsHint: "Returns only privacy-released time groups.",
+      now: Date.parse("2026-07-22T12:00:01.000Z"),
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    expect(created.dsl).toContain(
+      "MEASURE revenue_running_total POST RUNNING_TOTAL OF SUM monthly_revenue_cents",
+    );
+    expect(created.dsl).toContain("PROTECTED LIMITS ROWS 50 GROUPS 50 RANKED GROUPS 500");
+    expect(created.dsl).not.toMatch(/\bOVER\s*\(|SELECT\s/i);
+    expect(created.contract.capabilities[0]?.protected_read?.aggregate?.measures).toEqual([{
+      name: "revenue_running_total",
+      function: "reviewed_derived",
+      derived: {
+        shape: "running_total",
+        base_measure: { function: "sum", field: "monthly_revenue_cents" },
+      },
+    }]);
+  });
+
   it("carries model-withheld output aliases into protected DSL and canonical authority", async () => {
     const fixture = await activatedFixture(churnInspection(), undefined, "region");
     const runtime = await createScopedExploreRuntime({
@@ -1060,6 +1116,7 @@ async function activatedFixture(
   inspection = churnInspection(),
   minimumCohort?: 1 | 2 | 3 | 4,
   modelWithheldField?: string,
+  narrow?: (candidate: ReturnType<typeof buildAutoBoundary>["exploration_boundary"]) => void,
 ): Promise<{
   root: string;
   boundary: ActivatedExplorationBoundary;
@@ -1114,6 +1171,7 @@ async function activatedFixture(
   });
   await writeAutoBoundaryArtifacts({ projectRoot: root, build });
   const candidate = structuredClone(build.exploration_boundary);
+  narrow?.(candidate);
   const digest = explorationBoundaryCandidateDigest(candidate);
   const boundary = await activateExplorationBoundary({
     projectRoot: root,

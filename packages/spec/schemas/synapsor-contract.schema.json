@@ -496,15 +496,30 @@
         "field": { "$ref": "#/$defs/safeIdentifier" },
         "relationship": { "$ref": "#/$defs/safeIdentifier" },
         "derived": {
-          "type": "object",
-          "required": ["shape", "numerator", "denominator", "null_policy"],
-          "additionalProperties": false,
-          "properties": {
-            "shape": { "enum": ["ratio", "percentage", "per_unit_average"] },
-            "numerator": { "$ref": "#/$defs/protectedReadDerivedOperand" },
-            "denominator": { "$ref": "#/$defs/protectedReadDerivedOperand" },
-            "null_policy": { "const": "null_on_zero_or_null_denominator" }
-          }
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["shape", "numerator", "denominator", "null_policy"],
+              "additionalProperties": false,
+              "properties": {
+                "shape": { "enum": ["ratio", "percentage", "per_unit_average"] },
+                "numerator": { "$ref": "#/$defs/protectedReadDerivedOperand" },
+                "denominator": { "$ref": "#/$defs/protectedReadDerivedOperand" },
+                "null_policy": { "const": "null_on_zero_or_null_denominator" }
+              }
+            },
+            {
+              "type": "object",
+              "required": ["shape", "base_measure"],
+              "additionalProperties": false,
+              "properties": {
+                "shape": { "enum": ["running_total", "rank", "lag_absolute_change", "lag_percentage_change", "moving_average", "share_of_released_total"] },
+                "base_measure": { "$ref": "#/$defs/protectedReadDerivedOperand" },
+                "direction": { "enum": ["asc", "desc"] },
+                "window_size": { "type": "integer", "minimum": 2, "maximum": 12 }
+              }
+            }
+          ]
         }
       }
     },

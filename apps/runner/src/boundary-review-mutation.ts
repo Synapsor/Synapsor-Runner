@@ -22,6 +22,9 @@ import {
   type DerivedScopeInference,
   type ActivatedExplorationBoundary,
   type ExplorationBoundaryDraft,
+  type ExplorationDerivedBaseMeasure,
+  type ExplorationDerivedMeasure,
+  type ExplorationPostAggregateOperation,
   type GenerationLock,
   type SharedReferenceScopeInference,
 } from "./auto-boundary.js";
@@ -78,22 +81,25 @@ export type BoundaryResourceReviewRequest = {
     field: string;
     values: string[];
   };
-  derived_measure?: {
-    name: string;
-    label: string;
-    shape: "ratio" | "percentage" | "per_unit_average";
-    numerator: {
-      function: "count" | "count_distinct" | "sum" | "avg";
-      field?: string;
-      relationship?: string;
-    };
-    denominator: {
-      function: "count" | "count_distinct" | "sum" | "avg";
-      field?: string;
-      relationship?: string;
-    };
-    remove?: boolean;
-  };
+  derived_measure?: (
+    | {
+      name: string;
+      label: string;
+      shape: "ratio" | "percentage" | "per_unit_average";
+      numerator: ExplorationDerivedBaseMeasure;
+      denominator: ExplorationDerivedBaseMeasure;
+      remove?: boolean;
+    }
+    | {
+      name: string;
+      label: string;
+      shape: ExplorationPostAggregateOperation;
+      base_measure: ExplorationDerivedBaseMeasure;
+      direction?: "asc" | "desc";
+      window_size?: number;
+      remove?: boolean;
+    }
+  );
   numeric_band?: {
     name: string;
     label: string;
@@ -123,6 +129,33 @@ export type BoundaryReviewMutationBindings = {
   role_posture_fingerprint: `sha256:${string}`;
   review_revision: number;
 };
+
+function normalizedRequestedDerivedMeasure(
+  reviewed: NonNullable<BoundaryResourceReviewRequest["derived_measure"]>,
+  resourceId: string,
+): ExplorationDerivedMeasure {
+  const definition = "base_measure" in reviewed
+    ? {
+      name: reviewed.name,
+      label: reviewed.label,
+      shape: reviewed.shape,
+      base_measure: reviewed.base_measure,
+      ...(reviewed.direction ? { direction: reviewed.direction } : {}),
+      ...(reviewed.window_size !== undefined ? { window_size: reviewed.window_size } : {}),
+    }
+    : {
+      name: reviewed.name,
+      label: reviewed.label,
+      shape: reviewed.shape,
+      numerator: reviewed.numerator,
+      denominator: reviewed.denominator,
+      null_policy: "null_on_zero_or_null_denominator" as const,
+    };
+  return normalizeExplorationDerivedMeasure(
+    definition,
+    `${resourceId}.${reviewed.name} derived measure`,
+  );
+}
 
 export type BoundaryReviewMutationPreview = {
   schema_version: "synapsor.boundary-review-mutation-preview.v1";
@@ -940,14 +973,7 @@ function managedDecisionsForRequest(
       name: reviewed.name,
       definition: reviewed.remove
         ? null
-        : normalizeExplorationDerivedMeasure({
-          name: reviewed.name,
-          label: reviewed.label,
-          shape: reviewed.shape,
-          numerator: reviewed.numerator,
-          denominator: reviewed.denominator,
-          null_policy: "null_on_zero_or_null_denominator",
-        }, `${request.resource_id}.${reviewed.name} derived measure`),
+        : normalizedRequestedDerivedMeasure(reviewed, request.resource_id),
     }));
   }
   if (request.numeric_band) {
@@ -1063,14 +1089,7 @@ function buildReviewedCandidate(input: {
     const retained = (resource.derived_measures ?? []).filter((measure) => measure.name !== reviewed.name);
     resource.derived_measures = reviewed.remove
       ? retained
-      : [...retained, normalizeExplorationDerivedMeasure({
-        name: reviewed.name,
-        label: reviewed.label,
-        shape: reviewed.shape,
-        numerator: reviewed.numerator,
-        denominator: reviewed.denominator,
-        null_policy: "null_on_zero_or_null_denominator",
-      }, `${input.request.resource_id}.${reviewed.name} derived measure`)]
+      : [...retained, normalizedRequestedDerivedMeasure(reviewed, input.request.resource_id)]
         .sort((left, right) => left.name.localeCompare(right.name));
     if (!resource.derived_measures.length) delete resource.derived_measures;
   }
@@ -1613,16 +1632,7 @@ function validateBoundaryResourceRequest(request: BoundaryResourceReviewRequest)
   }
   if (request.derived_measure) {
     const measure = request.derived_measure;
-    if (!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(measure.name)) {
-      throw new Error("A reviewed derived-measure name must be a safe identifier of at most 64 characters.");
-    }
-    if (!measure.label.trim() || measure.label.length > 120
-      || /[\u0000-\u001f\u007f]/.test(measure.label)) {
-      throw new Error("A reviewed derived measure requires a plain-language label of at most 120 characters.");
-    }
-    if (!["ratio", "percentage", "per_unit_average"].includes(measure.shape)) {
-      throw new Error("Derived-measure shape must be ratio, percentage, or per_unit_average.");
-    }
+    normalizedRequestedDerivedMeasure(measure, request.resource_id);
   }
   if (request.numeric_band) {
     normalizeExplorationNumericBand({
@@ -1841,11 +1851,7 @@ function canonicalReviewRequest(request: BoundaryResourceReviewRequest): JsonRec
       ? { field: request.field_enum.field, values: [...request.field_enum.values] }
       : null,
     derived_measure: request.derived_measure
-      ? {
-        ...request.derived_measure,
-        numerator: { ...request.derived_measure.numerator },
-        denominator: { ...request.derived_measure.denominator },
-      }
+      ? structuredClone(request.derived_measure)
       : null,
     numeric_band: request.numeric_band
       ? {
@@ -1868,6 +1874,24 @@ function sortedOrNull(value: string[] | undefined): string[] | null {
 }
 
 function requestArrays(request: BoundaryResourceReviewRequest): string[] {
+  const operandValues = (operand: ExplorationDerivedBaseMeasure): string[] => [
+    ...("field" in operand ? [operand.field] : []),
+    ...("relationship" in operand && operand.relationship ? [operand.relationship] : []),
+  ];
+  const derivedMeasureValues = request.derived_measure
+    ? "base_measure" in request.derived_measure
+      ? [
+        request.derived_measure.name,
+        request.derived_measure.label,
+        ...operandValues(request.derived_measure.base_measure),
+      ]
+      : [
+        request.derived_measure.name,
+        request.derived_measure.label,
+        ...operandValues(request.derived_measure.numerator),
+        ...operandValues(request.derived_measure.denominator),
+      ]
+    : [];
   return [
     ...(request.keep_out_fields ?? []),
     ...(request.withhold_from_model_fields ?? []),
@@ -1880,14 +1904,7 @@ function requestArrays(request: BoundaryResourceReviewRequest): string[] {
     ...(request.count_distinct_fields ?? []),
     ...(request.time_bucket_fields ?? []),
     ...(request.field_enum ? [request.field_enum.field, ...request.field_enum.values] : []),
-    ...(request.derived_measure ? [
-      request.derived_measure.name,
-      request.derived_measure.label,
-      ...(request.derived_measure.numerator.field ? [request.derived_measure.numerator.field] : []),
-      ...(request.derived_measure.numerator.relationship ? [request.derived_measure.numerator.relationship] : []),
-      ...(request.derived_measure.denominator.field ? [request.derived_measure.denominator.field] : []),
-      ...(request.derived_measure.denominator.relationship ? [request.derived_measure.denominator.relationship] : []),
-    ] : []),
+    ...derivedMeasureValues,
     ...(request.numeric_band ? [
       request.numeric_band.name,
       request.numeric_band.label,

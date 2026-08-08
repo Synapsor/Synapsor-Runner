@@ -7911,6 +7911,22 @@ function managedReviewMutationRequest(
     if (decision.definition === null) {
       throw new Error("Workbench derived-measure removal requires the reviewed resource editor.");
     }
+    if ("base_measure" in decision.definition) {
+      return {
+        ...common,
+        derived_measure: {
+          name: decision.name,
+          label: decision.definition.label,
+          shape: decision.definition.shape,
+          base_measure: structuredClone(decision.definition.base_measure),
+          ...(decision.definition.direction ? { direction: decision.definition.direction } : {}),
+          ...(decision.definition.window_size !== undefined
+            ? { window_size: decision.definition.window_size }
+            : {}),
+          ...(decision.remove ? { remove: true } : {}),
+        },
+      };
+    }
     return {
       ...common,
       derived_measure: {

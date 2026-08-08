@@ -2130,7 +2130,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const actor=esc(byId("actor").value.trim());
       const option=value=>esc(JSON.stringify(value));
       const bandRows=bands.length?bands.map(band=>'<div class="risk"><strong>'+esc(band.label)+'</strong><p><code>'+esc(band.name)+'</code> groups '+esc(band.relationship?band.relationship+" -> "+band.field:band.field)+' into '+esc(band.bucket_labels.length)+' fixed buckets: '+esc(band.bucket_labels.join(" | "))+'</p><button class="quiet" data-remove-numeric-band="'+esc(band.name)+'" type="button">Remove this band</button></div>').join(""):'<p>No numeric bands are reviewed for this table.</p>';
-      const measureRows=measures.length?measures.map(measure=>'<div class="risk"><strong>'+esc(measure.label)+'</strong><p><code>'+esc(measure.name)+'</code> is a fixed '+esc(measure.shape.replace(/_/g," "))+'. The AI can select its name but cannot change its formula.</p><button class="quiet" data-remove-derived-measure="'+esc(measure.name)+'" type="button">Remove this metric</button></div>').join(""):'<p>No named derived metrics are reviewed for this table.</p>';
+      const measureRows=measures.length?measures.map(measure=>'<div class="risk"><strong>'+esc(measure.label)+'</strong><p><code>'+esc(measure.name)+'</code> is a fixed '+esc(measure.shape.replace(/_/g," "))+'. The AI can select its name but cannot change its reviewed definition.'+(measure.base_measure?' Runner applies it only after small-group suppression.':'')+'</p><button class="quiet" data-remove-derived-measure="'+esc(measure.name)+'" type="button">Remove this metric</button></div>').join(""):'<p>No named derived metrics are reviewed for this table.</p>';
       const commonReview='<div class="form-grid"><label class="field">Human reviewer<input id="analytics-review-actor" type="text" maxlength="128" value="'+actor+'"></label><label class="field">Reason for this analytics definition<textarea id="analytics-review-reason" maxlength="500" rows="2" placeholder="Explain why this fixed metric or grouping is appropriate for this boundary."></textarea></label></div>';
       const bandForm=fields.length
         ?'<div class="review-form"><h4>Add a fixed numeric band</h4><p>Choose a reviewed numeric field and fixed bucket boundaries. The AI receives only the saved name and labels; it cannot supply edges.</p><div class="form-grid"><label class="field">Numeric field<select id="analytics-band-field">'+fields.map(item=>'<option value="'+option(item)+'">'+esc(item.label)+'</option>').join("")+'</select></label><label class="field">Saved name<input id="analytics-band-name" type="text" maxlength="64" placeholder="order_value_band"></label><label class="field">Plain-language label<input id="analytics-band-label" type="text" maxlength="120" placeholder="Order value band"></label><label class="field">Bucket edges<input id="analytics-band-edges" type="text" maxlength="512" placeholder="1000, 5000"></label><label class="field">Labels, lowest to highest<input id="analytics-band-labels" type="text" maxlength="2048" placeholder="Under 10 | 10 to 49 | 50 or more"></label></div><div class="actions"><button id="save-numeric-band" type="button">Save numeric band</button></div></div>'
@@ -2138,7 +2138,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const derivedForm=operands.length
         ?'<div class="review-form"><h4>Add a named derived metric</h4><p>Choose two existing reviewed aggregates. Runner fixes the calculation; there is no formula or SQL input.</p><div class="form-grid"><label class="field">Numerator<select id="analytics-derived-numerator">'+operands.map(item=>'<option data-relationship="'+esc(item.relationship)+'" value="'+option(item.value)+'">'+esc(item.label)+'</option>').join("")+'</select></label><label class="field">Denominator<select id="analytics-derived-denominator">'+operands.map(item=>'<option data-relationship="'+esc(item.relationship)+'" value="'+option(item.value)+'">'+esc(item.label)+'</option>').join("")+'</select></label><label class="field">Released result<select id="analytics-derived-shape"><option value="ratio">Ratio</option><option value="percentage">Percentage (ratio x 100)</option><option value="per_unit_average">Per-unit average</option></select></label><label class="field">Saved name<input id="analytics-derived-name" type="text" maxlength="64" placeholder="average_order_value"></label><label class="field">Plain-language label<input id="analytics-derived-label" type="text" maxlength="120" placeholder="Average order value"></label></div><div class="actions"><button id="save-derived-measure" type="button">Save named metric</button></div></div>'
         :'<div class="risk high"><strong>No reviewed aggregate is available.</strong><p>Review aggregate operations before defining a metric.</p></div>';
-      return '<details class="access-secondary" data-access-secondary data-reviewed-analytics><summary>Reviewed metrics and numeric bands · '+esc(measures.length+bands.length)+'</summary><p>These are fixed, digest-bound human decisions. Saving creates a disabled revision; press <strong>Review and activate</strong> after checking the complete boundary.</p><div class="risk-list">'+measureRows+bandRows+'</div>'+commonReview+bandForm+derivedForm+'<span id="analytics-review-status" class="status-message"></span></details>';
+      const postForm=operands.length
+        ?'<div class="review-form"><h4>Add a post-suppression calculation</h4><p>Choose one reviewed aggregate and a fixed operation. Runner calculates only from groups that passed small-group privacy; the AI receives only the saved name.</p><div class="form-grid"><label class="field">Base aggregate<select id="analytics-post-base">'+operands.map(item=>'<option value="'+option(item.value)+'">'+esc(item.label)+'</option>').join("")+'</select></label><label class="field">Calculation<select id="analytics-post-shape"><option value="running_total">Running total by time</option><option value="rank">Rank across released groups</option><option value="lag_absolute_change">Change from previous time bucket</option><option value="lag_percentage_change">Percentage change from previous time bucket</option><option value="moving_average">Moving average by time</option><option value="share_of_released_total">Percentage of released-group total</option></select></label><label class="field">Rank direction<select id="analytics-post-direction" disabled><option value="desc">Highest first</option><option value="asc">Lowest first</option></select></label><label class="field">Moving window<input id="analytics-post-window" type="number" min="2" max="12" value="3" disabled></label><label class="field">Saved name<input id="analytics-post-name" type="text" maxlength="64" placeholder="revenue_running_total"></label><label class="field">Plain-language label<input id="analytics-post-label" type="text" maxlength="120" placeholder="Revenue running total"></label></div><p id="analytics-post-grain">This calculation requires a reviewed ordered time bucket when queried. Optional dimensions partition the sequence.</p><div class="actions"><button id="save-post-measure" type="button">Save post-suppression calculation</button></div></div>'
+        :'';
+      return '<details class="access-secondary" data-access-secondary data-reviewed-analytics><summary>Reviewed metrics and numeric bands · '+esc(measures.length+bands.length)+'</summary><p>These are fixed, digest-bound human decisions. Saving creates a disabled revision; press <strong>Review and activate</strong> after checking the complete boundary.</p><div class="risk-list">'+measureRows+bandRows+'</div>'+commonReview+bandForm+derivedForm+postForm+'<span id="analytics-review-status" class="status-message"></span></details>';
     }
 
     function safeAnalyticsName(value){
@@ -2192,6 +2195,32 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       };
       numerator?.addEventListener("change",refreshDenominators);
       refreshDenominators();
+      const postShape=byId("analytics-post-shape");
+      const refreshPostShape=()=>{
+        if(!postShape)return;
+        const shape=postShape.value;
+        const sequential=["running_total","lag_absolute_change","lag_percentage_change","moving_average"].includes(shape);
+        byId("analytics-post-direction").disabled=shape!=="rank";
+        byId("analytics-post-window").disabled=shape!=="moving_average";
+        byId("analytics-post-grain").textContent=sequential
+          ?"This calculation requires a reviewed ordered time bucket when queried. Optional dimensions partition the sequence."
+          :"This calculation requires at least one reviewed group and no time bucket. It uses the complete released candidate set.";
+        const name=byId("analytics-post-name");
+        const label=byId("analytics-post-label");
+        if(name&&!name.value.trim()){
+          const base=JSON.parse(byId("analytics-post-base").value);
+          const subject=base.function==="count"?"rows":(base.relationship?base.relationship+"_":"")+(base.field||base.function);
+          name.value=safeAnalyticsName(subject+"_"+shape);
+          if(label&&!label.value.trim())label.value=name.value.replace(/_/g," ").replace(/\b\w/g,value=>value.toUpperCase());
+        }
+      };
+      postShape?.addEventListener("change",refreshPostShape);
+      byId("analytics-post-base")?.addEventListener("change",()=>{
+        byId("analytics-post-name").value="";
+        byId("analytics-post-label").value="";
+        refreshPostShape();
+      });
+      refreshPostShape();
       byId("save-numeric-band")?.addEventListener("click",()=>{
         try{
           const review=analyticsReviewIdentity();
@@ -2222,6 +2251,27 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           if(!label)throw new Error("Enter a plain-language label.");
           if(shape==="per_unit_average"&&(numeratorValue.function!=="sum"||!["count","count_distinct"].includes(denominatorValue.function)))throw new Error("A per-unit average requires SUM divided by COUNT or COUNT DISTINCT.");
           saveReviewedAnalyticsDecision({kind:"derived_measure",resource_id:selectedResource,name,definition:{name,label,shape,numerator:numeratorValue,denominator:denominatorValue,null_policy:"null_on_zero_or_null_denominator"},...review},"Saved named metric "+name+" for "+selectedResource+".");
+        }catch(error){
+          const status=byId("analytics-review-status");status.className="status-message error";status.textContent=error.message;
+        }
+      });
+      byId("save-post-measure")?.addEventListener("click",()=>{
+        try{
+          const review=analyticsReviewIdentity();
+          const shape=byId("analytics-post-shape").value;
+          const baseMeasure=JSON.parse(byId("analytics-post-base").value);
+          const name=byId("analytics-post-name").value.trim();
+          const label=byId("analytics-post-label").value.trim();
+          if(!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name))throw new Error("Use a saved name that starts with a letter or underscore and contains only letters, numbers, and underscores.");
+          if(!label)throw new Error("Enter a plain-language label.");
+          const definition={name,label,shape,base_measure:baseMeasure};
+          if(shape==="rank")definition.direction=byId("analytics-post-direction").value;
+          if(shape==="moving_average"){
+            const windowSize=Number(byId("analytics-post-window").value);
+            if(!Number.isSafeInteger(windowSize)||windowSize<2||windowSize>12)throw new Error("Choose a moving window from 2 through 12 time buckets.");
+            definition.window_size=windowSize;
+          }
+          saveReviewedAnalyticsDecision({kind:"derived_measure",resource_id:selectedResource,name,definition,...review},"Saved post-suppression calculation "+name+" for "+selectedResource+".");
         }catch(error){
           const status=byId("analytics-review-status");status.className="status-message error";status.textContent=error.message;
         }
@@ -4624,6 +4674,17 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         throw new Error("Choose each reviewed grouping field only once.");
       }
       const timeField=parseFieldChoice(byId("aggregate-time").value);
+      if(measure.derived_measure){
+        const definition=(resource.derived_measures||[]).find(item=>item.name===measure.derived_measure);
+        if(definition?.base_measure){
+          const sequential=["running_total","lag_absolute_change","lag_percentage_change","moving_average"].includes(definition.shape);
+          if(sequential&&!timeField)throw new Error(definition.label+" requires a reviewed time grouping.");
+          if(sequential&&byId("aggregate-bucket").value==="day_of_week")throw new Error(definition.label+" requires an ordered calendar interval, not day of week.");
+          if(!sequential&&timeField)throw new Error(definition.label+" uses released groups and cannot be combined with a time grouping.");
+          if(!sequential&&!dimensions.length)throw new Error(definition.label+" requires at least one reviewed grouping field.");
+          if(byId("aggregate-compare").checked)throw new Error(definition.label+" cannot be combined with a two-period comparison.");
+        }
+      }
       const filterField=parseFieldChoice(byId("aggregate-filter").value);
       const filterOperator=byId("aggregate-filter-op").value;
       const filterText=byId("aggregate-filter-value").value.trim();

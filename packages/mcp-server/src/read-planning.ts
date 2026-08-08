@@ -215,6 +215,12 @@ export function buildProtectedReadQuery(
         if (!derived) {
           throw new McpRuntimeError("PROTECTED_DERIVED_REQUIRED", "Reviewed derived measure authority is missing its frozen definition.");
         }
+        if ("base_measure" in derived) {
+          const base = protectedDerivedOperandSql(derived.base_measure, field);
+          select.push(`${base.value} AS ${quoteIdentifier(measure.name, placeholderStyle)}`);
+          select.push(`LEAST(COUNT(*), ${base.contributors}) AS ${quoteIdentifier(`__measure_cohort_${index}`, placeholderStyle)}`);
+          return;
+        }
         const numerator = protectedDerivedOperandSql(derived.numerator, field);
         const denominator = protectedDerivedOperandSql(derived.denominator, field);
         const scale = derived.shape === "percentage" ? "100.0" : "1.0";
@@ -249,7 +255,11 @@ export function buildProtectedReadQuery(
           ? ` ORDER BY ${groups.join(", ")}`
           : "";
     const ranked = aggregate.order_by?.kind === "measure"
-      || aggregate.order_by?.kind === "comparison_change";
+      || aggregate.order_by?.kind === "comparison_change"
+      || aggregate.measures.some((measure) =>
+        measure.function === "reviewed_derived"
+        && measure.derived !== undefined
+        && "base_measure" in measure.derived);
     const maximumGroups = ranked
       ? protectedRead.limits.max_ranked_groups ?? protectedRead.limits.max_groups
       : protectedRead.limits.max_groups;

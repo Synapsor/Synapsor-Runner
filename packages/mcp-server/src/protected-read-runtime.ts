@@ -3,6 +3,7 @@ import type {
   ProposalRuntimeStore,
 } from "@synapsor-runner/proposal-store";
 import {
+  applyReviewedAggregateTransforms,
   PrivacyBoundaryError,
   canonicalJsonDigest,
   shapePrivacySuppressedGroups,
@@ -206,7 +207,9 @@ export async function recordProtectedRead(input: {
     const aggregate = protectedRead.aggregate;
     if (!aggregate) throw new McpRuntimeError("PROTECTED_AGGREGATE_REQUIRED", "Protected aggregate authority is missing.");
     const periodMover = aggregate.order_by?.kind === "comparison_change";
-    const ranked = aggregate.order_by?.kind === "measure" || periodMover;
+    const ranked = aggregate.order_by?.kind === "measure"
+      || periodMover
+      || hasProtectedPostAggregateTransform(aggregate);
     const outputFields = [
       ...(aggregate.dimensions ?? []).map((dimension) => dimension.name),
       ...(aggregate.time_bucket && !periodMover ? [aggregate.time_bucket.name] : []),
@@ -264,9 +267,10 @@ export async function recordProtectedRead(input: {
       }
       throw error;
     }
+    const releasedGroups = applyProtectedPostAggregateTransforms(shaped.groups, aggregate);
     const candidateGroups = periodMover
-      ? shapeProtectedPeriodComparison(shaped.groups, aggregate)
-      : shaped.groups.map((group) => {
+      ? shapeProtectedPeriodComparison(releasedGroups, aggregate)
+      : releasedGroups.map((group) => {
         if (!aggregate.comparison) return group;
         const { __period, ...rest } = group;
         return { ...rest, period: __period };
@@ -358,6 +362,43 @@ function effectiveProtectedMinimumGroupSize(aggregate: ProtectedReadAggregateSpe
     ["stddev_samp", "stddev_pop", "var_samp", "var_pop", "reviewed_derived"].includes(measure.function))
     ? Math.max(aggregate.minimum_group_size, 5)
     : aggregate.minimum_group_size;
+}
+
+function hasProtectedPostAggregateTransform(aggregate: ProtectedReadAggregateSpec): boolean {
+  return aggregate.measures.some((measure) =>
+    measure.function === "reviewed_derived"
+    && measure.derived !== undefined
+    && "base_measure" in measure.derived);
+}
+
+function applyProtectedPostAggregateTransforms(
+  groups: Array<Record<string, unknown>>,
+  aggregate: ProtectedReadAggregateSpec,
+): Array<Record<string, unknown>> {
+  const transforms = aggregate.measures.flatMap((measure) => {
+    if (measure.function !== "reviewed_derived"
+      || !measure.derived
+      || !("base_measure" in measure.derived)) return [];
+    const definition = measure.derived;
+    const sequential = definition.shape === "running_total"
+      || definition.shape === "lag_absolute_change"
+      || definition.shape === "lag_percentage_change"
+      || definition.shape === "moving_average";
+    return [{
+      operation: definition.shape,
+      input_field: measure.name,
+      output_field: measure.name,
+      partition_fields: sequential
+        ? (aggregate.dimensions ?? []).map((dimension) => dimension.name)
+        : [],
+      ...(sequential && aggregate.time_bucket ? { time_field: aggregate.time_bucket.name } : {}),
+      ...(definition.shape === "rank" ? { direction: definition.direction } : {}),
+      ...(definition.shape === "moving_average" ? { window_size: definition.window_size } : {}),
+    }];
+  });
+  return transforms.length
+    ? applyReviewedAggregateTransforms({ groups, transforms })
+    : groups;
 }
 
 function shapeProtectedPeriodComparison(

@@ -15,6 +15,7 @@ import {
 } from "@synapsor-runner/proposal-store";
 import {
   PrivacyBoundaryError,
+  applyReviewedAggregateTransforms,
   canonicalJsonDigest,
   shapePrivacySuppressedGroups,
 } from "@synapsor-runner/protocol";
@@ -1424,6 +1425,30 @@ function validateAggregatePlan(input: Record<string, unknown>, boundary: Activat
   if (!comparison && orderBy?.kind === "comparison_change") {
     throw planError("comparison_change ordering requires one bounded two-period comparison");
   }
+  for (const measure of measures) {
+    if (!("derived_measure" in measure)) continue;
+    const definition = reviewedDerivedMeasure(resource, measure.derived_measure);
+    if (!("base_measure" in definition)) continue;
+    if (comparison) {
+      throw planError(`${definition.shape} is a post-suppression transform and cannot be combined with a two-period comparison`);
+    }
+    const sequential = definition.shape === "running_total"
+      || definition.shape === "lag_absolute_change"
+      || definition.shape === "lag_percentage_change"
+      || definition.shape === "moving_average";
+    if (sequential && !timeBucket) {
+      throw planError(`${definition.shape} requires one reviewed time_bucket`);
+    }
+    if (sequential && timeBucket?.bucket === "day_of_week") {
+      throw planError(`${definition.shape} requires an ordered calendar bucket, not day_of_week`);
+    }
+    if (!sequential && timeBucket) {
+      throw planError(`${definition.shape} groups the complete released result and cannot be combined with a time_bucket`);
+    }
+    if (!sequential && dimensions.length === 0) {
+      throw planError(`${definition.shape} requires at least one reviewed dimension`);
+    }
+  }
   const relationships = unique([
     relationship,
     ...measures.flatMap((measure) => measureRelationships(measure, resource)),
@@ -1896,17 +1921,18 @@ function shapeExploreResponse(
       maximum_groups: underlyingGroupLimit,
       // Ranked and comparison plans must suppress and pair the complete
       // reviewed candidate set before final ordering and top-N selection.
-      top_n: isRankedAggregatePlan(plan) || plan.comparison
+      top_n: isRankedAggregatePlan(plan, resource) || plan.comparison
         ? underlyingGroupLimit
         : plan.top_n,
       ...(plan.comparison
         ? { period_field: "__period", periods: ["period_1", "period_2"] }
         : {}),
     });
+    const releasedGroups = applyPostSuppressionTransforms(plan, resource, shaped.groups);
     const comparison = plan.comparison
-      ? shapePeriodComparison(shaped.groups, aliases)
+      ? shapePeriodComparison(releasedGroups, aliases)
       : undefined;
-    const data = comparison?.data ?? shaped.groups.map((group) => {
+    const data = comparison?.data ?? releasedGroups.map((group) => {
       const output: Record<string, Scalar> = {};
       aliases.dimensions.forEach((alias, index) => {
         output[alias] = safeDatabaseValue(group[`dimension_${index}`]);
@@ -1975,7 +2001,7 @@ function shapeExploreResponse(
       throw new ScopedExploreError(
         "EXPLORE_RESPONSE_TOO_LARGE",
         error.code === "GROUP_LIMIT_EXCEEDED"
-          ? isRankedAggregatePlan(plan)
+          ? isRankedAggregatePlan(plan, resource)
             ? "The ranked aggregate exceeded its separately reviewed execution boundary. Narrow the filters or grouping before retrying."
             : `${error.message} Use fewer dimensions, a coarser time bucket, or one bounded two-period comparison; top_n cannot bypass this reviewed limit.`
           : "Aggregate result failed its reviewed privacy boundary.",
@@ -2024,6 +2050,36 @@ function aggregateOutputAliases(
       : `${measure.function}_${reviewedFieldAlias(measure.field!, measure.relationship)}`,
   ));
   return { dimensions, measures, timeBucket: "time_bucket" };
+}
+
+function applyPostSuppressionTransforms(
+  plan: AggregateExplorePlan,
+  resource: BoundaryResource,
+  groups: Array<Record<string, unknown>>,
+): Array<Record<string, unknown>> {
+  const transforms = plan.measures.flatMap((measure, index) => {
+    if (!("derived_measure" in measure)) return [];
+    const definition = reviewedDerivedMeasure(resource, measure.derived_measure);
+    if (!("base_measure" in definition)) return [];
+    const sequential = definition.shape === "running_total"
+      || definition.shape === "lag_absolute_change"
+      || definition.shape === "lag_percentage_change"
+      || definition.shape === "moving_average";
+    return [{
+      operation: definition.shape,
+      input_field: `measure_${index}`,
+      output_field: `measure_${index}`,
+      partition_fields: sequential
+        ? (plan.dimensions ?? []).map((_dimension, dimensionIndex) => `dimension_${dimensionIndex}`)
+        : [],
+      ...(sequential ? { time_field: "time_bucket" } : {}),
+      ...(definition.shape === "rank" ? { direction: definition.direction } : {}),
+      ...(definition.shape === "moving_average" ? { window_size: definition.window_size } : {}),
+    }];
+  });
+  return transforms.length
+    ? applyReviewedAggregateTransforms({ groups, transforms })
+    : groups;
 }
 
 function shapePeriodComparison(
@@ -2105,8 +2161,13 @@ function sortExploreData(
   });
 }
 
-function isRankedAggregatePlan(plan: AggregateExplorePlan): boolean {
-  return plan.order_by?.kind === "measure" || plan.order_by?.kind === "comparison_change";
+function isRankedAggregatePlan(plan: AggregateExplorePlan, resource: BoundaryResource): boolean {
+  return plan.order_by?.kind === "measure"
+    || plan.order_by?.kind === "comparison_change"
+    || plan.measures.some((measure) => {
+      if (!("derived_measure" in measure)) return false;
+      return "base_measure" in reviewedDerivedMeasure(resource, measure.derived_measure);
+    });
 }
 
 function reviewedNumericAggregateFunctions(
@@ -2168,8 +2229,9 @@ function dimensionRelationships(
 function measureRelationships(measure: AggregateMeasure, root: BoundaryResource): string[] {
   if (!("derived_measure" in measure)) return measure.relationship ? [measure.relationship] : [];
   const definition = reviewedDerivedMeasure(root, measure.derived_measure);
-  const relationship = "relationship" in definition.numerator
-    ? definition.numerator.relationship
+  const source = "base_measure" in definition ? definition.base_measure : definition.numerator;
+  const relationship = "relationship" in source
+    ? source.relationship
     : undefined;
   return relationship ? [relationship] : [];
 }
@@ -2192,6 +2254,10 @@ function compiledDerivedMeasureSql(
       contributors: `COUNT(${field})`,
     };
   };
+  if ("base_measure" in definition) {
+    const base = operand(definition.base_measure);
+    return { value: base.value, contributorCohort: base.contributors };
+  }
   const numerator = operand(definition.numerator);
   const denominator = operand(definition.denominator);
   const scale = definition.shape === "percentage" ? "100.0" : "1.0";
@@ -2215,7 +2281,7 @@ function aggregateUnderlyingGroupLimit(
   plan: AggregateExplorePlan,
   boundary: ActivatedExplorationBoundary,
 ): number {
-  return isRankedAggregatePlan(plan)
+  return isRankedAggregatePlan(plan, resourceFor(boundary, plan.resource))
     ? reviewedRankedGroupLimit(boundary.budgets)
     : boundary.budgets.max_groups;
 }
@@ -2489,16 +2555,8 @@ function describeBoundary(
         presence_measure_functions: resource.presence_measure_fields?.length
           ? ["null_count", "non_null_count", "completion_rate"]
           : [],
-        derived_measures: (resource.derived_measures ?? []).map((measure) => ({
-          name: measure.name,
-          label: measure.label,
-          shape: measure.shape,
-          null_behavior: "null when the reviewed denominator is zero or null",
-          effective_minimum_cohort_size: Math.max(
-            resource.minimum_cohort_size,
-            MINIMUM_DISPERSION_COHORT_SIZE,
-          ),
-        })),
+        derived_measures: (resource.derived_measures ?? []).map((measure) =>
+          describeReviewedDerivedMeasure(measure, resource.minimum_cohort_size)),
         numeric_bands: (resource.numeric_bands ?? []).map((band) => ({
           name: band.name,
           label: band.label,
@@ -2569,16 +2627,8 @@ function describeBoundary(
             presence_measure_functions: target.presence_measure_fields?.length
               ? ["null_count", "non_null_count", "completion_rate"]
               : [],
-            derived_measures: (target.derived_measures ?? []).map((measure) => ({
-              name: measure.name,
-              label: measure.label,
-              shape: measure.shape,
-              null_behavior: "null when the reviewed denominator is zero or null",
-              effective_minimum_cohort_size: Math.max(
-                target.minimum_cohort_size,
-                MINIMUM_DISPERSION_COHORT_SIZE,
-              ),
-            })),
+            derived_measures: (target.derived_measures ?? []).map((measure) =>
+              describeReviewedDerivedMeasure(measure, target.minimum_cohort_size)),
             count_distinct_fields: target.count_distinct_fields,
             time_bucket_fields: target.time_bucket_fields,
             field_types: Object.fromEntries(targetFields.map((field) => [field, target.field_types[field]])),
@@ -2599,6 +2649,42 @@ function describeBoundary(
     next_cursor: input.resource || cursor + selected.length >= boundary.pack.resources.length ? null : cursor + selected.length,
     raw_sql_available: false,
     source_rows_available_before_activation: false,
+  };
+}
+
+function describeReviewedDerivedMeasure(
+  measure: ExplorationDerivedMeasure,
+  minimumCohortSize: number,
+): Record<string, unknown> {
+  const common = {
+    name: measure.name,
+    label: measure.label,
+    shape: measure.shape,
+    effective_minimum_cohort_size: Math.max(
+      minimumCohortSize,
+      MINIMUM_DISPERSION_COHORT_SIZE,
+    ),
+  };
+  if (!("base_measure" in measure)) {
+    return {
+      ...common,
+      calculation_stage: "after cohort validation",
+      null_behavior: "null when the reviewed denominator is zero or null",
+    };
+  }
+  const sequential = measure.shape === "running_total"
+    || measure.shape === "lag_absolute_change"
+    || measure.shape === "lag_percentage_change"
+    || measure.shape === "moving_average";
+  return {
+    ...common,
+    calculation_stage: "after small-group suppression",
+    required_grain: sequential
+      ? "one reviewed ordered time_bucket; dimensions are optional partitions"
+      : "one or more reviewed dimensions and no time_bucket",
+    ...(measure.shape === "rank" ? { fixed_direction: measure.direction } : {}),
+    ...(measure.shape === "moving_average" ? { fixed_window_size: measure.window_size } : {}),
+    suppressed_groups_included: false,
   };
 }
 

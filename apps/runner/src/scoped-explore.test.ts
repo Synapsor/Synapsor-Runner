@@ -332,6 +332,68 @@ describe("Scoped Explore", () => {
     }
   });
 
+  it("runs reviewed running totals only over groups released after suppression", async () => {
+    const fixture = await activatedFixture((candidate) => {
+      candidate.pack.resources[0]!.derived_measures = [{
+        name: "revenue_running_total",
+        label: "Revenue running total",
+        shape: "running_total",
+        base_measure: { function: "sum", field: "monthly_revenue_cents" },
+      }];
+    });
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ derived_measure: "revenue_running_total" }],
+      dimensions: [{ field: "region" }],
+      time_bucket: { field: "churned_at", bucket: "week" },
+      order_by: { kind: "time_bucket", direction: "asc" },
+      top_n: 10,
+    }, fixture.boundary);
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [compiled] = compileExplorePlan(plan, fixture.boundary, {
+        tenant: "tenant-acme",
+        principal: "pm-1",
+      }, engine);
+      expect(compiled?.sql).toContain(engine === "postgres"
+        ? 'SUM(t0."monthly_revenue_cents") AS "measure_0"'
+        : "SUM(t0.`monthly_revenue_cents`) AS `measure_0`");
+      expect(compiled?.sql).not.toMatch(/\bOVER\s*\(|RUNNING_TOTAL/i);
+    }
+    expect(() => validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ derived_measure: "revenue_running_total" }],
+      dimensions: [{ field: "region" }],
+      top_n: 10,
+    }, fixture.boundary)).toThrow(/requires one reviewed time_bucket/i);
+
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([
+        { dimension_0: "north", time_bucket: "2026-07-06", measure_0: 10, __measure_cohort_0: 10, __cohort_size: 10 },
+        { dimension_0: "north", time_bucket: "2026-07-13", measure_0: 100, __measure_cohort_0: 2, __cohort_size: 2 },
+        { dimension_0: "north", time_bucket: "2026-07-20", measure_0: 20, __measure_cohort_0: 20, __cohort_size: 20 },
+        { dimension_0: "south", time_bucket: "2026-07-06", measure_0: 5, __measure_cohort_0: 5, __cohort_size: 5 },
+      ]),
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    try {
+      const result = await runtime.explore(plan);
+      expect(result.data).toEqual([
+        { region: "north", time_bucket: "2026-07-06", revenue_running_total: 10 },
+        { region: "south", time_bucket: "2026-07-06", revenue_running_total: 5 },
+        { region: "north", time_bucket: "2026-07-20", revenue_running_total: 30 },
+      ]);
+      expect(result.privacy).toMatchObject({ suppressed_groups: 1 });
+      expect(JSON.stringify(result)).not.toContain("2026-07-13");
+    } finally {
+      await runtime.close();
+    }
+  });
+
   it("selects a reviewed numeric band by name and parameterizes its fixed definition on both engines", async () => {
     const fixture = await activatedFixture((candidate) => {
       candidate.pack.resources[0]!.numeric_bands = [{
@@ -3372,7 +3434,14 @@ describe("Scoped Explore", () => {
   }, 20_000);
 
   it("runs production HTTP Explore with claim-bound scope and hierarchical privacy accounting", async () => {
-    const fixture = await activatedProductionFixture();
+    const fixture = await activatedProductionFixture((candidate) => {
+      candidate.pack.resources[0]!.derived_measures = [{
+        name: "revenue_running_total",
+        label: "Revenue running total",
+        shape: "running_total",
+        base_measure: { function: "sum", field: "monthly_revenue_cents" },
+      }];
+    });
     const claimBudget = vi.fn(async () => ({
       allowed: true as const,
       principal_usage_after_reservation: {
@@ -3401,10 +3470,16 @@ describe("Scoped Explore", () => {
     const execute = vi.fn(async () => [] as Record<string, unknown>[]);
     const executeBatch = vi.fn(async ({ queries, context }: Parameters<ScopedExploreExecutor["executeBatch"]>[0]) => {
       expect(context).toEqual({ tenant: "tenant-from-jwt", principal: "principal-from-jwt" });
-      return queries.map(() => [
-        { dimension_0: "north", measure_0: 8, __cohort_size: 8 },
-        { dimension_0: "small", measure_0: 2, __cohort_size: 2 },
-      ]);
+      return queries.map((query) => query.sql.includes("SUM(")
+        ? [
+          { time_bucket: "2026-07-06", measure_0: 10, __measure_cohort_0: 10, __cohort_size: 10 },
+          { time_bucket: "2026-07-13", measure_0: 100, __measure_cohort_0: 2, __cohort_size: 2 },
+          { time_bucket: "2026-07-20", measure_0: 20, __measure_cohort_0: 20, __cohort_size: 20 },
+        ]
+        : [
+          { dimension_0: "north", measure_0: 8, __cohort_size: 8 },
+          { dimension_0: "small", measure_0: 2, __cohort_size: 2 },
+        ]);
     });
     const tenantLimits = {
       max_queries_per_session: 10_000,
@@ -3464,6 +3539,23 @@ describe("Scoped Explore", () => {
       expect(compiled.sql).toContain('t0."account_id" = $2');
       expect(compiled.params.slice(0, 2)).toEqual(["tenant-from-jwt", "principal-from-jwt"]);
       expect(compiled.params[2]).toBe(fixture.boundary.budgets.max_groups + 1);
+      const running = await runtime.explore({
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ derived_measure: "revenue_running_total" }],
+        time_bucket: { field: "churned_at", bucket: "week" },
+        order_by: { kind: "time_bucket", direction: "asc" },
+        top_n: 10,
+      });
+      expect(running).toMatchObject({
+        data: [
+          { time_bucket: "2026-07-06", revenue_running_total: 10 },
+          { time_bucket: "2026-07-20", revenue_running_total: 30 },
+        ],
+        privacy: { suppressed_groups: 1 },
+      });
+      expect(executeBatch).toHaveBeenCalledTimes(2);
+      expect(executeBatch.mock.calls[1]![0].queries[0]!.sql).not.toMatch(/\bOVER\s*\(|RUNNING_TOTAL/i);
       expect(claimBudget).toHaveBeenCalledWith(expect.objectContaining({
         principal_scope_fingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
         tenant_scope_fingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
@@ -3978,7 +4070,9 @@ async function activatedDerivedScopeFixture(): Promise<{
   };
 }
 
-async function activatedProductionFixture(): Promise<{
+async function activatedProductionFixture(
+  narrow?: (candidate: ReturnType<typeof buildAutoBoundary>["exploration_boundary"]) => void,
+): Promise<{
   root: string;
   boundary: ActivatedExplorationBoundary;
   inspection: SchemaInspection;
@@ -4025,6 +4119,7 @@ async function activatedProductionFixture(): Promise<{
   });
   await writeAutoBoundaryArtifacts({ projectRoot: root, build });
   const candidate = structuredClone(build.exploration_boundary);
+  narrow?.(candidate);
   const digest = explorationBoundaryCandidateDigest(candidate);
   const boundary = await activateExplorationBoundary({
     projectRoot: root,

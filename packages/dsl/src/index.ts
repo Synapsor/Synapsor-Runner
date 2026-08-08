@@ -8,6 +8,7 @@ import {
   type ProtectedReadAggregateSpec,
   type ProtectedReadBaseMeasureSpec,
   type ProtectedReadLimitsSpec,
+  type ProtectedReadPostAggregateOperation,
   type ProtectedReadPredicateSpec,
   type ProtectedReadRelationshipPathSpec,
   type ProtectedReadRelationshipSpec,
@@ -683,6 +684,24 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
           numerator: parseProtectedDerivedOperand(protectedDerivedMeasure[3], item.line),
           denominator: parseProtectedDerivedOperand(protectedDerivedMeasure[4], item.line),
           null_policy: "null_on_zero_or_null_denominator",
+        },
+      });
+      continue;
+    }
+    const protectedPostMeasure = item.text.match(/^MEASURE\s+([A-Za-z_][A-Za-z0-9_]*)\s+POST\s+(RUNNING_TOTAL|RANK|LAG_ABSOLUTE_CHANGE|LAG_PERCENTAGE_CHANGE|MOVING_AVERAGE|SHARE_OF_RELEASED_TOTAL)(?:\s+(ASC|DESC))?(?:\s+WINDOW\s+(\d+))?\s+OF\s+(COUNT\s+ROWS|COUNT\s+DISTINCT\s+[A-Za-z_][A-Za-z0-9_.]*|(?:SUM|AVG)\s+[A-Za-z_][A-Za-z0-9_.]*)$/i);
+    if (protectedPostMeasure?.[1] && protectedPostMeasure[2] && protectedPostMeasure[5]) {
+      const aggregate = requireProtectedAggregate(capability, item);
+      aggregate.measures ??= [];
+      aggregate.measures.push({
+        name: protectedPostMeasure[1],
+        function: "reviewed_derived",
+        derived: {
+          shape: protectedPostMeasure[2].toLowerCase() as ProtectedReadPostAggregateOperation,
+          base_measure: parseProtectedDerivedOperand(protectedPostMeasure[5], item.line),
+          ...(protectedPostMeasure[3]
+            ? { direction: protectedPostMeasure[3].toLowerCase() as "asc" | "desc" }
+            : {}),
+          ...(protectedPostMeasure[4] ? { window_size: Number(protectedPostMeasure[4]) } : {}),
         },
       });
       continue;

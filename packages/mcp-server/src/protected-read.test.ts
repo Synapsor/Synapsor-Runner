@@ -269,6 +269,79 @@ describe("protected named reads", () => {
     }
   });
 
+  it("computes fixed running totals only after suppression on both SQL dialects", async () => {
+    const capability = aggregateConfig().capabilities?.[0];
+    const protectedRead = capability?.protected_read;
+    const aggregate = protectedRead?.aggregate;
+    if (!capability || !protectedRead || !aggregate) throw new Error("protected aggregate fixture is incomplete");
+    aggregate.measures = [{
+      name: "running_churn",
+      function: "reviewed_derived",
+      derived: { shape: "running_total", base_measure: { function: "count" } },
+    }];
+    aggregate.dimensions = [{ name: "region", field: "region" }];
+    aggregate.time_bucket = { name: "churn_week", field: "churned_at", bucket: "week" };
+    aggregate.order_by = { kind: "time_bucket", direction: "asc" };
+    aggregate.top_n = 10;
+    delete aggregate.comparison;
+    protectedRead.limits.max_ranked_groups = 100;
+    const context = {
+      tenant_id: "tenant-acme",
+      principal: "principal-acme",
+      provenance: "environment" as const,
+    };
+    for (const style of ["$", "?"] as const) {
+      const query = buildProtectedReadQuery(capability, style, {}, context);
+      expect(query.sql).toContain(`COUNT(*) AS ${style === "$" ? '"running_churn"' : "`running_churn`"}`);
+      expect(query.sql).toContain("LIMIT 101");
+      expect(query.sql).not.toMatch(/\bOVER\s*\(|RUNNING_TOTAL/i);
+    }
+
+    const store = new ProposalStore(":memory:");
+    try {
+      const budgetReservation = await enforceProtectedReadBudget(
+        store,
+        capability,
+        context,
+        {},
+        "post-suppression-running-total",
+      );
+      const result = await recordProtectedRead({
+        capability,
+        sourceName: capability.source,
+        context,
+        current: {
+          row: {},
+          rows: [
+            { region: "north", churn_week: "2026-07-06", running_churn: 10, __measure_cohort_0: 10, __cohort_size: 10 },
+            { region: "north", churn_week: "2026-07-13", running_churn: 100, __measure_cohort_0: 2, __cohort_size: 2 },
+            { region: "north", churn_week: "2026-07-20", running_churn: 20, __measure_cohort_0: 20, __cohort_size: 20 },
+            { region: "south", churn_week: "2026-07-06", running_churn: 5, __measure_cohort_0: 5, __cohort_size: 5 },
+          ],
+          rowCount: 4,
+        },
+        store,
+        mode: "read_only",
+        privacySessionId: "post-suppression-running-total",
+        args: {},
+        budgetReservation,
+      });
+      expect(result).toMatchObject({
+        data: {
+          groups: expect.arrayContaining([
+            { region: "north", churn_week: "2026-07-06", running_churn: 10 },
+            { region: "north", churn_week: "2026-07-20", running_churn: 30 },
+            { region: "south", churn_week: "2026-07-06", running_churn: 5 },
+          ]),
+          suppression: { suppressed_groups: 1 },
+        },
+      });
+      expect(JSON.stringify(result)).not.toContain("2026-07-13");
+    } finally {
+      store.close();
+    }
+  });
+
   it("compiles a frozen reviewed numeric band with bound edges and labels on both engines", () => {
     const capability = aggregateConfig().capabilities?.[0];
     if (!capability?.protected_read?.aggregate) throw new Error("protected aggregate fixture is incomplete");

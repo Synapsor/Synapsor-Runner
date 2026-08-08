@@ -13,6 +13,7 @@ import {
   loadActivatedExplorationBoundaries,
   reviewedRankedGroupLimit,
   type ActivatedExplorationBoundary,
+  type ExplorationDerivedBaseMeasure,
   type GenerationLock,
 } from "./auto-boundary.js";
 import { loadCompletedBoundaryReviewOverrides } from "./boundary-review-policy.js";
@@ -614,7 +615,7 @@ function emitProtectedQueryDsl(input: {
   }
   lines.push(
     "  REQUIRE EVIDENCE",
-    protectedLimitsDsl(input.plan, input.boundary),
+    protectedLimitsDsl(input.plan, input.boundary, root),
     "END",
   );
   return `${formatAgentDsl(lines.join("\n"))}\n`;
@@ -630,6 +631,14 @@ function aggregateDsl(
   const lines = plan.measures.map((measure, index) => {
     if ("derived_measure" in measure) {
       const definition = protectedDerivedMeasure(root, measure.derived_measure);
+      if ("base_measure" in definition) {
+        const modifier = definition.shape === "rank"
+          ? ` ${definition.direction!.toUpperCase()}`
+          : definition.shape === "moving_average"
+            ? ` WINDOW ${definition.window_size}`
+            : "";
+        return `  MEASURE ${aliases.measures[index]} POST ${definition.shape.toUpperCase()}${modifier} OF ${protectedDerivedOperandDsl(definition.base_measure)}`;
+      }
       return `  MEASURE ${aliases.measures[index]} DERIVED ${definition.shape.toUpperCase()} NUMERATOR ${protectedDerivedOperandDsl(definition.numerator)} DENOMINATOR ${protectedDerivedOperandDsl(definition.denominator)}`;
     }
     if (measure.function === "count") return `  MEASURE ${aliases.measures[index]} COUNT ROWS`;
@@ -671,11 +680,18 @@ function aggregateDsl(
   return lines;
 }
 
-function protectedLimitsDsl(plan: ExplorePlan, boundary: ActivatedExplorationBoundary): string {
+function protectedLimitsDsl(
+  plan: ExplorePlan,
+  boundary: ActivatedExplorationBoundary,
+  root: BoundaryResource,
+): string {
   const budgets = boundary.budgets;
   const rows = plan.kind === "rows" ? plan.limit : budgets.max_rows;
   const ranked = plan.kind === "aggregate"
-    && (plan.order_by?.kind === "measure" || plan.order_by?.kind === "comparison_change");
+    && (plan.order_by?.kind === "measure"
+      || plan.order_by?.kind === "comparison_change"
+      || plan.measures.some((measure) => "derived_measure" in measure
+        && "base_measure" in protectedDerivedMeasure(root, measure.derived_measure)));
   const rankedGroups = ranked
     ? ` RANKED GROUPS ${reviewedRankedGroupLimit(budgets)}`
     : "";
@@ -727,10 +743,12 @@ function relationshipsForPlan(
     for (const measure of plan.measures) {
       if ("derived_measure" in measure) {
         const definition = protectedDerivedMeasure(root, measure.derived_measure);
-        const relationship = "relationship" in definition.numerator
-          ? definition.numerator.relationship
-          : undefined;
-        if (relationship) names.add(relationship);
+        const operands = "base_measure" in definition
+          ? [definition.base_measure]
+          : [definition.numerator, definition.denominator];
+        for (const operand of operands) {
+          if ("relationship" in operand && operand.relationship) names.add(operand.relationship);
+        }
       } else if (measure.relationship) names.add(measure.relationship);
     }
     for (const dimension of plan.dimensions ?? []) {
@@ -898,7 +916,7 @@ function protectedNumericBand(
 }
 
 function protectedDerivedOperandDsl(
-  operand: NonNullable<BoundaryResource["derived_measures"]>[number]["numerator"],
+  operand: ExplorationDerivedBaseMeasure,
 ): string {
   if (operand.function === "count") return "COUNT ROWS";
   const target = protectedFieldName(operand.field, operand.relationship);

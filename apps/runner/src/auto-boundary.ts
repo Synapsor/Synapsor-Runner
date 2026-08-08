@@ -78,7 +78,17 @@ export type ExplorationDerivedBaseMeasure =
     field: string;
     relationship?: string;
   };
-export type ExplorationDerivedMeasure = {
+export const EXPLORATION_POST_AGGREGATE_OPERATIONS = [
+  "running_total",
+  "rank",
+  "lag_absolute_change",
+  "lag_percentage_change",
+  "moving_average",
+  "share_of_released_total",
+] as const;
+export type ExplorationPostAggregateOperation =
+  typeof EXPLORATION_POST_AGGREGATE_OPERATIONS[number];
+export type ExplorationRatioDerivedMeasure = {
   name: string;
   label: string;
   shape: "ratio" | "percentage" | "per_unit_average";
@@ -86,6 +96,17 @@ export type ExplorationDerivedMeasure = {
   denominator: ExplorationDerivedBaseMeasure;
   null_policy: "null_on_zero_or_null_denominator";
 };
+export type ExplorationPostAggregateMeasure = {
+  name: string;
+  label: string;
+  shape: ExplorationPostAggregateOperation;
+  base_measure: ExplorationDerivedBaseMeasure;
+  direction?: "asc" | "desc";
+  window_size?: number;
+};
+export type ExplorationDerivedMeasure =
+  | ExplorationRatioDerivedMeasure
+  | ExplorationPostAggregateMeasure;
 export type ExplorationNumericBand = {
   name: string;
   label: string;
@@ -711,7 +732,9 @@ export function pruneAutoBoundaryReviewOverrides(
       AutoBoundaryReviewOverrides["resources"][string]["derived_measures"]
     > = {};
     for (const [name, derivedDecision] of Object.entries(decision.derived_measures ?? {})) {
-      const operands = [derivedDecision.definition.numerator, derivedDecision.definition.denominator];
+      const operands = "base_measure" in derivedDecision.definition
+        ? [derivedDecision.definition.base_measure]
+        : [derivedDecision.definition.numerator, derivedDecision.definition.denominator];
       const missingLocalField = operands.find((operand) =>
         "field" in operand && !operand.relationship && !columns.has(operand.field));
       if (missingLocalField && "field" in missingLocalField) {
@@ -2298,28 +2321,61 @@ export function normalizeExplorationDerivedMeasure(
   label: string,
 ): ExplorationDerivedMeasure {
   if (!isRecord(value)) throw new Error(`${label} must be an object.`);
-  assertOnlyKeys(
-    value,
-    ["name", "label", "shape", "numerator", "denominator", "null_policy"],
-    label,
-  );
   const name = reviewedText(value.name, `${label} name`, 64);
   if (!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name)) {
     throw new Error(`${label} name must be a safe identifier of at most 64 characters.`);
   }
-  if (value.shape !== "ratio" && value.shape !== "percentage" && value.shape !== "per_unit_average") {
-    throw new Error(`${label} shape must be ratio, percentage, or per_unit_average.`);
+  const reviewedLabel = reviewedText(value.label, `${label} label`, 120);
+  if (value.shape === "ratio" || value.shape === "percentage" || value.shape === "per_unit_average") {
+    assertOnlyKeys(
+      value,
+      ["name", "label", "shape", "numerator", "denominator", "null_policy"],
+      label,
+    );
+    if (value.null_policy !== "null_on_zero_or_null_denominator") {
+      throw new Error(`${label} must use null_on_zero_or_null_denominator.`);
+    }
+    return {
+      name,
+      label: reviewedLabel,
+      shape: value.shape,
+      numerator: normalizeExplorationDerivedBaseMeasure(value.numerator, `${label} numerator`),
+      denominator: normalizeExplorationDerivedBaseMeasure(value.denominator, `${label} denominator`),
+      null_policy: "null_on_zero_or_null_denominator",
+    };
   }
-  if (value.null_policy !== "null_on_zero_or_null_denominator") {
-    throw new Error(`${label} must use null_on_zero_or_null_denominator.`);
+  if (!EXPLORATION_POST_AGGREGATE_OPERATIONS.includes(
+    value.shape as ExplorationPostAggregateOperation,
+  )) {
+    throw new Error(
+      `${label} shape must be a fixed reviewed ratio, percentage, per-unit average, or post-suppression transform.`,
+    );
+  }
+  assertOnlyKeys(value, ["name", "label", "shape", "base_measure", "direction", "window_size"], label);
+  const shape = value.shape as ExplorationPostAggregateOperation;
+  if (shape === "rank") {
+    if (value.direction !== "asc" && value.direction !== "desc") {
+      throw new Error(`${label} rank requires direction asc or desc.`);
+    }
+  } else if (value.direction !== undefined) {
+    throw new Error(`${label} direction is available only for a reviewed rank.`);
+  }
+  if (shape === "moving_average") {
+    if (!Number.isSafeInteger(value.window_size)
+      || Number(value.window_size) < 2
+      || Number(value.window_size) > 12) {
+      throw new Error(`${label} moving_average requires a fixed window_size from 2 through 12.`);
+    }
+  } else if (value.window_size !== undefined) {
+    throw new Error(`${label} window_size is available only for a reviewed moving average.`);
   }
   return {
     name,
-    label: reviewedText(value.label, `${label} label`, 120),
-    shape: value.shape,
-    numerator: normalizeExplorationDerivedBaseMeasure(value.numerator, `${label} numerator`),
-    denominator: normalizeExplorationDerivedBaseMeasure(value.denominator, `${label} denominator`),
-    null_policy: "null_on_zero_or_null_denominator",
+    label: reviewedLabel,
+    shape,
+    base_measure: normalizeExplorationDerivedBaseMeasure(value.base_measure, `${label} base_measure`),
+    ...(shape === "rank" ? { direction: value.direction as "asc" | "desc" } : {}),
+    ...(shape === "moving_average" ? { window_size: Number(value.window_size) } : {}),
   };
 }
 
@@ -3118,21 +3174,36 @@ function assertReviewedDerivedMeasures(
       || /[\u0000-\u001f\u007f]/.test(definition.label)) {
       throw new Error(`${resource.id}.${definition.name} requires a bounded plain-language label.`);
     }
-    if (!["ratio", "percentage", "per_unit_average"].includes(definition.shape)
-      || definition.null_policy !== "null_on_zero_or_null_denominator") {
-      throw new Error(`${resource.id}.${definition.name} has an unsupported fixed derived-measure shape or null policy.`);
-    }
-    const numeratorRelationship = derivedBaseMeasureRelationship(definition.numerator);
-    const denominatorRelationship = derivedBaseMeasureRelationship(definition.denominator);
-    if (numeratorRelationship !== denominatorRelationship) {
-      throw new Error(`${resource.id}.${definition.name} operands must use the same reviewed relationship path.`);
-    }
-    assertDerivedBaseMeasure(resource, definition.name, definition.numerator, resources);
-    assertDerivedBaseMeasure(resource, definition.name, definition.denominator, resources);
-    if (definition.shape === "per_unit_average"
-      && (definition.numerator.function !== "sum"
-        || !["count", "count_distinct"].includes(definition.denominator.function))) {
-      throw new Error(`${resource.id}.${definition.name} per_unit_average requires SUM divided by COUNT or COUNT DISTINCT.`);
+    if ("base_measure" in definition) {
+      if (!EXPLORATION_POST_AGGREGATE_OPERATIONS.includes(definition.shape)) {
+        throw new Error(`${resource.id}.${definition.name} has an unsupported post-suppression transform.`);
+      }
+      assertDerivedBaseMeasure(resource, definition.name, definition.base_measure, resources);
+      if (definition.shape === "rank" && definition.direction !== "asc" && definition.direction !== "desc") {
+        throw new Error(`${resource.id}.${definition.name} rank requires a fixed direction.`);
+      }
+      if (definition.shape === "moving_average"
+        && (!Number.isSafeInteger(definition.window_size)
+          || definition.window_size! < 2
+          || definition.window_size! > 12)) {
+        throw new Error(`${resource.id}.${definition.name} moving average requires a fixed 2-12 group window.`);
+      }
+    } else {
+      if (definition.null_policy !== "null_on_zero_or_null_denominator") {
+        throw new Error(`${resource.id}.${definition.name} has an unsupported fixed derived-measure null policy.`);
+      }
+      const numeratorRelationship = derivedBaseMeasureRelationship(definition.numerator);
+      const denominatorRelationship = derivedBaseMeasureRelationship(definition.denominator);
+      if (numeratorRelationship !== denominatorRelationship) {
+        throw new Error(`${resource.id}.${definition.name} operands must use the same reviewed relationship path.`);
+      }
+      assertDerivedBaseMeasure(resource, definition.name, definition.numerator, resources);
+      assertDerivedBaseMeasure(resource, definition.name, definition.denominator, resources);
+      if (definition.shape === "per_unit_average"
+        && (definition.numerator.function !== "sum"
+          || !["count", "count_distinct"].includes(definition.denominator.function))) {
+        throw new Error(`${resource.id}.${definition.name} per_unit_average requires SUM divided by COUNT or COUNT DISTINCT.`);
+      }
     }
   }
 }

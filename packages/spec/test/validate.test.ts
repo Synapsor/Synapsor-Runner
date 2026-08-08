@@ -274,6 +274,53 @@ describe("@synapsor/spec validation", () => {
     expect(validateContract(lowCohort).errors.map((error) => error.code)).toContain("PROTECTED_DISPERSION_COHORT_TOO_SMALL");
   });
 
+  it("accepts only fixed post-suppression calculations with a compatible reviewed grain", () => {
+    const running = protectedAggregateContract();
+    running.capabilities[0].protected_read.aggregate.measures = [{
+      name: "running_churn",
+      function: "reviewed_derived",
+      derived: {
+        shape: "running_total",
+        base_measure: { function: "count" },
+      },
+    }];
+    running.capabilities[0].protected_read.aggregate.order_by = {
+      kind: "time_bucket",
+      direction: "asc",
+    };
+    running.capabilities[0].protected_read.limits.max_ranked_groups = 500;
+    expect(validateContract(running)).toMatchObject({ ok: true, errors: [] });
+
+    const missingTime = structuredClone(running);
+    delete missingTime.capabilities[0].protected_read.aggregate.time_bucket;
+    expect(validateContract(missingTime).errors.map((error) => error.code))
+      .toContain("PROTECTED_TRANSFORM_TIME_BUCKET_REQUIRED");
+
+    const rank = structuredClone(running);
+    rank.capabilities[0].protected_read.aggregate.measures[0].derived = {
+      shape: "rank",
+      base_measure: { function: "count" },
+      direction: "desc",
+    };
+    delete rank.capabilities[0].protected_read.aggregate.time_bucket;
+    rank.capabilities[0].protected_read.aggregate.order_by = {
+      kind: "measure",
+      measure: "running_churn",
+      direction: "asc",
+    };
+    expect(validateContract(rank)).toMatchObject({ ok: true, errors: [] });
+
+    const noDimension = structuredClone(rank);
+    delete noDimension.capabilities[0].protected_read.aggregate.dimensions;
+    expect(validateContract(noDimension).errors.map((error) => error.code))
+      .toContain("PROTECTED_TRANSFORM_DIMENSION_REQUIRED");
+
+    const modelFormula = structuredClone(running);
+    modelFormula.capabilities[0].protected_read.aggregate.measures[0].derived.formula = "running_sum(balance_cents)";
+    expect(validateContract(modelFormula).errors.map((error) => error.code))
+      .toContain("UNKNOWN_CORE_FIELD");
+  });
+
   it("accepts only complete bounded numeric-band dimensions", () => {
     const contract = protectedAggregateContract();
     contract.capabilities[0].protected_read.aggregate.dimensions = [{
