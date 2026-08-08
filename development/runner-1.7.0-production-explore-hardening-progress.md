@@ -1347,6 +1347,43 @@ Post-change gates:
 No package or Spec/DSL version changed. Nothing was merged, pushed, tagged,
 published, or released in this checkpoint.
 
-Latest checkpoint: see `Independent Boundary Policy And In-Shell Protect
-Recovery (2026-08-07)` above. It is the current resume point and supersedes the
-earlier 1,445-test checkpoint for final-worktree verification.
+## Null-Tolerant Optional Explore Arguments (2026-08-07)
+
+This unpublished 1.7.0 checkpoint makes the two Scoped Explore MCP tools more
+robust to smaller models that emit explicit JSON `null` for optional arguments.
+It changes no required plan field, reviewed authority, trusted scope,
+suppression rule, query compiler, or model-facing tool count.
+
+Completed behavior:
+
+- Every declared optional `app.describe_data` and `app.explore_data` argument
+  treats explicit `null` as omission before the runtime receives it. This
+  covers boundary/resource selectors, pagination, optional row and aggregate
+  clauses, and nested optional relationship/measure fields.
+- Null-derived `undefined` properties are removed recursively from the
+  validated plan before execution and audit projection, so the downstream plan
+  is the same shape as one where the model omitted those keys.
+- Required fields still reject `null`, including plan `kind`, `resource`, row
+  `limit`, aggregate `top_n`, and required measure/filter structure.
+- Strict objects still reject unknown keys. A filter's `value: null` remains a
+  valid scalar and is never rewritten; only fields already declared optional
+  receive the tolerance.
+- The shared server factory applies this behavior identically to local Ask,
+  local MCP clients, and explicitly enabled production HTTP Explore.
+
+Verification:
+
+- Official in-memory MCP client coverage passed for local and production modes,
+  including all optional plan locations, exact omission-shaped handler input,
+  preserved scalar null, required-null refusals, and unknown-key refusal.
+- Focused Scoped Explore suites passed 64/64 tests.
+- Canonical root gate passed 90 files and 1,446 tests, with 9 explicitly
+  database-gated tests skipped. TypeScript, trusted-core dependencies,
+  license/content, human command surface, DSL source paths, and Cursor package
+  checks all passed.
+- Packed npm-style production HTTP gate passed with exactly
+  `app.describe_data` and `app.explore_data`, principal/tenant and derived-scope
+  isolation, atomic accounting, suppression, and no source mutation.
+
+No package or Spec/DSL version changed. Nothing was merged, pushed, tagged,
+published, or released in this checkpoint.

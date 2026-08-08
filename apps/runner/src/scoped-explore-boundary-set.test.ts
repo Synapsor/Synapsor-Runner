@@ -168,17 +168,18 @@ describe("Scoped Explore active boundary routing", () => {
       data: [],
       source_database_changed: false,
     }));
+    const describe = vi.fn(async () => ({
+      ok: true,
+      boundaries: [{ name: "finance" }, { name: "support" }],
+      resources: [],
+      source_database_changed: false,
+    }));
     const runtime = {
       boundary: finance,
       boundaries: [support, finance],
       active_boundary_set_digest: `sha256:${"4".repeat(64)}`,
       session_fingerprint: `sha256:${"3".repeat(64)}`,
-      describe: async () => ({
-        ok: true,
-        boundaries: [{ name: "finance" }, { name: "support" }],
-        resources: [],
-        source_database_changed: false,
-      }),
+      describe,
       explore,
       projectResultForModel: ({ result }: { result: Record<string, unknown> }) => ({
         value: result,
@@ -224,6 +225,11 @@ describe("Scoped Explore active boundary routing", () => {
         expect.stringMatching(/activate|create|approve|apply/i),
       ]));
       await client.callTool({
+        name: "app.describe_data",
+        arguments: { boundary: null, resource: null, cursor: null, limit: null },
+      });
+      expect(describe).toHaveBeenLastCalledWith({});
+      await client.callTool({
         name: "app.explore_data",
         arguments: {
           boundary: "finance",
@@ -238,6 +244,120 @@ describe("Scoped Explore active boundary routing", () => {
       expect(explore).toHaveBeenCalledWith(expect.objectContaining({
         resource: "public.invoices",
       }), "finance");
+
+      await client.callTool({
+        name: "app.explore_data",
+        arguments: {
+          boundary: null,
+          plan: {
+            kind: "aggregate",
+            resource: "public.invoices",
+            relationship: null,
+            measures: [{ function: "count", field: null, relationship: null }],
+            dimensions: [{ field: "status", relationship: null }],
+            time_bucket: null,
+            where: [{ field: "status", op: "eq", value: null, relationship: null }],
+            order_by: null,
+            top_n: 10,
+            comparison: null,
+          },
+        },
+      });
+      expect(explore).toHaveBeenLastCalledWith({
+        kind: "aggregate",
+        resource: "public.invoices",
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "status" }],
+        where: [{ field: "status", op: "eq", value: null }],
+        top_n: 10,
+      }, undefined);
+
+      await client.callTool({
+        name: "app.explore_data",
+        arguments: {
+          plan: {
+            kind: "aggregate",
+            resource: "public.invoices",
+            measures: [{ function: "count" }],
+            dimensions: null,
+            time_bucket: {
+              field: "created_at",
+              bucket: "month",
+              relationship: null,
+            },
+            where: null,
+            top_n: 10,
+            comparison: {
+              field: "created_at",
+              relationship: null,
+              ranges: [
+                { start: "2026-06-01T00:00:00.000Z", end: "2026-07-01T00:00:00.000Z" },
+                { start: "2026-07-01T00:00:00.000Z", end: "2026-08-01T00:00:00.000Z" },
+              ],
+            },
+          },
+        },
+      });
+      expect(explore).toHaveBeenLastCalledWith(expect.objectContaining({
+        time_bucket: { field: "created_at", bucket: "month" },
+        comparison: expect.objectContaining({ field: "created_at" }),
+      }), undefined);
+
+      const callCount = explore.mock.calls.length;
+      const requiredResourceNull = await client.callTool({
+        name: "app.explore_data",
+        arguments: {
+          plan: {
+            kind: "rows",
+            resource: null,
+            select: ["id"],
+            limit: 1,
+          },
+        },
+      });
+      const requiredKindNull = await client.callTool({
+        name: "app.explore_data",
+        arguments: {
+          plan: {
+            kind: null,
+            resource: "public.invoices",
+            select: ["id"],
+            limit: 1,
+          },
+        },
+      });
+      const requiredTopNNull = await client.callTool({
+        name: "app.explore_data",
+        arguments: {
+          plan: {
+            kind: "aggregate",
+            resource: "public.invoices",
+            measures: [{ function: "count" }],
+            top_n: null,
+          },
+        },
+      });
+      const requiredLimitNull = await client.callTool({
+        name: "app.explore_data",
+        arguments: {
+          plan: {
+            kind: "rows",
+            resource: "public.invoices",
+            select: ["id"],
+            limit: null,
+          },
+        },
+      });
+      const unknownKey = await client.callTool({
+        name: "app.describe_data",
+        arguments: { hallucinated_scope: null },
+      });
+      expect(requiredResourceNull.isError).toBe(true);
+      expect(requiredKindNull.isError).toBe(true);
+      expect(requiredTopNNull.isError).toBe(true);
+      expect(requiredLimitNull.isError).toBe(true);
+      expect(unknownKey.isError).toBe(true);
+      expect(explore).toHaveBeenCalledTimes(callCount);
     } finally {
       await Promise.allSettled([client.close(), server.close()]);
     }

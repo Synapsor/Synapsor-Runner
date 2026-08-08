@@ -513,13 +513,25 @@ describe("Scoped Explore", () => {
         ok: true,
         resources: [{ id: "public.subscriptions" }],
       });
+      const describedWithNullOptionalSelectors = await client.callTool({
+        name: "app.describe_data",
+        arguments: { boundary: null, resource: null, cursor: null, limit: null },
+      });
+      expect(describedWithNullOptionalSelectors.isError).not.toBe(true);
+      expect(describedWithNullOptionalSelectors.structuredContent).toMatchObject({
+        ok: true,
+        resources: [{ id: "public.subscriptions" }],
+      });
       const called = await client.callTool({
         name: "app.explore_data",
         arguments: {
+          boundary: null,
           plan: {
             kind: "rows",
             resource: "public.subscriptions",
             select: ["region"],
+            where: null,
+            order_by: null,
             limit: 1,
           },
         },

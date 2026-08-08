@@ -23,19 +23,20 @@ const scalar = z.union([z.string().max(512), z.number().finite(), z.boolean(), z
 const fieldId = z.string().min(1).max(256).describe("Copy the exact field id from app.describe_data. Do not prefix it; put any related-table path in relationship.");
 const resourceId = z.string().min(1).max(256)
   .describe("Copy the exact resource id from app.describe_data for the root table that owns the counted entity or measure.");
-const optionalBoundarySelector = z.string()
+// Smaller models often serialize an omitted optional JSON field as null.
+const optionalModelArgument = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess((value) => value === null ? undefined : value, schema.optional());
+const optionalBoundarySelector = optionalModelArgument(z.string()
   .regex(/^(?:[a-z][a-z0-9_.-]{0,63})?$/)
-  .describe("An active reviewed boundary name; empty means omitted.")
-  .optional();
-const optionalResourceSelector = z.string().max(256)
-  .describe("Copy the exact resource id from app.describe_data. Empty means omitted.")
-  .optional();
+  .describe("An active reviewed boundary name; empty means omitted."));
+const optionalResourceSelector = optionalModelArgument(z.string().max(256)
+  .describe("Copy the exact resource id from app.describe_data. Empty means omitted."));
 const relationshipId = z.string().min(1).max(256).describe("Copy the exact active relationship id from app.describe_data; keep it separate from field.");
 const filter = z.object({
   field: fieldId,
   op: z.enum(["eq", "neq", "lt", "lte", "gt", "gte", "in"]),
   value: z.union([scalar, z.array(scalar).min(1).max(20)]),
-  relationship: relationshipId.optional(),
+  relationship: optionalModelArgument(relationshipId),
 }).strict();
 
 export function createScopedExploreMcpServer(
@@ -47,33 +48,33 @@ export function createScopedExploreMcpServer(
     kind: z.literal("rows"),
     resource: resourceId,
     select: z.array(fieldId).min(1).max(20),
-    where: z.array(filter).max(8).optional(),
-    order_by: z.array(z.object({
+    where: optionalModelArgument(z.array(filter).max(8)),
+    order_by: optionalModelArgument(z.array(z.object({
       field: fieldId,
       direction: z.enum(["asc", "desc"]),
-    }).strict()).max(3).optional(),
+    }).strict()).max(3)),
     limit: z.number().int().positive(),
   }).strict();
   const aggregatePlan = z.object({
     kind: z.literal("aggregate"),
     resource: resourceId,
-    relationship: relationshipId.optional(),
+    relationship: optionalModelArgument(relationshipId),
     measures: z.array(z.object({
       function: z.enum(["count", "count_distinct", "sum", "avg"]),
-      field: fieldId.optional(),
-      relationship: relationshipId.optional(),
+      field: optionalModelArgument(fieldId),
+      relationship: optionalModelArgument(relationshipId),
     }).strict()).min(1),
-    dimensions: z.array(z.object({
+    dimensions: optionalModelArgument(z.array(z.object({
       field: fieldId,
-      relationship: relationshipId.optional(),
-    }).strict()).optional(),
-    time_bucket: z.object({
+      relationship: optionalModelArgument(relationshipId),
+    }).strict())),
+    time_bucket: optionalModelArgument(z.object({
       field: fieldId,
       bucket: z.enum(["day", "week", "month"]),
-      relationship: relationshipId.optional(),
-    }).strict().optional(),
-    where: z.array(filter).max(8).optional(),
-    order_by: z.union([
+      relationship: optionalModelArgument(relationshipId),
+    }).strict()),
+    where: optionalModelArgument(z.array(filter).max(8)),
+    order_by: optionalModelArgument(z.union([
       z.object({
         kind: z.literal("measure"),
         index: z.number().int().nonnegative(),
@@ -89,16 +90,16 @@ export function createScopedExploreMcpServer(
         kind: z.literal("time_bucket"),
         direction: z.enum(["asc", "desc"]),
       }).strict(),
-    ]).optional(),
+    ])),
     top_n: z.number().int().positive().describe("Maximum aggregate rows; dimension-by-time uses one row per dimension/time combination; comparisons need both periods."),
-    comparison: z.object({
+    comparison: optionalModelArgument(z.object({
       field: fieldId,
-      relationship: relationshipId.optional(),
+      relationship: optionalModelArgument(relationshipId),
       ranges: z.array(z.object({
         start: z.string().datetime(),
         end: z.string().datetime(),
       }).strict()).length(2).describe("Two non-overlapping half-open ranges, earlier then later; change is period_2 minus period_1."),
-    }).strict().optional(),
+    }).strict()),
   }).strict();
 
   const server = new McpServer(
@@ -111,8 +112,8 @@ export function createScopedExploreMcpServer(
     inputSchema: z.object({
       boundary: optionalBoundarySelector,
       resource: optionalResourceSelector,
-      cursor: z.number().int().nonnegative().optional(),
-      limit: z.number().int().positive().max(10).optional(),
+      cursor: optionalModelArgument(z.number().int().nonnegative()),
+      limit: optionalModelArgument(z.number().int().positive().max(10)),
     }).strict(),
     outputSchema: scopedExploreDescribeOutputSchema,
     annotations: {
@@ -158,8 +159,9 @@ export function createScopedExploreMcpServer(
       "synapsor.approval_tool": false,
       "synapsor.commit_tool": false,
     },
-  }, async ({ boundary: selectedBoundary, plan }) => {
+  }, async ({ boundary: selectedBoundary, plan: parsedPlan }) => {
     const boundary = selectedBoundary || undefined;
+    const plan = omitUndefinedModelArguments(parsedPlan);
     return toolResult(
       () => isBoundarySetRuntime(runtime)
         ? runtime.explore(plan, boundary)
@@ -179,6 +181,18 @@ export function createScopedExploreMcpServer(
     );
   });
   return server;
+}
+
+function omitUndefinedModelArguments<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => omitUndefinedModelArguments(item)) as T;
+  }
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, item]) => item !== undefined)
+      .map(([key, item]) => [key, omitUndefinedModelArguments(item)]),
+  ) as T;
 }
 
 export async function serveScopedExploreStdio(options: {
