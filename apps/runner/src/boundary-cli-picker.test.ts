@@ -1028,6 +1028,38 @@ describe("boundary review terminal picker", () => {
     });
   });
 
+  it("offers an eligible shared reference as an explicit reviewed row-scope choice", async () => {
+    const { input, output } = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const view = reviewView();
+    view.status = "blocked_scope";
+    view.candidate = null;
+    view.generated_candidate = null;
+    view.tenant_key = {
+      ...view.tenant_key,
+      selected: undefined,
+      candidates: [],
+      alternatives_considered: [],
+    };
+    view.derived_tenant_scope = undefined;
+    view.shared_reference_scope = {
+      eligible: true,
+      confirmation_required: true,
+      safety_consequence: "No tenant predicate is applied.",
+      blockers: [],
+    };
+
+    const resolution = session.resolveBlockedResource!(view);
+    const rendered = stripAnsi(output.read()?.toString() ?? "");
+    expect(rendered).toContain("Shared reference - same reviewed rows for every tenant");
+    expect(rendered).toContain("Shared reference means every tenant receives the same reviewed rows");
+    await send(input, "\r");
+    await expect(resolution).resolves.toEqual({
+      row_identity: "outcome",
+      shared_reference_scope: "table_has_no_per_tenant_rows",
+    });
+  });
+
   it("sanitizes inspected names before rendering the structural map", () => {
     const view = reviewView();
     view.resource_id = "public.check_ins\u001b[2J";

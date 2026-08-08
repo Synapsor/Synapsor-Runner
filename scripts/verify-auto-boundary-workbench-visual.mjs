@@ -798,15 +798,29 @@ try {
         visible:Boolean(form?.offsetParent),
         text:form?.textContent||"",
         startingTableOptions:[...table.options].map(option=>option.value).filter(Boolean),
-        inspectedTableCount:(original?.pack?.resources||[]).length,
+        generatedTableIds:(original?.pack?.resources||[]).map(resource=>resource.id),
+        sharedReferenceCandidateIds:(reviewReport?.resources||[])
+          .filter(resource=>resource.shared_reference_scope?.eligible)
+          .map(resource=>resource.id),
         selected:table?.value||"",
         createLabel:document.querySelector("#create-boundary")?.textContent||"",
       };
     })()`);
+    const expectedStartingTableIds = [...new Set([
+      ...newBoundaryForm.generatedTableIds,
+      ...newBoundaryForm.sharedReferenceCandidateIds,
+    ])].sort();
     assert(
       newBoundaryForm.visible
-        && newBoundaryForm.startingTableOptions.length === newBoundaryForm.inspectedTableCount
-        && newBoundaryForm.inspectedTableCount > 0
+        && JSON.stringify([...newBoundaryForm.startingTableOptions].sort())
+          === JSON.stringify(expectedStartingTableIds)
+        && newBoundaryForm.generatedTableIds.length > 0
+        && newBoundaryForm.sharedReferenceCandidateIds.includes(
+          "public.unscoped_shared_reference_data",
+        )
+        && !newBoundaryForm.generatedTableIds.includes(
+          "public.unscoped_shared_reference_data",
+        )
         && newBoundaryForm.selected === ""
         && /choose its first table/i.test(newBoundaryForm.text)
         && /nothing is copied from another boundary/i.test(newBoundaryForm.text)
@@ -1117,6 +1131,49 @@ try {
       screenWidth: 1440,
       screenHeight: 1100,
     });
+
+    const sharedReferenceResource = "public.unscoped_shared_reference_data";
+    await clickSelector(page, `[data-access-resource="${sharedReferenceResource}"]`);
+    await waitForExpression(
+      page,
+      `document.querySelector(".access-resource.selected")?.dataset.accessResource === ${JSON.stringify(sharedReferenceResource)}`,
+    );
+    await evaluate(page, `(() => {
+      const details=[...document.querySelectorAll("#resource-detail details")]
+        .find(item=>/Resolve blocked access/i.test(item.querySelector("summary")?.textContent||""));
+      if(!details)throw new Error("Shared-reference table omitted its review controls");
+      details.open=true;
+    })()`);
+    await waitForExpression(
+      page,
+      "document.querySelector('[data-submit-scope-review=\"tenant_key\"]')?.offsetParent !== null",
+    );
+    const sharedReferenceForm = '[data-scope-review-form]:has([data-submit-scope-review="tenant_key"])';
+    await selectOptionByValue(
+      page,
+      `${sharedReferenceForm} [data-scope-review-value]`,
+      "table_has_no_per_tenant_rows",
+    );
+    const sharedReferenceReview = await evaluate(page, `(() => {
+      const form=document.querySelector(${JSON.stringify(sharedReferenceForm)});
+      const option=form?.querySelector("[data-scope-review-value]")?.selectedOptions?.[0];
+      return {
+        text:document.querySelector("#resource-detail")?.textContent||"",
+        kind:option?.dataset.reviewKind||null,
+        acknowledgementVisible:Boolean(form?.querySelector("[data-shared-reference-ack]")?.offsetParent),
+        acknowledgementChecked:Boolean(form?.querySelector("[data-shared-reference-ack]")?.checked),
+      };
+    })()`);
+    assert(
+      sharedReferenceReview.kind === "shared_reference_scope"
+        && sharedReferenceReview.acknowledgementVisible
+        && !sharedReferenceReview.acknowledgementChecked
+        && /owner assertion, not an automatic inference/i.test(sharedReferenceReview.text)
+        && /field visibility, cohort suppression, and budgets still apply/i.test(sharedReferenceReview.text),
+      "Workbench did not expose Shared reference as an explicit, default-off reviewed authority",
+      sharedReferenceReview,
+    );
+    await screenshot(page, "workbench-shared-reference-review.png");
 
     await evaluate(page, "document.querySelector('[data-view=\"activate\"]')?.click()");
     await typeIntoSelector(page, "#actor", "visual-reviewer@example.test");

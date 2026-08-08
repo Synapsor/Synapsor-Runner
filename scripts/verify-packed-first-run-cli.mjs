@@ -188,15 +188,20 @@ async function runFirstUseJourney({ cli, fixture, projectRoot }) {
     child.stdin.write("c");
 
     await checkpoint(/REVIEW EXACT BOUNDARY/i, "whole-boundary review");
-    await checkpoint(/Activate "reviewed_staging" exactly as shown and continue to Ask\? \[Y\/n\]/i, "explicit activation prompt");
+    await checkpoint(
+      /Activate "reviewed_staging" exactly as shown(?: now\? You will stay in \/access\.| and continue to Ask\?) \[Y\/n\]/i,
+      "explicit activation prompt",
+    );
     child.stdin.write("\r");
 
     await checkpoint(/ASK YOUR REVIEWED DATA/i, "model and MCP continuation chooser");
     child.stdin.write("\u001b[B\u001b[B\u001b[B\u001b[B\r");
     await checkpoint(/Your reviewed boundaries remain active\./i, "Later handoff");
+    await checkpoint(/\/access is still open\./i, "resumed access editor");
+    child.stdin.write("q");
 
     const result = await waitForExit(child, 15_000, () =>
-      `${fixture.engine} first-run did not exit cleanly after choosing Later.\n${tail(transcript())}`);
+      `${fixture.engine} first-run did not exit cleanly after leaving the resumed access editor.\n${tail(transcript())}`);
     assert.equal(result.code, 0, `${fixture.engine} first-run exited with ${result.code ?? result.signal}`);
     assert.doesNotMatch(transcript(), /cannot be added because record identity or trusted scope is unresolved/i);
     assert.doesNotMatch(transcript(), /Ask did not start:/i);

@@ -11,6 +11,7 @@ import { Pool } from "pg";
 import { inspectDatabase } from "../packages/schema-inspector/dist/index.js";
 import {
   AUTO_BOUNDARY_OVERRIDES_VERSION,
+  SHARED_REFERENCE_ACKNOWLEDGEMENT,
   activateExplorationBoundary,
   buildAutoBoundary,
   explorationBoundaryCandidateDigest,
@@ -162,13 +163,23 @@ async function sourceSnapshot(pool) {
       (SELECT md5(string_agg(id || ':' || order_id || ':' || item_kind || ':' || quantity::text, '|' ORDER BY id))
         FROM public.scoped_order_items) AS item_digest
   `);
-  return { churn: churn.rows[0], derived: derived.rows[0] };
+  const sharedReference = await pool.query(`
+    SELECT COUNT(*)::int AS row_count,
+      md5(string_agg(id || ':' || category, '|' ORDER BY id)) AS digest
+    FROM public.shared_product_catalog
+  `);
+  return {
+    churn: churn.rows[0],
+    derived: derived.rows[0],
+    shared_reference: sharedReference.rows[0],
+  };
 }
 
 async function seedDerivedSource(pool) {
   await pool.query(`
     DROP TABLE IF EXISTS public.scoped_order_items;
     DROP TABLE IF EXISTS public.scoped_orders;
+    DROP TABLE IF EXISTS public.shared_product_catalog;
     CREATE TABLE public.scoped_orders (
       id text PRIMARY KEY,
       tenant_id text NOT NULL,
@@ -188,6 +199,11 @@ async function seedDerivedSource(pool) {
     CREATE INDEX scoped_order_items_order_id_idx ON public.scoped_order_items (order_id);
     CREATE INDEX scoped_orders_tenant_id_idx ON public.scoped_orders (tenant_id);
     CREATE INDEX scoped_orders_owner_id_idx ON public.scoped_orders (owner_id);
+    CREATE TABLE public.shared_product_catalog (
+      id text PRIMARY KEY,
+      category text NOT NULL CHECK (category IN ('hardware', 'software')),
+      internal_notes text NOT NULL
+    );
     INSERT INTO public.scoped_orders (id, tenant_id, owner_id, category, occurred_at) VALUES
       ('derived-acme-order', 'acme', 'derived-acme', 'trail', '2026-07-01T00:00:00Z'),
       ('derived-globex-order', 'globex', 'derived-globex', 'enterprise', '2026-07-01T00:00:00Z');
@@ -197,6 +213,12 @@ async function seedDerivedSource(pool) {
     INSERT INTO public.scoped_order_items (id, order_id, item_kind, quantity, occurred_at)
     SELECT 'derived-globex-item-' || item, 'derived-globex-order', 'standard', item, '2026-07-01T00:00:00Z'::timestamptz
       FROM generate_series(1, 7) AS item;
+    INSERT INTO public.shared_product_catalog (id, category, internal_notes)
+    SELECT 'hardware-' || item, 'hardware', 'operator-only hardware note ' || item
+      FROM generate_series(1, 6) AS item;
+    INSERT INTO public.shared_product_catalog (id, category, internal_notes)
+    SELECT 'software-' || item, 'software', 'operator-only software note ' || item
+      FROM generate_series(1, 6) AS item;
     ALTER TABLE public.scoped_orders ENABLE ROW LEVEL SECURITY;
     ALTER TABLE public.scoped_orders FORCE ROW LEVEL SECURITY;
     CREATE POLICY scoped_orders_trusted_scope ON public.scoped_orders
@@ -205,7 +227,7 @@ async function seedDerivedSource(pool) {
         tenant_id = current_setting('app.tenant_id', true)
         AND owner_id = current_setting('app.principal', true)
       );
-    GRANT SELECT ON public.scoped_orders, public.scoped_order_items TO synapsor_churn_reader;
+    GRANT SELECT ON public.scoped_orders, public.scoped_order_items, public.shared_product_catalog TO synapsor_churn_reader;
   `);
 }
 
@@ -585,6 +607,14 @@ async function main() {
               decided_at: "2026-08-05T18:00:00.000Z",
             },
           },
+          "public.shared_product_catalog": {
+            shared_reference_scope: {
+              value: SHARED_REFERENCE_ACKNOWLEDGEMENT,
+              actor: "production-owner@example.test",
+              reason: "This centrally maintained catalog contains the same reviewed rows for every tenant.",
+              decided_at: "2026-08-07T12:00:00.000Z",
+            },
+          },
         },
       },
     });
@@ -595,13 +625,18 @@ async function main() {
       "public.churn_events",
       "public.scoped_orders",
       "public.scoped_order_items",
+      "public.shared_product_catalog",
     ].includes(resource.id));
-    assert(candidate.pack.resources.length === 3, "Production fixture did not draft the direct and derived resources.", candidate.pack.resources);
+    assert(candidate.pack.resources.length === 4,
+      "Production fixture did not draft its direct, derived, and shared-reference resources.", candidate.pack.resources);
     const churnResource = candidate.pack.resources.find((resource) => resource.id === "public.churn_events");
     const scopedOrders = candidate.pack.resources.find((resource) => resource.id === "public.scoped_orders");
     const scopedOrderItems = candidate.pack.resources.find((resource) => resource.id === "public.scoped_order_items");
-    assert(churnResource && scopedOrders && scopedOrderItems?.tenant_scope && scopedOrderItems?.principal_scope,
-      "Production fixture did not preserve the reviewed derived tenant/principal path.", candidate.pack.resources);
+    const sharedProductCatalog = candidate.pack.resources.find((resource) =>
+      resource.id === "public.shared_product_catalog");
+    assert(churnResource && scopedOrders && scopedOrderItems?.tenant_scope && scopedOrderItems?.principal_scope
+      && sharedProductCatalog?.shared_reference_scope?.acknowledgement === SHARED_REFERENCE_ACKNOWLEDGEMENT,
+    "Production fixture did not preserve its derived scope and explicit shared-reference authority.", candidate.pack.resources);
     assert(
       JSON.stringify(churnResource.field_enums.reason_category)
         === JSON.stringify(["onboarding", "price", "product", "service"]),
@@ -610,6 +645,18 @@ async function main() {
     );
     narrowResource(churnResource);
     narrowDerivedResources(scopedOrders, scopedOrderItems);
+    sharedProductCatalog.selectable_fields = ["category"];
+    sharedProductCatalog.filterable_fields = Object.fromEntries(
+      Object.entries(sharedProductCatalog.filterable_fields).filter(([field]) => field === "category"),
+    );
+    sharedProductCatalog.sortable_fields = sharedProductCatalog.sortable_fields
+      .filter((field) => field === "category");
+    sharedProductCatalog.groupable_fields = sharedProductCatalog.groupable_fields
+      .filter((field) => field === "category");
+    sharedProductCatalog.aggregate_measures = [];
+    sharedProductCatalog.count_distinct_fields = [];
+    sharedProductCatalog.time_bucket_fields = {};
+    sharedProductCatalog.relationships = [];
     const indexedChecks = derivedScopeIndexDoctorChecks({
       boundaries: [candidate],
       inspectionsBySource: new Map([[candidate.source, [inspection]]]),
@@ -755,6 +802,11 @@ async function main() {
     assert(doctor.checks?.some((check) => check.name === "derived-scope-indexes:complete"
       && check.level === "pass" && check.message.includes("2 reviewed derived-scope paths")),
     "Production Explore doctor did not attest live derived-scope index coverage.", doctor.checks);
+    assert(doctor.checks?.some((check) =>
+      check.name === "shared-reference:customer_churn_production:public.shared_product_catalog"
+      && check.ok === true
+      && check.message.includes("no tenant predicate")),
+    "Production Explore doctor did not attest the exact reviewed Shared reference.", doctor.checks);
     const doctorSerialized = JSON.stringify(doctor);
     assert(!doctorSerialized.includes(controlUrl)
       && !doctorSerialized.includes(readUrl)
@@ -829,6 +881,58 @@ async function main() {
       && globexResult.data[0].reason_category === "price"
       && globexResult.data[0].count === 8,
     "Verified tenant/principal claims did not isolate the Globex result.", globexResult);
+
+    const sharedReferencePlan = {
+      kind: "aggregate",
+      resource: "public.shared_product_catalog",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "category" }],
+      order_by: { kind: "measure", index: 0, direction: "desc" },
+      top_n: 10,
+    };
+    const sharedAcme = clientFor(server.url, await token(privateKey, {
+      tenant: "acme",
+      principal: "shared-reference-acme",
+    }));
+    clients.push(sharedAcme.client);
+    await sharedAcme.client.connect(sharedAcme.transport);
+    const sharedAcmeResult = resultPayload(await sharedAcme.client.callTool({
+      name: "app.explore_data",
+      arguments: { plan: sharedReferencePlan },
+    }));
+    const sharedGlobex = clientFor(server.url, await token(privateKey, {
+      tenant: "globex",
+      principal: "shared-reference-globex",
+    }));
+    clients.push(sharedGlobex.client);
+    await sharedGlobex.client.connect(sharedGlobex.transport);
+    const sharedGlobexResult = resultPayload(await sharedGlobex.client.callTool({
+      name: "app.explore_data",
+      arguments: { plan: sharedReferencePlan },
+    }));
+    const expectedSharedData = [
+      { category: "hardware", count: 6 },
+      { category: "software", count: 6 },
+    ];
+    const sharedAcmeData = [...(sharedAcmeResult.data ?? [])]
+      .sort((left, right) => left.category.localeCompare(right.category));
+    const sharedGlobexData = [...(sharedGlobexResult.data ?? [])]
+      .sort((left, right) => left.category.localeCompare(right.category));
+    assert(sharedAcmeResult.ok === true
+      && sharedGlobexResult.ok === true
+      && JSON.stringify(sharedAcmeData) === JSON.stringify(expectedSharedData)
+      && JSON.stringify(sharedGlobexData) === JSON.stringify(expectedSharedData)
+      && sharedAcmeResult.source_database_changed === false
+      && sharedGlobexResult.source_database_changed === false,
+    "Production HTTP Shared reference did not return the same reviewed global rows to two JWT tenants.", {
+      sharedAcmeResult,
+      sharedGlobexResult,
+    });
+    assert(!JSON.stringify([sharedAcmeResult, sharedGlobexResult]).match(/operator-only|internal_notes|SELECT\s/i),
+      "Production HTTP Shared reference leaked a kept-out field or compiled SQL.", {
+        sharedAcmeResult,
+        sharedGlobexResult,
+      });
 
     const derivedPlan = {
       kind: "aggregate",
@@ -937,6 +1041,7 @@ async function main() {
       principal_budget_isolated: true,
       tenant_and_principal_rows_isolated: true,
       derived_tenant_and_principal_scope_isolated: true,
+      shared_reference_same_across_tenants: true,
       concurrent_budget_reservation: true,
       source_connection_ceiling: 2,
       principal_session_ceiling: 2,

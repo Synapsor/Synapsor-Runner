@@ -37,6 +37,7 @@ export const AUTO_BOUNDARY_OVERRIDES_VERSION = "synapsor.auto-boundary-overrides
 export const ACTIVE_EXPLORATION_BOUNDARY_SET_VERSION = "synapsor.active-exploration-boundaries.v1";
 export const AUTO_BOUNDARY_COMPILER_VERSION = "1.6.6";
 export const AUTO_BOUNDARY_SPEC_VERSION = "1.8.0";
+export const SHARED_REFERENCE_ACKNOWLEDGEMENT = "table_has_no_per_tenant_rows";
 export const DEFAULT_GENERATED_DIR = "synapsor/generated";
 export const MAX_ACTIVE_EXPLORATION_BOUNDARIES = 8;
 const EXPLORATION_LOCK_SNAPSHOT_DIR = "exploration-locks";
@@ -124,6 +125,20 @@ export type DerivedScopeInference = {
   blocked_reason?: string;
 };
 
+export type SharedReferenceScope = {
+  mode: "shared_reference";
+  acknowledgement: typeof SHARED_REFERENCE_ACKNOWLEDGEMENT;
+};
+
+export type SharedReferenceScopeInference = {
+  eligible: boolean;
+  selected?: SharedReferenceScope;
+  confirmation_required: true;
+  safety_consequence: string;
+  blockers: string[];
+  review_override?: ReviewedValueDecision;
+};
+
 export type BoundaryInference<T> = {
   selected?: T;
   candidates: T[];
@@ -173,6 +188,8 @@ export type AutoBoundaryResource = {
   principal_key: BoundaryInference<string>;
   /** Present only when a catalog-proven scope path is available. */
   derived_tenant_scope?: DerivedScopeInference;
+  /** Human-reviewed option for a table whose rows are identical for every tenant. */
+  shared_reference_scope?: SharedReferenceScopeInference;
   /** Present only when a catalog-proven principal path is available. */
   derived_principal_scope?: DerivedScopeInference;
   fields: AutoBoundaryField[];
@@ -313,6 +330,7 @@ export type ExplorationBoundaryDraft = {
       primary_key: string;
       tenant_key?: string;
       tenant_scope?: DerivedScopePath;
+      shared_reference_scope?: SharedReferenceScope;
       principal_key?: string;
       principal_scope?: DerivedScopePath;
       field_types: Record<string, string>;
@@ -408,6 +426,7 @@ export type GenerationAuthorityDependencies = {
     schema: string;
     table: string;
     fields: string[];
+    shared_reference_scope?: SharedReferenceScope;
     fingerprint: `sha256:${string}`;
   }>;
   relationships: Record<string, {
@@ -485,6 +504,7 @@ export type AutoBoundaryReviewOverrides = {
     row_identity?: ReviewedValueDecision;
     tenant_key?: ReviewedValueDecision;
     tenant_scope_path?: ReviewedValueDecision;
+    shared_reference_scope?: ReviewedValueDecision;
     principal_key?: Omit<ReviewedValueDecision, "value"> & { value: string | null };
     principal_scope_path?: Omit<ReviewedValueDecision, "value"> & { value: string | null };
     minimum_cohort?: ReviewedMinimumCohortDecision;
@@ -603,6 +623,7 @@ export function pruneAutoBoundaryReviewOverrides(
       else removed.push(`${resourceId}: reviewed tenant key ${decision.tenant_key.value} no longer exists`);
     }
     if (decision.tenant_scope_path) retained.tenant_scope_path = decision.tenant_scope_path;
+    if (decision.shared_reference_scope) retained.shared_reference_scope = decision.shared_reference_scope;
     if (decision.principal_key) {
       if (decision.principal_key.value === null || columns.has(decision.principal_key.value)) {
         retained.principal_key = decision.principal_key;
@@ -659,7 +680,9 @@ export function pruneAutoBoundaryReviewOverrides(
     resources,
   });
   if (Object.values(preliminary.resources).some((resource) =>
-    resource.tenant_scope_path || resource.principal_scope_path)) {
+    resource.tenant_scope_path
+    || resource.principal_scope_path
+    || resource.shared_reference_scope)) {
     const parsedEvidence = context.parsedEvidence ?? [];
     const staticObjects = parsedEvidence.flatMap((evidence) =>
       evidence.objects.map((object) => ({ format: evidence.format, object })));
@@ -694,6 +717,15 @@ export function pruneAutoBoundaryReviewOverrides(
           `${resourceId}: reviewed derived principal path ${decision.principal_scope_path.value} is no longer non-null, catalog-proven, unique, and connected to direct principal scope`,
         );
         delete decision.principal_scope_path;
+      }
+      if (decision.shared_reference_scope && reviewed) {
+        const eligibility = sharedReferenceScopeInference(reviewed, reviewedResources);
+        if (!eligibility.eligible) {
+          removed.push(
+            `${resourceId}: reviewed shared-reference scope is no longer safe (${eligibility.blockers.join("; ")})`,
+          );
+          delete decision.shared_reference_scope;
+        }
       }
       if (Object.keys(decision).length === 0) delete resources[resourceId];
     }
@@ -737,7 +769,7 @@ function buildAutoBoundaryOnce(input: BuildAutoBoundaryInput): AutoBoundaryBuild
   applyReviewOverrides(graph, overrides);
   if (organizationScope) assertSingleOrganizationInspectionSafe(input.inspection, graph);
   inferDerivedScopeCandidates(graph);
-  applyDerivedScopeReviewOverrides(graph, overrides);
+  applyDerivedScopeReviewOverrides(graph, overrides, Boolean(organizationScope));
   graph.resources.forEach((resource) => refreshResourceStatus(resource, Boolean(organizationScope)));
   const dsl = emitDraftDsl(graph, sourceName);
   const contract = compileAgentDsl(dsl);
@@ -831,6 +863,9 @@ function reviewOverrideAuthority(overrides: AutoBoundaryReviewOverrides): Record
             ...(resource.tenant_key ? { tenant_key: resource.tenant_key.value } : {}),
             ...(resource.tenant_scope_path
               ? { tenant_scope_path: resource.tenant_scope_path.value }
+              : {}),
+            ...(resource.shared_reference_scope
+              ? { shared_reference_scope: resource.shared_reference_scope.value }
               : {}),
             ...(resource.principal_key ? { principal_key: resource.principal_key.value } : {}),
             ...(resource.principal_scope_path
@@ -1090,7 +1125,10 @@ export function resourceAuthorityDependencyFingerprint(
     candidate.schema === dependency.schema && candidate.name === dependency.table);
   if (!table) return undefined;
   const columns = new Map(table.columns.map((column) => [column.name, column]));
-  const selectedColumns = dependency.fields.map((name) => {
+  const dependencyFieldNames = dependency.shared_reference_scope
+    ? table.columns.map((column) => column.name).sort()
+    : dependency.fields;
+  const selectedColumns = dependencyFieldNames.map((name) => {
     const column = columns.get(name);
     if (!column) return undefined;
     return {
@@ -1109,6 +1147,21 @@ export function resourceAuthorityDependencyFingerprint(
     schema: table.schema,
     table: table.name,
     type: table.type,
+    ...(dependency.shared_reference_scope
+      ? {
+        shared_reference_scope: dependency.shared_reference_scope,
+        tenant_column_candidates: [...table.suggestions.tenant_columns].sort(),
+        foreign_keys: [...table.foreign_keys]
+          .map((foreignKey) => ({
+            name: foreignKey.name,
+            columns: [...foreignKey.columns],
+            referenced_schema: foreignKey.referenced_schema,
+            referenced_table: foreignKey.referenced_table,
+            referenced_columns: [...foreignKey.referenced_columns],
+          }))
+          .sort((left, right) => left.name.localeCompare(right.name)),
+      }
+      : {}),
     primary_key: [...table.primary_key],
     columns: selectedColumns,
     row_level_security: table.row_level_security ?? "unknown",
@@ -1186,6 +1239,9 @@ function buildGenerationAuthorityDependencies(
       schema: resource.schema,
       table: resource.table,
       fields,
+      ...(resource.shared_reference_scope
+        ? { shared_reference_scope: structuredClone(resource.shared_reference_scope) }
+        : {}),
     };
     const fingerprint = resourceAuthorityDependencyFingerprint(descriptor, inspection);
     if (!fingerprint) throw new Error(`Cannot fingerprint generated authority for missing resource ${resource.id}.`);
@@ -1809,6 +1865,7 @@ export function normalizeAutoBoundaryReviewOverrides(input: unknown): AutoBounda
         "row_identity",
         "tenant_key",
         "tenant_scope_path",
+        "shared_reference_scope",
         "principal_key",
         "principal_scope_path",
         "minimum_cohort",
@@ -1830,6 +1887,18 @@ export function normalizeAutoBoundaryReviewOverrides(input: unknown): AutoBounda
         `${resourceId} derived tenant scope path`,
         false,
       ) as ReviewedValueDecision;
+    }
+    if (rawResource.shared_reference_scope !== undefined) {
+      resource.shared_reference_scope = normalizeReviewedValueDecision(
+        rawResource.shared_reference_scope,
+        `${resourceId} shared-reference scope`,
+        false,
+      ) as ReviewedValueDecision;
+      if (resource.shared_reference_scope.value !== SHARED_REFERENCE_ACKNOWLEDGEMENT) {
+        throw new Error(
+          `${resourceId} shared-reference scope must acknowledge ${SHARED_REFERENCE_ACKNOWLEDGEMENT}.`,
+        );
+      }
     }
     if (rawResource.principal_key !== undefined) {
       resource.principal_key = normalizeReviewedValueDecision(rawResource.principal_key, `${resourceId} principal key`, true);
@@ -2154,13 +2223,30 @@ function derivedScopeCandidates(
 function applyDerivedScopeReviewOverrides(
   graph: AutoBoundaryEvidenceGraph,
   overrides: AutoBoundaryReviewOverrides,
+  singleOrganization = false,
 ): void {
   const resources = new Map(graph.resources.map((resource) => [resource.id, resource]));
+  for (const resource of graph.resources) {
+    if (!singleOrganization
+      && !resource.tenant_key.selected
+      && !resource.derived_tenant_scope?.selected) {
+      resource.shared_reference_scope = sharedReferenceScopeInference(resource, resources);
+    } else {
+      delete resource.shared_reference_scope;
+    }
+  }
   for (const [resourceId, override] of Object.entries(overrides.resources)) {
     const resource = resources.get(resourceId);
     if (!resource) continue;
-    if (override.tenant_key && override.tenant_scope_path) {
-      throw new Error(`${resourceId} cannot review both a direct tenant key and a derived tenant scope path.`);
+    const reviewedTenantModes = [
+      override.tenant_key,
+      override.tenant_scope_path,
+      override.shared_reference_scope,
+    ].filter(Boolean).length;
+    if (reviewedTenantModes > 1) {
+      throw new Error(
+        `${resourceId} must review exactly one of a direct tenant key, a derived tenant path, or shared-reference scope.`,
+      );
     }
     if (override.principal_key?.value && override.principal_scope_path?.value) {
       throw new Error(`${resourceId} cannot review both a direct principal key and a derived principal scope path.`);
@@ -2176,6 +2262,26 @@ function applyDerivedScopeReviewOverrides(
       resource.derived_tenant_scope!.selected = structuredClone(selected);
       delete resource.derived_tenant_scope!.blocked_reason;
     }
+    if (override.shared_reference_scope) {
+      if (singleOrganization) {
+        throw new Error(
+          `${resourceId} cannot declare shared-reference scope inside a single-organization boundary.`,
+        );
+      }
+      const inference = resource.shared_reference_scope
+        ?? sharedReferenceScopeInference(resource, resources);
+      if (!inference.eligible) {
+        throw new Error(
+          `${resourceId} cannot be reviewed as a shared reference: ${inference.blockers.join("; ")}.`,
+        );
+      }
+      inference.selected = {
+        mode: "shared_reference",
+        acknowledgement: SHARED_REFERENCE_ACKNOWLEDGEMENT,
+      };
+      inference.review_override = structuredClone(override.shared_reference_scope);
+      resource.shared_reference_scope = inference;
+    }
     if (override.principal_scope_path?.value) {
       const selected = resource.derived_principal_scope?.candidates.find((candidate) =>
         candidate.path_id === override.principal_scope_path!.value);
@@ -2188,6 +2294,43 @@ function applyDerivedScopeReviewOverrides(
       delete resource.derived_principal_scope!.blocked_reason;
     }
   }
+}
+
+function sharedReferenceScopeInference(
+  resource: AutoBoundaryResource,
+  resources: Map<string, AutoBoundaryResource>,
+): SharedReferenceScopeInference {
+  const blockers = new Set<string>();
+  if (resource.tenant_key.selected || resource.tenant_key.candidates.length > 0) {
+    blockers.add("the inspected table has tenant-scope column evidence");
+  }
+  if ((resource.derived_tenant_scope?.candidates.length ?? 0) > 0) {
+    blockers.add("the inspected table has a proven path to tenant-scoped rows");
+  }
+  if (resource.rls.enabled === true
+    || resource.rls.enabled === "unknown"
+    || resource.rls.policy_names.length > 0) {
+    blockers.add("row-level tenant posture is present or could not be proven absent");
+  }
+  for (const relationship of resource.relationships) {
+    const target = resources.get(relationship.referenced_resource);
+    if (!target) continue;
+    if (target.tenant_key.selected
+      || target.tenant_key.candidates.length > 0
+      || target.derived_tenant_scope?.selected
+      || (target.derived_tenant_scope?.candidates.length ?? 0) > 0) {
+      blockers.add(
+        `relationship ${relationship.name} reaches tenant-scoped resource ${target.id}`,
+      );
+    }
+  }
+  return {
+    eligible: blockers.size === 0,
+    confirmation_required: true,
+    safety_consequence:
+      "Runner will apply no tenant predicate to this table; every tenant may receive the same reviewed rows, while field, cohort, and budget controls remain enforced.",
+    blockers: [...blockers].sort(),
+  };
 }
 
 function markReviewedInference(
@@ -2206,14 +2349,18 @@ function markReviewedInference(
 
 function refreshResourceStatus(resource: AutoBoundaryResource, singleOrganization = false): void {
   const hasTenantScope = Boolean(
-    resource.tenant_key.selected || resource.derived_tenant_scope?.selected,
+    resource.tenant_key.selected
+    || resource.derived_tenant_scope?.selected
+    || resource.shared_reference_scope?.selected,
   );
   const tenantResolved = singleOrganization ? !hasTenantScope : hasTenantScope;
   resource.blockers = [
     ...(!resource.primary_key.selected ? ["source-proven single-column primary or unique row identifier is unresolved"] : []),
     ...(!tenantResolved ? [singleOrganization
-      ? "single-organization resources must not declare a direct or derived tenant scope"
-      : "trusted tenant scope is unresolved"] : []),
+      ? "single-organization resources must not declare direct, derived, or shared-reference tenant scope"
+      : resource.shared_reference_scope?.eligible
+        ? "trusted tenant scope is unresolved; review Shared reference only if this table has no per-tenant rows"
+        : "trusted tenant scope is unresolved"] : []),
   ];
   resource.status = !resource.primary_key.selected
     ? "blocked_identifier"
@@ -2445,8 +2592,10 @@ function assertBoundaryCandidateNarrowsDraft(
       if (resource[field] !== original[field]) throw new Error(`${resource.id} ${field} cannot change during review.`);
     }
     if (JSON.stringify(resource.tenant_scope ?? null) !== JSON.stringify(original.tenant_scope ?? null)
+      || JSON.stringify(resource.shared_reference_scope ?? null)
+        !== JSON.stringify(original.shared_reference_scope ?? null)
       || JSON.stringify(resource.principal_scope ?? null) !== JSON.stringify(original.principal_scope ?? null)) {
-      throw new Error(`${resource.id} derived trusted scope cannot change during boundary review.`);
+      throw new Error(`${resource.id} trusted scope cannot change during boundary review.`);
     }
     assertReviewedResourceScope(resource, candidateResources, Boolean(candidate.organization_scope));
     if (JSON.stringify(resource.field_types) !== JSON.stringify(original.field_types)
@@ -2564,11 +2713,25 @@ function assertReviewedResourceScope(
   resources: Map<string, ExplorationBoundaryDraft["pack"]["resources"][number]>,
   singleOrganization: boolean,
 ): void {
-  if (singleOrganization && (resource.tenant_key || resource.tenant_scope)) {
+  if (singleOrganization
+    && (resource.tenant_key || resource.tenant_scope || resource.shared_reference_scope)) {
     throw new Error(`${resource.id} cannot declare tenant scope inside a single-organization boundary.`);
   }
-  if (!singleOrganization && Boolean(resource.tenant_key) === Boolean(resource.tenant_scope)) {
-    throw new Error(`${resource.id} must have exactly one direct or derived tenant scope.`);
+  const tenantModes = [
+    resource.tenant_key,
+    resource.tenant_scope,
+    resource.shared_reference_scope,
+  ].filter(Boolean).length;
+  if (!singleOrganization && tenantModes !== 1) {
+    throw new Error(
+      `${resource.id} must have exactly one direct, derived, or shared-reference tenant scope.`,
+    );
+  }
+  if (resource.shared_reference_scope
+    && (resource.shared_reference_scope.mode !== "shared_reference"
+      || resource.shared_reference_scope.acknowledgement
+        !== SHARED_REFERENCE_ACKNOWLEDGEMENT)) {
+    throw new Error(`${resource.id} has malformed shared-reference scope authority.`);
   }
   if (resource.principal_key && resource.principal_scope) {
     throw new Error(`${resource.id} cannot have both direct and derived principal scope.`);
@@ -3365,7 +3528,13 @@ function buildExplorationBoundaryDraft(
       ...(!options.organizationScope
         ? resource.tenant_key.selected
           ? { tenant_key: resource.tenant_key.selected }
-          : { tenant_scope: structuredClone(resource.derived_tenant_scope!.selected!) }
+          : resource.derived_tenant_scope?.selected
+            ? { tenant_scope: structuredClone(resource.derived_tenant_scope.selected) }
+            : {
+              shared_reference_scope: structuredClone(
+                resource.shared_reference_scope!.selected!,
+              ),
+            }
         : {}),
       ...(resource.principal_key.selected ? { principal_key: resource.principal_key.selected } : {}),
       ...(!resource.principal_key.selected && resource.derived_principal_scope?.selected
@@ -3481,11 +3650,12 @@ function reviewedTrustedScopeReadableFields(resource: AutoBoundaryResource): Set
 function commonDatabaseRoleTenantSetting(
   resources: ExplorationBoundaryDraft["pack"]["resources"],
 ): string | undefined {
-  if (resources.length === 0) return undefined;
-  const settings = unique(resources.map((resource) => resource.rls_session?.tenant_setting)
+  const tenantScoped = resources.filter((resource) => !resource.shared_reference_scope);
+  if (tenantScoped.length === 0) return undefined;
+  const settings = unique(tenantScoped.map((resource) => resource.rls_session?.tenant_setting)
     .filter((setting): setting is string => Boolean(setting)));
   if (settings.length !== 1) return undefined;
-  return resources.every((resource) => resource.rls_session?.tenant_setting === settings[0])
+  return tenantScoped.every((resource) => resource.rls_session?.tenant_setting === settings[0])
     ? settings[0]
     : undefined;
 }
@@ -3571,7 +3741,9 @@ function generatedContractTests(
     cases.push(
       singleOrganization
         ? { name: `${resource.id}: reviewed organization fixed`, kind: "scope", expected: "single_organization_boundary_bound" }
-        : { name: `${resource.id}: trusted tenant required`, kind: "scope", expected: "deny_without_trusted_tenant" },
+        : resource.shared_reference_scope?.selected
+          ? { name: `${resource.id}: reviewed shared reference`, kind: "scope", expected: "shared_reference_no_tenant_predicate" }
+          : { name: `${resource.id}: trusted tenant required`, kind: "scope", expected: "deny_without_trusted_tenant" },
       singleOrganization
         ? { name: `${resource.id}: model organization override absent`, kind: "schema", expected: "organization_not_model_argument" }
         : { name: `${resource.id}: model tenant override absent`, kind: "schema", expected: "tenant_not_model_argument" },
@@ -3619,7 +3791,9 @@ function unresolvedDecisions(
         ? `${resource.id}: confirm whole-organization read access with no tenant predicate`
         : resource.tenant_key.selected
           ? `${resource.id}: confirm tenant key ${resource.tenant_key.selected}`
-          : `${resource.id}: confirm mandatory derived tenant scope via ${resource.derived_tenant_scope!.selected!.path_id} to ${resource.derived_tenant_scope!.selected!.ancestor_resource}.${resource.derived_tenant_scope!.selected!.ancestor_column}`,
+          : resource.derived_tenant_scope?.selected
+            ? `${resource.id}: confirm mandatory derived tenant scope via ${resource.derived_tenant_scope.selected.path_id} to ${resource.derived_tenant_scope.selected.ancestor_resource}.${resource.derived_tenant_scope.selected.ancestor_column}`
+            : `${resource.id}: confirm reviewed shared reference with no tenant predicate`,
       resource.principal_key.selected
         ? `${resource.id}: confirm principal scope ${resource.principal_key.selected}`
         : resource.derived_principal_scope?.selected
@@ -3650,6 +3824,9 @@ function reviewMarkdown(build: AutoBoundaryBuild): string {
       ? [{ resource: resource.id, kind: "principal", scope: resource.derived_principal_scope.selected }]
       : []),
   ]);
+  const sharedReferences = build.exploration_boundary.pack.resources
+    .filter((resource) => Boolean(resource.shared_reference_scope))
+    .map((resource) => resource.id);
   const lines = [
     "# Auto Boundary Review",
     "",
@@ -3671,6 +3848,16 @@ function reviewMarkdown(build: AutoBoundaryBuild): string {
     "",
     ...build.review.unresolved_decisions.map((decision) =>
       `- [ ] ${humanReadableScopeDecision(decision, derivedScopes)}`),
+    ...(sharedReferences.length
+      ? [
+          "",
+          "## Reviewed Shared References",
+          "",
+          "These tables apply no tenant predicate because a human asserted that every tenant may receive the same reviewed rows. Field visibility, cohort suppression, privacy budgets, and principal scope remain enforced.",
+          "",
+          ...sharedReferences.map((resource) => `- ${resource}`),
+        ]
+      : []),
     ...(derivedScopes.length
       ? [
           "",

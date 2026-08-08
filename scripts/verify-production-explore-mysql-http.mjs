@@ -12,6 +12,7 @@ import { inspectDatabase } from "../packages/schema-inspector/dist/index.js";
 import { startStreamableHttpMcpServer } from "../packages/mcp-server/dist/index.js";
 import {
   AUTO_BOUNDARY_OVERRIDES_VERSION,
+  SHARED_REFERENCE_ACKNOWLEDGEMENT,
   activateExplorationBoundary,
   buildAutoBoundary,
   explorationBoundaryCandidateDigest,
@@ -37,6 +38,7 @@ const sourceSchema = "synapsor_production_explore";
 const sourceId = `${sourceSchema}.events`;
 const scopedOrdersId = `${sourceSchema}.scoped_orders`;
 const scopedOrderItemsId = `${sourceSchema}.scoped_order_items`;
+const sharedProductCatalogId = `${sourceSchema}.shared_product_catalog`;
 const singleOrganizationSchema = "synapsor_single_org_explore";
 const singleOrganizationSourceId = `${singleOrganizationSchema}.activity`;
 
@@ -86,6 +88,11 @@ async function seedSource(connection) {
       CONSTRAINT scoped_order_items_order_id_fkey
         FOREIGN KEY (order_id) REFERENCES ${sourceSchema}.scoped_orders(id) ON DELETE RESTRICT
     );
+    CREATE TABLE ${sourceSchema}.shared_product_catalog (
+      id varchar(64) PRIMARY KEY,
+      category enum('hardware', 'software') NOT NULL,
+      internal_notes text NOT NULL
+    );
     INSERT INTO ${sourceSchema}.events (id, tenant_id, category, amount_cents, occurred_at) VALUES
       ('a-1', 'acme', 'growth', 100, '2026-07-01 00:00:00'),
       ('a-2', 'acme', 'growth', 110, '2026-07-02 00:00:00'),
@@ -120,6 +127,19 @@ async function seedSource(connection) {
       ('derived-globex-item-5', 'derived-globex-order', 'standard', 5, '2026-07-01 00:00:00'),
       ('derived-globex-item-6', 'derived-globex-order', 'standard', 6, '2026-07-01 00:00:00'),
       ('derived-globex-item-7', 'derived-globex-order', 'standard', 7, '2026-07-01 00:00:00');
+    INSERT INTO ${sourceSchema}.shared_product_catalog (id, category, internal_notes) VALUES
+      ('hardware-1', 'hardware', 'operator-only hardware note 1'),
+      ('hardware-2', 'hardware', 'operator-only hardware note 2'),
+      ('hardware-3', 'hardware', 'operator-only hardware note 3'),
+      ('hardware-4', 'hardware', 'operator-only hardware note 4'),
+      ('hardware-5', 'hardware', 'operator-only hardware note 5'),
+      ('hardware-6', 'hardware', 'operator-only hardware note 6'),
+      ('software-1', 'software', 'operator-only software note 1'),
+      ('software-2', 'software', 'operator-only software note 2'),
+      ('software-3', 'software', 'operator-only software note 3'),
+      ('software-4', 'software', 'operator-only software note 4'),
+      ('software-5', 'software', 'operator-only software note 5'),
+      ('software-6', 'software', 'operator-only software note 6');
     CREATE USER IF NOT EXISTS 'synapsor_production_reader'@'%' IDENTIFIED BY 'synapsor_production_reader_password';
     GRANT SELECT ON ${sourceSchema}.* TO 'synapsor_production_reader'@'%';
     DROP DATABASE IF EXISTS ${singleOrganizationSchema};
@@ -174,6 +194,21 @@ async function sourceSnapshot(connection) {
     total: Number(rows[0].total),
     latest: new Date(rows[0].latest).toISOString(),
     derived: await derivedSourceSnapshot(connection),
+    shared_reference: await sharedReferenceSourceSnapshot(connection),
+  };
+}
+
+async function sharedReferenceSourceSnapshot(connection) {
+  const [rows] = await connection.query(`
+    SELECT COUNT(*) AS row_count,
+      SUM(CASE WHEN category = 'hardware' THEN 1 ELSE 0 END) AS hardware_count,
+      SUM(CASE WHEN category = 'software' THEN 1 ELSE 0 END) AS software_count
+    FROM ${sourceSchema}.shared_product_catalog
+  `);
+  return {
+    row_count: Number(rows[0].row_count),
+    hardware_count: Number(rows[0].hardware_count),
+    software_count: Number(rows[0].software_count),
   };
 }
 
@@ -507,6 +542,14 @@ async function main() {
               decided_at: "2026-08-05T18:00:00.000Z",
             },
           },
+          [sharedProductCatalogId]: {
+            shared_reference_scope: {
+              value: SHARED_REFERENCE_ACKNOWLEDGEMENT,
+              actor: "production-owner@example.test",
+              reason: "This centrally maintained catalog contains the same reviewed rows for every tenant.",
+              decided_at: "2026-08-07T12:00:00.000Z",
+            },
+          },
         },
       },
     });
@@ -517,13 +560,18 @@ async function main() {
       sourceId,
       scopedOrdersId,
       scopedOrderItemsId,
+      sharedProductCatalogId,
     ].includes(resource.id));
-    assert(candidate.pack.resources.length === 3, "MySQL production fixture did not draft the direct and derived resources.", candidate.pack.resources);
+    assert(candidate.pack.resources.length === 4,
+      "MySQL production fixture did not draft its direct, derived, and shared-reference resources.", candidate.pack.resources);
     const resource = candidate.pack.resources.find((candidateResource) => candidateResource.id === sourceId);
     const scopedOrders = candidate.pack.resources.find((candidateResource) => candidateResource.id === scopedOrdersId);
     const scopedOrderItems = candidate.pack.resources.find((candidateResource) => candidateResource.id === scopedOrderItemsId);
-    assert(resource && scopedOrders && scopedOrderItems?.tenant_scope && scopedOrderItems?.principal_scope,
-      "MySQL production fixture did not preserve the reviewed derived tenant/principal path.", candidate.pack.resources);
+    const sharedProductCatalog = candidate.pack.resources.find((candidateResource) =>
+      candidateResource.id === sharedProductCatalogId);
+    assert(resource && scopedOrders && scopedOrderItems?.tenant_scope && scopedOrderItems?.principal_scope
+      && sharedProductCatalog?.shared_reference_scope?.acknowledgement === SHARED_REFERENCE_ACKNOWLEDGEMENT,
+    "MySQL production fixture did not preserve its derived scope and explicit shared-reference authority.", candidate.pack.resources);
     assert(
       JSON.stringify(resource.field_enums.category)
         === JSON.stringify(["growth", "retained", "private-small", "enterprise"]),
@@ -541,6 +589,18 @@ async function main() {
       .filter(([field]) => field === "occurred_at"));
     resource.relationships = [];
     narrowDerivedResources(scopedOrders, scopedOrderItems);
+    sharedProductCatalog.selectable_fields = ["category"];
+    sharedProductCatalog.filterable_fields = Object.fromEntries(
+      Object.entries(sharedProductCatalog.filterable_fields).filter(([field]) => field === "category"),
+    );
+    sharedProductCatalog.sortable_fields = sharedProductCatalog.sortable_fields
+      .filter((field) => field === "category");
+    sharedProductCatalog.groupable_fields = sharedProductCatalog.groupable_fields
+      .filter((field) => field === "category");
+    sharedProductCatalog.aggregate_measures = [];
+    sharedProductCatalog.count_distinct_fields = [];
+    sharedProductCatalog.time_bucket_fields = {};
+    sharedProductCatalog.relationships = [];
     const indexChecks = derivedScopeIndexDoctorChecks({
       boundaries: [candidate],
       inspectionsBySource: new Map([[candidate.source, [inspection]]]),
@@ -680,6 +740,58 @@ async function main() {
       && globexResult.data[0].count === 5,
     "MySQL production tenant predicate did not isolate the Globex result.", globexResult);
 
+    const sharedReferencePlan = {
+      kind: "aggregate",
+      resource: sharedProductCatalogId,
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "category" }],
+      order_by: { kind: "measure", index: 0, direction: "desc" },
+      top_n: 10,
+    };
+    const sharedAcme = mcpClient(server.url, signedToken(privateKey, {
+      tenant: "acme",
+      principal: "shared-reference-acme",
+    }));
+    clients.push(sharedAcme.client);
+    await sharedAcme.client.connect(sharedAcme.transport);
+    const sharedAcmeResult = resultPayload(await sharedAcme.client.callTool({
+      name: "app.explore_data",
+      arguments: { plan: sharedReferencePlan },
+    }));
+    const sharedGlobex = mcpClient(server.url, signedToken(privateKey, {
+      tenant: "globex",
+      principal: "shared-reference-globex",
+    }));
+    clients.push(sharedGlobex.client);
+    await sharedGlobex.client.connect(sharedGlobex.transport);
+    const sharedGlobexResult = resultPayload(await sharedGlobex.client.callTool({
+      name: "app.explore_data",
+      arguments: { plan: sharedReferencePlan },
+    }));
+    const expectedSharedData = [
+      { category: "hardware", count: 6 },
+      { category: "software", count: 6 },
+    ];
+    const sharedAcmeData = [...(sharedAcmeResult.data ?? [])]
+      .sort((left, right) => left.category.localeCompare(right.category));
+    const sharedGlobexData = [...(sharedGlobexResult.data ?? [])]
+      .sort((left, right) => left.category.localeCompare(right.category));
+    assert(sharedAcmeResult.ok === true
+      && sharedGlobexResult.ok === true
+      && JSON.stringify(sharedAcmeData) === JSON.stringify(expectedSharedData)
+      && JSON.stringify(sharedGlobexData) === JSON.stringify(expectedSharedData)
+      && sharedAcmeResult.source_database_changed === false
+      && sharedGlobexResult.source_database_changed === false,
+    "MySQL production HTTP Shared reference did not return the same reviewed global rows to two JWT tenants.", {
+      sharedAcmeResult,
+      sharedGlobexResult,
+    });
+    assert(!JSON.stringify([sharedAcmeResult, sharedGlobexResult]).match(/operator-only|internal_notes|SELECT\s|`shared_/i),
+      "MySQL production HTTP Shared reference leaked a kept-out field or compiled SQL.", {
+        sharedAcmeResult,
+        sharedGlobexResult,
+      });
+
     const derivedPlan = {
       kind: "aggregate",
       resource: scopedOrderItemsId,
@@ -744,6 +856,7 @@ async function main() {
       principal_budget_isolated: true,
       tenant_rows_isolated: true,
       derived_tenant_and_principal_scope_isolated: true,
+      shared_reference_same_across_tenants: true,
       source_connection_ceiling: 2,
       principal_session_ceiling: 2,
       derived_scope_indexes_attested: true,

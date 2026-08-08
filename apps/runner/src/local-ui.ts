@@ -30,6 +30,7 @@ import {
 import { renderBoundaryWorkbench } from "./boundary-workbench.js";
 import {
   AUTO_BOUNDARY_OVERRIDES_VERSION,
+  SHARED_REFERENCE_ACKNOWLEDGEMENT,
   activateExplorationBoundary,
   assertCurrentExplorationBoundaryAuthority,
   buildAutoBoundary,
@@ -6059,7 +6060,7 @@ function renderBoundaryShell(csrfToken: string): string {
     const has=(r,f,k)=>k==="filterable_fields"||k==="time_bucket_fields"?Object.hasOwn(r[k],f):r[k].includes(f);
     const currentResource=id=>candidate.pack.resources.find(r=>r.id===id);
     const scopePathLabel=scope=>{const links=scope?.proof?.links||[];const resources=[];if(links[0]?.source_resource)resources.push(links[0].source_resource);links.forEach(link=>{if(resources.at(-1)!==link.source_resource)resources.push(link.source_resource);if(resources.at(-1)!==link.target_resource)resources.push(link.target_resource)});if(resources.at(-1)!==scope.ancestor_resource)resources.push(scope.ancestor_resource);if(!resources.length)resources.push(scope.ancestor_resource);const shown=resources.map(resource=>resource.startsWith("public.")?resource.slice(7):resource);shown[shown.length-1]=shown.at(-1)+"."+scope.ancestor_column;return shown.join(" → ")};
-    const scopeLabel=(resource,kind)=>{const direct=resource[kind+"_key"];if(direct)return direct;const scope=resource[kind+"_scope"];return scope?"mandatory relationship path "+scopePathLabel(scope):"not configured"};
+    const scopeLabel=(resource,kind)=>{const direct=resource[kind+"_key"];if(direct)return direct;if(kind==="tenant"&&resource.shared_reference_scope)return "Shared reference; no tenant predicate";const scope=resource[kind+"_scope"];return scope?"mandatory relationship path "+scopePathLabel(scope):"not configured"};
     const reviewDecisionLabel=item=>{const separator=item.indexOf(":");if(separator<1)return item;const resource=currentResource(item.slice(0,separator));if(item.includes(": confirm mandatory derived tenant scope ")&&resource?.tenant_scope)return resource.id+": confirm customer isolation through "+scopePathLabel(resource.tenant_scope);if(item.includes(": confirm mandatory derived principal scope ")&&resource?.principal_scope)return resource.id+": confirm user/owner isolation through "+scopePathLabel(resource.principal_scope);return item};
     function allDecisionsConfirmed(){return reviewDecisions.length>0&&document.querySelectorAll("[data-review-decision]:checked").length===reviewDecisions.length}
     function updateActivationState(){document.getElementById("activate").disabled=!digest||!allDecisionsConfirmed()}
@@ -7904,6 +7905,13 @@ function managedReviewMutationRequest(
   if (decision.kind === "tenant_scope_path") {
     return { ...common, include: true, tenant_scope_path: decision.value };
   }
+  if (decision.kind === "shared_reference_scope") {
+    return {
+      ...common,
+      include: true,
+      shared_reference_scope: decision.acknowledgement,
+    };
+  }
   if (decision.kind === "principal_key") {
     return { ...common, principal_key: decision.value };
   }
@@ -7977,10 +7985,26 @@ function applyManagedBoundaryReviewDecision(
     else if (kind === "tenant_key") {
       resource.tenant_key = decision;
       delete resource.tenant_scope_path;
+      delete resource.shared_reference_scope;
     } else {
       resource.tenant_scope_path = decision;
       delete resource.tenant_key;
+      delete resource.shared_reference_scope;
     }
+  } else if (kind === "shared_reference_scope") {
+    if (body.acknowledgement !== SHARED_REFERENCE_ACKNOWLEDGEMENT) {
+      throw new Error(
+        `shared_reference_scope review requires acknowledgement ${SHARED_REFERENCE_ACKNOWLEDGEMENT}.`,
+      );
+    }
+    resource.shared_reference_scope = {
+      value: SHARED_REFERENCE_ACKNOWLEDGEMENT,
+      actor,
+      reason,
+      decided_at: decidedAt,
+    };
+    delete resource.tenant_key;
+    delete resource.tenant_scope_path;
   } else if (kind === "principal_key" || kind === "principal_scope_path") {
     const value = body.value === null ? null : requiredReviewText(body.value, "value");
     if (kind === "principal_key") {
@@ -8006,7 +8030,7 @@ function applyManagedBoundaryReviewDecision(
     }
   } else {
     throw new Error(
-      "Managed boundary review kind must be field_exposure, field_enum, row_identity, tenant_key, tenant_scope_path, principal_key, principal_scope_path, or minimum_cohort.",
+      "Managed boundary review kind must be field_exposure, field_enum, row_identity, tenant_key, tenant_scope_path, shared_reference_scope, principal_key, principal_scope_path, or minimum_cohort.",
     );
   }
 

@@ -8,6 +8,7 @@ import {
 } from "@synapsor-runner/schema-inspector";
 import {
   buildAutoBoundary,
+  SHARED_REFERENCE_ACKNOWLEDGEMENT,
   explorationBoundaryCandidateDigest,
   loadActivatedExplorationBoundary,
   loadStructuredProjectEvidence,
@@ -20,6 +21,7 @@ import {
   type ActivatedExplorationBoundary,
   type ExplorationBoundaryDraft,
   type GenerationLock,
+  type SharedReferenceScopeInference,
 } from "./auto-boundary.js";
 import {
   applyManagedBoundaryReviewDecision,
@@ -53,6 +55,7 @@ export type BoundaryResourceReviewRequest = {
   row_identity?: string;
   tenant_key?: string;
   tenant_scope_path?: string;
+  shared_reference_scope?: typeof SHARED_REFERENCE_ACKNOWLEDGEMENT;
   principal_key?: string | null;
   principal_scope_path?: string | null;
   keep_out_fields?: string[];
@@ -128,6 +131,7 @@ export type BoundaryReviewSemanticDiff = {
   selected_row_identity: string | null;
   selected_tenant_key: string | null;
   selected_tenant_scope_path?: string;
+  selected_shared_reference_scope: boolean;
   selected_principal_key: string | null;
   selected_principal_scope_path?: string;
   added_visible_fields: string[];
@@ -162,6 +166,7 @@ export type BoundaryResourceReviewView = {
   row_identity: BoundaryInference<string>;
   tenant_key: BoundaryInference<string>;
   derived_tenant_scope?: DerivedScopeInference;
+  shared_reference_scope?: SharedReferenceScopeInference;
   principal_key: BoundaryInference<string>;
   derived_principal_scope?: DerivedScopeInference;
   fields: AutoBoundaryField[];
@@ -202,6 +207,7 @@ export type BoundaryResourceReviewSummary = {
   first_table_guidance?: string;
   first_table_scope_label?: string;
   derived_tenant_scope?: DerivedScopeInference;
+  shared_reference_scope?: SharedReferenceScopeInference;
   derived_principal_scope?: DerivedScopeInference;
   relationships: Array<{
     relationship_id: string;
@@ -224,6 +230,7 @@ type BoundaryReviewFiles = {
       primary_key: BoundaryInference<string>;
       tenant_key: BoundaryInference<string>;
       derived_tenant_scope?: DerivedScopeInference;
+      shared_reference_scope?: SharedReferenceScopeInference;
       principal_key: BoundaryInference<string>;
       derived_principal_scope?: DerivedScopeInference;
       fields: AutoBoundaryField[];
@@ -253,6 +260,9 @@ export async function inspectBoundaryResourceReview(
     tenant_key: reviewed.tenant_key,
     ...(reviewed.derived_tenant_scope
       ? { derived_tenant_scope: reviewed.derived_tenant_scope }
+      : {}),
+    ...(reviewed.shared_reference_scope
+      ? { shared_reference_scope: reviewed.shared_reference_scope }
       : {}),
     principal_key: reviewed.principal_key,
     ...(reviewed.derived_principal_scope
@@ -320,11 +330,15 @@ export async function listBoundaryResourceReviews(
           && Boolean(
             resource.tenant_key.selected
             || resource.tenant_key.candidates.length
-            || resource.derived_tenant_scope?.candidates.length,
+            || resource.derived_tenant_scope?.candidates.length
+            || resource.shared_reference_scope?.eligible,
           ),
         ...firstTable,
         ...(resource.derived_tenant_scope
           ? { derived_tenant_scope: structuredClone(resource.derived_tenant_scope) }
+          : {}),
+        ...(resource.shared_reference_scope
+          ? { shared_reference_scope: structuredClone(resource.shared_reference_scope) }
           : {}),
         ...(resource.derived_principal_scope
           ? { derived_principal_scope: structuredClone(resource.derived_principal_scope) }
@@ -828,6 +842,13 @@ function managedDecisionsForRequest(
       value: request.tenant_scope_path,
     }));
   }
+  if (request.shared_reference_scope !== undefined) {
+    decisions.push(normalizeManagedBoundaryReviewDecision({
+      ...common,
+      kind: "shared_reference_scope",
+      acknowledgement: request.shared_reference_scope,
+    }));
+  }
   if (request.principal_key !== undefined) {
     decisions.push(normalizeManagedBoundaryReviewDecision({
       ...common,
@@ -1206,6 +1227,7 @@ function canStageIncompleteScopeResolution(
   const hasScopeChoice = request.row_identity !== undefined
     || request.tenant_key !== undefined
     || request.tenant_scope_path !== undefined
+    || request.shared_reference_scope !== undefined
     || request.principal_key !== undefined
     || request.principal_scope_path !== undefined;
   const hasNonScopeChoice = [
@@ -1276,6 +1298,7 @@ function semanticDiff(
     ...(afterResource?.tenant_scope
       ? { selected_tenant_scope_path: afterResource.tenant_scope.path_id }
       : {}),
+    selected_shared_reference_scope: Boolean(afterResource?.shared_reference_scope),
     selected_principal_key: afterResource?.principal_key ?? null,
     ...(afterResource?.principal_scope
       ? { selected_principal_scope_path: afterResource.principal_scope.path_id }
@@ -1401,8 +1424,21 @@ function assertBindingsEqual(
 function validateBoundaryResourceRequest(request: BoundaryResourceReviewRequest): void {
   if (!request.resource_id.trim()) throw new Error("Boundary resource review requires a resource ID.");
   if (request.include && request.exclude) throw new Error("Boundary resource review cannot include and exclude the same resource.");
-  if (request.tenant_key !== undefined && request.tenant_scope_path !== undefined) {
-    throw new Error("Choose either a direct tenant-isolation column or one relationship-carried tenant path, not both.");
+  const tenantModes = [
+    request.tenant_key,
+    request.tenant_scope_path,
+    request.shared_reference_scope,
+  ].filter((value) => value !== undefined).length;
+  if (tenantModes > 1) {
+    throw new Error(
+      "Choose exactly one tenant mode: a direct column, one relationship-carried path, or reviewed Shared reference.",
+    );
+  }
+  if (request.shared_reference_scope !== undefined
+    && request.shared_reference_scope !== SHARED_REFERENCE_ACKNOWLEDGEMENT) {
+    throw new Error(
+      `Shared-reference review must acknowledge ${SHARED_REFERENCE_ACKNOWLEDGEMENT}.`,
+    );
   }
   if (request.principal_key && request.principal_scope_path) {
     throw new Error("Choose either a direct principal column or one relationship-carried principal path, not both.");
@@ -1447,6 +1483,7 @@ function validateBoundaryResourceRequest(request: BoundaryResourceReviewRequest)
     request.row_identity,
     request.tenant_key,
     request.tenant_scope_path,
+    request.shared_reference_scope,
     ...(request.principal_key ? [request.principal_key] : []),
     ...(request.principal_scope_path ? [request.principal_scope_path] : []),
     ...requestArrays(request),
@@ -1495,6 +1532,16 @@ function validateBoundaryRequestAgainstResource(
         formatDerivedScopePathWithId,
       ).join(", ") || "none"}. Use the exact path ID with --tenant-scope-path.`,
     );
+  }
+  if (request.shared_reference_scope !== undefined) {
+    if (!resource.shared_reference_scope?.eligible) {
+      throw new Error(
+        `${resource.id} cannot be reviewed as a shared reference: ${
+          resource.shared_reference_scope?.blockers.join("; ")
+          || "the inspected structure does not prove that shared-reference review is eligible"
+        }. No change was made.`,
+      );
+    }
   }
   if (request.principal_scope_path
     && !resource.derived_principal_scope?.candidates.some((candidate) =>
@@ -1600,6 +1647,7 @@ function canonicalReviewRequest(request: BoundaryResourceReviewRequest): JsonRec
     ...(request.tenant_scope_path !== undefined
       ? { tenant_scope_path: request.tenant_scope_path }
       : {}),
+    shared_reference_scope: request.shared_reference_scope ?? null,
     principal_key: request.principal_key === undefined ? "unchanged" : request.principal_key,
     ...(request.principal_scope_path !== undefined
       ? { principal_scope_path: request.principal_scope_path }

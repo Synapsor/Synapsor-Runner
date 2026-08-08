@@ -9,6 +9,7 @@ import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AUTO_BOUNDARY_OVERRIDES_VERSION,
+  SHARED_REFERENCE_ACKNOWLEDGEMENT,
   activateExplorationBoundary,
   buildAutoBoundary,
   explorationBoundaryCandidateDigest,
@@ -265,6 +266,40 @@ describe("Scoped Explore", () => {
       tenant: "internal-finance",
       principal: "",
     }, "postgres")).toThrow(/has no direct or derived tenant scope/i);
+  });
+
+  it("emits no tenant predicate for an exact reviewed shared-reference resource", async () => {
+    const fixture = await activatedFixture();
+    const boundary = structuredClone(fixture.boundary);
+    const resource = boundary.pack.resources[0]!;
+    delete resource.tenant_key;
+    delete resource.tenant_scope;
+    resource.shared_reference_scope = {
+      mode: "shared_reference",
+      acknowledgement: SHARED_REFERENCE_ACKNOWLEDGEMENT,
+    };
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: resource.id,
+      measures: [{ function: "count" }],
+      top_n: 1,
+    }, boundary);
+
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [compiled] = compileExplorePlan(plan, boundary, {
+        tenant: "tenant-acme",
+        principal: "",
+      }, engine);
+      expect(compiled?.params).not.toContain("tenant-acme");
+      expect(compiled?.sql).not.toContain("tenant_id");
+      expect(compiled?.sql).not.toContain(" WHERE ");
+    }
+
+    delete resource.shared_reference_scope;
+    expect(() => compileExplorePlan(plan, boundary, {
+      tenant: "tenant-acme",
+      principal: "",
+    }, "postgres")).toThrow(/no direct or derived tenant scope.*not reviewed as a shared reference/i);
   });
 
   it("keeps a mandatory derived principal predicate in a single-organization boundary", async () => {
@@ -1627,6 +1662,71 @@ describe("Scoped Explore", () => {
         "public.regions",
         "public.subscriptions",
       ]);
+    }
+  });
+
+  it("allows a tenant-scoped resource to join an explicitly reviewed shared reference", async () => {
+    const { boundary } = await activatedFixture(undefined, relationshipInspection());
+    const shared = structuredClone(boundary);
+    const target = shared.pack.resources.find((resource) => resource.id === "public.regions")!;
+    delete target.tenant_key;
+    delete target.tenant_scope;
+    target.shared_reference_scope = {
+      mode: "shared_reference",
+      acknowledgement: SHARED_REFERENCE_ACKNOWLEDGEMENT,
+    };
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "name", relationship: "subscriptions_region_id_fkey" }],
+      top_n: 10,
+    }, shared);
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [compiled] = compileExplorePlan(plan, shared, {
+        tenant: "tenant-acme",
+        principal: "",
+      }, engine);
+      expect(compiled?.params).toContain("tenant-acme");
+      expect(compiled?.sql).toContain(engine === "postgres"
+        ? 't0."tenant_id" = $1'
+        : "t0.`tenant_id` = ?");
+      expect(compiled?.sql).not.toContain(engine === "postgres"
+        ? 't1."tenant_id"'
+        : "t1.`tenant_id`");
+    }
+  });
+
+  it("keeps the target tenant predicate when a shared-reference root joins scoped rows", async () => {
+    const { boundary } = await activatedFixture(undefined, relationshipInspection());
+    const sharedRoot = structuredClone(boundary);
+    const root = sharedRoot.pack.resources.find((resource) =>
+      resource.id === "public.subscriptions")!;
+    delete root.tenant_key;
+    delete root.tenant_scope;
+    root.shared_reference_scope = {
+      mode: "shared_reference",
+      acknowledgement: SHARED_REFERENCE_ACKNOWLEDGEMENT,
+    };
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "name", relationship: "subscriptions_region_id_fkey" }],
+      top_n: 10,
+    }, sharedRoot);
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [compiled] = compileExplorePlan(plan, sharedRoot, {
+        tenant: "tenant-acme",
+        principal: "",
+      }, engine);
+      expect(compiled?.sql).not.toContain(engine === "postgres"
+        ? 't0."tenant_id"'
+        : "t0.`tenant_id`");
+      expect(compiled?.sql).toContain(engine === "postgres"
+        ? 't1."tenant_id" = $1'
+        : "t1.`tenant_id` = ?");
+      expect(compiled?.params).toContain("tenant-acme");
     }
   });
 
@@ -3080,6 +3180,96 @@ describe("Scoped Explore", () => {
     }
   });
 
+  it("serves an explicitly reviewed shared reference over production HTTP without a row-scope predicate", async () => {
+    const fixture = await activatedSharedReferenceFixture({ production: true });
+    const claimBudget = vi.fn(async () => ({
+      allowed: true as const,
+      principal_usage_after_reservation: {
+        query_count: 1,
+        queries_last_minute: 1,
+        extracted_cells: 2,
+        differencing_attempts: 1,
+      },
+      tenant_usage_after_reservation: {
+        query_count: 1,
+        queries_last_minute: 1,
+        extracted_cells: 2,
+        differencing_attempts: 1,
+      },
+      principal_variant_already_counted: false,
+      tenant_variant_already_counted: false,
+    }));
+    const store = new ProposalStore();
+    Object.assign(store, {
+      claimProductionExploreBudgetReservation: claimBudget,
+      completeProductionExploreBudgetReservation: vi.fn(async () => ({ completed: true as const })),
+      claimProductionExplorePrivacyRelease: vi.fn(async () => ({ allowed: true as const })),
+    });
+    const executeBatch = vi.fn(async ({ queries, context }: Parameters<ScopedExploreExecutor["executeBatch"]>[0]) => {
+      expect(context).toEqual({ tenant: "tenant-from-jwt", principal: "principal-from-jwt" });
+      return queries.map(() => [
+        { dimension_0: "north", measure_0: 8, __cohort_size: 8 },
+      ]);
+    });
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "streamable_http",
+      mode: "production_http",
+      env: fixture.env,
+      store,
+      sessionContext: {
+        tenant_id: "tenant-from-jwt",
+        principal: "principal-from-jwt",
+        provenance: "http_claims",
+      },
+      productionPrivacyHmacKey: Buffer.from("shared-production-accounting-key-32-bytes-minimum"),
+      productionAccountingNamespace: "example.shared-reference.production",
+      productionTenantLimits: {
+        max_queries_per_session: 100,
+        max_extracted_cells_per_session: 10_000,
+        max_differencing_queries: 10,
+        rate_limit_per_minute: 20,
+        max_response_cells: 10_000,
+      },
+      executor: {
+        execute: async () => [],
+        executeBatch,
+        close: async () => undefined,
+      },
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    try {
+      const resource = runtime.boundary.pack.resources[0]!;
+      expect(resource.shared_reference_scope).toEqual({
+        mode: "shared_reference",
+        acknowledgement: SHARED_REFERENCE_ACKNOWLEDGEMENT,
+      });
+      expect(resource.kept_out_fields).toContain("billing_token");
+
+      await expect(runtime.explore({
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "region" }],
+        top_n: 5,
+      })).resolves.toMatchObject({ ok: true, source_database_changed: false });
+
+      expect(executeBatch).toHaveBeenCalledTimes(1);
+      const compiled = executeBatch.mock.calls[0]![0].queries[0]!;
+      expect(compiled.sql).not.toContain("tenant_id");
+      expect(compiled.sql).not.toContain("account_id");
+      expect(compiled.params).not.toContain("tenant-from-jwt");
+      expect(compiled.params).not.toContain("principal-from-jwt");
+      expect(claimBudget).toHaveBeenCalledWith(expect.objectContaining({
+        principal_scope_fingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+        tenant_scope_fingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+      }));
+    } finally {
+      await runtime.close();
+      store.close();
+    }
+  });
+
   it("derives replica-stable opaque production budget scopes", async () => {
     const [firstFixture, secondFixture] = await Promise.all([
       activatedProductionFixture(),
@@ -3235,6 +3425,55 @@ describe("Scoped Explore", () => {
         message: expect.stringMatching(/derived tenant scope/i),
       });
       expect(compiled).toHaveLength(1);
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("fails closed before execution when a reviewed shared reference gains tenant-shaped schema", async () => {
+    const fixture = await activatedSharedReferenceFixture();
+    let currentInspection = fixture.inspection;
+    let sourceExecutions = 0;
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: {
+        execute: async () => [],
+        executeBatch: async ({ queries }) => queries.map(() => {
+          sourceExecutions += 1;
+          return [{ region: "north" }];
+        }),
+        close: async () => undefined,
+      },
+      inspectDatabaseFn: async () => currentInspection,
+    });
+    try {
+      await expect(runtime.explore({
+        kind: "rows",
+        resource: "public.subscriptions",
+        select: ["region"],
+        limit: 1,
+      })).resolves.toMatchObject({ source_database_changed: false });
+      expect(sourceExecutions).toBe(1);
+
+      const drifted = structuredClone(fixture.inspection);
+      drifted.tables[0]!.columns.splice(1, 0, column("tenant_id", "uuid", {
+        tenant: true,
+        immutable: true,
+      }));
+      drifted.tables[0]!.suggestions.tenant_columns = ["tenant_id"];
+      currentInspection = drifted;
+      await expect(runtime.explore({
+        kind: "rows",
+        resource: "public.subscriptions",
+        select: ["region"],
+        limit: 1,
+      })).rejects.toMatchObject({
+        code: "EXPLORE_LOCK_STALE",
+        message: expect.stringMatching(/authority-bearing schema[\s\S]*No query was executed/i),
+      });
+      expect(sourceExecutions).toBe(1);
     } finally {
       await runtime.close();
     }
@@ -3491,6 +3730,71 @@ async function activatedProductionFixture(): Promise<{
     boundary,
     inspection,
     env: { DATABASE_URL: "postgresql://unused.example.test/synapsor" },
+  };
+}
+
+async function activatedSharedReferenceFixture(
+  options: { production?: boolean } = {},
+): Promise<{
+  root: string;
+  boundary: ActivatedExplorationBoundary;
+  inspection: SchemaInspection;
+  env: NodeJS.ProcessEnv;
+}> {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-shared-reference-"));
+  temporaryRoots.push(root);
+  const inspection = sharedReferenceInspection();
+  const build = buildAutoBoundary({
+    inspection,
+    project: {
+      root,
+      package_manager: "pnpm",
+      frameworks: [],
+      schema_inputs: [],
+      database_env_names: ["DATABASE_URL"],
+    },
+    sourceEnv: "DATABASE_URL",
+    ...(options.production
+      ? {
+        deploymentProfile: "production" as const,
+        httpClaims: { tenantClaim: "org_id", principalClaim: "sub" },
+      }
+      : {}),
+    overrides: {
+      schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+      resources: {
+        "public.subscriptions": {
+          shared_reference_scope: {
+            value: SHARED_REFERENCE_ACKNOWLEDGEMENT,
+            actor: "owner@example.test",
+            reason: "This reference table is centrally maintained and has identical rows for every tenant.",
+            decided_at: "2026-08-07T12:00:00.000Z",
+          },
+        },
+      },
+    },
+  });
+  await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+  const candidate = structuredClone(build.exploration_boundary);
+  const digest = explorationBoundaryCandidateDigest(candidate);
+  const boundary = await activateExplorationBoundary({
+    projectRoot: root,
+    candidate,
+    expectedDigest: digest,
+    actor: "owner@example.test",
+    confirmation: `ACTIVATE ${digest}`,
+    confirmedDecisions: candidate.unresolved_decisions,
+    currentInspection: inspection,
+  });
+  return {
+    root,
+    boundary,
+    inspection,
+    env: {
+      DATABASE_URL: "postgresql://unused.example.test/synapsor",
+      SYNAPSOR_TENANT_ID: "tenant-acme",
+      SYNAPSOR_PRINCIPAL: "pm-1",
+    },
   };
 }
 
@@ -3926,6 +4230,21 @@ function churnInspection(): SchemaInspection {
       },
     }],
   };
+}
+
+function sharedReferenceInspection(): SchemaInspection {
+  const inspection = churnInspection();
+  const resource = inspection.tables[0]!;
+  resource.columns = resource.columns.filter((field) => field.name !== "tenant_id");
+  resource.suggestions.tenant_columns = [];
+  resource.suggestions.default_visible_columns = resource.suggestions.default_visible_columns
+    .filter((field) => field !== "tenant_id");
+  resource.row_level_security = false;
+  resource.row_level_security_policies = [];
+  if (!resource.role_posture) throw new Error("shared-reference fixture role posture is required");
+  resource.role_posture.row_security_forced = false;
+  resource.role_posture.row_security_effective_for_current_role = false;
+  return inspection;
 }
 
 function column(

@@ -398,6 +398,7 @@ the local reviewed contract and proposal before writeback.
   ${cmd} boundary review resource public.orders [--project-root .] [--map|--json]
   ${cmd} boundary review resource public.orders --include --tenant-key tenant_id --no-principal --visible-fields id,status --actor reviewer@example.com --reason "Reviewed tenant-scoped order access"
   ${cmd} boundary review resource public.order_items --include --tenant-scope-path order_items_order_id_fkey --actor reviewer@example.com --reason "Order items inherit tenant scope through their required order"
+  ${cmd} boundary review resource public.product_catalog --include --shared-reference --acknowledge-table-has-no-per-tenant-rows --actor owner@example.com --reason "Every tenant receives the same reviewed catalog rows"
   ${cmd} boundary review resource public.orders --withhold-from-model customer_segment --actor reviewer@example.com --reason "Use this grouping locally without sending segment values to the model"
   ${cmd} boundary review resource public.orders --minimum-cohort 3 --actor owner@example.com --reason "Reviewed owner decision for this staging dataset"
   ${cmd} boundary review resource public.orders --max-ranked-groups 200 --actor reviewer@example.com --reason "Reviewed bounded ranking across this known customer population"
@@ -568,6 +569,8 @@ Resource decision flags:
   --include | --exclude
   --row-identity <column>
   --tenant-key <column>
+  --tenant-scope-path <path-id>
+  --shared-reference --acknowledge-table-has-no-per-tenant-rows
   --principal-key <column> | --no-principal
   --keep-out <column,...>
   --withhold-from-model <column,...>
@@ -611,7 +614,9 @@ an actor string are never sufficient. Workbench and CLI converge on the same
 activation checks. After activation, --authoring installs exactly
 app.describe_data and app.explore_data in the selected Cursor, Claude Code, or
 VS Code project. Scoped
-Explore remains local stdio only and is absent from production and remote HTTP.
+Explore remains local by default. Serving it over remote HTTP requires the
+separate production_explore profile, secured Streamable HTTP, verified JWT
+tenant/principal context, and the production budget and rate-limit prerequisites.
 `,
     action: `Usage:
   ${cmd} action validate ./synapsor/actions/billing.propose_refund_order.ts [--config ./synapsor.runner.json]

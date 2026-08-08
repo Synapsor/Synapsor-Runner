@@ -8,10 +8,12 @@
   HTTP. It serves only `app.describe_data` and `app.explore_data`; SQL,
   credentials, Protect, activation, approval, apply, and configuration remain
   outside the model-facing surface.
-- Requires separately generated and reviewed production boundaries with tenant
-  and principal values taken only from verified asymmetric JWT claims. Tenant
-  scope is injected on every query; reviewed principal columns add row scope,
-  while every authenticated principal is independently budgeted.
+- Requires separately generated and reviewed production boundaries with trusted
+  identity taken only from verified asymmetric JWT claims. Direct and derived
+  tenant scope remains mandatory for tenant-owned rows; a human may separately
+  review an exact tenant-independent table as a shared reference with no tenant
+  predicate. Reviewed principal scope and per-principal privacy accounting remain
+  enforced in both cases.
 - Adds durable shared-Postgres privacy accounting with atomic principal and
   tenant reservations, rolling query/extraction/differencing limits, rate
   limits, and tenant-level complementary-release protection. Concurrent calls
@@ -22,6 +24,11 @@
 - Proves PostgreSQL and MySQL source execution through the official MCP client,
   including scope isolation, suppression, concurrency, source immutability,
   `doctor`, the public CLI entrypoint, and a clean packed installation.
+- Keeps whole-organization databases simple through explicit boundary-wide
+  single-organization review, while mixed databases can add only individually
+  acknowledged shared-reference tables. Neither posture is inferred, and field
+  visibility, cohort suppression, budgets, schema locks, and read-only checks
+  remain unchanged.
 - Leaves local/staging Explore, protected named capabilities, existing boundary
   digests, and Spec/DSL `1.8.0` semantics unchanged.
 

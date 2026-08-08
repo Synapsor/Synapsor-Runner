@@ -23,6 +23,7 @@ import {
   AUTHORITY_DEPENDENCIES_VERSION,
   AUTO_BOUNDARY_COMPILER_VERSION,
   AUTO_BOUNDARY_SPEC_VERSION,
+  SHARED_REFERENCE_ACKNOWLEDGEMENT,
   assertSingleOrganizationInspectionSafe,
   compareGenerationLock,
   credentialPostureFingerprintForAuthority,
@@ -915,13 +916,17 @@ export function assertPreparedExplorePlanAuthority(
     }
   }
   if (!prepared.lock.authority_dependencies) {
-    const usesDerivedScope = prepared.boundary.pack.resources.some((resource) =>
-      Boolean(resource.tenant_scope || resource.principal_scope));
-    if (usesDerivedScope) {
+    const usesDependencyBoundScope = prepared.boundary.pack.resources.some((resource) =>
+      Boolean(
+        resource.tenant_scope
+        || resource.principal_scope
+        || resource.shared_reference_scope,
+      ));
+    if (usesDependencyBoundScope) {
       throw new ScopedExploreError(
         "EXPLORE_LOCK_STALE",
         withGenerationLockRemediation(
-          "The active boundary uses derived trusted scope, but its generation lock does not bind the required relationship authority. No query was executed.",
+          "The active boundary uses derived trusted scope or shared-reference scope, but its generation lock does not bind that authority. No query was executed.",
           prepared.lock,
         ),
       );
@@ -3184,10 +3189,10 @@ function compileScopePredicates(
       engine,
       resources,
     }));
-  } else if (!boundary.organization_scope) {
+  } else if (!resource.shared_reference_scope && !boundary.organization_scope) {
     throw new ScopedExploreError(
       "EXPLORE_BOUNDARY_MISMATCH",
-      `Reviewed resource ${resource.id} has no direct or derived tenant scope.`,
+      `Reviewed resource ${resource.id} has no direct or derived tenant scope and is not reviewed as a shared reference.`,
     );
   }
   if (resource.principal_key) {
@@ -3448,6 +3453,11 @@ function assertAuthorityDependenciesShape(dependencies: GenerationAuthorityDepen
       || typeof dependency.table !== "string"
       || !Array.isArray(dependency.fields)
       || dependency.fields.some((field) => typeof field !== "string")
+      || (dependency.shared_reference_scope !== undefined
+        && (!isRecord(dependency.shared_reference_scope)
+          || dependency.shared_reference_scope.mode !== "shared_reference"
+          || dependency.shared_reference_scope.acknowledgement
+            !== SHARED_REFERENCE_ACKNOWLEDGEMENT))
       || !digest.test(String(dependency.fingerprint))) {
       throw new ScopedExploreError("EXPLORE_BOUNDARY_MISMATCH", `The generation lock contains a malformed resource dependency for ${id || "(empty)"}.`);
     }
@@ -3648,8 +3658,13 @@ function reviewedRelationship(root: BoundaryResource, id: string, boundary: Acti
       throw relationshipError(`Relationship ${id} does not contain continuous many-to-one uniqueness proof.`);
     }
     const target = resourceFor(boundary, link.target_resource);
-    if (!boundary.organization_scope && !target.tenant_key && !target.tenant_scope) {
-      throw relationshipError(`Relationship ${id} target ${target.id} has no independently reviewed tenant scope.`);
+    if (!boundary.organization_scope
+      && !target.tenant_key
+      && !target.tenant_scope
+      && !target.shared_reference_scope) {
+      throw relationshipError(
+        `Relationship ${id} target ${target.id} has no independently reviewed tenant scope or shared-reference scope.`,
+      );
     }
     expectedSource = target.id;
   }

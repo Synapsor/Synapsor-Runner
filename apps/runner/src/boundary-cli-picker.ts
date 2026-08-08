@@ -4,7 +4,10 @@ import type {
   BoundaryResourceReviewSummary,
   BoundaryResourceReviewView,
 } from "./boundary-review-mutation.js";
-import type { DerivedScopePath } from "./auto-boundary.js";
+import {
+  SHARED_REFERENCE_ACKNOWLEDGEMENT,
+  type DerivedScopePath,
+} from "./auto-boundary.js";
 import { readTerminalTextWithEscape } from "./terminal-prompt.js";
 import {
   padTerminalLine,
@@ -31,6 +34,11 @@ export type BoundaryBlockedResolution =
   | ({ row_identity: string } & (
       | { tenant_key: string; tenant_scope_path?: never }
       | { tenant_key?: never; tenant_scope_path: string }
+      | {
+        tenant_key?: never;
+        tenant_scope_path?: never;
+        shared_reference_scope: typeof SHARED_REFERENCE_ACKNOWLEDGEMENT;
+      }
     ))
   | "back"
   | undefined;
@@ -168,6 +176,12 @@ async function resolveBlockedResource(
       label: `${formatDerivedScopePath(scope)} (mandatory relationship path)`,
       selected: view.derived_tenant_scope?.selected?.path_id === scope.path_id,
     })),
+    ...(view.shared_reference_scope?.eligible ? [{
+      kind: "shared_reference" as const,
+      value: SHARED_REFERENCE_ACKNOWLEDGEMENT,
+      label: "Shared reference - same reviewed rows for every tenant",
+      selected: Boolean(view.shared_reference_scope.selected),
+    }] : []),
   ];
   const theme = terminalTheme(output.isTTY && !("NO_COLOR" in process.env));
   let selectedDecision = view.row_identity.selected ? 1 : 0;
@@ -186,13 +200,16 @@ async function resolveBlockedResource(
           ?? view.row_identity.evidence.find((item) => item.detail.includes(String(selectedValue)))?.detail
         : tenantOption?.kind === "derived"
           ? "database foreign key is non-null and points many-to-one to a unique key on the scoped ancestor"
-          : view.tenant_key.alternatives_considered
+          : tenantOption?.kind === "shared_reference"
+            ? "human confirmation is required because Runner will apply no tenant predicate to this table"
+            : view.tenant_key.alternatives_considered
             .find((candidate) => candidate.value === selectedValue)?.evidence[0]
             ?? view.tenant_key.evidence.find((item) => item.detail.includes(String(selectedValue)))?.detail;
       render([
         theme.title(`RESOLVE TABLE ACCESS - ${safeTerminalText(view.resource_id)}`),
-        "Runner needs one database-backed record ID and one tenant-isolation choice.",
-        theme.dim("Tenant isolation may use a direct column or one mandatory, proven relationship path."),
+        "Runner needs one database-backed record ID and one reviewed row-scope choice.",
+        theme.dim("Choose a direct tenant column, a proven path, or Shared reference."),
+        theme.dim("Shared reference means every tenant receives the same reviewed rows."),
         theme.dim("These choices stay outside model arguments and do not activate access."),
         "",
         resolutionRow(
@@ -248,9 +265,16 @@ async function resolveBlockedResource(
         continue;
       }
       if ((key.name === "return" || key.name === "enter") && rowValue && tenantOption) {
-        return tenantOption.kind === "direct"
-          ? { row_identity: rowValue, tenant_key: tenantOption.value }
-          : { row_identity: rowValue, tenant_scope_path: tenantOption.value };
+        if (tenantOption.kind === "direct") {
+          return { row_identity: rowValue, tenant_key: tenantOption.value };
+        }
+        if (tenantOption.kind === "derived") {
+          return { row_identity: rowValue, tenant_scope_path: tenantOption.value };
+        }
+        return {
+          row_identity: rowValue,
+          shared_reference_scope: SHARED_REFERENCE_ACKNOWLEDGEMENT,
+        };
       }
     }
   });
@@ -1249,7 +1273,9 @@ function boundaryResourceMapLines(
     `|-- Record identity: ${safeTerminalText(candidate.primary_key)}`,
     `|-- Trusted tenant scope: ${candidate.tenant_key
       ? `${safeTerminalText(candidate.tenant_key)} (direct; bound outside model arguments)`
-      : `${safeTerminalText(formatDerivedScopePath(candidate.tenant_scope!))} (mandatory relationship path)`}`,
+      : candidate.tenant_scope
+        ? `${safeTerminalText(formatDerivedScopePath(candidate.tenant_scope))} (mandatory relationship path)`
+        : "Shared reference (no tenant predicate; reviewed field/privacy controls still apply)"}`,
     `|-- Trusted principal scope: ${candidate.principal_key
       ? `${safeTerminalText(candidate.principal_key)} (bound outside model arguments)`
       : candidate.principal_scope

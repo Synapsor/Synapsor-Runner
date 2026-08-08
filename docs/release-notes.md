@@ -18,10 +18,11 @@ for the Synapsor Cloud CLI.
   over secured MCP Streamable HTTP for genuinely ad-hoc read-only analytics.
   The remote model surface remains exactly `app.describe_data` and
   `app.explore_data`.
-- Every request requires a verified asymmetrically signed JWT. Runner always
-  injects tenant scope, always uses the principal as the privacy/rate identity,
-  and adds principal row filtering wherever the reviewed table has a
-  `principal_key`. Prompts and tool arguments cannot select either scope.
+- Every request requires a verified asymmetrically signed JWT and uses the
+  principal as the privacy/rate identity. Runner injects direct or derived tenant
+  scope for tenant-owned rows and adds reviewed principal row filtering. An exact
+  tenant-independent table may omit only its tenant predicate after explicit
+  shared-reference review. Prompts and tool arguments cannot select any scope.
 - Shared Postgres accounting atomically enforces per-principal and tenant query,
   extraction, differencing, complementary-release, and rate limits across
   replicas. One principal cannot starve another; concurrent requests cannot
@@ -33,6 +34,11 @@ for the Synapsor Cloud CLI.
 - Reviewed normalized child tables may derive tenant or principal scope through
   an exact non-null, catalog-proven many-to-one path. Runner injects that path
   as a mandatory scope predicate outside model arguments for every plan shape.
+- Explicit single-organization mode covers whole-organization databases without
+  fake tenant columns. Mixed databases can instead add an eligible global catalog
+  or reference table through an audited Shared reference choice. Runner never
+  infers either posture; field controls, suppression, budgets, principal scope,
+  schema locks, and read-only execution remain enforced.
 - `doctor` now checks live PostgreSQL and MySQL index metadata for every active
   derived-scope path. Missing supporting indexes are advisory warnings or notes
   with reviewable `CREATE INDEX` suggestions; they never weaken or gate scope.

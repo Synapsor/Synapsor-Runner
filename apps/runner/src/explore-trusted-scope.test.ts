@@ -52,6 +52,47 @@ describe("Explore trusted scope", () => {
     });
   });
 
+  it("keeps role-bound tenant proof on scoped tables while skipping reviewed shared references", async () => {
+    const candidate = boundary(true);
+    const shared = structuredClone(candidate.pack.resources[0]!);
+    shared.id = "public.product_catalog";
+    delete shared.tenant_key;
+    delete shared.rls_session;
+    shared.shared_reference_scope = {
+      mode: "shared_reference",
+      acknowledgement: "table_has_no_per_tenant_rows",
+    };
+    candidate.pack.resources.push(shared);
+    const currentInspection = inspection();
+    currentInspection.tables.push({
+      ...structuredClone(currentInspection.tables[0]!),
+      name: "product_catalog",
+      row_level_security: false,
+      row_level_security_policies: [],
+      role_posture: {
+        ...structuredClone(currentInspection.tables[0]!.role_posture!),
+        row_security_forced: false,
+        row_security_effective_for_current_role: false,
+      },
+    });
+    const reader = vi.fn().mockResolvedValue({
+      currentUser: "fitflow_analytics_reader",
+      value: "org-fitflow",
+    });
+
+    await expect(resolveExploreTrustedScope({
+      boundary: candidate,
+      lock: lock(),
+      inspection: currentInspection,
+      env: { DATABASE_URL: "postgresql://credential-owned-scope" },
+      readPostgresRoleSetting: reader,
+    })).resolves.toMatchObject({
+      tenant: "org-fitflow",
+      tenant_source: "postgres_role_setting",
+    });
+    expect(reader).toHaveBeenCalledOnce();
+  });
+
   it("proves role-bound derived scope on the terminal ancestor rather than the child", async () => {
     const candidate = derivedBoundary();
     const derivedInspection = inspection();

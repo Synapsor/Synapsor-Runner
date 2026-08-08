@@ -63,8 +63,19 @@ export function reconstructBoundaryReviewOverrides(input: {
     if (candidate.tenant_scope?.path_id !== baseline.tenant_scope?.path_id) {
       if (candidate.tenant_scope) resource.tenant_scope_path = decision(candidate.tenant_scope.path_id);
       else if (candidate.tenant_key) resource.tenant_key = decision(candidate.tenant_key);
+      else if (candidate.shared_reference_scope) {
+        resource.shared_reference_scope = decision(
+          candidate.shared_reference_scope.acknowledgement,
+        );
+      }
     } else if (candidate.tenant_key !== baseline.tenant_key && candidate.tenant_key) {
       resource.tenant_key = decision(candidate.tenant_key);
+    } else if (candidate.shared_reference_scope
+      && JSON.stringify(candidate.shared_reference_scope)
+        !== JSON.stringify(baseline.shared_reference_scope)) {
+      resource.shared_reference_scope = decision(
+        candidate.shared_reference_scope.acknowledgement,
+      );
     }
     if (candidate.principal_scope?.path_id !== baseline.principal_scope?.path_id) {
       if (candidate.principal_scope) {

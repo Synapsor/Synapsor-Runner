@@ -50,6 +50,13 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain('data-review-kind="');
     expect(html).toContain('kind:reviewedKind');
     expect(html).toContain('tenant_scope_path');
+    expect(html).toContain('shared_reference_scope');
+    expect(html).toContain("Shared reference - same rows for every tenant");
+    expect(html).toContain("I confirm this table has no per-tenant rows");
+    expect(html).toContain('data-shared-reference-ack');
+    expect(html).toContain('reviewRequest.acknowledgement="table_has_no_per_tenant_rows"');
+    expect(html).toContain("explicitly review Shared reference only if ");
+    expect(html).toContain('if(candidate.organization_scope)return {kind:"startable"}');
     expect(html).toContain('principal_scope_path');
     expect(html).toContain('return "mandatory relationship path "+shown.join(" → ")');
     expect(html).toContain("Advanced exact path IDs");

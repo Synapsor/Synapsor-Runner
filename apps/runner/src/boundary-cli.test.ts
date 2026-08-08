@@ -2109,6 +2109,105 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 25_000);
 
+  it("requires a reason and explicit confirmation before adding a shared reference", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-shared-reference-"));
+    const inspection = sharedReferenceInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    expect(build.exploration_boundary.pack.resources).toEqual([]);
+    const choices = [
+      { resource_id: "public.service_visits", action: "add" as const },
+      undefined,
+    ];
+    const prompts: string[] = [];
+    const confirmations: string[] = [];
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => choices.shift(),
+      resolveBlockedResource: async (view) => {
+        expect(view.shared_reference_scope).toMatchObject({ eligible: true });
+        return {
+          row_identity: "id",
+          shared_reference_scope: "table_has_no_per_tenant_rows",
+        };
+      },
+      editFieldTiers: async () => "back",
+      promptText: async (prompt) => {
+        prompts.push(prompt);
+        return "This reference data is centrally maintained and identical for every tenant.";
+      },
+      confirm: async (prompt, options) => {
+        confirmations.push(prompt);
+        expect(options?.defaultValue).toBe(false);
+        return true;
+      },
+    };
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await expect(boundaryReviewCommand([
+        "resource",
+        "public.service_visits",
+        "--project-root", root,
+        "--include",
+        "--shared-reference",
+        "--acknowledge-table-has-no-per-tenant-rows",
+        "--actor", "owner@example.test",
+        "--reason", "This reference data is centrally maintained and identical for every tenant.",
+        "--json",
+      ], async () => inspection)).resolves.toBe(0);
+      expect(JSON.parse(output)).toMatchObject({
+        ok: true,
+        semantic_diff: {
+          resource_id: "public.service_visits",
+          before_included: false,
+          after_included: true,
+          selected_shared_reference_scope: true,
+        },
+        authority_activated: false,
+        source_database_changed: false,
+      });
+      output = "";
+      await expect(boundaryReviewCommandInternal([
+        "--project-root", root,
+      ], async () => inspection, session)).resolves.toBe(0);
+      expect(prompts[0]).toMatch(/why does public\.service_visits contain the same rows/i);
+      expect(confirmations[0]).toMatch(/has no per-tenant rows.*every tenant/i);
+      expect(output).toContain("Row scope: Shared reference (no tenant predicate");
+      const reviews = await listBoundaryResourceReviews(root);
+      expect(reviews[0]).toMatchObject({ included: true, status: "draft_read" });
+      const progress = JSON.parse(await fs.readFile(
+        path.join(root, ".synapsor/boundary-review-progress.json"),
+        "utf8",
+      ));
+      expect(progress.candidate.pack.resources[0].shared_reference_scope).toEqual({
+        mode: "shared_reference",
+        acknowledgement: "table_has_no_per_tenant_rows",
+      });
+      expect(progress.review_overrides.resources["public.service_visits"].shared_reference_scope)
+        .toMatchObject({
+          value: "table_has_no_per_tenant_rows",
+          actor: expect.any(String),
+          reason: "This reference data is centrally maintained and identical for every tenant.",
+        });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 25_000);
+
   it("adds a table before column review and stages removal without exiting the access editor", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-add-remove-loop-"));
     const inspection = boundaryInspection();
@@ -4003,6 +4102,22 @@ function derivedPrincipalFirstTableInspection(singleOrganization: boolean): Sche
     }
   }
   inspection.tables = [orderItems, orders];
+  return inspection;
+}
+
+function sharedReferenceInspection(): SchemaInspection {
+  const inspection = boundaryInspection();
+  const table = inspection.tables[0]!;
+  table.columns = table.columns.filter((column) => column.name !== "tenant_id");
+  table.suggestions.tenant_columns = [];
+  table.suggestions.default_visible_columns = table.suggestions.default_visible_columns
+    .filter((column) => column !== "tenant_id");
+  table.row_level_security = false;
+  table.row_level_security_policies = [];
+  table.role_posture = {
+    ...table.role_posture!,
+    row_security_effective_for_current_role: false,
+  };
   return inspection;
 }
 

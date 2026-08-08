@@ -11,6 +11,7 @@ import path from "node:path";
 import process from "node:process";
 import readline from "node:readline/promises";
 import {
+  SHARED_REFERENCE_ACKNOWLEDGEMENT,
   activateExplorationBoundary,
   explorationBoundaryCandidateDigest,
   loadActivatedExplorationBoundary,
@@ -622,6 +623,8 @@ async function boundaryResourceReviewCommand(
     "--row-identity",
     "--tenant-key",
     "--tenant-scope-path",
+    "--shared-reference",
+    "--acknowledge-table-has-no-per-tenant-rows",
     "--principal-key",
     "--principal-scope-path",
     "--no-principal",
@@ -663,6 +666,8 @@ async function boundaryResourceReviewCommand(
     "--row-identity",
     "--tenant-key",
     "--tenant-scope-path",
+    "--shared-reference",
+    "--acknowledge-table-has-no-per-tenant-rows",
     "--principal-key",
     "--principal-scope-path",
     "--no-principal",
@@ -747,8 +752,24 @@ async function boundaryResourceReviewCommand(
   if (args.includes("--principal-key") && args.includes("--no-principal")) {
     throw new Error("Use either --principal-key <column> or --no-principal, not both.");
   }
-  if (args.includes("--tenant-key") && args.includes("--tenant-scope-path")) {
-    throw new Error("Use either --tenant-key <column> or --tenant-scope-path <path>, not both.");
+  const sharedReference = args.includes("--shared-reference");
+  const sharedReferenceAcknowledged = args.includes(
+    "--acknowledge-table-has-no-per-tenant-rows",
+  );
+  if (sharedReference !== sharedReferenceAcknowledged) {
+    throw new Error(
+      "--shared-reference requires --acknowledge-table-has-no-per-tenant-rows, and the acknowledgement is valid only with --shared-reference.",
+    );
+  }
+  const tenantModeFlags = [
+    args.includes("--tenant-key"),
+    args.includes("--tenant-scope-path"),
+    sharedReference,
+  ].filter(Boolean).length;
+  if (tenantModeFlags > 1) {
+    throw new Error(
+      "Use one tenant mode: --tenant-key, --tenant-scope-path, or --shared-reference with its acknowledgement.",
+    );
   }
   if (args.includes("--principal-scope-path")
     && (args.includes("--principal-key") || args.includes("--no-principal"))) {
@@ -791,6 +812,9 @@ async function boundaryResourceReviewCommand(
     ...(optionalArg(args, "--tenant-key") ? { tenant_key: optionalArg(args, "--tenant-key") } : {}),
     ...(optionalArg(args, "--tenant-scope-path")
       ? { tenant_scope_path: optionalArg(args, "--tenant-scope-path") }
+      : {}),
+    ...(sharedReference
+      ? { shared_reference_scope: SHARED_REFERENCE_ACKNOWLEDGEMENT }
       : {}),
     ...(args.includes("--no-principal")
       ? { principal_key: null, principal_scope_path: null }
@@ -1419,6 +1443,32 @@ async function resolveBlockedBoundaryResource(input: {
   }
   const resolution = await input.session.resolveBlockedResource(input.view);
   if (!resolution || resolution === "back") return resolution;
+  const sharedReference = "shared_reference_scope" in resolution;
+  let reason = "Selected database-inspected identity and tenant isolation in local boundary review.";
+  if (sharedReference) {
+    while (true) {
+      const answer = await input.session.promptText(
+        `Why does ${input.view.resource_id} contain the same rows for every tenant? A concrete reason is required; Enter alone does not save`,
+      );
+      if (answer === undefined) {
+        process.stdout.write("Cancelled - no change was made.\n\n");
+        return "back";
+      }
+      if (answer.trim()) {
+        reason = answer.trim();
+        break;
+      }
+      process.stdout.write("A reason is required; no change was made.\n");
+    }
+    const confirmed = await input.session.confirm(
+      `Confirm ${input.view.resource_id} has no per-tenant rows and every tenant may receive the same reviewed rows?`,
+      { defaultValue: false },
+    );
+    if (confirmed !== true) {
+      process.stdout.write("Cancelled - no change was made.\n\n");
+      return "back";
+    }
+  }
   try {
     const preview = await prepareBoundaryResourceReviewMutation(
       input.projectRoot,
@@ -1428,9 +1478,11 @@ async function resolveBlockedBoundaryResource(input: {
         row_identity: resolution.row_identity,
         ...(resolution.tenant_key
           ? { tenant_key: resolution.tenant_key }
-          : { tenant_scope_path: resolution.tenant_scope_path }),
+          : resolution.tenant_scope_path
+            ? { tenant_scope_path: resolution.tenant_scope_path }
+            : { shared_reference_scope: SHARED_REFERENCE_ACKNOWLEDGEMENT }),
         actor: localInteractiveActor(),
-        reason: "Selected database-inspected identity and tenant isolation in local boundary review.",
+        reason,
       },
       input.schemaInspector,
     );
@@ -1444,9 +1496,11 @@ async function resolveBlockedBoundaryResource(input: {
       `Record ID: ${resolution.row_identity}`,
       resolution.tenant_key
         ? `Tenant isolation: ${resolution.tenant_key} (direct column; trusted value stays outside model arguments)`
-        : `Tenant isolation: ${derivedTenantScope
-          ? formatDerivedScopePath(derivedTenantScope)
-          : resolution.tenant_scope_path} (mandatory relationship path; trusted value stays outside model arguments)`,
+        : resolution.tenant_scope_path
+          ? `Tenant isolation: ${derivedTenantScope
+            ? formatDerivedScopePath(derivedTenantScope)
+            : resolution.tenant_scope_path} (mandatory relationship path; trusted value stays outside model arguments)`
+          : "Row scope: Shared reference (no tenant predicate; field, privacy, and budget controls still apply)",
       "Agent authority activated: no",
       "Review column access next.",
       "",
@@ -1661,7 +1715,9 @@ export function formatFocusedBoundaryActivationReview(
   const directTenantKeys = [...new Set(bundle.candidate.pack.resources
     .map((resource) => resource.tenant_key)
     .filter((value): value is string => Boolean(value)))];
-  const allTenantScopesDirect = bundle.candidate.pack.resources.every((resource) => Boolean(resource.tenant_key));
+  const allTenantScopesDirect = bundle.candidate.pack.resources.every(
+    (resource) => Boolean(resource.tenant_key),
+  );
   const tenantBinding = bundle.candidate.organization_scope
     ? `fixed reviewed organization ${bundle.candidate.organization_scope.organization_id}`
     : bundle.candidate.trusted_context.provider === "http_claims"
@@ -1676,10 +1732,13 @@ export function formatFocusedBoundaryActivationReview(
       : `${resource.id} through ${formatDerivedScopePath(resource.principal_scope!)}`);
   const tenantScopeSummary = bundle.candidate.organization_scope
     ? `Single organization (${bundle.candidate.organization_scope.organization_id}); no tenant predicate is applied`
-    : `${allTenantScopesDirect && directTenantKeys.length === 1
-      ? `${directTenantKeys[0]} on every table`
+    : allTenantScopesDirect && directTenantKeys.length === 1
+      ? `${directTenantKeys[0]} on every table via ${tenantBinding}`
       : bundle.candidate.pack.resources.map((resource) =>
-        `${resource.id} ${reviewedTenantScopeLabel(resource)}`).join("; ")} via ${tenantBinding}`;
+        resource.shared_reference_scope
+          ? `${resource.id} Shared reference (no tenant predicate)`
+          : `${resource.id} ${reviewedTenantScopeLabel(resource)} via ${tenantBinding}`)
+        .join("; ");
   const principalBinding = bundle.candidate.trusted_context.provider === "http_claims"
     ? `verified JWT claim ${bundle.candidate.trusted_context.principal_claim}`
     : bundle.candidate.trusted_context.principal_env;
@@ -3013,6 +3072,11 @@ function formatRequestedBoundaryChanges(
       ? formatDerivedScopePath(scope)
       : request.tenant_scope_path}`);
   }
+  if (request.shared_reference_scope) {
+    lines.push(
+      "Row scope: Shared reference; no tenant predicate will be applied to this table, while field, cohort, and budget controls remain enforced.",
+    );
+  }
   if (request.principal_key !== undefined) {
     lines.push(request.principal_key === null
       ? "Trusted user/owner scope: not configured."
@@ -3629,8 +3693,9 @@ function formatBoundaryFinalReview(bundle: BoundaryReviewBundle): string {
 function reviewedTenantScopeLabel(
   resource: ExplorationBoundaryDraft["pack"]["resources"][number],
 ): string {
-  return resource.tenant_key
-    ?? `through ${formatDerivedScopePath(resource.tenant_scope!)}`;
+  if (resource.tenant_key) return resource.tenant_key;
+  if (resource.tenant_scope) return `through ${formatDerivedScopePath(resource.tenant_scope)}`;
+  return "Shared reference (no tenant predicate)";
 }
 
 function formatBoundarySettingsSignoff(bundle: BoundaryReviewBundle): string {

@@ -9,6 +9,7 @@ import {
   AUTO_BOUNDARY_OVERRIDES_VERSION,
   AUTO_BOUNDARY_SPEC_VERSION,
   AUTO_BOUNDARY_VERSION,
+  SHARED_REFERENCE_ACKNOWLEDGEMENT,
   activateExplorationBoundary,
   buildAutoBoundary,
   compareGenerationLock,
@@ -1883,6 +1884,135 @@ describe("Auto Boundary compiler", () => {
     } finally {
       await fs.rm(projectRoot, { recursive: true, force: true });
     }
+  });
+
+  it("keeps tenant-independent tables blocked until an exact shared-reference review", () => {
+    const inspection = singleOrganizationInspection();
+    const project = projectSummary("/workspace/shared-reference");
+    const generated = buildAutoBoundary({
+      inspection,
+      project,
+      sourceEnv: "DATABASE_URL",
+    });
+    expect(generated.exploration_boundary.pack.resources).toEqual([]);
+    expect(generated.graph.resources[0]?.shared_reference_scope).toMatchObject({
+      eligible: true,
+      confirmation_required: true,
+    });
+    expect(generated.graph.resources[0]?.shared_reference_scope).not.toHaveProperty("selected");
+
+    const overrides = applyManagedBoundaryReviewDecision(
+      generated.overrides,
+      {
+        kind: "shared_reference_scope",
+        resource_id: "public.subscriptions",
+        acknowledgement: SHARED_REFERENCE_ACKNOWLEDGEMENT,
+        actor: "owner@example.test",
+        reason: "This catalog is maintained once and contains the same reviewed rows for every tenant.",
+        decided_at: "2026-08-07T00:00:00.000Z",
+      },
+    );
+    const reviewed = buildAutoBoundary({
+      inspection,
+      project,
+      sourceEnv: "DATABASE_URL",
+      overrides,
+    });
+    expect(reviewed.exploration_boundary.pack.resources).toHaveLength(1);
+    expect(reviewed.exploration_boundary.pack.resources[0]?.shared_reference_scope).toEqual({
+      mode: "shared_reference",
+      acknowledgement: SHARED_REFERENCE_ACKNOWLEDGEMENT,
+    });
+    expect(reviewed.exploration_boundary.pack.resources[0]).not.toHaveProperty("tenant_key");
+    expect(reviewed.exploration_boundary.pack.resources[0]).not.toHaveProperty("tenant_scope");
+    expect(reviewed.exploration_boundary.unresolved_decisions).toContain(
+      "public.subscriptions: confirm reviewed shared reference with no tenant predicate",
+    );
+    expect(reviewed.lock.authority_dependencies?.resources["public.subscriptions"])
+      .toMatchObject({
+        shared_reference_scope: {
+          mode: "shared_reference",
+          acknowledgement: SHARED_REFERENCE_ACKNOWLEDGEMENT,
+        },
+      });
+
+    const mysqlInspection = structuredClone(inspection);
+    mysqlInspection.engine = "mysql";
+    mysqlInspection.server_version = "MySQL 8.4";
+    const mysqlReviewed = buildAutoBoundary({
+      inspection: mysqlInspection,
+      project: projectSummary("/workspace/shared-reference-mysql"),
+      sourceEnv: "DATABASE_URL",
+      overrides,
+    });
+    expect(mysqlReviewed.exploration_boundary.pack.resources[0]?.shared_reference_scope)
+      .toEqual({
+        mode: "shared_reference",
+        acknowledgement: SHARED_REFERENCE_ACKNOWLEDGEMENT,
+      });
+  });
+
+  it("keeps single-organization review boundary-wide without offering redundant shared-reference scope", () => {
+    const build = buildAutoBoundary({
+      inspection: singleOrganizationInspection(),
+      project: projectSummary("/workspace/single-organization-no-shared-reference"),
+      sourceEnv: "DATABASE_URL",
+      singleOrganization: {
+        organizationId: "internal-finance",
+      },
+    });
+    expect(build.exploration_boundary.organization_scope).toMatchObject({
+      mode: "single_organization",
+      organization_id: "internal-finance",
+    });
+    expect(build.graph.resources[0]).not.toHaveProperty("shared_reference_scope");
+    expect(build.exploration_boundary.pack.resources[0]).not.toHaveProperty(
+      "shared_reference_scope",
+    );
+  });
+
+  it("refuses shared-reference review when tenant columns, derived scope, or RLS are present", () => {
+    const reviewed = (resourceId: string) => applyManagedBoundaryReviewDecision(
+      { schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION, resources: {} },
+      {
+        kind: "shared_reference_scope",
+        resource_id: resourceId,
+        acknowledgement: SHARED_REFERENCE_ACKNOWLEDGEMENT,
+        actor: "owner@example.test",
+        reason: "Attempted global catalog review.",
+        decided_at: "2026-08-07T00:00:00.000Z",
+      },
+    );
+    expect(() => buildAutoBoundary({
+      inspection: churnInspection(),
+      project: projectSummary("/workspace/unsafe-shared-reference"),
+      sourceEnv: "DATABASE_URL",
+      overrides: reviewed("public.subscriptions"),
+    })).toThrow(/cannot be reviewed as a shared reference[\s\S]*tenant-scope column evidence/i);
+
+    const derived = derivedTenantScopeInspection();
+    expect(() => buildAutoBoundary({
+      inspection: derived,
+      project: projectSummary("/workspace/derived-shared-reference"),
+      sourceEnv: "DATABASE_URL",
+      overrides: reviewed("public.order_items"),
+    })).toThrow(/cannot be reviewed as a shared reference[\s\S]*proven path to tenant-scoped rows/i);
+
+    const rls = singleOrganizationInspection();
+    rls.tables[0]!.row_level_security = true;
+    rls.tables[0]!.row_level_security_policies = [{
+      name: "tenant_policy",
+      command: "SELECT",
+      permissive: true,
+      roles: ["app_reader"],
+      using_expression: "tenant context managed by the database",
+    }];
+    expect(() => buildAutoBoundary({
+      inspection: rls,
+      project: projectSummary("/workspace/rls-shared-reference"),
+      sourceEnv: "DATABASE_URL",
+      overrides: reviewed("public.subscriptions"),
+    })).toThrow(/cannot be reviewed as a shared reference[\s\S]*row-level tenant posture/i);
   });
 
   it("refuses single-organization mode when tenant columns or row-level security are present", () => {

@@ -164,6 +164,7 @@ function assertRoleBoundTenantAuthority(
   }
   const tables = new Map(inspection.tables.map((table) => [`${table.schema}.${table.name}`, table]));
   for (const resource of boundary.pack.resources) {
+    if (resource.shared_reference_scope) continue;
     const scopeOwner = resource.tenant_key
       ? resource
       : resource.tenant_scope

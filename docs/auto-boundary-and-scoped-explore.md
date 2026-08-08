@@ -1,6 +1,6 @@
 # Auto Boundary, Scoped Explore, And Protect
 
-Runner 1.6.6 provides a deterministic, resumable authoring path for a real
+Runner 1.7.0 provides a deterministic, resumable authoring path for a real
 application:
 
 ```text
@@ -70,6 +70,54 @@ such as `trainer_id` is only a candidate relationship; it does not prove that
 the current database role is authorized for only that person's rows. Auto
 Boundary selects principal scope only from an applicable RLS policy, an
 existing reviewed Synapsor contract, or an explicit human override.
+
+### Whole-Organization And Shared-Reference Tables
+
+For a database that belongs to exactly one organization and has no tenant
+columns or tenant RLS, review that posture once for the complete boundary:
+
+```bash
+npx -y @synapsor/runner start \
+  --from-env DATABASE_URL \
+  --single-tenant \
+  --organization-id internal-finance \
+  --cli
+```
+
+This is boundary-wide single-organization mode. Reviewed tables need no fake
+`tenant_id` column and Runner emits no tenant predicate. Principal scope,
+field controls, cohort suppression, budgets, schema locking, and read-only
+credential checks still apply. Runner refuses this mode when inspection finds
+tenant columns, tenant RLS, or other multi-tenant evidence.
+
+Mixed databases use a narrower authority. A tenant-scoped boundary may include
+a genuinely global reference table, such as a product catalog or currency list,
+only after a reviewer marks that exact table **Shared reference** and confirms
+that it contains the same rows for every tenant. Runner never infers this
+posture. A table with tenant-column evidence, a proven path to tenant-scoped
+rows, or tenant/RLS evidence remains ineligible.
+
+The terminal editor offers **Shared reference** while resolving an eligible
+table. The equivalent noninteractive review is explicit and audited:
+
+```bash
+synapsor-runner boundary review resource public.product_catalog \
+  --include \
+  --shared-reference \
+  --acknowledge-table-has-no-per-tenant-rows \
+  --actor owner@example.com \
+  --reason "Every tenant receives the same reviewed catalog rows"
+```
+
+The change remains a disabled draft until the boundary is reviewed and
+activated. It applies no tenant predicate only to that table. Kept-out and
+model-withheld fields, enum allowlists, principal scope, small-group privacy,
+query/extraction/differencing budgets, and relationship proofs remain intact.
+The same compiled authority is used by local Explore and explicitly enabled,
+secured production HTTP Explore. Production still requires verified JWT
+tenant/principal context for authentication and per-principal privacy
+accounting; the shared table simply does not use the tenant value as a SQL row
+predicate.
 
 A fresh interactive invocation with no existing config, selector, or automation
 input enters Auto Boundary. It scans the whole selected schema and opens the

@@ -5,6 +5,7 @@ import { Buffer } from "node:buffer";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
   AUTO_BOUNDARY_OVERRIDES_VERSION,
+  SHARED_REFERENCE_ACKNOWLEDGEMENT,
   emptyReviewOverrides,
   explorationBoundaryCandidateDigest,
   generationLockSharedFactsDigest,
@@ -64,6 +65,14 @@ export type ManagedBoundaryReviewDecision =
       kind: "row_identity" | "tenant_key" | "tenant_scope_path";
       resource_id: string;
       value: string;
+      actor: string;
+      reason: string;
+      decided_at?: string;
+    }
+  | {
+      kind: "shared_reference_scope";
+      resource_id: string;
+      acknowledgement: typeof SHARED_REFERENCE_ACKNOWLEDGEMENT;
       actor: string;
       reason: string;
       decided_at?: string;
@@ -146,6 +155,21 @@ export function normalizeManagedBoundaryReviewDecision(
       decided_at: decidedAt,
     };
   }
+  if (kind === "shared_reference_scope") {
+    if (input.acknowledgement !== SHARED_REFERENCE_ACKNOWLEDGEMENT) {
+      throw new Error(
+        `shared_reference_scope review requires acknowledgement ${SHARED_REFERENCE_ACKNOWLEDGEMENT}.`,
+      );
+    }
+    return {
+      kind,
+      resource_id: resourceId,
+      acknowledgement: SHARED_REFERENCE_ACKNOWLEDGEMENT,
+      actor,
+      reason,
+      decided_at: decidedAt,
+    };
+  }
   if (kind === "principal_key" || kind === "principal_scope_path") {
     return {
       kind,
@@ -170,7 +194,7 @@ export function normalizeManagedBoundaryReviewDecision(
     };
   }
   throw new Error(
-    "Managed boundary review kind must be field_exposure, field_enum, row_identity, tenant_key, tenant_scope_path, principal_key, principal_scope_path, or minimum_cohort.",
+    "Managed boundary review kind must be field_exposure, field_enum, row_identity, tenant_key, tenant_scope_path, shared_reference_scope, principal_key, principal_scope_path, or minimum_cohort.",
   );
 }
 
@@ -220,6 +244,7 @@ export function applyManagedBoundaryReviewDecision(
       decided_at: decidedAt,
     };
     delete resource.tenant_scope_path;
+    delete resource.shared_reference_scope;
   } else if (input.kind === "tenant_scope_path") {
     resource.tenant_scope_path = {
       value: input.value,
@@ -228,6 +253,16 @@ export function applyManagedBoundaryReviewDecision(
       decided_at: decidedAt,
     };
     delete resource.tenant_key;
+    delete resource.shared_reference_scope;
+  } else if (input.kind === "shared_reference_scope") {
+    resource.shared_reference_scope = {
+      value: input.acknowledgement,
+      actor: input.actor,
+      reason: input.reason,
+      decided_at: decidedAt,
+    };
+    delete resource.tenant_key;
+    delete resource.tenant_scope_path;
   } else if (input.kind === "principal_key") {
     resource.principal_key = {
       value: input.value,
@@ -650,6 +685,13 @@ export function boundaryReviewDecisions(candidate: ExplorationBoundaryDraft): Bo
         rls_session: resource.rls_session ?? null,
       }, resourceId);
     }
+    if (detail === "confirm reviewed shared reference with no tenant predicate") {
+      return reviewDecision(`resource.${resourceId}.tenant_scope`, "tenant_scope", decision, {
+        shared_reference_scope: resource.shared_reference_scope,
+        tenant_predicate: "not_applied",
+        field_privacy_controls: "unchanged",
+      }, resourceId);
+    }
     if (detail.startsWith("confirm principal scope ")) {
       return reviewDecision(`resource.${resourceId}.principal_scope`, "principal_scope", decision, {
         principal_key: resource.principal_key ?? null,
@@ -709,12 +751,18 @@ export function boundaryReviewDecisions(candidate: ExplorationBoundaryDraft): Bo
           source_scope: {
             ...(resource.tenant_key ? { tenant_key: resource.tenant_key } : {}),
             ...(resource.tenant_scope ? { tenant_scope: resource.tenant_scope } : {}),
+            ...(resource.shared_reference_scope
+              ? { shared_reference_scope: resource.shared_reference_scope }
+              : {}),
             principal_key: resource.principal_key ?? null,
             ...(resource.principal_scope ? { principal_scope: resource.principal_scope } : {}),
           },
           target_scope: targetResource ? {
             ...(targetResource.tenant_key ? { tenant_key: targetResource.tenant_key } : {}),
             ...(targetResource.tenant_scope ? { tenant_scope: targetResource.tenant_scope } : {}),
+            ...(targetResource.shared_reference_scope
+              ? { shared_reference_scope: targetResource.shared_reference_scope }
+              : {}),
             principal_key: targetResource.principal_key ?? null,
             ...(targetResource.principal_scope ? { principal_scope: targetResource.principal_scope } : {}),
           } : null,

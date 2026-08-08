@@ -79,6 +79,21 @@ export async function localDoctor(args: string[]): Promise<number> {
       message: `Boundary ${boundary.pack.name} is explicitly reviewed for one organization (${boundary.organization_scope!.organization_id}); no tenant predicate is applied, and principal scope remains independently enforced where reviewed.`,
     });
   }
+  for (const boundary of activeExploreBoundaries) {
+    for (const resource of boundary.pack.resources.filter(
+      (item) => Boolean(item.shared_reference_scope),
+    )) {
+      checks.push({
+        name: `shared-reference:${boundary.pack.name}:${resource.id}`,
+        ok: true,
+        level: "pass",
+        message:
+          `${boundary.pack.name}.${resource.id} is a human-reviewed Shared reference: `
+          + "no tenant predicate is applied to this table; field visibility, cohort suppression, "
+          + "privacy budgets, and any independently reviewed principal scope remain enforced.",
+      });
+    }
+  }
   if ((parsed.capabilities ?? []).some((capability) => capability.protected_read)) {
     try {
       await preflightGeneratedAuthority(parsed, process.env);

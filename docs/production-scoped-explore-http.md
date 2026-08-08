@@ -17,11 +17,17 @@ existing stdio and loopback behavior.
 
 Every production HTTP session must carry a short-lived, asymmetrically signed
 JWT. Runner verifies its algorithm, signature, issuer, audience, time bounds,
-required OAuth scope, tenant claim, and principal claim on every request.
+required OAuth scope, and principal claim on every request. Mixed-tenant
+boundaries also require the configured tenant claim. An explicitly reviewed
+single-organization boundary fixes the organization outside the JWT instead.
 
 The claims have two distinct jobs:
 
-- The verified tenant is always injected as the reviewed tenant predicate.
+- For tenant-owned rows, the verified tenant is injected through the reviewed
+  direct column or mandatory derived path.
+- A reviewer may mark an eligible tenant-independent table **Shared reference**.
+  Only that exact table omits a tenant predicate; the tenant still partitions
+  production accounting and authentication for the mixed-tenant deployment.
 - The verified principal is always the privacy and rate-budget identity.
 - When a reviewed table also has a `principal_key`, Runner injects the
   principal as a row predicate and, for PostgreSQL RLS, as the reviewed session
@@ -58,6 +64,14 @@ scope, cohort minimums, and per-principal query/extraction/differencing limits.
 Activate the exact production boundary through the normal human review action.
 A development/staging boundary cannot be promoted by changing a profile field;
 production authority is generated and reviewed separately.
+
+For a mixed database, a global catalog or reference table remains blocked until
+an operator explicitly reviews it as Shared reference. Runner never infers that
+posture, and refuses it when inspection finds tenant columns, a derived path to
+tenant-owned rows, or tenant/RLS evidence. The same field, relationship,
+principal, cohort, and budget review remains required. Whole-organization
+databases should use the separate boundary-wide single-organization mode rather
+than marking every table individually.
 
 ## 2. Configure The Secured Runtime
 

@@ -1148,6 +1148,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       if(!candidate?.organization_scope&&!review.tenant_key?.selected&&!review.derived_tenant_scope?.selected){
         const candidates=review.tenant_key?.candidates||[];
         const paths=review.derived_tenant_scope?.candidates||[];
+        if(review.shared_reference_scope?.eligible){
+          return "Choose a direct customer-isolation option, or explicitly review Shared reference only if "+review.id+" has the same rows for every tenant.";
+        }
         return candidates.length||paths.length
           ?"Choose the direct customer-isolation column or mandatory proven relationship path for "+review.id+"."
           :"Add or identify a trusted customer-isolation column, then rescan "+review.id+".";
@@ -1193,14 +1196,16 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         requiredScopes.push(resource.derived_principal_scope.selected);
       }
       if(requiredScopes.length)return {kind:"ancestor",reason:requiredScopes.map(scope=>derivedScopeStartGuidance(scope)+" ("+derivedScopePathLabel(scope)+")").join("; ")};
-      if(candidate.organization_scope)return generated?{kind:"startable"}:{kind:"unavailable",reason:resource.blockers?.[0]||"structural review required"};
+      if(candidate.organization_scope)return {kind:"startable"};
       if(resource.tenant_key?.selected||resource.tenant_key?.candidates?.length)return generated?{kind:"startable"}:{kind:"unavailable",reason:resource.blockers?.[0]||"structural review required"};
+      if(resource.shared_reference_scope?.eligible)return {kind:"startable"};
       return generated?{kind:"startable"}:{kind:"unavailable",reason:resource.blockers?.[0]||"structural review required"};
     }
 
     function reviewedTenantScopeLabel(resource,review){
       if(candidate?.organization_scope)return "whole reviewed organization ("+candidate.organization_scope.organization_id+"); no tenant filter";
       if(resource?.tenant_key)return "direct column "+resource.tenant_key;
+      if(resource?.shared_reference_scope)return "Shared reference; no tenant predicate";
       const scope=resource?.tenant_scope||review?.derived_tenant_scope?.selected;
       return scope?derivedScopePathLabel(scope):"unresolved";
     }
@@ -1231,9 +1236,13 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	        ?reviewReport.resources||[]
 	        :(reviewReport.resources||[]).filter(resource=>
 	          resource.tenant_key?.selected||resource.derived_tenant_scope?.selected);
+	      const sharedReferenceResources=candidate.organization_scope
+	        ?[]
+	        :(reviewReport.resources||[]).filter(resource=>resource.shared_reference_scope?.eligible);
 	      const principalResources=(reviewReport.resources||[]).filter(resource=>
 	        resource.principal_key?.selected||resource.derived_principal_scope?.selected);
 	      const tenantResolved=tenantResources.length;
+	      const sharedReferenceReviewable=sharedReferenceResources.length;
 	      const principalResolved=principalResources.length;
 	      const collectionLabel=reviewedCollectionLabel();
 		      byId("resources-heading").textContent=collectionLabel==="tables"
@@ -1242,7 +1251,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      byId("resource-navigation-shell").setAttribute("aria-label",collectionLabel.replace(/\\b\\w/g,char=>char.toUpperCase())+" navigation");
 	      byId("resource-search-label").textContent="Find a "+(collectionLabel==="tables"?"table":"table or view");
 	      byId("resource-search").placeholder="Search "+collectionLabel;
-			      byId("database-summary").innerHTML='<h3>Database connected</h3><p><strong>'+esc(String(reviewReport.engine||"database").toUpperCase())+'</strong> · read role <code>'+esc(reviewReport.database_role?.name||"unknown")+'</code> · '+esc(summary.objects)+' '+esc(collectionLabel)+' inspected.</p><p>'+esc(summary.draft_reads)+' can be reviewed now; '+esc(summary.blocked_objects)+' stay unavailable. '+(candidate.organization_scope?'Whole-organization access is explicitly reviewed for <code>'+esc(candidate.organization_scope.organization_id)+'</code>; no tenant predicate is applied.':'Customer isolation was detected for '+esc(tenantResolved)+' '+esc(reviewedCollectionLabel(tenantResources))+'.')+' Per-user row limits were detected for '+esc(principalResolved)+' '+esc(reviewedCollectionLabel(principalResources))+'. '+esc(summary.sensitive_fields_kept_out)+' sensitive field(s) were hidden conservatively across the inspected schema.</p>';
+			      byId("database-summary").innerHTML='<h3>Database connected</h3><p><strong>'+esc(String(reviewReport.engine||"database").toUpperCase())+'</strong> · read role <code>'+esc(reviewReport.database_role?.name||"unknown")+'</code> · '+esc(summary.objects)+' '+esc(collectionLabel)+' inspected.</p><p>'+esc(summary.draft_reads)+' can be reviewed now; '+esc(summary.blocked_objects)+' stay unavailable. '+(candidate.organization_scope?'Whole-organization access is explicitly reviewed for <code>'+esc(candidate.organization_scope.organization_id)+'</code>; no tenant predicate is applied.':'Customer isolation was detected for '+esc(tenantResolved)+' '+esc(reviewedCollectionLabel(tenantResources))+'. '+esc(sharedReferenceReviewable)+' '+esc(reviewedCollectionLabel(sharedReferenceResources))+' may instead be explicitly reviewed as Shared reference.')+' Per-user row limits were detected for '+esc(principalResolved)+' '+esc(reviewedCollectionLabel(principalResources))+'. '+esc(summary.sensitive_fields_kept_out)+' sensitive field(s) were hidden conservatively across the inspected schema.</p>';
 		    }
 
 		    function renderBoundaryOverview(){
@@ -1989,17 +1998,22 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         const actor=form.querySelector("[data-scope-review-actor]").value.trim();
         const reason=form.querySelector("[data-scope-review-reason]").value.trim();
         if((value===null?false:!value)||!actor||!reason)throw new Error("Choose the reviewed scope and enter the human reviewer identity and reason.");
+        if(reviewedKind==="shared_reference_scope"&&!form.querySelector("[data-shared-reference-ack]")?.checked){
+          throw new Error("Confirm that this table has no per-tenant rows. No change was made.");
+        }
         button.disabled=true;
         detail.setAttribute("aria-busy","true");
         status.className="status-message";
         status.textContent="Saving this reviewed choice and updating only the affected access...";
-        await post("/api/boundary/regenerate",{
+        const reviewRequest={
           kind:reviewedKind,
           resource_id:selectedResource,
-          value,
           actor,
           reason
-        });
+        };
+        if(reviewedKind==="shared_reference_scope")reviewRequest.acknowledgement="table_has_no_per_tenant_rows";
+        else reviewRequest.value=value;
+        await post("/api/boundary/regenerate",reviewRequest);
         candidateDigest=undefined;
         focusedAccessReview=true;
         document.body.classList.remove("quick-start-mode");
@@ -2074,7 +2088,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       return inferenceExplanation(label,inference)+'<div class="review-form" data-scope-review-form><h3>Confirm or change the '+esc(label)+'</h3><div class="form-grid"><label class="field">Database column<select data-scope-review-value>'+options.map(option=>'<option value="'+esc(option.value)+'" '+((current===undefined&&option.value==="__none__")||current===option.value?"selected":"")+'>'+esc(option.label)+'</option>').join("")+'</select></label><label class="field">Human reviewer<input data-scope-review-actor type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><label class="field">Why is this correct?<textarea data-scope-review-reason maxlength="500" rows="2" placeholder="Describe the application rule this column enforces."></textarea></label></div><div class="actions"><button data-submit-scope-review="'+esc(kind)+'" type="button">Save this reviewed choice</button></div><span data-scope-review-status class="status-message"></span></div>';
     }
 
-    function managedTrustedScopeReviewForm(kind,label,directValues,currentDirect,allowNone,directInference,derivedInference,currentDerived){
+    function managedTrustedScopeReviewForm(kind,label,directValues,currentDirect,allowNone,directInference,derivedInference,currentDerived,sharedInference,currentShared){
       const pathKind=kind==="tenant_key"?"tenant_scope_path":"principal_scope_path";
       const ranked=(directInference?.alternatives_considered||[]).map(item=>item.value);
       const direct=[...new Set([...ranked,...directValues])].map(value=>({
@@ -2087,22 +2101,30 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         label:derivedScopePathLabel(scope),
         kind:pathKind
       }));
+      const shared=kind==="tenant_key"&&sharedInference?.eligible?[{
+        value:"table_has_no_per_tenant_rows",
+        label:"Shared reference - same rows for every tenant",
+        kind:"shared_reference_scope"
+      }]:[];
       const options=[
         ...(allowNone?[{value:"__none__",label:"No per-user row limit",kind:"principal_key"}]:[]),
         ...direct,
-        ...derived
+        ...derived,
+        ...shared
       ];
       if(!options.length){
         return '<div class="risk high"><strong>No proven '+esc(label)+' is available.</strong><p>Add a direct scope column or a required foreign-key path to a directly scoped ancestor, then rescan.</p></div>';
       }
-      const selectedKind=currentDerived?pathKind:kind;
-      const selectedValue=currentDerived||currentDirect||(allowNone?"__none__":undefined);
+      const selectedKind=currentShared?"shared_reference_scope":currentDerived?pathKind:kind;
+      const selectedValue=currentShared?.acknowledgement||currentDerived||currentDirect||(allowNone?"__none__":undefined);
       const exactPathIds=derived.length
         ?'<details class="access-secondary"><summary>Advanced exact path IDs</summary><p>Use these canonical IDs only with scripted <code>--'+esc(pathKind.replaceAll("_","-"))+'</code> review. Human review and enforcement still refer to the readable mandatory path above.</p><ul>'+derived.map(option=>'<li><code>'+esc(option.value)+'</code> · '+esc(option.label)+'</li>').join("")+'</ul></details>'
         :"";
       const explanation=inferenceExplanation(label,directInference)
-        +(derivedInference?'<div class="risk unresolved"><strong>Relationship-carried scope available</strong><p>Runner will inject the selected path into every read. The AI cannot remove, weaken, or choose this join.</p><p><strong>Safety consequence:</strong> '+esc(derivedInference.safety_consequence)+'</p></div>':"");
-      return explanation+'<div class="review-form" data-scope-review-form><h3>Confirm or change the '+esc(label)+'</h3><div class="form-grid"><label class="field">Reviewed scope<select data-scope-review-value>'+options.map(option=>'<option value="'+esc(option.value)+'" data-review-kind="'+esc(option.kind)+'" '+(selectedKind===option.kind&&selectedValue===option.value?"selected":"")+'>'+esc(option.label)+'</option>').join("")+'</select></label><label class="field">Human reviewer<input data-scope-review-actor type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><label class="field">Why is this correct?<textarea data-scope-review-reason maxlength="500" rows="2" placeholder="Describe why this direct column or mandatory relationship path enforces the application scope."></textarea></label></div><div class="actions"><button data-submit-scope-review="'+esc(kind)+'" type="button">Save this reviewed choice</button></div><span data-scope-review-status class="status-message"></span></div>'+exactPathIds;
+        +(derivedInference?'<div class="risk unresolved"><strong>Relationship-carried scope available</strong><p>Runner will inject the selected path into every read. The AI cannot remove, weaken, or choose this join.</p><p><strong>Safety consequence:</strong> '+esc(derivedInference.safety_consequence)+'</p></div>':"")
+        +(sharedInference?.eligible?'<div class="risk high"><strong>Shared reference is an owner assertion, not an automatic inference.</strong><p>Select it only when this table has no per-tenant rows and every tenant may receive the same reviewed rows. Field visibility, cohort suppression, and budgets still apply.</p></div>':"");
+      const sharedConfirmation=sharedInference?.eligible?'<label class="check"><input data-shared-reference-ack type="checkbox"><span>I confirm this table has no per-tenant rows and every tenant may receive the same reviewed rows. Required when Shared reference is selected.</span></label>':"";
+      return explanation+'<div class="review-form" data-scope-review-form><h3>Confirm or change the '+esc(label)+'</h3><div class="form-grid"><label class="field">Reviewed scope<select data-scope-review-value>'+options.map(option=>'<option value="'+esc(option.value)+'" data-review-kind="'+esc(option.kind)+'" '+(selectedKind===option.kind&&selectedValue===option.value?"selected":"")+'>'+esc(option.label)+'</option>').join("")+'</select></label><label class="field">Human reviewer<input data-scope-review-actor type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><label class="field">Why is this correct?<textarea data-scope-review-reason maxlength="500" rows="2" placeholder="Describe why this direct column, mandatory path, or shared-reference assertion is correct."></textarea></label></div>'+sharedConfirmation+'<div class="actions"><button data-submit-scope-review="'+esc(kind)+'" type="button">Save this reviewed choice</button></div><span data-scope-review-status class="status-message"></span></div>'+exactPathIds;
     }
 
     function invalidateResourceReview(id){
@@ -2312,7 +2334,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
               false,
               review.tenant_key,
               review.derived_tenant_scope,
-              review.derived_tenant_scope?.selected?.path_id
+              review.derived_tenant_scope?.selected?.path_id,
+              review.shared_reference_scope,
+              review.shared_reference_scope?.selected
             );
 	        const derivedTenantCandidates=(review.derived_tenant_scope?.candidates||[]).map(derivedScopePathLabel);
 	        const blockedDetails='<details class="access-secondary" data-access-secondary open><summary>Resolve blocked access</summary><div class="risk-list">'+(review.blockers||[]).map(blocker=>'<div class="risk high"><strong>'+esc(blocker)+'</strong><p>This object stays unavailable; unrelated safe resources can continue.</p></div>').join("")+'</div><div class="scope-grid" style="margin-top:12px"><div><strong>Row identity candidates</strong><p>'+esc((review.primary_key?.candidates||[]).join(", ")||"none")+'</p></div><div><strong>Direct tenant columns</strong><p>'+esc((review.tenant_key?.candidates||[]).join(", ")||"none")+'</p></div><div><strong>Mandatory proven tenant paths</strong><p>'+esc(derivedTenantCandidates.join("; ")||"none")+'</p></div></div>'+resolution+'<p>Sensitive or unresolved fields kept unavailable: '+esc(kept.join(", ")||"none detected")+'.</p></details>';
@@ -2346,7 +2370,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         :'<details class="access-secondary" data-access-secondary><summary>Advanced field operations</summary><p>This '+esc(selectedKind)+' is excluded. Include it before changing analytical permissions.</p></details>';
       const organizationScopeReview=candidate.organization_scope
         ?'<div class="risk"><strong>Whole reviewed organization</strong><p>'+esc(candidate.organization_scope.organization_id)+' is fixed outside model arguments. This boundary applies no tenant predicate; changing that posture requires regenerating and reviewing the complete boundary.</p></div>'
-        :managedTrustedScopeReviewForm("tenant_key","customer isolation",review.tenant_key?.candidates||[],source.tenant_key,false,review.tenant_key,review.derived_tenant_scope,source.tenant_scope?.path_id);
+        :managedTrustedScopeReviewForm("tenant_key","customer isolation",review.tenant_key?.candidates||[],source.tenant_key,false,review.tenant_key,review.derived_tenant_scope,source.tenant_scope?.path_id,review.shared_reference_scope,source.shared_reference_scope);
       const scopeReview=resource
         ?'<details class="access-secondary" data-access-secondary><summary>Record and customer limits</summary><p>'+(candidate.organization_scope?'The reviewed organization is fixed outside the model. Any user/owner limit still comes from trusted application context.':'Runner reads tenant and user values from trusted application context. The AI never supplies them or controls a mandatory relationship path.')+'</p>'+managedScopeReviewForm("row_identity","record ID",review.primary_key?.candidates||[],source.primary_key,false,review.primary_key)+organizationScopeReview+managedTrustedScopeReviewForm("principal_key","user/owner limit",review.principal_key?.candidates||[],source.principal_key,true,review.principal_key,review.derived_principal_scope,source.principal_scope?.path_id)+'</details>'
         :'<details class="access-secondary" data-access-secondary><summary>Record and customer limits</summary><p>This '+esc(selectedKind)+' is excluded. Include it before reviewing trusted scope.</p></details>';
