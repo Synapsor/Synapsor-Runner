@@ -611,6 +611,77 @@ describe("Synapsor Analytics shell", () => {
     expect(io.output()).not.toContain("Database unchanged");
   });
 
+  it("offers an explicit namespace for a bare protect name and keeps the shell active", async () => {
+    const io = fakeIo([
+      "Which regions had the most failed sessions?",
+      "/protect last as order_by_channel",
+      "",
+      "/help",
+      "/exit",
+    ]);
+    const protect = vi.fn(async ({ capabilityName }: { capabilityName: string }) => ({
+      draft: {
+        ...dummyDraft(),
+        capability: capabilityName,
+      },
+    }));
+    await runAnalyticsShell({
+      providerLabel: "OpenAI",
+      profileLabel: "development",
+      reviewedDataAreas: 1,
+      io,
+      ask: async () => ({
+        turn: turn("The reviewed results are shown below."),
+        analyses: [analysis("A1", 0)],
+        answer_id: "ans_namespaced_protect_001",
+      }),
+      listAnalyses: async () => [storedAnalysis("A1")],
+      protect,
+      clearConversation: vi.fn(),
+      cancel: vi.fn(() => false),
+    });
+
+    expect(io.output()).toContain("needs a namespace");
+    expect(io.output()).toContain("Suggested name: analytics.order_by_channel");
+    expect(io.output()).toContain("Actions\n  /catalog");
+    expect(io.output()).not.toContain("Ask did not start");
+    expect(protect).toHaveBeenCalledWith({
+      reference: "A1",
+      capabilityName: "analytics.order_by_channel",
+    });
+  });
+
+  it("reports a thrown protect error inline without ending the Ask loop", async () => {
+    const io = fakeIo([
+      "Which regions had the most failed sessions?",
+      "/protect last as analytics.order_by_channel",
+      "/help",
+      "/exit",
+    ]);
+    await runAnalyticsShell({
+      providerLabel: "OpenAI",
+      profileLabel: "development",
+      reviewedDataAreas: 1,
+      io,
+      ask: async () => ({
+        turn: turn("The reviewed results are shown below."),
+        analyses: [analysis("A1", 0)],
+        answer_id: "ans_protect_error_001",
+      }),
+      listAnalyses: async () => [storedAnalysis("A1")],
+      protect: vi.fn(async () => {
+        throw new Error("Generated protection storage is temporarily unavailable.");
+      }),
+      clearConversation: vi.fn(),
+      cancel: vi.fn(() => false),
+    });
+
+    expect(io.output()).toContain("Protect was rejected");
+    expect(io.output()).toContain("This Ask session is still active");
+    expect(io.output()).toContain("Actions\n  /catalog");
+    expect(io.output()).not.toContain("Ask did not start");
+  });
+
   it("styles the Protect review hierarchy in an interactive terminal", async () => {
     const previousNoColor = process.env.NO_COLOR;
     delete process.env.NO_COLOR;

@@ -41,6 +41,8 @@ export const DEFAULT_GENERATED_DIR = "synapsor/generated";
 export const MAX_ACTIVE_EXPLORATION_BOUNDARIES = 8;
 const EXPLORATION_LOCK_SNAPSHOT_DIR = "exploration-locks";
 const ACTIVE_EXPLORATION_BOUNDARY_SET_FILE = "exploration-boundaries.active.json";
+const AUTO_BOUNDARY_POLICY_BASELINE_FILE = "auto-boundary-policy-baseline.json";
+const AUTO_BOUNDARY_POLICY_BASELINE_VERSION = "synapsor.auto-boundary-policy-baseline.v1";
 
 const MAX_STATIC_INPUT_BYTES = 2 * 1024 * 1024;
 const MAX_DIRECT_RELATIONSHIP_CANDIDATES_PER_RESOURCE = 4;
@@ -416,7 +418,7 @@ export type GenerationAuthorityDependencies = {
   }>;
 };
 
-export type AutoBoundaryBuild = {
+type AutoBoundaryBuildCore = {
   graph: AutoBoundaryEvidenceGraph;
   dsl: string;
   contract: SynapsorContract;
@@ -446,6 +448,34 @@ export type AutoBoundaryBuild = {
     schema_version: "synapsor.generated-tests.v1";
     contract_digest: `sha256:${string}`;
     cases: Array<Record<string, unknown>>;
+  };
+};
+
+export type AutoBoundaryBuild = AutoBoundaryBuildCore & {
+  /** Policy-neutral candidate over the same inspected schema and role facts. */
+  policy_baseline: {
+    schema_version: typeof AUTO_BOUNDARY_POLICY_BASELINE_VERSION;
+    boundary: ExplorationBoundaryDraft;
+    lock: GenerationLock;
+  };
+};
+
+export type BuildAutoBoundaryInput = {
+  inspection: SchemaInspection;
+  project: ProjectDetectionSummary;
+  parsedEvidence?: ParsedSchema[];
+  existingContracts?: SynapsorContract[];
+  sourceEnv: string;
+  sourceName?: string;
+  inspectedSchema?: string;
+  overrides?: AutoBoundaryReviewOverrides;
+  deploymentProfile?: "development" | "staging" | "production";
+  httpClaims?: {
+    tenantClaim?: string;
+    principalClaim: string;
+  };
+  singleOrganization?: {
+    organizationId: string;
   };
 };
 
@@ -538,19 +568,6 @@ export async function loadStructuredProjectEvidence(
   return { parsed, existingContracts, warnings };
 }
 
-export async function loadAutoBoundaryReviewOverrides(projectRoot: string): Promise<AutoBoundaryReviewOverrides> {
-  const filePath = path.join(path.resolve(projectRoot), ".synapsor/review-overrides.json");
-  if (!await exists(filePath)) return emptyReviewOverrides();
-  const stat = await fs.lstat(filePath);
-  if (!stat.isFile() || stat.isSymbolicLink()) {
-    throw new Error("Auto Boundary review overrides must be a regular project-local file.");
-  }
-  if (stat.size > MAX_STATIC_INPUT_BYTES) {
-    throw new Error(`Auto Boundary review overrides exceed ${MAX_STATIC_INPUT_BYTES} bytes.`);
-  }
-  return normalizeReviewOverrides(JSON.parse(await fs.readFile(filePath, "utf8")) as unknown);
-}
-
 export function pruneAutoBoundaryReviewOverrides(
   inspection: SchemaInspection,
   input: AutoBoundaryReviewOverrides,
@@ -560,7 +577,7 @@ export function pruneAutoBoundaryReviewOverrides(
     existingContracts?: SynapsorContract[];
   } = {},
 ): { overrides: AutoBoundaryReviewOverrides; removed: string[] } {
-  const current = normalizeReviewOverrides(input);
+  const current = normalizeAutoBoundaryReviewOverrides(input);
   const tables = new Map(inspection.tables.map((table) => [`${table.schema}.${table.name}`, table]));
   const resources: AutoBoundaryReviewOverrides["resources"] = {};
   const removed: string[] = [];
@@ -637,7 +654,7 @@ export function pruneAutoBoundaryReviewOverrides(
     if (Object.keys(fields).length) retained.fields = fields;
     if (Object.keys(retained).length) resources[resourceId] = retained;
   }
-  const preliminary = normalizeReviewOverrides({
+  const preliminary = normalizeAutoBoundaryReviewOverrides({
     schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
     resources,
   });
@@ -682,7 +699,7 @@ export function pruneAutoBoundaryReviewOverrides(
     }
   }
   return {
-    overrides: normalizeReviewOverrides({
+    overrides: normalizeAutoBoundaryReviewOverrides({
       schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
       resources,
     }),
@@ -690,27 +707,26 @@ export function pruneAutoBoundaryReviewOverrides(
   };
 }
 
-export function buildAutoBoundary(input: {
-  inspection: SchemaInspection;
-  project: ProjectDetectionSummary;
-  parsedEvidence?: ParsedSchema[];
-  existingContracts?: SynapsorContract[];
-  sourceEnv: string;
-  sourceName?: string;
-  inspectedSchema?: string;
-  overrides?: AutoBoundaryReviewOverrides;
-  deploymentProfile?: "development" | "staging" | "production";
-  httpClaims?: {
-    tenantClaim?: string;
-    principalClaim: string;
+export function buildAutoBoundary(input: BuildAutoBoundaryInput): AutoBoundaryBuild {
+  const build = buildAutoBoundaryOnce(input);
+  const hasPolicy = Object.keys(build.overrides.resources).length > 0;
+  const baseline = hasPolicy
+    ? buildAutoBoundaryOnce({ ...input, overrides: emptyReviewOverrides() })
+    : build;
+  return {
+    ...build,
+    policy_baseline: {
+      schema_version: AUTO_BOUNDARY_POLICY_BASELINE_VERSION,
+      boundary: baseline.exploration_boundary,
+      lock: baseline.lock,
+    },
   };
-  singleOrganization?: {
-    organizationId: string;
-  };
-}): AutoBoundaryBuild {
+}
+
+function buildAutoBoundaryOnce(input: BuildAutoBoundaryInput): AutoBoundaryBuildCore {
   const parsedEvidence = input.parsedEvidence ?? [];
   const existingContracts = input.existingContracts ?? [];
-  const overrides = normalizeReviewOverrides(input.overrides);
+  const overrides = normalizeAutoBoundaryReviewOverrides(input.overrides);
   const sourceName = input.sourceName ?? (input.inspection.engine === "postgres" ? "local_postgres" : "local_mysql");
   const organizationScope = input.singleOrganization
     ? singleOrganizationScope(input.singleOrganization.organizationId)
@@ -821,6 +837,13 @@ function reviewOverrideAuthority(overrides: AutoBoundaryReviewOverrides): Record
               ? { principal_scope_path: resource.principal_scope_path.value }
               : {}),
             ...(resource.minimum_cohort ? { minimum_cohort: resource.minimum_cohort.value } : {}),
+            ...(resource.field_enums ? {
+              field_enums: Object.fromEntries(
+                Object.entries(resource.field_enums)
+                  .sort(([left], [right]) => left.localeCompare(right))
+                  .map(([field, decision]) => [field, decision.values]),
+              ),
+            } : {}),
             ...(resource.fields ? {
               fields: Object.fromEntries(
                 Object.entries(resource.fields)
@@ -846,6 +869,9 @@ function generationEvidenceAuthority(resources: AutoBoundaryResource[]): unknown
       : {}),
     fields: resource.fields.map((field) => ({
       ...field,
+      ...(field.enum_review_override
+        ? { enum_review_override: { values: field.enum_review_override.values } }
+        : {}),
       ...(field.review_override
         ? { review_override: { exposure: field.review_override.exposure } }
         : {}),
@@ -860,7 +886,10 @@ export async function writeAutoBoundaryArtifacts(input: {
   force?: boolean;
   preserveReviewProgress?: boolean;
   preserveActiveBoundary?: boolean;
-  reviewProgress?: BoundaryReviewProgressArtifact<ExplorationBoundaryDraft>;
+  reviewProgress?: BoundaryReviewProgressArtifact<
+    ExplorationBoundaryDraft,
+    AutoBoundaryReviewOverrides
+  >;
 }): Promise<AutoBoundaryWriteResult> {
   const projectRoot = path.resolve(input.projectRoot);
   const outputRoot = await assertSafeManagedOutputPath(
@@ -921,6 +950,11 @@ export async function writeAutoBoundaryArtifacts(input: {
     }), "utf8");
     await fs.mkdir(stagedState, { recursive: true, mode: 0o700 });
     await writePrivateStagedFile(stagedState, "generation-lock.json", json(input.build.lock));
+    await writePrivateStagedFile(
+      stagedState,
+      AUTO_BOUNDARY_POLICY_BASELINE_FILE,
+      json(input.build.policy_baseline),
+    );
     await writePrivateStagedFile(stagedState, "review-report.json", json(input.build.review));
     await writePrivateStagedFile(stagedState, "review-overrides.json", json(input.build.overrides));
     if (input.reviewProgress) {
@@ -930,6 +964,16 @@ export async function writeAutoBoundaryArtifacts(input: {
         json(input.reviewProgress),
       );
     }
+    await persistGenerationLockSnapshot(
+      projectRoot,
+      input.build.exploration_boundary.generation_lock_fingerprint,
+      input.build.lock,
+    );
+    await persistGenerationLockSnapshot(
+      projectRoot,
+      input.build.policy_baseline.boundary.generation_lock_fingerprint,
+      input.build.policy_baseline.lock,
+    );
     await commitManagedAutoBoundaryWrite({
       outputRoot,
       stagedOutput: temporary,
@@ -939,6 +983,7 @@ export async function writeAutoBoundaryArtifacts(input: {
       existingOutput: existing,
       installStateFiles: [
         "generation-lock.json",
+        AUTO_BOUNDARY_POLICY_BASELINE_FILE,
         "review-report.json",
         "review-overrides.json",
         ...(input.reviewProgress ? ["boundary-review-progress.json"] : []),
@@ -959,6 +1004,7 @@ export async function writeAutoBoundaryArtifacts(input: {
       files: [
         ...files.map((file) => path.join(outputRoot, file)),
         path.join(stateDir, "generation-lock.json"),
+        path.join(stateDir, AUTO_BOUNDARY_POLICY_BASELINE_FILE),
         path.join(stateDir, "review-report.json"),
         path.join(stateDir, "review-overrides.json"),
       ],
@@ -1631,6 +1677,63 @@ export async function loadGenerationLockForActivatedBoundary(
   return current;
 }
 
+export async function loadGenerationLockSnapshot(
+  projectRootInput: string,
+  fingerprint: `sha256:${string}`,
+): Promise<GenerationLock> {
+  const projectRoot = path.resolve(projectRootInput);
+  const snapshot = JSON.parse(
+    await fs.readFile(generationLockSnapshotPath(projectRoot, fingerprint), "utf8"),
+  ) as GenerationLock;
+  assertGenerationLockFingerprint(snapshot, fingerprint);
+  return snapshot;
+}
+
+export async function loadAutoBoundaryPolicyBaseline(
+  projectRootInput: string,
+): Promise<AutoBoundaryBuild["policy_baseline"]> {
+  const projectRoot = path.resolve(projectRootInput);
+  const value = JSON.parse(await fs.readFile(
+    path.join(projectRoot, ".synapsor", AUTO_BOUNDARY_POLICY_BASELINE_FILE),
+    "utf8",
+  )) as unknown;
+  if (!isRecord(value)
+    || value.schema_version !== AUTO_BOUNDARY_POLICY_BASELINE_VERSION
+    || !isRecord(value.boundary)
+    || !isRecord(value.lock)
+    || value.boundary.activation !== "disabled_unreviewed"
+    || typeof value.boundary.generation_lock_fingerprint !== "string") {
+    throw new Error("Saved policy-neutral Auto Boundary baseline is invalid; Rescan before creating another boundary.");
+  }
+  const baseline = value as unknown as AutoBoundaryBuild["policy_baseline"];
+  assertGenerationLockFingerprint(
+    baseline.lock,
+    baseline.boundary.generation_lock_fingerprint,
+  );
+  if (baseline.lock.reviewed_overrides_digest
+    !== canonicalJsonDigest(reviewOverrideAuthority(emptyReviewOverrides()))) {
+    throw new Error("Saved Auto Boundary baseline contains human policy; Rescan before creating another boundary.");
+  }
+  return baseline;
+}
+
+export function generationLockSharedFactsDigest(
+  lock: GenerationLock,
+): `sha256:${string}` {
+  return canonicalJsonDigest({
+    schema_version: "synapsor.boundary-shared-generation-facts.v1",
+    compiler_version: lock.compiler_version,
+    spec_version: lock.spec_version,
+    engine: lock.engine,
+    source_env: lock.source_env,
+    inspected_schema: lock.inspected_schema ?? null,
+    schema_fingerprint: lock.schema_fingerprint,
+    role_posture_fingerprint: lock.role_posture_fingerprint,
+    reporting_timezone: lock.reporting_timezone ?? null,
+    organization_scope: lock.organization_scope ?? null,
+  });
+}
+
 function generationLockSnapshotPath(
   projectRoot: string,
   fingerprint: `sha256:${string}`,
@@ -1686,7 +1789,7 @@ export function emptyReviewOverrides(): AutoBoundaryReviewOverrides {
   };
 }
 
-function normalizeReviewOverrides(input: unknown): AutoBoundaryReviewOverrides {
+export function normalizeAutoBoundaryReviewOverrides(input: unknown): AutoBoundaryReviewOverrides {
   if (input === undefined) return emptyReviewOverrides();
   if (!isRecord(input)) throw new Error("Auto Boundary review overrides must be a JSON object.");
   assertOnlyKeys(input, ["schema_version", "resources"], "Auto Boundary review overrides");

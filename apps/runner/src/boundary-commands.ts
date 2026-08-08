@@ -3061,6 +3061,13 @@ export async function boundaryActivateCommand(
   );
   const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
   const context = await loadBoundaryReviewContext(projectRoot);
+  if (context.progress?.policy_migration.status === "review_required") {
+    throw new Error([
+      `Boundary ${context.candidate.pack.name} has legacy project-wide review settings that are not yet isolated to its immutable boundary identity.`,
+      "Runner preserved the exact saved boundary revision but will not activate it as newly reviewed policy.",
+      "Open /access and save a reviewed setting for this boundary, or Rescan, then review and activate the resulting disabled revision.",
+    ].join("\n"));
+  }
   const headless = args.includes("--headless");
   const expectedConfirmation = `ACTIVATE ${context.bundle.candidate_digest}`;
   let confirmation = optionalArg(args, "--confirm")?.trim();

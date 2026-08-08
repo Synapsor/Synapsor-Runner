@@ -33,8 +33,8 @@ import {
   activateExplorationBoundary,
   assertCurrentExplorationBoundaryAuthority,
   buildAutoBoundary,
+  emptyReviewOverrides,
   explorationBoundaryCandidateDigest,
-  loadAutoBoundaryReviewOverrides,
   loadActivatedExplorationBoundary,
   loadActivatedExplorationBoundaries,
   loadStructuredProjectEvidence,
@@ -166,6 +166,10 @@ import {
   type BoundaryReviewMutationPreview,
   type BoundaryResourceReviewRequest,
 } from "./boundary-review-mutation.js";
+import {
+  backupLegacyBoundaryReviewOverrides,
+  boundaryReviewOverridesForCandidate,
+} from "./boundary-review-policy.js";
 import {
   createSavedBoundary,
   deleteSavedBoundary,
@@ -765,6 +769,7 @@ async function handleRequest(input: {
       review_decisions: reviewDecisions,
       review_progress: {
         revision: progress?.revision ?? 0,
+        policy_migration: progress?.policy_migration ?? null,
         invalidated_decisions: progress?.invalidated_decisions ?? [],
         outstanding_decisions: reviewDecisions
           .filter((decision) => !confirmedDecisions.includes(decision.decision)),
@@ -1515,7 +1520,11 @@ async function handleRequest(input: {
     const progress = reconcileBoundaryReviewProgress(
       previousProgress,
       prepared.build.exploration_boundary,
+      prepared.build.overrides,
     );
+    if (!previousProgress || previousProgress.policy_migration.status === "review_required") {
+      await backupLegacyBoundaryReviewOverrides(projectRoot);
+    }
     await writeAutoBoundaryArtifacts({
       projectRoot,
       outputRoot: path.relative(projectRoot, boundaryRoot),
@@ -1686,6 +1695,19 @@ async function handleRequest(input: {
       await fs.readFile(path.join(boundaryRoot, "exploration-boundary.draft.json"), "utf8"),
     ) as ExplorationBoundaryDraft;
     const progress = await readBoundaryReviewProgress(projectRoot, draft);
+    if (progress?.policy_migration.status === "review_required") {
+      sendJson(response, 409, {
+        ok: false,
+        error_code: "BOUNDARY_POLICY_MIGRATION_REQUIRED",
+        error: [
+          `Boundary ${progress.candidate.pack.name} has legacy project-wide review settings that are not yet isolated to its immutable boundary identity.`,
+          "Runner preserved the exact saved boundary revision but will not activate it as newly reviewed policy.",
+          "Edit and save a reviewed setting for this boundary, or apply a Rescan, then review and activate the resulting disabled revision.",
+        ].join(" "),
+        source_database_changed: false,
+      });
+      return;
+    }
     const candidateDigest = explorationBoundaryCandidateDigest(
       body.candidate as unknown as ExplorationBoundaryDraft,
     );
@@ -5445,71 +5467,9 @@ export async function saveBoundaryReviewProgress(
 function reconcileBoundaryReviewProgress(
   previous: BoundaryReviewProgress | undefined,
   draft: ExplorationBoundaryDraft,
+  reviewOverrides?: AutoBoundaryReviewOverrides,
 ): BoundaryReviewProgress | undefined {
-  return reconcileSharedBoundaryReviewProgress(previous, draft);
-}
-
-function normalizeStoredBoundaryReviewProgress(
-  raw: JsonRecord,
-  candidate: ExplorationBoundaryDraft,
-): BoundaryReviewProgress {
-  const decisions = boundaryReviewDecisions(candidate);
-  const decisionById = new Map(decisions.map((decision) => [decision.id, decision]));
-  const confirmations: BoundaryReviewConfirmation[] = [];
-  for (const item of raw.confirmations as unknown[]) {
-    if (!isRecord(item)
-      || typeof item.id !== "string"
-      || typeof item.decision !== "string"
-      || typeof item.input_digest !== "string"
-      || item.status !== "confirmed"
-      || typeof item.actor !== "string"
-      || typeof item.reason !== "string"
-      || typeof item.confirmed_at !== "string") {
-      throw new Error("Saved boundary-review confirmations are invalid.");
-    }
-    const current = decisionById.get(item.id);
-    if (!current || current.input_digest !== item.input_digest) continue;
-    confirmations.push({
-      ...current,
-      status: "confirmed",
-      actor: item.actor,
-      reason: item.reason,
-      confirmed_at: item.confirmed_at,
-    });
-  }
-  const invalidatedDecisions = (raw.invalidated_decisions as unknown[])
-    .flatMap((item): BoundaryReviewInvalidation[] => {
-      if (!isRecord(item)
-        || typeof item.id !== "string"
-        || typeof item.decision !== "string"
-        || typeof item.previous_input_digest !== "string"
-        || (item.current_input_digest !== undefined && typeof item.current_input_digest !== "string")
-        || (item.reason !== "reviewed_input_changed" && item.reason !== "decision_removed")
-        || typeof item.invalidated_at !== "string") return [];
-      return [{
-        id: item.id,
-        decision: item.decision,
-        previous_input_digest: item.previous_input_digest as `sha256:${string}`,
-        ...(item.current_input_digest
-          ? { current_input_digest: item.current_input_digest as `sha256:${string}` }
-          : {}),
-        reason: item.reason,
-        invalidated_at: item.invalidated_at,
-      }];
-    });
-  return {
-    schema_version: BOUNDARY_REVIEW_PROGRESS_VERSION,
-    revision: raw.revision as number,
-    draft_digest: raw.draft_digest as `sha256:${string}`,
-    candidate,
-    candidate_digest: explorationBoundaryCandidateDigest(candidate),
-    confirmed_decisions: decisions
-      .filter((decision) => confirmations.some((confirmation) => confirmation.id === decision.id))
-      .map((decision) => decision.decision),
-    confirmations,
-    invalidated_decisions: invalidatedDecisions,
-    updated_at: raw.updated_at as string,
-  };
+  return reconcileSharedBoundaryReviewProgress(previous, draft, reviewOverrides);
 }
 
 function mergeBoundaryReviewInvalidations(
@@ -7821,25 +7781,14 @@ async function prepareAutoBoundaryRescan(input: {
   });
   const project = await detectProjectContext(input.projectRoot);
   const evidence = await loadStructuredProjectEvidence(project);
-  const currentOverrides = input.resetOverrides
-    ? { overrides: { schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION, resources: {} } as AutoBoundaryReviewOverrides, removed: [] }
-    : pruneAutoBoundaryReviewOverrides(
-      inspection,
-      await loadAutoBoundaryReviewOverrides(input.projectRoot),
-      {
-        project,
-        parsedEvidence: evidence.parsed,
-        existingContracts: evidence.existingContracts,
-      },
-    );
-  const build = buildAutoBoundary({
+  const previousProgress = await readSharedBoundaryReviewProgress(input.projectRoot, oldDraft);
+  const buildInput = {
     inspection,
     project,
     parsedEvidence: evidence.parsed,
     existingContracts: evidence.existingContracts,
     sourceEnv: lock.source_env,
     inspectedSchema: lock.inspected_schema,
-    overrides: currentOverrides.overrides,
     deploymentProfile: oldDraft.deployment_profile,
     ...(oldDraft.trusted_context.provider === "http_claims" ? {
       httpClaims: {
@@ -7850,6 +7799,26 @@ async function prepareAutoBoundaryRescan(input: {
     ...(oldDraft.organization_scope ? {
       singleOrganization: { organizationId: oldDraft.organization_scope.organization_id },
     } : {}),
+  } satisfies Parameters<typeof buildAutoBoundary>[0];
+  const cleanBuild = buildAutoBoundary(buildInput);
+  const currentOverrides = input.resetOverrides
+    ? { overrides: emptyReviewOverrides(), removed: [] }
+    : pruneAutoBoundaryReviewOverrides(
+      inspection,
+      boundaryReviewOverridesForCandidate({
+        progress: previousProgress,
+        baseline: cleanBuild.exploration_boundary,
+        candidate: previousProgress?.candidate ?? oldDraft,
+      }),
+      {
+        project,
+        parsedEvidence: evidence.parsed,
+        existingContracts: evidence.existingContracts,
+      },
+    );
+  const build = buildAutoBoundary({
+    ...buildInput,
+    overrides: currentOverrides.overrides,
   });
   const diff = boundarySemanticDiff(oldDraft, build, currentOverrides.removed);
   const previewDigest = canonicalJsonDigest({

@@ -14,7 +14,6 @@ import {
   compareGenerationLock,
   deactivateExplorationBoundary,
   explorationBoundaryCandidateDigest,
-  loadAutoBoundaryReviewOverrides,
   loadActivatedExplorationBoundary,
   loadActivatedExplorationBoundaries,
   pruneAutoBoundaryReviewOverrides,
@@ -26,6 +25,7 @@ import {
   applyManagedBoundaryReviewDecision,
   boundaryReviewDecisions,
 } from "./boundary-review-domain.js";
+import { reconstructBoundaryReviewOverrides } from "./boundary-review-policy.js";
 
 describe("Auto Boundary compiler", () => {
   it("emits deterministic disabled DSL-first candidates without source data or secrets", () => {
@@ -862,12 +862,78 @@ describe("Auto Boundary compiler", () => {
       expect(reviewed.review.activation).toBe("blocked_unreviewed");
       expect(reviewed.exploration_boundary.activation).toBe("disabled_unreviewed");
       await writeAutoBoundaryArtifacts({ projectRoot, build: reviewed });
-      await expect(loadAutoBoundaryReviewOverrides(projectRoot)).resolves.toEqual(reviewed.overrides);
+      await expect(fs.readFile(
+        path.join(projectRoot, ".synapsor/review-overrides.json"),
+        "utf8",
+      ).then((value) => JSON.parse(value))).resolves.toEqual(reviewed.overrides);
       await expect(fs.readFile(path.join(projectRoot, "synapsor/generated/review-overrides.json"), "utf8"))
         .resolves.toContain("reviewer@example.test");
     } finally {
       await fs.rm(projectRoot, { recursive: true, force: true });
     }
+  });
+
+  it("reconstructs legacy policy from one exact boundary without assigning global ownership", () => {
+    const inspection = churnInspection();
+    inspection.tables[0]!.columns.find((column) => column.name === "region")!.enum_values = [
+      "west",
+      "east",
+      "central",
+    ];
+    const input = {
+      inspection,
+      project: projectSummary("/workspace/policy-migration"),
+      sourceEnv: "DATABASE_URL",
+    };
+    const baseline = buildAutoBoundary(input);
+    const reviewed = buildAutoBoundary({
+      ...input,
+      overrides: {
+        schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+        resources: {
+          "public.subscriptions": {
+            minimum_cohort: {
+              value: 2,
+              actor: "finance-reviewer",
+              reason: "Owner-reviewed threshold for this exact boundary.",
+              decided_at: "2026-08-07T00:00:00.000Z",
+            },
+            field_enums: {
+              region: {
+                values: ["west", "east"],
+                actor: "finance-reviewer",
+                reason: "Keep this boundary on reviewed sales regions.",
+                decided_at: "2026-08-07T00:00:00.000Z",
+              },
+            },
+            fields: {
+              churned_at: {
+                exposure: "withhold_from_model",
+                actor: "finance-reviewer",
+                reason: "Keep exact timestamps in Runner output only.",
+                decided_at: "2026-08-07T00:00:00.000Z",
+              },
+            },
+          },
+        },
+      },
+    });
+    const reconstructed = reconstructBoundaryReviewOverrides({
+      baseline: baseline.exploration_boundary,
+      candidate: reviewed.exploration_boundary,
+      actor: "boundary-policy-migration",
+      decidedAt: "2026-08-07T01:00:00.000Z",
+    });
+    const rebuilt = buildAutoBoundary({ ...input, overrides: reconstructed });
+
+    expect(reconstructed.resources["public.subscriptions"]).toMatchObject({
+      minimum_cohort: { value: 2 },
+      field_enums: { region: { values: ["west", "east"] } },
+      fields: { churned_at: { exposure: "withhold_from_model" } },
+    });
+    expect(rebuilt.lock.reviewed_overrides_digest).toBe(reviewed.lock.reviewed_overrides_digest);
+    expect(rebuilt.lock).toEqual(reviewed.lock);
+    expect(rebuilt.exploration_boundary).toEqual(reviewed.exploration_boundary);
   });
 
   it("records a model-withheld field as digest-bound use without provider value egress", () => {

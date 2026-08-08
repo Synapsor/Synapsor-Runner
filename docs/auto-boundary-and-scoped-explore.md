@@ -161,6 +161,7 @@ synapsor/generated/
 
 .synapsor/
   generation-lock.json
+  auto-boundary-policy-baseline.json
   review-report.json
   review-overrides.json
   boundary-review-progress.json
@@ -174,6 +175,15 @@ candidates start disabled. Auto Boundary never replaces an active contract.
 
 No source rows, credentials, tenant values, or principal values are written to
 these files.
+
+`boundary-review-progress.json` owns the selected boundary's policy under an
+immutable boundary ID. The generated `review-overrides.json` files are
+compatibility mirrors for that selected boundary; they are not project-wide
+authority and are never merged into another boundary. Database facts such as
+keys, relationships, enum declarations, and role posture remain shared through
+the generation lock and policy-neutral baseline. Human choices such as field
+visibility, operations, scope-path selection, relationships, and privacy limits
+remain independent for each boundary.
 
 Workbench previews generated DSL with a local deterministic highlighter. It
 distinguishes DSL keywords from reviewer-defined names, strings, numbers,

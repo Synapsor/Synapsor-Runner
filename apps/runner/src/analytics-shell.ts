@@ -1239,7 +1239,17 @@ async function handleShellCommand(
     return "continue";
   }
   if (line === "/protect" || line.startsWith("/protect ")) {
-    await protectAnalysis(line, input, current);
+    try {
+      await protectAnalysis(line, input, current);
+    } catch (error) {
+      input.io.write([
+        "",
+        `Protect could not complete: ${safeShellError(error)}`,
+        "No capability was created or activated. This Ask session is still active.",
+        "",
+        "",
+      ].join("\n"));
+    }
     return "continue";
   }
   input.io.write("Unknown action. Type /help for the available actions.\n\n");
@@ -1750,9 +1760,11 @@ async function protectAnalysis(
     input.io.write("Protect cancelled. No capability was created or activated.\n\n");
     return;
   }
-  const capabilityInput = parsed.capabilityName
+  const requestedCapability = parsed.capabilityName
     ? suggested
     : capabilityAnswer.trim() || suggested;
+  const capabilityInput = await reviewedCapabilityName(input.io, requestedCapability);
+  if (!capabilityInput) return;
   let minimumCohortConfirmed: true | undefined;
   let minimumCohortActor: string | undefined;
   if (selected.minimum_cohort_override) {
@@ -1776,12 +1788,24 @@ async function protectAnalysis(
     minimumCohortConfirmed = true;
     minimumCohortActor = input.operatorLabel ?? "local-developer";
   }
-  const protectedResult = await input.protect({
-    reference: selected.token,
-    capabilityName: capabilityInput,
-    ...(minimumCohortConfirmed ? { minimumCohortConfirmed } : {}),
-    ...(minimumCohortActor ? { minimumCohortActor } : {}),
-  });
+  let protectedResult: Awaited<ReturnType<AnalyticsShellInput["protect"]>>;
+  try {
+    protectedResult = await input.protect({
+      reference: selected.token,
+      capabilityName: capabilityInput,
+      ...(minimumCohortConfirmed ? { minimumCohortConfirmed } : {}),
+      ...(minimumCohortActor ? { minimumCohortActor } : {}),
+    });
+  } catch (error) {
+    input.io.write([
+      "",
+      `Protect was rejected: ${safeShellError(error)}`,
+      "No capability was created or activated. This Ask session is still active.",
+      "",
+      "",
+    ].join("\n"));
+    return;
+  }
   const actor = input.operatorLabel ?? "local-developer";
   const selectedLiveAnalysis = current?.analyses.find((analysis) => analysis.reference === selected.token);
   input.io.write([
@@ -1926,6 +1950,63 @@ export function protectedCapabilityWorkbenchUrl(
   url.searchParams.set("query_ref", analysisReference);
   url.searchParams.set("capability", capabilityName);
   return url.toString();
+}
+
+async function reviewedCapabilityName(
+  io: AnalyticsShellIo,
+  requested: string,
+): Promise<string | undefined> {
+  if (isQualifiedCapabilityName(requested)) return requested;
+  const localName = requested
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/^[^a-z_]+/, "");
+  const suggestion = localName && /^[a-z_][a-z0-9_]*$/.test(localName)
+    ? `analytics.${localName}`
+    : undefined;
+  io.write([
+    "",
+    "A protected capability name needs a namespace, such as analytics.order_by_channel.",
+    ...(suggestion ? [`Suggested name: ${suggestion}`] : []),
+    "The analysis is unchanged and nothing has been created yet.",
+    "",
+  ].join("\n"));
+  if (suggestion) {
+    const answer = await readOperatorPrompt(
+      io,
+      `Use ${suggestion}? [Y/n] [Esc Back]: `,
+    );
+    if (answer === undefined) {
+      io.write("Protect cancelled. No capability was created or activated.\n\n");
+      return undefined;
+    }
+    if (parseDefaultYes(answer)) return suggestion;
+  }
+  const replacement = await readOperatorPrompt(
+    io,
+    "Capability name (namespace.name) [Esc Back]: ",
+  );
+  if (replacement === undefined) {
+    io.write("Protect cancelled. No capability was created or activated.\n\n");
+    return undefined;
+  }
+  const normalized = replacement.trim();
+  if (!isQualifiedCapabilityName(normalized)) {
+    io.write([
+      "",
+      "That name is still invalid. Use namespace.name, for example analytics.order_by_channel.",
+      "No capability was created or activated. This Ask session is still active.",
+      "",
+      "",
+    ].join("\n"));
+    return undefined;
+  }
+  return normalized;
+}
+
+function isQualifiedCapabilityName(value: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$/.test(value);
 }
 
 function parseProtectCommand(line: string): {

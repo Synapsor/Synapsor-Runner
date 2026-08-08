@@ -1316,6 +1316,91 @@ export default defineCapability({
     }
   });
 
+  it("refuses Workbench activation until legacy boundary policy is isolated", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-policy-migration-"));
+    const inspection = boundaryReviewInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root: tempDir,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const written = await writeAutoBoundaryArtifacts({ projectRoot: tempDir, build });
+    const guided = await initializeGuidedProject({
+      projectRoot: tempDir,
+      build,
+      runnerVersion: "1.6.7",
+    });
+    const current = createBoundaryReviewProgress({
+      draft: build.exploration_boundary,
+      candidate: build.exploration_boundary,
+      confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+      actor: "legacy-reviewer",
+      revision: 1,
+    });
+    const {
+      boundary_id: _boundaryId,
+      review_overrides: _reviewOverrides,
+      policy_migration: _policyMigration,
+      ...legacy
+    } = current;
+    await fs.writeFile(
+      path.join(tempDir, ".synapsor/boundary-review-progress.json"),
+      `${JSON.stringify({
+        ...legacy,
+        schema_version: "synapsor.boundary-review-progress.v2",
+      }, null, 2)}\n`,
+    );
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      boundaryRoot: written.root,
+      configPath: guided.config_path,
+      storePath: guided.store_path,
+      token: "policy-migration-token",
+      csrfToken: "policy-migration-csrf",
+      schemaInspector: async () => inspection,
+    });
+    try {
+      const baseUrl = `http://${server.host}:${server.port}`;
+      const bootstrap = await fetch(`${baseUrl}/?token=policy-migration-token`, { redirect: "manual" });
+      const cookie = bootstrap.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
+      const digest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+      const response = await fetch(`${baseUrl}/api/boundary/activate`, {
+        method: "POST",
+        headers: {
+          cookie,
+          "content-type": "application/json",
+          "x-synapsor-csrf": "policy-migration-csrf",
+        },
+        body: JSON.stringify({
+          candidate: build.exploration_boundary,
+          expected_digest: digest,
+          actor: "legacy-reviewer",
+          confirmation: `ACTIVATE ${digest}`,
+          confirmed_decisions: build.exploration_boundary.unresolved_decisions,
+        }),
+      });
+      expect(response.status).toBe(409);
+      await expect(response.json()).resolves.toMatchObject({
+        ok: false,
+        error_code: "BOUNDARY_POLICY_MIGRATION_REQUIRED",
+        error: expect.stringMatching(/not yet isolated.*Edit and save.*Rescan/s),
+        source_database_changed: false,
+      });
+      await expect(fs.access(path.join(tempDir, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("activates one conservative development resource and drives a real scoped runtime call in the instant path", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-instant-"));
     const inspection = boundaryReviewInspection();
@@ -3087,9 +3172,12 @@ export default defineCapability({
         const progress = JSON.parse(
           await fs.readFile(path.join(tempDir, ".synapsor/boundary-review-progress.json"), "utf8"),
         );
-        expect(progress).toMatchObject({
-          schema_version: "synapsor.boundary-review-progress.v2",
-          confirmations: expect.arrayContaining([
+	        expect(progress).toMatchObject({
+	          schema_version: "synapsor.boundary-review-progress.v3",
+	          boundary_id: expect.stringMatching(/^bnd_[a-f0-9]{32}$/),
+	          policy_migration: { status: "complete", source: "native" },
+	          review_overrides: expect.objectContaining({ resources: expect.any(Object) }),
+	          confirmations: expect.arrayContaining([
             expect.objectContaining({
               id: `resource.${firstResource}.principal_scope`,
               actor: "reviewer@example.test",

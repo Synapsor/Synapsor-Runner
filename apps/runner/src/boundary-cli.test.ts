@@ -26,6 +26,7 @@ import {
 } from "./boundary-commands.js";
 import {
   createSavedBoundary,
+  renameSavedBoundary,
   switchSavedBoundary,
   synchronizeBoundaryLibrary,
 } from "./boundary-library.js";
@@ -43,6 +44,7 @@ import {
   listBoundaryResourceReviews,
   prepareBoundaryResourceReviewMutation,
 } from "./boundary-review-mutation.js";
+import { loadCompletedBoundaryReviewOverrides } from "./boundary-review-policy.js";
 import { boundaryCommand } from "./guided-start.js";
 import { initializeGuidedProject, readGuidedOnboardingState } from "./guided-project.js";
 import { prepareScopedExplore } from "./scoped-explore.js";
@@ -2751,7 +2753,7 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 20_000);
 
-  it("conservatively rebases another saved draft after reviewed generation inputs change", async () => {
+  it("conservatively rebases another saved draft only after shared schema facts change", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-library-rebase-"));
     const inspection = boundaryInspection();
     const build = buildAutoBoundary({
@@ -2768,6 +2770,16 @@ describe("boundary operator-plane CLI", () => {
     });
     try {
       await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const activeDigest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+      await activateExplorationBoundary({
+        projectRoot: root,
+        candidate: build.exploration_boundary,
+        expectedDigest: activeDigest,
+        actor: "original-reviewer",
+        confirmation: `ACTIVATE ${activeDigest}`,
+        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        currentInspection: inspection,
+      });
       let context = await loadBoundaryReviewContext(root);
       await synchronizeBoundaryLibrary({
         projectRoot: root,
@@ -2791,12 +2803,29 @@ describe("boundary operator-plane CLI", () => {
         name: build.exploration_boundary.pack.name,
       });
 
+      const driftedInspection = structuredClone(inspection);
+      const table = driftedInspection.tables[0]!;
+      table.columns.push({
+        name: "priority",
+        data_type: "text",
+        nullable: false,
+        generated: false,
+        ordinal_position: table.columns.length + 1,
+        suggestions: {
+          tenant: false,
+          conflict: false,
+          sensitive: false,
+          immutable: false,
+          large_or_binary: false,
+        },
+      });
+      table.suggestions.default_visible_columns.push("priority");
       const preview = await prepareBoundaryResourceReviewMutation(root, {
         resource_id: "public.service_visits",
         keep_out_fields: ["status"],
         actor: "alice",
         reason: "Keep status unavailable in this reviewed analytics boundary.",
-      }, async () => inspection);
+      }, async () => driftedInspection);
       await commitBoundaryResourceReviewMutation(root, preview);
 
       context = await loadBoundaryReviewContext(root);
@@ -2814,25 +2843,497 @@ describe("boundary operator-plane CLI", () => {
         currentProgress: context.progress,
         name: "support_analytics",
       });
+      const policyBaseline = JSON.parse(await fs.readFile(
+        path.join(root, ".synapsor/auto-boundary-policy-baseline.json"),
+        "utf8",
+      ));
       expect(restored.candidate).toMatchObject({
-        generation_lock_fingerprint: context.draft.generation_lock_fingerprint,
+        generation_lock_fingerprint: policyBaseline.boundary.generation_lock_fingerprint,
         pack: {
           name: "support_analytics",
           resources: [{
             id: "public.service_visits",
-            kept_out_fields: expect.arrayContaining(["status"]),
+            kept_out_fields: expect.arrayContaining(["priority"]),
           }],
         },
       });
+      expect(restored.candidate.pack.resources[0]!.kept_out_fields).not.toContain("status");
       expect(restored.confirmed_decisions).not.toEqual(
         restored.candidate.unresolved_decisions,
       );
-      await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
-        .rejects.toMatchObject({ code: "ENOENT" });
+      const active = (await loadActivatedExplorationBoundaries(root))
+        .find((boundary) => boundary.pack.name === build.exploration_boundary.pack.name)!;
+      expect(active.activation.digest).toBe(activeDigest);
+      expect(active.pack.resources[0]!.kept_out_fields).not.toContain("status");
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
   }, 20_000);
+
+  it("keeps overlapping table policy isolated by immutable boundary identity", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-policy-isolation-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const activeDigest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+      await activateExplorationBoundary({
+        projectRoot: root,
+        candidate: build.exploration_boundary,
+        expectedDigest: activeDigest,
+        actor: "original-reviewer",
+        confirmation: `ACTIVATE ${activeDigest}`,
+        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        currentInspection: inspection,
+      });
+      let context = await loadBoundaryReviewContext(root);
+      const originalName = context.candidate.pack.name;
+      const originalCandidate = structuredClone(context.candidate);
+      await synchronizeBoundaryLibrary({
+        projectRoot: root,
+        draft: context.draft,
+        currentCandidate: context.candidate,
+        currentProgress: context.progress,
+      });
+      const second = await createSavedBoundary({
+        projectRoot: root,
+        draft: context.draft,
+        currentCandidate: context.candidate,
+        currentProgress: context.progress,
+        name: "finance_lens",
+        resourceId: "public.service_visits",
+        actor: "finance-reviewer",
+      });
+      const secondBoundaryId = second.boundary_id;
+
+      const withhold = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.service_visits",
+        withhold_from_model_fields: ["scheduled_at"],
+        field_enum: { field: "status", values: ["completed"] },
+        groupable_fields: [],
+        minimum_cohort_size: 2,
+        actor: "finance-reviewer",
+        reason: "Use a narrower finance-only view and owner-reviewed cohort in this boundary.",
+      }, async () => inspection);
+      await commitBoundaryResourceReviewMutation(root, withhold);
+      const privacyEdit = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.service_visits",
+        minimum_cohort_size: 3,
+        actor: "finance-reviewer",
+        reason: "Adjust only this boundary's privacy threshold without changing its operation grants.",
+      }, async () => inspection);
+      await commitBoundaryResourceReviewMutation(root, privacyEdit);
+      context = await loadBoundaryReviewContext(root);
+      expect(context.candidate.pack.resources[0]).toMatchObject({
+        model_withheld_fields: expect.arrayContaining(["scheduled_at"]),
+        field_enums: { status: ["completed"] },
+        groupable_fields: [],
+        minimum_cohort_size: 3,
+        minimum_cohort_overridden: true,
+      });
+      const stillActive = (await loadActivatedExplorationBoundaries(root))
+        .find((boundary) => boundary.pack.name === originalName)!;
+      expect(stillActive.pack.resources[0]!.model_withheld_fields ?? []).not.toContain("scheduled_at");
+      expect(stillActive.pack.resources[0]!.field_enums.status).toEqual(["scheduled", "completed"]);
+      expect(stillActive.pack.resources[0]!.minimum_cohort_size).toBe(5);
+      expect(stillActive.activation.digest).toBe(activeDigest);
+      await synchronizeBoundaryLibrary({
+        projectRoot: root,
+        draft: context.draft,
+        currentCandidate: context.candidate,
+        currentProgress: context.progress,
+      });
+
+      const restored = await switchSavedBoundary({
+        projectRoot: root,
+        draft: context.draft,
+        currentCandidate: context.candidate,
+        currentProgress: context.progress,
+        name: originalName,
+      });
+      expect(restored.candidate).toEqual(originalCandidate);
+      expect(restored.candidate.pack.resources[0]!.model_withheld_fields ?? [])
+        .not.toContain("scheduled_at");
+      expect(restored.invalidated_decisions).toEqual([]);
+      expect(restored.boundary_id).not.toBe(secondBoundaryId);
+
+      context = await loadBoundaryReviewContext(root);
+      const finance = await switchSavedBoundary({
+        projectRoot: root,
+        draft: context.draft,
+        currentCandidate: context.candidate,
+        currentProgress: context.progress,
+        name: "finance_lens",
+      });
+      expect(finance.candidate.pack.resources[0]!.model_withheld_fields).toContain("scheduled_at");
+      const renamed = await renameSavedBoundary({
+        projectRoot: root,
+        draft: context.draft,
+        currentCandidate: finance.candidate,
+        currentProgress: finance,
+        name: "finance_lens",
+        newName: "finance_reviewed",
+        actor: "finance-reviewer",
+        reason: "Use the reviewed finance boundary label.",
+      });
+      expect(renamed.boundary_id).toBe(secondBoundaryId);
+      expect(renamed.review_overrides.resources["public.service_visits"]?.fields?.scheduled_at)
+        .toMatchObject({ exposure: "withhold_from_model" });
+      expect(renamed.review_overrides.resources["public.service_visits"]?.field_enums?.status)
+        .toMatchObject({ values: ["completed"] });
+      expect(renamed.review_overrides.resources["public.service_visits"]?.minimum_cohort)
+        .toMatchObject({ value: 3 });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("starts an overlapping boundary from policy-neutral schema facts instead of the selected policy", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-neutral-start-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const selectedPolicy = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.service_visits",
+        withhold_from_model_fields: ["scheduled_at"],
+        field_enum: { field: "status", values: ["completed"] },
+        minimum_cohort_size: 2,
+        actor: "support-reviewer",
+        reason: "Use a narrow support view only in the selected boundary.",
+      }, async () => inspection);
+      await commitBoundaryResourceReviewMutation(root, selectedPolicy);
+      const context = await loadBoundaryReviewContext(root);
+      await synchronizeBoundaryLibrary({
+        projectRoot: root,
+        draft: context.draft,
+        currentCandidate: context.candidate,
+        currentProgress: context.progress,
+      });
+      const created = await createSavedBoundary({
+        projectRoot: root,
+        draft: context.draft,
+        currentCandidate: context.candidate,
+        currentProgress: context.progress,
+        name: "independent_lens",
+        resourceId: "public.service_visits",
+        actor: "finance-reviewer",
+      });
+      const resource = created.candidate.pack.resources[0]!;
+      expect(resource.model_withheld_fields ?? []).not.toContain("scheduled_at");
+      expect(resource.field_enums.status).toEqual(["scheduled", "completed"]);
+      expect(resource.minimum_cohort_size).toBe(5);
+      expect(created.review_overrides.resources).toEqual({});
+      expect(created.boundary_id).not.toBe(context.progress!.boundary_id);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("migrates legacy review state from the exact boundary without trusting a conflicting global override", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-policy-migration-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const digest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+      await activateExplorationBoundary({
+        projectRoot: root,
+        candidate: build.exploration_boundary,
+        expectedDigest: digest,
+        actor: "legacy-reviewer",
+        confirmation: `ACTIVATE ${digest}`,
+        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        currentInspection: inspection,
+      });
+      const current = createBoundaryReviewProgress({
+        draft: build.exploration_boundary,
+        candidate: build.exploration_boundary,
+        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        actor: "legacy-reviewer",
+        revision: 1,
+        now: "2026-08-07T12:00:00.000Z",
+      });
+      const {
+        boundary_id: _boundaryId,
+        review_overrides: _reviewOverrides,
+        policy_migration: _policyMigration,
+        ...legacyProgress
+      } = current;
+      await fs.writeFile(
+        path.join(root, ".synapsor/boundary-review-progress.json"),
+        `${JSON.stringify({
+          ...legacyProgress,
+          schema_version: "synapsor.boundary-review-progress.v2",
+        }, null, 2)}\n`,
+      );
+      const conflictingGlobal = structuredClone(build.overrides);
+      conflictingGlobal.resources["public.service_visits"] = {
+        fields: {
+          scheduled_at: {
+            exposure: "withhold_from_model",
+            actor: "different-boundary-reviewer",
+            reason: "This project-global decision belongs to a different legacy boundary.",
+            decided_at: "2026-08-07T12:30:00.000Z",
+          },
+        },
+      };
+      await fs.writeFile(
+        path.join(root, ".synapsor/review-overrides.json"),
+        `${JSON.stringify(conflictingGlobal, null, 2)}\n`,
+      );
+
+      const conflictingDraft = buildAutoBoundary({
+        inspection,
+        project: {
+          root,
+          package_manager: "npm",
+          frameworks: ["node"],
+          schema_inputs: [],
+          database_env_names: ["DATABASE_URL"],
+        },
+        sourceEnv: "DATABASE_URL",
+        inspectedSchema: "public",
+        overrides: conflictingGlobal,
+      }).exploration_boundary;
+      const preservedLegacy = await readBoundaryReviewProgress(root, conflictingDraft);
+      expect(preservedLegacy).toMatchObject({
+        policy_migration: { status: "review_required" },
+        candidate: build.exploration_boundary,
+      });
+      expect(preservedLegacy!.candidate.pack.resources[0]!.model_withheld_fields ?? [])
+        .not.toContain("scheduled_at");
+
+      await expect(boundaryActivateCommandInternal([
+        "--project-root", root,
+      ], async () => inspection)).rejects.toThrow(
+        /legacy project-wide review settings.*not yet isolated.*save a reviewed setting.*Rescan/s,
+      );
+
+      const migratedPreview = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.service_visits",
+        minimum_cohort_size: 2,
+        actor: "boundary-owner",
+        reason: "Record this boundary's reviewed cohort independently.",
+      }, async () => inspection);
+      await commitBoundaryResourceReviewMutation(root, migratedPreview);
+
+      const context = await loadBoundaryReviewContext(root);
+      expect(context.progress).toMatchObject({
+        schema_version: "synapsor.boundary-review-progress.v3",
+        boundary_id: expect.stringMatching(/^bnd_[a-f0-9]{32}$/),
+        policy_migration: {
+          status: "complete",
+          source: "legacy_exact_boundary_revision",
+        },
+        review_overrides: {
+          resources: {
+            "public.service_visits": {
+              minimum_cohort: { value: 2 },
+            },
+          },
+        },
+      });
+      expect(context.progress!.review_overrides.resources["public.service_visits"]?.fields)
+        .toBeUndefined();
+      expect(context.candidate.pack.resources[0]!.model_withheld_fields ?? [])
+        .not.toContain("scheduled_at");
+      const active = (await loadActivatedExplorationBoundaries(root))[0]!;
+      expect(active.activation.digest).toBe(digest);
+      expect(active.pack.resources[0]!.minimum_cohort_size).toBe(5);
+      expect(active.pack.resources[0]!.model_withheld_fields ?? []).not.toContain("scheduled_at");
+      const backup = JSON.parse(await fs.readFile(
+        path.join(root, ".synapsor/review-overrides.legacy-backup.json"),
+        "utf8",
+      ));
+      expect(backup.resources["public.service_visits"].fields.scheduled_at.exposure)
+        .toBe("withhold_from_model");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("never assigns one ambiguous legacy override to either overlapping boundary", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-policy-ambiguous-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    try {
+      await fs.mkdir(path.join(root, ".synapsor"), { recursive: true });
+      const progress = createBoundaryReviewProgress({
+        draft: build.exploration_boundary,
+        candidate: build.exploration_boundary,
+        confirmedDecisions: [],
+        actor: "legacy-reviewer",
+        revision: 1,
+      });
+      const {
+        boundary_id: _boundaryId,
+        review_overrides: _reviewOverrides,
+        policy_migration: _policyMigration,
+        ...legacyProgress
+      } = progress;
+      const first = {
+        ...legacyProgress,
+        schema_version: "synapsor.boundary-review-progress.v2",
+      };
+      const secondCandidate = structuredClone(build.exploration_boundary);
+      secondCandidate.pack.name = "finance_lens";
+      const second = {
+        ...first,
+        candidate: secondCandidate,
+        candidate_digest: explorationBoundaryCandidateDigest(secondCandidate),
+      };
+      await fs.writeFile(
+        path.join(root, ".synapsor/boundary-review-progress.json"),
+        `${JSON.stringify(first, null, 2)}\n`,
+      );
+      await fs.writeFile(path.join(root, ".synapsor/boundary-library.json"), `${JSON.stringify({
+        schema_version: "synapsor.boundary-library.v1",
+        selected_name: build.exploration_boundary.pack.name,
+        boundaries: {
+          [build.exploration_boundary.pack.name]: first,
+          finance_lens: second,
+        },
+        updated_at: "2026-08-07T12:00:00.000Z",
+      }, null, 2)}\n`);
+      const global = structuredClone(build.overrides);
+      global.resources["public.service_visits"] = {
+        fields: {
+          scheduled_at: {
+            exposure: "withhold_from_model",
+            actor: "unknown-legacy-owner",
+            reason: "Ownership is ambiguous across the two saved boundaries.",
+            decided_at: "2026-08-07T12:00:00.000Z",
+          },
+        },
+      };
+      await fs.writeFile(
+        path.join(root, ".synapsor/review-overrides.json"),
+        `${JSON.stringify(global, null, 2)}\n`,
+      );
+
+      await expect(loadCompletedBoundaryReviewOverrides({
+        projectRoot: root,
+        boundaryName: build.exploration_boundary.pack.name,
+      })).resolves.toBeUndefined();
+      await expect(loadCompletedBoundaryReviewOverrides({
+        projectRoot: root,
+        boundaryName: "finance_lens",
+      })).resolves.toBeUndefined();
+      const normalized = await readBoundaryReviewProgress(root, build.exploration_boundary);
+      expect(normalized).toMatchObject({
+        policy_migration: { status: "review_required" },
+        review_overrides: { resources: {} },
+        candidate: build.exploration_boundary,
+      });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a self-consistent saved policy candidate bound to different shared database facts", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-policy-lock-"));
+    const inspection = boundaryInspection();
+    const project = {
+      root,
+      package_manager: "npm" as const,
+      frameworks: ["node"],
+      schema_inputs: [],
+      database_env_names: ["DATABASE_URL"],
+    };
+    const original = buildAutoBoundary({
+      inspection,
+      project,
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const driftedInspection = structuredClone(inspection);
+    driftedInspection.tables[0]!.columns.push({
+      name: "new_schema_field",
+      data_type: "text",
+      nullable: true,
+      generated: false,
+      ordinal_position: 99,
+      suggestions: {
+        tenant: false,
+        conflict: false,
+        sensitive: false,
+        immutable: false,
+        large_or_binary: false,
+      },
+    });
+    const drifted = buildAutoBoundary({
+      inspection: driftedInspection,
+      project,
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build: original });
+      await writeAutoBoundaryArtifacts({
+        projectRoot: root,
+        build: drifted,
+        force: true,
+        preserveReviewProgress: true,
+      });
+      const invalid = createBoundaryReviewProgress({
+        draft: original.exploration_boundary,
+        candidate: drifted.exploration_boundary,
+        confirmedDecisions: [],
+        actor: "local-boundary-library",
+        revision: 1,
+      });
+      await saveBoundaryReviewProgress(root, invalid);
+      await expect(readBoundaryReviewProgress(root, original.exploration_boundary))
+        .rejects.toThrow("different schema or role facts");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
 
   it("records a narrow schema-enum allowlist and disables value operations when none remain", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-enum-review-"));

@@ -10,7 +10,6 @@ import {
   buildAutoBoundary,
   explorationBoundaryCandidateDigest,
   loadActivatedExplorationBoundary,
-  loadAutoBoundaryReviewOverrides,
   loadStructuredProjectEvidence,
   reviewExplorationBoundaryCandidate,
   writeAutoBoundaryArtifacts,
@@ -26,11 +25,16 @@ import {
   applyManagedBoundaryReviewDecision,
   boundaryReviewDecisions,
   createBoundaryReviewProgress,
+  nativePolicyMigration,
   normalizeManagedBoundaryReviewDecision,
   readBoundaryReviewProgress,
   type BoundaryReviewProgress,
   type ManagedBoundaryReviewDecision,
 } from "./boundary-review-domain.js";
+import {
+  backupLegacyBoundaryReviewOverrides,
+  boundaryReviewOverridesForCandidate,
+} from "./boundary-review-policy.js";
 import { detectProjectContext } from "./project-detection.js";
 import { readGuidedOnboardingState } from "./guided-project.js";
 import { recommendedBoundaryReviewCandidate } from "./boundary-candidate.js";
@@ -396,11 +400,6 @@ export async function prepareBoundaryResourceReviewMutation(
   validateBoundaryRequestAgainstResource(request, reviewed);
   const previousBindings = reviewBindings(state);
   const managedDecisions = managedDecisionsForRequest(request);
-  let overrides = await loadAutoBoundaryReviewOverrides(projectRoot);
-  for (const decision of managedDecisions) {
-    overrides = applyManagedBoundaryReviewDecision(overrides, decision);
-  }
-
   const inspection = await schemaInspector({
     engine: state.lock.engine,
     databaseUrlEnv: state.lock.source_env,
@@ -410,6 +409,22 @@ export async function prepareBoundaryResourceReviewMutation(
   assertCurrentInspectedResource(inspection, request.resource_id);
   const project = await detectProjectContext(projectRoot);
   const evidence = await loadStructuredProjectEvidence(project);
+  const cleanBuild = buildReviewMutationBoundary({
+    inspection,
+    project,
+    evidence,
+    state,
+  });
+  let overrides = boundaryReviewOverridesForCandidate({
+    progress: state.progress,
+    baseline: cleanBuild.exploration_boundary,
+    candidate: state.candidate,
+    actor: request.actor,
+    now: request.decided_at,
+  });
+  for (const decision of managedDecisions) {
+    overrides = applyManagedBoundaryReviewDecision(overrides, decision);
+  }
   const build = buildAutoBoundary({
     inspection,
     project,
@@ -518,12 +533,6 @@ export async function prepareBoundaryReviewMutationBatch(
     );
   }
   const bindings = reviewBindings(state);
-  let overrides = await loadAutoBoundaryReviewOverrides(projectRoot);
-  for (const request of requests) {
-    for (const decision of managedDecisionsForRequest(request)) {
-      overrides = applyManagedBoundaryReviewDecision(overrides, decision);
-    }
-  }
   const inspection = await schemaInspector({
     engine: state.lock.engine,
     databaseUrlEnv: state.lock.source_env,
@@ -533,6 +542,24 @@ export async function prepareBoundaryReviewMutationBatch(
   for (const request of requests) assertCurrentInspectedResource(inspection, request.resource_id);
   const project = await detectProjectContext(projectRoot);
   const evidence = await loadStructuredProjectEvidence(project);
+  const cleanBuild = buildReviewMutationBoundary({
+    inspection,
+    project,
+    evidence,
+    state,
+  });
+  let overrides = boundaryReviewOverridesForCandidate({
+    progress: state.progress,
+    baseline: cleanBuild.exploration_boundary,
+    candidate: state.candidate,
+    actor: requests[0]!.actor,
+    now: requests[0]!.decided_at,
+  });
+  for (const request of requests) {
+    for (const decision of managedDecisionsForRequest(request)) {
+      overrides = applyManagedBoundaryReviewDecision(overrides, decision);
+    }
+  }
   const build = buildAutoBoundary({
     inspection,
     project,
@@ -658,6 +685,34 @@ export async function commitBoundaryResourceReviewMutation(
   };
 }
 
+function buildReviewMutationBoundary(input: {
+  inspection: SchemaInspection;
+  project: Awaited<ReturnType<typeof detectProjectContext>>;
+  evidence: Awaited<ReturnType<typeof loadStructuredProjectEvidence>>;
+  state: BoundaryReviewFiles;
+}): AutoBoundaryBuild {
+  return buildAutoBoundary({
+    inspection: input.inspection,
+    project: input.project,
+    parsedEvidence: input.evidence.parsed,
+    existingContracts: input.evidence.existingContracts,
+    sourceEnv: input.state.lock.source_env,
+    inspectedSchema: input.state.lock.inspected_schema,
+    deploymentProfile: input.state.candidate.deployment_profile,
+    ...(input.state.candidate.trusted_context.provider === "http_claims" ? {
+      httpClaims: {
+        tenantClaim: input.state.candidate.trusted_context.tenant_claim,
+        principalClaim: input.state.candidate.trusted_context.principal_claim,
+      },
+    } : {}),
+    ...(input.state.candidate.organization_scope ? {
+      singleOrganization: {
+        organizationId: input.state.candidate.organization_scope.organization_id,
+      },
+    } : {}),
+  });
+}
+
 export async function commitBoundaryReviewMutationBatch(
   projectRoot: string,
   preview: BoundaryReviewMutationBatchPreview,
@@ -711,10 +766,21 @@ async function commitPreparedBoundaryReviewMutation(input: {
     candidate: input.candidate,
     confirmedDecisions: retainedConfirmations,
     ...(input.previousProgress ? { previous: input.previousProgress } : {}),
+    reviewOverrides: input.build.overrides,
+    policyMigration: input.previousProgress?.policy_migration.source === "legacy_exact_boundary_revision"
+      ? {
+        status: "complete",
+        source: "legacy_exact_boundary_revision",
+        reason: "Reconstructed this boundary's policy from its exact saved revision against a clean inspected baseline.",
+      }
+      : nativePolicyMigration(),
     actor: input.actor,
     reason: input.reason,
     revision: input.bindings.review_revision + 1,
   });
+  if (!input.previousProgress || input.previousProgress.policy_migration.status === "review_required") {
+    await backupLegacyBoundaryReviewOverrides(input.projectRoot);
+  }
   await writeAutoBoundaryArtifacts({
     projectRoot: input.projectRoot,
     outputRoot: path.relative(input.projectRoot, input.boundaryRoot),
@@ -853,6 +919,19 @@ function buildReviewedCandidate(input: {
     }
   }
   candidate.pack.resources.sort((left, right) => left.id.localeCompare(right.id));
+  const previousResources = new Map(
+    input.previous.pack.resources.map((resource) => [resource.id, resource]),
+  );
+  for (const generatedResource of candidate.pack.resources) {
+    const previousResource = previousResources.get(generatedResource.id);
+    if (!previousResource) continue;
+    preserveBoundaryResourcePolicy(
+      generatedResource,
+      previousResource,
+      input.request,
+      generatedResource.id === input.request.resource_id,
+    );
+  }
   const resource = candidate.pack.resources.find(
     (item) => item.id === input.request.resource_id,
   );
@@ -907,6 +986,108 @@ function buildReviewedCandidate(input: {
   pruneRelationshipsOutsideBoundary(candidate);
   assertRequestedRelationshipsRetained(input.request, input.generated, candidate);
   return reviewExplorationBoundaryCandidate(input.generated, candidate).candidate;
+}
+
+type ReviewedBoundaryResource = ExplorationBoundaryDraft["pack"]["resources"][number];
+
+function preserveBoundaryResourcePolicy(
+  generated: ReviewedBoundaryResource,
+  previous: ReviewedBoundaryResource,
+  request: BoundaryResourceReviewRequest,
+  editedResource: boolean,
+): void {
+  const visibilityChanges = new Set([
+    ...(editedResource ? request.keep_out_fields ?? [] : []),
+    ...(editedResource ? request.withhold_from_model_fields ?? [] : []),
+    ...(editedResource ? request.allow_reviewed_fields ?? [] : []),
+  ]);
+  generated.selectable_fields = preserveReviewedList(
+    generated.selectable_fields,
+    previous.selectable_fields,
+    visibilityChanges,
+  );
+  generated.sortable_fields = preserveReviewedList(
+    generated.sortable_fields,
+    previous.sortable_fields,
+  );
+  generated.groupable_fields = preserveReviewedList(
+    generated.groupable_fields,
+    previous.groupable_fields,
+  );
+  generated.aggregate_measures = preserveReviewedList(
+    generated.aggregate_measures,
+    previous.aggregate_measures,
+  );
+  generated.count_distinct_fields = preserveReviewedList(
+    generated.count_distinct_fields,
+    previous.count_distinct_fields,
+  );
+  generated.filterable_fields = preserveReviewedMap(
+    generated.filterable_fields,
+    previous.filterable_fields,
+  );
+  generated.time_bucket_fields = preserveReviewedMap(
+    generated.time_bucket_fields,
+    previous.time_bucket_fields,
+  );
+
+  const previousRelationships = new Map(
+    previous.relationships.map((relationship) => [relationship.id, relationship]),
+  );
+  const requestedRelationships = new Set([
+    ...(editedResource ? request.relationship_ids ?? [] : []),
+    ...(editedResource && request.nullable_relationship
+      ? [request.nullable_relationship.relationship_id]
+      : []),
+  ]);
+  generated.relationships = generated.relationships
+    .filter((relationship) =>
+      previousRelationships.has(relationship.id)
+      || requestedRelationships.has(relationship.id)
+      || (request.include === true
+        && relationshipTouchesResource(relationship, request.resource_id)))
+    .map((relationship) => {
+      const prior = previousRelationships.get(relationship.id);
+      if (relationship.unmatched_rows === "review_required"
+        && (prior?.unmatched_rows === "exclude" || prior?.unmatched_rows === "keep_null")) {
+        return { ...relationship, unmatched_rows: prior.unmatched_rows };
+      }
+      return relationship;
+    });
+}
+
+function relationshipTouchesResource(
+  relationship: ReviewedBoundaryResource["relationships"][number],
+  resourceId: string,
+): boolean {
+  if (relationship.target_resource === resourceId) return true;
+  return (relationship.proof?.links ?? []).some((link) =>
+    link.source_resource === resourceId || link.target_resource === resourceId);
+}
+
+function preserveReviewedList(
+  generated: string[],
+  previous: string[],
+  explicitlyChanged: ReadonlySet<string> = new Set(),
+): string[] {
+  const previousSet = new Set(previous);
+  return generated.filter((value) =>
+    previousSet.has(value) || explicitlyChanged.has(value));
+}
+
+function preserveReviewedMap<T extends string>(
+  generated: Record<string, T[]>,
+  previous: Record<string, T[]>,
+): Record<string, T[]> {
+  const result: Record<string, T[]> = {};
+  for (const [field, generatedValues] of Object.entries(generated)) {
+    const previousValues = previous[field];
+    if (!previousValues) continue;
+    const previousSet = new Set(previousValues);
+    const retained = generatedValues.filter((value) => previousSet.has(value));
+    if (retained.length) result[field] = retained;
+  }
+  return result;
 }
 
 function preserveReviewedBudgets(

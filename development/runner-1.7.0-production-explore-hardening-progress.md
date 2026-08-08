@@ -1136,6 +1136,90 @@ Post-change gates:
 No package or Spec/DSL version changed. Nothing was merged, pushed, tagged,
 published, or released in this checkpoint.
 
+## Independent Boundary Policy And In-Shell Protect Recovery (2026-08-07)
+
+This unpublished 1.7.0 checkpoint removes project-global coupling between
+overlapping boundaries and keeps recoverable Protect mistakes inside the active
+Analytics shell. Runtime scope, model-facing tools, activation authority, and
+the source database are unchanged.
+
+Completed behavior:
+
+- Every saved boundary now has an immutable local `bnd_<id>` identity. Renaming
+  changes only the display name; it does not lose, transfer, or relabel the
+  boundary's policy.
+- Database facts remain shared and fingerprinted: schema, types, keys,
+  relationships, enum declarations, role/RLS posture, and structural proofs.
+  Human choices remain boundary-owned: selected tables and scope, field
+  exposure, enum subsets, operation grants, relationships, privacy thresholds,
+  budgets, and review provenance.
+- Managed CLI and Workbench edits, rescans, saved-boundary switching, and
+  lowered-cohort Protect provenance no longer read the project-global
+  `review-overrides.json` as current authority. A policy-neutral candidate over
+  the same inspected facts is persisted privately and used for independent new
+  boundaries and conservative drift rebases.
+- Two boundaries may contain the same table with different policies. Editing
+  one cannot alter the other's active revision, disabled candidate,
+  confirmations, model-facing fields, enums, cohorts, operations, or
+  relationships. A later unrelated edit also preserves prior operation and
+  relationship narrowing within the edited boundary.
+- Legacy review progress is mapped to a stable migration identity while its
+  exact saved boundary revision remains authoritative. Ambiguous project-wide
+  overrides are never assigned to a boundary. The old file is backed up once,
+  migration is shown in CLI and Workbench, and activation fails closed until an
+  operator edits that boundary or applies a Rescan that reconstructs its policy
+  from the exact revision and clean inspected baseline.
+- New overlapping boundaries start from schema-derived defaults, not from the
+  selected boundary's field visibility, enum, cohort, operation, or
+  relationship policy. There is no live link between boundary policies.
+- Enum review values now participate in the reviewed override authority digest;
+  review actor/reason provenance remains audited without changing authority when
+  the effective reviewed values are identical.
+- `/protect last as order_by_channel` now explains that a namespace is needed,
+  suggests `analytics.order_by_channel`, and accepts it only after an explicit
+  default-yes operator response. Invalid names, storage failures, and other
+  Protect command errors render inline, create no capability, and leave the Ask
+  session active for the next command.
+
+Regression coverage proves:
+
+- Boundary B can withhold a shared field, narrow its enum, change its cohort,
+  and remove a group operation without changing boundary A. A later privacy-only
+  edit in B does not restore that group operation. Renaming B preserves its ID
+  and exact policy.
+- A clean overlapping boundary does not inherit the selected boundary's policy.
+- Conflicting legacy global overrides do not alter the exact active revision;
+  ambiguous overlap is not assigned to either boundary; unresolved migration
+  cannot activate through either the CLI or Workbench; the Workbench returns a
+  fail-closed conflict instead of creating an active revision; and genuine
+  shared schema/role drift still rebases conservatively.
+- A conflicting regenerated draft cannot replace an exact legacy v2 candidate,
+  even before policy reconstruction. The saved revision remains authoritative
+  and disabled until its policy is isolated.
+- Table inclusion still stages only proven relationships that touch the newly
+  added table. Previously omitted unrelated relationships stay omitted.
+- Bare and invalid Protect names and thrown Protect callbacks return to `/help`
+  in the same shell and never reach the startup-failure path.
+
+Final verification on this worktree:
+
+- Canonical root gate: 90 test files passed, 2 database-gated files skipped;
+  1,446 tests passed and 9 skipped. TypeScript, trusted-core dependency,
+  license/content, human command-surface, DSL source-path, and Cursor package
+  checks all passed.
+- Live PostgreSQL gate: 9/9 tests passed, including durable production Explore
+  accounting and native Postgres enum inspection.
+- Secured PostgreSQL HTTP, secured MySQL HTTP, and packed npm-style production
+  HTTP gates passed. They retained exactly `app.describe_data` and
+  `app.explore_data`, per-principal budget isolation, direct and derived scope,
+  atomic concurrent reservation, connection/session ceilings, suppression,
+  single-organization principal binding, and no source mutation.
+- `git diff --check` is clean. Test-only Docker resources were removed after the
+  gates.
+
+No package or Spec/DSL version changed. Nothing was merged, pushed, tagged,
+published, or released in this checkpoint.
+
 ## First-Table Scope Guidance, Nested Completion, and SQL Framing (2026-08-07)
 
 This unpublished 1.7.0 checkpoint closes the remaining first-run boundary and
@@ -1262,3 +1346,7 @@ Post-change gates:
 
 No package or Spec/DSL version changed. Nothing was merged, pushed, tagged,
 published, or released in this checkpoint.
+
+Latest checkpoint: see `Independent Boundary Policy And In-Shell Protect
+Recovery (2026-08-07)` above. It is the current resume point and supersedes the
+earlier 1,445-test checkpoint for final-worktree verification.

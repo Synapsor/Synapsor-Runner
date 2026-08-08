@@ -1266,7 +1266,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		        ?boundaryLibrary.entries
 		        :[{name:candidate.pack.name,selected:true,active:activeBoundaryName===candidate.pack.name,matches_active_digest:activeBoundaryName===candidate.pack.name,table_count:candidate.pack.resources.length,outstanding_decisions:candidate.unresolved_decisions.length-confirmedDecisions.size}];
 		      const rows=entries.map(entry=>{
-		        const status=entry.active
+		        const status=entry.policy_review_required
+		          ?"Legacy policy review needed"
+		          :entry.active
 		          ?entry.matches_active_digest?"Active":"Active + draft edits"
 		          :entry.outstanding_decisions>0?"Disabled draft":"Reviewed · not active";
 		        const action=entry.selected
@@ -1278,9 +1280,11 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		        return '<tr class="'+(entry.selected?'selected-boundary':'')+'"><td><strong>'+esc(entry.name)+'</strong>'+(entry.selected?'<small>Selected for editing</small>':'')+'</td><td>'+esc(status)+'</td><td>'+esc(entry.table_count)+'</td><td>'+(entry.active?'<span class="badge good">Active Explore</span>':'<span class="badge">No authority</span>')+'</td><td><div class="actions boundary-row-actions">'+action+deletion+'</div></td></tr>';
 		      }).join("");
 			      const selectedEntry=entries.find(entry=>entry.name===boundaryLibrary.selected_name);
-			      const pendingBoundaryChange=Boolean(selectedEntry&&(!selectedEntry.active||!selectedEntry.matches_active_digest));
+			      const pendingBoundaryChange=Boolean(selectedEntry&&(selectedEntry.policy_review_required||!selectedEntry.active||!selectedEntry.matches_active_digest));
 			      const pendingBoundaryBanner=pendingBoundaryChange
-			        ?'<div class="band notice"><strong>1 pending boundary change is not active</strong><p>'+(selectedEntry.active?'Ask still uses the previous exact reviewed revision.':'This disabled boundary grants no Ask access yet.')+'</p><button id="review-pending-boundary" type="button">Review and activate now</button></div>'
+			        ?selectedEntry.policy_review_required
+			          ?'<div class="band notice"><strong>Legacy boundary policy needs review</strong><p>Runner preserved this boundary&apos;s exact revision and did not assign ambiguous project-wide settings to it. Open and save a reviewed setting, or Rescan, before activation.</p></div>'
+			          :'<div class="band notice"><strong>1 pending boundary change is not active</strong><p>'+(selectedEntry.active?'Ask still uses the previous exact reviewed revision.':'This disabled boundary grants no Ask access yet.')+'</p><button id="review-pending-boundary" type="button">Review and activate now</button></div>'
 			        :'';
 			      const lifecycleControls='<div class="actions"><button id="edit-boundary-tables" '+(pendingBoundaryChange?'class="secondary" ':'')+'type="button">Edit selected boundary</button><button id="new-boundary" class="secondary" type="button">New boundary</button>'+(selectedEntry?.active?'<button id="disable-active-boundary" class="quiet" type="button">Deactivate selected boundary</button>':'<button id="disable-active-boundary" class="quiet" type="button" disabled title="The selected boundary is not active.">Selected boundary inactive</button>')+'</div>';
 		      const rankedMinimum=candidate.budgets.max_groups;

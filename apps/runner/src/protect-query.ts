@@ -9,13 +9,13 @@ import type {
 } from "@synapsor/spec";
 import {
   deactivateExplorationBoundary,
-  loadAutoBoundaryReviewOverrides,
   loadActivatedExplorationBoundary,
   loadActivatedExplorationBoundaries,
   reviewedRankedGroupLimit,
   type ActivatedExplorationBoundary,
   type GenerationLock,
 } from "./auto-boundary.js";
+import { loadCompletedBoundaryReviewOverrides } from "./boundary-review-policy.js";
 import {
   listProtectedPlans,
   loadProtectedPlan,
@@ -1230,7 +1230,15 @@ async function reviewedMinimumCohortOverrideForResource(input: {
 }): Promise<ReviewedMinimumCohortAuthority | undefined> {
   const resource = resourceFor(input.boundary, input.resourceId);
   if (resource.minimum_cohort_overridden !== true) return undefined;
-  const overrides = await loadAutoBoundaryReviewOverrides(input.projectRoot);
+  const overrides = await loadCompletedBoundaryReviewOverrides({
+    projectRoot: input.projectRoot,
+    boundaryName: input.boundary.pack.name,
+  });
+  if (!overrides) {
+    throw new Error(
+      `Boundary ${input.boundary.pack.name} has legacy owner-review evidence that is not yet isolated from other boundaries. Open /access, review this boundary, and activate its disabled revision before protecting this lowered cohort threshold.`,
+    );
+  }
   const decision = overrides.resources[resource.id]?.minimum_cohort;
   if (!decision || decision.value !== resource.minimum_cohort_size) {
     throw new Error(

@@ -2,7 +2,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
+  emptyReviewOverrides,
   explorationBoundaryCandidateDigest,
+  generationLockSharedFactsDigest,
+  loadAutoBoundaryPolicyBaseline,
+  loadGenerationLockSnapshot,
   loadActivatedExplorationBoundaries,
   reviewExplorationBoundaryCandidate,
   type ActivatedExplorationBoundary,
@@ -11,6 +15,8 @@ import {
 import {
   boundaryReviewDecisions,
   createBoundaryReviewProgress,
+  legacyPolicyMigration,
+  normalizeStoredBoundaryReviewProgress,
   saveBoundaryReviewProgress,
   type BoundaryReviewProgress,
 } from "./boundary-review-domain.js";
@@ -33,6 +39,7 @@ export type BoundaryLibraryEntry = {
   table_count: number;
   candidate_digest: `sha256:${string}`;
   outstanding_decisions: number;
+  policy_review_required: boolean;
 };
 
 export type BoundaryLibrarySnapshot = {
@@ -82,14 +89,18 @@ export async function createSavedBoundary(input: BoundaryLibraryContext & {
   if (library.boundaries[input.name]) {
     throw new Error(`A saved boundary named ${input.name} already exists.`);
   }
-  const selectedResource = input.draft.pack.resources.find((resource) =>
+  const policyBaseline = await policyNeutralBoundaryForCurrentFacts(
+    input.projectRoot,
+    input.draft,
+  );
+  const selectedResource = policyBaseline.pack.resources.find((resource) =>
     resource.id === input.resourceId);
   if (!selectedResource) {
     throw new Error(
       `Starting table ${input.resourceId} is not an available generated boundary resource.`,
     );
   }
-  const candidate = structuredClone(input.draft);
+  const candidate = structuredClone(policyBaseline);
   const active = await readActiveBoundaryIdentities(input.projectRoot);
   const compatibleActive = findCompatibleActiveBoundary(input.draft, active);
   if (active.length && !compatibleActive) {
@@ -105,12 +116,13 @@ export async function createSavedBoundary(input: BoundaryLibraryContext & {
     ...structuredClone(selectedResource),
     relationships: [],
   }];
-  const reviewed = reviewExplorationBoundaryCandidate(input.draft, candidate).candidate;
+  const reviewed = reviewExplorationBoundaryCandidate(policyBaseline, candidate).candidate;
   const progress = createBoundaryReviewProgress({
     draft: input.draft,
     candidate: reviewed,
     confirmedDecisions: [],
     actor: input.actor,
+    reviewOverrides: emptyReviewOverrides(),
     reason: `Created disabled boundary ${input.name} with operator-selected starting table ${input.resourceId}.`,
     revision: 1,
   });
@@ -168,7 +180,12 @@ export async function switchSavedBoundary(input: BoundaryLibraryContext & {
   const library = await readOrCreateLibrary(input);
   const stored = library.boundaries[input.name];
   if (!stored) throw new Error(`Saved boundary ${input.name} was not found.`);
-  const progress = normalizeStoredProgress(input.draft, stored, input.name);
+  const progress = await normalizeStoredProgress(
+    input.projectRoot,
+    input.draft,
+    stored,
+    input.name,
+  );
   library.boundaries[input.name] = progress;
   library.selected_name = input.name;
   library.updated_at = new Date().toISOString();
@@ -238,7 +255,8 @@ export async function deleteSavedBoundary(input: BoundaryLibraryContext & {
   if (library.selected_name === input.name) {
     library.selected_name = Object.keys(library.boundaries).sort()[0]!;
   }
-  const progress = normalizeStoredProgress(
+  const progress = await normalizeStoredProgress(
+    input.projectRoot,
     input.draft,
     library.boundaries[library.selected_name]!,
     library.selected_name,
@@ -265,7 +283,7 @@ async function readOrCreateLibrary(input: BoundaryLibraryContext): Promise<Bound
   let library: BoundaryLibraryFile;
   try {
     const raw = JSON.parse(await fs.readFile(filePath, "utf8")) as unknown;
-    library = normalizeLibrary(raw, input.draft, current);
+    library = await normalizeLibrary(input.projectRoot, raw, input.draft, current);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     library = {
@@ -295,11 +313,12 @@ async function readOrCreateLibrary(input: BoundaryLibraryContext): Promise<Bound
   return library;
 }
 
-function normalizeLibrary(
+async function normalizeLibrary(
+  projectRoot: string,
   raw: unknown,
   draft: ExplorationBoundaryDraft,
   current: BoundaryReviewProgress,
-): BoundaryLibraryFile {
+): Promise<BoundaryLibraryFile> {
   if (!isRecord(raw)
     || raw.schema_version !== BOUNDARY_LIBRARY_VERSION
     || typeof raw.selected_name !== "string"
@@ -313,7 +332,7 @@ function normalizeLibrary(
     assertBoundaryName(name);
     boundaries[name] = name === current.candidate.pack.name
       ? current
-      : normalizeStoredProgress(draft, value, name);
+      : await normalizeStoredProgress(projectRoot, draft, value, name);
   }
   if (!boundaries[raw.selected_name]) {
     throw new Error("Saved boundary library does not contain its selected boundary.");
@@ -326,11 +345,12 @@ function normalizeLibrary(
   };
 }
 
-function normalizeStoredProgress(
+async function normalizeStoredProgress(
+  projectRoot: string,
   draft: ExplorationBoundaryDraft,
   raw: unknown,
   expectedName: string,
-): BoundaryReviewProgress {
+): Promise<BoundaryReviewProgress> {
   if (!isRecord(raw)
     || !isRecord(raw.candidate)
     || !isRecord(raw.candidate.pack)
@@ -345,24 +365,95 @@ function normalizeStoredProgress(
     throw new Error(`Saved boundary ${expectedName} has invalid review state.`);
   }
   const storedCandidate = raw.candidate as unknown as ExplorationBoundaryDraft;
-  const candidate = storedCandidate.generation_lock_fingerprint === draft.generation_lock_fingerprint
-    && storedCandidate.role_posture_fingerprint === draft.role_posture_fingerprint
-    ? reviewExplorationBoundaryCandidate(draft, storedCandidate).candidate
-    : rebaseDisabledBoundary(draft, storedCandidate, expectedName);
+  const policyBaseline = await optionalPolicyNeutralBoundaryForCurrentFacts(
+    projectRoot,
+    draft,
+  );
+  const sharedFactsStatus = await boundarySharedFactsStatus(
+    projectRoot,
+    storedCandidate,
+    draft,
+  );
+  const candidate = sharedFactsStatus === "changed" && policyBaseline
+    ? rebaseDisabledBoundary(policyBaseline, storedCandidate, expectedName)
+    : sharedFactsStatus === "unchanged"
+      && storedCandidate.generation_lock_fingerprint === draft.generation_lock_fingerprint
+      ? reviewExplorationBoundaryCandidate(draft, storedCandidate).candidate
+      : structuredClone(storedCandidate);
   if (candidate.pack.name !== expectedName) {
     throw new Error(`Saved boundary ${expectedName} has a mismatched internal name.`);
   }
+  const previous = normalizeStoredBoundaryReviewProgress(raw, candidate);
   return createBoundaryReviewProgress({
     draft,
     candidate,
     confirmedDecisions: (raw.confirmed_decisions as string[])
       .filter((decision) => candidate.unresolved_decisions.includes(decision)),
-    previous: raw as unknown as BoundaryReviewProgress,
+    previous,
     actor: "local-boundary-library",
     reason: "Restored an operator-selected saved boundary.",
     revision: Number(raw.revision),
     now: raw.updated_at,
   });
+}
+
+async function policyNeutralBoundaryForCurrentFacts(
+  projectRoot: string,
+  current: ExplorationBoundaryDraft,
+): Promise<ExplorationBoundaryDraft> {
+  const baseline = await optionalPolicyNeutralBoundaryForCurrentFacts(projectRoot, current);
+  if (!baseline) {
+    throw new Error(
+      "Creating an independent boundary requires a policy-neutral schema baseline. Run Rescan, then create the boundary again.",
+    );
+  }
+  return baseline;
+}
+
+async function optionalPolicyNeutralBoundaryForCurrentFacts(
+  projectRoot: string,
+  current: ExplorationBoundaryDraft,
+): Promise<ExplorationBoundaryDraft | undefined> {
+  try {
+    const baseline = await loadAutoBoundaryPolicyBaseline(projectRoot);
+    const currentLock = await loadGenerationLockSnapshot(
+      projectRoot,
+      current.generation_lock_fingerprint,
+    );
+    if (generationLockSharedFactsDigest(baseline.lock)
+      !== generationLockSharedFactsDigest(currentLock)) {
+      throw new Error(
+        "The saved policy-neutral schema baseline is stale. Run Rescan before changing saved boundaries.",
+      );
+    }
+    return baseline.boundary;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
+async function boundarySharedFactsStatus(
+  projectRoot: string,
+  stored: ExplorationBoundaryDraft,
+  current: ExplorationBoundaryDraft,
+): Promise<"unchanged" | "changed" | "unavailable"> {
+  if (stored.generation_lock_fingerprint === current.generation_lock_fingerprint) {
+    return "unchanged";
+  }
+  try {
+    const [storedLock, currentLock] = await Promise.all([
+      loadGenerationLockSnapshot(projectRoot, stored.generation_lock_fingerprint),
+      loadGenerationLockSnapshot(projectRoot, current.generation_lock_fingerprint),
+    ]);
+    return generationLockSharedFactsDigest(storedLock)
+      === generationLockSharedFactsDigest(currentLock)
+      ? "unchanged"
+      : "changed";
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "unavailable";
+    throw error;
+  }
 }
 
 function rebaseDisabledBoundary(
@@ -572,7 +663,9 @@ async function snapshot(
       table_count: progress.candidate.pack.resources.length,
       candidate_digest: explorationBoundaryCandidateDigest(progress.candidate),
       outstanding_decisions: progress.candidate.unresolved_decisions.length
-        - progress.confirmed_decisions.length,
+        - progress.confirmed_decisions.length
+        + (progress.policy_migration.status === "review_required" ? 1 : 0),
+      policy_review_required: progress.policy_migration.status === "review_required",
     });
   }
   return {
@@ -633,6 +726,8 @@ async function readActiveBoundaryProgress(
       .filter((decision) => decision.confirmed)
       .map((decision) => decision.decision),
     actor: active.activation.actor,
+    reviewOverrides: emptyReviewOverrides(),
+    policyMigration: legacyPolicyMigration(),
     reason: "Registered the current active Explore boundary in the local saved-boundary list.",
     revision: 1,
     now: active.activation.activated_at,

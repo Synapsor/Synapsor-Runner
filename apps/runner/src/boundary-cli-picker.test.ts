@@ -350,6 +350,41 @@ describe("boundary review terminal picker", () => {
     await expect(selected).resolves.toBeUndefined();
   });
 
+  it("explains an isolated legacy policy review without assigning global settings", async () => {
+    const { input, output } = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const resource = summary("public.orders", 0);
+    resource.active = true;
+    resource.active_boundary_name = "reviewed_staging";
+    const selected = session.chooseResource(
+      [resource],
+      {
+        confirmed_decisions: 6,
+        outstanding_decisions: 0,
+        outstanding_resource_decisions: 0,
+        outstanding_boundary_decisions: 0,
+        resources_requiring_signoff: 0,
+        boundaries: [{
+          name: "reviewed_staging",
+          selected: true,
+          active: true,
+          matches_active_digest: true,
+          table_count: 1,
+          outstanding_decisions: 1,
+          policy_review_required: true,
+        }],
+      },
+      { initialView: "access", startAtBoundaryList: true },
+    );
+    const first = stripAnsi(output.read()?.toString() ?? "");
+    expect(first).toContain("LEGACY BOUNDARY POLICY NEEDS REVIEW");
+    expect(first).toContain("preserved this boundary's exact revision");
+    expect(first).toContain("did not assign the old project-wide");
+    expect(first).toContain("settings to it");
+    await send(input, "q");
+    await expect(selected).resolves.toBeUndefined();
+  });
+
   it("starts with boundary tables and opens proven relationship candidates in place", async () => {
     const { input, output } = fakeTerminal();
     const session = createBoundaryReviewInteractiveSession(input, output);

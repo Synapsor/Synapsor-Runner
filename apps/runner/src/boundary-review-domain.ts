@@ -5,7 +5,11 @@ import { Buffer } from "node:buffer";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
   AUTO_BOUNDARY_OVERRIDES_VERSION,
+  emptyReviewOverrides,
   explorationBoundaryCandidateDigest,
+  generationLockSharedFactsDigest,
+  loadGenerationLockSnapshot,
+  normalizeAutoBoundaryReviewOverrides,
   reviewExplorationBoundaryCandidate,
   type AutoBoundaryReviewOverrides,
   type ExplorationBoundaryDraft,
@@ -15,6 +19,7 @@ import {
   type BoundaryReviewConfirmation,
   type BoundaryReviewDecision,
   type BoundaryReviewInvalidation,
+  type BoundaryReviewPolicyMigration,
   type BoundaryReviewProgressArtifact,
 } from "./boundary-review-progress-types.js";
 
@@ -29,8 +34,12 @@ export type {
   BoundaryReviewInvalidation,
 };
 const LEGACY_BOUNDARY_REVIEW_PROGRESS_VERSION = "synapsor.boundary-review-progress.v1";
+const LEGACY_BOUNDARY_REVIEW_PROGRESS_V2 = "synapsor.boundary-review-progress.v2";
 
-export type BoundaryReviewProgress = BoundaryReviewProgressArtifact<ExplorationBoundaryDraft>;
+export type BoundaryReviewProgress = BoundaryReviewProgressArtifact<
+  ExplorationBoundaryDraft,
+  AutoBoundaryReviewOverrides
+>;
 
 export type ManagedBoundaryReviewDecision =
   | {
@@ -261,6 +270,7 @@ export async function readBoundaryReviewProgress(
   if (raw === null) return undefined;
   if (!isRecord(raw)
     || (raw.schema_version !== BOUNDARY_REVIEW_PROGRESS_VERSION
+      && raw.schema_version !== LEGACY_BOUNDARY_REVIEW_PROGRESS_V2
       && raw.schema_version !== LEGACY_BOUNDARY_REVIEW_PROGRESS_VERSION)
     || !isRecord(raw.candidate)
     || !Array.isArray(raw.confirmed_decisions)
@@ -282,6 +292,9 @@ export async function readBoundaryReviewProgress(
           .filter((decision) => preview.candidate.unresolved_decisions.includes(decision)),
       ),
       actor: "legacy-workbench-review",
+      boundaryId: legacyBoundaryReviewId(preview.candidate),
+      reviewOverrides: emptyReviewOverrides(),
+      policyMigration: legacyPolicyMigration(),
       revision: 1,
       now: raw.updated_at,
     });
@@ -296,12 +309,46 @@ export async function readBoundaryReviewProgress(
   }
 
   const draftDigest = explorationBoundaryCandidateDigest(draft);
-  let candidate = draft;
-  if (raw.draft_digest === draftDigest) {
-    candidate = reviewExplorationBoundaryCandidate(
-      draft,
-      raw.candidate as unknown as ExplorationBoundaryDraft,
-    ).candidate;
+  const storedCandidate = raw.candidate as unknown as ExplorationBoundaryDraft;
+  let candidate = raw.schema_version === LEGACY_BOUNDARY_REVIEW_PROGRESS_V2
+    ? structuredClone(storedCandidate)
+    : draft;
+  if (raw.schema_version === LEGACY_BOUNDARY_REVIEW_PROGRESS_V2
+    && storedCandidate.generation_lock_fingerprint === draft.generation_lock_fingerprint) {
+    candidate = reviewExplorationBoundaryCandidate(draft, storedCandidate).candidate;
+  } else if (raw.draft_digest === draftDigest) {
+    if (storedCandidate.generation_lock_fingerprint === draft.generation_lock_fingerprint) {
+      candidate = reviewExplorationBoundaryCandidate(draft, storedCandidate).candidate;
+    } else if (raw.schema_version === BOUNDARY_REVIEW_PROGRESS_VERSION
+      && raw.candidate_digest === explorationBoundaryCandidateDigest(storedCandidate)) {
+      try {
+        const [storedLock, draftLock] = await Promise.all([
+          loadGenerationLockSnapshot(projectRoot, storedCandidate.generation_lock_fingerprint),
+          loadGenerationLockSnapshot(projectRoot, draft.generation_lock_fingerprint),
+        ]);
+        if (generationLockSharedFactsDigest(storedLock)
+          !== generationLockSharedFactsDigest(draftLock)) {
+          throw new Error(
+            "Saved boundary-review progress is bound to different schema or role facts; rescan that boundary before editing it.",
+          );
+        }
+      } catch (error) {
+        const migration = isRecord(raw.policy_migration)
+          ? normalizePolicyMigration(raw.policy_migration)
+          : undefined;
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT"
+          || migration?.status !== "review_required"
+          || migration.source !== "legacy_exact_boundary_revision") {
+          throw error;
+        }
+        // Legacy disabled boundaries may predate lock snapshots. Keep their
+        // exact authority disabled and require reconstruction; never rebase
+        // them through another boundary's policy-bound draft.
+      }
+      // Different boundaries may bind different human policy over these exact
+      // shared facts. Preserve the selected boundary's self-consistent revision.
+      candidate = storedCandidate;
+    }
   }
   const previous = normalizeStoredBoundaryReviewProgress(raw, candidate);
   return createBoundaryReviewProgress({
@@ -328,11 +375,46 @@ export function normalizePartialReviewDecisions(required: string[], confirmed: s
   return required.filter((decision) => confirmedSet.has(decision));
 }
 
+export function newBoundaryReviewId(): `bnd_${string}` {
+  return `bnd_${crypto.randomBytes(16).toString("hex")}`;
+}
+
+export function legacyBoundaryReviewId(
+  candidate: ExplorationBoundaryDraft,
+): `bnd_${string}` {
+  const digest = canonicalJsonDigest({
+    schema_version: "synapsor.boundary-review-legacy-id.v1",
+    source: candidate.source,
+    generation_lock_fingerprint: candidate.generation_lock_fingerprint,
+    boundary_name: candidate.pack.name,
+  }).slice("sha256:".length, "sha256:".length + 32);
+  return `bnd_${digest}`;
+}
+
+export function nativePolicyMigration(): BoundaryReviewPolicyMigration {
+  return {
+    status: "complete",
+    source: "native",
+    reason: "Review policy is stored with this immutable boundary identity.",
+  };
+}
+
+export function legacyPolicyMigration(): BoundaryReviewPolicyMigration {
+  return {
+    status: "review_required",
+    source: "legacy_exact_boundary_revision",
+    reason: "Legacy project-wide review inputs were not assigned to this boundary; its exact saved revision remains authoritative until policy is reconstructed from a clean inspection.",
+  };
+}
+
 export function createBoundaryReviewProgress(input: {
   draft: ExplorationBoundaryDraft;
   candidate: ExplorationBoundaryDraft;
   confirmedDecisions: string[];
   previous?: BoundaryReviewProgress;
+  boundaryId?: `bnd_${string}`;
+  reviewOverrides?: AutoBoundaryReviewOverrides;
+  policyMigration?: BoundaryReviewPolicyMigration;
   actor?: string;
   revision: number;
   now?: string;
@@ -382,6 +464,17 @@ export function createBoundaryReviewProgress(input: {
     });
   return {
     schema_version: BOUNDARY_REVIEW_PROGRESS_VERSION,
+    boundary_id: input.boundaryId
+      ?? input.previous?.boundary_id
+      ?? newBoundaryReviewId(),
+    review_overrides: normalizeAutoBoundaryReviewOverrides(
+      input.reviewOverrides
+        ?? input.previous?.review_overrides
+        ?? emptyReviewOverrides(),
+    ),
+    policy_migration: input.policyMigration
+      ?? input.previous?.policy_migration
+      ?? nativePolicyMigration(),
     revision: input.revision,
     draft_digest: explorationBoundaryCandidateDigest(input.draft),
     candidate: input.candidate,
@@ -451,6 +544,7 @@ export async function saveInstantBoundaryEditBaseline(input: {
 export function reconcileBoundaryReviewProgress(
   previous: BoundaryReviewProgress | undefined,
   draft: ExplorationBoundaryDraft,
+  reviewOverrides?: AutoBoundaryReviewOverrides,
 ): BoundaryReviewProgress | undefined {
   if (!previous) return undefined;
   const nextDecisions = boundaryReviewDecisions(draft);
@@ -463,6 +557,16 @@ export function reconcileBoundaryReviewProgress(
     candidate: draft,
     confirmedDecisions,
     previous,
+    ...(reviewOverrides ? {
+      reviewOverrides,
+      policyMigration: previous.policy_migration.source === "legacy_exact_boundary_revision"
+        ? {
+          status: "complete",
+          source: "legacy_exact_boundary_revision",
+          reason: "Reconstructed this boundary's policy from its exact saved revision during schema rescan.",
+        }
+        : nativePolicyMigration(),
+    } : {}),
     actor: "local-workbench-review",
     revision: previous.revision + 1,
   });
@@ -628,10 +732,20 @@ export function boundaryReviewDecisions(candidate: ExplorationBoundaryDraft): Bo
   });
 }
 
-function normalizeStoredBoundaryReviewProgress(
+export function normalizeStoredBoundaryReviewProgress(
   raw: JsonRecord,
   candidate: ExplorationBoundaryDraft,
 ): BoundaryReviewProgress {
+  const currentVersion = raw.schema_version === BOUNDARY_REVIEW_PROGRESS_VERSION;
+  const boundaryId = currentVersion
+    ? normalizeBoundaryReviewId(raw.boundary_id)
+    : legacyBoundaryReviewId(candidate);
+  const reviewOverrides = currentVersion
+    ? normalizeAutoBoundaryReviewOverrides(raw.review_overrides)
+    : emptyReviewOverrides();
+  const policyMigration = currentVersion
+    ? normalizePolicyMigration(raw.policy_migration)
+    : legacyPolicyMigration();
   const decisions = boundaryReviewDecisions(candidate);
   const decisionById = new Map(decisions.map((decision) => [decision.id, decision]));
   const confirmations: BoundaryReviewConfirmation[] = [];
@@ -678,6 +792,9 @@ function normalizeStoredBoundaryReviewProgress(
     });
   return {
     schema_version: BOUNDARY_REVIEW_PROGRESS_VERSION,
+    boundary_id: boundaryId,
+    review_overrides: reviewOverrides,
+    policy_migration: policyMigration,
     revision: raw.revision as number,
     draft_digest: raw.draft_digest as `sha256:${string}`,
     candidate,
@@ -688,6 +805,29 @@ function normalizeStoredBoundaryReviewProgress(
     confirmations,
     invalidated_decisions: invalidatedDecisions,
     updated_at: raw.updated_at as string,
+  };
+}
+
+function normalizeBoundaryReviewId(value: unknown): `bnd_${string}` {
+  if (typeof value !== "string" || !/^bnd_[a-f0-9]{32}$/.test(value)) {
+    throw new Error("Saved boundary-review progress has an invalid immutable boundary id.");
+  }
+  return value as `bnd_${string}`;
+}
+
+function normalizePolicyMigration(value: unknown): BoundaryReviewPolicyMigration {
+  if (!isRecord(value)
+    || (value.status !== "complete" && value.status !== "review_required")
+    || (value.source !== "native" && value.source !== "legacy_exact_boundary_revision")
+    || typeof value.reason !== "string"
+    || !value.reason.trim()
+    || value.reason.length > 500) {
+    throw new Error("Saved boundary-review progress has invalid policy migration state.");
+  }
+  return {
+    status: value.status,
+    source: value.source,
+    reason: value.reason,
   };
 }
 

@@ -61,6 +61,7 @@ export type BoundaryReviewOverview = {
     matches_active_digest: boolean;
     table_count: number;
     outstanding_decisions: number;
+    policy_review_required?: boolean;
   }>;
 };
 
@@ -502,7 +503,9 @@ async function chooseResource(
         selectedBoundary = Math.min(selectedBoundary, boundaryEntries.length - 1);
         const highlightedBoundary = boundaryEntries[selectedBoundary]!;
         const selectedBoundaryHasPendingChange = highlightedBoundary.selected
-          && (!highlightedBoundary.active || !highlightedBoundary.matches_active_digest);
+          && (highlightedBoundary.policy_review_required
+            || !highlightedBoundary.active
+            || !highlightedBoundary.matches_active_digest);
         if (focusedAccess && !activeResources.length && boundaryEntries.length === 1) {
           render([
             theme.title("YOUR DATA BOUNDARY"),
@@ -561,7 +564,9 @@ async function chooseResource(
         const rows = boundaryEntries.map((entry, index) => {
           const isCurrent = entry.selected;
           const outstanding = isCurrent
-            ? (reviewLeft === "Complete" ? 0 : entry.outstanding_decisions)
+            ? (reviewLeft === "Complete"
+              ? (entry.policy_review_required ? 1 : 0)
+              : entry.outstanding_decisions)
             : entry.outstanding_decisions;
           const status = entry.active
             ? (entry.matches_active_digest ? "ACTIVE" : "ACTIVE + DRAFT EDITS")
@@ -587,8 +592,15 @@ async function chooseResource(
           ...(selectedBoundaryHasPendingChange
             ? [
               "",
-              theme.warning("1 PENDING BOUNDARY CHANGE IS NOT ACTIVE"),
-              theme.bold(`${theme.key("C")} reviews and activates the exact disabled update.`),
+              theme.warning(highlightedBoundary.policy_review_required
+                ? "LEGACY BOUNDARY POLICY NEEDS REVIEW"
+                : "1 PENDING BOUNDARY CHANGE IS NOT ACTIVE"),
+              ...(highlightedBoundary.policy_review_required
+                ? [
+                  "Runner preserved this boundary's exact revision and did not assign the old project-wide settings to it.",
+                  theme.bold("Open this boundary and save a reviewed setting, or Rescan, to isolate its policy before activation."),
+                ]
+                : [theme.bold(`${theme.key("C")} reviews and activates the exact disabled update.`)]),
             ]
             : []),
           "",
