@@ -40,6 +40,30 @@ The claims have two distinct jobs:
 JWT values never become MCP tool arguments. Query strings, arbitrary headers,
 MCP metadata, prompts, and model output cannot replace them.
 
+## Reviewed Analytics Parity
+
+Production HTTP uses the same validator, compiler, activated boundary, and
+two-tool schemas as local Explore. Reviewed dispersion, missing-data measures,
+calendar groupings, named ratios, numeric bands, post-suppression running/lag/
+rank/moving-average/share operations, and safe child-count measures therefore
+behave identically. Production additionally requires the verified principal,
+per-principal and tenant budgets, rate limits, atomic reservations, and secured
+transport described below.
+
+Safe child counts fix one reviewed child resource and one catalog-proven,
+non-null many-to-one child-to-parent relationship. The generated SQL is a
+correlated subaggregate, never a raw one-to-many join. Runner independently
+injects the verified tenant and any reviewed principal predicate into both the
+parent query and child subquery, rechecks every participating resource and scope
+dependency against the generation lock, and releases only parent cohorts of at
+least five. A model cannot provide the child table, key, predicate, or formula.
+
+The 1.7.0 production gates execute the expanded grammar on PostgreSQL 16 and
+MySQL 8. These are the documented tested server lines. Fixed post-suppression
+operations run in Runner rather than database window SQL, so their behavior is
+identical across those engines. No compatibility claim is made here for older
+database releases.
+
 ## 1. Create Separate Production Authority
 
 Use the same read-only, non-owner database credential that production Explore

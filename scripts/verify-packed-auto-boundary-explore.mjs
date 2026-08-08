@@ -668,7 +668,7 @@ try {
       [{ ...goldenPlan, max_ranked_groups: 10_000 }, "ranked candidate-limit override"],
       [{ ...goldenPlan, measures: [...goldenPlan.measures, { function: "count" }] }, "measure overflow"],
       [{ ...goldenPlan, dimensions: [...goldenPlan.dimensions, { field: "churned_at" }] }, "dimension overflow"],
-      [{ ...goldenPlan, time_bucket: { field: "churned_at", bucket: "quarter" } }, "bucket overflow"],
+      [{ ...goldenPlan, time_bucket: { field: "churned_at", bucket: "minute" } }, "unreviewed time bucket"],
       [{
         ...goldenPlan,
         comparison: {

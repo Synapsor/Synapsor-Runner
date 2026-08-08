@@ -15,6 +15,8 @@ import {
   activateExplorationBoundary,
   explorationBoundaryCandidateDigest,
   loadActivatedExplorationBoundary,
+  loadActivatedExplorationBoundaries,
+  resolveReviewedChildCountLink,
   reviewExplorationBoundaryCandidate,
   type ExplorationDerivedBaseMeasure,
   type ExplorationBoundaryDraft,
@@ -380,6 +382,7 @@ export async function boundaryReviewCommand(
 export async function boundaryDisableCommand(
   args: string[],
   interactiveSession?: BoundaryReviewInteractiveSession,
+  options: { keepAccessOpen?: boolean } = {},
 ): Promise<number> {
   assertKnownOptions(
     args,
@@ -418,19 +421,18 @@ export async function boundaryDisableCommand(
     || "local-operator";
   const suppliedConfirmation = optionalArg(args, "--confirm")?.trim();
   let confirmed = args.includes("--yes") || suppliedConfirmation === expectedConfirmation;
-  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+  if (!confirmed && interactiveSession) {
+    confirmed = await interactiveSession.confirm(
+      `Disable Scoped Explore boundary "${active.pack.name}"? ` +
+      "The disabled next boundary and protected capabilities stay intact.",
+    ) === true;
+  } else if (!process.stdin.isTTY || !process.stdout.isTTY) {
     if (!confirmed) {
       throw new Error(
         `Noninteractive boundary disable requires --confirm ${shellQuote(expectedConfirmation)}.`,
       );
     }
   } else if (!confirmed) {
-    if (interactiveSession) {
-      confirmed = await interactiveSession.confirm(
-        `Disable Scoped Explore boundary "${active.pack.name}"? ` +
-        "The disabled next boundary and protected capabilities stay intact.",
-      ) === true;
-    } else {
       const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
       try {
         const answer = (await rl.question(
@@ -441,7 +443,6 @@ export async function boundaryDisableCommand(
       } finally {
         rl.close();
       }
-    }
   }
   if (!confirmed) {
     process.stdout.write("Scoped Explore remains active. Nothing changed.\n");
@@ -467,7 +468,9 @@ export async function boundaryDisableCommand(
     protected_capabilities_changed: false,
     review_state_changed: false,
     source_database_changed: false,
-    next_action: `${cliCommandName()} boundary review --project-root ${shellQuote(displayPath(projectRoot))}`,
+    next_action: options.keepAccessOpen
+      ? "Continue in /access."
+      : `${cliCommandName()} boundary review --project-root ${shellQuote(displayPath(projectRoot))}`,
   };
   if (args.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
   else process.stdout.write([
@@ -475,7 +478,7 @@ export async function boundaryDisableCommand(
     `Disabled authority: ${payload.disabled_digest}`,
     "Preserved: disabled next boundary, review decisions, protected capabilities, evidence, and ledger.",
     "Source database changed: no.",
-    `Next: ${payload.next_action}`,
+    options.keepAccessOpen ? payload.next_action : `Next: ${payload.next_action}`,
     "",
   ].join("\n"));
   return 0;
@@ -942,6 +945,18 @@ async function interactiveBoundaryReviewLoop(input: {
 }): Promise<number> {
   let startAtBoundaryList = input.startAtBoundaryList;
   let selectedResourceId: string | undefined;
+  let deferredActivationHandoff: Parameters<BoundaryActivationHandoff>[0] | undefined;
+  const accessActivationInput = {
+    ...input,
+    ...(input.activationHandoff
+      ? {
+          activationHandoff: async (handoffInput: Parameters<BoundaryActivationHandoff>[0]) => {
+            deferredActivationHandoff = handoffInput;
+            return 0;
+          },
+        }
+      : {}),
+  };
   while (true) {
     let context = await loadBoundaryReviewContext(input.projectRoot);
     const boundaryLibrary = await synchronizeBoundaryLibrary({
@@ -975,6 +990,9 @@ async function interactiveBoundaryReviewLoop(input: {
             `Resume: ${cliCommandName()} start --from-env ${context.lock.source_env} --cli`,
             "",
           ].join("\n"));
+      if (deferredActivationHandoff && input.activationHandoff) {
+        return input.activationHandoff(deferredActivationHandoff);
+      }
       return 0;
     }
     if (selected.action === "rename") {
@@ -1003,7 +1021,7 @@ async function interactiveBoundaryReviewLoop(input: {
       });
       if (result === "review") {
         if (input.initialView === "access") {
-          const activationResult = await confirmActivateAndKeepAccessOpen(input);
+          const activationResult = await confirmActivateAndKeepAccessOpen(accessActivationInput);
           if (activationResult !== 0) return activationResult;
         }
         continue;
@@ -1137,7 +1155,7 @@ async function interactiveBoundaryReviewLoop(input: {
         focusedAccess: true,
       });
       if (editResult === "review") {
-        const activationResult = await confirmActivateAndKeepAccessOpen(input);
+        const activationResult = await confirmActivateAndKeepAccessOpen(accessActivationInput);
         if (activationResult !== 0) return activationResult;
         continue;
       }
@@ -1184,7 +1202,7 @@ async function interactiveBoundaryReviewLoop(input: {
     }
     if (selected.action === "confirm") {
       if (input.initialView === "access") {
-        const activationResult = await confirmActivateAndKeepAccessOpen(input);
+        const activationResult = await confirmActivateAndKeepAccessOpen(accessActivationInput);
         if (activationResult !== 0) return activationResult;
         continue;
       }
@@ -1209,10 +1227,24 @@ async function interactiveBoundaryReviewLoop(input: {
       return 0;
     }
     if (selected.action === "disable") {
-      return boundaryDisableCommand(
+      const result = await boundaryDisableCommand(
         ["--project-root", input.projectRoot, "--name", selected.boundary_name],
         input.session,
+        { keepAccessOpen: input.initialView === "access" },
       );
+      if (result !== 0 || input.initialView !== "access") return result;
+      const remaining = await loadActivatedExplorationBoundaries(input.projectRoot).catch(
+        (error: unknown) => {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+          throw error;
+        },
+      );
+      process.stdout.write(remaining.length
+        ? `You are still in /access. Ask will use ${remaining.length} remaining active ${remaining.length === 1 ? "boundary" : "boundaries"} when you leave.\n\n`
+        : "No active boundary. Stay in /access and highlight a reviewed boundary, then press C to enable Ask.\n\n");
+      deferredActivationHandoff = undefined;
+      startAtBoundaryList = true;
+      continue;
     }
     if (!("resource_id" in selected)) {
       throw new Error("Boundary review returned an unsupported interactive action.");
@@ -1234,7 +1266,7 @@ async function interactiveBoundaryReviewLoop(input: {
       });
       if (result === "review") {
         if (input.initialView === "access") {
-          const activationResult = await confirmActivateAndKeepAccessOpen(input);
+          const activationResult = await confirmActivateAndKeepAccessOpen(accessActivationInput);
           if (activationResult !== 0) return activationResult;
         }
         continue;
@@ -1271,7 +1303,7 @@ async function interactiveBoundaryReviewLoop(input: {
       });
       if (result === "review") {
         if (input.initialView === "access") {
-          const activationResult = await confirmActivateAndKeepAccessOpen(input);
+          const activationResult = await confirmActivateAndKeepAccessOpen(accessActivationInput);
           if (activationResult !== 0) return activationResult;
         }
         continue;
@@ -1300,7 +1332,7 @@ async function interactiveBoundaryReviewLoop(input: {
     });
     if (result === "review") {
       if (input.initialView === "access") {
-        const activationResult = await confirmActivateAndKeepAccessOpen(input);
+        const activationResult = await confirmActivateAndKeepAccessOpen(accessActivationInput);
         if (activationResult !== 0) return activationResult;
       }
       continue;
@@ -1404,10 +1436,11 @@ async function interactiveReviewedAnalyticsReview(input: {
     "2  Remove a numeric band",
     "3  Add a named ratio or per-unit metric",
     "4  Add a post-suppression calculation",
-    "5  Remove a named reviewed metric",
+    "5  Add a safe child-count metric",
+    "6  Remove a named reviewed metric",
     "",
   ].join("\n"));
-  const entered = await input.session.promptText("Choose 1-5; Esc returns without changes");
+  const entered = await input.session.promptText("Choose 1-6; Esc returns without changes");
   if (entered === undefined || !entered.trim()) {
     process.stdout.write("Returned to boundary tables. No analytics setting changed.\n\n");
     return 0;
@@ -1426,9 +1459,12 @@ async function interactiveReviewedAnalyticsReview(input: {
       return addReviewedPostAggregateMeasure(input, context.candidate, resource);
     }
     if (entered.trim() === "5") {
+      return addReviewedChildCountMeasure(input, context.candidate, resource);
+    }
+    if (entered.trim() === "6") {
       return removeReviewedDerivedMeasure(input, resource);
     }
-    process.stdout.write("Choose 1, 2, 3, 4, or 5. No analytics setting changed.\n\n");
+    process.stdout.write("Choose a number from 1 through 6. No analytics setting changed.\n\n");
     return 0;
   } catch (error) {
     process.stdout.write([
@@ -1728,6 +1764,116 @@ async function addReviewedPostAggregateMeasure(
     "",
   ].join("\n"));
   return 0;
+}
+
+type ReviewedChildCountChoice = {
+  childResource: string;
+  relationship: string;
+  label: string;
+};
+
+async function addReviewedChildCountMeasure(
+  input: Parameters<typeof interactiveReviewedAnalyticsReview>[0],
+  boundary: ExplorationBoundaryDraft,
+  resource: ExplorationBoundaryDraft["pack"]["resources"][number],
+): Promise<number> {
+  const choices = reviewedChildCountChoices(boundary, resource);
+  if (!choices.length) {
+    process.stdout.write([
+      "No safe child-count path is available for this table.",
+      "Add and review a child table with one non-null many-to-one foreign key into this table, then return here.",
+      "No change was made.",
+      "",
+    ].join("\n"));
+    return 0;
+  }
+  process.stdout.write([
+    "Choose the reviewed child relationship. Runner counts scoped child rows in a correlated subaggregate; it never performs a raw one-to-many join:",
+    ...choices.map((item, index) => `  ${index + 1}  ${item.label}`),
+    "",
+  ].join("\n"));
+  const selected = await chooseNumberedReviewOption(input.session, "Child relationship number", choices);
+  if (!selected) return cancelledAnalyticsEdit();
+  process.stdout.write([
+    "Choose the fixed result:",
+    "  1  Total child rows across each released parent cohort",
+    "  2  Average child rows per parent in each released cohort",
+    "",
+  ].join("\n"));
+  const shapeInput = await input.session.promptText("Result number [1]");
+  if (shapeInput === undefined) return cancelledAnalyticsEdit();
+  const shapeChoice = shapeInput.trim() || "1";
+  if (shapeChoice !== "1" && shapeChoice !== "2") throw new Error("Choose 1 for total or 2 for average.");
+  const shape = shapeChoice === "1" ? "child_count_total" : "child_count_average";
+  const childName = selected.childResource.split(".").pop() ?? selected.childResource;
+  const suggestedName = reviewedAnalyticsIdentifier(
+    shape === "child_count_total" ? `${childName}_count` : `average_${childName}_per_parent`,
+  );
+  const nameInput = await input.session.promptText(`Saved metric name [${suggestedName}]`);
+  if (nameInput === undefined) return cancelledAnalyticsEdit();
+  const name = nameInput.trim() || suggestedName;
+  const suggestedLabel = humanReviewedAnalyticsLabel(name);
+  const labelInput = await input.session.promptText(`Plain-language label [${suggestedLabel}]`);
+  if (labelInput === undefined) return cancelledAnalyticsEdit();
+  const reason = await requiredReviewedAnalyticsReason(input.session);
+  if (reason === undefined) return cancelledAnalyticsEdit();
+  const preview = await prepareBoundaryResourceReviewMutation(input.projectRoot, {
+    resource_id: input.resourceId,
+    derived_measure: {
+      name,
+      label: labelInput.trim() || suggestedLabel,
+      shape,
+      child_resource: selected.childResource,
+      relationship: selected.relationship,
+    },
+    actor: localInteractiveActor(),
+    reason,
+  }, input.schemaInspector);
+  const committed = await commitBoundaryResourceReviewMutation(input.projectRoot, preview);
+  process.stdout.write([
+    `Saved reviewed child-count metric ${name} for ${input.resourceId} in disabled boundary revision ${committed.review_revision}.`,
+    `Path: ${selected.label}. Child rows stay scoped; release requires at least 5 reviewed parent contributors.`,
+    "The AI may select only this saved name. Press C in /access to review and activate this exact boundary revision.",
+    "",
+  ].join("\n"));
+  return 0;
+}
+
+function reviewedChildCountChoices(
+  boundary: ExplorationBoundaryDraft,
+  root: ExplorationBoundaryDraft["pack"]["resources"][number],
+): ReviewedChildCountChoice[] {
+  const choices: ReviewedChildCountChoice[] = [];
+  for (const child of boundary.pack.resources) {
+    if (child.id === root.id) continue;
+    const relationshipIds = new Set([
+      ...child.relationships
+        .filter((relationship) => relationship.target_resource === root.id && (relationship.path_depth ?? 1) === 1)
+        .map((relationship) => relationship.id),
+      ...[child.tenant_scope, child.principal_scope]
+        .filter((scope) => scope?.ancestor_resource === root.id && scope.proof.links.length === 1)
+        .map((scope) => scope!.path_id),
+    ]);
+    for (const relationship of relationshipIds) {
+      try {
+        const reviewed = resolveReviewedChildCountLink(root.id, {
+          name: "candidate_child_count",
+          label: "Candidate child count",
+          shape: "child_count_total",
+          child_resource: child.id,
+          relationship,
+        }, boundary.pack.resources, Boolean(boundary.organization_scope));
+        choices.push({
+          childResource: child.id,
+          relationship,
+          label: `${child.id}.${reviewed.link.source_columns.join(",")} -> ${root.id}.${reviewed.link.target_columns.join(",")} (${relationship})`,
+        });
+      } catch {
+        // Only catalog-proven, currently valid paths are offered.
+      }
+    }
+  }
+  return choices.sort((left, right) => left.label.localeCompare(right.label));
 }
 
 function reviewedAnalyticsFieldChoices(
@@ -2675,6 +2821,24 @@ async function interactiveBoundaryResourceReview(input: {
   });
   if (selected === "back") return "back";
   if (selected === "privacy") return interactiveMinimumCohortReview(input);
+  if (isPrincipalFieldTierAction(selected)) {
+    const principalResult = await interactiveBoundaryPrincipalReview({
+      ...input,
+      stagedTiers: selected.tiers,
+    });
+    if (principalResult === "saved") {
+      const updatedView = await inspectBoundaryResourceReview(input.projectRoot, input.resourceId);
+      return interactiveBoundaryResourceReview({
+        ...input,
+        view: updatedView,
+        initialTiers: selected.tiers,
+      });
+    }
+    if (principalResult === "columns") {
+      return interactiveBoundaryResourceReview({ ...input, initialTiers: selected.tiers });
+    }
+    return principalResult;
+  }
   if (isEnumFieldTierAction(selected)) {
     const enumResult = await interactiveBoundaryEnumReview({
       ...input,
@@ -2883,6 +3047,124 @@ function isEnumFieldTierAction(value: unknown): value is {
     && Boolean((value as { tiers?: unknown }).tiers)
     && typeof (value as { tiers?: unknown }).tiers === "object"
     && !Array.isArray((value as { tiers?: unknown }).tiers);
+}
+
+function isPrincipalFieldTierAction(value: unknown): value is {
+  action: "principal";
+  tiers: Record<string, BoundaryFieldTier>;
+} {
+  return Boolean(value)
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && (value as { action?: unknown }).action === "principal"
+    && Boolean((value as { tiers?: unknown }).tiers)
+    && typeof (value as { tiers?: unknown }).tiers === "object"
+    && !Array.isArray((value as { tiers?: unknown }).tiers);
+}
+
+async function interactiveBoundaryPrincipalReview(input: {
+  projectRoot: string;
+  resourceId: string;
+  view: BoundaryResourceReviewView;
+  schemaInspector: typeof inspectDatabase;
+  session: BoundaryReviewInteractiveSession;
+  focusedAccess?: boolean;
+  stagedTiers: Record<string, BoundaryFieldTier>;
+}): Promise<number | "columns" | "saved"> {
+  const candidate = input.view.candidate ?? input.view.generated_candidate;
+  if (!candidate) return "columns";
+  const direct = input.view.fields
+    .filter((field) => field.nullable === false && !/(?:bytea|blob|binary|varbinary|image)/i.test(field.data_type))
+    .map((field) => ({
+      kind: "direct" as const,
+      value: field.name,
+      label: `Direct column ${field.name}`,
+    }));
+  const derived = (input.view.derived_principal_scope?.candidates ?? []).map((scope) => ({
+    kind: "derived" as const,
+    value: scope.path_id,
+    label: `Mandatory path ${formatDerivedScopePath(scope)}`,
+  }));
+  const options = [
+    { kind: "none" as const, value: "", label: "No per-user row limit" },
+    ...direct,
+    ...derived,
+  ];
+  const currentIndex = Math.max(0, options.findIndex((option) =>
+    (option.kind === "direct" && option.value === candidate.principal_key)
+    || (option.kind === "derived" && option.value === candidate.principal_scope?.path_id)
+    || (option.kind === "none" && !candidate.principal_key && !candidate.principal_scope)));
+  process.stdout.write([
+    `USER/OWNER ROW LIMIT - ${input.resourceId}`,
+    "Runner binds this value from trusted application context. The AI never supplies it.",
+    "Choose one reviewed column/path, or explicitly keep no per-user row limit:",
+    ...options.map((option, index) =>
+      `  ${index + 1}  ${option.label}${index === currentIndex ? " [current]" : ""}`),
+    "",
+  ].join("\n"));
+  const selectedText = await input.session.promptText(`Choice number [${currentIndex + 1}]`);
+  if (selectedText === undefined) {
+    process.stdout.write("Cancelled - no user/owner row-limit change was made.\n\n");
+    return "columns";
+  }
+  const selectedIndex = Number(selectedText.trim() || String(currentIndex + 1)) - 1;
+  const selected = options[selectedIndex];
+  if (!selected || !Number.isSafeInteger(selectedIndex)) {
+    process.stdout.write("Rejected: choose one of the listed numbers; no change was made.\n\n");
+    return "columns";
+  }
+  if (selectedIndex === currentIndex) {
+    process.stdout.write("Unchanged: this table already uses that user/owner row limit.\n\n");
+    return "columns";
+  }
+  let reason: string | undefined;
+  while (!reason) {
+    const entered = await input.session.promptText(
+      "Required reason for this trusted user/owner row-limit decision",
+    );
+    if (entered === undefined) {
+      process.stdout.write("Cancelled - no user/owner row-limit change was made.\n\n");
+      return "columns";
+    }
+    reason = entered.trim();
+    if (!reason) {
+      process.stdout.write("Rejected: a concrete reason is required; no change was made. Enter it now, or press Esc to cancel.\n");
+    }
+  }
+  const actor = localInteractiveActor();
+  const request: BoundaryResourceReviewRequest = {
+    resource_id: input.resourceId,
+    ...(selected.kind === "direct"
+      ? { principal_key: selected.value }
+      : selected.kind === "derived"
+        ? { principal_scope_path: selected.value }
+        : { principal_key: null, principal_scope_path: null }),
+    actor,
+    reason,
+  };
+  try {
+    const preview = await prepareBoundaryResourceReviewMutation(
+      input.projectRoot,
+      request,
+      input.schemaInspector,
+    );
+    const committed = await commitBoundaryResourceReviewMutation(input.projectRoot, preview);
+    process.stdout.write([
+      `Saved: ${input.resourceId} user/owner row limit -> ${selected.label}.`,
+      `Actor: ${actor}; reason: ${JSON.stringify(reason)}.`,
+      `Disabled boundary revision ${committed.review_revision}; agent authority is unchanged until C Review + activate.`,
+      "Returning to this table's columns.",
+      "",
+    ].join("\n"));
+    return "saved";
+  } catch (error) {
+    process.stdout.write([
+      `Rejected: ${redactCliErrorMessage(error instanceof Error ? error.message : String(error))}`,
+      "No boundary change was made or activated. Returning to this table's columns.",
+      "",
+    ].join("\n"));
+    return "columns";
+  }
 }
 
 async function interactiveBoundaryEnumReview(input: {
@@ -3887,6 +4169,8 @@ export async function boundaryActivateCommand(
     const active = await activateExplorationBoundary({
       projectRoot,
       candidate: context.candidate,
+      reviewDraft: context.draft,
+      generationLock: context.lock,
       expectedDigest: context.bundle.candidate_digest,
       actor: actor!,
       confirmation: expectedConfirmation,

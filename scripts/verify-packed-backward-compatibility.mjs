@@ -302,15 +302,21 @@ function verifyCliRouting(baseline, current) {
     ["start", "--from-env", "DATABASE_URL", "--answers", answersPath, "--yes", "--dry-run", "--no-open"],
     [
       "start", "--from-env", "DATABASE_URL", "--inspection-json", inspectionPath,
-      "--table", "support_tickets", "--mode", "read_only", "--yes", "--dry-run", "--no-open",
+      "--table", "support_tickets", "--mode", "read_only", "--tenant-key", "tenant_id",
+      "--yes", "--dry-run", "--no-open",
     ],
   ];
 
   for (const args of routes) {
     const baselineResult = runCli(baseline, args, { cwd: fixtureRoot, env: commonEnv });
     const currentResult = runCli(current, args, { cwd: fixtureRoot, env: commonEnv });
-    assert.equal(currentResult.status, baselineResult.status, `${args.join(" ")} exit code changed`);
-    assert.equal(currentResult.status, 0, `${args.join(" ")} failed`);
+    const diagnostic = [
+      `${args.join(" ")} failed`,
+      `baseline stderr:\n${baselineResult.stderr}`,
+      `current stderr:\n${currentResult.stderr}`,
+    ].join("\n");
+    assert.equal(currentResult.status, baselineResult.status, diagnostic);
+    assert.equal(currentResult.status, 0, diagnostic);
     assert.doesNotMatch(currentResult.stdout, /Opening the local first-safe-action workbench|https?:\/\/127\.0\.0\.1:/);
   }
 
@@ -328,7 +334,10 @@ function verifyCliRouting(baseline, current) {
     timeout: 5000,
   });
   assert.notEqual(selectorFree.status, 0);
-  assert.match(selectorFree.stderr, /Fresh Auto Boundary onboarding requires an interactive terminal/);
+  assert.match(selectorFree.stderr, /Non-interactive own-database setup needs all review decisions/);
+  assert.match(selectorFree.stderr, /--table <schema\.table>/);
+  assert.match(selectorFree.stderr, /--mode read_only\|shadow\|review/);
+  assert.match(selectorFree.stderr, /--tenant-key <column> or --single-tenant-dev/);
   assert.equal(fs.existsSync(path.join(fixtureRoot, ".synapsor", "generation-lock.json")), false);
 }
 

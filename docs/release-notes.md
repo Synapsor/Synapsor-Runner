@@ -34,6 +34,26 @@ for the Synapsor Cloud CLI.
 - Reviewed normalized child tables may derive tenant or principal scope through
   an exact non-null, catalog-proven many-to-one path. Runner injects that path
   as a mandatory scope predicate outside model arguments for every plan shape.
+- A config-declared principal binding can seed an exact matching non-null source
+  column into a disabled per-boundary review. CLI and Workbench can review a
+  direct column or derived path, while activation and all trusted principal
+  values remain outside the model.
+- The focused `/access` editor keeps activation and deactivation inside the
+  editor. Table-level `R` is explicitly **Remove from draft**, boundary-level
+  `D` is **Deactivate active boundary**, zero active boundaries remain a normal
+  recoverable state, and provider handoff is deferred until the operator exits
+  access review.
+- Reviewed analytics now include contributor-safe standard deviation and
+  variance, missing-data measures, additional calendar grains, fixed numeric
+  bands, named ratios, and post-suppression running/rank/lag/moving-average/share
+  operations. The model selects only reviewed names and never supplies formulas,
+  SQL, window frames, or bucket edges.
+- A reviewer may add total or average child-count measures through one exact
+  non-null child-to-parent catalog proof. Runner uses a correlated scoped
+  subaggregate instead of a one-to-many join, applies tenant/principal scope to
+  the child independently, and releases only parent cohorts of at least five.
+  Child-count Protect conversion stays refused until protected contracts can
+  freeze that inverse authority.
 - Explicit single-organization mode covers whole-organization databases without
   fake tenant columns. Mixed databases can instead add an eligible global catalog
   or reference table through an audited Shared reference choice. Runner never
@@ -45,13 +65,13 @@ for the Synapsor Cloud CLI.
 - Real PostgreSQL and MySQL HTTP journeys verify official MCP interoperability,
   row scope, suppression, budget isolation, concurrency, source immutability,
   public `doctor` attestation, and packed-package behavior.
-- Local/staging Explore and protected named capabilities retain their existing
-  behavior. Existing boundary digests remain compatible, so Spec and DSL stay
-  at `1.8.0`.
+- Local/staging Explore and existing protected named capabilities retain their
+  existing behavior. Spec and DSL `1.9.0` add the new fixed aggregate operations
+  and post-suppression transforms without admitting model-authored expressions.
 
 Prepared package versions: `@synapsor/runner@1.7.0` and
-`synapsor-runner@1.7.0`. Spec and DSL remain at their already-published `1.8.0`
-versions. No package is published by this change.
+`synapsor-runner@1.7.0`, `@synapsor/spec@1.9.0`, and
+`@synapsor/dsl@1.9.0`. No package is published by this change.
 
 ## 1.6.7 (published 2026-08-04)
 

@@ -19,6 +19,7 @@ import {
   loadActivatedExplorationBoundaries,
   pruneAutoBoundaryReviewOverrides,
   reviewExplorationBoundaryCandidate,
+  seedConfiguredPrincipalBindingReview,
   writeAutoBoundaryArtifacts,
   type AutoBoundaryReviewOverrides,
 } from "./auto-boundary.js";
@@ -171,6 +172,58 @@ describe("Auto Boundary compiler", () => {
     expect(pruned.overrides.resources["public.subscriptions"]?.derived_measures).toBeUndefined();
     expect(pruned.removed).toContain(
       "public.subscriptions.revenue_per_subscription: reviewed derived measure field monthly_revenue_cents no longer exists",
+    );
+  });
+
+  it("stores safe child-count policy and prunes it when the catalog proof stops being non-null", () => {
+    const inspection = derivedTenantScopeInspection();
+    const definition = {
+      name: "order_item_count",
+      label: "Order item count",
+      shape: "child_count_total" as const,
+      child_resource: "public.order_items",
+      relationship: "order_items_order_id_fkey",
+    };
+    const overrides: AutoBoundaryReviewOverrides = {
+      schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+      resources: {
+        "public.order_items": {
+          tenant_scope_path: {
+            value: "order_items_order_id_fkey",
+            actor: "analytics-owner@example.test",
+            reason: "Every item belongs to its required reviewed order.",
+            decided_at: "2026-08-08T12:00:00.000Z",
+          },
+        },
+        "public.orders": {
+          derived_measures: {
+            [definition.name]: {
+              definition,
+              actor: "analytics-owner@example.test",
+              reason: "Count scoped item rows without a one-to-many join.",
+              decided_at: "2026-08-08T12:01:00.000Z",
+            },
+          },
+        },
+      },
+    };
+    const reviewed = buildAutoBoundary({
+      inspection,
+      project: projectSummary("/workspace/child-count-policy"),
+      sourceEnv: "DATABASE_URL",
+      overrides,
+    });
+    expect(reviewed.exploration_boundary.pack.resources.find((resource) =>
+      resource.id === "public.orders")?.derived_measures).toEqual([definition]);
+    expect(reviewed.lock.authority_dependencies?.resources).toHaveProperty("public.order_items");
+
+    const nullable = structuredClone(inspection);
+    nullable.tables.find((table) => table.name === "order_items")!
+      .columns.find((field) => field.name === "order_id")!.nullable = true;
+    const pruned = pruneAutoBoundaryReviewOverrides(nullable, overrides);
+    expect(pruned.overrides.resources["public.orders"]?.derived_measures).toBeUndefined();
+    expect(pruned.removed).toContain(
+      "public.orders.order_item_count: reviewed child-count relationship order_items_order_id_fkey is no longer a non-null many-to-one path to a unique parent key",
     );
   });
 
@@ -641,6 +694,90 @@ describe("Auto Boundary compiler", () => {
       ancestor_resource: "public.orders",
       ancestor_column: "owner_id",
     });
+  });
+
+  it("seeds an exact configured principal column as reviewed policy and derives it to normalized children", () => {
+    const inspection = derivedTenantScopeInspection();
+    const orders = inspection.tables.find((table) => table.name === "orders")!;
+    orders.columns.push(column("rep", "text"));
+    orders.suggestions.default_visible_columns.push("rep");
+
+    const overrides = seedConfiguredPrincipalBindingReview({
+      inspection,
+      principalBinding: "rep",
+      actor: "runner-config",
+      decidedAt: "2026-08-08T12:00:00.000Z",
+    });
+    expect(overrides.resources["public.orders"]?.principal_key).toMatchObject({
+      value: "rep",
+      actor: "runner-config",
+      decided_at: "2026-08-08T12:00:00.000Z",
+    });
+    expect(overrides.resources["public.orders"]?.principal_key?.reason)
+      .toMatch(/principal_binding explicitly names inspected non-null column rep/i);
+
+    const generated = buildAutoBoundary({
+      inspection,
+      project: projectSummary("/workspace/configured-principal-scope"),
+      sourceEnv: "DATABASE_URL",
+      overrides,
+    });
+    const orderResource = generated.exploration_boundary.pack.resources.find((resource) =>
+      resource.id === "public.orders")!;
+    expect(orderResource.principal_key).toBe("rep");
+    const child = generated.graph.resources.find((resource) =>
+      resource.id === "public.order_items")!;
+    expect(child.derived_principal_scope?.candidates).toEqual([
+      expect.objectContaining({
+        path_id: "order_items_order_id_fkey",
+        ancestor_resource: "public.orders",
+        ancestor_column: "rep",
+      }),
+    ]);
+  });
+
+  it("does not seed unsafe or absent principal columns and never overwrites an explicit boundary decision", () => {
+    const inspection = derivedTenantScopeInspection();
+    const orders = inspection.tables.find((table) => table.name === "orders")!;
+    const nullableRep = column("rep", "text");
+    nullableRep.nullable = true;
+    orders.columns.push(nullableRep, column("principal_blob", "bytea", { large_or_binary: true }));
+
+    expect(seedConfiguredPrincipalBindingReview({
+      inspection,
+      principalBinding: "rep",
+      decidedAt: "2026-08-08T12:00:00.000Z",
+    }).resources["public.orders"]).toBeUndefined();
+    expect(seedConfiguredPrincipalBindingReview({
+      inspection,
+      principalBinding: "principal_blob",
+      decidedAt: "2026-08-08T12:00:00.000Z",
+    }).resources["public.orders"]).toBeUndefined();
+    expect(seedConfiguredPrincipalBindingReview({
+      inspection,
+      principalBinding: "missing_column",
+      decidedAt: "2026-08-08T12:00:00.000Z",
+    }).resources).toEqual({});
+
+    const explicit: AutoBoundaryReviewOverrides = {
+      schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+      resources: {
+        "public.orders": {
+          principal_key: {
+            value: null,
+            actor: "owner@example.test",
+            reason: "This boundary intentionally has no per-user row limit.",
+            decided_at: "2026-08-08T11:00:00.000Z",
+          },
+        },
+      },
+    };
+    expect(seedConfiguredPrincipalBindingReview({
+      inspection,
+      principalBinding: "rep",
+      overrides: explicit,
+      decidedAt: "2026-08-08T12:00:00.000Z",
+    })).toEqual(explicit);
   });
 
   it("keeps a primary key hidden when it is also the trusted tenant key", () => {

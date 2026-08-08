@@ -159,6 +159,23 @@ for governance work. Sensitive widening requires reviewer identity and reason.
 Nullable relationships require a direct keep-unmatched or exclude-unmatched
 choice because either answer changes business totals.
 
+To add or change a per-user row limit in the terminal editor, select the table,
+press `Enter` for columns, then press `O`. Choose a direct non-null column, a
+proven mandatory relationship path, or explicitly keep no per-user limit, and
+record the reason. Runner returns to the same column screen; press `Enter` to
+save any staged column choices, then `C` from the boundary table view to review
+and activate the exact disabled revision. Workbench provides the same control
+under **Record and customer limits**. Trusted principal values remain outside
+the model in both local and production HTTP Explore.
+
+In the boundary overview, `D` means **Deactivate active boundary**. In a
+boundary's table list, `R` means **Remove from draft** and never deactivates the
+whole boundary. Deactivating the last active boundary is a normal `/access`
+state: the editor stays open, displays `Enter/C Review + activate`, and lets the
+operator restore reviewed Ask access without restarting. Activation also
+returns to `/access`; provider rebinding or model choice occurs only after the
+operator presses `Q` or Escape to finish editing.
+
 Explore may then answer repeated legal question combinations without another
 review and without Protect. Protect is optional: it converts one selected
 analysis into generated public DSL, canonical JSON, and tests, but creates only
@@ -296,9 +313,11 @@ the tested provider matrix, and the full no-model alternative.
 
 ## Ten Minutes: Explore Repeatedly, Protect Optionally
 
-Scoped Explore is available only after its exact local authoring boundary is
-activated. It is absent from production, unknown-profile, remote, shared HTTP,
-and non-loopback `tools/list`.
+Scoped Explore is available only after its exact boundary is activated. The
+guided Workbench and `try ask` flow here are local development/staging clients.
+Production uses a separately reviewed production boundary and explicit secured
+HTTP MCP opt-in; without every production prerequisite, Explore remains absent
+from remote `tools/list`.
 
 In Workbench, choose **Ask an aggregate question**. Select only reviewed
 resources, dimensions, measures, filters, and time buckets. No SQL or plan JSON
@@ -307,9 +326,13 @@ is required.
 The first release supports bounded:
 
 - `count` and reviewed `count_distinct`;
-- `sum` and `avg` over reviewed numeric measures;
+- `sum`, `avg`, standard deviation, and variance over reviewed numeric measures;
+- reviewed missing-data measures, named ratios, fixed numeric bands, and safe
+  child-count metrics;
 - reviewed categorical dimensions;
-- day, week, and month buckets;
+- hour, day, week, month, quarter, year, and day-of-week buckets;
+- reviewed running totals, ranks, lag changes, moving averages, and shares,
+  calculated only from groups released after suppression;
 - typed filters, bounded top/bottom-N, and an exact two-period comparison;
 - up to three activated relationship paths, each containing one or two
   catalog-proven many-to-one links with fan-out one.

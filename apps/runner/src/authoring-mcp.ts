@@ -2,7 +2,7 @@ import type { Readable, Writable } from "node:stream";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
-  scopedExploreDescribeOutputSchema,
+  scopedExploreDescribeToolOutputSchema,
   scopedExploreQueryToolOutputSchema,
 } from "@synapsor-runner/mcp-server";
 import { z } from "zod";
@@ -22,9 +22,9 @@ import {
 } from "./scoped-explore-boundary-set.js";
 
 const scalar = z.union([z.string().max(512), z.number().finite(), z.boolean(), z.null()]);
-const fieldId = z.string().min(1).max(256).describe("Copy the exact field id from app.describe_data. Do not prefix it; put any related-table path in relationship.");
+const fieldId = z.string().min(1).max(256).describe("Exact field id; keep relationship separate.");
 const resourceId = z.string().min(1).max(256)
-  .describe("Copy the exact resource id from app.describe_data for the root table that owns the counted entity or measure.");
+  .describe("Exact root resource id.");
 // Smaller models often serialize an omitted optional JSON field as null.
 const optionalModelArgument = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess((value) => value === null ? undefined : value, schema.optional());
@@ -41,12 +41,12 @@ const modelObject = <T extends z.ZodTypeAny>(schema: T) => modelJsonContainer(
 );
 const optionalBoundarySelector = optionalModelArgument(z.string()
   .regex(/^(?:[a-z][a-z0-9_.-]{0,63})?$/)
-  .describe("An active reviewed boundary name; empty means omitted."));
+  .describe("Exact active boundary name; empty means omitted."));
 const optionalResourceSelector = optionalModelArgument(z.string().max(256)
-  .describe("Copy the exact resource id from app.describe_data. Empty means omitted."));
-const relationshipId = z.string().min(1).max(256).describe("Copy the exact active relationship id from app.describe_data; keep it separate from field.");
+  .describe("Exact resource id; empty means omitted."));
+const relationshipId = z.string().min(1).max(256).describe("Exact relationship id.");
 const numericBandId = z.string().min(1).max(64).describe(
-  "Copy one exact reviewed numeric-band name from app.describe_data. Never send bucket edges or labels.",
+  "Exact reviewed numeric-band name; never send edges.",
 );
 const filter = z.object({
   field: fieldId,
@@ -83,7 +83,7 @@ export function createScopedExploreMcpServer(
       }).strict(),
       z.object({
         derived_measure: fieldId.describe(
-          "Copy one exact reviewed derived-measure name from app.describe_data. Do not send a formula or operands.",
+          "Exact reviewed derived-measure name; never send a formula.",
         ),
       }).strict(),
     ])).min(1)),
@@ -113,20 +113,22 @@ export function createScopedExploreMcpServer(
         index: modelInteger(z.number().int().nonnegative()),
         change: z.enum(["absolute", "percentage"]),
         direction: z.enum(["asc", "desc"]),
-      }).strict().describe("Rank a reviewed two-period comparison by its signed absolute or percentage change; desc finds growth and asc finds decline."),
+      }).strict().describe("Rank reviewed period change; desc is growth, asc is decline."),
       z.object({
         kind: z.literal("time_bucket"),
         direction: z.enum(["asc", "desc"]),
       }).strict(),
     ]))),
-    top_n: modelInteger(z.number().int().positive().describe("Maximum aggregate rows; dimension-by-time uses one row per dimension/time combination; comparisons need both periods.")),
+    top_n: modelInteger(z.number().int().positive().describe(
+      "Maximum aggregate rows; dimension-by-time uses one row per dimension/time combination; comparisons need both periods.",
+    )),
     comparison: optionalModelArgument(modelObject(z.object({
       field: fieldId,
       relationship: optionalModelArgument(relationshipId),
       ranges: modelArray(z.array(z.object({
         start: z.string().datetime(),
         end: z.string().datetime(),
-      }).strict()).length(2).describe("Two non-overlapping half-open ranges, earlier then later; change is period_2 minus period_1.")),
+      }).strict()).length(2).describe("Two non-overlapping ranges, earlier then later.")),
     }).strict())),
   }).strict();
   const plan = z.discriminatedUnion("kind", [rowPlan, aggregatePlan], {
@@ -145,14 +147,14 @@ export function createScopedExploreMcpServer(
   );
   server.registerTool(SCOPED_EXPLORE_DESCRIBE_TOOL, {
     title: "Describe reviewed data",
-    description: "Lists the active reviewed boundaries and a bounded page of their exact resource ids, field ids, aggregate dimensions, measures, time buckets, relationship ids, and privacy limits. Copy the exact ids into app.explore_data. Use boundary when the same resource appears in more than one boundary. It returns metadata only, never source rows.",
+    description: "Lists a bounded page of exact active boundary, resource, field, measure, time-bucket, relationship ids, and privacy limits. Copy ids into app.explore_data; use boundary to disambiguate overlaps. Metadata only; no source rows.",
     inputSchema: z.object({
       boundary: optionalBoundarySelector,
       resource: optionalResourceSelector,
       cursor: optionalModelArgument(z.number().int().nonnegative()),
       limit: optionalModelArgument(z.number().int().positive().max(10)),
     }).strict(),
-    outputSchema: scopedExploreDescribeOutputSchema,
+    outputSchema: scopedExploreDescribeToolOutputSchema,
     annotations: {
       readOnlyHint: true,
       destructiveHint: false,
@@ -239,14 +241,13 @@ function invalidExploreKindMessage(): string {
 
 function exploreToolDescription(production: boolean): string {
   return [
-    `Runs one bounded plan against one active reviewed ${production ? "production" : "local"} boundary.`,
-    "Always nest plan fields under plan; kind is exactly rows or aggregate. First call app.describe_data and copy its exact resource, field, relationship, and boundary ids.",
-    'Aggregate: {"plan":{"kind":"aggregate","resource":"<exact resource id>","measures":[{"function":"sum","field":"<numeric field id>"}],"dimensions":[{"field":"<group field id>"}],"top_n":25}}.',
-    'Related aggregate: {"plan":{"kind":"aggregate","resource":"<exact root resource id>","measures":[{"function":"count"}],"dimensions":[{"field":"<target field id>","relationship":"<exact relationship id>"}],"top_n":25}}.',
-    'Rows: {"plan":{"kind":"rows","resource":"<exact resource id>","select":["<field id>"],"limit":50}}.',
-    'Reviewed derived measure: {"plan":{"kind":"aggregate","resource":"<exact resource id>","measures":[{"derived_measure":"<exact reviewed derived-measure name>"}],"top_n":25}}. Never invent or send its formula.',
-    'Reviewed numeric band: {"plan":{"kind":"aggregate","resource":"<exact resource id>","measures":[{"function":"count"}],"dimensions":[{"numeric_band":"<exact reviewed numeric-band name>"}],"top_n":25}}. Never send bucket edges or labels.',
-    "Keep relationship separate from field; never concatenate them. Separate boundaries cannot be joined. SQL, formulas, arbitrary ids, model-selected tenant/principal, mutation, approval, and commit are unavailable.",
+    `Runs one reviewed read-only ${production ? "production" : "local"} plan.`,
+    "Call app.describe_data first and copy exact ids. Send {boundary?,plan:{...}}; plan.kind is exactly rows or aggregate.",
+    'Aggregate: {"plan":{"kind":"aggregate","resource":"<exact resource id>","measures":[{"function":"sum","field":"<field>"}],"dimensions":[{"field":"<field>"}],"top_n":25}}.',
+    'Relationship: keep "relationship":"<id>" separate from the related field; never concatenate them.',
+    'Rows: {"plan":{"kind":"rows","resource":"<exact resource id>","select":["<field>"],"limit":50}}.',
+    'Named controls use {"derived_measure":"<name>"} in measures or {"numeric_band":"<name>"} in dimensions; never send formulas or edges.',
+    "No cross-boundary joins, SQL, model-selected tenant/principal, mutation, approval, or commit.",
   ].join(" ");
 }
 

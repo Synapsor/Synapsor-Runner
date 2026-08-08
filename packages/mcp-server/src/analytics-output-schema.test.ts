@@ -3,6 +3,7 @@ import {
   analyticalToolOutputSchema,
   schemaAsJsonSchema,
   scopedExploreDescribeOutputSchema,
+  scopedExploreDescribeToolOutputSchema,
   scopedExploreQueryOutputSchema,
   scopedExploreQueryToolOutputSchema,
 } from "./analytics-output-schema.js";
@@ -65,6 +66,10 @@ describe("analytical MCP output schemas", () => {
       groupable_fields: ["status"],
       aggregate_measures: [],
       aggregate_measure_functions: {},
+      presence_measure_fields: [],
+      presence_measure_functions: [],
+      derived_measures: [],
+      numeric_bands: [],
       count_distinct_fields: ["id"],
       time_bucket_fields: {},
       time_coverage: {},
@@ -89,6 +94,50 @@ describe("analytical MCP output schemas", () => {
       ...success,
       resources: [{ ...canonicalResource, plan_resource: "public.orders" }],
     }).success).toBe(false);
+    expect(scopedExploreDescribeOutputSchema.safeParse({
+      ...success,
+      resources: [{
+        ...canonicalResource,
+        derived_measures: [{
+          name: "order_item_count",
+          label: "Order item count",
+          shape: "child_count_total",
+          calculation_stage: "scoped child count aggregated over reviewed parent cohorts",
+          child_resource: "public.order_items",
+          relationship: "order_items_order_id_fkey",
+          parent_contributor_floor: "applied before release",
+          raw_child_rows_returned: false,
+          effective_minimum_cohort_size: 5,
+        }],
+      }],
+    }).success).toBe(true);
+    expect(scopedExploreDescribeOutputSchema.safeParse({
+      ...success,
+      resources: [{
+        ...canonicalResource,
+        derived_measures: [{
+          name: "unsafe_child_count",
+          label: "Unsafe child count",
+          shape: "child_count_total",
+          calculation_stage: "scoped child count aggregated over reviewed parent cohorts",
+          child_resource: "public.order_items",
+          relationship: "order_items_order_id_fkey",
+          parent_contributor_floor: "applied before release",
+          raw_child_rows_returned: true,
+          effective_minimum_cohort_size: 5,
+        }],
+      }],
+    }).success).toBe(false);
+    expect(scopedExploreDescribeToolOutputSchema.safeParse({
+      ...success,
+      resources: [canonicalResource],
+    }).success).toBe(true);
+    expect(scopedExploreDescribeToolOutputSchema.safeParse({
+      ...success,
+      resources: [{ ...canonicalResource, id: undefined }],
+    }).success).toBe(false);
+    expect(Buffer.byteLength(JSON.stringify(schemaAsJsonSchema(scopedExploreDescribeToolOutputSchema))))
+      .toBeLessThan(Buffer.byteLength(JSON.stringify(schemaAsJsonSchema(scopedExploreDescribeOutputSchema))));
   });
 
   it("validates success, suppression, empty, comparison, and refusal variants from one schema", () => {

@@ -17,6 +17,7 @@ import {
   generationLockRemediation,
   generationLockRemediationCommand,
   loadStructuredProjectEvidence,
+  seedConfiguredPrincipalBindingReview,
   writeAutoBoundaryArtifacts,
   type ExplorationBudgets,
   type GenerationLock
@@ -848,6 +849,10 @@ export async function boundaryCommand(
       return 0;
     }
     const project = await detectProjectContext(projectRoot);
+    const existingProject = await resolveSynapsorProject(projectRoot, process.env);
+    const configuredPrincipal = existingProject?.config_path
+      ? await configuredPrincipalBinding(existingProject.config_path, sourceEnv)
+      : undefined;
     const inspection = await schemaInspector({
       engine: (optionalArg(rest, "--engine") ?? "auto") as InspectEngine,
       databaseUrlEnv: sourceEnv,
@@ -861,6 +866,16 @@ export async function boundaryCommand(
       parsedEvidence: evidence.parsed,
       existingContracts: evidence.existingContracts,
       sourceEnv,
+      ...(configuredPrincipal
+        ? {
+            overrides: seedConfiguredPrincipalBindingReview({
+              inspection,
+              principalBinding: configuredPrincipal.binding,
+              actor: "runner-config",
+              decidedAt: configuredPrincipal.decidedAt,
+            }),
+          }
+        : {}),
       inspectedSchema: optionalArg(rest, "--schema"),
       deploymentProfile,
       ...(deploymentProfile === "production"
@@ -868,7 +883,6 @@ export async function boundaryCommand(
         : {}),
       ...(singleOrganization ? { singleOrganization: { organizationId: organizationId! } } : {}),
     });
-    const existingProject = await resolveSynapsorProject(projectRoot, process.env);
     const shouldInitializeProject = deploymentProfile !== "production"
       && !existingJourney
       && !existingProject?.config_path;
@@ -1083,6 +1097,23 @@ export async function boundaryCommand(
   }
   usage(["boundary"]);
   return 2;
+}
+
+async function configuredPrincipalBinding(
+  configPath: string,
+  sourceEnv: string,
+): Promise<{ binding: string; decidedAt: string } | undefined> {
+  const config = loadRuntimeConfigFromFile(configPath);
+  const sourceMatches = Object.values(config.sources ?? {}).some((source) =>
+    source.read_url_env === sourceEnv);
+  const context = config.trusted_context;
+  const binding = context?.principal_binding?.trim();
+  const hasTrustedPrincipal = context?.provider === "http_claims"
+    || context?.provider === "cloud_session"
+    || typeof context?.values?.principal_env === "string";
+  if (!sourceMatches || !binding || !hasTrustedPrincipal) return undefined;
+  const stat = await fs.stat(configPath);
+  return { binding, decidedAt: stat.mtime.toISOString() };
 }
 
 async function boundaryOperationalStatus(

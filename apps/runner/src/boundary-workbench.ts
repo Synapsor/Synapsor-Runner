@@ -2122,15 +2122,49 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       return choices;
     }
 
+    function reviewedChildCountChoices(resource){
+      const choices=[];
+      for(const child of candidate.pack.resources){
+        if(child.id===resource.id)continue;
+        if(!candidate.organization_scope&&(child.shared_reference_scope||(!child.tenant_key&&!child.tenant_scope)))continue;
+        const proofs=[];
+        for(const relationship of child.relationships||[]){
+          if(relationship.target_resource===resource.id&&(relationship.path_depth||1)===1&&relationship.proof?.links?.length===1){
+            proofs.push({relationship:relationship.id,link:relationship.proof.links[0]});
+          }
+        }
+        for(const scope of [child.tenant_scope,child.principal_scope]){
+          if(scope?.ancestor_resource===resource.id&&scope.proof?.links?.length===1){
+            proofs.push({relationship:scope.path_id,link:scope.proof.links[0]});
+          }
+        }
+        const seen=new Set();
+        for(const proof of proofs){
+          const link=proof.link;
+          const key=proof.relationship+"\u0000"+JSON.stringify(link);
+          if(seen.has(key))continue;
+          seen.add(key);
+          if(!link||link.constraint_name!==proof.relationship||link.source_resource!==child.id||link.target_resource!==resource.id||link.nullable||link.cardinality!=="many_to_one"||link.max_fan_out!==1||!link.source_columns?.length||link.source_columns.length!==link.target_columns?.length)continue;
+          choices.push({
+            child_resource:child.id,
+            relationship:proof.relationship,
+            label:child.id+"."+link.source_columns.join(",")+" -> "+resource.id+"."+link.target_columns.join(",")+" ("+proof.relationship+")"
+          });
+        }
+      }
+      return choices.sort((left,right)=>left.label.localeCompare(right.label));
+    }
+
     function reviewedAnalyticsPanel(resource){
       const bands=resource.numeric_bands||[];
       const measures=resource.derived_measures||[];
       const fields=reviewedAnalyticsFieldChoices(resource);
       const operands=reviewedAnalyticsOperandChoices(resource);
+      const childCounts=reviewedChildCountChoices(resource);
       const actor=esc(byId("actor").value.trim());
       const option=value=>esc(JSON.stringify(value));
       const bandRows=bands.length?bands.map(band=>'<div class="risk"><strong>'+esc(band.label)+'</strong><p><code>'+esc(band.name)+'</code> groups '+esc(band.relationship?band.relationship+" -> "+band.field:band.field)+' into '+esc(band.bucket_labels.length)+' fixed buckets: '+esc(band.bucket_labels.join(" | "))+'</p><button class="quiet" data-remove-numeric-band="'+esc(band.name)+'" type="button">Remove this band</button></div>').join(""):'<p>No numeric bands are reviewed for this table.</p>';
-      const measureRows=measures.length?measures.map(measure=>'<div class="risk"><strong>'+esc(measure.label)+'</strong><p><code>'+esc(measure.name)+'</code> is a fixed '+esc(measure.shape.replace(/_/g," "))+'. The AI can select its name but cannot change its reviewed definition.'+(measure.base_measure?' Runner applies it only after small-group suppression.':'')+'</p><button class="quiet" data-remove-derived-measure="'+esc(measure.name)+'" type="button">Remove this metric</button></div>').join(""):'<p>No named derived metrics are reviewed for this table.</p>';
+      const measureRows=measures.length?measures.map(measure=>'<div class="risk"><strong>'+esc(measure.label)+'</strong><p><code>'+esc(measure.name)+'</code> is a fixed '+esc(measure.shape.replace(/_/g," "))+'. The AI can select its name but cannot change its reviewed definition.'+(measure.base_measure?' Runner applies it only after small-group suppression.':measure.child_resource?' Runner counts scoped child rows through '+esc(measure.child_resource)+" -> "+esc(resource.id)+" without a raw one-to-many join.":'')+'</p><button class="quiet" data-remove-derived-measure="'+esc(measure.name)+'" type="button">Remove this metric</button></div>').join(""):'<p>No named derived metrics are reviewed for this table.</p>';
       const commonReview='<div class="form-grid"><label class="field">Human reviewer<input id="analytics-review-actor" type="text" maxlength="128" value="'+actor+'"></label><label class="field">Reason for this analytics definition<textarea id="analytics-review-reason" maxlength="500" rows="2" placeholder="Explain why this fixed metric or grouping is appropriate for this boundary."></textarea></label></div>';
       const bandForm=fields.length
         ?'<div class="review-form"><h4>Add a fixed numeric band</h4><p>Choose a reviewed numeric field and fixed bucket boundaries. The AI receives only the saved name and labels; it cannot supply edges.</p><div class="form-grid"><label class="field">Numeric field<select id="analytics-band-field">'+fields.map(item=>'<option value="'+option(item)+'">'+esc(item.label)+'</option>').join("")+'</select></label><label class="field">Saved name<input id="analytics-band-name" type="text" maxlength="64" placeholder="order_value_band"></label><label class="field">Plain-language label<input id="analytics-band-label" type="text" maxlength="120" placeholder="Order value band"></label><label class="field">Bucket edges<input id="analytics-band-edges" type="text" maxlength="512" placeholder="1000, 5000"></label><label class="field">Labels, lowest to highest<input id="analytics-band-labels" type="text" maxlength="2048" placeholder="Under 10 | 10 to 49 | 50 or more"></label></div><div class="actions"><button id="save-numeric-band" type="button">Save numeric band</button></div></div>'
@@ -2141,7 +2175,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const postForm=operands.length
         ?'<div class="review-form"><h4>Add a post-suppression calculation</h4><p>Choose one reviewed aggregate and a fixed operation. Runner calculates only from groups that passed small-group privacy; the AI receives only the saved name.</p><div class="form-grid"><label class="field">Base aggregate<select id="analytics-post-base">'+operands.map(item=>'<option value="'+option(item.value)+'">'+esc(item.label)+'</option>').join("")+'</select></label><label class="field">Calculation<select id="analytics-post-shape"><option value="running_total">Running total by time</option><option value="rank">Rank across released groups</option><option value="lag_absolute_change">Change from previous time bucket</option><option value="lag_percentage_change">Percentage change from previous time bucket</option><option value="moving_average">Moving average by time</option><option value="share_of_released_total">Percentage of released-group total</option></select></label><label class="field">Rank direction<select id="analytics-post-direction" disabled><option value="desc">Highest first</option><option value="asc">Lowest first</option></select></label><label class="field">Moving window<input id="analytics-post-window" type="number" min="2" max="12" value="3" disabled></label><label class="field">Saved name<input id="analytics-post-name" type="text" maxlength="64" placeholder="revenue_running_total"></label><label class="field">Plain-language label<input id="analytics-post-label" type="text" maxlength="120" placeholder="Revenue running total"></label></div><p id="analytics-post-grain">This calculation requires a reviewed ordered time bucket when queried. Optional dimensions partition the sequence.</p><div class="actions"><button id="save-post-measure" type="button">Save post-suppression calculation</button></div></div>'
         :'';
-      return '<details class="access-secondary" data-access-secondary data-reviewed-analytics><summary>Reviewed metrics and numeric bands · '+esc(measures.length+bands.length)+'</summary><p>These are fixed, digest-bound human decisions. Saving creates a disabled revision; press <strong>Review and activate</strong> after checking the complete boundary.</p><div class="risk-list">'+measureRows+bandRows+'</div>'+commonReview+bandForm+derivedForm+postForm+'<span id="analytics-review-status" class="status-message"></span></details>';
+      const childCountForm=childCounts.length
+        ?'<div class="review-form"><h4>Add a safe child-count metric</h4><p>Count child records without a raw one-to-many join. Runner fixes the catalog-proven child path, applies trusted child scope, and releases only parent cohorts of at least five.</p><div class="form-grid"><label class="field">Child relationship<select id="analytics-child-count-path">'+childCounts.map(item=>'<option value="'+option(item)+'">'+esc(item.label)+'</option>').join("")+'</select></label><label class="field">Released result<select id="analytics-child-count-shape"><option value="child_count_total">Total child rows</option><option value="child_count_average">Average child rows per parent</option></select></label><label class="field">Saved name<input id="analytics-child-count-name" type="text" maxlength="64" placeholder="orders_count"></label><label class="field">Plain-language label<input id="analytics-child-count-label" type="text" maxlength="120" placeholder="Order count"></label></div><div class="actions"><button id="save-child-count" type="button">Save child-count metric</button></div></div>'
+        :'<div class="risk"><strong>No safe child-count path is available for this table.</strong><p>Add and review a child table with one non-null many-to-one foreign key into this table.</p></div>';
+      return '<details class="access-secondary" data-access-secondary data-reviewed-analytics><summary>Reviewed metrics and numeric bands · '+esc(measures.length+bands.length)+'</summary><p>These are fixed, digest-bound human decisions. Saving creates a disabled revision; press <strong>Review and activate</strong> after checking the complete boundary.</p><div class="risk-list">'+measureRows+bandRows+'</div>'+commonReview+bandForm+derivedForm+postForm+childCountForm+'<span id="analytics-review-status" class="status-message"></span></details>';
     }
 
     function safeAnalyticsName(value){
@@ -2221,6 +2258,30 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         refreshPostShape();
       });
       refreshPostShape();
+      const childPath=byId("analytics-child-count-path");
+      const childShape=byId("analytics-child-count-shape");
+      const refreshChildCount=()=>{
+        if(!childPath||!childShape)return;
+        const selected=JSON.parse(childPath.value);
+        const childName=selected.child_resource.split(".").pop();
+        const name=byId("analytics-child-count-name");
+        const label=byId("analytics-child-count-label");
+        if(name&&!name.value.trim()){
+          name.value=safeAnalyticsName(childShape.value==="child_count_total"?childName+"_count":"average_"+childName+"_per_parent");
+          if(label&&!label.value.trim())label.value=name.value.replace(/_/g," ").replace(/\b\w/g,value=>value.toUpperCase());
+        }
+      };
+      childPath?.addEventListener("change",()=>{
+        byId("analytics-child-count-name").value="";
+        byId("analytics-child-count-label").value="";
+        refreshChildCount();
+      });
+      childShape?.addEventListener("change",()=>{
+        byId("analytics-child-count-name").value="";
+        byId("analytics-child-count-label").value="";
+        refreshChildCount();
+      });
+      refreshChildCount();
       byId("save-numeric-band")?.addEventListener("click",()=>{
         try{
           const review=analyticsReviewIdentity();
@@ -2272,6 +2333,20 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
             definition.window_size=windowSize;
           }
           saveReviewedAnalyticsDecision({kind:"derived_measure",resource_id:selectedResource,name,definition,...review},"Saved post-suppression calculation "+name+" for "+selectedResource+".");
+        }catch(error){
+          const status=byId("analytics-review-status");status.className="status-message error";status.textContent=error.message;
+        }
+      });
+      byId("save-child-count")?.addEventListener("click",()=>{
+        try{
+          const review=analyticsReviewIdentity();
+          const selected=JSON.parse(childPath.value);
+          const shape=childShape.value;
+          const name=byId("analytics-child-count-name").value.trim();
+          const label=byId("analytics-child-count-label").value.trim();
+          if(!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name))throw new Error("Use a saved name that starts with a letter or underscore and contains only letters, numbers, and underscores.");
+          if(!label)throw new Error("Enter a plain-language label.");
+          saveReviewedAnalyticsDecision({kind:"derived_measure",resource_id:selectedResource,name,definition:{name,label,shape,child_resource:selected.child_resource,relationship:selected.relationship},...review},"Saved child-count metric "+name+" for "+selectedResource+".");
         }catch(error){
           const status=byId("analytics-review-status");status.className="status-message error";status.textContent=error.message;
         }
@@ -2612,7 +2687,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         ?'<div class="risk"><strong>Whole reviewed organization</strong><p>'+esc(candidate.organization_scope.organization_id)+' is fixed outside model arguments. This boundary applies no tenant predicate; changing that posture requires regenerating and reviewing the complete boundary.</p></div>'
         :managedTrustedScopeReviewForm("tenant_key","customer isolation",review.tenant_key?.candidates||[],source.tenant_key,false,review.tenant_key,review.derived_tenant_scope,source.tenant_scope?.path_id,review.shared_reference_scope,source.shared_reference_scope);
       const scopeReview=resource
-        ?'<details class="access-secondary" data-access-secondary><summary>Record and customer limits</summary><p>'+(candidate.organization_scope?'The reviewed organization is fixed outside the model. Any user/owner limit still comes from trusted application context.':'Runner reads tenant and user values from trusted application context. The AI never supplies them or controls a mandatory relationship path.')+'</p>'+managedScopeReviewForm("row_identity","record ID",review.primary_key?.candidates||[],source.primary_key,false,review.primary_key)+organizationScopeReview+managedTrustedScopeReviewForm("principal_key","user/owner limit",review.principal_key?.candidates||[],source.principal_key,true,review.principal_key,review.derived_principal_scope,source.principal_scope?.path_id)+'</details>'
+        ?'<details class="access-secondary" data-access-secondary><summary>Record and customer limits</summary><p>'+(candidate.organization_scope?'The reviewed organization is fixed outside the model. Any user/owner limit still comes from trusted application context.':'Runner reads tenant and user values from trusted application context. The AI never supplies them or controls a mandatory relationship path.')+'</p>'+managedScopeReviewForm("row_identity","record ID",review.primary_key?.candidates||[],source.primary_key,false,review.primary_key)+organizationScopeReview+managedTrustedScopeReviewForm("principal_key","user/owner limit",[...new Set([...(review.principal_key?.candidates||[]),...(review.fields||[]).filter(field=>field.nullable===false&&!/(?:bytea|blob|binary|varbinary|image)/i.test(field.data_type)).map(field=>field.name)])],source.principal_key,true,review.principal_key,review.derived_principal_scope,source.principal_scope?.path_id)+'</details>'
         :'<details class="access-secondary" data-access-secondary><summary>Record and customer limits</summary><p>This '+esc(selectedKind)+' is excluded. Include it before reviewing trusted scope.</p></details>';
       const cohortDecision=review.minimum_cohort_override;
       const cohortValue=resource?.minimum_cohort_size??5;

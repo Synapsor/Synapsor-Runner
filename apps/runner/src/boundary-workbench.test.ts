@@ -16,8 +16,13 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("Reviewed metrics and numeric bands");
     expect(html).toContain("Add a fixed numeric band");
     expect(html).toContain("Add a named derived metric");
+    expect(html).toContain("Add a safe child-count metric");
+    expect(html).toContain("Count child records without a raw one-to-many join");
     expect(html).toContain('kind:"numeric_band"');
     expect(html).toContain('kind:"derived_measure"');
+    expect(html).toContain('<option value="child_count_total">Total child rows</option>');
+    expect(html).toContain("definition:{name,label,shape,child_resource:selected.child_resource");
+    expect(html).toContain("relationship:selected.relationship");
     expect(html).toContain("The AI receives only the saved name and labels; it cannot supply edges.");
     expect(html).toContain("Review security exceptions");
     expect(html).toContain("Pick a table. Set each column's access.");
@@ -67,6 +72,9 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("explicitly review Shared reference only if ");
     expect(html).toContain('if(candidate.organization_scope)return {kind:"startable"}');
     expect(html).toContain('principal_scope_path');
+    expect(html).toContain("user/owner limit");
+    expect(html).toContain("review.fields||[]).filter(field=>field.nullable===false");
+    expect(html).toContain("bytea|blob|binary|varbinary|image");
     expect(html).toContain('return "mandatory relationship path "+shown.join(" → ")');
     expect(html).toContain("Advanced exact path IDs");
     expect(html).toContain('post("/api/boundary/library/switch"');

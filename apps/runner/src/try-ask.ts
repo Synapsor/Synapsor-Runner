@@ -26,6 +26,7 @@ import {
 } from "./ask-authority.js";
 import { createWorkbenchAskMcpGateway } from "./ask-mcp-gateway.js";
 import { assertKnownOptions, optionalArg, positional } from "./cli-options.js";
+import { fileExists } from "./cli-files.js";
 import { redactCliErrorMessage } from "./cli-logging.js";
 import { startLocalUiServer } from "./local-ui.js";
 import {
@@ -618,6 +619,17 @@ export async function tryAsk(
         continue;
       }
       if (reviewResult !== 0) return reviewResult;
+      if (!await fileExists(path.join(
+        projectRoot,
+        ".synapsor/exploration-boundary.active.json",
+      ))) {
+        writeInteractiveStdout([
+          "No active boundary. Ask remains disabled.",
+          "The access editor was closed explicitly; restart Ask after activating a reviewed boundary.",
+          "",
+        ].join("\n"));
+        return 0;
+      }
     }
   } finally {
     pastedSecret = undefined;

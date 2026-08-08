@@ -631,6 +631,11 @@ function aggregateDsl(
   const lines = plan.measures.map((measure, index) => {
     if ("derived_measure" in measure) {
       const definition = protectedDerivedMeasure(root, measure.derived_measure);
+      if ("child_resource" in definition) {
+        throw new Error(
+          `Protect conversion refused ${definition.name}: reviewed child-count metrics are available in local and production HTTP Explore, but protected capabilities do not yet freeze inverse child-scope authority.`,
+        );
+      }
       if ("base_measure" in definition) {
         const modifier = definition.shape === "rank"
           ? ` ${definition.direction!.toUpperCase()}`
@@ -743,6 +748,11 @@ function relationshipsForPlan(
     for (const measure of plan.measures) {
       if ("derived_measure" in measure) {
         const definition = protectedDerivedMeasure(root, measure.derived_measure);
+        if ("child_resource" in definition) {
+          throw new Error(
+            `Protect conversion refused ${definition.name}: reviewed child-count metrics are available in local and production HTTP Explore, but protected capabilities do not yet freeze inverse child-scope authority.`,
+          );
+        }
         const operands = "base_measure" in definition
           ? [definition.base_measure]
           : [definition.numerator, definition.denominator];

@@ -2,7 +2,7 @@
 
 The canonical scope page is [Current Limitations](limitations.md).
 
-Current `1.6.6` scope:
+Current `1.7.0` scope:
 
 - local semantic MCP tools over Postgres/MySQL without raw SQL tools;
 - one-command, resumable, review-by-exception onboarding from
@@ -13,8 +13,11 @@ Current `1.6.6` scope:
   Synapsor definitions;
 - disabled generated `.synapsor.sql`, canonical JSON, tests, review evidence,
   and generation locks; no generated authority activates itself;
-- local development/staging Scoped Explore through exactly two temporary MCP
-  tools, using typed row plans or a reviewed analytical cube. Up to eight
+- development/staging Scoped Explore and explicit production Scoped Explore over
+  secured HTTP through exactly two MCP tools, using typed row plans or a
+  reviewed analytical cube. Production requires verified JWT scope,
+  per-principal and tenant budgets, atomic shared accounting, rate limits, and
+  transport attestation. Up to eight
   independently reviewed boundaries may be active; one plan selects one
   boundary and cannot join/union across them. Activation permits repeated legal
   combinations without per-question review or Protect;
@@ -27,8 +30,11 @@ Current `1.6.6` scope:
   consent, an interactive follow-up shell or one-shot mode, quiet untrusted
   provider prose, independently rendered Runner results, hidden short analysis
   references, and operator-only `/protect`;
-- aggregate `count`, reviewed `count_distinct`, `sum`, `avg`, reviewed
-  dimensions and day/week/month buckets, typed filters, bounded top/bottom-N,
+- aggregate `count`, reviewed `count_distinct`, numeric blends and dispersion,
+  missing-data measures, named ratios, fixed numeric bands, reviewed dimensions
+  and hour-through-year/day-of-week buckets, typed filters, bounded top/bottom-N,
+  post-suppression running/rank/lag/moving-average/share operations, safe scoped
+  child counts,
   ranked high-cardinality candidate populations under a separate reviewed
   ceiling, signed absolute/percentage movers from an exact two-period
   comparison in one read-only snapshot, and at

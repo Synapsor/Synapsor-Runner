@@ -113,7 +113,12 @@ async function seedSource(connection) {
       ('g-5', 'globex', 'enterprise', 540, '2026-07-05 00:00:00');
     INSERT INTO ${sourceSchema}.scoped_orders (id, tenant_id, owner_id, category, occurred_at) VALUES
       ('derived-acme-order', 'acme', 'derived-acme', 'trail', '2026-07-01 00:00:00'),
-      ('derived-globex-order', 'globex', 'derived-globex', 'enterprise', '2026-07-01 00:00:00');
+      ('derived-globex-order', 'globex', 'derived-globex', 'enterprise', '2026-07-01 00:00:00'),
+      ('fanout-acme-order-1', 'acme', 'fanout-acme', 'trail', '2026-07-01 00:00:00'),
+      ('fanout-acme-order-2', 'acme', 'fanout-acme', 'trail', '2026-07-01 00:00:00'),
+      ('fanout-acme-order-3', 'acme', 'fanout-acme', 'trail', '2026-07-01 00:00:00'),
+      ('fanout-acme-order-4', 'acme', 'fanout-acme', 'trail', '2026-07-01 00:00:00'),
+      ('fanout-acme-order-5', 'acme', 'fanout-acme', 'trail', '2026-07-01 00:00:00');
     INSERT INTO ${sourceSchema}.scoped_order_items (id, order_id, item_kind, quantity, occurred_at) VALUES
       ('derived-acme-item-1', 'derived-acme-order', 'standard', 1, '2026-07-01 00:00:00'),
       ('derived-acme-item-2', 'derived-acme-order', 'standard', 2, '2026-07-01 00:00:00'),
@@ -126,7 +131,12 @@ async function seedSource(connection) {
       ('derived-globex-item-4', 'derived-globex-order', 'standard', 4, '2026-07-01 00:00:00'),
       ('derived-globex-item-5', 'derived-globex-order', 'standard', 5, '2026-07-01 00:00:00'),
       ('derived-globex-item-6', 'derived-globex-order', 'standard', 6, '2026-07-01 00:00:00'),
-      ('derived-globex-item-7', 'derived-globex-order', 'standard', 7, '2026-07-01 00:00:00');
+      ('derived-globex-item-7', 'derived-globex-order', 'standard', 7, '2026-07-01 00:00:00'),
+      ('fanout-acme-item-1', 'fanout-acme-order-1', 'standard', 1, '2026-07-01 00:00:00'),
+      ('fanout-acme-item-2', 'fanout-acme-order-2', 'standard', 2, '2026-07-01 00:00:00'),
+      ('fanout-acme-item-3', 'fanout-acme-order-3', 'standard', 3, '2026-07-01 00:00:00'),
+      ('fanout-acme-item-4', 'fanout-acme-order-4', 'standard', 4, '2026-07-01 00:00:00'),
+      ('fanout-acme-item-5', 'fanout-acme-order-5', 'standard', 5, '2026-07-01 00:00:00');
     INSERT INTO ${sourceSchema}.shared_product_catalog (id, category, internal_notes) VALUES
       ('hardware-1', 'hardware', 'operator-only hardware note 1'),
       ('hardware-2', 'hardware', 'operator-only hardware note 2'),
@@ -589,6 +599,13 @@ async function main() {
       .filter(([field]) => field === "occurred_at"));
     resource.relationships = [];
     narrowDerivedResources(scopedOrders, scopedOrderItems);
+    scopedOrders.derived_measures = [{
+      name: "scoped_order_item_count",
+      label: "Scoped order item count",
+      shape: "child_count_total",
+      child_resource: scopedOrderItemsId,
+      relationship: "scoped_order_items_order_id_fkey",
+    }];
     sharedProductCatalog.selectable_fields = ["category"];
     sharedProductCatalog.filterable_fields = Object.fromEntries(
       Object.entries(sharedProductCatalog.filterable_fields).filter(([field]) => field === "category"),
@@ -837,6 +854,33 @@ async function main() {
       && derivedGlobexResult.data[0].count === 7,
     "MySQL derived scope did not isolate the second tenant/principal.", derivedGlobexResult);
 
+    const fanoutAcme = mcpClient(server.url, signedToken(privateKey, {
+      tenant: "acme",
+      principal: "fanout-acme",
+    }));
+    clients.push(fanoutAcme.client);
+    await fanoutAcme.client.connect(fanoutAcme.transport);
+    const fanoutResult = resultPayload(await fanoutAcme.client.callTool({
+      name: "app.explore_data",
+      arguments: {
+        plan: {
+          kind: "aggregate",
+          resource: scopedOrdersId,
+          measures: [{ derived_measure: "scoped_order_item_count" }],
+          dimensions: [{ field: "category" }],
+          top_n: 10,
+        },
+      },
+    }));
+    assert(fanoutResult.ok === true
+      && fanoutResult.data.length === 1
+      && fanoutResult.data[0].category === "trail"
+      && fanoutResult.data[0].scoped_order_item_count === 5
+      && fanoutResult.privacy.minimum_cohort_size >= 5,
+    "MySQL production HTTP Explore did not execute the reviewed scoped child count.", fanoutResult);
+    assert(!JSON.stringify(fanoutResult).match(/globex|derived-acme|SELECT\s|`scoped_/i),
+      "MySQL reviewed child count leaked another principal, tenant, or compiled SQL.", fanoutResult);
+
     const singleOrganization = await verifySingleOrganizationProductionExplore({
       controlSchema,
       controlUrl,
@@ -856,6 +900,7 @@ async function main() {
       principal_budget_isolated: true,
       tenant_rows_isolated: true,
       derived_tenant_and_principal_scope_isolated: true,
+      reviewed_child_count_scope_isolated: true,
       shared_reference_same_across_tenants: true,
       source_connection_ceiling: 2,
       principal_session_ceiling: 2,

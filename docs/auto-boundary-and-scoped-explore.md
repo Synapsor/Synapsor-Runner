@@ -69,7 +69,16 @@ analytics does not require a placeholder principal. A person-like foreign key
 such as `trainer_id` is only a candidate relationship; it does not prove that
 the current database role is authorized for only that person's rows. Auto
 Boundary selects principal scope only from an applicable RLS policy, an
-existing reviewed Synapsor contract, or an explicit human override.
+existing reviewed Synapsor contract, a config-declared exact column, or an
+explicit human override. When `trusted_context.principal_binding` exactly names
+a non-null inspected column, `boundary draft` seeds that column as the disabled
+boundary's reviewed principal policy. It does not activate the decision. In
+`/access`, select the table, press `Enter`, then press `O` to choose no
+per-user limit, a direct column, or a proven derived path; the editor returns to
+the same columns with unsaved column choices intact. Workbench exposes the same
+choice under **Record and customer limits**. The principal value still comes
+only from the configured environment or verified HTTP claim and is never a
+model argument.
 
 ### Whole-Organization And Shared-Reference Tables
 
@@ -253,9 +262,12 @@ The Workbench requires a human to narrow and confirm:
 - selectable fields;
 - filterable fields and allowed operators;
 - sortable and groupable fields;
-- aggregate-safe numeric measures;
+- aggregate-safe numeric, dispersion, and missing-data measures;
 - identifiers allowed only for `count_distinct`;
-- timestamp fields and permitted day/week/month buckets;
+- timestamp fields and permitted hour/day/week/month/quarter/year/day-of-week
+  buckets;
+- named derived measures, post-suppression calculations, fixed numeric bands,
+  and safe child-count paths;
 - whether each usable field is model-visible or model-withheld;
 - kept-out fields;
 - counted entity and relationship cardinality;
@@ -472,6 +484,9 @@ only shows it in the local verified result and sends a response-local token to
 the model; Model + Runner may send the reviewed value to the configured model.
 Either disclosure choice requires a recorded human reason and changes the exact
 boundary fingerprint. It never creates a tenant or principal tool argument.
+Principal selection is independently reviewed per boundary. Two overlapping
+boundaries may therefore apply different user/owner limits to the same table
+without either policy leaking into the other.
 
 The table picker shows `P` directly below its `TABLES` heading. Pressing it
 explains what the highlighted table's single sign-off covers: field access,
@@ -779,9 +794,22 @@ analytics database tool. It supports:
 
 - `count`;
 - `count_distinct` on explicitly reviewed identifiers;
-- `sum` and `avg` on explicitly reviewed numeric measures;
+- `sum`, `avg`, sample/population standard deviation, and sample/population
+  variance on explicitly reviewed numeric measures;
+- reviewed missing-value counts and completion rates;
+- reviewer-named ratios, percentages, and per-unit averages assembled only from
+  reviewed base aggregates;
+- reviewer-fixed numeric bands;
 - reviewed categorical dimensions;
-- day, week, and month buckets on reviewed timestamps;
+- hour, day, week, month, quarter, year, and day-of-week buckets on reviewed
+  timestamps;
+- reviewer-named running totals, ranks, previous-period changes, moving averages,
+  and shares of released totals, calculated by Runner only after small-group
+  suppression;
+- reviewer-named total or average child counts through one exact non-null,
+  catalog-proven child-to-parent relationship. Runner uses a scoped correlated
+  subaggregate, not a one-to-many join, and releases only parent cohorts of at
+  least five;
 - typed bounded filters;
 - ordering by a returned aggregate;
 - bounded top-N and bottom-N results;
@@ -793,11 +821,13 @@ analytics database tool. It supports:
 - one or two inspected, reviewed many-to-one foreign-key links per path, each
   with maximum fan-out one.
 
-It does not support arbitrary `DISTINCT`, `HAVING`, formulas, window functions,
-unions, nested queries, many-to-many joins, system catalogs, user-defined
-functions, or a general join planner. Scope is enforced independently on every
-participating relation. Runner refuses a plan when cardinality, fan-out,
-counted entity, or scope cannot be proven.
+It does not accept arbitrary `DISTINCT`, `HAVING`, formulas, model-authored
+window functions, unions, nested queries, many-to-many joins, system catalogs,
+user-defined functions, or a general join planner. The reviewed running, lag,
+rank, moving-average, and share operations are fixed names evaluated over
+already released groups; the model never sends an expression or SQL window.
+Scope is enforced independently on every participating relation. Runner refuses
+a plan when cardinality, fan-out, counted entity, or scope cannot be proven.
 
 Auto Boundary does not activate every discovered path. When a useful question
 needs one inactive but catalog-proven path, Runner refuses the plan and stages

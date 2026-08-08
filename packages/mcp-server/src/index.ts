@@ -59,6 +59,7 @@ export {
   analyticalToolOutputSchema,
   schemaAsJsonSchema,
   scopedExploreDescribeOutputSchema,
+  scopedExploreDescribeToolOutputSchema,
   scopedExploreQueryOutputSchema,
   scopedExploreQueryToolOutputSchema,
 } from "./analytics-output-schema.js";

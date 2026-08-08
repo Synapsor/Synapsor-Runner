@@ -99,6 +99,14 @@ export type BoundaryResourceReviewRequest = {
       window_size?: number;
       remove?: boolean;
     }
+    | {
+      name: string;
+      label: string;
+      shape: "child_count_total" | "child_count_average";
+      child_resource: string;
+      relationship: string;
+      remove?: boolean;
+    }
   );
   numeric_band?: {
     name: string;
@@ -134,7 +142,15 @@ function normalizedRequestedDerivedMeasure(
   reviewed: NonNullable<BoundaryResourceReviewRequest["derived_measure"]>,
   resourceId: string,
 ): ExplorationDerivedMeasure {
-  const definition = "base_measure" in reviewed
+  const definition = "child_resource" in reviewed
+    ? {
+      name: reviewed.name,
+      label: reviewed.label,
+      shape: reviewed.shape,
+      child_resource: reviewed.child_resource,
+      relationship: reviewed.relationship,
+    }
+    : "base_measure" in reviewed
     ? {
       name: reviewed.name,
       label: reviewed.label,
@@ -1879,7 +1895,14 @@ function requestArrays(request: BoundaryResourceReviewRequest): string[] {
     ...("relationship" in operand && operand.relationship ? [operand.relationship] : []),
   ];
   const derivedMeasureValues = request.derived_measure
-    ? "base_measure" in request.derived_measure
+    ? "child_resource" in request.derived_measure
+      ? [
+        request.derived_measure.name,
+        request.derived_measure.label,
+        request.derived_measure.child_resource,
+        request.derived_measure.relationship,
+      ]
+      : "base_measure" in request.derived_measure
       ? [
         request.derived_measure.name,
         request.derived_measure.label,

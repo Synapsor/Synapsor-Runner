@@ -36,6 +36,7 @@ import {
   loadGenerationLockForActivatedBoundary,
   relationshipAuthorityDependencyFingerprint,
   relationshipDependencyKey,
+  resolveReviewedChildCountLink,
   reviewedRankedGroupLimit,
   resourceAuthorityDependencyFingerprint,
   rolePostureFingerprint,
@@ -980,7 +981,8 @@ export function assertPreparedExplorePlanAuthority(
       Boolean(
         resource.tenant_scope
         || resource.principal_scope
-        || resource.shared_reference_scope,
+        || resource.shared_reference_scope
+        || resource.derived_measures?.some((definition) => "child_resource" in definition),
       ));
     if (usesDependencyBoundScope) {
       throw new ScopedExploreError(
@@ -1428,6 +1430,15 @@ function validateAggregatePlan(input: Record<string, unknown>, boundary: Activat
   for (const measure of measures) {
     if (!("derived_measure" in measure)) continue;
     const definition = reviewedDerivedMeasure(resource, measure.derived_measure);
+    if ("child_resource" in definition) {
+      resolveReviewedChildCountLink(
+        resource.id,
+        definition,
+        boundary.pack.resources,
+        Boolean(boundary.organization_scope),
+      );
+      continue;
+    }
     if (!("base_measure" in definition)) continue;
     if (comparison) {
       throw planError(`${definition.shape} is a post-suppression transform and cannot be combined with a two-period comparison`);
@@ -1672,6 +1683,7 @@ function compileAggregatePlan(
   const parametersBeforeSelect = params.length;
   const select: string[] = [];
   const groupBy: string[] = [];
+  const derivedResources: BoundaryResource[] = [];
   (plan.dimensions ?? []).forEach((dimension, index) => {
     if ("numeric_band" in dimension) {
       const definition = reviewedNumericBand(root, dimension.numeric_band);
@@ -1732,9 +1744,19 @@ function compileAggregatePlan(
   plan.measures.forEach((measure, index) => {
     if ("derived_measure" in measure) {
       const definition = reviewedDerivedMeasure(root, measure.derived_measure);
-      const expression = compiledDerivedMeasureSql(definition, root, joined, engine);
+      const expression = compiledDerivedMeasureSql({
+        definition,
+        root,
+        joined,
+        boundary,
+        context,
+        params,
+        engine,
+        measureIndex: index,
+      });
       select.push(`${expression.value} AS ${quote(`measure_${index}`, engine)}`);
       select.push(`${expression.contributorCohort} AS ${quote(`__measure_cohort_${index}`, engine)}`);
+      derivedResources.push(...expression.resources);
       return;
     }
     const alias = measure.relationship
@@ -1771,7 +1793,7 @@ function compileAggregatePlan(
         ...params.slice(parametersAfterSelect),
       ]
       : params,
-    resources: uniqueResources([...joined.resources, ...rootScope.resources]),
+    resources: uniqueResources([...joined.resources, ...rootScope.resources, ...derivedResources]),
     ...(reviewedValueControls.length
       ? { reviewed_value_controls: uniqueReviewedValueControls(reviewedValueControls) }
       : {}),
@@ -2229,6 +2251,7 @@ function dimensionRelationships(
 function measureRelationships(measure: AggregateMeasure, root: BoundaryResource): string[] {
   if (!("derived_measure" in measure)) return measure.relationship ? [measure.relationship] : [];
   const definition = reviewedDerivedMeasure(root, measure.derived_measure);
+  if ("child_resource" in definition) return [];
   const source = "base_measure" in definition ? definition.base_measure : definition.numerator;
   const relationship = "relationship" in source
     ? source.relationship
@@ -2236,14 +2259,19 @@ function measureRelationships(measure: AggregateMeasure, root: BoundaryResource)
   return relationship ? [relationship] : [];
 }
 
-function compiledDerivedMeasureSql(
-  definition: ExplorationDerivedMeasure,
-  root: BoundaryResource,
+function compiledDerivedMeasureSql(input: {
+  definition: ExplorationDerivedMeasure;
+  root: BoundaryResource;
   joined: {
     targets: Map<string, { resource: BoundaryResource; alias: string }>;
-  },
-  engine: "postgres" | "mysql",
-): { value: string; contributorCohort: string } {
+  };
+  boundary: ActivatedExplorationBoundary;
+  context: { tenant: string; principal: string };
+  params: Scalar[];
+  engine: "postgres" | "mysql";
+  measureIndex: number;
+}): { value: string; contributorCohort: string; resources: BoundaryResource[] } {
+  const { definition, root, joined, engine } = input;
   const operand = (measure: ExplorationDerivedBaseMeasure): { value: string; contributors: string } => {
     if (measure.function === "count") return { value: "COUNT(*)", contributors: "COUNT(*)" };
     const target = measure.relationship ? joined.targets.get(measure.relationship) : undefined;
@@ -2254,9 +2282,37 @@ function compiledDerivedMeasureSql(
       contributors: `COUNT(${field})`,
     };
   };
+  if ("child_resource" in definition) {
+    const reviewed = resolveReviewedChildCountLink(
+      root.id,
+      definition,
+      input.boundary.pack.resources,
+      Boolean(input.boundary.organization_scope),
+    );
+    const alias = `fc${input.measureIndex}`;
+    const childScope = compileScopePredicates(
+      reviewed.child,
+      input.boundary,
+      alias,
+      input.context,
+      input.params,
+      engine,
+    );
+    const correlation = reviewed.link.source_columns.map((column, index) =>
+      `${alias}.${quote(column, engine)} = t0.${quote(reviewed.link.target_columns[index]!, engine)}`);
+    const predicates = [...correlation, ...childScope.predicates];
+    const childCount = `(SELECT COUNT(*) FROM ${qualified(reviewed.child, engine)} ${alias} WHERE ${predicates.join(" AND ")})`;
+    return {
+      value: definition.shape === "child_count_total"
+        ? `SUM(${childCount})`
+        : `AVG(1.0 * ${childCount})`,
+      contributorCohort: "COUNT(*)",
+      resources: childScope.resources,
+    };
+  }
   if ("base_measure" in definition) {
     const base = operand(definition.base_measure);
-    return { value: base.value, contributorCohort: base.contributors };
+    return { value: base.value, contributorCohort: base.contributors, resources: [] };
   }
   const numerator = operand(definition.numerator);
   const denominator = operand(definition.denominator);
@@ -2264,6 +2320,7 @@ function compiledDerivedMeasureSql(
   return {
     value: `CASE WHEN ${denominator.value} IS NULL OR ${denominator.value} = 0 THEN NULL ELSE (${scale} * ${numerator.value} / ${denominator.value}) END`,
     contributorCohort: `LEAST(COUNT(*), ${numerator.contributors}, ${denominator.contributors})`,
+    resources: [],
   };
 }
 
@@ -2335,9 +2392,12 @@ function describeExploreResult(input: {
       relationship: "derived_measure" in measure ? null : measure.relationship ?? null,
       ...( "derived_measure" in measure ? { derived_measure: measure.derived_measure } : {}),
       contributor_cohort: "derived_measure" in measure
-        || CONTRIBUTOR_AWARE_MEASURE_FUNCTIONS.has(measure.function)
-        ? "non-null values for this reviewed field"
-        : "reviewed root rows",
+        ? "child_resource" in reviewedDerivedMeasure(resource, measure.derived_measure)
+          ? "reviewed parent rows"
+          : "non-null contributors to this reviewed definition"
+        : CONTRIBUTOR_AWARE_MEASURE_FUNCTIONS.has(measure.function)
+          ? "non-null values for this reviewed field"
+          : "reviewed root rows",
       ...(aggregatePlan.comparison
         ? {
           comparison_outputs: {
@@ -2665,6 +2725,16 @@ function describeReviewedDerivedMeasure(
       MINIMUM_DISPERSION_COHORT_SIZE,
     ),
   };
+  if ("child_resource" in measure) {
+    return {
+      ...common,
+      calculation_stage: "scoped child count aggregated over reviewed parent cohorts",
+      child_resource: measure.child_resource,
+      relationship: measure.relationship,
+      parent_contributor_floor: "applied before release",
+      raw_child_rows_returned: false,
+    };
+  }
   if (!("base_measure" in measure)) {
     return {
       ...common,
@@ -3864,19 +3934,33 @@ function assertPlanAuthorityDependenciesCurrent(
 ): void {
   const root = resourceFor(boundary, plan.resource);
   const resourceIds = new Set([root.id]);
-  for (const relationshipId of relationshipIdsForPlan(plan, boundary)) {
-    const relationship = reviewedRelationship(root, relationshipId, boundary);
-    const key = relationshipDependencyKey(root.id, relationshipId);
+  if (plan.kind === "aggregate") {
+    for (const measure of plan.measures) {
+      if (!("derived_measure" in measure)) continue;
+      const definition = reviewedDerivedMeasure(root, measure.derived_measure);
+      if (!("child_resource" in definition)) continue;
+      const reviewed = resolveReviewedChildCountLink(
+        root.id,
+        definition,
+        boundary.pack.resources,
+        Boolean(boundary.organization_scope),
+      );
+      resourceIds.add(reviewed.child.id);
+    }
+  }
+  for (const authority of relationshipAuthoritiesForPlan(plan, boundary)) {
+    const relationship = reviewedRelationship(authority.root, authority.relationshipId, boundary);
+    const key = relationshipDependencyKey(authority.root.id, authority.relationshipId);
     const dependency = dependencies.relationships[key];
     if (!dependency || !relationship.proof
-      || dependency.root_resource !== root.id
-      || dependency.relationship_id !== relationshipId
+      || dependency.root_resource !== authority.root.id
+      || dependency.relationship_id !== authority.relationshipId
       || dependency.proof_digest !== relationship.proof.digest
       || canonicalJsonDigest(dependency.links) !== relationship.proof.digest) {
       throw new ScopedExploreError(
         "EXPLORE_LOCK_STALE",
         withGenerationLockRemediation(
-          `Reviewed relationship ${relationshipId} is not bound to the current generation-lock proof.`,
+          `Reviewed relationship ${authority.relationshipId} is not bound to the current generation-lock proof.`,
           lock,
         ),
       );
@@ -3886,7 +3970,7 @@ function assertPlanAuthorityDependenciesCurrent(
       throw new ScopedExploreError(
         "EXPLORE_LOCK_STALE",
         withGenerationLockRemediation(
-          `Reviewed relationship ${relationshipId} is stale because its foreign-key or uniqueness proof changed.`,
+          `Reviewed relationship ${authority.relationshipId} is stale because its foreign-key or uniqueness proof changed.`,
           lock,
         ),
       );
@@ -3992,20 +4076,43 @@ function describeReviewedResourceDrift(
   return `Reviewed table or view ${resource.id} changed in authority-bearing schema, RLS, grant, ownership, or column semantics. No query was executed.`;
 }
 
-function relationshipIdsForPlan(
+function relationshipAuthoritiesForPlan(
   plan: ExplorePlan,
   boundary: ActivatedExplorationBoundary,
-): string[] {
+): Array<{ root: BoundaryResource; relationshipId: string }> {
   if (plan.kind !== "aggregate") return [];
   const root = resourceFor(boundary, plan.resource);
-  return unique([
+  const authorities = unique([
     plan.relationship,
     ...plan.measures.flatMap((measure) => measureRelationships(measure, root)),
     ...(plan.dimensions ?? []).flatMap((dimension) => dimensionRelationships(dimension, root)),
     plan.time_bucket?.relationship,
     ...(plan.where ?? []).map((filter) => filter.relationship),
     plan.comparison?.relationship,
-  ].filter((value): value is string => Boolean(value)));
+  ].filter((value): value is string => Boolean(value))).map((relationshipId) => ({
+    root,
+    relationshipId,
+  }));
+  for (const measure of plan.measures) {
+    if (!("derived_measure" in measure)) continue;
+    const definition = reviewedDerivedMeasure(root, measure.derived_measure);
+    if (!("child_resource" in definition)) continue;
+    const reviewed = resolveReviewedChildCountLink(
+      root.id,
+      definition,
+      boundary.pack.resources,
+      Boolean(boundary.organization_scope),
+    );
+    const activeRelationship = reviewed.child.relationships.find((relationship) =>
+      relationship.id === definition.relationship && (relationship.path_depth ?? 1) === 1);
+    if (activeRelationship) {
+      authorities.push({ root: reviewed.child, relationshipId: activeRelationship.id });
+    }
+  }
+  return [...new Map(authorities.map((authority) => [
+    `${authority.root.id}\u0000${authority.relationshipId}`,
+    authority,
+  ])).values()];
 }
 
 function requestedResource(boundary: ActivatedExplorationBoundary, value: unknown): BoundaryResource {

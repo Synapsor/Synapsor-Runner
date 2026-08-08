@@ -38,6 +38,7 @@ import {
   explorationBoundaryCandidateDigest,
   loadActivatedExplorationBoundary,
   loadActivatedExplorationBoundaries,
+  loadGenerationLockSnapshot,
   loadStructuredProjectEvidence,
   normalizeExplorationDerivedMeasure,
   normalizeExplorationNumericBand,
@@ -1180,7 +1181,14 @@ async function handleRequest(input: {
       });
       return;
     }
-    const preview = reviewExplorationBoundaryCandidate(draft, body.candidate as unknown as ExplorationBoundaryDraft);
+    const submittedCandidate = body.candidate as unknown as ExplorationBoundaryDraft;
+    const reviewDraft = existingProgress
+      && submittedCandidate.generation_lock_fingerprint
+        === existingProgress.candidate.generation_lock_fingerprint
+      && submittedCandidate.pack?.name === existingProgress.candidate.pack.name
+      ? existingProgress.candidate
+      : draft;
+    const preview = reviewExplorationBoundaryCandidate(reviewDraft, submittedCandidate);
     const confirmed = normalizePartialReviewDecisions(
       preview.candidate.unresolved_decisions,
       body.confirmed_decisions as string[],
@@ -1308,13 +1316,24 @@ async function handleRequest(input: {
       candidateSource.relationships.sort((left, right) =>
         (left.path_depth ?? 1) - (right.path_depth ?? 1) || left.id.localeCompare(right.id));
     }
-    const preview = reviewExplorationBoundaryCandidate(draft, candidate);
+    const relationshipDecision =
+      `${resourceId}: review relationship ${relationshipId} cardinality and scope on ${reviewedRelationship.target_resource}`;
+    // This endpoint constructs the only permitted widening from the active pack
+    // after proving the catalog relationship and every resource in its path.
+    // Reconstitute that boundary's own review requirements without borrowing a
+    // policy-bound draft from another saved boundary.
+    const reviewDraft = structuredClone(candidate);
+    reviewDraft.unresolved_decisions = [...new Set([
+      ...active.activation.reviewed_decisions
+        .filter((decision) => decision.confirmed)
+        .map((decision) => decision.decision),
+      relationshipDecision,
+    ])].sort();
+    const preview = reviewExplorationBoundaryCandidate(reviewDraft, candidate);
     const confirmedDecisions = active.activation.reviewed_decisions
       .filter((decision) => decision.confirmed)
       .map((decision) => decision.decision)
       .filter((decision) => preview.candidate.unresolved_decisions.includes(decision));
-    const relationshipDecision =
-      `${resourceId}: review relationship ${relationshipId} cardinality and scope on ${reviewedRelationship.target_resource}`;
     if (reviewedRelationship.unmatched_rows !== "review_required"
       && preview.candidate.unresolved_decisions.includes(relationshipDecision)
       && !confirmedDecisions.includes(relationshipDecision)) {
@@ -1726,7 +1745,11 @@ async function handleRequest(input: {
       });
       return;
     }
-    const lock = JSON.parse(await fs.readFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "utf8")) as GenerationLock;
+    const candidate = body.candidate as unknown as ExplorationBoundaryDraft;
+    const lock = await loadGenerationLockSnapshot(
+      projectRoot,
+      candidate.generation_lock_fingerprint,
+    );
     const inspection = await schemaInspector({
       engine: lock.engine,
       databaseUrlEnv: lock.source_env,
@@ -1735,7 +1758,9 @@ async function handleRequest(input: {
     });
     const active = await activateExplorationBoundary({
       projectRoot,
-      candidate: body.candidate as unknown as ExplorationBoundaryDraft,
+      candidate,
+      reviewDraft: progress?.candidate,
+      generationLock: lock,
       expectedDigest: body.expected_digest,
       actor: body.actor,
       confirmation: body.confirmation,
@@ -1840,10 +1865,14 @@ async function handleRequest(input: {
       });
       return;
     }
-    const reviewed = reviewExplorationBoundaryCandidate(
-      draft,
-      body.candidate as unknown as ExplorationBoundaryDraft,
-    );
+    const submittedCandidate = body.candidate as unknown as ExplorationBoundaryDraft;
+    const reviewDraft = progress
+      && submittedCandidate.generation_lock_fingerprint
+        === progress.candidate.generation_lock_fingerprint
+      && submittedCandidate.pack?.name === progress.candidate.pack.name
+      ? progress.candidate
+      : draft;
+    const reviewed = reviewExplorationBoundaryCandidate(reviewDraft, submittedCandidate);
     if (!progress
       || explorationBoundaryCandidateDigest(progress.candidate) !== reviewed.digest) {
       sendJson(response, 409, {
@@ -7923,6 +7952,19 @@ function managedReviewMutationRequest(
           ...(decision.definition.window_size !== undefined
             ? { window_size: decision.definition.window_size }
             : {}),
+          ...(decision.remove ? { remove: true } : {}),
+        },
+      };
+    }
+    if ("child_resource" in decision.definition) {
+      return {
+        ...common,
+        derived_measure: {
+          name: decision.name,
+          label: decision.definition.label,
+          shape: decision.definition.shape,
+          child_resource: decision.definition.child_resource,
+          relationship: decision.definition.relationship,
           ...(decision.remove ? { remove: true } : {}),
         },
       };

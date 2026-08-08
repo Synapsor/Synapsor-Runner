@@ -75,7 +75,7 @@ Auto Boundary and Protect projects opt into generation-lock enforcement:
 must be `required`; generated authority fails closed when its reviewed schema,
 role/grant/RLS posture, compiler, Spec, or dependency fingerprints drift.
 `reporting_timezone` is optional for backward compatibility. Newly generated
-analytical authority binds `UTC` into its lock and config so day/week/month
+analytical authority binds `UTC` into its lock and config so reviewed calendar
 buckets and exact two-period comparisons keep the same semantics after
 promotion.
 
@@ -287,6 +287,15 @@ Providers are `environment`, `static_dev`, `http_claims`, and `cloud_session`.
 `static_dev` is only for local fixtures. Named `contexts` use the same shape.
 Capabilities may reference a context by name. The model never receives tenant
 or principal as an overridable argument.
+
+For Explore authoring, `principal_binding` may also exactly name a non-null
+source column such as `rep`. On a fresh `boundary draft`, Runner records that
+match as a per-boundary disabled review seed; it does not infer authority from
+the name and does not activate it. The operator can confirm or replace the
+direct column with a proven derived principal path in `/access` or Workbench.
+No match, a nullable column, or a binary/large column leaves principal row scope
+unconfigured. The trusted principal value still comes from
+`values.principal_env` locally or the verified JWT claim over production HTTP.
 
 The language-neutral canonical contract can preserve a `session` binding for
 implementations such as C++/Cloud that own a typed session boundary. Runner has

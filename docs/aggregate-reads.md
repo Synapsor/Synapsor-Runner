@@ -4,12 +4,13 @@ There are two distinct aggregate surfaces:
 
 1. A fixed named `aggregate_read` capability, described on this page, is
    production-capable and returns one contract-authored scalar.
-2. Scoped Aggregate Explore is a local development/staging authoring tool. It
-   accepts only a typed plan inside a human-activated analytical boundary and
-   supports repeated questions over reviewed measures, dimensions, time
-   buckets, filters, ordering, and bounds. Protect is optional while exploring;
-   use it only when a selected analysis should become a named production
-   capability.
+2. Scoped Aggregate Explore accepts only a typed plan inside a human-activated
+   analytical boundary and supports repeated questions over reviewed measures,
+   dimensions, time buckets, filters, ordering, and bounds. It runs locally in
+   development/staging and, after explicit production opt-in and attestation,
+   through the same two-tool surface over secured HTTP MCP. Protect is optional
+   for local analysis that should become a fixed named capability; production
+   HTTP Explore remains read-only and does not expose Protect to the model.
 
 Neither surface accepts SQL strings or arbitrary identifiers. Read
 [Auto Boundary, Scoped Explore, And
@@ -79,18 +80,20 @@ suppression reduces single-record inference when the reviewed threshold is
 greater than 1; it does not solve every statistical inference risk. Review the
 underlying view, database role, and aggregation policy as well.
 
-For a derived measure, keep formulas and joins out of the model-facing grammar.
-Define them in a reviewed database view and expose only a typed view column
-through the fixed aggregate capability. The complete hardened PostgreSQL
-pattern and runnable retail example are in [Reviewed Database Views For Derived
+Fixed named `aggregate_read` capabilities still require contract-authored
+operations. For calculations outside their closed grammar, use a reviewed
+database view. The complete hardened PostgreSQL pattern and runnable retail
+example are in [Reviewed Database Views For Derived
 Measures](reviewed-database-views.md).
 
 Scoped Aggregate Explore reuses and extends this suppression machinery. Its
 reviewed boundary additionally fixes aggregate-safe measures,
-`count_distinct` identifiers, dimensions, day/week/month buckets, typed
-filters, up to three activated relationship paths (one or two proven
-many-to-one links per path), maximum groups, response/query/rate limits, and
-durable extraction/differencing budgets. A field may be approved for
+`count_distinct` identifiers, numeric dispersion, missing-data measures,
+reviewer-named derived measures, fixed numeric bands, hour through year and
+day-of-week buckets, typed filters, up to three activated relationship paths
+(one or two proven many-to-one links per path), maximum groups,
+response/query/rate limits, and durable extraction/differencing budgets. A
+field may be approved for
 `count_distinct` while its raw values remain hidden. Relationship paths remain
 catalog-proven, operator-activated authority; the model cannot supply join
 identifiers or activate an inactive path. Plans may request top- or bottom-N
@@ -99,6 +102,42 @@ percentage change. Timestamps, bucket labels, and range boundaries use UTC in
 this release. Structured MCP output schemas and the safe analytics catalog let
 external clients consume the same bounded result without learning physical
 schema names.
+
+Dispersion uses `COUNT(field)` rather than `COUNT(*)` as its contributor count.
+It is released only when at least `max(reviewed minimum group size, 5)` non-null
+values contributed; sample standard deviation also requires at least two.
+Lowering a table's ordinary group threshold therefore never lowers the
+dispersion floor. `min`, `max`, median, percentile, mode, covariance, and
+correlation remain unavailable because they need separate disclosure analysis.
+
+Reviewers can save ratio, percentage, and per-unit definitions assembled from
+reviewed base aggregates. They can also save running total, rank, lag change,
+moving average, and share-of-released-total operations. The model receives only
+the digest-bound name. Runner performs the latter operations after suppression,
+over released groups only; it emits no database window SQL and accepts no
+formula, partition expression, frame, or arbitrary ordering from the model.
+
+A reviewed child-count measure answers normalized-schema questions such as
+total line items by customer region or average events per order. Its definition
+fixes one child resource and one non-null catalog-proven many-to-one child-to-
+parent foreign key. Runner compiles a correlated subaggregate, injects the
+child's own trusted tenant/principal scope, and never exposes a raw one-to-many
+join. The released cohort is the reviewed parent population and has an effective
+minimum of five. Child-count analyses are currently Explore-only: Protect
+refuses them until protected contracts can freeze the inverse child and scope
+authority explicitly.
+
+### Database Compatibility For Reviewed Analytics
+
+The 1.7.0 release gates execute these analytics on PostgreSQL 16 and MySQL 8.
+Those are the documented tested database lines for the expanded grammar; this
+release makes no broader server-version claim. Standard deviation and variance
+compile to each engine's `STDDEV_*` and `VAR_*` aggregate functions. Calendar
+grouping and correlated child counts compile through engine-specific fixed SQL.
+Post-suppression running totals, lag changes, ranks, moving averages, and shares
+run in Runner after bounded groups are returned, so they do not depend on
+database window-function support. Already-correct plans have one shared
+validator/compiler path for local stdio and production HTTP MCP.
 
 Ranked aggregates use two independent reviewed ceilings:
 
@@ -166,11 +205,14 @@ The model-visible catalog retains the field's reviewed type and legal
 operations so it can compose typed plans, but omits that field's enum/value
 domain.
 
-Explore remains an authoring surface: it is absent from production
-`tools/list`. Repeated authoring questions do not create authority and do not
-need to be protected. When an operator explicitly chooses **Protect this
-analysis**, Runner freezes that exact normalized analysis into disabled public
-DSL and canonical named authority, then requires a separate digest-bound human
-activation. See [Reviewed Relationship Paths](reviewed-relationships.md) and
-[Auto Boundary, Scoped Explore, And
+Local Explore remains an authoring surface. Repeated questions do not create
+authority and do not need to be protected. When a local operator explicitly
+chooses **Protect this analysis**, Runner freezes supported normalized analyses
+into disabled public DSL and canonical named authority, then requires a separate
+digest-bound human activation. Production Explore appears in `tools/list` only
+under its explicit secured-HTTP opt-in and still exposes exactly
+`app.describe_data` and `app.explore_data`; it never exposes Protect or any
+operator action. See [Production Scoped Explore Over
+HTTP](production-scoped-explore-http.md), [Reviewed Relationship
+Paths](reviewed-relationships.md), and [Auto Boundary, Scoped Explore, And
 Protect](auto-boundary-and-scoped-explore.md).

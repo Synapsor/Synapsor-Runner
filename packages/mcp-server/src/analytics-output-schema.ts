@@ -48,13 +48,78 @@ const scopedExploreMeasureFunctionSchema = z.enum([
   "completion_rate",
   "reviewed_derived",
 ]);
+const sequentialDerivedGrain =
+  "one reviewed ordered time_bucket; dimensions are optional partitions" as const;
+const groupedDerivedGrain =
+  "one or more reviewed dimensions and no time_bucket" as const;
 const scopedDerivedMeasureSchema = z.object({
   name: z.string(),
   label: z.string(),
-  shape: z.enum(["ratio", "percentage", "per_unit_average"]),
-  null_behavior: z.literal("null when the reviewed denominator is zero or null"),
+  shape: z.enum([
+    "ratio",
+    "percentage",
+    "per_unit_average",
+    "child_count_total",
+    "child_count_average",
+    "running_total",
+    "lag_absolute_change",
+    "lag_percentage_change",
+    "moving_average",
+    "rank",
+    "share_of_released_total",
+  ]),
   effective_minimum_cohort_size: z.number().int().min(5),
-}).strict();
+  calculation_stage: z.enum([
+    "after cohort validation",
+    "scoped child count aggregated over reviewed parent cohorts",
+    "after small-group suppression",
+  ]),
+  null_behavior: z.literal("null when the reviewed denominator is zero or null").optional(),
+  child_resource: z.string().optional(),
+  relationship: z.string().optional(),
+  parent_contributor_floor: z.literal("applied before release").optional(),
+  raw_child_rows_returned: z.literal(false).optional(),
+  required_grain: z.enum([sequentialDerivedGrain, groupedDerivedGrain]).optional(),
+  suppressed_groups_included: z.literal(false).optional(),
+  fixed_window_size: z.number().int().min(2).max(12).optional(),
+  fixed_direction: z.enum(["asc", "desc"]).optional(),
+}).strict().superRefine((value, context) => {
+  const requireValue = (field: keyof typeof value, expected: unknown): void => {
+    if (value[field] !== expected) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [field],
+        message: `${String(field)} must match the reviewed derived-measure shape`,
+      });
+    }
+  };
+  if (["ratio", "percentage", "per_unit_average"].includes(value.shape)) {
+    requireValue("calculation_stage", "after cohort validation");
+    requireValue("null_behavior", "null when the reviewed denominator is zero or null");
+    return;
+  }
+  if (value.shape === "child_count_total" || value.shape === "child_count_average") {
+    requireValue("calculation_stage", "scoped child count aggregated over reviewed parent cohorts");
+    if (!value.child_resource) requireValue("child_resource", "required");
+    if (!value.relationship) requireValue("relationship", "required");
+    requireValue("parent_contributor_floor", "applied before release");
+    requireValue("raw_child_rows_returned", false);
+    return;
+  }
+  requireValue("calculation_stage", "after small-group suppression");
+  requireValue("suppressed_groups_included", false);
+  if (["running_total", "lag_absolute_change", "lag_percentage_change", "moving_average"].includes(value.shape)) {
+    requireValue("required_grain", sequentialDerivedGrain);
+    if (value.shape === "moving_average" && value.fixed_window_size === undefined) {
+      requireValue("fixed_window_size", "required");
+    }
+    return;
+  }
+  requireValue("required_grain", groupedDerivedGrain);
+  if (value.shape === "rank" && value.fixed_direction === undefined) {
+    requireValue("fixed_direction", "required");
+  }
+});
 const scopedNumericBandSchema = z.object({
   name: z.string(),
   label: z.string(),
@@ -389,6 +454,43 @@ export const scopedExploreDescribeOutputSchema = z.object({
   next_cursor: z.number().int().nonnegative().nullable().optional(),
   raw_sql_available: z.literal(false).optional(),
   source_rows_available_before_activation: z.literal(false).optional(),
+}).strict();
+
+// tools/list needs the stable resource contract, but repeating every nested
+// relationship and reviewed-analytics field makes discovery much larger than
+// the two model-facing tools. Full runtime validation remains above.
+const scopedExploreClientDescribeResourceSchema = z.object({
+  boundary_name: z.string().optional(),
+  id: z.string(),
+  primary_key: z.string(),
+  field_egress: safeRecordSchema,
+  selectable_fields: z.array(z.string()),
+  filterable_fields: z.array(z.string()),
+  filter_operators: safeRecordSchema,
+  sortable_fields: z.array(z.string()),
+  groupable_fields: z.array(z.string()),
+  aggregate_measures: z.array(z.string()),
+  aggregate_measure_functions: safeRecordSchema,
+  presence_measure_fields: z.array(z.string()),
+  presence_measure_functions: z.array(z.string()),
+  derived_measures: z.array(safeRecordSchema),
+  numeric_bands: z.array(safeRecordSchema),
+  count_distinct_fields: z.array(z.string()),
+  time_bucket_fields: safeRecordSchema,
+  time_coverage: safeRecordSchema,
+  field_types: safeRecordSchema,
+  field_enums: safeRecordSchema,
+  kept_out_field_count: z.number().int().nonnegative(),
+  relationships: z.array(safeRecordSchema),
+  minimum_cohort_size: z.number().int().positive(),
+  minimum_cohort_overridden: z.literal(true).optional(),
+  maximum_rows: z.number().int().positive(),
+  maximum_groups: z.number().int().positive(),
+  suggested_questions: z.array(safeRecordSchema),
+}).strict();
+
+export const scopedExploreDescribeToolOutputSchema = scopedExploreDescribeOutputSchema.extend({
+  resources: z.array(scopedExploreClientDescribeResourceSchema).optional(),
 }).strict();
 
 export const scopedExploreQueryOutputSchema = z.object({

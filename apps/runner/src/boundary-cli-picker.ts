@@ -27,6 +27,10 @@ export type BoundaryFieldTierEditResult =
       field: string;
       tiers: Record<string, BoundaryFieldTier>;
     }
+  | {
+      action: "principal";
+      tiers: Record<string, BoundaryFieldTier>;
+    }
   | `enum:${string}`
   | "back"
   | "privacy"
@@ -574,7 +578,7 @@ async function chooseResource(
             )),
             "",
             theme.bold(
-              `${theme.key("Enter")} Review once, activate, and choose how to ask`,
+              `${theme.key("Enter/C")} Review + activate`,
             ),
             ...packTerminalActions([
               `${theme.key("E")} Edit access`,
@@ -587,8 +591,8 @@ async function chooseResource(
             ], terminalContentWidth(output.columns)),
             "",
             theme.dim(
-              "After one exact confirmation, choose OpenAI, Anthropic, a local model, " +
-              "or an existing MCP client.",
+              "Activation returns here so you can keep editing. Press Q when finished " +
+              "to choose how to ask.",
             ),
             theme.dim("The draft grants no AI access until you confirm it."),
           ]);
@@ -669,7 +673,7 @@ async function chooseResource(
             `${theme.key("M")} Map`,
             `${theme.key("N")} Rename`,
             `${theme.key("X")} Delete`,
-            ...(highlightedBoundary.active ? [`${theme.key("D")} Deactivate`] : []),
+            ...(highlightedBoundary.active ? [`${theme.key("D")} Deactivate active boundary`] : []),
             `${theme.key("Q")} Quit`,
           ], terminalContentWidth(output.columns)),
           theme.dim("New boundaries start with a table you choose, then open its column access for review."),
@@ -806,7 +810,7 @@ async function chooseResource(
           ? [`${theme.key("S")} Sign off table`]
           : []),
         ...(resourceView === "boundary"
-          ? [`${theme.key("R")} Remove`]
+          ? [`${theme.key("R")} Remove from draft`]
           : []),
         ...(focusedAccess && resourceView === "boundary"
           ? [`${theme.key("P")} Privacy (minimum group ${
@@ -957,9 +961,6 @@ async function chooseResource(
       if (key.name === "n") return { action: "rename" };
       if (key.name === "l") return { action: "limits" };
       if (key.name === "c") return { action: "confirm" };
-      if (key.name === "d" && resources.some((resource) => resource.active)) {
-        return { action: "disable", boundary_name: resources[0]!.candidate_boundary_name };
-      }
       if (key.name === "a" && resourceView === "boundary") {
         resourceView = "related";
         selected = 0;
@@ -1059,6 +1060,12 @@ async function editFieldTiers(
         `${theme.key("P")} Privacy threshold: minimum group ${
           (view.candidate ?? view.generated_candidate)!.minimum_cohort_size
         } (${(view.candidate ?? view.generated_candidate)!.minimum_cohort_size === 1 ? "suppression off" : "small groups withheld"})`,
+        `${theme.key("O")} User/owner row limit: ${
+          (view.candidate ?? view.generated_candidate)!.principal_key
+            ?? ((view.candidate ?? view.generated_candidate)!.principal_scope
+              ? formatDerivedScopePath((view.candidate ?? view.generated_candidate)!.principal_scope!)
+              : "not configured")
+        }`,
         ...(enumValues
           ? [`${theme.key("E")} Edit allowed values for selected column: ${reviewedEnumValues!.length} of ${enumValues.length}`]
           : []),
@@ -1103,6 +1110,7 @@ async function editFieldTiers(
         continue;
       }
       if (key.name === "p") return "privacy";
+      if (key.name === "o") return { action: "principal", tiers: { ...tiers } };
       if (key.name === "e" && enumValues) {
         return {
           action: "enum",

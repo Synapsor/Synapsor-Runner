@@ -104,9 +104,17 @@ export type ExplorationPostAggregateMeasure = {
   direction?: "asc" | "desc";
   window_size?: number;
 };
+export type ExplorationChildCountDerivedMeasure = {
+  name: string;
+  label: string;
+  shape: "child_count_total" | "child_count_average";
+  child_resource: string;
+  relationship: string;
+};
 export type ExplorationDerivedMeasure =
   | ExplorationRatioDerivedMeasure
-  | ExplorationPostAggregateMeasure;
+  | ExplorationPostAggregateMeasure
+  | ExplorationChildCountDerivedMeasure;
 export type ExplorationNumericBand = {
   name: string;
   label: string;
@@ -732,9 +740,40 @@ export function pruneAutoBoundaryReviewOverrides(
       AutoBoundaryReviewOverrides["resources"][string]["derived_measures"]
     > = {};
     for (const [name, derivedDecision] of Object.entries(decision.derived_measures ?? {})) {
-      const operands = "base_measure" in derivedDecision.definition
-        ? [derivedDecision.definition.base_measure]
-        : [derivedDecision.definition.numerator, derivedDecision.definition.denominator];
+      const definition = derivedDecision.definition;
+      if ("child_resource" in definition) {
+        const child = tables.get(definition.child_resource);
+        if (!child) {
+          removed.push(
+            `${resourceId}.${name}: reviewed child-count resource ${definition.child_resource} no longer exists`,
+          );
+          continue;
+        }
+        const relationship = child.foreign_keys.find((foreignKey) =>
+          foreignKey.name === definition.relationship
+          && `${foreignKey.referenced_schema}.${foreignKey.referenced_table}` === resourceId);
+        if (!relationship) {
+          removed.push(
+            `${resourceId}.${name}: reviewed child-count relationship ${definition.relationship} no longer exists`,
+          );
+          continue;
+        }
+        const sourceColumnsAreNonNull = relationship.columns.length > 0
+          && relationship.columns.every((field) =>
+            child.columns.find((column) => column.name === field)?.nullable === false);
+        const targetUniqueness = relationshipTargetUniqueness(table, relationship.referenced_columns);
+        if (!sourceColumnsAreNonNull || !targetUniqueness) {
+          removed.push(
+            `${resourceId}.${name}: reviewed child-count relationship ${definition.relationship} is no longer a non-null many-to-one path to a unique parent key`,
+          );
+          continue;
+        }
+        derivedMeasures[name] = derivedDecision;
+        continue;
+      }
+      const operands = "base_measure" in definition
+        ? [definition.base_measure]
+        : [definition.numerator, definition.denominator];
       const missingLocalField = operands.find((operand) =>
         "field" in operand && !operand.relationship && !columns.has(operand.field));
       if (missingLocalField && "field" in missingLocalField) {
@@ -1478,6 +1517,8 @@ function sameOrderedStrings(left: string[], right: string[]): boolean {
 export async function activateExplorationBoundary(input: {
   projectRoot: string;
   candidate: ExplorationBoundaryDraft;
+  reviewDraft?: ExplorationBoundaryDraft;
+  generationLock?: GenerationLock;
   expectedDigest: string;
   actor: string;
   confirmation: string;
@@ -1498,8 +1539,10 @@ export async function activateExplorationBoundary(input: {
   const projectRoot = path.resolve(input.projectRoot);
   const draftPath = path.join(projectRoot, DEFAULT_GENERATED_DIR, "exploration-boundary.draft.json");
   const lockPath = path.join(projectRoot, ".synapsor/generation-lock.json");
-  const draft = JSON.parse(await fs.readFile(draftPath, "utf8")) as ExplorationBoundaryDraft;
-  const lock = JSON.parse(await fs.readFile(lockPath, "utf8")) as GenerationLock;
+  const draft = input.reviewDraft
+    ?? JSON.parse(await fs.readFile(draftPath, "utf8")) as ExplorationBoundaryDraft;
+  const lock = input.generationLock
+    ?? JSON.parse(await fs.readFile(lockPath, "utf8")) as GenerationLock;
   const reviewed = reviewExplorationBoundaryCandidate(draft, input.candidate);
   const candidate = reviewed.candidate;
   assertGenerationLockFingerprint(lock, candidate.generation_lock_fingerprint);
@@ -2036,6 +2079,37 @@ export function emptyReviewOverrides(): AutoBoundaryReviewOverrides {
   };
 }
 
+export function seedConfiguredPrincipalBindingReview(input: {
+  inspection: SchemaInspection;
+  principalBinding: string | undefined;
+  overrides?: AutoBoundaryReviewOverrides;
+  actor?: string;
+  decidedAt: string;
+}): AutoBoundaryReviewOverrides {
+  const overrides = structuredClone(normalizeAutoBoundaryReviewOverrides(input.overrides));
+  const principalBinding = input.principalBinding?.trim();
+  if (!principalBinding) return overrides;
+  const actor = input.actor?.trim() || "runner-config";
+  for (const table of input.inspection.tables) {
+    const column = table.columns.find((candidate) =>
+      candidate.name === principalBinding
+      && candidate.nullable === false
+      && candidate.suggestions.large_or_binary !== true);
+    if (!column) continue;
+    const resourceId = `${table.schema}.${table.name}`;
+    const review = overrides.resources[resourceId] ?? {};
+    if (review.principal_key !== undefined || review.principal_scope_path !== undefined) continue;
+    review.principal_key = {
+      value: column.name,
+      actor,
+      reason: `Runner config principal_binding explicitly names inspected non-null column ${column.name}; exact boundary activation is still required.`,
+      decided_at: input.decidedAt,
+    };
+    overrides.resources[resourceId] = review;
+  }
+  return normalizeAutoBoundaryReviewOverrides(overrides);
+}
+
 export function normalizeAutoBoundaryReviewOverrides(input: unknown): AutoBoundaryReviewOverrides {
   if (input === undefined) return emptyReviewOverrides();
   if (!isRecord(input)) throw new Error("Auto Boundary review overrides must be a JSON object.");
@@ -2344,6 +2418,16 @@ export function normalizeExplorationDerivedMeasure(
       null_policy: "null_on_zero_or_null_denominator",
     };
   }
+  if (value.shape === "child_count_total" || value.shape === "child_count_average") {
+    assertOnlyKeys(value, ["name", "label", "shape", "child_resource", "relationship"], label);
+    return {
+      name,
+      label: reviewedLabel,
+      shape: value.shape,
+      child_resource: reviewedText(value.child_resource, `${label} child_resource`, 256),
+      relationship: reviewedText(value.relationship, `${label} relationship`, 256),
+    };
+  }
   if (!EXPLORATION_POST_AGGREGATE_OPERATIONS.includes(
     value.shape as ExplorationPostAggregateOperation,
   )) {
@@ -2415,7 +2499,7 @@ function applyReviewedDerivedMeasureOverrides(
       .sort((left, right) => left.name.localeCompare(right.name));
   }
   for (const resource of boundary.pack.resources) {
-    assertReviewedDerivedMeasures(resource, boundary.pack.resources);
+    assertReviewedDerivedMeasures(resource, boundary.pack.resources, Boolean(boundary.organization_scope));
   }
 }
 
@@ -3071,7 +3155,7 @@ function assertBoundaryCandidateNarrowsDraft(
         `${resource.id} model-visible missing-data measure fields`,
       );
     }
-    assertReviewedDerivedMeasures(resource, candidate.pack.resources);
+    assertReviewedDerivedMeasures(resource, candidate.pack.resources, Boolean(candidate.organization_scope));
     assertReviewedNumericBands(resource, candidate.pack.resources);
     assertSubset(resource.count_distinct_fields, original.count_distinct_fields, `${resource.id} count-distinct fields`);
     assertSubset(original.kept_out_fields, resource.kept_out_fields, `${resource.id} generated kept-out fields`);
@@ -3161,6 +3245,7 @@ function assertBoundaryCandidateNarrowsDraft(
 function assertReviewedDerivedMeasures(
   resource: ExplorationBoundaryDraft["pack"]["resources"][number],
   resources: ExplorationBoundaryDraft["pack"]["resources"],
+  singleOrganization: boolean,
 ): void {
   const definitions = resource.derived_measures ?? [];
   if (definitions.length > 16) throw new Error(`${resource.id} may review at most 16 named derived measures.`);
@@ -3188,6 +3273,8 @@ function assertReviewedDerivedMeasures(
           || definition.window_size! > 12)) {
         throw new Error(`${resource.id}.${definition.name} moving average requires a fixed 2-12 group window.`);
       }
+    } else if ("child_resource" in definition) {
+      resolveReviewedChildCountLink(resource.id, definition, resources, singleOrganization);
     } else {
       if (definition.null_policy !== "null_on_zero_or_null_denominator") {
         throw new Error(`${resource.id}.${definition.name} has an unsupported fixed derived-measure null policy.`);
@@ -3208,6 +3295,74 @@ function assertReviewedDerivedMeasures(
   }
 }
 
+export function resolveReviewedChildCountLink(
+  rootResourceId: string,
+  definition: ExplorationChildCountDerivedMeasure,
+  resources: ExplorationBoundaryDraft["pack"]["resources"],
+  singleOrganization = false,
+): {
+  child: ExplorationBoundaryDraft["pack"]["resources"][number];
+  link: RelationshipLinkProof;
+} {
+  const root = resources.find((resource) => resource.id === rootResourceId);
+  const child = resources.find((resource) => resource.id === definition.child_resource);
+  if (!root) throw new Error(`${rootResourceId}.${definition.name} root is not in this boundary.`);
+  if (!child || child.id === root.id) {
+    throw new Error(`${root.id}.${definition.name} requires a different reviewed child resource.`);
+  }
+  if (!singleOrganization
+    && (child.shared_reference_scope || (!child.tenant_key && !child.tenant_scope))) {
+    throw new Error(
+      `${root.id}.${definition.name} child ${child.id} must have independently reviewed tenant scope.`,
+    );
+  }
+  const proofs: Array<{
+    id: string;
+    source: "database_catalog";
+    links: RelationshipLinkProof[];
+    digest: `sha256:${string}`;
+  }> = [];
+  for (const relationship of child.relationships) {
+    if (relationship.id !== definition.relationship || (relationship.path_depth ?? 1) !== 1
+      || !relationship.proof) continue;
+    proofs.push({ id: relationship.id, ...relationship.proof });
+  }
+  for (const scope of [child.tenant_scope, child.principal_scope]) {
+    if (scope?.path_id !== definition.relationship || scope.proof.links.length !== 1) continue;
+    proofs.push({ id: scope.path_id, ...scope.proof });
+  }
+  const uniqueProofs = [...new Map(proofs.map((proof) => [
+    canonicalJsonDigest({ id: proof.id, links: proof.links }),
+    proof,
+  ])).values()];
+  if (uniqueProofs.length !== 1) {
+    throw new Error(
+      `${root.id}.${definition.name} requires one active catalog-proven child relationship ${definition.relationship}.`,
+    );
+  }
+  const proof = uniqueProofs[0]!;
+  const link = proof.links[0];
+  if (proof.source !== "database_catalog"
+    || proof.links.length !== 1
+    || canonicalJsonDigest(proof.links) !== proof.digest
+    || !link
+    || link.constraint_name !== definition.relationship
+    || link.source_resource !== child.id
+    || link.target_resource !== root.id
+    || link.nullable
+    || link.cardinality !== "many_to_one"
+    || link.max_fan_out !== 1
+    || link.source_columns.length < 1
+    || link.source_columns.length !== link.target_columns.length
+    || link.target_uniqueness.columns.length !== link.target_columns.length
+    || link.target_uniqueness.columns.some((column, index) => column !== link.target_columns[index])) {
+    throw new Error(
+      `${root.id}.${definition.name} requires one continuous non-null child-to-parent relationship with a unique reviewed parent key.`,
+    );
+  }
+  return { child, link };
+}
+
 export function assertReviewedDerivedMeasureForBoundary(
   boundary: ExplorationBoundaryDraft,
   resourceId: string,
@@ -3218,6 +3373,7 @@ export function assertReviewedDerivedMeasureForBoundary(
   assertReviewedDerivedMeasures(
     { ...resource, derived_measures: [structuredClone(definition)] },
     boundary.pack.resources,
+    Boolean(boundary.organization_scope),
   );
 }
 

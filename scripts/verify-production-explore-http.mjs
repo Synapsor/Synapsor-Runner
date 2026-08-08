@@ -207,12 +207,18 @@ async function seedDerivedSource(pool) {
     INSERT INTO public.scoped_orders (id, tenant_id, owner_id, category, occurred_at) VALUES
       ('derived-acme-order', 'acme', 'derived-acme', 'trail', '2026-07-01T00:00:00Z'),
       ('derived-globex-order', 'globex', 'derived-globex', 'enterprise', '2026-07-01T00:00:00Z');
+    INSERT INTO public.scoped_orders (id, tenant_id, owner_id, category, occurred_at)
+    SELECT 'fanout-acme-order-' || item, 'acme', 'fanout-acme', 'trail', '2026-07-01T00:00:00Z'::timestamptz
+      FROM generate_series(1, 5) AS item;
     INSERT INTO public.scoped_order_items (id, order_id, item_kind, quantity, occurred_at)
     SELECT 'derived-acme-item-' || item, 'derived-acme-order', 'standard', item, '2026-07-01T00:00:00Z'::timestamptz
       FROM generate_series(1, 5) AS item;
     INSERT INTO public.scoped_order_items (id, order_id, item_kind, quantity, occurred_at)
     SELECT 'derived-globex-item-' || item, 'derived-globex-order', 'standard', item, '2026-07-01T00:00:00Z'::timestamptz
       FROM generate_series(1, 7) AS item;
+    INSERT INTO public.scoped_order_items (id, order_id, item_kind, quantity, occurred_at)
+    SELECT 'fanout-acme-item-' || item, 'fanout-acme-order-' || item, 'standard', item, '2026-07-01T00:00:00Z'::timestamptz
+      FROM generate_series(1, 5) AS item;
     INSERT INTO public.shared_product_catalog (id, category, internal_notes)
     SELECT 'hardware-' || item, 'hardware', 'operator-only hardware note ' || item
       FROM generate_series(1, 6) AS item;
@@ -645,6 +651,13 @@ async function main() {
     );
     narrowResource(churnResource);
     narrowDerivedResources(scopedOrders, scopedOrderItems);
+    scopedOrders.derived_measures = [{
+      name: "scoped_order_item_count",
+      label: "Scoped order item count",
+      shape: "child_count_total",
+      child_resource: "public.scoped_order_items",
+      relationship: "scoped_order_items_order_id_fkey",
+    }];
     sharedProductCatalog.selectable_fields = ["category"];
     sharedProductCatalog.filterable_fields = Object.fromEntries(
       Object.entries(sharedProductCatalog.filterable_fields).filter(([field]) => field === "category"),
@@ -979,6 +992,33 @@ async function main() {
       && derivedGlobexResult.data[0].count === 7,
     "PostgreSQL derived scope did not isolate the second tenant/principal.", derivedGlobexResult);
 
+    const fanoutAcme = clientFor(server.url, await token(privateKey, {
+      tenant: "acme",
+      principal: "fanout-acme",
+    }));
+    clients.push(fanoutAcme.client);
+    await fanoutAcme.client.connect(fanoutAcme.transport);
+    const fanoutResult = resultPayload(await fanoutAcme.client.callTool({
+      name: "app.explore_data",
+      arguments: {
+        plan: {
+          kind: "aggregate",
+          resource: "public.scoped_orders",
+          measures: [{ derived_measure: "scoped_order_item_count" }],
+          dimensions: [{ field: "category" }],
+          top_n: 10,
+        },
+      },
+    }));
+    assert(fanoutResult.ok === true
+      && fanoutResult.data.length === 1
+      && fanoutResult.data[0].category === "trail"
+      && fanoutResult.data[0].scoped_order_item_count === 5
+      && fanoutResult.privacy.minimum_cohort_size >= 5,
+    "PostgreSQL production HTTP Explore did not execute the reviewed scoped child count.", fanoutResult);
+    assert(!JSON.stringify(fanoutResult).match(/globex|derived-acme|SELECT\s/i),
+      "PostgreSQL reviewed child count leaked another principal, tenant, or compiled SQL.", fanoutResult);
+
     const loadClients = await Promise.all(Array.from({ length: 8 }, async (_unused, index) => {
       const handle = clientFor(server.url, await token(privateKey, {
         tenant: "acme",
@@ -1041,6 +1081,7 @@ async function main() {
       principal_budget_isolated: true,
       tenant_and_principal_rows_isolated: true,
       derived_tenant_and_principal_scope_isolated: true,
+      reviewed_child_count_scope_isolated: true,
       shared_reference_same_across_tenants: true,
       concurrent_budget_reservation: true,
       source_connection_ceiling: 2,

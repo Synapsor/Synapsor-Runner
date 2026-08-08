@@ -394,6 +394,188 @@ describe("Scoped Explore", () => {
     }
   });
 
+  it("counts scoped child rows through a reviewed inverse relationship without a fan-out join", async () => {
+    const fixture = await activatedDerivedScopeFixture((candidate) => {
+      const orders = candidate.pack.resources.find((resource) => resource.id === "public.orders")!;
+      orders.derived_measures = [{
+        name: "order_item_count",
+        label: "Order item count",
+        shape: "child_count_total",
+        child_resource: "public.order_items",
+        relationship: "order_items_order_id_fkey",
+      }, {
+        name: "average_items_per_order",
+        label: "Average items per order",
+        shape: "child_count_average",
+        child_resource: "public.order_items",
+        relationship: "order_items_order_id_fkey",
+      }];
+    });
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.orders",
+      measures: [
+        { derived_measure: "order_item_count" },
+        { derived_measure: "average_items_per_order" },
+      ],
+      dimensions: [{ field: "region" }],
+      top_n: 10,
+    }, fixture.boundary);
+
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [compiled] = compileExplorePlan(plan, fixture.boundary, {
+        tenant: "tenant-acme",
+        principal: "pm-1",
+      }, engine);
+      const sql = compiled!.sql;
+      expect(sql).toContain(engine === "postgres"
+        ? 'SUM((SELECT COUNT(*) FROM "public"."order_items" fc0 WHERE fc0."order_id" = t0."id"'
+        : "SUM((SELECT COUNT(*) FROM `public`.`order_items` fc0 WHERE fc0.`order_id` = t0.`id`");
+      expect(sql).toContain(engine === "postgres"
+        ? 'AVG(1.0 * (SELECT COUNT(*) FROM "public"."order_items" fc1 WHERE fc1."order_id" = t0."id"'
+        : "AVG(1.0 * (SELECT COUNT(*) FROM `public`.`order_items` fc1 WHERE fc1.`order_id` = t0.`id`");
+      expect(sql).toContain("EXISTS (SELECT 1 FROM");
+      expect(sql).not.toMatch(/JOIN\s+["`]public["`]\.["`]order_items["`]/i);
+      expect(compiled!.resources.map((resource) => resource.id).sort()).toEqual([
+        "public.order_items",
+        "public.orders",
+      ]);
+      expect(compiled!.params).toEqual([
+        "tenant-acme",
+        "tenant-acme",
+        "tenant-acme",
+        fixture.boundary.budgets.max_groups + 1,
+      ]);
+      if (engine === "mysql") {
+        expect((sql.match(/\?/g) ?? [])).toHaveLength(compiled!.params.length);
+      }
+    }
+
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([
+        { dimension_0: "north", measure_0: 18, __measure_cohort_0: 8, measure_1: 2.25, __measure_cohort_1: 8, __cohort_size: 8 },
+        { dimension_0: "private", measure_0: 3, __measure_cohort_0: 2, measure_1: 1.5, __measure_cohort_1: 2, __cohort_size: 2 },
+      ]),
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    try {
+      await expect(runtime.describe({ resource: "public.orders" })).resolves.toMatchObject({
+        resources: [{
+          derived_measures: [
+            expect.objectContaining({
+              name: "order_item_count",
+              shape: "child_count_total",
+              child_resource: "public.order_items",
+              raw_child_rows_returned: false,
+            }),
+            expect.objectContaining({
+              name: "average_items_per_order",
+              shape: "child_count_average",
+            }),
+          ],
+        }],
+      });
+      await expect(runtime.explore(plan)).resolves.toMatchObject({
+        data: [{ region: "north", order_item_count: 18, average_items_per_order: 2.25 }],
+        privacy: { suppressed_groups: 1, minimum_cohort_size: 5 },
+      });
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("counts child rows without fake tenant predicates in an explicit single-organization boundary", async () => {
+    const fixture = await activatedDerivedScopeFixture();
+    const boundary = structuredClone(fixture.boundary);
+    boundary.organization_scope = {
+      mode: "single_organization",
+      organization_id: "internal-finance",
+      acknowledgement: "all_rows_belong_to_one_organization",
+    };
+    for (const resource of boundary.pack.resources) {
+      delete resource.tenant_key;
+      delete resource.tenant_scope;
+    }
+    const orders = boundary.pack.resources.find((resource) => resource.id === "public.orders")!;
+    orders.derived_measures = [{
+      name: "order_item_count",
+      label: "Order item count",
+      shape: "child_count_total",
+      child_resource: "public.order_items",
+      relationship: "order_items_order_id_fkey",
+    }];
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: orders.id,
+      measures: [{ derived_measure: "order_item_count" }],
+      dimensions: [{ field: "region" }],
+      top_n: 10,
+    }, boundary);
+
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [compiled] = compileExplorePlan(plan, boundary, {
+        tenant: "internal-finance",
+        principal: "",
+      }, engine);
+      expect(compiled?.sql).toContain(engine === "postgres"
+        ? 'FROM "public"."order_items" fc0'
+        : "FROM `public`.`order_items` fc0");
+      expect(compiled?.sql).not.toContain("tenant_id");
+      expect(compiled?.params).not.toContain("internal-finance");
+      expect(compiled?.resources.map((resource) => resource.id).sort()).toEqual([
+        "public.order_items",
+        "public.orders",
+      ]);
+    }
+  });
+
+  it("refuses malformed, nullable, and tenant-neutral child-count authority", async () => {
+    const fixture = await activatedDerivedScopeFixture();
+    const boundary = structuredClone(fixture.boundary);
+    const orders = boundary.pack.resources.find((resource) => resource.id === "public.orders")!;
+    const child = boundary.pack.resources.find((resource) => resource.id === "public.order_items")!;
+    orders.derived_measures = [{
+      name: "order_item_count",
+      label: "Order item count",
+      shape: "child_count_total",
+      child_resource: child.id,
+      relationship: "order_items_order_id_fkey",
+    }];
+    child.tenant_scope!.proof.links[0]!.nullable = true;
+    child.tenant_scope!.proof.digest = canonicalJsonDigest(child.tenant_scope!.proof.links);
+    expect(() => validateExplorePlan({
+      kind: "aggregate",
+      resource: orders.id,
+      measures: [{ derived_measure: "order_item_count" }],
+      top_n: 1,
+    }, boundary)).toThrow(/catalog-proven child relationship|non-null child-to-parent relationship/i);
+
+    const tenantNeutral = structuredClone(fixture.boundary);
+    const neutralOrders = tenantNeutral.pack.resources.find((resource) => resource.id === "public.orders")!;
+    const neutralChild = tenantNeutral.pack.resources.find((resource) => resource.id === "public.order_items")!;
+    neutralOrders.derived_measures = [{
+      name: "order_item_count",
+      label: "Order item count",
+      shape: "child_count_total",
+      child_resource: neutralChild.id,
+      relationship: "order_items_order_id_fkey",
+    }];
+    delete neutralChild.tenant_scope;
+    neutralChild.shared_reference_scope = {
+      mode: "shared_reference",
+      acknowledgement: SHARED_REFERENCE_ACKNOWLEDGEMENT,
+    };
+    expect(() => validateExplorePlan({
+      kind: "aggregate",
+      resource: neutralOrders.id,
+      measures: [{ derived_measure: "order_item_count" }],
+      top_n: 1,
+    }, tenantNeutral)).toThrow(/independently reviewed tenant scope/i);
+  });
+
   it("selects a reviewed numeric band by name and parameterizes its fixed definition on both engines", async () => {
     const fixture = await activatedFixture((candidate) => {
       candidate.pack.resources[0]!.numeric_bands = [{
@@ -3435,13 +3617,21 @@ describe("Scoped Explore", () => {
 
   it("runs production HTTP Explore with claim-bound scope and hierarchical privacy accounting", async () => {
     const fixture = await activatedProductionFixture((candidate) => {
-      candidate.pack.resources[0]!.derived_measures = [{
+      const subscriptions = candidate.pack.resources.find((resource) =>
+        resource.id === "public.subscriptions")!;
+      subscriptions.derived_measures = [{
         name: "revenue_running_total",
         label: "Revenue running total",
         shape: "running_total",
         base_measure: { function: "sum", field: "monthly_revenue_cents" },
+      }, {
+        name: "subscription_event_count",
+        label: "Subscription event count",
+        shape: "child_count_total",
+        child_resource: "public.subscription_events",
+        relationship: "subscription_events_subscription_id_fkey",
       }];
-    });
+    }, productionFanOutInspection());
     const claimBudget = vi.fn(async () => ({
       allowed: true as const,
       principal_usage_after_reservation: {
@@ -3470,16 +3660,21 @@ describe("Scoped Explore", () => {
     const execute = vi.fn(async () => [] as Record<string, unknown>[]);
     const executeBatch = vi.fn(async ({ queries, context }: Parameters<ScopedExploreExecutor["executeBatch"]>[0]) => {
       expect(context).toEqual({ tenant: "tenant-from-jwt", principal: "principal-from-jwt" });
-      return queries.map((query) => query.sql.includes("SUM(")
+      return queries.map((query) => query.sql.includes('"subscription_events" fc0')
         ? [
+          { dimension_0: "north", measure_0: 24, __measure_cohort_0: 8, __cohort_size: 8 },
+          { dimension_0: "small", measure_0: 2, __measure_cohort_0: 2, __cohort_size: 2 },
+        ]
+        : query.sql.includes("SUM(")
+          ? [
           { time_bucket: "2026-07-06", measure_0: 10, __measure_cohort_0: 10, __cohort_size: 10 },
           { time_bucket: "2026-07-13", measure_0: 100, __measure_cohort_0: 2, __cohort_size: 2 },
           { time_bucket: "2026-07-20", measure_0: 20, __measure_cohort_0: 20, __cohort_size: 20 },
-        ]
-        : [
-          { dimension_0: "north", measure_0: 8, __cohort_size: 8 },
-          { dimension_0: "small", measure_0: 2, __cohort_size: 2 },
-        ]);
+          ]
+          : [
+            { dimension_0: "north", measure_0: 8, __cohort_size: 8 },
+            { dimension_0: "small", measure_0: 2, __cohort_size: 2 },
+          ]);
     });
     const tenantLimits = {
       max_queries_per_session: 10_000,
@@ -3556,6 +3751,31 @@ describe("Scoped Explore", () => {
       });
       expect(executeBatch).toHaveBeenCalledTimes(2);
       expect(executeBatch.mock.calls[1]![0].queries[0]!.sql).not.toMatch(/\bOVER\s*\(|RUNNING_TOTAL/i);
+      const childCount = await runtime.explore({
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ derived_measure: "subscription_event_count" }],
+        dimensions: [{ field: "region" }],
+        top_n: 10,
+      });
+      expect(childCount).toMatchObject({
+        data: [{ region: "north", subscription_event_count: 24 }],
+        privacy: { suppressed_groups: 1 },
+      });
+      expect(executeBatch).toHaveBeenCalledTimes(3);
+      const childQuery = executeBatch.mock.calls[2]![0].queries[0]!;
+      expect(childQuery.sql).toContain('t0."tenant_id" = $1');
+      expect(childQuery.sql).toContain('t0."account_id" = $2');
+      expect(childQuery.sql).toContain('FROM "public"."subscription_events" fc0');
+      expect(childQuery.sql).toContain('fc0."tenant_id" = $3');
+      expect(childQuery.sql).toContain('fc0."account_id" = $4');
+      expect(childQuery.sql).not.toMatch(/JOIN\s+"public"\."subscription_events"/i);
+      expect(childQuery.params.slice(0, 4)).toEqual([
+        "tenant-from-jwt",
+        "principal-from-jwt",
+        "tenant-from-jwt",
+        "principal-from-jwt",
+      ]);
       expect(claimBudget).toHaveBeenCalledWith(expect.objectContaining({
         principal_scope_fingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
         tenant_scope_fingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
@@ -4013,7 +4233,9 @@ async function activatedFixture(
   };
 }
 
-async function activatedDerivedScopeFixture(): Promise<{
+async function activatedDerivedScopeFixture(
+  narrow?: (candidate: ReturnType<typeof buildAutoBoundary>["exploration_boundary"]) => void,
+): Promise<{
   root: string;
   boundary: ActivatedExplorationBoundary;
   inspection: SchemaInspection;
@@ -4048,6 +4270,7 @@ async function activatedDerivedScopeFixture(): Promise<{
   });
   await writeAutoBoundaryArtifacts({ projectRoot: root, build });
   const candidate = structuredClone(build.exploration_boundary);
+  narrow?.(candidate);
   const digest = explorationBoundaryCandidateDigest(candidate);
   const boundary = await activateExplorationBoundary({
     projectRoot: root,
@@ -4072,6 +4295,7 @@ async function activatedDerivedScopeFixture(): Promise<{
 
 async function activatedProductionFixture(
   narrow?: (candidate: ReturnType<typeof buildAutoBoundary>["exploration_boundary"]) => void,
+  sourceInspection = churnInspection(),
 ): Promise<{
   root: string;
   boundary: ActivatedExplorationBoundary;
@@ -4080,17 +4304,23 @@ async function activatedProductionFixture(
 }> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-production-explore-"));
   temporaryRoots.push(root);
-  const inspection = churnInspection();
-  const resource = inspection.tables[0]!;
-  resource.columns.splice(2, 0, column("account_id", "uuid", { immutable: true }));
-  resource.suggestions.default_visible_columns.push("account_id");
-  resource.row_level_security_policies!.push({
-    name: "principal_read",
-    command: "SELECT",
-    permissive: true,
-    roles: ["app_reader"],
-    using_expression: "(account_id = current_setting('app.principal_id')::uuid)",
-  });
+  const inspection = structuredClone(sourceInspection);
+  for (const resource of inspection.tables) {
+    if (!resource.columns.some((field) => field.name === "account_id")) {
+      resource.columns.splice(2, 0, column("account_id", "uuid", { immutable: true }));
+    }
+    if (!resource.suggestions.default_visible_columns.includes("account_id")) {
+      resource.suggestions.default_visible_columns.push("account_id");
+    }
+    resource.row_level_security_policies ??= [];
+    resource.row_level_security_policies.push({
+      name: `${resource.name}_principal_read`,
+      command: "SELECT",
+      permissive: true,
+      roles: ["app_reader"],
+      using_expression: "(account_id = current_setting('app.principal_id')::uuid)",
+    });
+  }
   const build = buildAutoBoundary({
     inspection,
     project: {
@@ -4105,16 +4335,17 @@ async function activatedProductionFixture(
     httpClaims: { tenantClaim: "org_id", principalClaim: "sub" },
     overrides: {
       schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
-      resources: {
-        "public.subscriptions": {
+      resources: Object.fromEntries(inspection.tables.map((resource) => [
+        `${resource.schema}.${resource.name}`,
+        {
           principal_key: {
             value: "account_id",
             actor: "production-owner@example.test",
-            reason: "Each authenticated account may analyze only its own subscription rows.",
+            reason: "Each authenticated account may analyze only its own reviewed rows.",
             decided_at: "2026-08-04T12:00:00.000Z",
           },
         },
-      },
+      ])),
     },
   });
   await writeAutoBoundaryArtifacts({ projectRoot: root, build });
@@ -4136,6 +4367,49 @@ async function activatedProductionFixture(
     inspection,
     env: { DATABASE_URL: "postgresql://unused.example.test/synapsor" },
   };
+}
+
+function productionFanOutInspection(): SchemaInspection {
+  const inspection = churnInspection();
+  const root = inspection.tables[0]!;
+  const child = structuredClone(root);
+  child.name = "subscription_events";
+  child.columns = [
+    column("id", "uuid", { immutable: true }),
+    column("tenant_id", "uuid", { tenant: true, immutable: true }),
+    column("subscription_id", "uuid", { immutable: true }),
+    column("event_type", "text"),
+  ];
+  child.primary_key = ["id"];
+  child.unique_constraints = [{ name: "subscription_events_pkey", columns: ["id"] }];
+  child.check_constraints = [];
+  child.foreign_keys = [{
+    name: "subscription_events_subscription_id_fkey",
+    columns: ["subscription_id"],
+    referenced_schema: "public",
+    referenced_table: "subscriptions",
+    referenced_columns: ["id"],
+    delete_rule: "RESTRICT",
+  }];
+  child.row_level_security_policies = [{
+    name: "subscription_events_tenant_read",
+    command: "SELECT",
+    permissive: true,
+    roles: ["app_reader"],
+    using_expression: "(tenant_id = current_setting('app.tenant_id')::uuid)",
+  }];
+  child.indexes = [
+    { name: "subscription_events_pkey", columns: ["id"], unique: true },
+    { name: "subscription_events_subscription_id_idx", columns: ["subscription_id"] },
+  ];
+  child.suggestions = {
+    tenant_columns: ["tenant_id"],
+    conflict_columns: [],
+    sensitive_columns: [],
+    default_visible_columns: ["id", "tenant_id", "subscription_id", "event_type"],
+  };
+  inspection.tables.push(child);
+  return inspection;
 }
 
 async function activatedSharedReferenceFixture(

@@ -321,6 +321,53 @@ describe("Protect This Query", () => {
     })).rejects.toThrow(/relationship-carried tenant scope is read-only Explore authority/);
   });
 
+  it("keeps inverse child-count authority in Explore until Protect can freeze the child scope", async () => {
+    const fixture = await activatedDerivedProtectFixture((candidate) => {
+      const orders = candidate.pack.resources.find((resource) => resource.id === "public.orders")!;
+      orders.derived_measures = [{
+        name: "order_item_count",
+        label: "Order item count",
+        shape: "child_count_total",
+        child_resource: "public.order_items",
+        relationship: "order_items_order_id_fkey",
+      }];
+    });
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([{
+        dimension_0: "west",
+        measure_0: 18,
+        __measure_cohort_0: 8,
+        __cohort_size: 8,
+      }]),
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => Date.parse("2026-08-08T12:00:00.000Z"),
+    });
+    const result = await runtime.explore({
+      kind: "aggregate",
+      resource: "public.orders",
+      measures: [{ derived_measure: "order_item_count" }],
+      dimensions: [{ field: "region" }],
+      top_n: 10,
+    });
+    await runtime.close();
+
+    await expect(createProtectedQueryDraft({
+      projectRoot: fixture.root,
+      token: (result.protect as { token: string }).token,
+      capabilityName: "analytics.order_item_count_by_region",
+      description: "Count reviewed order items by order region.",
+      returnsHint: "Returns scoped, privacy-released aggregates.",
+      now: Date.parse("2026-08-08T12:00:01.000Z"),
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+    })).rejects.toThrow(
+      /reviewed child-count metrics are available in local and production HTTP Explore, but protected capabilities do not yet freeze inverse child-scope authority/i,
+    );
+  });
+
   it("requires principal RLS only on participating relations that declare principal scope", async () => {
     const fixture = await activatedFixture();
     const boundary = structuredClone(fixture.boundary);
@@ -1194,7 +1241,9 @@ async function activatedFixture(
   };
 }
 
-async function activatedDerivedProtectFixture(): Promise<{
+async function activatedDerivedProtectFixture(
+  narrow?: (candidate: ReturnType<typeof buildAutoBoundary>["exploration_boundary"]) => void,
+): Promise<{
   root: string;
   boundary: ActivatedExplorationBoundary;
   inspection: SchemaInspection;
@@ -1229,6 +1278,7 @@ async function activatedDerivedProtectFixture(): Promise<{
   });
   await writeAutoBoundaryArtifacts({ projectRoot: root, build });
   const candidate = structuredClone(build.exploration_boundary);
+  narrow?.(candidate);
   const digest = explorationBoundaryCandidateDigest(candidate);
   const boundary = await activateExplorationBoundary({
     projectRoot: root,

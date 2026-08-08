@@ -495,6 +495,7 @@ describe("try ask", () => {
         deployment_profile: "development",
         pack: { name: "support", resources: [{ id: "public.tickets" }] },
         activation: {
+          state: "active",
           digest: activeDigest,
           actor: "reviewer@example.test",
           activated_at: "2026-07-26T00:05:00.000Z",
@@ -505,6 +506,7 @@ describe("try ask", () => {
         deployment_profile: "development",
         pack: { name: "finance", resources: [{ id: "public.invoices" }] },
         activation: {
+          state: "active",
           digest: financeDigest,
           actor: "reviewer@example.test",
           activated_at: "2026-07-26T00:05:00.000Z",
@@ -580,6 +582,48 @@ describe("try ask", () => {
       "app.explore_data",
     ]));
     expect(consent).toHaveBeenCalledOnce();
+  });
+
+  it("exits cleanly only after the operator closes /access with no active boundary", async () => {
+    const fixture = await askProject();
+    const answers: Array<string | undefined> = ["/access"];
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    const runTerminalBoundaryReview = vi.fn(async () => {
+      await Promise.all([
+        fs.rm(path.join(fixture.root, ".synapsor/exploration-boundary.active.json"), { force: true }),
+        fs.rm(path.join(fixture.root, ".synapsor/exploration-boundaries.active.json"), { force: true }),
+      ]);
+      return 0;
+    });
+
+    await expect(tryAsk([
+      "--project-root", fixture.root,
+      "--config", fixture.configPath,
+      "--store", fixture.storePath,
+      "--provider", "openai",
+      "--model", "gpt-test",
+    ], {
+      env: fixture.env,
+      gatewayFactory: testGatewayFactory([]),
+      boundaryCatalogLoader: async () => undefined,
+      confirmEgress: async () => true,
+      shellIo: {
+        read: async () => answers.shift(),
+        write: () => undefined,
+        columns: () => 100,
+        onInterrupt: () => () => undefined,
+        close: () => undefined,
+      },
+      runTerminalBoundaryReview,
+    })).resolves.toBe(0);
+
+    expect(runTerminalBoundaryReview).toHaveBeenCalledOnce();
+    expect(output.join("")).toContain("No active boundary. Ask remains disabled.");
+    expect(output.join("")).not.toContain("Ask did not start");
   });
 
   it("returns to the previous Ask authority when boundary activation fails safely", async () => {

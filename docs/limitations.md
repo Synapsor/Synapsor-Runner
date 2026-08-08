@@ -159,7 +159,9 @@ truth for the model-facing tools.
 - Prompt-injection prevention.
 - Unbounded/high-throughput or multi-region ledger scale.
 - Managed fleet, SLA, compliance certification, or production support guarantee.
-- Production, shared HTTP, remote, or non-loopback Scoped Explore.
+- Production Scoped Explore without its explicit production boundary, verified
+  principal, per-principal and tenant budgets, shared atomic accounting, rate
+  limits, OAuth/JWT checks, and secured HTTP transport attestation.
 - Production, shared HTTP, remote, or non-loopback Workbench Ask; model-facing
   provider configuration; Synapsor-relayed provider traffic; durable chat
   history; automatic provider retries; exact monetary spend enforcement; or
@@ -168,10 +170,11 @@ truth for the model-facing tools.
   sets, app-owned/external effects, or writes without deterministic conflict,
   deduplication, freshness, and receipt authority.
 - Arbitrary aggregate expressions, dynamic identifiers, unrestricted joins,
-  many-to-many joins, formulas, window functions, subqueries, `HAVING`,
+  many-to-many joins, model-authored formulas or window functions, subqueries, `HAVING`,
   user-defined functions, or a statistical privacy guarantee. Runner supports
-  only the explicitly reviewed authoring cube described above and fixed
-  protected named capabilities produced from it.
+  only the explicitly reviewed authoring cube described above. Named running,
+  lag, rank, moving-average, and share operations run after suppression and do
+  not accept SQL or window definitions from the model.
 - Automatic policy widening or activation from graduated-trust metrics.
 - Immutable/WORM compliance storage from the local report exporter.
 

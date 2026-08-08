@@ -345,9 +345,9 @@ describe("boundary review terminal picker", () => {
     expect(rendered).not.toContain("Active   -");
     expect(rendered).not.toContain("> Next");
     expect(rendered).toContain("Enter");
-    expect(rendered).toContain("Review once, activate, and choose how to ask");
-    expect(rendered).toContain("OpenAI, Anthropic, a local model, or an existing MCP");
-    expect(rendered).toContain("  client.");
+    expect(rendered).toContain("Enter/C Review + activate");
+    expect(rendered).toContain("Activation returns here so you can keep editing");
+    expect(rendered).toContain("Press Q when finished to choose how to ask");
   });
 
   it("uses arrow-key resource selection without changing risk-first order", async () => {
@@ -822,6 +822,24 @@ describe("boundary review terminal picker", () => {
     expect(rendered).toContain("Deactivate");
   });
 
+  it("keeps hidden deactivate keys inert in the table editor and distinguishes draft removal", async () => {
+    const { input, output } = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const active = summary("public.check_ins", 0);
+    active.active = true;
+    active.active_boundary_name = active.candidate_boundary_name;
+    const selected = session.chooseResource([active], undefined, {
+      initialView: "access",
+      startAtBoundaryList: false,
+    });
+    await send(input, "d");
+    await send(input, "q");
+    await expect(selected).resolves.toBeUndefined();
+    const rendered = stripAnsi(output.read()?.toString() ?? "");
+    expect(rendered).toContain("R Remove from draft");
+    expect(rendered).not.toContain("Deactivate active boundary");
+  });
+
   it("explains the multi-table boundary concisely and keeps the exhaustive map available", async () => {
     const first = summary("public.check_ins", 0);
     first.active = true;
@@ -1044,6 +1062,21 @@ describe("boundary review terminal picker", () => {
     expect(rendered).toContain("Removed values are refused even if guessed");
     expect(rendered).toContain("Selecting none disables filtering and grouping");
     expect(rendered).toContain("Save allowed values and return to columns");
+  });
+
+  it("opens user-owner scope review without losing staged column choices", async () => {
+    const terminal = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(terminal.input, terminal.output);
+    const action = session.editFieldTiers(reviewView(), { focusedAccess: true });
+    await send(terminal.input, "w");
+    await send(terminal.input, "o");
+
+    await expect(action).resolves.toMatchObject({
+      action: "principal",
+      tiers: { outcome: "withheld_from_model" },
+    });
+    const rendered = stripAnsi(terminal.output.read()?.toString() ?? "");
+    expect(rendered).toContain("O User/owner row limit: not configured");
   });
 
   it("resolves blocked identity and tenant choices without leaving the terminal editor", async () => {
