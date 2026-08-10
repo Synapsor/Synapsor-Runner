@@ -108,23 +108,23 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.29.0",
+    "@modelcontextprotocol/sdk": "1.30.0",
     "@synapsor/spec": "workspace:^1.8.0",
-    "jose": "6.2.3",
+    "jose": "6.2.8",
     "jsonc-parser": "3.3.1",
-    "mysql2": "^3.11.0",
+    "mysql2": "^3.23.2",
     "pdf-lib": "1.17.1",
     "pg": "^8.13.0",
     "typescript": "5.9.3",
     "vscode-languageserver": "9.0.1",
     "vscode-languageserver-textdocument": "1.0.12",
-    "yaml": "2.8.3",
+    "yaml": "2.9.0",
     "zod": "^3.25.0"
   },
   "devDependencies": {
-    "@types/pg": "^8.11.0",
+    "@types/pg": "^8.20.4",
     "ajv": "^8.17.1",
-    "vitest": "^3.2.0"
+    "vitest": "^3.2.7"
   },
   "homepage": "https://synapsor.ai",
   "repository": {
