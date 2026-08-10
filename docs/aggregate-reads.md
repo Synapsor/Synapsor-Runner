@@ -116,6 +116,8 @@ moving average, and share-of-released-total operations. The model receives only
 the digest-bound name. Runner performs the latter operations after suppression,
 over released groups only; it emits no database window SQL and accepts no
 formula, partition expression, frame, or arbitrary ordering from the model.
+Sequential operations omit records whose reviewed time field is null, so an
+undated group cannot alter a dated running total, lag, or moving average.
 
 A reviewed child-count measure answers normalized-schema questions such as
 total line items by customer region or average events per order. Its definition

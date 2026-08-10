@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 import mysql from "mysql2/promise";
-import { Pool } from "pg";
+import { Pool, type PoolClient } from "pg";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
   classifySensitivity,
@@ -871,8 +871,9 @@ export function summarizeInspection(inspection: SchemaInspection): string {
 
 async function inspectPostgres(options: InspectOptions & { engine: "postgres"; url: string }): Promise<SchemaInspection> {
   const pool = new Pool({ connectionString: options.url, connectionTimeoutMillis: options.statementTimeoutMs ?? 3000 });
-  const client = await pool.connect();
+  let client: PoolClient | undefined;
   try {
+    client = await pool.connect();
     await client.query("BEGIN READ ONLY");
     await client.query(`SET LOCAL statement_timeout = ${Number(options.statementTimeoutMs ?? 3000)}`);
     const version = await client.query<{
@@ -1085,16 +1086,17 @@ async function inspectPostgres(options: InspectOptions & { engine: "postgres"; u
       relationRolePosture: relationRolePosture.rows,
     });
   } catch (error) {
-    await client.query("ROLLBACK").catch(() => undefined);
+    await client?.query("ROLLBACK").catch(() => undefined);
     throw error;
   } finally {
-    client.release();
-    await pool.end();
+    try { client?.release(); } catch { /* preserve the inspection outcome */ }
+    await pool.end().catch(() => undefined);
   }
 }
 
 async function inspectMysql(options: InspectOptions & { engine: "mysql"; url: string }): Promise<SchemaInspection> {
   const connection = await mysql.createConnection({ uri: options.url, connectTimeout: options.statementTimeoutMs ?? 3000, dateStrings: true });
+  let inspectionFailed = false;
   try {
     await connection.query("START TRANSACTION READ ONLY").catch(() => connection.query("START TRANSACTION"));
     await connection.query("SET SESSION max_execution_time = ?", [Number(options.statementTimeoutMs ?? 3000)]).catch(() => undefined);
@@ -1261,10 +1263,13 @@ async function inspectMysql(options: InspectOptions & { engine: "mysql"; url: st
       relationRolePosture,
     });
   } catch (error) {
+    inspectionFailed = true;
     await connection.query("ROLLBACK").catch(() => undefined);
     throw error;
   } finally {
-    await connection.end();
+    await connection.end().catch((error) => {
+      if (!inspectionFailed) throw error;
+    });
   }
 }
 

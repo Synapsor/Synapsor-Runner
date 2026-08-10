@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { Pool, types as pgTypes, type PoolConfig } from "pg";
+import { Pool, types as pgTypes, type PoolClient, type PoolConfig } from "pg";
 import type { InverseDescriptorV1, WritebackJob, WritebackResult } from "@synapsor-runner/protocol";
 import { assertCompensationJobIntegrity, assertFrozenSetJobIntegrity, classifyFrozenSetReconciliation, compensationInverseFromJob, type ApplyAdapter, type CompensationWritebackJob, type ReconciliationObservation, type RunnerConfig } from "@synapsor-runner/worker-core";
 
@@ -581,8 +581,9 @@ export async function inspectPostgresWritebackSource(
 ): Promise<ReconciliationObservation> {
   if (!databaseUrl) throw new Error("DATABASE_UNAVAILABLE");
   const pool = createPostgresPool(databaseUrl);
-  const client = await pool.connect();
+  let client: PoolClient | undefined;
   try {
+    client = await pool.connect();
     const query = buildPostgresReconciliationRead(job);
     await client.query("BEGIN");
     if (databaseScope) {
@@ -602,12 +603,12 @@ export async function inspectPostgresWritebackSource(
     if (result.rowCount !== null && result.rowCount > 1) throw new Error("RECONCILIATION_IDENTITY_NOT_UNIQUE");
     return reconciliationObservation(job, result.rows[0]);
   } catch (error) {
-    await client.query("ROLLBACK").catch(() => undefined);
+    await client?.query("ROLLBACK").catch(() => undefined);
     const code = safeErrorCode(error);
     throw new Error(code === "TRANSACTION_FAILED" ? "RECONCILIATION_INSPECTION_FAILED" : code);
   } finally {
-    client.release();
-    await pool.end();
+    try { client?.release(); } catch { /* cleanup must not replace the reconciliation result */ }
+    await pool.end().catch(() => undefined);
   }
 }
 
@@ -787,14 +788,15 @@ export async function applyPostgresJob(job: WritebackJob, config: RunnerConfig):
   }
   if (!config.databaseUrl) return failedResult(job, config, "DATABASE_UNAVAILABLE");
   const pool = createPostgresPool(config.databaseUrl);
-  const client = await pool.connect();
+  let client: PoolClient | undefined;
   try {
+    client = await pool.connect();
     return await applyPostgresJobWithClient(job, config, client);
   } catch (error) {
     return failedResult(job, config, safeErrorCode(error, operationOf(job)));
   } finally {
-    client.release();
-    await pool.end();
+    try { client?.release(); } catch { /* cleanup must not make a committed write look retryable */ }
+    await pool.end().catch(() => undefined);
   }
 }
 
@@ -1453,8 +1455,9 @@ export const postgresAdapter: ApplyAdapter = {
   async doctor(config) {
     if (!config.databaseUrl) return { ok: false, details: { error: "database URL required; local config apply reads source.write_url_env, legacy workers use SYNAPSOR_DATABASE_URL" } };
     const pool = createPostgresPool(config.databaseUrl);
-    const client = await pool.connect();
+    let client: PoolClient | undefined;
     try {
+      client = await pool.connect();
       const version = await client.query("SELECT version()");
       if (receiptAuthority(config) === "source_db") {
         if (config.receipts?.provisioning === "auto_migrate") await client.query(postgresReceiptMigrationForConfig(config));
@@ -1474,8 +1477,8 @@ export const postgresAdapter: ApplyAdapter = {
       }
       return { ok: true, details: { version: version.rows[0]?.version, receipt_authority: receiptAuthority(config), receipt_provisioning: receiptAuthority(config) === "source_db" ? (config.receipts?.provisioning ?? "precreated") : "not_applicable", receipt_table: receiptAuthority(config) === "source_db" ? "ready" : "not_used", receipt_permissions: receiptAuthority(config) === "source_db" ? "select_insert_update_rollback_verified" : "no_source_receipt_access", write_permission_rollback: true, dry_run: config.dryRun } };
     } finally {
-      client.release();
-      await pool.end();
+      try { client?.release(); } catch { /* doctor reports the source check, not pool cleanup */ }
+      await pool.end().catch(() => undefined);
     }
   },
   apply: applyPostgresJob,

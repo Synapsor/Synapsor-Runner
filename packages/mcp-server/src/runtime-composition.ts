@@ -148,11 +148,30 @@ export function createMcpRuntime(config: RuntimeConfig, options: McpRuntimeOptio
       ? cloudSynchronizer.status()
       : ({ authority_mode: "local_only", evidence_residency: "metadata_only", pending: 0, leased: 0, acknowledged: 0, dead_letter: 0, reconciliation_required: 0 }),
     close: async () => {
-      await cloudSynchronizer?.stop();
-      if (ownsResources) await resources.close();
-      if (!options.store) await store.close();
+      await runRuntimeCleanups([
+        ...(cloudSynchronizer ? [() => cloudSynchronizer.stop()] : []),
+        ...(ownsResources ? [() => resources.close()] : []),
+        ...(ownsStore ? [async () => { await store.close(); }] : []),
+      ]);
     },
   };
+}
+
+export async function runRuntimeCleanups(
+  cleanups: Array<() => void | Promise<void>>,
+): Promise<void> {
+  const failures: unknown[] = [];
+  for (const cleanup of cleanups) {
+    try {
+      await cleanup();
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) {
+    throw new AggregateError(failures, "Runner runtime resources did not all close cleanly.");
+  }
 }
 
 export function createDefaultRuntimeStore(config: RuntimeConfig, env: NodeJS.ProcessEnv, storePath: string): ProposalRuntimeStore {

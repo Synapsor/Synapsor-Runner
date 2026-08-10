@@ -24,17 +24,28 @@
 - Proves PostgreSQL and MySQL source execution through the official MCP client,
   including scope isolation, suppression, concurrency, source immutability,
   `doctor`, the public CLI entrypoint, and a clean packed installation.
+- Proves a real Ollama `qwen2.5:7b` agent against both local Explore and the
+  RS256/JWT-bound production HTTP MCP surface. Loopback model discovery,
+  compact catalog guidance, strict benign argument normalization, intent-checked
+  JSON-plan recovery, and Runner-owned fallback results improve small-model DX
+  without widening the two-tool grammar or trusted scope.
+- Refuses ambiguous SQL-null filter literals with missing-data guidance, omits
+  undated records from sequential metrics, restores MySQL session timezone
+  before pooled reuse, and gives each Workbench relationship a separate
+  labeled graph lane.
 - Keeps whole-organization databases simple through explicit boundary-wide
   single-organization review, while mixed databases can add only individually
   acknowledged shared-reference tables. Neither posture is inferred, and field
   visibility, cohort suppression, budgets, schema locks, and read-only checks
   remain unchanged.
-- Leaves local/staging Explore, protected named capabilities, existing boundary
-  digests, and Spec/DSL `1.8.0` semantics unchanged.
+- Leaves local/staging Explore, protected named capabilities, and existing
+  boundary digests unchanged. Spec/DSL `1.9.0` add only the reviewed fixed
+  aggregate operations and post-suppression transforms; they do not admit
+  model-authored SQL or expressions.
 
 Prepared package versions: `@synapsor/runner@1.7.0` and the optional
-`synapsor-runner@1.7.0` command alias. Spec and DSL remain at their
-already-published `1.8.0` versions. No package is published by this change.
+`synapsor-runner@1.7.0` command alias, plus `@synapsor/spec@1.9.0` and
+`@synapsor/dsl@1.9.0`. No package is published by this change.
 
 ## 1.6.7 (published 2026-08-04)
 

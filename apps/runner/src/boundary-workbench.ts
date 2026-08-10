@@ -3533,9 +3533,13 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         links.push(Object.assign({},link,{proven:link.proven!==false}));
       }));
       const outgoing=new Map(tables.map(table=>[table.id,[]]));
+      const outgoingPorts=new Map(tables.map(table=>[table.id,[]]));
+      const incomingPorts=new Map(tables.map(table=>[table.id,[]]));
       const indegree=new Map(tables.map(table=>[table.id,0]));
-      links.forEach(link=>{
+      links.forEach((link,index)=>{
         outgoing.get(link.source_table).push(link.target_table);
+        outgoingPorts.get(link.source_table).push(index);
+        incomingPorts.get(link.target_table).push(index);
         indegree.set(link.target_table,(indegree.get(link.target_table)||0)+1);
       });
       const rank=new Map(tables.map(table=>[table.id,0]));
@@ -3565,7 +3569,12 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         table.id.length,
         ...(table.model_visible_fields||[]).slice(0,4).map(field=>field.name.length)
       ]));
-      const nodeWidth=Math.max(250,Math.min(420,longestNodeText*7.4+32)),nodeHeight=126,xGap=190,yGap=30,pad=28;
+      const maxPorts=Math.max(1,...tables.map(table=>Math.max(
+        (outgoingPorts.get(table.id)||[]).length,
+        (incomingPorts.get(table.id)||[]).length
+      )));
+      const nodeWidth=Math.max(250,Math.min(420,longestNodeText*7.4+32));
+      const nodeHeight=Math.max(126,56+maxPorts*22),xGap=190,yGap=30,pad=28;
       const ranks=[...columns.keys()].sort((left,right)=>left-right);
       const maxRows=Math.max(...ranks.map(value=>columns.get(value).length));
       const width=pad*2+ranks.length*nodeWidth+Math.max(0,ranks.length-1)*xGap;
@@ -3581,13 +3590,23 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         }));
       });
       const marker='catalog-arrow-'+String(boundary.name).replace(/[^A-Za-z0-9_-]/g,'-')+'-'+(++boundaryGraphSequence);
-      const edgeSvg=links.map(link=>{
+      const portOffset=(ports,tableId,edgeIndex)=>{
+        const indexes=ports.get(tableId)||[];
+        const position=indexes.indexOf(edgeIndex);
+        return (position-(indexes.length-1)/2)*22;
+      };
+      const edgeSvg=links.map((link,edgeIndex)=>{
         const source=positions.get(link.source_table),target=positions.get(link.target_table);
         if(!source||!target)return '';
-        const sx=source.x+nodeWidth,sy=source.y+nodeHeight/2,tx=target.x,ty=target.y+nodeHeight/2,mx=(sx+tx)/2;
+        const forward=target.x>=source.x;
+        const sx=source.x+(forward?nodeWidth:0);
+        const sy=source.y+nodeHeight/2+portOffset(outgoingPorts,link.source_table,edgeIndex);
+        const tx=target.x+(forward?0:nodeWidth);
+        const ty=target.y+nodeHeight/2+portOffset(incomingPorts,link.target_table,edgeIndex);
+        const mx=(sx+tx)/2;
         const label=link.hidden_join_key?'reviewed hidden key':link.source_key+' → '+link.target_key;
         const edgeTitle=link.source_table+'.'+link.source_key+' to '+link.target_table+'.'+link.target_key+'; '+(link.proven?'catalog proven':'proof unavailable');
-        return '<path class="edge '+(link.proven?'':'unproven')+'" d="M '+sx+' '+sy+' C '+mx+' '+sy+', '+mx+' '+ty+', '+tx+' '+ty+'" marker-end="url(#'+marker+')"><title>'+esc(edgeTitle)+'</title></path><text class="edge-label" x="'+(sx+12)+'" y="'+(sy-9)+'" text-anchor="start">'+esc(label.slice(0,50))+'<title>'+esc(edgeTitle)+'</title></text>';
+        return '<path class="edge '+(link.proven?'':'unproven')+'" d="M '+sx+' '+sy+' C '+mx+' '+sy+', '+mx+' '+ty+', '+tx+' '+ty+'" marker-end="url(#'+marker+')"><title>'+esc(edgeTitle)+'</title></path><text class="edge-label" x="'+(sx+(forward?12:-12))+'" y="'+(sy-8)+'" text-anchor="'+(forward?'start':'end')+'">'+esc(label.slice(0,50))+'<title>'+esc(edgeTitle)+'</title></text>';
       }).join('');
       const nodeSvg=tables.map(table=>{
         const point=positions.get(table.id);
@@ -3596,7 +3615,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         const lines=[...fields,...((table.model_visible_fields||[]).length>4?['+'+((table.model_visible_fields||[]).length-4)+' more visible']:[]),...(hidden?[''+hidden+' unavailable to model']:[])].slice(0,5);
         return '<g><title>'+esc(table.id+'; '+(table.model_visible_fields||[]).map(field=>field.name).join(', '))+'</title><rect class="node" x="'+point.x+'" y="'+point.y+'" width="'+nodeWidth+'" height="'+nodeHeight+'" rx="6"></rect><text class="node-title" x="'+(point.x+14)+'" y="'+(point.y+23)+'">'+esc(table.id.slice(0,52))+'</text>'+lines.map((line,index)=>'<text class="node-field" x="'+(point.x+14)+'" y="'+(point.y+47+index*16)+'">'+esc(line.slice(0,52))+'</text>').join('')+'</g>';
       }).join('');
-      return '<div class="boundary-catalog-graph" role="img" aria-label="Reviewed table relationship diagram for '+esc(boundary.name)+'"><svg viewBox="0 0 '+width+' '+height+'" width="'+width+'" height="'+height+'"><defs><marker id="'+marker+'" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0, 9 3.5, 0 7" fill="#75e3b7"></polygon></marker></defs>'+edgeSvg+nodeSvg+'</svg></div><p class="muted">Arrows point from the many-row table to the reviewed one-row ancestor. Solid lines are catalog-proven; dashed lines require proof before activation.</p>';
+      return '<div class="boundary-catalog-graph" role="img" aria-label="Reviewed table relationship diagram for '+esc(boundary.name)+'"><svg viewBox="0 0 '+width+' '+height+'" width="'+width+'" height="'+height+'"><defs><marker id="'+marker+'" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0, 9 3.5, 0 7" fill="#75e3b7"></polygon></marker></defs>'+edgeSvg+nodeSvg+'</svg></div><p class="muted">Arrows point from the many-row table to the reviewed one-row ancestor. Each reviewed join uses its own labeled connection lane. Solid lines are catalog-proven; dashed lines require proof before activation.</p>';
     }
 
     function wireBoundaryRelationshipMaps(scope=document){

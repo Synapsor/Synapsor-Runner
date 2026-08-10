@@ -590,7 +590,19 @@ export async function runAnalyticsShell(
       const line = raw.trim();
       if (!line) continue;
       if (line.startsWith("/")) {
-        const action = await handleShellCommand(line, input, current, liveEvidence);
+        let action: Awaited<ReturnType<typeof handleShellCommand>>;
+        try {
+          action = await handleShellCommand(line, input, current, liveEvidence);
+        } catch (error) {
+          input.io.write([
+            "",
+            `Action could not complete: ${safeShellError(error)}`,
+            "No reviewed authority or source data was changed. This Ask session is still active.",
+            "",
+            "",
+          ].join("\n"));
+          continue;
+        }
         if (action === "exit") break;
         if (action === "access") {
           exitReason = "access";

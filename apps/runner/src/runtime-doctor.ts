@@ -30,6 +30,7 @@ import { fetchStdioMcpToolsCommand, mcpAuditToolNames } from "./mcp-audit.js";
 import { isManagedAuthoringEntry } from "./mcp-project-domain.js";
 import { trustedCliContext } from "./operator-authority.js";
 import { inspectProductionExploreStartup } from "./mcp-runtime.js";
+import { runAllCleanups, withPreservedCleanup } from "./resource-lifecycle.js";
 import { capabilityOperation, formatSourceReceiptMode, receiptTableGuidance, runnerReceiptConfig, sourceNeedsSqlWriteback, writebackTimeoutMs } from "./writeback-domain.js";
 
 
@@ -996,25 +997,26 @@ async function inspectPostgresRlsDoctorTarget(
   target: { schema: string; table: string; operations: PostgresRlsOperation[] },
 ): Promise<DoctorCheck> {
   const pool = createPostgresPool(databaseUrl, { max: 1, connectionTimeoutMillis: 3000 });
-  const client = await pool.connect();
   try {
-    const report = await inspectPostgresRlsTarget(client, {
-      schema: target.schema,
-      table: target.table,
-      scope: {
-        tenantSetting: scope.tenant_setting,
-        principalSetting: scope.principal_setting,
-      },
-      operations: target.operations,
+    return await withPostgresProbeClient(pool, async (client) => {
+      const report = await inspectPostgresRlsTarget(client, {
+        schema: target.schema,
+        table: target.table,
+        scope: {
+          tenantSetting: scope.tenant_setting,
+          principalSetting: scope.principal_setting,
+        },
+        operations: target.operations,
+      });
+      return {
+        name: `source:${sourceName}:postgres-rls:${credentialKind}:${target.schema}.${target.table}`,
+        ok: report.ok,
+        level: report.ok ? "pass" : "fail",
+        message: report.ok
+          ? `Role ${report.role} is non-owner/non-bypass, RLS and FORCE RLS are enabled, and ${target.operations.join("/")} policies use both configured settings (${report.policies.length} applicable policy record(s)).`
+          : `RLS prerequisites failed for role ${report.role}: ${report.errors.join(", ")}. Hardened mode will refuse this target rather than fall back to Runner-only predicates.`,
+      };
     });
-    return {
-      name: `source:${sourceName}:postgres-rls:${credentialKind}:${target.schema}.${target.table}`,
-      ok: report.ok,
-      level: report.ok ? "pass" : "fail",
-      message: report.ok
-        ? `Role ${report.role} is non-owner/non-bypass, RLS and FORCE RLS are enabled, and ${target.operations.join("/")} policies use both configured settings (${report.policies.length} applicable policy record(s)).`
-        : `RLS prerequisites failed for role ${report.role}: ${report.errors.join(", ")}. Hardened mode will refuse this target rather than fall back to Runner-only predicates.`,
-    };
   } catch (error) {
     return {
       name: `source:${sourceName}:postgres-rls:${credentialKind}:${target.schema}.${target.table}`,
@@ -1022,9 +1024,6 @@ async function inspectPostgresRlsDoctorTarget(
       level: "fail",
       message: `RLS metadata inspection failed (${rlsDoctorError(error)}). Hardened mode will refuse this target.`,
     };
-  } finally {
-    client.release();
-    await pool.end();
   }
 }
 
@@ -1037,49 +1036,47 @@ async function verifyPostgresRlsCanary(
 ): Promise<void> {
   const context = trustedCliContext(config, capability, process.env);
   const pool = createPostgresPool(databaseUrl, { max: 1, connectionTimeoutMillis: 3000 });
-  const client = await pool.connect();
   const table = `${quotePostgresIdentifier(capability.target.schema)}.${quotePostgresIdentifier(capability.target.table)}`;
   const primaryKey = quotePostgresIdentifier(capability.target.primary_key);
-  const bind = async (tenantId: string, principal: string) => bindPostgresTrustedScope(client, scope, {
-    tenant_id: tenantId,
-    principal,
-    provenance: "environment",
-  });
-  try {
-    await client.query("BEGIN");
-    await bind(context.tenant_id, context.principal);
-    const visible = await client.query(`SELECT ${primaryKey} AS id FROM ${table} ORDER BY ${primaryKey} LIMIT 1`);
-    await client.query("ROLLBACK");
-    const id = visible.rows[0]?.id;
-    if (id === undefined) throw new Error("POSTGRES_RLS_CANARY_NO_VISIBLE_ROW");
-
-    const deniedScopes: Array<[string, string]> = [
-      [`synapsor-canary-tenant-${crypto.randomUUID()}`, context.principal],
-      ...(scope.principal_setting
-        ? [[context.tenant_id, `synapsor-canary-principal-${crypto.randomUUID()}`] as [string, string]]
-        : []),
-    ];
-    for (const [tenantId, principal] of deniedScopes) {
+  await withPostgresProbeClient(pool, async (client) => {
+    const bind = async (tenantId: string, principal: string) => bindPostgresTrustedScope(client, scope, {
+      tenant_id: tenantId,
+      principal,
+      provenance: "environment",
+    });
+    try {
       await client.query("BEGIN");
-      const before = await client.query(
-        "SELECT current_setting($1, true) AS tenant, current_setting($2, true) AS principal",
-        [scope.tenant_setting, scope.principal_setting],
-      );
-      if (before.rows[0]?.tenant === context.tenant_id || before.rows[0]?.principal === context.principal) {
-        throw new Error("POSTGRES_RLS_CONTEXT_LEAKED_ACROSS_TRANSACTION");
-      }
-      await bind(tenantId, principal);
-      const denied = await client.query(`SELECT ${primaryKey} AS id FROM ${table} WHERE ${primaryKey} = $1`, [id]);
+      await bind(context.tenant_id, context.principal);
+      const visible = await client.query(`SELECT ${primaryKey} AS id FROM ${table} ORDER BY ${primaryKey} LIMIT 1`);
       await client.query("ROLLBACK");
-      if ((denied.rowCount ?? denied.rows.length) !== 0) throw new Error("POSTGRES_RLS_CANARY_SCOPE_BYPASS");
+      const id = visible.rows[0]?.id;
+      if (id === undefined) throw new Error("POSTGRES_RLS_CANARY_NO_VISIBLE_ROW");
+
+      const deniedScopes: Array<[string, string]> = [
+        [`synapsor-canary-tenant-${crypto.randomUUID()}`, context.principal],
+        ...(scope.principal_setting
+          ? [[context.tenant_id, `synapsor-canary-principal-${crypto.randomUUID()}`] as [string, string]]
+          : []),
+      ];
+      for (const [tenantId, principal] of deniedScopes) {
+        await client.query("BEGIN");
+        const before = await client.query(
+          "SELECT current_setting($1, true) AS tenant, current_setting($2, true) AS principal",
+          [scope.tenant_setting, scope.principal_setting],
+        );
+        if (before.rows[0]?.tenant === context.tenant_id || before.rows[0]?.principal === context.principal) {
+          throw new Error("POSTGRES_RLS_CONTEXT_LEAKED_ACROSS_TRANSACTION");
+        }
+        await bind(tenantId, principal);
+        const denied = await client.query(`SELECT ${primaryKey} AS id FROM ${table} WHERE ${primaryKey} = $1`, [id]);
+        await client.query("ROLLBACK");
+        if ((denied.rowCount ?? denied.rows.length) !== 0) throw new Error("POSTGRES_RLS_CANARY_SCOPE_BYPASS");
+      }
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
     }
-  } catch (error) {
-    await client.query("ROLLBACK").catch(() => undefined);
-    throw error;
-  } finally {
-    client.release();
-    await pool.end();
-  }
+  });
 }
 
 
@@ -1224,8 +1221,7 @@ async function rollbackOnlyFreshnessDependencyProbe(
   if (engine === "postgres") {
     const pg = await dynamicImportModule<{ Pool: new (options: { connectionString: string }) => { connect(): Promise<PostgresProbeClient>; end(): Promise<void> } }>("pg");
     const pool = new pg.Pool({ connectionString: databaseUrl });
-    const client = await pool.connect();
-    try {
+    await withPostgresProbeClient(pool, async (client) => {
       await client.query("BEGIN");
       try {
         const table = `${quotePostgresIdentifier(capability.target.schema)}.${quotePostgresIdentifier(capability.target.table)}`;
@@ -1236,16 +1232,13 @@ async function rollbackOnlyFreshnessDependencyProbe(
         await client.query("ROLLBACK").catch(() => undefined);
         throw error;
       }
-    } finally {
-      client.release();
-      await pool.end();
-    }
+    });
     return;
   }
 
   const mysql = await dynamicImportModule<{ createConnection(options: { uri: string; dateStrings: boolean }): Promise<MysqlProbeConnection> }>("mysql2/promise");
   const connection = await mysql.createConnection({ uri: databaseUrl, dateStrings: true });
-  try {
+  await withMysqlProbeConnection(connection, async () => {
     await connection.beginTransaction();
     try {
       const table = `${quoteMysqlIdentifier(capability.target.schema)}.${quoteMysqlIdentifier(capability.target.table)}`;
@@ -1256,17 +1249,14 @@ async function rollbackOnlyFreshnessDependencyProbe(
       await connection.rollback().catch(() => undefined);
       throw error;
     }
-  } finally {
-    await connection.end();
-  }
+  });
 }
 
 
 async function rollbackOnlyPostgresTargetProbe(databaseUrl: string, capability: RunnerCapabilityConfig): Promise<void> {
   const pg = await dynamicImportModule<{ Pool: new (options: { connectionString: string }) => { connect(): Promise<PostgresProbeClient>; end(): Promise<void> } }>("pg");
   const pool = new pg.Pool({ connectionString: databaseUrl });
-  const client = await pool.connect();
-  try {
+  await withPostgresProbeClient(pool, async (client) => {
     await client.query("BEGIN");
     try {
       const table = `${quotePostgresIdentifier(capability.target.schema)}.${quotePostgresIdentifier(capability.target.table)}`;
@@ -1291,17 +1281,14 @@ async function rollbackOnlyPostgresTargetProbe(databaseUrl: string, capability: 
       await client.query("ROLLBACK").catch(() => undefined);
       throw error;
     }
-  } finally {
-    client.release();
-    await pool.end();
-  }
+  });
 }
 
 
 async function rollbackOnlyMysqlTargetProbe(databaseUrl: string, capability: RunnerCapabilityConfig): Promise<void> {
   const mysql = await dynamicImportModule<{ createConnection(options: { uri: string; dateStrings: boolean }): Promise<MysqlProbeConnection> }>("mysql2/promise");
   const connection = await mysql.createConnection({ uri: databaseUrl, dateStrings: true });
-  try {
+  await withMysqlProbeConnection(connection, async () => {
     await connection.beginTransaction();
     try {
       const table = `${quoteMysqlIdentifier(capability.target.schema)}.${quoteMysqlIdentifier(capability.target.table)}`;
@@ -1326,14 +1313,15 @@ async function rollbackOnlyMysqlTargetProbe(databaseUrl: string, capability: Run
       await connection.rollback().catch(() => undefined);
       throw error;
     }
-  } finally {
-    await connection.end();
-  }
+  });
 }
 
 
 type PostgresProbeClient = {
-  query(sql: string, values?: unknown[]): Promise<unknown>;
+  query(sql: string, values?: unknown[]): Promise<{
+    rows: Record<string, unknown>[];
+    rowCount: number | null;
+  }>;
   release(): void;
 };
 
@@ -1344,6 +1332,41 @@ type MysqlProbeConnection = {
   rollback(): Promise<void>;
   end(): Promise<void>;
 };
+
+
+export async function withPostgresProbeClient<T>(
+  pool: { connect(): Promise<PostgresProbeClient>; end(): Promise<void> },
+  callback: (client: PostgresProbeClient) => Promise<T>,
+): Promise<T> {
+  let client: PostgresProbeClient | undefined;
+  return withPreservedCleanup(async () => {
+    client = await pool.connect();
+    return await callback(client);
+  }, async () => runAllCleanups([
+    () => { client?.release(); },
+    () => pool.end(),
+  ], "PostgreSQL doctor probe cleanup failed"));
+}
+
+
+export async function withMysqlProbeConnection<T>(
+  connection: MysqlProbeConnection,
+  callback: () => Promise<T>,
+): Promise<T> {
+  let operationError: unknown;
+  try {
+    return await callback();
+  } catch (error) {
+    operationError = error;
+    throw error;
+  } finally {
+    try {
+      await connection.end();
+    } catch (error) {
+      if (operationError === undefined) throw error;
+    }
+  }
+}
 
 
 function proposalReadProbeColumns(capability: RunnerCapabilityConfig): string[] {

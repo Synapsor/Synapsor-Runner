@@ -117,6 +117,28 @@ synapsor-runner try ask \
   --timeout 180
 ```
 
+The guided provider picker performs one bounded request to a loopback
+OpenAI-compatible `/models` endpoint and offers the returned model IDs instead
+of silently choosing an unrelated vendor default. Direct scripted
+`try ask --provider openai-compatible` remains explicit: pass `--model` and
+`--base-url` so automation never changes model because a local server changed.
+
+For smaller local models, the model-facing catalog is a compact resource index
+followed by focused details for one exact resource. Each resource includes one
+valid reviewed plan example. Declared optional arguments may arrive as `null`,
+clean integer strings, or JSON-encoded arrays/objects and are normalized before
+the original strict schema runs. Required fields, enum values, cardinality
+bounds, unknown-key rejection, reviewed resource/relationship allowlists, and
+trusted scope are never relaxed.
+
+If a loopback model describes catalog metadata instead of querying data, Runner
+allows one focused correction and one JSON-plan response. Runner compares that
+plan with exact terms in the question and reviewed catalog before source
+execution. A mismatch runs no query. A matching rescued plan executes through
+the normal validator/compiler, and Runner renders the verified result directly
+instead of asking the weak model to summarize values it may misread. Models that
+use the tool protocol correctly keep the normal model-prose path.
+
 Without a positional question, the command opens the conversational
 `Synapsor Analytics` shell. Ask natural-language follow-ups directly. The
 normal answer shows concise model interpretation plus every actual structured
@@ -464,7 +486,7 @@ The current release enforces:
 | Conversation history | 4 completed turns, 16 KiB |
 | Final answer | 16 KiB |
 | Provider request timeout | 30 seconds remote; 120 seconds loopback; operator override 1-600 seconds |
-| Reported session token usage | 50,000 tokens |
+| Reported session token usage | 200,000 tokens |
 
 One Workbench Ask session runs one request at a time. Runner does not
 automatically retry provider calls in this release. A developer may retry a
@@ -485,14 +507,15 @@ latency but does not replace a suitable Runner request timeout.
 
 ## Tested Provider Matrix
 
-Status as of the prepared 1.6.6 source:
+Status as of the prepared 1.7.0 source:
 
 | Provider surface | Verification | Claim |
 | --- | --- | --- |
 | OpenAI `gpt-5-mini` | Live packed Community Solar and TrailPeak runs against real local PostgreSQL; the 2026-08-01 TrailPeak run proved a 12-week aggregate explanation, independently rendered values, and an unavailable relationship review path | Live tested |
 | Anthropic Messages/tool-use protocol | Deterministic mock server, normal/refusal/error paths | Protocol tested; no live Anthropic account run |
 | Custom OpenAI-compatible loopback | Deterministic real HTTP server plus tool/refusal/proposal and endpoint-security paths | Protocol tested against the documented Chat Completions subset |
-| Ollama, LM Studio, or another named local server | No engine/model installed or running in the release environment | Real engine not verified; compatibility is not implied by the label |
+| Ollama `qwen2.5:7b` | Live local PostgreSQL matrix plus a real RS256/JWT-authenticated production Streamable HTTP MCP run; simple enum filtering, a two-hop relationship aggregate, kept-out refusal, exact two-tool surface, and no model-supplied scope | Live tested through Ollama's OpenAI-compatible API |
+| LM Studio or another named local server | No live engine run in this release | Compatibility requires the documented Chat Completions and tool-call subset; the label alone is not a claim |
 
 The live OpenAI run used `app.describe_data` and `app.explore_data`, matched the
 official MCP aggregate result, changed no source rows, and passed exact-key

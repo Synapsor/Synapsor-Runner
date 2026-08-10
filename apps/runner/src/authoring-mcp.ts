@@ -21,7 +21,9 @@ import {
   type ScopedExploreBoundarySetRuntime,
 } from "./scoped-explore-boundary-set.js";
 
-const scalar = z.union([z.string().max(512), z.number().finite(), z.boolean(), z.null()]);
+const filterScalar = z.union([z.string().max(512), z.number().finite(), z.boolean()]).describe(
+  "A concrete filter value. Null is not a filter literal; use null_count, non_null_count, or completion_rate for missing-data analysis.",
+);
 const fieldId = z.string().min(1).max(256).describe("Exact field id; keep relationship separate.");
 const resourceId = z.string().min(1).max(256)
   .describe("Exact root resource id.");
@@ -51,7 +53,7 @@ const numericBandId = z.string().min(1).max(64).describe(
 const filter = z.object({
   field: fieldId,
   op: z.enum(["eq", "neq", "lt", "lte", "gt", "gte", "in"]),
-  value: z.union([scalar, z.array(scalar).min(1).max(20)]),
+  value: z.union([filterScalar, z.array(filterScalar).min(1).max(20)]),
   relationship: optionalModelArgument(relationshipId),
 }).strict();
 
@@ -69,7 +71,9 @@ export function createScopedExploreMcpServer(
       field: fieldId,
       direction: z.enum(["asc", "desc"]),
     }).strict()).max(3))),
-    limit: modelInteger(z.number().int().positive()),
+    limit: optionalModelArgument(modelInteger(z.number().int().positive().describe(
+      "Maximum returned rows. Omit to use Runner's conservative reviewed default.",
+    ))),
   }).strict();
   const aggregatePlan = z.object({
     kind: z.literal("aggregate"),
@@ -119,9 +123,9 @@ export function createScopedExploreMcpServer(
         direction: z.enum(["asc", "desc"]),
       }).strict(),
     ]))),
-    top_n: modelInteger(z.number().int().positive().describe(
-      "Maximum aggregate rows; dimension-by-time uses one row per dimension/time combination; comparisons need both periods.",
-    )),
+    top_n: optionalModelArgument(modelInteger(z.number().int().positive().describe(
+      "Maximum aggregate rows; omit to use Runner's conservative reviewed default. Dimension-by-time uses one row per dimension/time combination; comparisons need both periods.",
+    ))),
     comparison: optionalModelArgument(modelObject(z.object({
       field: fieldId,
       relationship: optionalModelArgument(relationshipId),
@@ -147,12 +151,15 @@ export function createScopedExploreMcpServer(
   );
   server.registerTool(SCOPED_EXPLORE_DESCRIBE_TOOL, {
     title: "Describe reviewed data",
-    description: "Lists a bounded page of exact active boundary, resource, field, measure, time-bucket, relationship ids, and privacy limits. Copy ids into app.explore_data; use boundary to disambiguate overlaps. Metadata only; no source rows.",
+    description: "Metadata only; never answers a data question. Without resource, lists a compact index of exact active resource ids and direct analysis. With one exact resource id, returns focused fields and relationship details. Copy ids into app.explore_data for values; use boundary only to disambiguate overlaps. No source rows.",
     inputSchema: z.object({
       boundary: optionalBoundarySelector,
       resource: optionalResourceSelector,
       cursor: optionalModelArgument(z.number().int().nonnegative()),
-      limit: optionalModelArgument(z.number().int().positive().max(10)),
+      limit: z.preprocess(
+        (value) => value === 0 ? undefined : value,
+        optionalModelArgument(z.number().int().positive().max(10)),
+      ),
     }).strict(),
     outputSchema: scopedExploreDescribeToolOutputSchema,
     annotations: {
@@ -169,12 +176,15 @@ export function createScopedExploreMcpServer(
       "synapsor.approval_tool": false,
       "synapsor.commit_tool": false,
     },
-  }, async (input) => toolResult(() => runtime.describe({
-    ...(input.boundary ? { boundary: input.boundary } : {}),
-    ...(input.resource ? { resource: input.resource } : {}),
-    ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
-    ...(input.limit === undefined ? {} : { limit: input.limit }),
-  })));
+  }, async (input) => toolResult(async () => projectDescribeDataForModel(
+    await runtime.describe({
+      ...(input.boundary ? { boundary: input.boundary } : {}),
+      ...(input.resource ? { resource: input.resource } : {}),
+      ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
+      ...(input.limit === undefined ? {} : { limit: input.limit }),
+    }),
+    Boolean(input.resource),
+  )));
   server.registerTool(SCOPED_EXPLORE_QUERY_TOOL, {
     title: "Explore reviewed data",
     description: exploreToolDescription(production),
@@ -243,12 +253,165 @@ function exploreToolDescription(production: boolean): string {
   return [
     `Runs one reviewed read-only ${production ? "production" : "local"} plan.`,
     "Call app.describe_data first and copy exact ids. Send {boundary?,plan:{...}}; plan.kind is exactly rows or aggregate.",
-    'Aggregate: {"plan":{"kind":"aggregate","resource":"<exact resource id>","measures":[{"function":"sum","field":"<field>"}],"dimensions":[{"field":"<field>"}],"top_n":25}}.',
+    'Aggregate: {"plan":{"kind":"aggregate","resource":"<exact resource id>","measures":[{"function":"sum","field":"<field>"}],"dimensions":[{"field":"<field>"}]}}. Omitted top_n uses Runner\'s reviewed bound.',
     'Relationship: keep "relationship":"<id>" separate from the related field; never concatenate them.',
-    'Rows: {"plan":{"kind":"rows","resource":"<exact resource id>","select":["<field>"],"limit":50}}.',
+    'Rows: {"plan":{"kind":"rows","resource":"<exact resource id>","select":["<field>"]}}. Omitted limit uses Runner\'s reviewed bound.',
     'Named controls use {"derived_measure":"<name>"} in measures or {"numeric_band":"<name>"} in dimensions; never send formulas or edges.',
+    "Filter values must be concrete, not null. Use null_count, non_null_count, or completion_rate for reviewed missing-data analysis.",
     "No cross-boundary joins, SQL, model-selected tenant/principal, mutation, approval, or commit.",
   ].join(" ");
+}
+
+export function projectDescribeDataForModel(
+  result: Record<string, unknown>,
+  resourceDetail: boolean,
+): Record<string, unknown> {
+  if (result.ok === false || !Array.isArray(result.resources)) return structuredClone(result);
+  const resources = result.resources
+    .filter(modelRecord)
+    .map((resource) => resourceDetail
+      ? modelResourceDetail(resource)
+      : modelResourceIndex(resource));
+  return {
+    ...structuredClone(result),
+    resources,
+    catalog_view: resourceDetail ? "resource_detail" : "resource_index",
+    metadata_only: true,
+    contains_source_values: false,
+    next_action: resourceDetail
+      ? "For application-data values, call app.explore_data with one smallest valid plan. Do not answer from this metadata."
+      : "Choose an exact resource id. Call app.describe_data with that resource only when focused relationship or filter details are needed, then call app.explore_data for values. Do not answer from this metadata.",
+  };
+}
+
+function modelResourceIndex(resource: Record<string, unknown>): Record<string, unknown> {
+  const relationships = modelRecords(resource.relationships).map((relationship) => ({
+    id: modelString(relationship.id),
+    target_resource: modelString(relationship.target_resource),
+    activation: modelString(relationship.activation),
+    path_depth: modelNumber(relationship.path_depth),
+  }));
+  return withoutUndefined({
+    id: modelString(resource.id),
+    boundary_name: modelString(resource.boundary_name),
+    selectable_fields: modelStrings(resource.selectable_fields),
+    filter_operators: modelStringArrayRecord(resource.filter_operators),
+    sortable_fields: modelStrings(resource.sortable_fields),
+    groupable_fields: modelStrings(resource.groupable_fields),
+    aggregate_measure_functions: modelStringArrayRecord(resource.aggregate_measure_functions),
+    presence_measure_fields: modelStrings(resource.presence_measure_fields),
+    presence_measure_functions: modelStrings(resource.presence_measure_functions),
+    derived_measures: modelRecords(resource.derived_measures),
+    numeric_bands: modelRecords(resource.numeric_bands),
+    count_distinct_fields: modelStrings(resource.count_distinct_fields),
+    time_bucket_fields: modelStringArrayRecord(resource.time_bucket_fields),
+    time_coverage: modelRecordOrEmpty(resource.time_coverage),
+    field_enums: modelRecordOrEmpty(resource.field_enums),
+    relationships,
+    minimum_cohort_size: modelNumber(resource.minimum_cohort_size),
+    maximum_rows: modelNumber(resource.maximum_rows),
+    maximum_groups: modelNumber(resource.maximum_groups),
+    valid_plan_example: modelValidAggregatePlan(resource),
+  });
+}
+
+function modelValidAggregatePlan(resource: Record<string, unknown>): Record<string, unknown> {
+  const resourceId = modelString(resource.id) ?? "";
+  const aggregateFunctions = modelStringArrayRecord(resource.aggregate_measure_functions);
+  const measured = Object.entries(aggregateFunctions).find(([field, functions]) =>
+    isUsefulExampleMeasure(field) && functions.some((name) => name === "sum" || name === "avg"));
+  const measure = measured
+    ? {
+      function: measured[1].includes("sum") ? "sum" : "avg",
+      field: measured[0],
+    }
+    : { function: "count" };
+  const dimension = modelStrings(resource.groupable_fields)[0];
+  return {
+    kind: "aggregate",
+    resource: resourceId,
+    measures: [measure],
+    ...(dimension ? { dimensions: [{ field: dimension }] } : {}),
+  };
+}
+
+function isUsefulExampleMeasure(field: string): boolean {
+  const normalized = field.toLowerCase();
+  return normalized !== "id"
+    && !normalized.endsWith("_id")
+    && !/(?:^|_)(?:version|revision|sequence|seq|ordinal|position|rank)(?:$|_)/.test(normalized);
+}
+
+function modelResourceDetail(resource: Record<string, unknown>): Record<string, unknown> {
+  const indexed = modelResourceIndex(resource);
+  const relationships = modelRecords(resource.relationships).map((relationship) => withoutUndefined({
+    id: modelString(relationship.id),
+    activation: modelString(relationship.activation),
+    operator_review_required: typeof relationship.operator_review_required === "boolean"
+      ? relationship.operator_review_required
+      : undefined,
+    target_resource: modelString(relationship.target_resource),
+    cardinality: modelString(relationship.cardinality),
+    counted_entity: modelString(relationship.counted_entity),
+    path_depth: modelNumber(relationship.path_depth),
+    nullable: typeof relationship.nullable === "boolean" ? relationship.nullable : undefined,
+    unmatched_rows: modelString(relationship.unmatched_rows),
+    model_withheld_fields: withheldFieldNames(relationship.field_egress),
+    filter_operators: modelStringArrayRecord(relationship.filter_operators),
+    groupable_fields: modelStrings(relationship.groupable_fields),
+    aggregate_measure_functions: modelStringArrayRecord(relationship.aggregate_measure_functions),
+    presence_measure_fields: modelStrings(relationship.presence_measure_fields),
+    presence_measure_functions: modelStrings(relationship.presence_measure_functions),
+    derived_measures: modelRecords(relationship.derived_measures),
+    count_distinct_fields: modelStrings(relationship.count_distinct_fields),
+    time_bucket_fields: modelStringArrayRecord(relationship.time_bucket_fields),
+  }));
+  return withoutUndefined({
+    ...indexed,
+    primary_key: modelString(resource.primary_key),
+    model_withheld_fields: withheldFieldNames(resource.field_egress),
+    kept_out_field_count: modelNumber(resource.kept_out_field_count),
+    relationships,
+  });
+}
+
+function modelRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function modelRecords(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.filter(modelRecord) : [];
+}
+
+function modelRecordOrEmpty(value: unknown): Record<string, unknown> {
+  return modelRecord(value) ? structuredClone(value) : {};
+}
+
+function modelString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function modelNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function modelStrings(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function modelStringArrayRecord(value: unknown): Record<string, string[]> {
+  if (!modelRecord(value)) return {};
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, modelStrings(item)]));
+}
+
+function withheldFieldNames(value: unknown): string[] {
+  if (!modelRecord(value)) return [];
+  return Object.entries(value).flatMap(([field, egress]) =>
+    modelRecord(egress) && egress.model_egress === "withheld" ? [field] : []);
+}
+
+function withoutUndefined(value: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined));
 }
 
 function omitUndefinedModelArguments<T>(value: T): T {

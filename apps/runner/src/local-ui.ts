@@ -34,6 +34,7 @@ import {
   activateExplorationBoundary,
   assertCurrentExplorationBoundaryAuthority,
   buildAutoBoundary,
+  deactivateExplorationBoundary,
   emptyReviewOverrides,
   explorationBoundaryCandidateDigest,
   loadActivatedExplorationBoundary,
@@ -703,7 +704,6 @@ async function handleRequest(input: {
     const hasReviewableResource = draft.pack.resources.length > 0;
     let candidate = progress?.candidate
       ?? (hasReviewableResource ? recommendedBoundaryReviewCandidate(draft) : structuredClone(draft));
-    const active = await readOptionalJson(path.join(projectRoot, ".synapsor/exploration-boundary.active.json"));
     let activeBoundaries: ActivatedExplorationBoundary[] = [];
     try {
       activeBoundaries = await loadActivatedExplorationBoundaries(projectRoot);
@@ -759,7 +759,7 @@ async function handleRequest(input: {
     }
     const instantAvailable = Boolean(instantCandidate)
       && instantOnboarding
-      && !active
+      && activeBoundaries.length === 0
       && !progress
       && !draft.pack.resources.some((resource) => resource.minimum_cohort_overridden === true)
       && isLocalHost(workbenchHost)
@@ -780,6 +780,8 @@ async function handleRequest(input: {
     progress = await readBoundaryReviewProgress(projectRoot, draft);
     candidate = progress?.candidate
       ?? (hasReviewableResource ? recommendedBoundaryReviewCandidate(draft) : structuredClone(draft));
+    const active = activeBoundaries.find((boundary) =>
+      boundary.pack.name === candidate.pack.name) ?? null;
     const reviewDecisions = boundaryReviewDecisions(candidate);
     const confirmedDecisions = progress?.confirmed_decisions ?? [];
     sendJson(response, 200, {
@@ -1252,10 +1254,13 @@ async function handleRequest(input: {
       path.join(boundaryRoot, "exploration-boundary.draft.json"),
       "utf8",
     )) as ExplorationBoundaryDraft;
-    const active = await readOptionalJson(
-      path.join(projectRoot, ".synapsor/exploration-boundary.active.json"),
-    ) as ActivatedExplorationBoundary | null;
-    if (!active || active.activation.digest !== expectedActiveDigest) {
+    const active = await loadActivatedExplorationBoundary(projectRoot, {
+      digest: expectedActiveDigest as `sha256:${string}`,
+    }).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
+    });
+    if (!active || active.pack.name !== draft.pack.name) {
       sendJson(response, 409, {
         ok: false,
         error: "The active boundary changed after this refusal. Retry the analysis before reviewing a relationship.",
@@ -1379,9 +1384,6 @@ async function handleRequest(input: {
       return;
     }
     const body = await readJsonBody(request);
-    const activeBeforeReview = await readOptionalJson(
-      path.join(projectRoot, ".synapsor/exploration-boundary.active.json"),
-    );
     let preview: BoundaryReviewMutationPreview | BoundaryReviewMutationBatchPreview;
     let committed: Awaited<ReturnType<typeof commitBoundaryResourceReviewMutation>>
       | Awaited<ReturnType<typeof commitBoundaryReviewMutationBatch>>;
@@ -1416,6 +1418,12 @@ async function handleRequest(input: {
       committed = await commitBoundaryResourceReviewMutation(projectRoot, preview);
     }
     const build = preview.build;
+    const activeBeforeReview = await loadActivatedExplorationBoundary(projectRoot, {
+      name: build.exploration_boundary.pack.name,
+    }).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw error;
+    });
     const progress = await readSharedBoundaryReviewProgress(projectRoot, build.exploration_boundary);
     const journey = activeBeforeReview
       ? await updateGuidedOnboardingState({
@@ -1548,13 +1556,19 @@ async function handleRequest(input: {
     if (body.expected_digest !== prepared.previewDigest || body.confirmation !== `RESCAN ${prepared.previewDigest}`) {
       throw new Error("Schema or review inputs changed after preview; preview the rescan again.");
     }
-    const previousActive = activeBoundaryEventMetadata(
-      await readOptionalJson(path.join(projectRoot, ".synapsor/exploration-boundary.active.json")),
-    );
+    const previousActiveBoundary = await loadActivatedExplorationBoundary(projectRoot, {
+      name: prepared.selectedProgress.candidate.pack.name,
+    }).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw error;
+    });
+    const previousActive = activeBoundaryEventMetadata(previousActiveBoundary);
     await commitBoundaryRescan(prepared);
     const progress = prepared.selectedProgress;
-    const authorityActive = previousActive !== undefined
-      || await readOptionalJson(path.join(projectRoot, ".synapsor/exploration-boundaries.active.json")) !== null;
+    const authorityActive = (await loadActivatedExplorationBoundaries(projectRoot).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    })).length > 0;
     const journey = await recordGuidedBoundaryRescan({
       projectRoot,
       schemaFingerprint: prepared.selectedBuild.lock.schema_fingerprint,
@@ -1634,26 +1648,46 @@ async function handleRequest(input: {
     if (body.confirmation !== "START OVER REVIEW") {
       throw new Error("Start over requires the exact confirmation START OVER REVIEW.");
     }
-    const previousActive = activeBoundaryEventMetadata(
-      await readOptionalJson(path.join(projectRoot, ".synapsor/exploration-boundary.active.json")),
-    );
     const prepared = await prepareAutoBoundaryRescan({
       projectRoot,
       boundaryRoot,
       schemaInspector,
       resetOverrides: true,
     });
+    const boundaryName = prepared.build.exploration_boundary.pack.name;
+    const previousActiveBoundary = await loadActivatedExplorationBoundary(projectRoot, {
+      name: boundaryName,
+    }).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw error;
+    });
+    const previousActive = activeBoundaryEventMetadata(previousActiveBoundary);
     await writeAutoBoundaryArtifacts({
       projectRoot,
       outputRoot: path.relative(projectRoot, boundaryRoot),
       build: prepared.build,
       force: true,
+      preserveActiveBoundary: true,
     });
-    const journey = await resetGuidedOnboardingForBoundaryReview({
+    const deactivated = previousActiveBoundary
+      ? await deactivateExplorationBoundary(projectRoot, boundaryName)
+      : { disabled: [], remaining: await loadActivatedExplorationBoundaries(projectRoot).catch((error: unknown) => {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+          throw error;
+        }) };
+    let journey = await resetGuidedOnboardingForBoundaryReview({
       projectRoot,
       schemaFingerprint: prepared.build.lock.schema_fingerprint,
       rolePostureFingerprint: prepared.build.lock.role_posture_fingerprint,
     }).catch(() => undefined);
+    if (deactivated.remaining.length > 0) {
+      journey = await updateGuidedOnboardingState({
+        projectRoot,
+        status: "boundary_active",
+        authorityActive: true,
+        recommendedNextAction: `Review ${boundaryName} when ready; Ask remains available through ${deactivated.remaining.length} other active ${deactivated.remaining.length === 1 ? "boundary" : "boundaries"}.`,
+      }).catch(() => journey);
+    }
     const candidateDigest = explorationBoundaryCandidateDigest(prepared.build.exploration_boundary);
     await recordWorkbenchAttention(storeAccess, {
       event_type: "capability.review_required",
@@ -1686,9 +1720,12 @@ async function handleRequest(input: {
       ok: true,
       journey,
       active: null,
+      remaining_active_boundaries: deactivated.remaining.map((boundary) => boundary.pack.name),
       source_database_changed: false,
       preserved: ["local ledger", "protected named capabilities", "Runner config", "source database"],
-      message: "Managed boundary-review decisions were reset. The new zero-activation draft is ready for review.",
+      message: deactivated.remaining.length > 0
+        ? `Managed review decisions for ${boundaryName} were reset, and that boundary is inactive. Ask remains available through: ${deactivated.remaining.map((boundary) => boundary.pack.name).join(", ")}.`
+        : `Managed review decisions for ${boundaryName} were reset. Its new inactive draft is ready for review.`,
     });
     return;
   }
@@ -5310,7 +5347,10 @@ async function resolveWorkbenchDeploymentProfile(
   configured: WorkbenchDeploymentProfile | undefined,
 ): Promise<WorkbenchDeploymentProfile> {
   if (configured) return configured;
-  const active = await readOptionalJson(path.join(projectRoot, ".synapsor/exploration-boundary.active.json"));
+  const active = await loadActivatedExplorationBoundary(projectRoot).catch((error) => {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  });
   const draft = await readOptionalJson(path.join(projectRoot, "synapsor/generated/exploration-boundary.draft.json"));
   const profile = isRecord(active)
     ? active.deployment_profile
@@ -7809,7 +7849,8 @@ function isInactiveExplorationBoundary(error: unknown): boolean {
   return error.message === "Exploration boundary is not active."
     || (fsError.code === "ENOENT"
       && typeof fsError.path === "string"
-      && path.basename(fsError.path) === "exploration-boundary.active.json");
+      && ["exploration-boundary.active.json", "exploration-boundaries.active.json"]
+        .includes(path.basename(fsError.path)));
 }
 
 async function prepareAutoBoundaryRescan(input: {
@@ -7871,6 +7912,8 @@ async function prepareAutoBoundaryRescan(input: {
     ...buildInput,
     overrides: currentOverrides.overrides,
   });
+  build.exploration_boundary.pack.name = oldDraft.pack.name;
+  build.policy_baseline.boundary.pack.name = oldDraft.pack.name;
   const diff = boundarySemanticDiff(oldDraft, build, currentOverrides.removed);
   const previewDigest = canonicalJsonDigest({
     schema_version: "synapsor.boundary-rescan-preview.v1",

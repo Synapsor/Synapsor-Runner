@@ -38,6 +38,24 @@ afterEach(async () => {
 });
 
 describe("Scoped Explore", () => {
+  it("uses boundary-bounded defaults when a model omits row and aggregate limits", async () => {
+    const fixture = await activatedFixture();
+    const rowPlan = validateExplorePlan({
+      kind: "rows",
+      resource: "public.subscriptions",
+      select: ["region"],
+    }, fixture.boundary);
+    const aggregatePlan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "region" }],
+    }, fixture.boundary);
+
+    expect(rowPlan).toMatchObject({ kind: "rows", limit: 50 });
+    expect(aggregatePlan).toMatchObject({ kind: "aggregate", top_n: 25 });
+  });
+
   it("uses database-role tenant scope without a tenant environment value and rechecks it before execution", async () => {
     const fixture = await activatedFixture();
     const env = { ...fixture.env, SYNAPSOR_TENANT_ID: undefined };
@@ -358,6 +376,9 @@ describe("Scoped Explore", () => {
       expect(compiled?.sql).toContain(engine === "postgres"
         ? 'SUM(t0."monthly_revenue_cents") AS "measure_0"'
         : "SUM(t0.`monthly_revenue_cents`) AS `measure_0`");
+      expect(compiled?.sql).toContain(engine === "postgres"
+        ? 't0."churned_at" IS NOT NULL'
+        : "t0.`churned_at` IS NOT NULL");
       expect(compiled?.sql).not.toMatch(/\bOVER\s*\(|RUNNING_TOTAL/i);
     }
     expect(() => validateExplorePlan({
@@ -381,6 +402,14 @@ describe("Scoped Explore", () => {
       inspectDatabaseFn: async () => fixture.inspection,
     });
     try {
+      await expect(runtime.describe({ resource: "public.subscriptions" })).resolves.toMatchObject({
+        resources: [{
+          derived_measures: [{
+            name: "revenue_running_total",
+            records_without_reviewed_time: "omitted",
+          }],
+        }],
+      });
       const result = await runtime.explore(plan);
       expect(result.data).toEqual([
         { region: "north", time_bucket: "2026-07-06", revenue_running_total: 10 },
@@ -1080,6 +1109,12 @@ describe("Scoped Explore", () => {
           id: "public.subscriptions",
           kept_out_field_count: expect.any(Number),
           minimum_cohort_size: expect.any(Number),
+          valid_plan_example: {
+            kind: "aggregate",
+            resource: "public.subscriptions",
+            measures: [{ function: "sum", field: "monthly_revenue_cents" }],
+            dimensions: [{ field: "region" }],
+          },
         }],
         raw_sql_available: false,
       });
@@ -1098,6 +1133,15 @@ describe("Scoped Explore", () => {
       });
       expect(describedWithNullOptionalSelectors.isError).not.toBe(true);
       expect(describedWithNullOptionalSelectors.structuredContent).toMatchObject({
+        ok: true,
+        resources: [{ id: "public.subscriptions" }],
+      });
+      const describedWithZeroDefaultLimit = await client.callTool({
+        name: "app.describe_data",
+        arguments: { limit: 0 },
+      });
+      expect(describedWithZeroDefaultLimit.isError).not.toBe(true);
+      expect(describedWithZeroDefaultLimit.structuredContent).toMatchObject({
         ok: true,
         resources: [{ id: "public.subscriptions" }],
       });
@@ -1159,12 +1203,7 @@ describe("Scoped Explore", () => {
       expect(described.structuredContent).toMatchObject({
         resources: [{
           count_distinct_fields: expect.arrayContaining(["billing_token"]),
-          field_egress: {
-            billing_token: { model_egress: "withheld" },
-          },
-          field_types: {
-            billing_token: expect.any(String),
-          },
+          model_withheld_fields: expect.arrayContaining(["billing_token"]),
         }],
       });
       expect((described.structuredContent as any).resources[0].field_enums)
@@ -1533,6 +1572,13 @@ describe("Scoped Explore", () => {
       where: [{ field: "tenant_id", op: "eq", value: "other-tenant" }],
       limit: 10,
     }, boundary)).toThrow(/trusted bindings/i);
+    expect(() => validateExplorePlan({
+      kind: "rows",
+      resource: "public.subscriptions",
+      select: ["region"],
+      where: [{ field: "region", op: "eq", value: null }],
+      limit: 10,
+    }, boundary)).toThrow(/Null is not a filter literal.*null_count.*non_null_count.*completion_rate/i);
 
     const plan = validateExplorePlan({
       kind: "rows",
@@ -2085,9 +2131,8 @@ describe("Scoped Explore", () => {
   it("suggests an explicit record-count trend when identifiers are the only numeric measures", async () => {
     const inspection = churnInspection();
     inspection.tables[0]!.columns.find((field) => field.name === "id")!.data_type = "integer";
-    const fixture = await activatedFixture((candidate) => {
-      candidate.pack.resources[0]!.aggregate_measures = ["id"];
-    }, inspection);
+    inspection.tables[0]!.columns.find((field) => field.name === "monthly_revenue_cents")!.data_type = "text";
+    const fixture = await activatedFixture(undefined, inspection);
     const runtime = await createScopedExploreRuntime({
       projectRoot: fixture.root,
       transport: "stdio",

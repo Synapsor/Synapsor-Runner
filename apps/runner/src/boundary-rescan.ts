@@ -31,7 +31,7 @@ import {
 import {
   loadBoundaryLibraryForReconciliation,
   rebaseSavedBoundaryForRescan,
-  saveBoundaryLibraryAfterReconciliation,
+  serializeBoundaryLibraryAfterReconciliation,
   type BoundaryLibraryReconciliationState,
 } from "./boundary-library.js";
 import {
@@ -111,6 +111,7 @@ export type BoundaryRescanReport = {
 export type PreparedBoundaryRescan = {
   projectRoot: string;
   boundaryRoot: string;
+  baseStateDigest: `sha256:${string}`;
   persistReviewState: boolean;
   selectedBuild: AutoBoundaryBuild;
   selectedProgress: BoundaryReviewProgress;
@@ -133,6 +134,7 @@ export async function prepareBoundaryRescan(input: {
   const projectRoot = path.resolve(input.projectRoot);
   const boundaryRoot = path.resolve(projectRoot, input.boundaryRoot ?? "synapsor/generated");
   assertInsideProject(projectRoot, boundaryRoot);
+  const baseStateDigest = await boundaryRescanBaseStateDigest(projectRoot, boundaryRoot);
   const [oldDraft, oldLock, hadSavedReviewState] = await Promise.all([
     readJson<ExplorationBoundaryDraft>(
       path.join(boundaryRoot, "exploration-boundary.draft.json"),
@@ -286,9 +288,15 @@ export async function prepareBoundaryRescan(input: {
   };
   const report = rescanReport({ oldLock, selectedBuild, inspection, entries, now });
   const { generated_at: _generatedAt, ...stableReport } = report;
+  if (await boundaryRescanBaseStateDigest(projectRoot, boundaryRoot) !== baseStateDigest) {
+    throw new Error(
+      "Boundary review changed while the rescan preview was being prepared. Retry --rescan so no newer review is overwritten.",
+    );
+  }
   return {
     projectRoot,
     boundaryRoot,
+    baseStateDigest,
     persistReviewState: hadSavedReviewState || Object.values(nextBoundaries).some(
       (progress) => progress.candidate.pack.resources.length > 0,
     ),
@@ -319,6 +327,12 @@ export async function prepareBoundaryRescan(input: {
 
 export async function commitBoundaryRescan(prepared: PreparedBoundaryRescan): Promise<void> {
   if (!prepared.report.changed) return;
+  if (await boundaryRescanBaseStateDigest(prepared.projectRoot, prepared.boundaryRoot)
+    !== prepared.baseStateDigest) {
+    throw new Error(
+      "Boundary review changed after this rescan preview was prepared. Nothing was written; retry --rescan.",
+    );
+  }
   if (Object.values(prepared.library.boundaries).some(
     (progress) => progress.policy_migration.status === "review_required",
   )) {
@@ -339,17 +353,13 @@ export async function commitBoundaryRescan(prepared: PreparedBoundaryRescan): Pr
     preserveActiveBoundary: true,
     preserveReviewProgress: prepared.persistReviewState,
     ...(prepared.persistReviewState ? { reviewProgress: prepared.selectedProgress } : {}),
+    additionalPrivateStateFiles: {
+      ...(prepared.persistReviewState
+        ? { "boundary-library.json": serializeBoundaryLibraryAfterReconciliation(prepared.library) }
+        : {}),
+      [BOUNDARY_RESCAN_REPORT_FILE]: `${JSON.stringify(prepared.report, null, 2)}\n`,
+    },
   });
-  if (prepared.persistReviewState) {
-    await saveBoundaryLibraryAfterReconciliation({
-      projectRoot: prepared.projectRoot,
-      state: prepared.library,
-    });
-  }
-  await writePrivateJsonAtomic(
-    path.join(prepared.projectRoot, ".synapsor", BOUNDARY_RESCAN_REPORT_FILE),
-    prepared.report,
-  );
 }
 
 export async function readBoundaryRescanReport(
@@ -771,11 +781,40 @@ async function readJson<T>(filePath: string, label: string): Promise<T> {
   }
 }
 
-async function writePrivateJsonAtomic(filePath: string, value: unknown): Promise<void> {
-  await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
-  const temporary = `${filePath}.${process.pid}.tmp`;
-  await fs.writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-  await fs.rename(temporary, filePath);
+async function boundaryRescanBaseStateDigest(
+  projectRoot: string,
+  boundaryRoot: string,
+): Promise<`sha256:${string}`> {
+  const files = [
+    path.join(boundaryRoot, "exploration-boundary.draft.json"),
+    path.join(boundaryRoot, "review-overrides.json"),
+    path.join(projectRoot, ".synapsor/generation-lock.json"),
+    path.join(projectRoot, ".synapsor/auto-boundary-policy-baseline.json"),
+    path.join(projectRoot, ".synapsor/review-overrides.json"),
+    path.join(projectRoot, ".synapsor/boundary-review-progress.json"),
+    path.join(projectRoot, ".synapsor/boundary-library.json"),
+    path.join(projectRoot, ".synapsor/exploration-boundary.active.json"),
+    path.join(projectRoot, ".synapsor/exploration-boundaries.active.json"),
+  ];
+  const snapshots = await Promise.all(files.map(async (filePath) => {
+    try {
+      const contents = await fs.readFile(filePath, "utf8");
+      return {
+        path: path.relative(projectRoot, filePath),
+        exists: true,
+        digest: canonicalJsonDigest(contents),
+      };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return { path: path.relative(projectRoot, filePath), exists: false };
+      }
+      throw error;
+    }
+  }));
+  return canonicalJsonDigest({
+    schema_version: "synapsor.boundary-rescan-base-state.v1",
+    files: snapshots,
+  });
 }
 
 async function anyFileExists(filePaths: string[]): Promise<boolean> {

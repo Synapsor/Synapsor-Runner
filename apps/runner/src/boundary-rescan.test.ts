@@ -146,7 +146,28 @@ describe("boundary rescan reconciliation", () => {
         (resource) => resource.id === "public.product_catalog",
       )?.shared_reference_scope).toMatchObject({ mode: "shared_reference" });
 
-      await commitBoundaryRescan(firstPreview);
+      const libraryPath = path.join(root, ".synapsor/boundary-library.json");
+      const originalLibrary = await fs.readFile(libraryPath, "utf8");
+      const concurrentLibrary = JSON.parse(originalLibrary);
+      concurrentLibrary.updated_at = "2026-08-08T01:30:00.000Z";
+      await fs.writeFile(libraryPath, `${JSON.stringify(concurrentLibrary, null, 2)}\n`);
+      await expect(commitBoundaryRescan(firstPreview)).rejects.toThrow(
+        /changed after this rescan preview.*nothing was written.*retry --rescan/i,
+      );
+      await fs.writeFile(libraryPath, originalLibrary);
+
+      const reportPath = path.join(root, ".synapsor/boundary-rescan-report.json");
+      const draftPath = path.join(root, "synapsor/generated/exploration-boundary.draft.json");
+      const draftBeforeFailedCommit = await fs.readFile(draftPath, "utf8");
+      await fs.mkdir(reportPath);
+      await expect(commitBoundaryRescan(secondPreview)).rejects.toThrow(
+        /refusing to replace non-regular managed state file/i,
+      );
+      expect(await fs.readFile(draftPath, "utf8")).toBe(draftBeforeFailedCommit);
+      expect(await fs.readFile(libraryPath, "utf8")).toBe(originalLibrary);
+      await fs.rm(reportPath, { recursive: true });
+
+      await commitBoundaryRescan(secondPreview);
       const active = await loadActivatedExplorationBoundaries(root);
       expect(active).toHaveLength(1);
       expect(active[0]!.activation.digest).toBe(activeDigest);

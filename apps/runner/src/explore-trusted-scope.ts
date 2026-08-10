@@ -5,6 +5,7 @@ import type {
   ExplorationBoundaryDraft,
   GenerationLock,
 } from "./auto-boundary.js";
+import { withPreservedCleanup } from "./resource-lifecycle.js";
 
 type ExploreBoundary = ExplorationBoundaryDraft | ActivatedExplorationBoundary;
 
@@ -193,27 +194,28 @@ async function readPostgresRoleSetting(input: {
     connectionTimeoutMillis: 3000,
     idleTimeoutMillis: 1000,
   });
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN READ ONLY");
-    await client.query("SET LOCAL statement_timeout = 3000");
-    const result = await client.query<{ current_user: string; setting_value: string | null }>(
-      "SELECT current_user::text AS current_user, current_setting($1, true)::text AS setting_value",
-      [input.setting],
-    );
-    await client.query("ROLLBACK");
-    const row = result.rows[0];
-    return {
-      currentUser: row?.current_user ?? "",
-      value: row?.setting_value ?? undefined,
-    };
-  } catch (error) {
-    await client.query("ROLLBACK").catch(() => undefined);
-    throw error;
-  } finally {
-    client.release();
-    await pool.end();
-  }
+  return withPreservedCleanup(async () => {
+    const client = await pool.connect();
+    return withPreservedCleanup(async () => {
+      try {
+        await client.query("BEGIN READ ONLY");
+        await client.query("SET LOCAL statement_timeout = 3000");
+        const result = await client.query<{ current_user: string; setting_value: string | null }>(
+          "SELECT current_user::text AS current_user, current_setting($1, true)::text AS setting_value",
+          [input.setting],
+        );
+        await client.query("ROLLBACK");
+        const row = result.rows[0];
+        return {
+          currentUser: row?.current_user ?? "",
+          value: row?.setting_value ?? undefined,
+        };
+      } catch (error) {
+        await client.query("ROLLBACK").catch(() => undefined);
+        throw error;
+      }
+    }, async () => { client.release(); });
+  }, async () => { await pool.end(); });
 }
 
 function normalizedScopeValue(value: string | undefined): string | undefined {

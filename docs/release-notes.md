@@ -65,6 +65,17 @@ for the Synapsor Cloud CLI.
 - Real PostgreSQL and MySQL HTTP journeys verify official MCP interoperability,
   row scope, suppression, budget isolation, concurrency, source immutability,
   public `doctor` attestation, and packed-package behavior.
+- A real Ollama `qwen2.5:7b` run verifies both local Ask and the secured
+  production HTTP path. Runner discovers bounded loopback model IDs, gives weak
+  models a compact reviewed catalog and one exact plan example, tolerates only
+  benign optional-argument serialization differences, and refuses a plan that
+  does not match the question before source execution. When the local JSON-plan
+  rescue is needed, Runner renders the verified result without asking the weak
+  model to reinterpret its values.
+- Explore refuses ambiguous SQL-null filter literals with guidance to reviewed
+  missing-data measures. Sequential metrics omit undated records, MySQL restores
+  pooled session timezones, and Workbench relationship labels use separate graph
+  lanes instead of overlapping.
 - Local/staging Explore and existing protected named capabilities retain their
   existing behavior. Spec and DSL `1.9.0` add the new fixed aggregate operations
   and post-suppression transforms without admitting model-authored expressions.

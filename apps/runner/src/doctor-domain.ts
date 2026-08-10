@@ -7,6 +7,7 @@ import {
 } from "@synapsor-runner/schema-inspector";
 import process from "node:process";
 import { cliCommandName } from "./cli-command-meta.js";
+import { withPreservedCleanup } from "./resource-lifecycle.js";
 import { envValue } from "./cli-options.js";
 import { RunnerCapabilityConfig } from "./cli-runtime.js";
 import { sharedPostgresLedgerMirrorOptions, sharedPostgresLedgerTableCounts } from "./shared-ledger-domain.js";
@@ -221,7 +222,7 @@ export async function sharedPostgresLedgerDoctorChecks(config: RuntimeConfig): P
   }
 
   const pool = createPostgresPool(databaseUrl);
-  try {
+  await withPreservedCleanup(async () => {
     const counts = await sharedPostgresLedgerTableCounts(pool, mirror.schema);
     const missing = Object.entries(counts)
       .filter(([, count]) => count === null)
@@ -241,16 +242,14 @@ export async function sharedPostgresLedgerDoctorChecks(config: RuntimeConfig): P
         message: `Shared Postgres ledger schema ${mirror.schema} is initialized (${Object.entries(counts).map(([table, count]) => `${table}=${count}`).join(", ")}).`,
       });
     }
-  } catch (error) {
+  }, async () => { await pool.end(); }).catch((error) => {
     checks.push({
       name: "shared-postgres-ledger:migration",
       ok: false,
       level: "fail",
       message: `Could not inspect shared Postgres ledger schema ${mirror.schema} using ${mirror.urlEnv}: ${error instanceof Error ? error.message : String(error)}`,
     });
-  } finally {
-    await pool.end();
-  }
+  });
   return checks;
 }
 

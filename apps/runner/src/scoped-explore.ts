@@ -56,6 +56,7 @@ import {
   type ExploreHttpSessionContext,
   type ExploreTrustedScope,
 } from "./explore-trusted-scope.js";
+import { runAllCleanups } from "./resource-lifecycle.js";
 
 export const SCOPED_EXPLORE_DESCRIBE_TOOL = "app.describe_data";
 export const SCOPED_EXPLORE_QUERY_TOOL = "app.explore_data";
@@ -946,8 +947,10 @@ export async function createScopedExploreRuntime(input: {
       };
     },
     close: async () => {
-      if (ownsExecutor) await executor.close();
-      if (ownsStore) await store.close();
+      await runAllCleanups([
+        ...(ownsExecutor ? [() => executor.close()] : []),
+        ...(ownsStore ? [async () => { await store.close(); }] : []),
+      ], "Scoped Explore runtime cleanup failed");
     },
   };
 }
@@ -1330,7 +1333,12 @@ function validateRowPlan(input: Record<string, unknown>, boundary: ActivatedExpl
     if (!resource.sortable_fields.includes(field)) throw fieldError(resource, field, "sort");
     return { field, direction: direction(order.direction) };
   });
-  const limit = positiveInteger(input.limit, "limit");
+  const maximumRowsByCells = Math.max(1, Math.floor(
+    boundary.budgets.max_response_cells / select.length,
+  ));
+  const limit = input.limit === undefined
+    ? Math.min(50, boundary.budgets.max_rows, maximumRowsByCells)
+    : positiveInteger(input.limit, "limit");
   if (limit > boundary.budgets.max_rows) throw planError(`limit exceeds reviewed maximum ${boundary.budgets.max_rows}`);
   return {
     kind: "rows",
@@ -1415,10 +1423,12 @@ function validateAggregatePlan(input: Record<string, unknown>, boundary: Activat
   const where = validateFilters(input.where, resource, boundary);
   const comparison = input.comparison === undefined ? undefined : validateComparison(input.comparison, resource, boundary);
   const orderBy = input.order_by === undefined ? undefined : validateAggregateOrder(input.order_by, measures, Boolean(timeBucket));
-  const topN = positiveInteger(input.top_n, "top_n");
   const maximumResultGroups = orderBy?.kind === "measure" || orderBy?.kind === "comparison_change"
     ? reviewedRankedGroupLimit(boundary.budgets)
     : boundary.budgets.max_groups;
+  const topN = input.top_n === undefined
+    ? Math.min(25, boundary.budgets.max_top_n, maximumResultGroups)
+    : positiveInteger(input.top_n, "top_n");
   if (topN > boundary.budgets.max_top_n || topN > maximumResultGroups) throw planError("top_n exceeds the reviewed aggregate result bound");
   if (comparison && !timeBucket) throw planError("bounded period comparison requires a reviewed time_bucket");
   if (comparison && orderBy?.kind === "time_bucket") {
@@ -1443,10 +1453,7 @@ function validateAggregatePlan(input: Record<string, unknown>, boundary: Activat
     if (comparison) {
       throw planError(`${definition.shape} is a post-suppression transform and cannot be combined with a two-period comparison`);
     }
-    const sequential = definition.shape === "running_total"
-      || definition.shape === "lag_absolute_change"
-      || definition.shape === "lag_percentage_change"
-      || definition.shape === "moving_average";
+    const sequential = isSequentialDerivedMeasureShape(definition.shape);
     if (sequential && !timeBucket) {
       throw planError(`${definition.shape} requires one reviewed time_bucket`);
     }
@@ -1642,6 +1649,18 @@ function compileAggregatePlan(
   for (const filter of plan.where ?? []) {
     const target = filter.relationship ? joined.targets.get(filter.relationship) : undefined;
     where.push(filterSql(filter, target?.resource ?? root, target?.alias ?? "t0", params, engine));
+  }
+  if (plan.time_bucket && plan.measures.some((measure) => {
+    if (!("derived_measure" in measure)) return false;
+    return isSequentialDerivedMeasureShape(
+      reviewedDerivedMeasure(root, measure.derived_measure).shape,
+    );
+  })) {
+    const target = plan.time_bucket.relationship
+      ? joined.targets.get(plan.time_bucket.relationship)
+      : undefined;
+    const alias = target?.alias ?? "t0";
+    where.push(`${alias}.${quote(plan.time_bucket.field, engine)} IS NOT NULL`);
   }
   const enumUses = (plan.where ?? []).map((filter) => ({
     field: filter.field,
@@ -2083,10 +2102,7 @@ function applyPostSuppressionTransforms(
     if (!("derived_measure" in measure)) return [];
     const definition = reviewedDerivedMeasure(resource, measure.derived_measure);
     if (!("base_measure" in definition)) return [];
-    const sequential = definition.shape === "running_total"
-      || definition.shape === "lag_absolute_change"
-      || definition.shape === "lag_percentage_change"
-      || definition.shape === "moving_average";
+    const sequential = isSequentialDerivedMeasureShape(definition.shape);
     return [{
       operation: definition.shape,
       input_field: `measure_${index}`,
@@ -2742,16 +2758,14 @@ function describeReviewedDerivedMeasure(
       null_behavior: "null when the reviewed denominator is zero or null",
     };
   }
-  const sequential = measure.shape === "running_total"
-    || measure.shape === "lag_absolute_change"
-    || measure.shape === "lag_percentage_change"
-    || measure.shape === "moving_average";
+  const sequential = isSequentialDerivedMeasureShape(measure.shape);
   return {
     ...common,
     calculation_stage: "after small-group suppression",
     required_grain: sequential
       ? "one reviewed ordered time_bucket; dimensions are optional partitions"
       : "one or more reviewed dimensions and no time_bucket",
+    ...(sequential ? { records_without_reviewed_time: "omitted" } : {}),
     ...(measure.shape === "rank" ? { fixed_direction: measure.direction } : {}),
     ...(measure.shape === "moving_average" ? { fixed_window_size: measure.window_size } : {}),
     suppressed_groups_included: false,
@@ -3811,27 +3825,54 @@ export function createScopedExploreDatabaseExecutor(input: {
   const pool = mysql.createPool({ uri: input.databaseUrl, connectionLimit: maxConnections, connectTimeout: 3000, dateStrings: true });
   const executeBatch: ScopedExploreExecutor["executeBatch"] = async (batch) => {
     const connection = await pool.getConnection();
+    let previousTimeZone: string | undefined;
+    let results: Array<Record<string, unknown>[]> | undefined;
+    let failure: unknown;
+    let failed = false;
+    let discardConnection = false;
     try {
       if (batch.queries.some((query) => query.reporting_timezone === "UTC")) {
-        await connection.query("SET SESSION time_zone = '+00:00'");
+        const [timeZoneRows] = await connection.query("SELECT @@SESSION.time_zone AS time_zone");
+        const timeZone = Array.isArray(timeZoneRows)
+          ? (timeZoneRows[0] as { time_zone?: unknown } | undefined)?.time_zone
+          : undefined;
+        if (typeof timeZone !== "string" || !timeZone) {
+          throw new Error("MySQL did not return the current session time zone.");
+        }
+        previousTimeZone = timeZone;
+        await connection.query("SET SESSION time_zone = ?", ["+00:00"]);
       }
       await connection.query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ");
       await connection.query("SET TRANSACTION READ ONLY");
       await connection.query("START TRANSACTION READ ONLY");
       await connection.query("SET SESSION max_execution_time = ?", [Math.max(1, Math.floor(batch.timeoutMs))]);
-      const results: Array<Record<string, unknown>[]> = [];
+      results = [];
       for (const query of batch.queries) {
         const [rows] = await connection.query(query.sql, query.params);
         results.push(rows as Record<string, unknown>[]);
       }
       await connection.query("COMMIT");
-      return results;
     } catch (error) {
       await connection.query("ROLLBACK").catch(() => undefined);
-      throw error;
-    } finally {
+      failure = error;
+      failed = true;
+    }
+    if (previousTimeZone !== undefined) {
+      try {
+        await connection.query("SET SESSION time_zone = ?", [previousTimeZone]);
+      } catch (error) {
+        discardConnection = true;
+        if (!failed) failure = error;
+        failed = true;
+      }
+    }
+    if (discardConnection) {
+      connection.destroy();
+    } else {
       connection.release();
     }
+    if (failed) throw failure;
+    return results!;
   };
   return {
     execute: async (query) => (await executeBatch({
@@ -4206,7 +4247,12 @@ function assertSubsetAllowed(values: string[], allowed: string[], resource: Boun
 }
 
 function assertTypedLiteral(resource: BoundaryResource, field: string, value: Scalar): void {
-  if (value === null) return;
+  if (value === null) {
+    throw planError(
+      `Null is not a filter literal for ${resource.id}.${field}. ` +
+      "Use the reviewed null_count, non_null_count, or completion_rate measure for missing-data analysis.",
+    );
+  }
   const type = resource.field_types[field] ?? "";
   if (/(?:int|numeric|decimal|real|double|float|money|number)/i.test(type) && typeof value !== "number") {
     throw planError(`${resource.id}.${field} requires a numeric filter value`);
@@ -4543,6 +4589,13 @@ function assertKeys(value: Record<string, unknown>, allowed: string[], label: st
 
 function isScalar(value: unknown): value is Scalar {
   return value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+}
+
+function isSequentialDerivedMeasureShape(shape: string): boolean {
+  return shape === "running_total"
+    || shape === "lag_absolute_change"
+    || shape === "lag_percentage_change"
+    || shape === "moving_average";
 }
 
 function unique<T>(values: T[]): T[] {

@@ -80,6 +80,7 @@ const scopedDerivedMeasureSchema = z.object({
   parent_contributor_floor: z.literal("applied before release").optional(),
   raw_child_rows_returned: z.literal(false).optional(),
   required_grain: z.enum([sequentialDerivedGrain, groupedDerivedGrain]).optional(),
+  records_without_reviewed_time: z.literal("omitted").optional(),
   suppressed_groups_included: z.literal(false).optional(),
   fixed_window_size: z.number().int().min(2).max(12).optional(),
   fixed_direction: z.enum(["asc", "desc"]).optional(),
@@ -110,6 +111,7 @@ const scopedDerivedMeasureSchema = z.object({
   requireValue("suppressed_groups_included", false);
   if (["running_total", "lag_absolute_change", "lag_percentage_change", "moving_average"].includes(value.shape)) {
     requireValue("required_grain", sequentialDerivedGrain);
+    requireValue("records_without_reviewed_time", "omitted");
     if (value.shape === "moving_average" && value.fixed_window_size === undefined) {
       requireValue("fixed_window_size", "required");
     }
@@ -459,38 +461,72 @@ export const scopedExploreDescribeOutputSchema = z.object({
 // tools/list needs the stable resource contract, but repeating every nested
 // relationship and reviewed-analytics field makes discovery much larger than
 // the two model-facing tools. Full runtime validation remains above.
-const scopedExploreClientDescribeResourceSchema = z.object({
+const scopedExploreClientRelationshipSchema = z.object({
+  id: z.string(),
+  target_resource: z.string(),
+  activation: z.enum(["active", "review_required"]),
+  path_depth: z.number().int().positive(),
+  operator_review_required: z.boolean().optional(),
+  cardinality: z.literal("many_to_one").optional(),
+  counted_entity: z.string().optional(),
+  nullable: z.boolean().optional(),
+  unmatched_rows: z.enum(["exclude", "keep_null"]).optional(),
+  model_withheld_fields: z.array(z.string()).optional(),
+  filter_operators: z.record(z.array(z.string())).optional(),
+  groupable_fields: z.array(z.string()).optional(),
+  aggregate_measure_functions: z.record(z.array(scopedExploreMeasureFunctionSchema)).optional(),
+  presence_measure_fields: z.array(z.string()).optional(),
+  presence_measure_functions: z.array(scopedExploreMeasureFunctionSchema).optional(),
+  derived_measures: z.array(scopedDerivedMeasureSchema).optional(),
+  count_distinct_fields: z.array(z.string()).optional(),
+  time_bucket_fields: z.record(z.array(z.string())).optional(),
+}).strict();
+
+const scopedExploreClientDescribeResourceIndexSchema = z.object({
   boundary_name: z.string().optional(),
   id: z.string(),
-  primary_key: z.string(),
-  field_egress: safeRecordSchema,
   selectable_fields: z.array(z.string()),
-  filterable_fields: z.array(z.string()),
-  filter_operators: safeRecordSchema,
+  filter_operators: z.record(z.array(z.string())),
   sortable_fields: z.array(z.string()),
   groupable_fields: z.array(z.string()),
-  aggregate_measures: z.array(z.string()),
-  aggregate_measure_functions: safeRecordSchema,
+  aggregate_measure_functions: z.record(z.array(scopedExploreMeasureFunctionSchema)),
   presence_measure_fields: z.array(z.string()),
-  presence_measure_functions: z.array(z.string()),
-  derived_measures: z.array(safeRecordSchema),
-  numeric_bands: z.array(safeRecordSchema),
+  presence_measure_functions: z.array(scopedExploreMeasureFunctionSchema),
+  derived_measures: z.array(scopedDerivedMeasureSchema),
+  numeric_bands: z.array(scopedNumericBandSchema),
   count_distinct_fields: z.array(z.string()),
-  time_bucket_fields: safeRecordSchema,
-  time_coverage: safeRecordSchema,
-  field_types: safeRecordSchema,
-  field_enums: safeRecordSchema,
-  kept_out_field_count: z.number().int().nonnegative(),
-  relationships: z.array(safeRecordSchema),
+  time_bucket_fields: z.record(z.array(z.string())),
+  time_coverage: z.record(z.object({
+    status: z.enum(["available", "empty", "withheld_below_minimum_cohort", "unavailable"]),
+    start_date: z.string().optional(),
+    end_date: z.string().optional(),
+    reporting_timezone: z.enum(["UTC", "database_session"]).optional(),
+  }).strict()),
+  field_enums: z.record(z.array(jsonScalarSchema)),
+  relationships: z.array(scopedExploreClientRelationshipSchema),
   minimum_cohort_size: z.number().int().positive(),
-  minimum_cohort_overridden: z.literal(true).optional(),
   maximum_rows: z.number().int().positive(),
   maximum_groups: z.number().int().positive(),
-  suggested_questions: z.array(safeRecordSchema),
+  valid_plan_example: z.object({
+    kind: z.literal("aggregate"),
+    resource: z.string(),
+    measures: z.array(z.object({
+      function: scopedExploreMeasureFunctionSchema,
+      field: z.string().optional(),
+    }).strict()).min(1).max(1),
+    dimensions: z.array(z.object({ field: z.string() }).strict()).min(1).max(1).optional(),
+  }).strict(),
+  primary_key: z.string().optional(),
+  model_withheld_fields: z.array(z.string()).optional(),
+  kept_out_field_count: z.number().int().nonnegative().optional(),
 }).strict();
 
 export const scopedExploreDescribeToolOutputSchema = scopedExploreDescribeOutputSchema.extend({
-  resources: z.array(scopedExploreClientDescribeResourceSchema).optional(),
+  resources: z.array(scopedExploreClientDescribeResourceIndexSchema).optional(),
+  catalog_view: z.enum(["resource_index", "resource_detail"]).optional(),
+  metadata_only: z.literal(true).optional(),
+  contains_source_values: z.literal(false).optional(),
+  next_action: z.string().optional(),
 }).strict();
 
 export const scopedExploreQueryOutputSchema = z.object({

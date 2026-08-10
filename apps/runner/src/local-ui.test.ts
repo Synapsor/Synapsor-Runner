@@ -14,6 +14,8 @@ import {
   activateExplorationBoundary,
   buildAutoBoundary,
   explorationBoundaryCandidateDigest,
+  loadActivatedExplorationBoundary,
+  loadActivatedExplorationBoundaries,
   writeAutoBoundaryArtifacts,
 } from "./auto-boundary.js";
 import { initializeGuidedProject } from "./guided-project.js";
@@ -2628,15 +2630,37 @@ export default defineCapability({
         },
       });
 
+      const otherCandidate = structuredClone(reconciledBoundary.candidate);
+      otherCandidate.pack.name = "other_active";
+      const otherDigest = explorationBoundaryCandidateDigest(otherCandidate);
+      const otherActive = await activateExplorationBoundary({
+        projectRoot: tempDir,
+        candidate: otherCandidate,
+        reviewDraft: otherCandidate,
+        expectedDigest: otherDigest,
+        actor: "other-reviewer@example.test",
+        confirmation: `ACTIVATE ${otherDigest}`,
+        confirmedDecisions: otherCandidate.unresolved_decisions,
+        currentInspection,
+        activeSetMode: "add",
+      });
+      expect((await loadActivatedExplorationBoundaries(tempDir)).map((boundary) => boundary.pack.name).sort())
+        .toEqual(["other_active", "reviewed_staging"]);
+
       const reset = await postJson(`http://${server.host}:${server.port}/api/project/start-over`, mutationHeaders, {
         confirmation: "START OVER REVIEW",
       });
       expect(reset).toMatchObject({
         ok: true,
         active: null,
+        remaining_active_boundaries: ["other_active"],
         source_database_changed: false,
         preserved: expect.arrayContaining(["local ledger", "protected named capabilities", "source database"]),
       });
+      expect(await loadActivatedExplorationBoundary(tempDir, { name: "other_active" }))
+        .toEqual(otherActive);
+      await expect(loadActivatedExplorationBoundary(tempDir, { name: "reviewed_staging" }))
+        .rejects.toThrow("not active");
       expect(JSON.parse(await fs.readFile(path.join(tempDir, ".synapsor/review-overrides.json"), "utf8")))
         .toMatchObject({ resources: {} });
       await expect(fs.readFile(path.join(tempDir, ".synapsor/active/protected.contract.json"), "utf8"))
@@ -2829,6 +2853,20 @@ export default defineCapability({
       confirmedDecisions: candidate.unresolved_decisions,
       currentInspection: inspection,
     });
+    const mirrorSelectedCandidate = structuredClone(candidate);
+    mirrorSelectedCandidate.pack.name = "secondary_boundary";
+    const mirrorSelectedDigest = explorationBoundaryCandidateDigest(mirrorSelectedCandidate);
+    await activateExplorationBoundary({
+      projectRoot: tempDir,
+      candidate: mirrorSelectedCandidate,
+      reviewDraft: mirrorSelectedCandidate,
+      expectedDigest: mirrorSelectedDigest,
+      actor: "secondary-reviewer@example.test",
+      confirmation: `ACTIVATE ${mirrorSelectedDigest}`,
+      confirmedDecisions: mirrorSelectedCandidate.unresolved_decisions,
+      currentInspection: inspection,
+      activeSetMode: "add",
+    });
     const proof = build.exploration_boundary.pack.resources
       .find((resource) => resource.id === "public.members")!
       .relationships.find((relationship) => relationship.id === "members_team_id_fkey")!
@@ -2949,10 +2987,9 @@ export default defineCapability({
         active.activation.reviewed_decisions.map((decision) => decision.decision),
       ));
       expect(staged.candidate_digest).not.toBe(active.activation.digest);
-	      expect(JSON.parse(await fs.readFile(
-	        path.join(tempDir, ".synapsor/exploration-boundary.active.json"),
-	        "utf8",
-	      )).activation.digest).toBe(active.activation.digest);
+	      expect((await loadActivatedExplorationBoundary(tempDir, {
+	        name: active.pack.name,
+	      })).activation.digest).toBe(active.activation.digest);
 
 	      const preview = await postJson(`${url}/api/boundary/preview`, {
 	        "x-synapsor-ui-token": "relationship-review-token",
@@ -3000,7 +3037,7 @@ export default defineCapability({
       expect(updatedAskStatus.boundary_catalog).toMatchObject({
         schema_version: "synapsor.boundary-catalog.v1",
         relationship_count: expect.any(Number),
-        boundaries: [expect.objectContaining({
+        boundaries: expect.arrayContaining([expect.objectContaining({
           name: activated.active.pack.name,
           relationships: expect.arrayContaining([expect.objectContaining({
             source_table: "public.members",
@@ -3008,12 +3045,12 @@ export default defineCapability({
             cardinality: "many_to_one",
             proven: true,
           })]),
-        })],
+        })]),
       });
       expect(updatedAskStatus.boundary_mermaid).toContain("flowchart LR");
       expect(updatedAskStatus.boundary_mermaid).toContain("PUBLIC_MEMBERS");
       expect(updatedAskStatus.boundary_mermaid).toContain("PUBLIC_TEAMS");
-      expect(updatedAskStatus.boundary_diagrams).toEqual([
+      expect(updatedAskStatus.boundary_diagrams).toEqual(expect.arrayContaining([
         expect.objectContaining({
           boundary_name: activated.active.pack.name,
           digest: activated.active.activation.digest,
@@ -3022,7 +3059,7 @@ export default defineCapability({
           mermaid: expect.stringContaining("PUBLIC_MEMBERS"),
           markdown: expect.stringContaining("## Mermaid Relationship Diagram"),
         }),
-      ]);
+      ]));
 
       const askResult = await postJson(`${url}/api/ask/run`, mutationHeaders, {
         question: "What access is reviewed now?",

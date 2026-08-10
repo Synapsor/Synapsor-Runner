@@ -521,9 +521,9 @@ describe("try ask", () => {
           updated_at: "2026-07-26T00:05:00.000Z",
         }, null, 2),
       );
-      await fs.writeFile(
+      await fs.rm(
         path.join(fixture.root, ".synapsor/exploration-boundary.active.json"),
-        JSON.stringify(financeBoundary, null, 2),
+        { force: true },
       );
       return input.onActivated();
     });

@@ -1330,6 +1330,8 @@ describe("Auto Boundary compiler", () => {
     expect(resource.sortable_fields).not.toContain("tenant_id");
     expect(resource.groupable_fields).not.toContain("tenant_id");
     expect(resource.aggregate_measures).not.toContain("tenant_id");
+    expect(resource.aggregate_measures).not.toContain("id");
+    expect(resource.aggregate_measures).not.toContain("version");
     expect(resource.count_distinct_fields).not.toContain("tenant_id");
     expect(resource.time_bucket_fields).not.toHaveProperty("tenant_id");
     expect(reviewed.dsl).toMatch(/ALLOW READ[^\n]*tenant_id/);
@@ -1978,20 +1980,24 @@ describe("Auto Boundary compiler", () => {
         });
       };
 
-      const support = await activate("support_analytics");
-      const finance = await activate("finance_analytics");
+      const [support, finance] = await Promise.all([
+        activate("support_analytics"),
+        activate("finance_analytics"),
+      ]);
       const active = await loadActivatedExplorationBoundaries(projectRoot);
-      expect(active.map((boundary) => boundary.pack.name)).toEqual([
-        "support_analytics",
+      expect(active.map((boundary) => boundary.pack.name).sort()).toEqual([
         "finance_analytics",
+        "support_analytics",
       ]);
       await expect(loadActivatedExplorationBoundary(projectRoot, {
         name: "support_analytics",
       })).resolves.toMatchObject({ activation: { digest: support.activation.digest } });
       await expect(loadActivatedExplorationBoundary(projectRoot)).resolves.toMatchObject({
-        activation: { digest: finance.activation.digest },
+        pack: { name: expect.stringMatching(/^(finance|support)_analytics$/) },
       });
 
+      await fs.rm(path.join(projectRoot, ".synapsor/exploration-boundary.active.json"));
+      await expect(loadActivatedExplorationBoundaries(projectRoot)).resolves.toHaveLength(2);
       const disabled = await deactivateExplorationBoundary(projectRoot, "finance_analytics");
       expect(disabled.disabled).toEqual(["finance_analytics"]);
       expect(disabled.remaining.map((boundary) => boundary.pack.name)).toEqual(["support_analytics"]);

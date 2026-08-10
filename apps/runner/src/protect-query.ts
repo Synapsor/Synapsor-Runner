@@ -398,6 +398,9 @@ export async function activateProtectedQuery(input: {
   disableExplore?: boolean;
   env?: NodeJS.ProcessEnv;
   prepareScopedExploreFn?: typeof prepareScopedExplore;
+  testFailpoint?: (
+    point: "after_active_artifacts" | "after_explore_deactivation" | "before_runtime_config_commit",
+  ) => void | Promise<void>;
 }): Promise<ProtectedQueryActivation> {
   const projectRoot = path.resolve(input.projectRoot);
   assertQualifiedCapabilityName(input.capabilityName);
@@ -470,9 +473,12 @@ export async function activateProtectedQuery(input: {
   const activeRoot = path.join(projectRoot, PROTECTED_DIR, "active");
   await fs.mkdir(activeRoot, { recursive: true, mode: 0o700 });
   const activeContractPath = path.join(activeRoot, `${safeCapabilityFileName(input.capabilityName)}.contract.json`);
-  await writeAtomic(activeContractPath, json(contract), 0o600);
+  const activationPath = path.join(
+    activeRoot,
+    `${safeCapabilityFileName(input.capabilityName)}.activation.json`,
+  );
   const configPath = path.resolve(input.configPath ?? path.join(projectRoot, "synapsor.runner.json"));
-  await addProtectedContractToRuntimeConfig({
+  const runtimeConfig = await protectedRuntimeConfig({
     projectRoot,
     configPath,
     contractPath: activeContractPath,
@@ -485,9 +491,6 @@ export async function activateProtectedQuery(input: {
     minimumCohortOverride: draft.minimum_cohort_override,
   });
   const explorationDisabled = input.disableExplore !== false;
-  if (explorationDisabled) {
-    await deactivateExplorationBoundary(projectRoot, prepared.boundary.pack.name);
-  }
   const activation: ProtectedQueryActivation = {
     schema_version: PROTECTED_QUERY_VERSION,
     state: "active",
@@ -508,7 +511,44 @@ export async function activateProtectedQuery(input: {
       }
       : {}),
   };
-  await writeAtomic(path.join(activeRoot, `${safeCapabilityFileName(input.capabilityName)}.activation.json`), json(activation), 0o600);
+  const trackedFiles = [
+    activeContractPath,
+    activationPath,
+    configPath,
+    path.join(projectRoot, ".synapsor/exploration-boundary.active.json"),
+    path.join(projectRoot, ".synapsor/exploration-boundaries.active.json"),
+  ];
+  const snapshots = new Map(await Promise.all(trackedFiles.map(async (filePath) => [
+    filePath,
+    await captureOptionalFile(filePath),
+  ] as const)));
+  try {
+    await writeAtomic(activeContractPath, json(contract), 0o600);
+    await writeAtomic(activationPath, json(activation), 0o600);
+    await input.testFailpoint?.("after_active_artifacts");
+    if (explorationDisabled) {
+      await deactivateExplorationBoundary(projectRoot, prepared.boundary.pack.name);
+    }
+    await input.testFailpoint?.("after_explore_deactivation");
+    await input.testFailpoint?.("before_runtime_config_commit");
+    await writeAtomic(configPath, runtimeConfig, 0o600);
+  } catch (error) {
+    let rollbackError: unknown;
+    try {
+      for (const filePath of trackedFiles) {
+        await restoreOptionalFile(filePath, snapshots.get(filePath)!);
+      }
+    } catch (failure) {
+      rollbackError = failure;
+    }
+    if (rollbackError) {
+      throw new Error(
+        "Protected capability activation failed and its local authority rollback could not be completed.",
+        { cause: { activation_error: error, rollback_error: rollbackError } },
+      );
+    }
+    throw error;
+  }
   return activation;
 }
 
@@ -1085,7 +1125,7 @@ async function writeDraftArtifacts(input: {
   await writeAtomic(markerPath, json({ schema_version: PROTECTED_QUERY_VERSION, capability: input.draft.capability }), 0o600);
 }
 
-async function addProtectedContractToRuntimeConfig(input: {
+async function protectedRuntimeConfig(input: {
   projectRoot: string;
   configPath: string;
   contractPath: string;
@@ -1100,7 +1140,7 @@ async function addProtectedContractToRuntimeConfig(input: {
   };
   statementTimeoutMs: number;
   minimumCohortOverride?: ProtectedQueryDraft["minimum_cohort_override"];
-}): Promise<void> {
+}): Promise<string> {
   const existing = await readOptionalJson(input.configPath);
   const relativeContract = relativeConfigPath(path.dirname(input.configPath), input.contractPath);
   const config = existing ?? {
@@ -1205,7 +1245,7 @@ async function addProtectedContractToRuntimeConfig(input: {
   config.sources = sources;
   const validation = validateRunnerCapabilityConfig(config);
   if (!validation.ok) throw new Error(`Protected capability would make Runner config invalid: ${validation.errors.map((issue) => `${issue.code}: ${issue.message}`).join("; ")}`);
-  await writeAtomic(input.configPath, json(config), 0o600);
+  return json(config);
 }
 
 export function protectedDatabaseScope(
@@ -1478,6 +1518,30 @@ async function writeAtomic(filePath: string, content: string, mode: number): Pro
     await fs.rm(temporary, { force: true }).catch(() => undefined);
     throw error;
   }
+}
+
+type OptionalFileSnapshot =
+  | { exists: false }
+  | { exists: true; contents: string };
+
+async function captureOptionalFile(filePath: string): Promise<OptionalFileSnapshot> {
+  try {
+    return { exists: true, contents: await fs.readFile(filePath, "utf8") };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { exists: false };
+    throw error;
+  }
+}
+
+async function restoreOptionalFile(
+  filePath: string,
+  snapshot: OptionalFileSnapshot,
+): Promise<void> {
+  if (!snapshot.exists) {
+    await fs.rm(filePath, { force: true });
+    return;
+  }
+  await writeAtomic(filePath, snapshot.contents, 0o600);
 }
 
 async function readOptionalJson(filePath: string): Promise<Record<string, unknown> | undefined> {

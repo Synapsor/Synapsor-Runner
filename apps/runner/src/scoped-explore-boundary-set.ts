@@ -24,6 +24,7 @@ import {
   type ScopedExploreTransport,
 } from "./scoped-explore.js";
 import type { ExploreHttpSessionContext } from "./explore-trusted-scope.js";
+import { runAllCleanups } from "./resource-lifecycle.js";
 
 export type BoundarySetDescribeInput = {
   boundary?: string;
@@ -252,9 +253,14 @@ export async function createScopedExploreBoundarySetRuntime(input: {
     close: async () => {
       if (closed) return;
       closed = true;
-      await Promise.allSettled([...children.values()].map((child) => child.runtime.close()));
-      children.clear();
-      if (ownsStore) await store.close();
+      try {
+        await runAllCleanups([
+          ...[...children.values()].map((child) => () => child.runtime.close()),
+          ...(ownsStore ? [async () => { await store.close(); }] : []),
+        ], "Scoped Explore boundary-set cleanup failed");
+      } finally {
+        children.clear();
+      }
     },
   };
   return runtime;

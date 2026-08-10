@@ -619,10 +619,14 @@ export async function tryAsk(
         continue;
       }
       if (reviewResult !== 0) return reviewResult;
-      if (!await fileExists(path.join(
+      const activeAuthorityExists = await fileExists(path.join(
+        projectRoot,
+        ".synapsor/exploration-boundaries.active.json",
+      )) || await fileExists(path.join(
         projectRoot,
         ".synapsor/exploration-boundary.active.json",
-      ))) {
+      ));
+      if (!activeAuthorityExists) {
         writeInteractiveStdout([
           "No active boundary. Ask remains disabled.",
           "The access editor was closed explicitly; restart Ask after activating a reviewed boundary.",

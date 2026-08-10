@@ -26,15 +26,21 @@ export function applyReviewedAggregateTransforms(input: {
 }): Array<Record<string, unknown>> {
   const groups = input.groups.map((group) => ({ ...group }));
   const source = input.groups.map((group) => ({ ...group }));
+  const omitted = new Set<number>();
   for (const transform of input.transforms) {
     assertTransform(transform);
     const partitions = partitionIndexes(source, transform.partition_fields);
     for (const indexes of partitions.values()) {
       const ordered = transform.time_field
-        ? [...indexes].sort((left, right) => compareTime(
-          source[left]![transform.time_field!],
-          source[right]![transform.time_field!],
-        ))
+        ? indexes.filter((index) => {
+          const included = hasTimeValue(source[index]![transform.time_field!]);
+          if (!included) omitted.add(index);
+          return included;
+        })
+          .sort((left, right) => compareTime(
+            source[left]![transform.time_field!],
+            source[right]![transform.time_field!],
+          ))
         : indexes;
       if (transform.operation === "rank") {
         applyRank(groups, source, ordered, transform);
@@ -49,7 +55,7 @@ export function applyReviewedAggregateTransforms(input: {
       }
     }
   }
-  return groups;
+  return groups.filter((_group, index) => !omitted.has(index));
 }
 
 function assertTransform(transform: ReviewedAggregateTransform): void {
@@ -91,9 +97,14 @@ function partitionIndexes(
 }
 
 function compareTime(left: unknown, right: unknown): number {
-  const leftValue = typeof left === "string" || typeof left === "number" ? String(left) : "";
-  const rightValue = typeof right === "string" || typeof right === "number" ? String(right) : "";
+  const leftValue = String(left);
+  const rightValue = String(right);
   return leftValue.localeCompare(rightValue);
+}
+
+function hasTimeValue(value: unknown): value is string | number {
+  return (typeof value === "string" && value.length > 0)
+    || (typeof value === "number" && Number.isFinite(value));
 }
 
 function finite(value: unknown): number | null {

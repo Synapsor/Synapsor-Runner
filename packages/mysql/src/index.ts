@@ -392,6 +392,38 @@ async function withMysqlPrecommitDeadline<T>(
   });
 }
 
+async function commitMysqlWithDeadline(
+  connection: MysqlApplyConnection,
+  timeoutMs: number | undefined,
+): Promise<void> {
+  if (timeoutMs === undefined) {
+    try { await connection.commit(); }
+    catch (error) { throw new SourceOutcomeUnknownError(error); }
+    return;
+  }
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 1) throw new Error("MYSQL_STATEMENT_TIMEOUT_INVALID");
+  if (!connection.destroy) throw new Error("MYSQL_STATEMENT_TIMEOUT_UNENFORCEABLE");
+  await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      callback();
+    };
+    const timer = setTimeout(() => {
+      finish(() => {
+        try { connection.destroy?.(); } catch { /* the unknown outcome remains authoritative */ }
+        reject(new SourceOutcomeUnknownError(new Error("MYSQL_COMMIT_TIMEOUT")));
+      });
+    }, Math.max(1, Math.floor(timeoutMs)));
+    connection.commit().then(
+      () => finish(resolve),
+      (error) => finish(() => reject(new SourceOutcomeUnknownError(error))),
+    );
+  });
+}
+
 async function sourceTransaction<T>(
   connection: MysqlApplyConnection,
   fn: () => Promise<T>,
@@ -411,7 +443,7 @@ async function sourceTransaction<T>(
       await hooks.beforeCommit?.();
       return value;
     });
-    try { await connection.commit(); } catch (error) { throw new SourceOutcomeUnknownError(error); }
+    await commitMysqlWithDeadline(connection, statementTimeoutMs);
     return result;
   } catch (error) {
     if (!(error instanceof SourceOutcomeUnknownError) && !(error instanceof MysqlPrecommitDeadlineError)) {

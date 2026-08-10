@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import crypto from "node:crypto";
 import path from "node:path";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
@@ -100,11 +101,26 @@ export async function saveBoundaryLibraryAfterReconciliation(input: {
   projectRoot: string;
   state: BoundaryLibraryReconciliationState;
 }): Promise<void> {
-  if (!input.state.boundaries[input.state.selected_name]) {
+  await writeBoundaryLibrary(
+    input.projectRoot,
+    boundaryLibraryFileAfterReconciliation(input.state),
+  );
+}
+
+export function serializeBoundaryLibraryAfterReconciliation(
+  state: BoundaryLibraryReconciliationState,
+): string {
+  return `${JSON.stringify(boundaryLibraryFileAfterReconciliation(state), null, 2)}\n`;
+}
+
+function boundaryLibraryFileAfterReconciliation(
+  state: BoundaryLibraryReconciliationState,
+): BoundaryLibraryFile {
+  if (!state.boundaries[state.selected_name]) {
     throw new Error("A reconciled boundary library must retain its selected boundary.");
   }
   const boundaryIds = new Set<string>();
-  for (const [name, progress] of Object.entries(input.state.boundaries)) {
+  for (const [name, progress] of Object.entries(state.boundaries)) {
     assertBoundaryName(name);
     if (progress.candidate.pack.name !== name) {
       throw new Error(`Reconciled boundary ${name} has a mismatched internal name.`);
@@ -114,12 +130,12 @@ export async function saveBoundaryLibraryAfterReconciliation(input: {
     }
     boundaryIds.add(progress.boundary_id);
   }
-  await writeBoundaryLibrary(input.projectRoot, {
+  return {
     schema_version: BOUNDARY_LIBRARY_VERSION,
-    selected_name: input.state.selected_name,
-    boundaries: structuredClone(input.state.boundaries),
-    updated_at: input.state.updated_at,
-  });
+    selected_name: state.selected_name,
+    boundaries: structuredClone(state.boundaries),
+    updated_at: state.updated_at,
+  };
 }
 
 export function rebaseSavedBoundaryForRescan(input: {
@@ -839,9 +855,18 @@ async function readActiveBoundaryProgress(
 async function writeBoundaryLibrary(projectRoot: string, value: BoundaryLibraryFile): Promise<void> {
   const filePath = boundaryLibraryPath(projectRoot);
   await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
-  const temporary = `${filePath}.${process.pid}.tmp`;
-  await fs.writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-  await fs.rename(temporary, filePath);
+  const temporary = `${filePath}.${process.pid}.${crypto.randomBytes(8).toString("hex")}.tmp`;
+  try {
+    await fs.writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, {
+      mode: 0o600,
+      flag: "wx",
+    });
+    await fs.rename(temporary, filePath);
+    await fs.chmod(filePath, 0o600);
+  } catch (error) {
+    await fs.rm(temporary, { force: true }).catch(() => undefined);
+    throw error;
+  }
 }
 
 function boundaryLibraryPath(projectRoot: string): string {

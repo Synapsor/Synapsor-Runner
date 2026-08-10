@@ -121,6 +121,7 @@ describe("post-activation Ask handoff", () => {
           prompts.push([prompt, defaultValue]);
           return defaultValue;
         },
+        listOpenAiCompatibleModels: async () => [],
         runAsk,
         stdout: { write: vi.fn(() => true) },
         stderr: { write: vi.fn(() => true) },
@@ -162,6 +163,26 @@ describe("post-activation Ask handoff", () => {
     })).toBe("Anthropic / claude-owner-selected");
   });
 
+  it("uses a model reported by a local OpenAI-compatible endpoint instead of a stale hardcoded default", async () => {
+    const prompts: Array<[string, string]> = [];
+    await expect(choosePostActivationAskSelection({
+      chooseRoute: async () => "openai-compatible",
+      listOpenAiCompatibleModels: async () => ["qwen2.5:7b"],
+      promptWithDefault: async (prompt, defaultValue) => {
+        prompts.push([prompt, defaultValue]);
+        return defaultValue;
+      },
+    })).resolves.toEqual({
+      route: "openai-compatible",
+      baseUrl: "http://127.0.0.1:11434/v1",
+      model: "qwen2.5:7b",
+    });
+    expect(prompts).toEqual([
+      ["Local OpenAI-compatible base URL", "http://127.0.0.1:11434/v1"],
+      ["Local model name (detected: qwen2.5:7b)", "qwen2.5:7b"],
+    ]);
+  });
+
   it("returns one level from model input and leaves provider selection on Escape", async () => {
     const routes: Array<PostActivationAskRoute | undefined> = ["openai", "anthropic"];
     const models: Array<string | undefined> = [undefined, "claude-owner-selected"];
@@ -188,6 +209,7 @@ describe("post-activation Ask handoff", () => {
         prompts.push(prompt);
         return values.shift();
       },
+      listOpenAiCompatibleModels: async () => [],
     })).resolves.toEqual({
       route: "openai-compatible",
       baseUrl: "http://127.0.0.1:1234/v1",

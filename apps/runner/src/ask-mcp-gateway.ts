@@ -103,6 +103,9 @@ export async function createWorkbenchAskMcpGateway(input: {
         }
         try {
           const result = await surface.client.callTool({ name, arguments: args });
+          if (result.isError === true && isMcpInputValidationRefusal(result)) {
+            return invalidModelToolArgumentsResult(name);
+          }
           const views = askToolResultViews(result);
           const value = views.local;
           const providerProjection = surface.projectResultForModel?.(name, args, value)
@@ -122,16 +125,7 @@ export async function createWorkbenchAskMcpGateway(input: {
             ...(errorCode ? { error_code: errorCode } : {}),
           };
         } catch {
-          return {
-            ok: false,
-            value: {
-              ok: false,
-              error_code: "MCP_TOOL_ARGUMENTS_INVALID",
-              message: "The reviewed MCP tool refused the supplied arguments.",
-              source_database_changed: false,
-            },
-            error_code: "MCP_TOOL_ARGUMENTS_INVALID",
-          };
+          return invalidModelToolArgumentsResult(name);
         }
       },
       ...(toolSurface.some((tool) => tool.name === "app.describe_data")
@@ -161,6 +155,40 @@ export async function createWorkbenchAskMcpGateway(input: {
     ]));
     throw error;
   }
+}
+
+function invalidModelToolArgumentsMessage(name: string): string {
+  if (name === "app.describe_data") {
+    return "Invalid app.describe_data arguments. Send {} to list the compact reviewed resource index, or {resource:\"<exact resource id>\"} for focused details. Omit optional values; limit, when present, is an integer from 1 to 10.";
+  }
+  if (name === "app.explore_data") {
+    return "Invalid app.explore_data arguments. Send {plan:{kind:\"rows\"|\"aggregate\",resource:\"<exact resource id>\",...}} using exact ids from app.describe_data. Do not send empty ids. Aggregate plans require measures; rows plans require select. Omit optional limit/top_n to use Runner defaults.";
+  }
+  return "The reviewed MCP tool refused the supplied arguments. Check its declared input schema and retry without unknown or empty fields.";
+}
+
+function invalidModelToolArgumentsResult(name: string): AskToolCallResult {
+  return {
+    ok: false,
+    value: {
+      ok: false,
+      error_code: "MCP_TOOL_ARGUMENTS_INVALID",
+      message: invalidModelToolArgumentsMessage(name),
+      source_database_changed: false,
+    },
+    error_code: "MCP_TOOL_ARGUMENTS_INVALID",
+  };
+}
+
+function isMcpInputValidationRefusal(
+  result: Awaited<ReturnType<Client["callTool"]>>,
+): boolean {
+  if (!Array.isArray(result.content)) return false;
+  return result.content.some((item) =>
+    isRecord(item)
+    && item.type === "text"
+    && typeof item.text === "string"
+    && item.text.includes("Input validation error: Invalid arguments for tool"));
 }
 
 async function connectRuntimeSurface(input: {

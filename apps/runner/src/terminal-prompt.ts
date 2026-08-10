@@ -22,15 +22,23 @@ export async function readTerminalTextWithEscape(
       if (settled) return;
       settled = true;
       input.off("keypress", onKeypress);
+      input.off("end", onEnd);
+      input.off("close", onEnd);
+      input.off("error", onError);
       rl.close();
       resolve(value);
     };
+    const onEnd = () => finish(undefined);
+    const onError = () => finish(undefined);
     const onKeypress = (_text: string, key: PromptKey) => {
       if (key.name !== "escape" && key.sequence !== "\u001b") return;
       output.write("\n");
       finish(undefined);
     };
     input.on("keypress", onKeypress);
+    input.once("end", onEnd);
+    input.once("close", onEnd);
+    input.once("error", onError);
     rl.question(padTerminalBlock(prompt), (value) => finish(value.trim()));
   });
 }

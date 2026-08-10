@@ -29,6 +29,28 @@ describe("reviewed post-suppression aggregate transforms", () => {
     ]);
   });
 
+  it("omits undated groups from sequential calculations", () => {
+    const transformed = applyReviewedAggregateTransforms({
+      groups: [
+        { region: "east", time: null, value: 1000 },
+        { region: "east", time: "2026-01-01", value: 10 },
+        { region: "east", time: "2026-02-01", value: 20 },
+      ],
+      transforms: [{
+        operation: "running_total",
+        input_field: "value",
+        output_field: "running",
+        partition_fields: ["region"],
+        time_field: "time",
+      }],
+    });
+
+    expect(transformed).toEqual([
+      { region: "east", time: "2026-01-01", value: 10, running: 10 },
+      { region: "east", time: "2026-02-01", value: 20, running: 30 },
+    ]);
+  });
+
   it("ranks and computes shares only across the released input rows", () => {
     const transformed = applyReviewedAggregateTransforms({
       groups: groups.slice(0, 3),

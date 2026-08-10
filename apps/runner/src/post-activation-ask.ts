@@ -46,6 +46,7 @@ export type PostActivationAskDependencies = {
     prompt: string,
     defaultValue: string,
   ) => Promise<string | undefined>;
+  listOpenAiCompatibleModels?: (baseUrl: string) => Promise<string[]>;
   runAsk?: (
     args: string[],
     options?: { consentOnFirstQuestion?: boolean },
@@ -271,7 +272,7 @@ export function formatPostActivationAskSelection(
 export async function choosePostActivationAskSelection(
   dependencies: Pick<
     PostActivationAskDependencies,
-    "chooseRoute" | "promptWithDefault" | "env"
+    "chooseRoute" | "promptWithDefault" | "listOpenAiCompatibleModels" | "env"
   > = {},
 ): Promise<PostActivationAskSelection | undefined> {
   const env = dependencies.env ?? process.env;
@@ -304,11 +305,46 @@ export async function choosePostActivationAskSelection(
         "http://127.0.0.1:11434/v1",
       );
       if (baseUrl === undefined) break;
-      const model = await prompt("Local model name", "llama3.2");
+      const detectedModels = await (dependencies.listOpenAiCompatibleModels
+        ?? discoverOpenAiCompatibleModels)(baseUrl).catch(() => []);
+      const defaultModel = detectedModels[0] ?? "llama3.2";
+      const detectedLabel = detectedModels.length
+        ? ` (detected: ${detectedModels.slice(0, 5).join(", ")}${detectedModels.length > 5 ? ", ..." : ""})`
+        : "";
+      const model = await prompt(`Local model name${detectedLabel}`, defaultModel);
       if (model === undefined) continue;
       return { route, baseUrl, model };
     }
   }
+}
+
+export async function discoverOpenAiCompatibleModels(baseUrl: string): Promise<string[]> {
+  const parsed = new URL(baseUrl);
+  const hostname = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if ((parsed.protocol !== "http:" && parsed.protocol !== "https:")
+    || !["127.0.0.1", "::1", "localhost"].includes(hostname)) {
+    return [];
+  }
+  const pathname = parsed.pathname.replace(/\/+$/, "");
+  parsed.pathname = `${pathname || "/v1"}/models`.replace(/\/{2,}/g, "/");
+  parsed.search = "";
+  parsed.hash = "";
+  const response = await fetch(parsed, {
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(2_000),
+  });
+  if (!response.ok) return [];
+  const contentLength = Number(response.headers.get("content-length") ?? 0);
+  if (Number.isFinite(contentLength) && contentLength > 65_536) return [];
+  const text = await response.text();
+  if (Buffer.byteLength(text, "utf8") > 65_536) return [];
+  const body: unknown = JSON.parse(text);
+  if (!body || typeof body !== "object" || !Array.isArray((body as { data?: unknown }).data)) return [];
+  return [...new Set((body as { data: unknown[] }).data.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const id = (item as { id?: unknown }).id;
+    return typeof id === "string" && id.trim() && id.length <= 128 ? [id.trim()] : [];
+  }))].sort((left, right) => left.localeCompare(right)).slice(0, 100);
 }
 
 export function formatMcpClientHandoff(projectRoot: string): string {

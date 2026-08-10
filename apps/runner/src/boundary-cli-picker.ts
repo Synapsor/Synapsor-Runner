@@ -2158,6 +2158,7 @@ function boundedWindowStart(selected: number, length: number, size: number): num
 
 function isCancel(key: Keypress): boolean {
   return (key.ctrl === true && key.name === "c")
+    || (key.ctrl === true && key.name === "d")
     || isEscapeKey(key)
     || (key.name === "q" && key.sequence === "q");
 }
@@ -2191,13 +2192,22 @@ async function withRawKeys<T>(
   let renderedLines = 0;
   const queuedKeys: Keypress[] = [];
   const keyWaiters: Array<(key: Keypress) => void> = [];
+  let terminalClosed = false;
+  const closedKey: Keypress = { name: "escape", sequence: "\u001b" };
   const keyHandler = (_text: string, key: Keypress) => {
     const waiter = keyWaiters.shift();
     if (waiter) waiter(key);
     else queuedKeys.push(key);
   };
+  const closeHandler = () => {
+    terminalClosed = true;
+    for (const waiter of keyWaiters.splice(0)) waiter(closedKey);
+  };
   readline.emitKeypressEvents(input);
   input.on("keypress", keyHandler);
+  input.once("end", closeHandler);
+  input.once("close", closeHandler);
+  input.once("error", closeHandler);
   input.setRawMode(true);
   input.resume();
   output.write("\u001b[?25l");
@@ -2215,12 +2225,16 @@ async function withRawKeys<T>(
   const nextKey = () => {
     const queued = queuedKeys.shift();
     if (queued) return Promise.resolve(queued);
+    if (terminalClosed) return Promise.resolve(closedKey);
     return new Promise<Keypress>((resolve) => keyWaiters.push(resolve));
   };
   try {
     return await operation(nextKey, render);
   } finally {
     input.off("keypress", keyHandler);
+    input.off("end", closeHandler);
+    input.off("close", closeHandler);
+    input.off("error", closeHandler);
     if (renderedLines) output.write(`\u001b[${renderedLines}F\u001b[0J`);
     output.write("\u001b[?25h");
     input.setRawMode(wasRaw);

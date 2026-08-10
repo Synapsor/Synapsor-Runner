@@ -161,7 +161,7 @@ describe("Scoped Explore active boundary routing", () => {
   it("keeps the production MCP surface at two read-only tools and routes an explicit reviewed boundary", async () => {
     const support = validBoundary("support", ["public.tickets"]);
     const finance = validBoundary("finance", ["public.invoices"]);
-    const explore = vi.fn(async () => ({
+    const explore = vi.fn(async (_plan: Record<string, unknown>, _boundary?: string) => ({
       ok: true,
       outcome: { type: "success" },
       boundary_name: "finance",
@@ -250,7 +250,8 @@ describe("Scoped Explore active boundary routing", () => {
         resource: "public.invoices",
       }), "finance");
 
-      await client.callTool({
+      const beforeNullFilter = explore.mock.calls.length;
+      const nullFilter = await client.callTool({
         name: "app.explore_data",
         arguments: {
           boundary: null,
@@ -268,14 +269,8 @@ describe("Scoped Explore active boundary routing", () => {
           },
         },
       });
-      expect(explore).toHaveBeenLastCalledWith({
-        kind: "aggregate",
-        resource: "public.invoices",
-        measures: [{ function: "count" }],
-        dimensions: [{ field: "status" }],
-        where: [{ field: "status", op: "eq", value: null }],
-        top_n: 10,
-      }, undefined);
+      expect(nullFilter.isError).toBe(true);
+      expect(explore).toHaveBeenCalledTimes(beforeNullFilter);
 
       await client.callTool({
         name: "app.explore_data",
@@ -391,7 +386,7 @@ describe("Scoped Explore active boundary routing", () => {
           },
         },
       });
-      const requiredTopNNull = await client.callTool({
+      await client.callTool({
         name: "app.explore_data",
         arguments: {
           plan: {
@@ -402,7 +397,7 @@ describe("Scoped Explore active boundary routing", () => {
           },
         },
       });
-      const requiredLimitNull = await client.callTool({
+      await client.callTool({
         name: "app.explore_data",
         arguments: {
           plan: {
@@ -451,8 +446,6 @@ describe("Scoped Explore active boundary routing", () => {
       });
       expect(requiredResourceNull.isError).toBe(true);
       expect(requiredKindNull.isError).toBe(true);
-      expect(requiredTopNNull.isError).toBe(true);
-      expect(requiredLimitNull.isError).toBe(true);
       expect(unknownKey.isError).toBe(true);
       expect(unknownFlatKey.isError).toBe(true);
       expect(malformedContainer.isError).toBe(true);
@@ -461,7 +454,19 @@ describe("Scoped Explore active boundary routing", () => {
       const invalidKindText = invalidKindContent.find((entry) => entry.type === "text")?.text ?? "";
       expect(invalidKindText).toContain("plan.kind must be exactly rows or aggregate");
       expect(invalidKindText).toContain('{\\"plan\\":{\\"kind\\":\\"aggregate\\"');
-      expect(explore).toHaveBeenCalledTimes(callCount);
+      expect(explore).toHaveBeenCalledTimes(callCount + 2);
+      expect(explore.mock.calls.slice(-2).map(([plan]) => plan)).toEqual([
+        {
+          kind: "aggregate",
+          resource: "public.invoices",
+          measures: [{ function: "count" }],
+        },
+        {
+          kind: "rows",
+          resource: "public.invoices",
+          select: ["id"],
+        },
+      ]);
     } finally {
       await Promise.allSettled([client.close(), server.close()]);
     }

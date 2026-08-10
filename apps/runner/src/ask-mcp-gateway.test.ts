@@ -106,11 +106,13 @@ describe("Workbench Ask MCP gateway", () => {
       const invalid = await gateway.callTool("support.inspect_ticket", {});
       expect(invalid).toMatchObject({
         ok: false,
-        error_code: "MCP_TOOL_REFUSED",
+        error_code: "MCP_TOOL_ARGUMENTS_INVALID",
         value: {
+          error_code: "MCP_TOOL_ARGUMENTS_INVALID",
           source_database_changed: false,
         },
       });
+      expect(String(invalid.value.message)).toContain("declared input schema");
 
       const unknown = await gateway.callTool("synapsor.approve", {});
       expect(unknown).toMatchObject({

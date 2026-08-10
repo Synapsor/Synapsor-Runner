@@ -3,6 +3,40 @@ import { describe, expect, it } from "vitest";
 import { renderBoundaryWorkbench } from "./boundary-workbench.js";
 
 describe("Auto Boundary Workbench renderer", () => {
+  it("assigns distinct graph lanes to multiple relationships from one table", () => {
+    const html = renderBoundaryWorkbench("test-csrf");
+    const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? "";
+    const renderer = script.match(/function renderBoundaryGraphSvg\(boundary\)\{[\s\S]*?\n    \}/)?.[0];
+    expect(renderer).toBeTruthy();
+    const context: Record<string, unknown> = {
+      boundaryGraphSequence: 0,
+      esc: (value: unknown) => String(value),
+      boundary: {
+        name: "sales",
+        tables: ["orders", "customers", "reps"].map((id) => ({
+          id,
+          model_visible_fields: [{ name: "id" }],
+          runner_only_field_count: 0,
+          kept_out_field_count: 0,
+        })),
+        relationships: [{
+          links: [
+            { source_table: "orders", source_key: "customer_id", target_table: "customers", target_key: "id", proven: true },
+            { source_table: "orders", source_key: "rep_id", target_table: "reps", target_key: "id", proven: true },
+          ],
+        }],
+      },
+    };
+    vm.runInNewContext(`${renderer}; result=renderBoundaryGraphSvg(boundary);`, context);
+    const graph = String((context as { result?: unknown }).result ?? "");
+    const labels = [...graph.matchAll(/class="edge-label"[^>]* y="([^"]+)"/g)]
+      .map((match) => match[1]);
+    expect(labels).toHaveLength(2);
+    expect(new Set(labels).size).toBe(2);
+    expect(graph).toContain("customer_id → id");
+    expect(graph).toContain("rep_id → id");
+  });
+
   it("emits executable browser JavaScript and the host-neutral guided journey", () => {
     const html = renderBoundaryWorkbench("test-csrf");
     const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
@@ -138,6 +172,7 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("data-boundary-catalog-section");
     expect(html).toContain("renderBoundaryGraphSvg");
     expect(html).toContain("boundary-catalog-graph");
+    expect(html).toContain("Each reviewed join uses its own labeled connection lane.");
     expect(html).toContain("This is one exact active boundary; it is never merged with another.");
     expect(html).toContain("Download this large boundary map");
     expect(html).toContain("diagram.markdown");

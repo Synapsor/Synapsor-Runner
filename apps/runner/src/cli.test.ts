@@ -575,6 +575,7 @@ describe("runner cli", () => {
       ["inspect", "--help"],
       ["init", "--help"],
       ["init", "--wizard", "--help"],
+      ["config", "--help"],
       ["mcp", "--help"],
       ["mcp", "serve", "--help"],
       ["mcp", "serve-streamable-http", "--help"],
@@ -627,6 +628,13 @@ describe("runner cli", () => {
     expect(output.join("")).toContain("smoke");
     expect(output.join("")).toContain("writeback");
     expect(output.join("")).toContain("handler");
+
+    output.length = 0;
+    await expect(main(["config", "--help"])).resolves.toBe(0);
+    expect(output.join(""))
+      .toContain("--tenant-claim tenant_id --principal-claim sub");
+    expect(output.join(""))
+      .toContain("SYNAPSOR_CONTROL_DATABASE_URL");
 
     output.length = 0;
     await expect(main(["cloud", "push", "--help"])).resolves.toBe(0);

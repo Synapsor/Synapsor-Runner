@@ -390,8 +390,14 @@ export async function boundaryDisableCommand(
     "boundary disable",
   );
   const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
-  const activePath = path.join(projectRoot, ".synapsor/exploration-boundary.active.json");
-  if (!await fileExists(activePath)) {
+  let activeBoundaries: Awaited<ReturnType<typeof loadActivatedExplorationBoundaries>>;
+  try {
+    activeBoundaries = await loadActivatedExplorationBoundaries(projectRoot);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    activeBoundaries = [];
+  }
+  if (activeBoundaries.length === 0) {
     const payload = {
       ok: true,
       disabled: false,
@@ -411,10 +417,10 @@ export async function boundaryDisableCommand(
   }
 
   const requestedName = optionalArg(args, "--name")?.trim();
-  const active = await loadActivatedExplorationBoundary(
-    projectRoot,
-    requestedName ? { name: requestedName } : undefined,
-  );
+  const active = requestedName
+    ? activeBoundaries.find((boundary) => boundary.pack.name === requestedName)
+    : activeBoundaries.at(-1);
+  if (!active) throw new Error(`Boundary ${requestedName} is not active.`);
   const expectedConfirmation = `DISABLE ${active.activation.digest}`;
   const actor = optionalArg(args, "--actor")?.trim()
     || envValue(process.env, "USER")

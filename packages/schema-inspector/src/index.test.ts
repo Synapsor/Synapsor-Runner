@@ -1,8 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { Pool } from "pg";
+import { describe, expect, it, vi } from "vitest";
 import {
   assessDirectWritePrerequisites,
   deriveSchemaDeclaredEnumValues,
   generateRunnerConfigFromSpec,
+  inspectDatabase,
   mysqlGrantPosture,
   schemaFingerprintForInspection,
   summarizeInspection,
@@ -11,6 +13,23 @@ import {
 } from "./index.js";
 
 describe("schema inspector helpers", () => {
+  it("closes the PostgreSQL pool when its initial connection fails", async () => {
+    const connect = vi.spyOn(Pool.prototype, "connect")
+      .mockRejectedValue(new Error("transient connect failure"));
+    const end = vi.spyOn(Pool.prototype, "end").mockResolvedValue(undefined);
+    try {
+      await expect(inspectDatabase({
+        engine: "postgres",
+        databaseUrlEnv: "TEST_DATABASE_URL",
+        env: { TEST_DATABASE_URL: "postgresql://example.invalid/test" },
+      })).rejects.toThrow("transient connect failure");
+      expect(end).toHaveBeenCalledOnce();
+    } finally {
+      connect.mockRestore();
+      end.mockRestore();
+    }
+  });
+
   it("derives complete bounded categorical vocabularies from schema metadata", () => {
     expect(deriveSchemaDeclaredEnumValues({
       engine: "postgres",

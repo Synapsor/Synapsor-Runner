@@ -332,6 +332,23 @@ describe("mysql adapter", () => {
     expect(() => parseWritebackResult(legacy)).not.toThrow();
   });
 
+  it("bounds a lost COMMIT acknowledgement and returns reconciliation instead of hanging", async () => {
+    const connection = new HangingCommitMysqlConnection();
+    const result = await applyMysqlJobWithConnection(job, {
+      ...config,
+      statementTimeoutMs: 20,
+    }, connection);
+
+    expect(result).toMatchObject({
+      status: "reconciliation_required",
+      error_code: "OUTCOME_UNKNOWN",
+      affected_rows: 0,
+    });
+    expect(connection.destroyed).toBe(true);
+    expect(connection.sqlLog).toContain("COMMIT");
+    expect(connection.sqlLog).not.toContain("ROLLBACK");
+  });
+
   it("refuses INSERT when no full unique key proves the reviewed deduplication columns", async () => {
     const single = new CrudMysqlConnection("insert", undefined, { uniqueDeduplication: false });
     await expect(applyMysqlJobWithConnection(v2InsertJob, config, single)).rejects.toThrow("INSERT_DEDUP_UNIQUENESS_UNPROVEN");
@@ -1021,6 +1038,35 @@ class HangingUpdateMysqlConnection extends FakeMysqlConnection {
     if (sql.startsWith("UPDATE `appdb`.`orders`")) {
       this.sqlLog.push(sql.trim());
       return await new Promise<[T, unknown]>(() => undefined);
+    }
+    return await super.query<T>(sql, values);
+  }
+
+  destroy(): void {
+    this.destroyed = true;
+    this.sqlLog.push("DESTROY");
+  }
+}
+
+class HangingCommitMysqlConnection extends FakeMysqlConnection {
+  destroyed = false;
+
+  constructor() {
+    super({
+      businessRow: { updated_at: "v1" },
+      businessUpdateAffectedRows: 1,
+    });
+  }
+
+  override async commit(): Promise<void> {
+    this.sqlLog.push("COMMIT");
+    return await new Promise<void>(() => undefined);
+  }
+
+  override async query<T = unknown>(sql: string, values?: unknown[]): Promise<[T, unknown]> {
+    if (sql.startsWith("SET SESSION ")) {
+      this.sqlLog.push(sql.trim());
+      return [{} as T, undefined];
     }
     return await super.query<T>(sql, values);
   }

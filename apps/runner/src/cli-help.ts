@@ -176,9 +176,9 @@ analysis. Explicit --from A2 remains available. Every Protect result is public
 DSL, canonical JSON, and tests for a disabled named capability; it never
 activates the result.
 	`,
-    config: `Usage:
+	    config: `Usage:
   ${cmd} config init [--output ./synapsor.runner.json] [--engine postgres|mysql] [--read-url-env DATABASE_URL]
-  ${cmd} config init --production-explore --issuer https://identity.example --audience https://runner.example/mcp --accounting-namespace acme.analytics.production [--project-root .]
+  ${cmd} config init --production-explore --tenant-claim tenant_id --principal-claim sub --issuer https://identity.example --audience https://runner.example/mcp --accounting-namespace acme.analytics.production [--project-root .]
   ${cmd} config init --production-explore --single-tenant-organization-id internal-finance --principal-claim sub --issuer https://identity.example --audience https://runner.example/mcp --accounting-namespace internal.finance.production
   ${cmd} config validate --config ./synapsor.runner.json
   ${cmd} config migrate --config ./synapsor.runner.json --out ./synapsor.runner.migrated.json
@@ -190,7 +190,16 @@ With --production-explore it emits the complete zero-authority shared-Postgres,
 JWT/JWKS, secured HTTP, OAuth, budget, source-pool, and session-cap skeleton.
 It reuses source and claim bindings from a production boundary draft when one
 exists; issuer, audience, and accounting namespace remain explicit operator
-inputs. No database URL, JWT, HMAC key, or other secret value is written.
+inputs. Without a reviewed draft, multi-tenant setup requires --tenant-claim and
+--principal-claim; single-organization setup requires
+--single-tenant-organization-id and --principal-claim. Optional overrides are
+--engine, --source, --read-url-env, --oauth-scope, --control-url-env,
+--jwks-url-env, --hmac-key-env, and --http-channel trusted_tls_proxy|direct_tls.
+The generated file references DATABASE_URL, SYNAPSOR_CONTROL_DATABASE_URL,
+SYNAPSOR_SESSION_JWKS_URL, and SYNAPSOR_EXPLORE_BUDGET_HMAC_KEY by default; it
+does not read or write their values. Set those values, run doctor, then serve
+with --transport streamable-http --production-explore. No database URL, JWT,
+HMAC key, or other secret value is written.
 Contract paths are resolved relative to the config file. SQLite store paths are
 resolved by the Runner process working directory.
 `,

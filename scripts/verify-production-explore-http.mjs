@@ -22,6 +22,11 @@ import {
 } from "../apps/runner/dist/mcp-runtime.js";
 import { derivedScopeIndexDoctorChecks } from "../apps/runner/dist/derived-scope-index-doctor.js";
 import { createScopedExploreRuntime } from "../apps/runner/dist/scoped-explore.js";
+import {
+  WorkbenchAskSession,
+  askToolSurfaceDigest,
+  secureAskJsonRequest,
+} from "../apps/runner/dist/model-ask.js";
 import { verifyJwtRejectionMatrix } from "./production-explore-http-e2e-helpers.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -240,7 +245,7 @@ async function seedDerivedSource(pool) {
       principal || '-' || source.id || '@example.invalid',
       source.internal_risk_score
     FROM public.accounts AS source
-    CROSS JOIN (VALUES ('pm-band'), ('pm-running')) AS copies(principal)
+    CROSS JOIN (VALUES ('pm-band'), ('pm-running'), ('pm-ollama')) AS copies(principal)
     WHERE source.tenant_id = 'acme' AND source.owner_id = 'pm-1';
     INSERT INTO public.churn_events (
       id, tenant_id, owner_id, account_id, reason_category,
@@ -256,7 +261,7 @@ async function seedDerivedSource(pool) {
       source.churned_at,
       'synthetic kept-out note ' || principal || '-' || source.id
     FROM public.churn_events AS source
-    CROSS JOIN (VALUES ('pm-band'), ('pm-running')) AS copies(principal)
+    CROSS JOIN (VALUES ('pm-band'), ('pm-running'), ('pm-ollama')) AS copies(principal)
     WHERE source.tenant_id = 'acme' AND source.owner_id = 'pm-1';
     INSERT INTO public.accounts (
       id, tenant_id, owner_id, region, segment, customer_email, internal_risk_score
@@ -402,6 +407,83 @@ function clientFor(url, bearer, query = {}) {
     client: new Client({ name: "production-explore-verifier", version: "1.0.0" }),
     transport,
   };
+}
+
+async function verifyOllamaAgentOverProductionHttp(input) {
+  const bearer = await token(input.privateKey, {
+    tenant: "acme",
+    principal: "pm-ollama",
+  });
+  const handle = clientFor(input.url, bearer);
+  let closed = false;
+  await handle.client.connect(handle.transport);
+  try {
+    const listed = await handle.client.listTools();
+    const tools = listed.tools.map((tool) => ({
+      name: tool.name,
+      title: tool.title,
+      description: tool.description ?? "",
+      input_schema: tool.inputSchema,
+      metadata: tool._meta,
+    }));
+    assert(tools.map((tool) => tool.name).join(",") === "app.describe_data,app.explore_data",
+      "Ollama received a production tool surface other than the exact reviewed two tools.", tools);
+    const gateway = {
+      mode: "runtime",
+      listTools: () => tools,
+      callTool: async (name, args) => {
+        const result = await handle.client.callTool({ name, arguments: args });
+        const value = resultPayload(result);
+        return {
+          ok: result.isError !== true && value.ok !== false,
+          value,
+          provider_value: value,
+          ...(typeof value.error_code === "string" ? { error_code: value.error_code } : {}),
+        };
+      },
+      close: async () => {
+        if (closed) return;
+        closed = true;
+        await handle.client.close();
+      },
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai_compatible",
+      model: input.model,
+      base_url: process.env.SYNAPSOR_TEST_OLLAMA_BASE_URL?.trim() || "http://127.0.0.1:11434/v1",
+      request_timeout_seconds: 180,
+      authority_digest: askToolSurfaceDigest(tools),
+      egress_acknowledged: true,
+    });
+    const result = await session.run(
+      "How many churn events are there by reason category?",
+      gateway,
+      { requestJson: secureAskJsonRequest },
+    );
+    const explored = result.tool_calls.find((call) => call.tool === "app.explore_data" && call.status === "ok");
+    assert(explored,
+      "Ollama did not execute an accepted Explore plan over production HTTP.", result.tool_calls);
+    const measure = explored.arguments?.plan?.measures?.[0];
+    const countEquivalent = measure?.function === "count"
+      || (measure?.function === "non_null_count" && measure?.field === "reason_category");
+    assert(explored.arguments?.plan?.resource === "public.churn_events"
+      && explored.arguments?.plan?.measures?.length === 1
+      && countEquivalent
+      && explored.arguments?.plan?.dimensions?.[0]?.field === "reason_category",
+    "Ollama's production HTTP plan did not match the reviewed question.", explored.arguments);
+    assert(!/tenant|principal/i.test(JSON.stringify(explored.arguments)),
+      "Ollama attempted to supply trusted tenant or principal authority.", explored.arguments);
+    return {
+      model: input.model,
+      answer_source: result.answer_source,
+      tools: tools.map((tool) => tool.name),
+      reviewed_plan_executed: true,
+      model_supplied_scope: false,
+    };
+  } finally {
+    if (!closed) await handle.client.close().catch(() => undefined);
+  }
 }
 
 async function productionControlCounts(control, schema) {
@@ -1085,6 +1167,15 @@ async function main() {
     assert(!JSON.stringify(described).match(/event-p1-|pm-other-event|@example\.invalid|synthetic kept-out note|31415/i),
       "Production describe_data returned source-row data instead of metadata only.", described);
 
+    const ollamaModel = process.env.SYNAPSOR_TEST_OLLAMA_MODEL?.trim();
+    const ollamaAgent = ollamaModel
+      ? await verifyOllamaAgentOverProductionHttp({
+        url: server.url,
+        privateKey,
+        model: ollamaModel,
+      })
+      : undefined;
+
     const injectedScope = await alice.client.callTool({
       name: "app.explore_data",
       arguments: {
@@ -1485,6 +1576,7 @@ async function main() {
       dedicated_audit_sink: true,
       complete_jwt_rejection_matrix: authRefusals.map((item) => item.label),
       metadata_only_catalog: true,
+      ollama_agent_http: ollamaAgent ?? "not_requested",
       analytics_http_stdio_parity: true,
       drift_refused_over_http: true,
       config_and_artifact_hygiene: true,

@@ -77,7 +77,9 @@ role/grant/RLS posture, compiler, Spec, or dependency fingerprints drift.
 `reporting_timezone` is optional for backward compatibility. Newly generated
 analytical authority binds `UTC` into its lock and config so reviewed calendar
 buckets and exact two-period comparisons keep the same semantics after
-promotion.
+promotion. PostgreSQL applies UTC transaction-locally. MySQL restores each
+pooled connection's prior session timezone before that connection can be reused
+by another boundary.
 
 Manual and legacy projects omit `generated_authority`. Runner does not create
 an implicit lock, rescan their database, change their startup path, or alter

@@ -128,13 +128,58 @@ describe("analytical MCP output schemas", () => {
         }],
       }],
     }).success).toBe(false);
-    expect(scopedExploreDescribeToolOutputSchema.safeParse({
+    expect(scopedExploreDescribeOutputSchema.safeParse({
       ...success,
-      resources: [canonicalResource],
+      resources: [{
+        ...canonicalResource,
+        derived_measures: [{
+          name: "revenue_running_total",
+          label: "Revenue running total",
+          shape: "running_total",
+          calculation_stage: "after small-group suppression",
+          required_grain: "one reviewed ordered time_bucket; dimensions are optional partitions",
+          records_without_reviewed_time: "omitted",
+          suppressed_groups_included: false,
+          effective_minimum_cohort_size: 5,
+        }],
+      }],
     }).success).toBe(true);
     expect(scopedExploreDescribeToolOutputSchema.safeParse({
       ...success,
-      resources: [{ ...canonicalResource, id: undefined }],
+      catalog_view: "resource_index",
+      metadata_only: true,
+      contains_source_values: false,
+      next_action: "Call app.explore_data for values.",
+      resources: [{
+        id: "public.orders",
+        selectable_fields: ["id", "status"],
+        filter_operators: { status: ["eq", "neq", "in"] },
+        sortable_fields: [],
+        groupable_fields: ["status"],
+        aggregate_measure_functions: {},
+        presence_measure_fields: [],
+        presence_measure_functions: [],
+        derived_measures: [],
+        numeric_bands: [],
+        count_distinct_fields: ["id"],
+        time_bucket_fields: {},
+        time_coverage: {},
+        field_enums: { status: ["open", "paid"] },
+        relationships: [],
+        minimum_cohort_size: 5,
+        maximum_rows: 25,
+        maximum_groups: 25,
+        valid_plan_example: {
+          kind: "aggregate",
+          resource: "public.orders",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "status" }],
+        },
+      }],
+    }).success).toBe(true);
+    expect(scopedExploreDescribeToolOutputSchema.safeParse({
+      ...success,
+      resources: [{ id: undefined }],
     }).success).toBe(false);
     expect(Buffer.byteLength(JSON.stringify(schemaAsJsonSchema(scopedExploreDescribeToolOutputSchema))))
       .toBeLessThan(Buffer.byteLength(JSON.stringify(schemaAsJsonSchema(scopedExploreDescribeOutputSchema))));

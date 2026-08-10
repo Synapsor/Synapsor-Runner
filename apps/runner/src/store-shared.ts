@@ -21,6 +21,7 @@ import { SharedPostgresLedgerMirror, sharedPostgresLedgerMirrorOptions, sharedPo
 import { quoteSqlIdentifier } from "./sql-identifiers.js";
 import { assertNoActiveStoreLease, storeLeasePath } from "./store-lease.js";
 import { renderTerminalSql, terminalSyntaxColorEnabled } from "./terminal-syntax.js";
+import { withPreservedCleanup } from "./resource-lifecycle.js";
 import { hashReceipt } from "./writeback-domain.js";
 
 
@@ -653,50 +654,52 @@ async function withSharedPostgresLedgerMirrorLock<T>(
   const databaseUrl = envValue(mirror.urlEnv);
   if (!databaseUrl) throw new Error(`${mirror.urlEnv} is not set.`);
   const pool = createPostgresPool(databaseUrl);
-  const client = await pool.connect();
   const lockKey = `synapsor-runner:${mirror.schema}:shared-ledger-mirror`;
-  let locked = false;
-  try {
-    locked = await acquirePostgresAdvisoryLock(client, lockKey, mirror.lockTimeoutMs);
-    if (!locked) {
-      operationalLog("warn", "shared_ledger_mirror_lock_timeout", {
-        command,
-        schema: mirror.schema,
-        url_env: mirror.urlEnv,
-        lock_timeout_ms: mirror.lockTimeoutMs,
-        source_database_changed: false,
-      });
-      throw new Error(`shared Postgres ledger mirror lock is held for schema ${mirror.schema}; retry later or increase --shared-ledger-lock-timeout-ms`);
-    }
-    operationalLog("info", "shared_ledger_mirror_lock_acquired", {
-      command,
-      schema: mirror.schema,
-      url_env: mirror.urlEnv,
-      lock_timeout_ms: mirror.lockTimeoutMs,
-      source_database_changed: false,
-    });
-    return await callback();
-  } finally {
-    if (locked) {
-      await client.query("SELECT pg_advisory_unlock(hashtext($1)) AS unlocked", [lockKey]).catch((error: unknown) => {
-        operationalLog("error", "shared_ledger_mirror_lock_release_failed", {
+  return withPreservedCleanup(async () => {
+    const client = await pool.connect();
+    return withPreservedCleanup(async () => {
+      let locked = false;
+      try {
+        locked = await acquirePostgresAdvisoryLock(client, lockKey, mirror.lockTimeoutMs);
+        if (!locked) {
+          operationalLog("warn", "shared_ledger_mirror_lock_timeout", {
+            command,
+            schema: mirror.schema,
+            url_env: mirror.urlEnv,
+            lock_timeout_ms: mirror.lockTimeoutMs,
+            source_database_changed: false,
+          });
+          throw new Error(`shared Postgres ledger mirror lock is held for schema ${mirror.schema}; retry later or increase --shared-ledger-lock-timeout-ms`);
+        }
+        operationalLog("info", "shared_ledger_mirror_lock_acquired", {
           command,
           schema: mirror.schema,
           url_env: mirror.urlEnv,
-          error_code: safeOperationalErrorCode(error),
+          lock_timeout_ms: mirror.lockTimeoutMs,
           source_database_changed: false,
         });
-      });
-      operationalLog("info", "shared_ledger_mirror_lock_released", {
-        command,
-        schema: mirror.schema,
-        url_env: mirror.urlEnv,
-        source_database_changed: false,
-      });
-    }
-    client.release();
-    await pool.end();
-  }
+        return await callback();
+      } finally {
+        if (locked) {
+          await client.query("SELECT pg_advisory_unlock(hashtext($1)) AS unlocked", [lockKey]).catch((error: unknown) => {
+            operationalLog("error", "shared_ledger_mirror_lock_release_failed", {
+              command,
+              schema: mirror.schema,
+              url_env: mirror.urlEnv,
+              error_code: safeOperationalErrorCode(error),
+              source_database_changed: false,
+            });
+          });
+          operationalLog("info", "shared_ledger_mirror_lock_released", {
+            command,
+            schema: mirror.schema,
+            url_env: mirror.urlEnv,
+            source_database_changed: false,
+          });
+        }
+      }
+    }, async () => { client.release(); });
+  }, async () => { await pool.end(); });
 }
 
 

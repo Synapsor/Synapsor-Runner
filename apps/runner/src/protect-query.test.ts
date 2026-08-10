@@ -837,6 +837,42 @@ describe("Protect This Query", () => {
       prepareScopedExploreFn: async () => ({ boundary: fixture.boundary, lock, inspection: fixture.inspection }),
     })).rejects.toThrow(/changed after review/i);
 
+    const configPath = path.join(fixture.root, "synapsor.runner.json");
+    const configBefore = await fs.readFile(configPath, "utf8").catch((error) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw error;
+    });
+    await expect(activateProtectedQuery({
+      projectRoot: fixture.root,
+      capabilityName: created.draft.capability,
+      expectedDigest: created.draft.contract_digest,
+      operatorConfirmed: true,
+      actor: "reviewer@example.test",
+      env: fixture.env,
+      prepareScopedExploreFn: async () => ({ boundary: fixture.boundary, lock, inspection: fixture.inspection }),
+      testFailpoint(point) {
+        if (point === "after_explore_deactivation") {
+          throw new Error("simulated pre-commit failure");
+        }
+      },
+    })).rejects.toThrow("simulated pre-commit failure");
+    await expect(loadActivatedExplorationBoundaries(fixture.root)).resolves.toMatchObject([{
+      activation: { digest: fixture.boundary.activation.digest },
+    }]);
+    const configAfterFailure = await fs.readFile(configPath, "utf8").catch((error) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw error;
+    });
+    expect(configAfterFailure).toBe(configBefore);
+    await expect(fs.stat(path.join(
+      fixture.root,
+      "synapsor/protected/active/analytics__recent_region_reasons.contract.json",
+    ))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.stat(path.join(
+      fixture.root,
+      "synapsor/protected/active/analytics__recent_region_reasons.activation.json",
+    ))).rejects.toMatchObject({ code: "ENOENT" });
+
     const activated = await activateProtectedQuery({
       projectRoot: fixture.root,
       capabilityName: created.draft.capability,

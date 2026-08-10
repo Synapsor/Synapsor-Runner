@@ -331,3 +331,29 @@ conservative charge until they age out of the rolling window.
 Use protected named capabilities instead when the production question shape is
 fixed and should have narrower, deterministic authority. Production Explore is
 for genuinely ad-hoc questions inside an already reviewed boundary.
+
+## Verification
+
+From a source checkout, the two hermetic engine gates start disposable source
+and control databases, generate an in-memory RS256 keypair, mint real JWTs,
+start the public Streamable HTTP command on a random loopback port, and clean up
+all state afterward:
+
+```bash
+corepack pnpm test:production-explore:http
+corepack pnpm test:production-explore:mysql-http
+```
+
+When Ollama is already installed and running, opt into the external-agent path
+without changing the ordinary CI gate:
+
+```bash
+SYNAPSOR_TEST_OLLAMA_MODEL='qwen2.5:7b' \
+  corepack pnpm test:production-explore:http
+```
+
+`SYNAPSOR_TEST_OLLAMA_BASE_URL` may override the default loopback URL
+`http://127.0.0.1:11434/v1`. The verifier uses a dedicated principal, sends the
+model only the two production tools, and asserts that its accepted plan contains
+no model-supplied tenant or principal. No bearer token, private key, database
+URL, or model response is written into generated authority artifacts.

@@ -43,6 +43,9 @@ export const DEFAULT_GENERATED_DIR = "synapsor/generated";
 export const MAX_ACTIVE_EXPLORATION_BOUNDARIES = 8;
 const EXPLORATION_LOCK_SNAPSHOT_DIR = "exploration-locks";
 const ACTIVE_EXPLORATION_BOUNDARY_SET_FILE = "exploration-boundaries.active.json";
+const ACTIVE_EXPLORATION_BOUNDARY_LOCK_FILE = "exploration-boundaries.active.lock";
+const ACTIVE_EXPLORATION_BOUNDARY_LOCK_TIMEOUT_MS = 5_000;
+const ACTIVE_EXPLORATION_BOUNDARY_STALE_LOCK_MS = 30_000;
 const AUTO_BOUNDARY_POLICY_BASELINE_FILE = "auto-boundary-policy-baseline.json";
 const AUTO_BOUNDARY_POLICY_BASELINE_VERSION = "synapsor.auto-boundary-policy-baseline.v1";
 
@@ -1102,6 +1105,7 @@ export async function writeAutoBoundaryArtifacts(input: {
     ExplorationBoundaryDraft,
     AutoBoundaryReviewOverrides
   >;
+  additionalPrivateStateFiles?: Record<string, string>;
 }): Promise<AutoBoundaryWriteResult> {
   const projectRoot = path.resolve(input.projectRoot);
   const outputRoot = await assertSafeManagedOutputPath(
@@ -1176,6 +1180,22 @@ export async function writeAutoBoundaryArtifacts(input: {
         json(input.reviewProgress),
       );
     }
+    const reservedStateFiles = new Set([
+      "generation-lock.json",
+      AUTO_BOUNDARY_POLICY_BASELINE_FILE,
+      "review-report.json",
+      "review-overrides.json",
+      "boundary-review-progress.json",
+      "exploration-boundary.active.json",
+      ACTIVE_EXPLORATION_BOUNDARY_SET_FILE,
+    ]);
+    const additionalStateFiles = Object.keys(input.additionalPrivateStateFiles ?? {}).sort();
+    for (const file of additionalStateFiles) {
+      if (file !== path.basename(file) || reservedStateFiles.has(file)) {
+        throw new Error(`Additional managed state file ${file} is not allowed.`);
+      }
+      await writePrivateStagedFile(stagedState, file, input.additionalPrivateStateFiles![file]!);
+    }
     await persistGenerationLockSnapshot(
       projectRoot,
       input.build.exploration_boundary.generation_lock_fingerprint,
@@ -1199,6 +1219,7 @@ export async function writeAutoBoundaryArtifacts(input: {
         "review-report.json",
         "review-overrides.json",
         ...(input.reviewProgress ? ["boundary-review-progress.json"] : []),
+        ...additionalStateFiles,
       ],
       removeStateFiles: existing
         ? [
@@ -1219,6 +1240,7 @@ export async function writeAutoBoundaryArtifacts(input: {
         path.join(stateDir, AUTO_BOUNDARY_POLICY_BASELINE_FILE),
         path.join(stateDir, "review-report.json"),
         path.join(stateDir, "review-overrides.json"),
+        ...additionalStateFiles.map((file) => path.join(stateDir, file)),
       ],
       contract_digest: input.build.contract_digest,
       schema_fingerprint: input.build.lock.schema_fingerprint,
@@ -1755,6 +1777,14 @@ export async function deactivateExplorationBoundary(
   name?: string,
 ): Promise<{ disabled: string[]; remaining: ActivatedExplorationBoundary[] }> {
   const projectRoot = path.resolve(projectRootInput);
+  return withActiveExplorationBoundaryLock(projectRoot, async () =>
+    deactivateExplorationBoundaryUnlocked(projectRoot, name));
+}
+
+async function deactivateExplorationBoundaryUnlocked(
+  projectRoot: string,
+  name?: string,
+): Promise<{ disabled: string[]; remaining: ActivatedExplorationBoundary[] }> {
   let active: ActivatedExplorationBoundary[];
   try {
     active = await loadActivatedExplorationBoundaries(projectRoot);
@@ -1769,23 +1799,34 @@ export async function deactivateExplorationBoundary(
   const remaining = name
     ? active.filter((boundary) => boundary.pack.name !== name)
     : [];
+  const legacyPath = path.join(projectRoot, ".synapsor/exploration-boundary.active.json");
+  const legacySnapshot = await captureOptionalPrivateFile(legacyPath);
   if (remaining.length === 0) {
-    await Promise.all([
-      fs.rm(path.join(projectRoot, ".synapsor/exploration-boundary.active.json"), { force: true }),
-      fs.rm(path.join(projectRoot, ".synapsor", ACTIVE_EXPLORATION_BOUNDARY_SET_FILE), { force: true }),
-    ]);
+    await fs.rm(legacyPath, { force: true });
+    try {
+      await fs.rm(
+        path.join(projectRoot, ".synapsor", ACTIVE_EXPLORATION_BOUNDARY_SET_FILE),
+        { force: true },
+      );
+    } catch (error) {
+      await restoreOptionalPrivateFile(legacyPath, legacySnapshot);
+      throw error;
+    }
   } else {
     const selected = remaining.at(-1)!;
-    await persistActivatedExplorationBoundarySet(projectRoot, {
+    const set: ActiveExplorationBoundarySet = {
       schema_version: ACTIVE_EXPLORATION_BOUNDARY_SET_VERSION,
       selected_name: selected.pack.name,
       boundaries: remaining,
       updated_at: new Date().toISOString(),
-    });
-    await writePrivateJsonAtomic(
-      path.join(projectRoot, ".synapsor/exploration-boundary.active.json"),
-      selected,
-    );
+    };
+    await writePrivateJsonAtomic(legacyPath, selected);
+    try {
+      await persistActivatedExplorationBoundarySet(projectRoot, set);
+    } catch (error) {
+      await restoreOptionalPrivateFile(legacyPath, legacySnapshot);
+      throw error;
+    }
   }
   return { disabled: disabled.map((boundary) => boundary.pack.name), remaining };
 }
@@ -1872,6 +1913,16 @@ async function writeActivatedExplorationBoundarySet(
   active: ActivatedExplorationBoundary,
   mode: "replace" | "add",
 ): Promise<void> {
+  await withActiveExplorationBoundaryLock(projectRoot, async () => {
+    await writeActivatedExplorationBoundarySetUnlocked(projectRoot, active, mode);
+  });
+}
+
+async function writeActivatedExplorationBoundarySetUnlocked(
+  projectRoot: string,
+  active: ActivatedExplorationBoundary,
+  mode: "replace" | "add",
+): Promise<void> {
   let boundaries: ActivatedExplorationBoundary[] = [];
   if (mode === "add") {
     try {
@@ -1909,11 +1960,15 @@ async function writeActivatedExplorationBoundarySet(
     updated_at: new Date().toISOString(),
   };
   activatedExplorationBoundarySetDigest(boundaries);
-  await persistActivatedExplorationBoundarySet(projectRoot, set);
-  await writePrivateJsonAtomic(
-    path.join(projectRoot, ".synapsor/exploration-boundary.active.json"),
-    active,
-  );
+  const legacyPath = path.join(projectRoot, ".synapsor/exploration-boundary.active.json");
+  const legacySnapshot = await captureOptionalPrivateFile(legacyPath);
+  await writePrivateJsonAtomic(legacyPath, active);
+  try {
+    await persistActivatedExplorationBoundarySet(projectRoot, set);
+  } catch (error) {
+    await restoreOptionalPrivateFile(legacyPath, legacySnapshot);
+    throw error;
+  }
 }
 
 async function persistActivatedExplorationBoundarySet(
@@ -1936,6 +1991,87 @@ async function writePrivateJsonAtomic(filePath: string, value: unknown): Promise
   } catch (error) {
     await fs.rm(temporary, { force: true }).catch(() => undefined);
     throw error;
+  }
+}
+
+type OptionalPrivateFileSnapshot =
+  | { exists: false }
+  | { exists: true; contents: string };
+
+async function captureOptionalPrivateFile(filePath: string): Promise<OptionalPrivateFileSnapshot> {
+  try {
+    return { exists: true, contents: await fs.readFile(filePath, "utf8") };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { exists: false };
+    throw error;
+  }
+}
+
+async function restoreOptionalPrivateFile(
+  filePath: string,
+  snapshot: OptionalPrivateFileSnapshot,
+): Promise<void> {
+  if (!snapshot.exists) {
+    await fs.rm(filePath, { force: true });
+    return;
+  }
+  await writePrivateTextAtomic(filePath, snapshot.contents);
+}
+
+async function writePrivateTextAtomic(filePath: string, contents: string): Promise<void> {
+  await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
+  const temporary = `${filePath}.${process.pid}.${cryptoRandomSuffix()}.tmp`;
+  try {
+    await fs.writeFile(temporary, contents, { encoding: "utf8", mode: 0o600, flag: "wx" });
+    await fs.rename(temporary, filePath);
+    await fs.chmod(filePath, 0o600);
+  } catch (error) {
+    await fs.rm(temporary, { force: true }).catch(() => undefined);
+    throw error;
+  }
+}
+
+async function withActiveExplorationBoundaryLock<T>(
+  projectRoot: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const stateRoot = path.join(projectRoot, ".synapsor");
+  const lockPath = path.join(stateRoot, ACTIVE_EXPLORATION_BOUNDARY_LOCK_FILE);
+  await fs.mkdir(stateRoot, { recursive: true, mode: 0o700 });
+  const deadline = Date.now() + ACTIVE_EXPLORATION_BOUNDARY_LOCK_TIMEOUT_MS;
+  let handle: Awaited<ReturnType<typeof fs.open>> | undefined;
+  while (!handle) {
+    try {
+      const candidate = await fs.open(lockPath, "wx", 0o600);
+      try {
+        await candidate.writeFile(JSON.stringify({
+          pid: process.pid,
+          created_at: new Date().toISOString(),
+        }));
+        handle = candidate;
+      } catch (error) {
+        await candidate.close().catch(() => undefined);
+        await fs.rm(lockPath, { force: true }).catch(() => undefined);
+        throw error;
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      const stat = await fs.stat(lockPath).catch(() => undefined);
+      if (stat && Date.now() - stat.mtimeMs > ACTIVE_EXPLORATION_BOUNDARY_STALE_LOCK_MS) {
+        await fs.rm(lockPath, { force: true }).catch(() => undefined);
+        continue;
+      }
+      if (Date.now() >= deadline) {
+        throw new Error("Another boundary activation is still updating the active authority. Retry the operation.");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+  try {
+    return await operation();
+  } finally {
+    await handle.close().catch(() => undefined);
+    await fs.rm(lockPath, { force: true }).catch(() => undefined);
   }
 }
 
@@ -2614,7 +2750,9 @@ function applyReviewOverrides(
         || fieldOverride.exposure === "withhold_from_model";
       field.sensitive_suggestion = !allow;
       field.raw_visible_suggestion = allow;
-      field.aggregate_measure_suggestion = allow && isNumericType(field.data_type);
+      field.aggregate_measure_suggestion = allow
+        && isNumericType(field.data_type)
+        && isAnalyticalNumericMeasureName(field.name);
       field.count_distinct_suggestion = allow;
       field.groupable_suggestion = allow
         && !field.primary_key
@@ -4015,7 +4153,9 @@ function buildResource(
         sensitive_suggestion: keptOutByClassification,
         sensitivity,
         raw_visible_suggestion: !keptOutByClassification && !column.suggestions.large_or_binary,
-        aggregate_measure_suggestion: !keptOutByClassification && isNumericType(column.data_type),
+        aggregate_measure_suggestion: !keptOutByClassification
+          && isNumericType(column.data_type)
+          && isAnalyticalNumericMeasureName(column.name),
         count_distinct_suggestion: !keptOutByClassification
           && (table.primary_key.includes(column.name) || isReferenceIdentifierName(column.name)),
         groupable_suggestion: !keptOutByClassification
@@ -4814,6 +4954,11 @@ function humanize(value: string): string {
 
 function isReferenceIdentifierName(value: string): boolean {
   return value.toLowerCase() === "id" || /_id$/i.test(value);
+}
+
+function isAnalyticalNumericMeasureName(value: string): boolean {
+  return !isReferenceIdentifierName(value)
+    && !/(?:^|_)(?:version|revision|sequence|seq|ordinal|position|rank)(?:_|$)/i.test(value);
 }
 
 function escapeDslString(value: string): string {

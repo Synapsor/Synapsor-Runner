@@ -16,6 +16,7 @@ import {
   compareGenerationLock,
   generationLockRemediation,
   generationLockRemediationCommand,
+  loadActivatedExplorationBoundary,
   loadStructuredProjectEvidence,
   seedConfiguredPrincipalBindingReview,
   writeAutoBoundaryArtifacts,
@@ -351,11 +352,7 @@ async function startAutoBoundary(
       );
     }
     const boundaryRoot = path.join(project.root, existingJourney.artifacts.boundary_root);
-    const activeBoundaryPath = path.join(
-      project.root,
-      ".synapsor/exploration-boundary.active.json",
-    );
-    const activeBoundaryExists = await fileExists(activeBoundaryPath);
+    const activeBoundaryExists = await guidedActiveBoundaryExists(project.root);
     writeGuidedOutput([
       "Existing Synapsor guided project found.",
       `Completed: ${existingJourney.completed_steps.join(", ")}`,
@@ -1020,10 +1017,12 @@ export async function boundaryCommand(
     assertKnownOptions(rest, new Set(["--project-root", "--json"]), "boundary status");
     const projectRoot = path.resolve(optionalArg(rest, "--project-root") ?? process.cwd());
     const context = await loadBoundaryReviewContext(projectRoot);
-    const activePath = path.join(projectRoot, ".synapsor/exploration-boundary.active.json");
-    const active = await fileExists(activePath)
-      ? await readJsonFileWithLocation<Record<string, unknown>>(activePath, "active exploration boundary")
-      : undefined;
+    const active = await loadActivatedExplorationBoundary(projectRoot, {
+      name: context.bundle.candidate.pack.name,
+    }).catch((error) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw error;
+    });
     const operational = await boundaryOperationalStatus(projectRoot, context.bundle, active);
     const unresolvedResources = [...new Set(context.bundle.decisions
       .filter((decision) => context.bundle.outstanding_decision_ids.includes(decision.id))

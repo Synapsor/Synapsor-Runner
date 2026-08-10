@@ -21,6 +21,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { loadActivatedExplorationBoundary } from "./auto-boundary.js";
 import { cliCommandName } from "./cli-command-meta.js";
 import { shellQuote } from "./cli-format.js";
 import { usage } from "./cli-help.js";
@@ -43,6 +44,7 @@ import {
 } from "./terminal-syntax.js";
 import { formatSourceReceiptMode, hashReceipt, receiptTableGuidance, runnerReceiptConfig, sourceNeedsSqlWriteback, writebackDatabaseScope, writebackTimeoutMs } from "./writeback-domain.js";
 import { resolveSqlWriteDatabaseUrl } from "./writeback-execution.js";
+import { withPreservedCleanup } from "./resource-lifecycle.js";
 
 
 export async function tools(args: string[]): Promise<number> {
@@ -726,9 +728,7 @@ async function writebackSetupProfile(args: string[], configPath: string): Promis
     return explicit as WritebackSetupProfile;
   }
   try {
-    const active = JSON.parse(
-      await fs.readFile(path.join(path.dirname(configPath), ".synapsor/exploration-boundary.active.json"), "utf8"),
-    ) as Record<string, unknown>;
+    const active = await loadActivatedExplorationBoundary(path.dirname(configPath));
     return active.deployment_profile === "development" || active.deployment_profile === "staging"
       ? active.deployment_profile
       : "unknown";
@@ -815,25 +815,25 @@ async function applyWritebackSetupPlan(
   }
   if (plan.engine === "postgres") {
     const pool = createPostgresPool(databaseUrl, { max: 1 });
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      await client.query(plan.sql_preview);
-      await client.query("COMMIT");
-    } catch (error) {
-      await client.query("ROLLBACK").catch(() => undefined);
-      throw error;
-    } finally {
-      client.release();
-      await pool.end();
-    }
+    await withPreservedCleanup(async () => {
+      const client = await pool.connect();
+      await withPreservedCleanup(async () => {
+        try {
+          await client.query("BEGIN");
+          await client.query(plan.sql_preview);
+          await client.query("COMMIT");
+        } catch (error) {
+          await client.query("ROLLBACK").catch(() => undefined);
+          throw error;
+        }
+      }, async () => { client.release(); });
+    }, async () => { await pool.end(); });
   } else if (plan.engine === "mysql") {
     const connection = await mysql.createConnection({ uri: databaseUrl, multipleStatements: true });
-    try {
-      await connection.query(plan.sql_preview);
-    } finally {
-      await connection.end();
-    }
+    await withPreservedCleanup(
+      async () => { await connection.query(plan.sql_preview); },
+      async () => { await connection.end(); },
+    );
   } else {
     throw new Error("Writeback setup engine is unavailable.");
   }

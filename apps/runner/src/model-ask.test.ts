@@ -872,6 +872,348 @@ describe("Workbench BYOM Ask", () => {
     expect(gateway.closed).toBe(1);
   });
 
+  it("replaces an unreviewed cents-to-currency claim with a Runner-owned unit notice", async () => {
+    const gateway = testGateway(tools, {
+      ok: true,
+      value: {
+        ok: true,
+        data: [{ measure_0: 1234 }],
+        source_database_changed: false,
+      },
+    });
+    let request = 0;
+    const session = configuredSession(askToolSurfaceDigest(tools));
+    const result = await session.run("What is total revenue?", gateway.gateway, {
+      requestJson: async () => {
+        request += 1;
+        return request === 1
+          ? openAiToolCall("sum_cents", "app__explore_data", {
+            plan: {
+              kind: "aggregate",
+              resource: "public.invoices",
+              measures: [{ function: "sum", field: "amount_cents" }],
+            },
+          })
+          : openAiText("Total revenue is $1,234.");
+      },
+    });
+
+    expect(result).toMatchObject({
+      answer_source: "runner",
+      answer_is_untrusted_model_output: false,
+    });
+    expect(result.answer).toContain("values in cents");
+    expect(result.answer).not.toContain("$1,234");
+  });
+
+  it("corrects a model that treats catalog metadata as a data answer, then executes Explore", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        return name === "app.describe_data"
+          ? {
+            ok: true,
+            value: {
+              ok: true,
+              catalog_view: args.resource ? "resource_detail" : "resource_index",
+              metadata_only: true,
+              contains_source_values: false,
+              resources: [{
+                id: "public.invoices",
+                groupable_fields: ["status"],
+                valid_plan_example: {
+                  kind: "aggregate",
+                  resource: "public.invoices",
+                  measures: [{ function: "sum", field: "amount_cents" }],
+                  dimensions: [{ field: "status" }],
+                },
+              }],
+              source_database_changed: false,
+            },
+          }
+          : {
+            ok: true,
+            value: {
+              ok: true,
+              data: [{ status: "paid", measure_0: 42 }],
+              source_database_changed: false,
+            },
+          };
+      },
+      close: async () => undefined,
+    };
+    const requests: Array<Record<string, unknown>> = [];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run("What is the total invoice amount by status?", gateway, {
+      requestJson: async (request) => {
+        requests.push(structuredClone(request.body));
+        if (requests.length === 1) {
+          return openAiToolCall("describe_catalog", "app__describe_data", {});
+        }
+        if (requests.length === 2) {
+          return openAiText("Invoices can be grouped by status.");
+        }
+        if (requests.length === 3) {
+          return openAiText(JSON.stringify({
+            plan: {
+              kind: "aggregate",
+              resource: "public.invoices",
+              measures: [{ function: "sum", field: "amount_cents" }],
+              dimensions: [{ field: "status" }],
+            },
+          }));
+        }
+        return openAiText("Paid invoices have a reviewed total of 42 cents.");
+      },
+    });
+
+    expect(result).toMatchObject({
+      answer_source: "runner",
+      answer_is_untrusted_model_output: false,
+      tool_calls: [
+        { tool: "app.describe_data", status: "ok" },
+        { tool: "app.describe_data", status: "ok" },
+        { tool: "app.explore_data", status: "ok" },
+      ],
+    });
+    expect(result.answer).toContain("intent-checked reviewed plan");
+    expect(requests).toHaveLength(3);
+    expect(JSON.stringify(requests[2])).toContain("valid_plan_example");
+    expect(requests[2]?.response_format).toEqual({ type: "json_object" });
+    expect(requests[2]?.temperature).toBe(0);
+    expect(requests[2]).not.toHaveProperty("tools");
+    expect(calls).toEqual([
+      { name: "app.describe_data", args: {} },
+      { name: "app.describe_data", args: { resource: "public.invoices" } },
+      {
+        name: "app.explore_data",
+        args: {
+          plan: {
+            kind: "aggregate",
+            resource: "public.invoices",
+            measures: [{ function: "sum", field: "amount_cents" }],
+            dimensions: [{ field: "status" }],
+          },
+        },
+      },
+    ]);
+  });
+
+  it("executes one exact reviewed relationship plan for a corrected local model", async () => {
+    const relationship = "invoices_order_id_fkey__orders_customer_id_fkey";
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        if (name === "app.describe_data") {
+          return {
+            ok: true,
+            value: {
+              ok: true,
+              catalog_view: args.resource ? "resource_detail" : "resource_index",
+              metadata_only: true,
+              resources: [{
+                id: "public.invoices",
+                boundary_name: "reviewed_staging",
+                aggregate_measure_functions: { amount_cents: ["sum", "avg"] },
+                groupable_fields: ["status"],
+                relationships: [{
+                  id: relationship,
+                  target_resource: "public.customers",
+                  groupable_fields: ["plan"],
+                }],
+              }],
+              source_database_changed: false,
+            },
+          };
+        }
+        return {
+          ok: true,
+          value: {
+            ok: true,
+            data: [
+              { plan: "free", sum_amount_cents: 6_803_016 },
+              { plan: "pro", sum_amount_cents: 7_128_972 },
+            ],
+            source_database_changed: false,
+          },
+        };
+      },
+      close: async () => undefined,
+    };
+    let request = 0;
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run("What is the total invoice amount by customer plan?", gateway, {
+      requestJson: async () => {
+        request += 1;
+        if (request === 1) return openAiToolCall("describe_relationship", "app__describe_data", {});
+        if (request === 2) return openAiText("Invoices can use reviewed customer metadata.");
+        return openAiText(JSON.stringify({
+          boundary: "reviewed_staging",
+          plan: {
+            kind: "aggregate",
+            resource: "public.invoices",
+            measures: [{ function: "sum", field: "amount_cents" }],
+            dimensions: [{ field: "plan", relationship }],
+          },
+        }));
+      },
+    });
+
+    expect(request).toBe(3);
+    expect(result).toMatchObject({
+      answer_source: "runner",
+      answer_is_untrusted_model_output: false,
+      tool_calls: [
+        { tool: "app.describe_data", status: "ok" },
+        { tool: "app.describe_data", status: "ok" },
+        {
+          tool: "app.explore_data",
+          status: "ok",
+          arguments: {
+            boundary: "reviewed_staging",
+            plan: {
+              kind: "aggregate",
+              resource: "public.invoices",
+              measures: [{ function: "sum", field: "amount_cents" }],
+              dimensions: [{ field: "plan", relationship }],
+            },
+          },
+        },
+      ],
+    });
+    expect(calls.map((call) => call.name)).toEqual([
+      "app.describe_data",
+      "app.describe_data",
+      "app.explore_data",
+    ]);
+  });
+
+  it("runs no data query when a local row request names no model-visible field", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        return {
+          ok: true,
+          value: {
+            ok: true,
+            catalog_view: args.resource ? "resource_detail" : "resource_index",
+            metadata_only: true,
+            resources: [{
+              id: "public.customers",
+              boundary_name: "reviewed_staging",
+              selectable_fields: ["plan", "region"],
+              model_withheld_fields: ["billing_email"],
+            }],
+            source_database_changed: false,
+          },
+        };
+      },
+      close: async () => undefined,
+    };
+    let request = 0;
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run("Show every customer's billing email.", gateway, {
+      requestJson: async () => {
+        request += 1;
+        return request === 1
+          ? openAiToolCall("describe_customers", "app__describe_data", {})
+          : openAiText("Customer metadata is available.");
+      },
+    });
+
+    expect(request).toBe(2);
+    expect(result).toMatchObject({
+      answer_source: "runner",
+      answer_is_untrusted_model_output: false,
+      tool_calls: [
+        { tool: "app.describe_data", status: "ok" },
+        { tool: "app.describe_data", status: "ok" },
+      ],
+    });
+    expect(result.answer).toContain("did not match the question");
+    expect(calls.map((call) => call.name)).toEqual([
+      "app.describe_data",
+      "app.describe_data",
+    ]);
+  });
+
+  it("returns a Runner-owned no-query outcome when a model ignores the catalog correction", async () => {
+    const gateway = testGateway(authoringTools, {
+      ok: true,
+      value: {
+        ok: true,
+        catalog_view: "resource_index",
+        metadata_only: true,
+        resources: [{ id: "public.invoices" }],
+        source_database_changed: false,
+      },
+    });
+    let request = 0;
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run("What is the total invoice amount?", gateway.gateway, {
+      requestJson: async () => {
+        request += 1;
+        if (request === 1) return openAiToolCall("describe_only", "app__describe_data", {});
+        return openAiText("The catalog says invoice amounts are available.");
+      },
+    });
+
+    expect(request).toBe(3);
+    expect(result).toMatchObject({
+      answer_source: "runner",
+      answer_is_untrusted_model_output: false,
+      tool_calls: [
+        { tool: "app.describe_data", status: "ok" },
+        { tool: "app.describe_data", status: "ok" },
+      ],
+    });
+    expect(result.answer).toContain("did not execute app.explore_data");
+    expect(result.answer).toContain("No source query ran");
+    expect(gateway.calls.map((call) => call.name)).toEqual([
+      "app.describe_data",
+      "app.describe_data",
+    ]);
+  });
+
+  it("allows a catalog question to finish after describe_data without forcing a data query", async () => {
+    const gateway = testGateway(authoringTools, {
+      ok: true,
+      value: {
+        ok: true,
+        catalog_view: "resource_index",
+        metadata_only: true,
+        resources: [{ id: "public.invoices" }],
+        source_database_changed: false,
+      },
+    });
+    let request = 0;
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run("Which tables are available to Ask?", gateway.gateway, {
+      requestJson: async () => {
+        request += 1;
+        return request === 1
+          ? openAiToolCall("describe_for_catalog", "app__describe_data", {})
+          : openAiText("The reviewed catalog contains public.invoices.");
+      },
+    });
+
+    expect(request).toBe(2);
+    expect(result).toMatchObject({
+      answer_source: "model",
+      tool_calls: [{ tool: "app.describe_data", status: "ok" }],
+    });
+    expect(gateway.calls.map((call) => call.name)).toEqual(["app.describe_data"]);
+  });
+
   it("returns a Runner-authored boundary explanation when OpenAI exhausts refused plans without final prose", async () => {
     const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
     const gateway: AskToolGateway = {
@@ -1635,6 +1977,36 @@ function configuredSession(authorityDigest: `sha256:${string}`): WorkbenchAskSes
     egress_acknowledged: true,
   });
   return session;
+}
+
+function openAiToolCall(
+  id: string,
+  name: string,
+  args: Record<string, unknown>,
+): { status: number; body: Record<string, unknown> } {
+  return {
+    status: 200,
+    body: {
+      choices: [{
+        message: {
+          role: "assistant",
+          content: null,
+          tool_calls: [{
+            id,
+            type: "function",
+            function: { name, arguments: JSON.stringify(args) },
+          }],
+        },
+      }],
+    },
+  };
+}
+
+function openAiText(content: string): { status: number; body: Record<string, unknown> } {
+  return {
+    status: 200,
+    body: { choices: [{ message: { role: "assistant", content } }] },
+  };
 }
 
 function testGateway(

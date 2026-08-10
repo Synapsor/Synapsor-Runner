@@ -682,6 +682,30 @@ describe("Synapsor Analytics shell", () => {
     expect(io.output()).not.toContain("Ask did not start");
   });
 
+  it("keeps every recoverable slash-command failure inside the Ask loop", async () => {
+    const io = fakeIo(["/analyses", "/help", "/exit"]);
+    await runAnalyticsShell({
+      providerLabel: "Local model",
+      profileLabel: "development",
+      reviewedDataAreas: 1,
+      io,
+      ask: vi.fn(),
+      listAnalyses: async () => {
+        throw new Error("Analysis storage is temporarily unavailable.");
+      },
+      protect: vi.fn(),
+      clearConversation: vi.fn(),
+      cancel: vi.fn(() => false),
+    });
+
+    expect(io.output()).toContain(
+      "Action could not complete: Analysis storage is temporarily unavailable.",
+    );
+    expect(io.output()).toContain("This Ask session is still active");
+    expect(io.output()).toContain("Actions\n  /catalog");
+    expect(io.output()).not.toContain("Ask did not start");
+  });
+
   it("styles the Protect review hierarchy in an interactive terminal", async () => {
     const previousNoColor = process.env.NO_COLOR;
     delete process.env.NO_COLOR;

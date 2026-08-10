@@ -196,6 +196,22 @@ describe("Ask authoring/runtime separation", () => {
         .toContain("never concatenate them");
       expect(JSON.stringify(listed.find((tool) => tool.name === "app.explore_data")?.input_schema))
         .toContain("one row per dimension/time combination");
+      await expect(gateway.callTool("app.describe_data", { limit: 99 })).resolves.toMatchObject({
+        ok: false,
+        error_code: "MCP_TOOL_ARGUMENTS_INVALID",
+        value: {
+          message: expect.stringContaining("Send {} to list the compact reviewed resource index"),
+        },
+      });
+      await expect(gateway.callTool("app.explore_data", {
+        plan: { kind: "aggregate", resource: "", measures: [] },
+      })).resolves.toMatchObject({
+        ok: false,
+        error_code: "MCP_TOOL_ARGUMENTS_INVALID",
+        value: {
+          message: expect.stringContaining("Do not send empty ids"),
+        },
+      });
     } finally {
       await gateway.close();
     }

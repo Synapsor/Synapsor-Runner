@@ -43,6 +43,36 @@ describe("boundary review terminal picker", () => {
     expect(confirmationOutput).toContain("[Esc Back]");
   });
 
+  it("treats terminal EOF as a safe cancellation for text and raw-key prompts", async () => {
+    const textTerminal = fakeTerminal();
+    const textSession = createBoundaryReviewInteractiveSession(
+      textTerminal.input,
+      textTerminal.output,
+    );
+    const text = textSession.promptText("New boundary name: ");
+    (textTerminal.input as unknown as PassThrough).end();
+    await expect(text).resolves.toBeUndefined();
+
+    const pickerTerminal = fakeTerminal();
+    const pickerSession = createBoundaryReviewInteractiveSession(
+      pickerTerminal.input,
+      pickerTerminal.output,
+    );
+    const selection = pickerSession.chooseResource(
+      [summary("public.orders", 0)],
+      {
+        confirmed_decisions: 1,
+        outstanding_decisions: 0,
+        outstanding_resource_decisions: 0,
+        outstanding_boundary_decisions: 0,
+        resources_requiring_signoff: 0,
+      },
+    );
+    (pickerTerminal.input as unknown as PassThrough).end();
+    await expect(selection).resolves.toBeUndefined();
+    expect(pickerTerminal.input.isRaw).toBe(false);
+  });
+
   it("keeps ordinary text and Enter defaults distinct from Escape", async () => {
     const textTerminal = fakeTerminal();
     const textSession = createBoundaryReviewInteractiveSession(
