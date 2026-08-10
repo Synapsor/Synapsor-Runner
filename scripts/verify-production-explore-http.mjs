@@ -21,12 +21,15 @@ import {
   assertProductionExploreStartup,
 } from "../apps/runner/dist/mcp-runtime.js";
 import { derivedScopeIndexDoctorChecks } from "../apps/runner/dist/derived-scope-index-doctor.js";
+import { createScopedExploreRuntime } from "../apps/runner/dist/scoped-explore.js";
+import { verifyJwtRejectionMatrix } from "./production-explore-http-e2e-helpers.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const fixture = path.join(root, "examples/auto-boundary-churn");
 const compose = path.join(fixture, "docker-compose.yml");
 const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-production-explore-http-"));
 const singleOrganizationProjectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-production-explore-single-org-http-"));
+const localParityProjectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-production-explore-local-parity-"));
 const readUrl = "postgresql://synapsor_churn_reader:synapsor_churn_reader_password@127.0.0.1:55460/synapsor_auto_boundary";
 const adminUrl = "postgresql://synapsor_admin:synapsor_admin_password@127.0.0.1:55460/synapsor_auto_boundary";
 const controlUrl = "postgresql://synapsor_admin:synapsor_admin_password@127.0.0.1:55460/postgres";
@@ -225,6 +228,62 @@ async function seedDerivedSource(pool) {
     INSERT INTO public.shared_product_catalog (id, category, internal_notes)
     SELECT 'software-' || item, 'software', 'operator-only software note ' || item
       FROM generate_series(1, 6) AS item;
+    INSERT INTO public.accounts (
+      id, tenant_id, owner_id, region, segment, customer_email, internal_risk_score
+    )
+    SELECT
+      principal || '-' || source.id,
+      source.tenant_id,
+      principal,
+      source.region,
+      source.segment,
+      principal || '-' || source.id || '@example.invalid',
+      source.internal_risk_score
+    FROM public.accounts AS source
+    CROSS JOIN (VALUES ('pm-band'), ('pm-running')) AS copies(principal)
+    WHERE source.tenant_id = 'acme' AND source.owner_id = 'pm-1';
+    INSERT INTO public.churn_events (
+      id, tenant_id, owner_id, account_id, reason_category,
+      monthly_revenue_cents, churned_at, private_note
+    )
+    SELECT
+      principal || '-' || source.id,
+      source.tenant_id,
+      principal,
+      principal || '-' || source.account_id,
+      source.reason_category,
+      source.monthly_revenue_cents,
+      source.churned_at,
+      'synthetic kept-out note ' || principal || '-' || source.id
+    FROM public.churn_events AS source
+    CROSS JOIN (VALUES ('pm-band'), ('pm-running')) AS copies(principal)
+    WHERE source.tenant_id = 'acme' AND source.owner_id = 'pm-1';
+    INSERT INTO public.accounts (
+      id, tenant_id, owner_id, region, segment, customer_email, internal_risk_score
+    )
+    SELECT
+      'pm-other-account-' || item,
+      'acme',
+      'pm-other',
+      'south',
+      'growth',
+      'pm-other-' || item || '@example.invalid',
+      700 + item
+    FROM generate_series(1, 5) AS item;
+    INSERT INTO public.churn_events (
+      id, tenant_id, owner_id, account_id, reason_category,
+      monthly_revenue_cents, churned_at, private_note
+    )
+    SELECT
+      'pm-other-event-' || item,
+      'acme',
+      'pm-other',
+      'pm-other-account-' || item,
+      'onboarding',
+      31415,
+      '2026-07-29T12:00:00Z'::timestamptz,
+      'synthetic kept-out note pm-other-' || item
+    FROM generate_series(1, 5) AS item;
     ALTER TABLE public.scoped_orders ENABLE ROW LEVEL SECURITY;
     ALTER TABLE public.scoped_orders FORCE ROW LEVEL SECURITY;
     CREATE POLICY scoped_orders_trusted_scope ON public.scoped_orders
@@ -343,6 +402,71 @@ function clientFor(url, bearer, query = {}) {
     client: new Client({ name: "production-explore-verifier", version: "1.0.0" }),
     transport,
   };
+}
+
+async function productionControlCounts(control, schema) {
+  const result = await control.query(`
+    SELECT
+      (SELECT COUNT(*)::int FROM "${schema}".production_explore_audit_events) AS audit_events,
+      (SELECT COUNT(*)::int FROM "${schema}".production_explore_budget_reservations) AS budget_reservations
+  `);
+  return result.rows[0];
+}
+
+async function runLocalParityPlan(env, principal, plan) {
+  const runtime = await createScopedExploreRuntime({
+    projectRoot: localParityProjectRoot,
+    transport: "stdio",
+    env: {
+      ...env,
+      SYNAPSOR_TENANT_ID: "acme",
+      SYNAPSOR_PRINCIPAL: principal,
+    },
+  });
+  try {
+    return await runtime.explore(plan);
+  } finally {
+    await runtime.close();
+  }
+}
+
+function comparableAnalyticsResult(result) {
+  return {
+    ok: result.ok,
+    status: result.outcome?.status ?? result.outcome?.result?.status,
+    data: result.data,
+    privacy: {
+      minimum_cohort_size: result.privacy?.minimum_cohort_size,
+      suppressed_groups: result.privacy?.suppressed_groups,
+      enum_allowlist_excluded_rows: result.privacy?.enum_allowlist_excluded_rows,
+    },
+  };
+}
+
+function generatedAuthorityText(projectRoot, configPath) {
+  const roots = [configPath, path.join(projectRoot, ".synapsor"), path.join(projectRoot, "synapsor/generated")];
+  const files = [];
+  const visit = (entry) => {
+    if (!fs.existsSync(entry)) return;
+    const stat = fs.lstatSync(entry);
+    if (stat.isSymbolicLink()) return;
+    if (stat.isDirectory()) {
+      for (const child of fs.readdirSync(entry)) visit(path.join(entry, child));
+      return;
+    }
+    if (/\.(?:json|md|sql|txt|ya?ml)$/i.test(entry)) files.push(entry);
+  };
+  for (const entry of roots) visit(entry);
+  return files.map((file) => `${file}\n${fs.readFileSync(file, "utf8")}`).join("\n");
+}
+
+function assertConfigAndArtifactHygiene(input) {
+  const text = generatedAuthorityText(input.projectRoot, input.configPath);
+  for (const secret of input.forbiddenValues.filter(Boolean)) {
+    assert(!text.includes(secret), "Production Explore config or authority artifact persisted secret material.", secret);
+  }
+  assert(!/-----BEGIN (?:RSA )?PRIVATE KEY-----|Bearer\s+[A-Za-z0-9._~+/=-]{12,}|eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\./i.test(text),
+    "Production Explore config or authority artifact persisted a private JWT key or bearer token.");
 }
 
 async function verifySingleOrganizationProductionExplore(input) {
@@ -556,6 +680,7 @@ async function main() {
   const admin = new Pool({ connectionString: adminUrl, max: 1 });
   const control = new Pool({ connectionString: controlUrl, max: 1 });
   let server;
+  let tenantBudgetServer;
   const clients = [];
   try {
     if (process.env.SYNAPSOR_SKIP_PRODUCTION_EXPLORE_ACCOUNTING_TEST !== "1") {
@@ -650,6 +775,19 @@ async function main() {
       churnResource.field_enums,
     );
     narrowResource(churnResource);
+    churnResource.numeric_bands = [{
+      name: "monthly_revenue_band",
+      label: "Monthly revenue band",
+      field: "monthly_revenue_cents",
+      edges: [6_500, 10_000, 20_000],
+      bucket_labels: ["under 65", "65 to 99", "100 to 199", "200 or more"],
+    }];
+    churnResource.derived_measures = [{
+      name: "revenue_running_total",
+      label: "Revenue running total",
+      shape: "running_total",
+      base_measure: { function: "sum", field: "monthly_revenue_cents" },
+    }];
     narrowDerivedResources(scopedOrders, scopedOrderItems);
     scopedOrders.derived_measures = [{
       name: "scoped_order_item_count",
@@ -692,6 +830,35 @@ async function main() {
       && missingIndexChecks.every((check) => check.message.includes("CREATE INDEX")),
     "PostgreSQL dropped-index advisory did not name both reviewed scope paths without gating them.", missingIndexChecks);
     await admin.query("CREATE INDEX scoped_order_items_order_id_idx ON public.scoped_order_items (order_id)");
+
+    const localBuild = buildAutoBoundary({
+      inspection,
+      project: {
+        root: localParityProjectRoot,
+        package_manager: "pnpm",
+        frameworks: ["node", "nextjs", "prisma"],
+        schema_inputs: [{ kind: "prisma", path: "prisma/schema.prisma" }],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      deploymentProfile: "staging",
+      overrides: build.overrides,
+    });
+    await writeAutoBoundaryArtifacts({ projectRoot: localParityProjectRoot, build: localBuild });
+    const localCandidate = structuredClone(localBuild.exploration_boundary);
+    localCandidate.pack.name = "customer_churn_local_parity";
+    localCandidate.pack.resources = structuredClone(candidate.pack.resources);
+    const localDigest = explorationBoundaryCandidateDigest(localCandidate);
+    await activateExplorationBoundary({
+      projectRoot: localParityProjectRoot,
+      candidate: localCandidate,
+      expectedDigest: localDigest,
+      actor: "production-e2e-local-parity@example.test",
+      confirmation: `ACTIVATE ${localDigest}`,
+      confirmedDecisions: localCandidate.unresolved_decisions,
+      currentInspection: inspection,
+    });
+
     candidate.budgets.max_queries_per_session = 1;
     candidate.budgets.rate_limit_per_minute = 10;
     candidate.budgets.max_extracted_cells_per_session = 100;
@@ -780,6 +947,29 @@ async function main() {
       "Production Explore startup posture did not attest the exact two-tool surface.", posture);
     const configPath = path.join(projectRoot, "synapsor.runner.json");
     fs.writeFileSync(configPath, `${JSON.stringify(runtimeConfig, null, 2)}\n`, "utf8");
+    assertConfigAndArtifactHygiene({
+      projectRoot,
+      configPath,
+      forbiddenValues: [readUrl, adminUrl, controlUrl, env.SYNAPSOR_EXPLORE_BUDGET_HMAC_KEY],
+    });
+    for (const presentationArgs of [
+      ["--result-format", "json"],
+      ["--tool-name-style", "snake_case"],
+    ]) {
+      const rejectedInvocation = productionExploreRunnerInvocation([
+        "mcp", "serve",
+        "--transport", "streamable-http",
+        "--production-explore",
+        "--config", configPath,
+        "--host", "127.0.0.1",
+        "--trusted-tls-proxy",
+        ...presentationArgs,
+      ]);
+      const rejected = run(rejectedInvocation.command, rejectedInvocation.args, { env, allowFailure: true });
+      assert(rejected.status !== 0
+        && /fixed app\.describe_data\/app\.explore_data|not available on this surface/i.test(`${rejected.stdout}\n${rejected.stderr}`),
+      `Production Explore accepted presentation override ${presentationArgs[0]}.`, rejected);
+    }
     const migrationInvocation = productionExploreRunnerInvocation([
       "store",
       "shared-postgres",
@@ -827,6 +1017,24 @@ async function main() {
     "Production Explore doctor disclosed a database URL or HMAC key.");
     server = await startProductionExploreCli(configPath, env);
 
+    const authCountsBefore = await productionControlCounts(control, controlSchema);
+    const wrongKeyPair = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const authRefusals = await verifyJwtRejectionMatrix({
+      url: server.url,
+      privateKey,
+      wrongPrivateKey: wrongKeyPair.privateKey,
+      tenant: "acme",
+      principal: "pm-1",
+    });
+    const authCountsAfter = await productionControlCounts(control, controlSchema);
+    assert(authRefusals.length === 11,
+      "Production Explore did not execute the complete JWT rejection matrix.", authRefusals);
+    assert(JSON.stringify(authCountsAfter) === JSON.stringify(authCountsBefore),
+      "An authentication failure reached production query budget or evidence accounting.", {
+        before: authCountsBefore,
+        after: authCountsAfter,
+      });
+
     const plan = {
       kind: "aggregate",
       resource: "public.churn_events",
@@ -859,6 +1067,49 @@ async function main() {
       && tool._meta?.["synapsor.commit_tool"] === false),
     "Production MCP tool metadata did not preserve the read-only boundary.", tools.tools);
 
+    const described = resultPayload(await alice.client.callTool({
+      name: "app.describe_data",
+      arguments: {},
+    }));
+    const describedChurn = described.resources?.find((resource) => resource.id === "public.churn_events");
+    const describedItems = described.resources?.find((resource) => resource.id === "public.scoped_order_items");
+    assert(described.ok === true
+      && described.resources?.length === 4
+      && JSON.stringify(describedChurn?.field_enums?.reason_category)
+        === JSON.stringify(["onboarding", "price", "product", "service"])
+      && describedChurn?.numeric_bands?.some((band) => band.name === "monthly_revenue_band")
+      && describedChurn?.derived_measures?.some((measure) => measure.name === "revenue_running_total")
+      && describedItems?.relationships?.some((relationship) =>
+        relationship.id === "scoped_order_items_order_id_fkey" && relationship.activation === "active"),
+    "Production describe_data did not return the complete reviewed metadata catalog.", described);
+    assert(!JSON.stringify(described).match(/event-p1-|pm-other-event|@example\.invalid|synthetic kept-out note|31415/i),
+      "Production describe_data returned source-row data instead of metadata only.", described);
+
+    const injectedScope = await alice.client.callTool({
+      name: "app.explore_data",
+      arguments: {
+        tenant_id: "globex",
+        principal: "pm-2",
+        plan: { ...plan, tenant_id: "globex", principal: "pm-2" },
+      },
+    });
+    assert(injectedScope.isError === true
+      && /unrecognized|unsupported|invalid/i.test(JSON.stringify(injectedScope)),
+    "Production Explore accepted model-supplied tenant or principal authority.", injectedScope);
+
+    const invalidEnum = await alice.client.callTool({
+      name: "app.explore_data",
+      arguments: {
+        plan: {
+          ...plan,
+          where: [{ field: "reason_category", op: "eq", value: "not-a-reviewed-reason" }],
+        },
+      },
+    });
+    assert(invalidEnum.isError === true
+      && /not a reviewed value|onboarding.*price.*product.*service/i.test(JSON.stringify(invalidEnum)),
+    "Production Explore did not enforce the reviewed field-enum allowlist before execution.", invalidEnum);
+
     const aliceResult = resultPayload(await alice.client.callTool({
       name: "app.explore_data",
       arguments: { plan },
@@ -872,6 +1123,93 @@ async function main() {
     assert(!aliceSerialized.match(/globex|pm-2|@example\.invalid|synthetic kept-out|SELECT\s/i),
       "Production result leaked another scope, kept-out values, or SQL.", aliceResult);
 
+    const localAliceResult = await runLocalParityPlan(env, "pm-1", plan);
+    assert(JSON.stringify(comparableAnalyticsResult(localAliceResult))
+      === JSON.stringify(comparableAnalyticsResult(aliceResult)),
+    "Suppression or reviewed enum grouping differed between local stdio and production HTTP.", {
+      local: comparableAnalyticsResult(localAliceResult),
+      http: comparableAnalyticsResult(aliceResult),
+    });
+
+    const evidenceRows = await control.query(`
+      SELECT event_id, event_kind, payload_json
+      FROM "${controlSchema}".production_explore_audit_events
+      WHERE event_id = $1 OR payload_json::text LIKE $2 OR payload_json::text LIKE $3
+      ORDER BY event_kind
+    `, [
+      aliceResult.evidence_bundle_id,
+      `%${aliceResult.evidence_bundle_id}%`,
+      `%${aliceResult.audit.query_fingerprint}%`,
+    ]);
+    const evidenceSerialized = JSON.stringify(evidenceRows.rows);
+    const evidenceEvent = evidenceRows.rows.find((row) => row.event_kind === "evidence_bundle");
+    assert(evidenceEvent
+      && Array.isArray(evidenceEvent.payload_json?.evidence_bundle?.query_audit)
+      && evidenceEvent.payload_json.evidence_bundle.query_audit.length === 1
+      && /"tenant_id":"keyed:[a-f0-9]{64}"/i.test(evidenceSerialized)
+      && /"result_fingerprint":"hmac-sha256:[a-f0-9]{64}"/i.test(evidenceSerialized)
+      && /"result_values_persisted":false/i.test(evidenceSerialized)
+      && !evidenceSerialized.includes("acme")
+      && !evidenceSerialized.includes("pm-1")
+      && !evidenceSerialized.includes("synthetic kept-out")
+      && !evidenceSerialized.includes("@example.invalid"),
+    "Production evidence did not preserve keyed scope, metadata-only audit, and result fingerprint invariants.",
+    evidenceRows.rows);
+
+    const numericBandPlan = {
+      kind: "aggregate",
+      resource: "public.churn_events",
+      measures: [{ function: "count" }],
+      dimensions: [{ numeric_band: "monthly_revenue_band" }],
+      order_by: { kind: "measure", index: 0, direction: "desc" },
+      top_n: 10,
+    };
+    const bandClient = clientFor(server.url, await token(privateKey, { tenant: "acme", principal: "pm-band" }));
+    clients.push(bandClient.client);
+    await bandClient.client.connect(bandClient.transport);
+    const bandResult = resultPayload(await bandClient.client.callTool({
+      name: "app.explore_data",
+      arguments: { plan: numericBandPlan },
+    }));
+    const localBandResult = await runLocalParityPlan(env, "pm-band", numericBandPlan);
+    assert(bandResult.ok === true
+      && bandResult.privacy?.suppressed_groups === 1
+      && bandResult.data?.some((row) => row.monthly_revenue_band === "100 to 199" && row.count === 15)
+      && bandResult.data?.some((row) => row.monthly_revenue_band === "200 or more" && row.count === 12)
+      && JSON.stringify(comparableAnalyticsResult(localBandResult))
+        === JSON.stringify(comparableAnalyticsResult(bandResult)),
+    "Reviewed numeric bands differed between local stdio and production HTTP.", {
+      local: comparableAnalyticsResult(localBandResult),
+      http: comparableAnalyticsResult(bandResult),
+    });
+
+    const runningTotalPlan = {
+      kind: "aggregate",
+      resource: "public.churn_events",
+      measures: [{ derived_measure: "revenue_running_total" }],
+      dimensions: [{ field: "reason_category" }],
+      time_bucket: { field: "churned_at", bucket: "week" },
+      order_by: { kind: "time_bucket", direction: "asc" },
+      top_n: 25,
+    };
+    const runningClient = clientFor(server.url, await token(privateKey, { tenant: "acme", principal: "pm-running" }));
+    clients.push(runningClient.client);
+    await runningClient.client.connect(runningClient.transport);
+    const runningResult = resultPayload(await runningClient.client.callTool({
+      name: "app.explore_data",
+      arguments: { plan: runningTotalPlan },
+    }));
+    const localRunningResult = await runLocalParityPlan(env, "pm-running", runningTotalPlan);
+    assert(runningResult.ok === true
+      && runningResult.privacy?.suppressed_groups >= 1
+      && runningResult.data?.every((row) => Number.isFinite(row.revenue_running_total))
+      && JSON.stringify(comparableAnalyticsResult(localRunningResult))
+        === JSON.stringify(comparableAnalyticsResult(runningResult)),
+    "The named post-suppression running total differed between local stdio and production HTTP.", {
+      local: comparableAnalyticsResult(localRunningResult),
+      http: comparableAnalyticsResult(runningResult),
+    });
+
     const exhausted = await alice.client.callTool({ name: "app.explore_data", arguments: { plan } });
     assert(exhausted.isError === true && JSON.stringify(exhausted).includes("authenticated principal"),
       "One principal did not exhaust only its own reviewed query budget.", exhausted);
@@ -881,7 +1219,10 @@ async function main() {
     clients.push(bob.client);
     await bob.client.connect(bob.transport);
     const bobResult = resultPayload(await bob.client.callTool({ name: "app.explore_data", arguments: { plan } }));
-    assert(bobResult.ok === true && bobResult.data.length === 0,
+    assert(bobResult.ok === true
+      && bobResult.data.length === 1
+      && bobResult.data[0].reason_category === "onboarding"
+      && bobResult.data[0].count === 5,
       "A second principal was starved by the first principal or read the first principal's rows.", bobResult);
 
     const globexToken = await token(privateKey, { tenant: "globex", principal: "pm-2" });
@@ -1040,6 +1381,53 @@ async function main() {
     assert(Number(sourceConnections.rows[0]?.count) <= 2,
       "Production MCP sessions exceeded the process-wide source connection ceiling.", sourceConnections.rows);
 
+    const tenantBudgetConfig = structuredClone(runtimeConfig);
+    tenantBudgetConfig.production_explore.accounting_namespace = "verify.production.explore.tenant-budget";
+    tenantBudgetConfig.production_explore.tenant_limits.max_queries_per_rolling_24_hours = 2;
+    const tenantBudgetConfigPath = path.join(projectRoot, "synapsor.tenant-budget.runner.json");
+    fs.writeFileSync(tenantBudgetConfigPath, `${JSON.stringify(tenantBudgetConfig, null, 2)}\n`, "utf8");
+    assertConfigAndArtifactHygiene({
+      projectRoot,
+      configPath: tenantBudgetConfigPath,
+      forbiddenValues: [readUrl, adminUrl, controlUrl, env.SYNAPSOR_EXPLORE_BUDGET_HMAC_KEY],
+    });
+    tenantBudgetServer = await startProductionExploreCli(tenantBudgetConfigPath, env);
+    const tenantBudgetClients = [];
+    try {
+      const tenantResults = [];
+      for (const principal of ["tenant-budget-1", "tenant-budget-2", "tenant-budget-3"]) {
+        const handle = clientFor(tenantBudgetServer.url, await token(privateKey, { tenant: "acme", principal }));
+        tenantBudgetClients.push(handle.client);
+        await handle.client.connect(handle.transport);
+        tenantResults.push(await handle.client.callTool({
+          name: "app.explore_data",
+          arguments: { plan: sharedReferencePlan },
+        }));
+      }
+      assert(resultPayload(tenantResults[0]).ok === true
+        && resultPayload(tenantResults[1]).ok === true
+        && tenantResults[2].isError === true
+        && /tenant/i.test(JSON.stringify(tenantResults[2])),
+      "The reviewed tenant query ceiling did not throttle only the exhausted tenant.", tenantResults);
+
+      const otherTenant = clientFor(tenantBudgetServer.url, await token(privateKey, {
+        tenant: "globex",
+        principal: "tenant-budget-other",
+      }));
+      tenantBudgetClients.push(otherTenant.client);
+      await otherTenant.client.connect(otherTenant.transport);
+      const otherTenantResult = resultPayload(await otherTenant.client.callTool({
+        name: "app.explore_data",
+        arguments: { plan: sharedReferencePlan },
+      }));
+      assert(otherTenantResult.ok === true && otherTenantResult.data.length === 2,
+        "One tenant's exhausted budget starved another tenant on the same production server.", otherTenantResult);
+    } finally {
+      await Promise.allSettled(tenantBudgetClients.map((client) => client.close()));
+      await stopProductionExploreCli(tenantBudgetServer).catch(() => undefined);
+      tenantBudgetServer = undefined;
+    }
+
     const auditStorage = await control.query(`
       SELECT
         (SELECT COUNT(*)::int FROM "${controlSchema}".production_explore_audit_events) AS dedicated_events,
@@ -1051,17 +1439,24 @@ async function main() {
     assert(Number(auditStorage.rows[0]?.proposal_ledger_events) === 0,
       "Production Explore query volume still entered the proposal/writeback ledger.", auditStorage.rows[0]);
 
-    const wrongScopeToken = await token(privateKey, { tenant: "acme", principal: "pm-scope", scope: "unrelated.scope" });
-    const wrongScope = clientFor(server.url, wrongScopeToken);
-    await wrongScope.client.connect(wrongScope.transport)
-      .then(() => { throw new Error("JWT without the production Explore OAuth scope unexpectedly initialized a session."); })
-      .catch((error) => assert(/403|insufficient_scope/i.test(String(error)), "Missing OAuth scope did not fail closed.", String(error)));
-
-    const missingPrincipalToken = await token(privateKey, { tenant: "acme", principal: undefined });
-    const missingPrincipal = clientFor(server.url, missingPrincipalToken);
-    await missingPrincipal.client.connect(missingPrincipal.transport)
-      .then(() => { throw new Error("JWT without a principal unexpectedly initialized production Explore."); })
-      .catch((error) => assert(/401|unauthorized/i.test(String(error)), "Missing-principal JWT did not fail as authentication.", String(error)));
+    await admin.query("ALTER TABLE public.churn_events ALTER COLUMN monthly_revenue_cents TYPE bigint");
+    try {
+      const driftClient = clientFor(server.url, await token(privateKey, {
+        tenant: "acme",
+        principal: "pm-drift",
+      }));
+      clients.push(driftClient.client);
+      await driftClient.client.connect(driftClient.transport);
+      const driftRefusal = await driftClient.client.callTool({
+        name: "app.explore_data",
+        arguments: { plan },
+      });
+      assert(driftRefusal.isError === true
+        && /EXPLORE_LOCK_STALE|generated authority is stale/i.test(JSON.stringify(driftRefusal)),
+      "A reviewed PostgreSQL column-type drift did not fail closed before source execution.", driftRefusal);
+    } finally {
+      await admin.query("ALTER TABLE public.churn_events ALTER COLUMN monthly_revenue_cents TYPE integer");
+    }
 
     const singleOrganization = await verifySingleOrganizationProductionExplore({
       admin,
@@ -1079,6 +1474,7 @@ async function main() {
       boundary: candidate.pack.name,
       tools: tools.tools.map((tool) => tool.name),
       principal_budget_isolated: true,
+      tenant_budget_isolated: true,
       tenant_and_principal_rows_isolated: true,
       derived_tenant_and_principal_scope_isolated: true,
       reviewed_child_count_scope_isolated: true,
@@ -1087,6 +1483,11 @@ async function main() {
       source_connection_ceiling: 2,
       principal_session_ceiling: 2,
       dedicated_audit_sink: true,
+      complete_jwt_rejection_matrix: authRefusals.map((item) => item.label),
+      metadata_only_catalog: true,
+      analytics_http_stdio_parity: true,
+      drift_refused_over_http: true,
+      config_and_artifact_hygiene: true,
       public_cli_entrypoint: true,
       packed_artifact: Boolean(process.env.SYNAPSOR_PRODUCTION_EXPLORE_RUNNER?.trim()),
       doctor_attested: true,
@@ -1097,6 +1498,7 @@ async function main() {
     }, null, 2)}\n`);
   } finally {
     await Promise.allSettled(clients.map((client) => client.close()));
+    await stopProductionExploreCli(tenantBudgetServer).catch(() => undefined);
     await stopProductionExploreCli(server).catch(() => undefined);
     await control.query(`DROP SCHEMA IF EXISTS "${controlSchema}" CASCADE`).catch(() => undefined);
     await Promise.allSettled([admin.end(), control.end()]);
@@ -1106,6 +1508,7 @@ async function main() {
       run("docker", ["compose", "-f", compose, "down", "-v", "--remove-orphans"], { allowFailure: true });
       fs.rmSync(projectRoot, { recursive: true, force: true });
       fs.rmSync(singleOrganizationProjectRoot, { recursive: true, force: true });
+      fs.rmSync(localParityProjectRoot, { recursive: true, force: true });
     }
   }
 }

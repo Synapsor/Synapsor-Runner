@@ -23,12 +23,20 @@ import {
   productionExploreSessionFactory,
 } from "../apps/runner/dist/mcp-runtime.js";
 import { derivedScopeIndexDoctorChecks } from "../apps/runner/dist/derived-scope-index-doctor.js";
+import { createScopedExploreRuntime } from "../apps/runner/dist/scoped-explore.js";
+import {
+  productionExploreRunnerInvocation,
+  startProductionExploreCli,
+  stopProductionExploreCli,
+  verifyJwtRejectionMatrix,
+} from "./production-explore-http-e2e-helpers.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const compose = path.join(root, "examples/runner-fleet/docker-compose.yml");
 const composeProject = `synapsor-production-explore-mysql-${process.pid}`;
 const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-production-explore-mysql-http-"));
 const singleOrganizationProjectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-production-explore-mysql-single-org-http-"));
+const localParityProjectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-production-explore-mysql-local-parity-"));
 const mysqlAdminUrl = "mysql://root:root_password@127.0.0.1:53309";
 const mysqlReadUrl = "mysql://synapsor_production_reader:synapsor_production_reader_password@127.0.0.1:53309/synapsor_production_explore";
 const mysqlSingleOrganizationReadUrl = "mysql://synapsor_production_reader:synapsor_production_reader_password@127.0.0.1:53309/synapsor_single_org_explore";
@@ -49,7 +57,7 @@ function assert(condition, message, detail) {
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: root,
-    env: process.env,
+    env: options.env ?? process.env,
     encoding: "utf8",
     stdio: options.inherit ? "inherit" : "pipe",
   });
@@ -66,7 +74,8 @@ async function seedSource(connection) {
     CREATE TABLE ${sourceSchema}.events (
       id varchar(64) PRIMARY KEY,
       tenant_id varchar(64) NOT NULL,
-      category enum('growth', 'retained', 'private-small', 'enterprise') NOT NULL,
+      owner_id varchar(64) NOT NULL DEFAULT 'alice',
+      category enum('growth', 'retained', 'private-small', 'enterprise', 'partner') NOT NULL,
       amount_cents integer NOT NULL,
       occurred_at timestamp NOT NULL
     );
@@ -111,6 +120,19 @@ async function seedSource(connection) {
       ('g-3', 'globex', 'enterprise', 520, '2026-07-03 00:00:00'),
       ('g-4', 'globex', 'enterprise', 530, '2026-07-04 00:00:00'),
       ('g-5', 'globex', 'enterprise', 540, '2026-07-05 00:00:00');
+    UPDATE ${sourceSchema}.events SET owner_id = 'carol' WHERE tenant_id = 'globex';
+    INSERT INTO ${sourceSchema}.events (id, tenant_id, owner_id, category, amount_cents, occurred_at) VALUES
+      ('bob-1', 'acme', 'bob', 'partner', 301, '2026-07-01 00:00:00'),
+      ('bob-2', 'acme', 'bob', 'partner', 302, '2026-07-02 00:00:00'),
+      ('bob-3', 'acme', 'bob', 'partner', 303, '2026-07-03 00:00:00'),
+      ('bob-4', 'acme', 'bob', 'partner', 304, '2026-07-04 00:00:00'),
+      ('bob-5', 'acme', 'bob', 'partner', 305, '2026-07-05 00:00:00');
+    INSERT INTO ${sourceSchema}.events (id, tenant_id, owner_id, category, amount_cents, occurred_at)
+    SELECT CONCAT('band-', id), tenant_id, 'band', category, amount_cents, occurred_at
+    FROM ${sourceSchema}.events WHERE tenant_id = 'acme' AND owner_id = 'alice';
+    INSERT INTO ${sourceSchema}.events (id, tenant_id, owner_id, category, amount_cents, occurred_at)
+    SELECT CONCAT('running-', id), tenant_id, 'running', category, amount_cents, occurred_at
+    FROM ${sourceSchema}.events WHERE tenant_id = 'acme' AND owner_id = 'alice';
     INSERT INTO ${sourceSchema}.scoped_orders (id, tenant_id, owner_id, category, occurred_at) VALUES
       ('derived-acme-order', 'acme', 'derived-acme', 'trail', '2026-07-01 00:00:00'),
       ('derived-globex-order', 'globex', 'derived-globex', 'enterprise', '2026-07-01 00:00:00'),
@@ -287,6 +309,71 @@ function resultPayload(result) {
   const text = result.content?.find((item) => item.type === "text")?.text;
   if (typeof text !== "string") throw new Error("MCP result did not contain structured content.");
   return JSON.parse(text);
+}
+
+async function productionControlCounts(control, schema) {
+  const result = await control.query(`
+    SELECT
+      (SELECT COUNT(*)::int FROM "${schema}".production_explore_audit_events) AS audit_events,
+      (SELECT COUNT(*)::int FROM "${schema}".production_explore_budget_reservations) AS budget_reservations
+  `);
+  return result.rows[0];
+}
+
+async function runLocalParityPlan(env, principal, plan) {
+  const runtime = await createScopedExploreRuntime({
+    projectRoot: localParityProjectRoot,
+    transport: "stdio",
+    env: {
+      ...env,
+      SYNAPSOR_TENANT_ID: "acme",
+      SYNAPSOR_PRINCIPAL: principal,
+    },
+  });
+  try {
+    return await runtime.explore(plan);
+  } finally {
+    await runtime.close();
+  }
+}
+
+function comparableAnalyticsResult(result) {
+  return {
+    ok: result.ok,
+    status: result.outcome?.status ?? result.outcome?.result?.status,
+    data: result.data,
+    privacy: {
+      minimum_cohort_size: result.privacy?.minimum_cohort_size,
+      suppressed_groups: result.privacy?.suppressed_groups,
+      enum_allowlist_excluded_rows: result.privacy?.enum_allowlist_excluded_rows,
+    },
+  };
+}
+
+function generatedAuthorityText(projectRoot, configPath) {
+  const roots = [configPath, path.join(projectRoot, ".synapsor"), path.join(projectRoot, "synapsor/generated")];
+  const files = [];
+  const visit = (entry) => {
+    if (!fs.existsSync(entry)) return;
+    const stat = fs.lstatSync(entry);
+    if (stat.isSymbolicLink()) return;
+    if (stat.isDirectory()) {
+      for (const child of fs.readdirSync(entry)) visit(path.join(entry, child));
+      return;
+    }
+    if (/\.(?:json|md|sql|txt|ya?ml)$/i.test(entry)) files.push(entry);
+  };
+  for (const entry of roots) visit(entry);
+  return files.map((file) => `${file}\n${fs.readFileSync(file, "utf8")}`).join("\n");
+}
+
+function assertConfigAndArtifactHygiene(input) {
+  const text = generatedAuthorityText(input.projectRoot, input.configPath);
+  for (const secret of input.forbiddenValues.filter(Boolean)) {
+    assert(!text.includes(secret), "MySQL production Explore config or artifact persisted secret material.", secret);
+  }
+  assert(!/-----BEGIN (?:RSA )?PRIVATE KEY-----|Bearer\s+[A-Za-z0-9._~+/=-]{12,}|eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\./i.test(text),
+    "MySQL production Explore config or artifact persisted a private JWT key or bearer token.");
 }
 
 async function verifySingleOrganizationProductionExplore(input) {
@@ -487,6 +574,7 @@ async function main() {
   const mysqlAdmin = await mysql.createConnection({ uri: mysqlAdminUrl, multipleStatements: true });
   const control = new Pool({ connectionString: controlUrl, max: 1 });
   let server;
+  let tenantBudgetServer;
   const clients = [];
   try {
     await seedSource(mysqlAdmin);
@@ -522,6 +610,12 @@ async function main() {
               actor: "production-owner@example.test",
               reason: "The application owner confirms tenant_id is the row authorization boundary.",
               decided_at: "2026-08-04T00:00:00.000Z",
+            },
+            principal_key: {
+              value: "owner_id",
+              actor: "production-owner@example.test",
+              reason: "The verified principal claim scopes each reviewed event.",
+              decided_at: "2026-08-08T00:00:00.000Z",
             },
           },
           [scopedOrdersId]: {
@@ -584,7 +678,7 @@ async function main() {
     "MySQL production fixture did not preserve its derived scope and explicit shared-reference authority.", candidate.pack.resources);
     assert(
       JSON.stringify(resource.field_enums.category)
-        === JSON.stringify(["growth", "retained", "private-small", "enterprise"]),
+        === JSON.stringify(["growth", "retained", "private-small", "enterprise", "partner"]),
       "MySQL ENUM values did not reach the reviewed boundary from live schema metadata.",
       resource.field_enums,
     );
@@ -598,6 +692,19 @@ async function main() {
     resource.time_bucket_fields = Object.fromEntries(Object.entries(resource.time_bucket_fields)
       .filter(([field]) => field === "occurred_at"));
     resource.relationships = [];
+    resource.numeric_bands = [{
+      name: "amount_band",
+      label: "Amount band",
+      field: "amount_cents",
+      edges: [150, 300],
+      bucket_labels: ["under 150", "150 to 299", "300 or more"],
+    }];
+    resource.derived_measures = [{
+      name: "amount_running_total",
+      label: "Amount running total",
+      shape: "running_total",
+      base_measure: { function: "sum", field: "amount_cents" },
+    }];
     narrowDerivedResources(scopedOrders, scopedOrderItems);
     scopedOrders.derived_measures = [{
       name: "scoped_order_item_count",
@@ -625,6 +732,36 @@ async function main() {
     assert(indexChecks.some((check) => check.name === "derived-scope-indexes:complete"
       && check.message.includes("2 reviewed derived-scope paths")),
     "MySQL information_schema.STATISTICS did not attest the live derived-scope indexes.", indexChecks);
+
+    const localBuild = buildAutoBoundary({
+      inspection,
+      project: {
+        root: localParityProjectRoot,
+        package_manager: "unknown",
+        frameworks: [],
+        schema_inputs: [],
+        database_env_names: ["MYSQL_DATABASE_URL"],
+      },
+      sourceEnv: "MYSQL_DATABASE_URL",
+      inspectedSchema: sourceSchema,
+      deploymentProfile: "staging",
+      overrides: build.overrides,
+    });
+    await writeAutoBoundaryArtifacts({ projectRoot: localParityProjectRoot, build: localBuild });
+    const localCandidate = structuredClone(localBuild.exploration_boundary);
+    localCandidate.pack.name = "mysql_events_local_parity";
+    localCandidate.pack.resources = structuredClone(candidate.pack.resources);
+    const localDigest = explorationBoundaryCandidateDigest(localCandidate);
+    await activateExplorationBoundary({
+      projectRoot: localParityProjectRoot,
+      candidate: localCandidate,
+      expectedDigest: localDigest,
+      actor: "production-e2e-local-parity@example.test",
+      confirmation: `ACTIVATE ${localDigest}`,
+      confirmedDecisions: localCandidate.unresolved_decisions,
+      currentInspection: inspection,
+    });
+
     candidate.budgets.max_queries_per_session = 1;
     candidate.budgets.rate_limit_per_minute = 10;
     candidate.budgets.max_extracted_cells_per_session = 100;
@@ -708,15 +845,57 @@ async function main() {
     });
     const posture = await assertProductionExploreStartup(runtimeConfig, env);
     assert(posture.ok, "MySQL production Explore posture did not pass startup attestation.", posture);
-    server = await startStreamableHttpMcpServer({
-      config: runtimeConfig,
-      env,
-      host: "127.0.0.1",
-      port: 0,
-      trustedTlsProxy: true,
-      log: false,
-      streamableSessionFactory: productionExploreSessionFactory(runtimeConfig, env),
+    const configPath = path.join(projectRoot, "synapsor.runner.json");
+    fs.writeFileSync(configPath, `${JSON.stringify(runtimeConfig, null, 2)}\n`, "utf8");
+    assertConfigAndArtifactHygiene({
+      projectRoot,
+      configPath,
+      forbiddenValues: [mysqlReadUrl, mysqlAdminUrl, controlUrl, env.SYNAPSOR_EXPLORE_BUDGET_HMAC_KEY],
     });
+    const migrationInvocation = productionExploreRunnerInvocation(root, [
+      "store", "shared-postgres", "apply-migration",
+      "--schema", controlSchema,
+      "--url-env", "SYNAPSOR_CONTROL_DATABASE_URL",
+      "--yes",
+    ]);
+    run(migrationInvocation.command, migrationInvocation.args, { env });
+    for (const presentationArgs of [
+      ["--result-format", "json"],
+      ["--tool-name-style", "snake_case"],
+    ]) {
+      const rejectedInvocation = productionExploreRunnerInvocation(root, [
+        "mcp", "serve",
+        "--transport", "streamable-http",
+        "--production-explore",
+        "--config", configPath,
+        "--host", "127.0.0.1",
+        "--trusted-tls-proxy",
+        ...presentationArgs,
+      ]);
+      const rejected = run(rejectedInvocation.command, rejectedInvocation.args, { env, allowFailure: true });
+      assert(rejected.status !== 0
+        && /fixed app\.describe_data\/app\.explore_data|not available on this surface/i.test(`${rejected.stdout}\n${rejected.stderr}`),
+      `MySQL production Explore accepted presentation override ${presentationArgs[0]}.`, rejected);
+    }
+    server = await startProductionExploreCli({ root, configPath, env });
+
+    const authCountsBefore = await productionControlCounts(control, controlSchema);
+    const wrongKeyPair = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const authRefusals = await verifyJwtRejectionMatrix({
+      url: server.url,
+      privateKey,
+      wrongPrivateKey: wrongKeyPair.privateKey,
+      tenant: "acme",
+      principal: "alice",
+    });
+    const authCountsAfter = await productionControlCounts(control, controlSchema);
+    assert(authRefusals.length === 11,
+      "MySQL production Explore did not execute the complete JWT rejection matrix.", authRefusals);
+    assert(JSON.stringify(authCountsAfter) === JSON.stringify(authCountsBefore),
+      "A MySQL authentication failure reached query budget or evidence accounting.", {
+        before: authCountsBefore,
+        after: authCountsAfter,
+      });
 
     const plan = {
       kind: "aggregate",
@@ -732,11 +911,138 @@ async function main() {
     const tools = await alice.client.listTools();
     assert(tools.tools.map((tool) => tool.name).join(",") === "app.describe_data,app.explore_data",
       "MySQL production MCP exposed an unexpected tool surface.", tools.tools);
+
+    const described = resultPayload(await alice.client.callTool({ name: "app.describe_data", arguments: {} }));
+    const describedEvents = described.resources?.find((candidateResource) => candidateResource.id === sourceId);
+    const describedItems = described.resources?.find((candidateResource) => candidateResource.id === scopedOrderItemsId);
+    assert(described.ok === true
+      && described.resources?.length === 4
+      && JSON.stringify(describedEvents?.field_enums?.category)
+        === JSON.stringify(["growth", "retained", "private-small", "enterprise", "partner"])
+      && describedEvents?.numeric_bands?.some((band) => band.name === "amount_band")
+      && describedEvents?.derived_measures?.some((measure) => measure.name === "amount_running_total")
+      && describedItems?.relationships?.some((relationship) =>
+        relationship.id === "scoped_order_items_order_id_fkey" && relationship.activation === "active"),
+    "MySQL production describe_data did not return the complete reviewed metadata catalog.", described);
+    assert(!JSON.stringify(described).match(/a-private-|bob-[1-5]|operator-only hardware note|derived-acme-item/i),
+      "MySQL production describe_data returned source-row data instead of metadata only.", described);
+
+    const injectedScope = await alice.client.callTool({
+      name: "app.explore_data",
+      arguments: {
+        tenant_id: "globex",
+        principal: "carol",
+        plan: { ...plan, tenant_id: "globex", principal: "carol" },
+      },
+    });
+    assert(injectedScope.isError === true
+      && /unrecognized|unsupported|invalid/i.test(JSON.stringify(injectedScope)),
+    "MySQL production Explore accepted model-supplied tenant or principal authority.", injectedScope);
+
+    const invalidEnum = await alice.client.callTool({
+      name: "app.explore_data",
+      arguments: {
+        plan: {
+          ...plan,
+          where: [{ field: "category", op: "eq", value: "not-a-reviewed-category" }],
+        },
+      },
+    });
+    assert(invalidEnum.isError === true
+      && /not a reviewed value|growth.*retained.*private-small.*enterprise.*partner/i.test(JSON.stringify(invalidEnum)),
+    "MySQL production Explore did not enforce the reviewed enum allowlist before execution.", invalidEnum);
+
     const aliceResult = resultPayload(await alice.client.callTool({ name: "app.explore_data", arguments: { plan } }));
     assert(aliceResult.ok === true && aliceResult.privacy?.suppressed_groups === 1,
       "MySQL production Explore did not return the expected suppressed aggregate.", aliceResult);
-    assert(!JSON.stringify(aliceResult).match(/globex|enterprise|private-small|SELECT\s|`events`/i),
+    assert(!JSON.stringify(aliceResult).match(/globex|enterprise|partner|private-small|SELECT\s|`events`/i),
       "MySQL production result leaked another tenant, a suppressed label, or compiled SQL.", aliceResult);
+    const localAliceResult = await runLocalParityPlan(env, "alice", plan);
+    assert(JSON.stringify(comparableAnalyticsResult(localAliceResult))
+      === JSON.stringify(comparableAnalyticsResult(aliceResult)),
+    "MySQL suppression or reviewed enum grouping differed between local stdio and production HTTP.", {
+      local: comparableAnalyticsResult(localAliceResult),
+      http: comparableAnalyticsResult(aliceResult),
+    });
+
+    const evidenceRows = await control.query(`
+      SELECT event_id, event_kind, payload_json
+      FROM "${controlSchema}".production_explore_audit_events
+      WHERE event_id = $1 OR payload_json::text LIKE $2 OR payload_json::text LIKE $3
+      ORDER BY event_kind
+    `, [
+      aliceResult.evidence_bundle_id,
+      `%${aliceResult.evidence_bundle_id}%`,
+      `%${aliceResult.audit.query_fingerprint}%`,
+    ]);
+    const evidenceSerialized = JSON.stringify(evidenceRows.rows);
+    const evidenceEvent = evidenceRows.rows.find((row) => row.event_kind === "evidence_bundle");
+    assert(evidenceEvent
+      && Array.isArray(evidenceEvent.payload_json?.evidence_bundle?.query_audit)
+      && evidenceEvent.payload_json.evidence_bundle.query_audit.length === 1
+      && /"tenant_id":"keyed:[a-f0-9]{64}"/i.test(evidenceSerialized)
+      && /"result_fingerprint":"hmac-sha256:[a-f0-9]{64}"/i.test(evidenceSerialized)
+      && /"result_values_persisted":false/i.test(evidenceSerialized)
+      && !evidenceSerialized.includes("acme")
+      && !evidenceSerialized.includes("alice")
+      && !evidenceSerialized.includes("operator-only"),
+    "MySQL production evidence did not preserve keyed scope, metadata-only audit, and fingerprint invariants.",
+    evidenceRows.rows);
+
+    const numericBandPlan = {
+      kind: "aggregate",
+      resource: sourceId,
+      measures: [{ function: "count" }],
+      dimensions: [{ numeric_band: "amount_band" }],
+      order_by: { kind: "measure", index: 0, direction: "desc" },
+      top_n: 10,
+    };
+    const bandClient = mcpClient(server.url, signedToken(privateKey, { tenant: "acme", principal: "band" }));
+    clients.push(bandClient.client);
+    await bandClient.client.connect(bandClient.transport);
+    const bandResult = resultPayload(await bandClient.client.callTool({
+      name: "app.explore_data",
+      arguments: { plan: numericBandPlan },
+    }));
+    const localBandResult = await runLocalParityPlan(env, "band", numericBandPlan);
+    assert(bandResult.ok === true
+      && bandResult.privacy?.suppressed_groups === 1
+      && bandResult.data?.some((row) => row.amount_band === "under 150" && row.count === 5)
+      && bandResult.data?.some((row) => row.amount_band === "150 to 299" && row.count === 5)
+      && JSON.stringify(comparableAnalyticsResult(localBandResult))
+        === JSON.stringify(comparableAnalyticsResult(bandResult)),
+    "MySQL reviewed numeric bands differed between local stdio and production HTTP.", {
+      local: comparableAnalyticsResult(localBandResult),
+      http: comparableAnalyticsResult(bandResult),
+    });
+
+    const runningTotalPlan = {
+      kind: "aggregate",
+      resource: sourceId,
+      measures: [{ derived_measure: "amount_running_total" }],
+      dimensions: [{ field: "category" }],
+      time_bucket: { field: "occurred_at", bucket: "week" },
+      order_by: { kind: "time_bucket", direction: "asc" },
+      top_n: 25,
+    };
+    const runningClient = mcpClient(server.url, signedToken(privateKey, { tenant: "acme", principal: "running" }));
+    clients.push(runningClient.client);
+    await runningClient.client.connect(runningClient.transport);
+    const runningResult = resultPayload(await runningClient.client.callTool({
+      name: "app.explore_data",
+      arguments: { plan: runningTotalPlan },
+    }));
+    const localRunningResult = await runLocalParityPlan(env, "running", runningTotalPlan);
+    assert(runningResult.ok === true
+      && runningResult.privacy?.suppressed_groups >= 1
+      && runningResult.data?.every((row) => Number.isFinite(row.amount_running_total))
+      && JSON.stringify(comparableAnalyticsResult(localRunningResult))
+        === JSON.stringify(comparableAnalyticsResult(runningResult)),
+    "MySQL named post-suppression metrics differed between local stdio and production HTTP.", {
+      local: comparableAnalyticsResult(localRunningResult),
+      http: comparableAnalyticsResult(runningResult),
+    });
+
     const exhausted = await alice.client.callTool({ name: "app.explore_data", arguments: { plan } });
     assert(exhausted.isError === true, "MySQL production principal budget did not enforce its reviewed query ceiling.", exhausted);
 
@@ -744,7 +1050,10 @@ async function main() {
     clients.push(secondPrincipal.client);
     await secondPrincipal.client.connect(secondPrincipal.transport);
     const secondResult = resultPayload(await secondPrincipal.client.callTool({ name: "app.explore_data", arguments: { plan } }));
-    assert(secondResult.ok === true && secondResult.data.length === aliceResult.data.length,
+    assert(secondResult.ok === true
+      && secondResult.data.length === 1
+      && secondResult.data[0].category === "partner"
+      && secondResult.data[0].count === 5,
       "A second MySQL principal was starved by the first principal's budget.", secondResult);
 
     const globex = mcpClient(server.url, signedToken(privateKey, { tenant: "globex", principal: "carol" }));
@@ -881,6 +1190,72 @@ async function main() {
     assert(!JSON.stringify(fanoutResult).match(/globex|derived-acme|SELECT\s|`scoped_/i),
       "MySQL reviewed child count leaked another principal, tenant, or compiled SQL.", fanoutResult);
 
+    const tenantBudgetConfig = structuredClone(runtimeConfig);
+    tenantBudgetConfig.production_explore.accounting_namespace = "verify.production.mysql.tenant-budget";
+    tenantBudgetConfig.production_explore.tenant_limits.max_queries_per_rolling_24_hours = 2;
+    const tenantBudgetConfigPath = path.join(projectRoot, "synapsor.tenant-budget.runner.json");
+    fs.writeFileSync(tenantBudgetConfigPath, `${JSON.stringify(tenantBudgetConfig, null, 2)}\n`, "utf8");
+    assertConfigAndArtifactHygiene({
+      projectRoot,
+      configPath: tenantBudgetConfigPath,
+      forbiddenValues: [mysqlReadUrl, mysqlAdminUrl, controlUrl, env.SYNAPSOR_EXPLORE_BUDGET_HMAC_KEY],
+    });
+    tenantBudgetServer = await startProductionExploreCli({ root, configPath: tenantBudgetConfigPath, env });
+    const tenantBudgetClients = [];
+    try {
+      const tenantResults = [];
+      for (const principal of ["tenant-budget-1", "tenant-budget-2", "tenant-budget-3"]) {
+        const handle = mcpClient(tenantBudgetServer.url, signedToken(privateKey, { tenant: "acme", principal }));
+        tenantBudgetClients.push(handle.client);
+        await handle.client.connect(handle.transport);
+        tenantResults.push(await handle.client.callTool({
+          name: "app.explore_data",
+          arguments: { plan: sharedReferencePlan },
+        }));
+      }
+      assert(resultPayload(tenantResults[0]).ok === true
+        && resultPayload(tenantResults[1]).ok === true
+        && tenantResults[2].isError === true
+        && /tenant/i.test(JSON.stringify(tenantResults[2])),
+      "The MySQL tenant query ceiling did not throttle only the exhausted tenant.", tenantResults);
+
+      const otherTenant = mcpClient(tenantBudgetServer.url, signedToken(privateKey, {
+        tenant: "globex",
+        principal: "tenant-budget-other",
+      }));
+      tenantBudgetClients.push(otherTenant.client);
+      await otherTenant.client.connect(otherTenant.transport);
+      const otherTenantResult = resultPayload(await otherTenant.client.callTool({
+        name: "app.explore_data",
+        arguments: { plan: sharedReferencePlan },
+      }));
+      assert(otherTenantResult.ok === true && otherTenantResult.data.length === 2,
+        "One MySQL tenant's exhausted budget starved another tenant on the same server.", otherTenantResult);
+    } finally {
+      await Promise.allSettled(tenantBudgetClients.map((client) => client.close()));
+      await stopProductionExploreCli(tenantBudgetServer).catch(() => undefined);
+      tenantBudgetServer = undefined;
+    }
+
+    await mysqlAdmin.query(`ALTER TABLE ${sourceSchema}.events MODIFY amount_cents BIGINT NOT NULL`);
+    try {
+      const driftClient = mcpClient(server.url, signedToken(privateKey, {
+        tenant: "acme",
+        principal: "drift",
+      }));
+      clients.push(driftClient.client);
+      await driftClient.client.connect(driftClient.transport);
+      const driftRefusal = await driftClient.client.callTool({
+        name: "app.explore_data",
+        arguments: { plan },
+      });
+      assert(driftRefusal.isError === true
+        && /EXPLORE_LOCK_STALE|generated authority is stale/i.test(JSON.stringify(driftRefusal)),
+      "A reviewed MySQL column-type drift did not fail closed before source execution.", driftRefusal);
+    } finally {
+      await mysqlAdmin.query(`ALTER TABLE ${sourceSchema}.events MODIFY amount_cents INT NOT NULL`);
+    }
+
     const singleOrganization = await verifySingleOrganizationProductionExplore({
       controlSchema,
       controlUrl,
@@ -898,6 +1273,7 @@ async function main() {
       boundary: candidate.pack.name,
       tools: tools.tools.map((tool) => tool.name),
       principal_budget_isolated: true,
+      tenant_budget_isolated: true,
       tenant_rows_isolated: true,
       derived_tenant_and_principal_scope_isolated: true,
       reviewed_child_count_scope_isolated: true,
@@ -905,17 +1281,24 @@ async function main() {
       source_connection_ceiling: 2,
       principal_session_ceiling: 2,
       derived_scope_indexes_attested: true,
+      complete_jwt_rejection_matrix: authRefusals.map((item) => item.label),
+      metadata_only_catalog: true,
+      analytics_http_stdio_parity: true,
+      drift_refused_over_http: true,
+      config_and_artifact_hygiene: true,
       single_organization: singleOrganization,
       source_database_changed: false,
     }, null, 2)}\n`);
   } finally {
     await Promise.allSettled(clients.map((client) => client.close()));
-    await server?.close().catch(() => undefined);
+    await stopProductionExploreCli(tenantBudgetServer).catch(() => undefined);
+    await stopProductionExploreCli(server).catch(() => undefined);
     await control.query(`DROP SCHEMA IF EXISTS "${controlSchema}" CASCADE`).catch(() => undefined);
     await Promise.allSettled([control.end(), mysqlAdmin.end()]);
     run("docker", ["compose", "-p", composeProject, "-f", compose, "down", "-v", "--remove-orphans"], { allowFailure: true });
     fs.rmSync(projectRoot, { recursive: true, force: true });
     fs.rmSync(singleOrganizationProjectRoot, { recursive: true, force: true });
+    fs.rmSync(localParityProjectRoot, { recursive: true, force: true });
   }
 }
 
