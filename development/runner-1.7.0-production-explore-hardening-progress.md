@@ -1136,6 +1136,52 @@ Post-change gates:
 No package or Spec/DSL version changed. Nothing was merged, pushed, tagged,
 published, or released in this checkpoint.
 
+## Config-Aware Trusted Context Reconciliation (2026-08-10)
+
+Existing reviewed projects now reconcile non-secret identity-authority changes
+from `synapsor.runner.json` instead of ignoring them when schema and database-role
+fingerprints are unchanged.
+
+Completed behavior:
+
+- Generation locks bind the normalized trust provider, tenant/principal
+  environment or JWT claim names, and configured tenant/principal column
+  bindings. No environment value, JWT, tenant/principal value, database URL, or
+  key is stored.
+- `boundary rescan` and non-destructive `boundary draft --force` reload that
+  authority from current config. Config-only changes create a disabled revision;
+  unchanged config remains a true no-op.
+- Adding a principal binding offers the exact inspected non-null column for
+  review and derives principal scope through existing proven paths. Removing or
+  changing it retracts only config-managed principal decisions. Derived scope,
+  shared-reference acknowledgments, field policy, enums, reviewed metadata,
+  bands, and measures remain intact when their inputs did not change.
+- Environment/claim-name changes invalidate the global trust confirmation.
+  Cross-profile provider conversion is refused rather than silently turning a
+  local/staging boundary into production HTTP authority or the reverse.
+- Newly generated production locks are compared with loaded claim/binding config
+  at startup. A mismatch stops Production Explore and prints a project-root-aware
+  reconciling rescan command.
+- Fresh generated configs and locks now agree on default tenant binding, and a
+  project with boundary artifacts but no Runner config does not produce a false
+  removal delta.
+
+Verification on the final source tree before soak restart:
+
+- Affected compiler/rescan/CLI/Workbench/startup suite: 241/241 tests passed.
+- Full suite with live PostgreSQL accounting and native-enum tests enabled:
+  100 files and 1,591/1,591 tests passed, followed by all static content and
+  command-surface checks.
+- Real PostgreSQL, real MySQL, and clean packed-consumer production Streamable
+  HTTP gates passed with exact two-tool surfaces, complete RS256 rejection
+  matrices, tenant/principal and derived-scope isolation, atomic budgets, drift,
+  evidence/audit, metadata, auto-bands, and no source mutation.
+- The 36-screenshot Workbench desktop/mobile matrix passed. A real Ollama
+  `qwen2.5:7b` production-HTTP turn selected and executed a reviewed plan without
+  supplying trusted scope.
+
+Nothing was published or released in this checkpoint.
+
 ## Independent Boundary Policy And In-Shell Protect Recovery (2026-08-07)
 
 This unpublished 1.7.0 checkpoint removes project-global coupling between

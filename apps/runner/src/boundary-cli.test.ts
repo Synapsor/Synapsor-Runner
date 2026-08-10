@@ -1057,7 +1057,9 @@ describe("boundary operator-plane CLI", () => {
         "--from-env", "DATABASE_URL",
         "--project-root", root,
       ], async () => structuredClone(inspection))).resolves.toBe(0);
-      expect(output).toContain("schema and database-role posture are unchanged");
+      expect(output).toContain(
+        "schema, database-role posture, and trusted-context authority are unchanged",
+      );
 
       output = "";
       await expect(boundaryCommand([

@@ -9,6 +9,7 @@ import {
   AUTO_BOUNDARY_OVERRIDES_VERSION,
   AUTO_BOUNDARY_SPEC_VERSION,
   AUTO_BOUNDARY_VERSION,
+  CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION,
   SHARED_REFERENCE_ACKNOWLEDGEMENT,
   activateExplorationBoundary,
   buildAutoBoundary,
@@ -923,7 +924,23 @@ describe("Auto Boundary compiler", () => {
       project: projectSummary("/workspace/configured-principal-scope"),
       sourceEnv: "DATABASE_URL",
       overrides,
+      configuredTrustedContext: {
+        schema_version: CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION,
+        provider: "environment",
+        tenant_binding: "tenant_id",
+        principal_binding: "rep",
+        tenant_env: "SYNAPSOR_TENANT_ID",
+        principal_env: "SYNAPSOR_PRINCIPAL",
+      },
     });
+    expect(generated.lock.trusted_context_authority).toMatchObject({
+      provider: "environment",
+      tenant_binding: "tenant_id",
+      principal_binding: "rep",
+    });
+    expect(generated.lock.trusted_context_fingerprint).toBe(
+      canonicalJsonDigest(generated.lock.trusted_context_authority),
+    );
     const orderResource = generated.exploration_boundary.pack.resources.find((resource) =>
       resource.id === "public.orders")!;
     expect(orderResource.principal_key).toBe("rep");

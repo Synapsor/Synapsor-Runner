@@ -7,7 +7,11 @@ import crypto from "node:crypto";
 import path from "node:path";
 import process from "node:process";
 import { createScopedExploreMcpServer, serveScopedExploreStdio } from "./authoring-mcp.js";
-import { loadActivatedExplorationBoundaries, type ActivatedExplorationBoundary } from "./auto-boundary.js";
+import {
+  loadActivatedExplorationBoundaries,
+  type ActivatedExplorationBoundary,
+  type GenerationLock,
+} from "./auto-boundary.js";
 import { createScopedExploreBoundarySetRuntime } from "./scoped-explore-boundary-set.js";
 import {
   createScopedExploreDatabaseExecutor,
@@ -406,6 +410,17 @@ export async function inspectProductionExploreStartup(
           `Boundary ${boundary.pack.name} source lock does not match runtime source ${boundary.source}. The reviewed engine and read credential environment name must match exactly.`,
         );
       }
+      const trustedContextMismatch = productionTrustedContextAuthorityMismatch(
+        config,
+        prepared.lock,
+      );
+      if (trustedContextMismatch) {
+        add(
+          "active-production-boundaries",
+          false,
+          `Boundary ${boundary.pack.name} trusted-context authority does not match the runtime config: ${trustedContextMismatch}. Run ${cliCommandName()} boundary rescan --from-env ${prepared.lock.source_env} --project-root ${shellQuote(production.project_root)}, review the disabled revision, and activate it explicitly.`,
+        );
+      }
     } catch (error) {
       add(
         "active-production-boundaries",
@@ -450,6 +465,37 @@ export async function inspectProductionExploreStartup(
     active_boundaries: boundaries.map((boundary) => boundary.pack.name),
     tools: ["app.describe_data", "app.explore_data"],
   };
+}
+
+function productionTrustedContextAuthorityMismatch(
+  config: RuntimeConfig,
+  lock: GenerationLock,
+): string | undefined {
+  const reviewed = lock.trusted_context_authority;
+  if (!reviewed) return undefined;
+  const configured = {
+    provider: config.trusted_context?.provider,
+    tenant_binding: normalizedConfigAuthorityValue(config.trusted_context?.tenant_binding),
+    principal_binding: normalizedConfigAuthorityValue(config.trusted_context?.principal_binding),
+    tenant_claim: normalizedConfigAuthorityValue(config.session_auth?.tenant_claim),
+    principal_claim: normalizedConfigAuthorityValue(config.session_auth?.principal_claim),
+  };
+  const comparisons: Array<[string, string | undefined, string | undefined]> = [
+    ["provider", reviewed.provider, configured.provider],
+    ["tenant binding", reviewed.tenant_binding, configured.tenant_binding],
+    ["principal binding", reviewed.principal_binding, configured.principal_binding],
+    ["tenant JWT claim", reviewed.tenant_claim, configured.tenant_claim],
+    ["principal JWT claim", reviewed.principal_claim, configured.principal_claim],
+  ];
+  const changed = comparisons
+    .filter(([, expected, actual]) => expected !== actual)
+    .map(([label, expected, actual]) =>
+      `${label} is ${actual ?? "unset"}, reviewed as ${expected ?? "unset"}`);
+  return changed.length ? changed.join("; ") : undefined;
+}
+
+function normalizedConfigAuthorityValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function productionExploreHmacKeyIssue(value: string | undefined): string | undefined {

@@ -13,6 +13,7 @@ import {
 } from "./auto-boundary.js";
 import {
   applyManagedBoundaryReviewDecision,
+  boundaryReviewDecisions,
   createBoundaryReviewProgress,
   saveBoundaryReviewProgress,
 } from "./boundary-review-domain.js";
@@ -272,6 +273,11 @@ describe("boundary rescan reconciliation", () => {
         currentCandidate: progress.candidate,
         currentProgress: progress,
       });
+      await writeRunnerConfig(root, {
+        provider: "http_claims",
+        tenantClaim: "org_id",
+        principalClaim: "sub",
+      });
       const preview = await prepareBoundaryRescan({ projectRoot: root, inspection });
       expect(preview.report.changed, JSON.stringify(preview.report, null, 2)).toBe(false);
       expect(preview.selectedProgress.candidate).toMatchObject({
@@ -282,6 +288,146 @@ describe("boundary rescan reconciliation", () => {
           principal_claim: "sub",
         },
       });
+
+      await writeRunnerConfig(root, {
+        provider: "http_claims",
+        tenantClaim: "org_id",
+        principalClaim: "actor_id",
+      });
+      const changedClaims = await prepareBoundaryRescan({
+        projectRoot: root,
+        inspection,
+        now: "2026-08-08T02:00:00.000Z",
+      });
+      expect(changedClaims.report).toMatchObject({
+        schema_changed: false,
+        role_posture_changed: false,
+        trusted_context_changed: true,
+        changed: true,
+      });
+      expect(changedClaims.report.trusted_context_changes).toContain(
+        "principal JWT claim changed from sub to actor_id",
+      );
+      expect(changedClaims.selectedProgress.candidate.trusted_context).toEqual({
+        provider: "http_claims",
+        tenant_claim: "org_id",
+        principal_claim: "actor_id",
+      });
+      expect(boundaryReviewDecisions(changedClaims.selectedProgress.candidate)
+        .map((decision) => decision.id)).toContain(
+        "global.trusted_context",
+      );
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reconciles config-added and removed principal bindings without discarding curated policy", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-config-scope-rescan-"));
+    const inspection = normalizedCommerceInspection();
+    const orders = inspection.tables.find((table) => table.name === "orders")!;
+    orders.columns.push(column("attending", "text", false, orders.columns.length + 1));
+    orders.suggestions.default_visible_columns.push("attending");
+    try {
+      await writeReviewedCommerceProject(root, false, inspection);
+      await writeRunnerConfig(root, {
+        provider: "environment",
+        tenantBinding: "tenant_id",
+      });
+
+      const unchanged = await prepareBoundaryRescan({ projectRoot: root, inspection });
+      expect(unchanged.report.changed).toBe(false);
+
+      await writeRunnerConfig(root, {
+        provider: "environment",
+        tenantBinding: "tenant_id",
+        principalBinding: "attending",
+      });
+      const added = await prepareBoundaryRescan({
+        projectRoot: root,
+        inspection,
+        now: "2026-08-08T01:00:00.000Z",
+      });
+      expect(added.report).toMatchObject({
+        schema_changed: false,
+        role_posture_changed: false,
+        trusted_context_changed: true,
+        changed: true,
+      });
+      expect(added.report.trusted_context_changes).toContain(
+        "principal binding attending added",
+      );
+      expect(formatBoundaryRescanReport(added.report)).toContain(
+        "principal binding attending added",
+      );
+      const addedOrders = added.selectedProgress.candidate.pack.resources.find(
+        (resource) => resource.id === "public.orders",
+      )!;
+      expect(addedOrders.principal_key).toBe("attending");
+      expect(added.selectedProgress.review_overrides.resources["public.orders"]?.principal_key)
+        .toMatchObject({ value: "attending", actor: "runner-config" });
+      expect(added.selectedProgress.candidate.pack.resources.find(
+        (resource) => resource.id === "public.order_items",
+      )).toMatchObject({
+        tenant_scope: { path_id: "order_items_order_id_fkey" },
+        auto_bands: [reviewedQuantityAutoBand()],
+      });
+      expect(added.selectedProgress.candidate.pack.resources.find(
+        (resource) => resource.id === "public.product_catalog",
+      )?.shared_reference_scope).toMatchObject({ mode: "shared_reference" });
+      expect(boundaryReviewDecisions(added.selectedProgress.candidate)
+        .map((decision) => decision.id)).toEqual(
+        expect.arrayContaining([
+          "global.trusted_context",
+          "resource.public.orders.principal_scope",
+        ]),
+      );
+
+      await commitBoundaryRescan(added);
+      await writeRunnerConfig(root, {
+        provider: "environment",
+        tenantBinding: "tenant_id",
+      });
+      const removed = await prepareBoundaryRescan({
+        projectRoot: root,
+        inspection,
+        now: "2026-08-08T02:00:00.000Z",
+      });
+      expect(removed.report.trusted_context_changes).toContain(
+        "principal binding attending removed",
+      );
+      expect(removed.selectedProgress.candidate.pack.resources.find(
+        (resource) => resource.id === "public.orders",
+      )?.principal_key).toBeUndefined();
+      expect(removed.selectedProgress.review_overrides.resources["public.orders"]?.principal_key)
+        .toBeUndefined();
+      expect(removed.selectedProgress.candidate.pack.resources.find(
+        (resource) => resource.id === "public.order_items",
+      )).toMatchObject({
+        tenant_scope: { path_id: "order_items_order_id_fkey" },
+        auto_bands: [reviewedQuantityAutoBand()],
+      });
+      expect(removed.selectedProgress.candidate.pack.resources.find(
+        (resource) => resource.id === "public.product_catalog",
+      )?.shared_reference_scope).toMatchObject({ mode: "shared_reference" });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses to convert a staging boundary to HTTP claim trust through config alone", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-config-provider-rescan-"));
+    const inspection = normalizedCommerceInspection();
+    try {
+      await writeReviewedCommerceProject(root, false, inspection);
+      await writeRunnerConfig(root, {
+        provider: "http_claims",
+        tenantClaim: "tenant_id",
+        principalClaim: "sub",
+      });
+      await expect(prepareBoundaryRescan({ projectRoot: root, inspection })).rejects.toThrow(
+        /uses trusted_context\.provider=http_claims.*boundary is local\/staging.*separately reviewed production boundary/i,
+      );
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -726,11 +872,15 @@ async function writeReviewedDirectCommerceProject(root: string): Promise<{
   return { inspection, activeDigest };
 }
 
-async function writeReviewedCommerceProject(root: string, activate = false): Promise<{
+async function writeReviewedCommerceProject(
+  root: string,
+  activate = false,
+  inspectionInput?: SchemaInspection,
+): Promise<{
   inspection: SchemaInspection;
   activeDigest?: `sha256:${string}`;
 }> {
-  const inspection = normalizedCommerceInspection();
+  const inspection = inspectionInput ?? normalizedCommerceInspection();
   const project = {
     root,
     package_manager: "npm" as const,
@@ -801,6 +951,79 @@ async function writeReviewedCommerceProject(root: string, activate = false): Pro
     currentInspection: inspection,
   });
   return { inspection, activeDigest };
+}
+
+async function writeRunnerConfig(root: string, input: {
+  provider: "environment" | "http_claims";
+  tenantBinding?: string;
+  principalBinding?: string;
+  tenantClaim?: string;
+  principalClaim?: string;
+}): Promise<void> {
+  const config = {
+    version: 1,
+    mode: "read_only",
+    sources: {
+      local_postgres: {
+        engine: "postgres",
+        read_url_env: "DATABASE_URL",
+      },
+    },
+    trusted_context: input.provider === "environment"
+      ? {
+          provider: "environment",
+          values: {
+            tenant_id_env: "SYNAPSOR_TENANT_ID",
+            principal_env: "SYNAPSOR_PRINCIPAL",
+          },
+          ...(input.tenantBinding ? { tenant_binding: input.tenantBinding } : {}),
+          ...(input.principalBinding ? { principal_binding: input.principalBinding } : {}),
+        }
+      : {
+          provider: "http_claims",
+          ...(input.tenantBinding ? { tenant_binding: input.tenantBinding } : {}),
+          ...(input.principalBinding ? { principal_binding: input.principalBinding } : {}),
+        },
+    capabilities: [{
+      name: "test.inspect_order",
+      kind: "read",
+      source: "local_postgres",
+      target: {
+        schema: "public",
+        table: "orders",
+        primary_key: "id",
+        tenant_key: "tenant_id",
+      },
+      args: {
+        order_id: {
+          type: "string",
+          required: true,
+          max_length: 128,
+        },
+      },
+      lookup: { id_from_arg: "order_id" },
+      visible_columns: ["id", "status"],
+      evidence: "required",
+      max_rows: 1,
+    }],
+    ...(input.provider === "http_claims"
+      ? {
+          session_auth: {
+            provider: "jwt_asymmetric",
+            algorithms: ["RS256"],
+            public_key_env: "SYNAPSOR_SESSION_PUBLIC_KEY",
+            issuer: "https://identity.example",
+            audience: "https://runner.example/mcp",
+            tenant_claim: input.tenantClaim ?? "tenant_id",
+            principal_claim: input.principalClaim ?? "sub",
+          },
+        }
+      : {}),
+  };
+  await fs.writeFile(
+    path.join(root, "synapsor.runner.json"),
+    `${JSON.stringify(config, null, 2)}\n`,
+  );
 }
 
 function reviewedQuantityAutoBand() {

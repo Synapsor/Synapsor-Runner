@@ -218,17 +218,21 @@ npx -y @synapsor/runner start --from-env DATABASE_URL --rescan
 
 `--rescan` works for both single-organization and multi-tenant projects. It
 reconciles all saved boundaries, preserves decisions whose exact reviewed
-inputs are unchanged, and itemizes new, removed, or invalidated inputs. New
-fields remain kept out and new relationships remain unused. Ask keeps using the
-previous exact revision until a human reviews and activates the disabled update.
+inputs are unchanged, and itemizes new, removed, or invalidated inputs. This
+includes normalized, non-secret trusted-context config: provider, environment or
+JWT claim names, and tenant/principal column bindings. A config-only change such
+as adding `principal_binding` therefore produces a disabled review revision even
+when the database fingerprints are unchanged; unrelated curated policy is kept.
+New fields remain kept out and new relationships remain unused. Ask keeps using
+the previous exact revision until a human reviews and activates the disabled update.
 On this Start path, `--force` performs the same guarded reconciliation; prefer
 `--rescan` because it states the intent clearly.
 
 The three related commands have different jobs:
 
-- `synapsor-runner boundary rescan` inspects the database and writes a disabled,
-  reconciled revision plus a change report. It does not open an editor or
-  activate anything.
+- `synapsor-runner boundary rescan` inspects the database, reloads config-derived
+  trusted-context authority, and writes a disabled, reconciled revision plus a
+  change report. It does not open an editor or activate anything.
 - `synapsor-runner boundary review --access` opens the focused table, column,
   relationship, and scope-path editor without inspecting again. This is the
   same editor opened by `/access` inside the Ask shell.

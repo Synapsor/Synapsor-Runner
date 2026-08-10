@@ -1,7 +1,10 @@
 import type { RuntimeConfig } from "@synapsor-runner/mcp-server";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
 import { describe, expect, it } from "vitest";
-import type { ActivatedExplorationBoundary } from "./auto-boundary.js";
+import {
+  CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION,
+  type ActivatedExplorationBoundary,
+} from "./auto-boundary.js";
 import {
   assertProductionExploreStartup,
   formatProductionExploreStartupReport,
@@ -182,6 +185,56 @@ describe("production Explore startup posture", () => {
     expect(report.ok).toBe(true);
     expect(formatProductionExploreStartupReport(report)).toContain(
       "organization identity is fixed as internal-finance",
+    );
+  });
+
+  it("fails startup when config-derived binding authority differs from the reviewed lock", async () => {
+    const config = productionConfig();
+    config.trusted_context!.tenant_binding = "tenant_id";
+    config.trusted_context!.principal_binding = "rep";
+    const prepareReviewedBinding: PrepareBoundary = async () => ({
+      boundary: productionBoundary(),
+      lock: {
+        engine: "postgres",
+        source_env: "DATABASE_URL",
+        trusted_context_authority: {
+          schema_version: CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION,
+          provider: "http_claims",
+          tenant_binding: "tenant_id",
+          principal_binding: "rep",
+          tenant_claim: "tenant_id",
+          principal_claim: "sub",
+        },
+      },
+    } as Awaited<ReturnType<PrepareBoundary>>);
+    const matching = await inspectProductionExploreStartup(
+      config,
+      productionEnv(),
+      async () => [productionBoundary()],
+      prepareReviewedBinding,
+    );
+    expect(matching.ok).toBe(true);
+
+    config.trusted_context!.principal_binding = "attending";
+    const report = await inspectProductionExploreStartup(
+      config,
+      productionEnv(),
+      async () => [productionBoundary()],
+      prepareReviewedBinding,
+    );
+    expect(report.ok).toBe(false);
+    expect(report.checks).toContainEqual(expect.objectContaining({
+      name: "active-production-boundaries",
+      ok: false,
+      message: expect.stringContaining(
+        "principal binding is attending, reviewed as rep",
+      ),
+    }));
+    expect(formatProductionExploreStartupReport(report)).toContain(
+      "boundary rescan --from-env DATABASE_URL",
+    );
+    expect(formatProductionExploreStartupReport(report)).toContain(
+      "--project-root '/srv/synapsor/production-explore'",
     );
   });
 

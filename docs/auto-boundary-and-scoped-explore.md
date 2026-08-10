@@ -138,11 +138,23 @@ database again. Add `--rescan` to the same Start command to deliberately
 re-inspect either a single-organization or multi-tenant source. Runner
 reconciles every saved boundary: manual tables and reviewed settings whose
 exact inputs are unchanged stay intact, while only decisions affected by real
-schema or role-posture drift are invalidated. New columns stay kept out and new
-relationships stay unused until reviewed. The itemized result is a disabled
+schema, role-posture, or config-derived trusted-context changes are invalidated.
+The generation lock fingerprints the normalized provider, environment/claim
+names, and configured tenant/principal column bindings without storing any
+credential or claim value. Adding `principal_binding` therefore creates a
+disabled revision that offers that inspected non-null column for review while
+preserving unrelated derived paths, shared-reference acknowledgments, field
+visibility, enums, metadata, bands, and measures. Removing or changing a binding
+retracts only its config-managed scope decisions. New columns stay kept out and
+new relationships stay unused until reviewed. The itemized result is a disabled
 boundary revision; it does not replace active authority until a human reviews
 and activates it. On this Start path, `--force` performs the same guarded
 reconciliation; prefer `--rescan` because it states the intent clearly.
+
+For newly generated production locks, startup also compares the loaded HTTP
+claim names and configured tenant/principal column bindings with that reviewed
+authority. A mismatch stops Production Explore and points back to the same
+reconciling rescan; restarting cannot silently accept a changed identity contract.
 
 Runner never derives a tenant or principal from a connection-string name,
 table contents, sample rows, or model input. If neither a verified credential-
@@ -575,8 +587,9 @@ diff for automation.
 
 Use the boundary commands according to the step you need:
 
-- `boundary rescan` re-inspects schema and database-role posture and writes a
-  disabled reconciliation report. It does not open review or activate.
+- `boundary rescan` re-inspects schema and database-role posture, reloads the
+  normalized trusted-context authority from Runner config, and writes a disabled
+  reconciliation report. It does not open review or activate.
 - `boundary review --access` opens the focused table, column, relationship, and
   scope-path editor without another inspection. It is the shell equivalent of
   `/access` in an active Ask session.

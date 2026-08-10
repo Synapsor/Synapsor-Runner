@@ -104,6 +104,7 @@ export async function initializeGuidedProject(input: {
 
   const sourceName = input.build.exploration_boundary.source;
   const trustedContext = input.build.exploration_boundary.trusted_context;
+  const configuredAuthority = input.build.lock.trusted_context_authority;
   const singleOrganization = Boolean(input.build.exploration_boundary.organization_scope);
   const principalRequired = input.build.exploration_boundary.pack.resources
     .some((resource) => Boolean(resource.principal_key || resource.principal_scope));
@@ -125,8 +126,12 @@ export async function initializeGuidedProject(input: {
         ...(!singleOrganization ? { tenant_id_env: trustedContext.tenant_env } : {}),
         ...(principalRequired ? { principal_env: trustedContext.principal_env } : {}),
       },
-      ...(!singleOrganization ? { tenant_binding: "tenant_id" } : {}),
-      ...(principalRequired ? { principal_binding: "principal" } : {}),
+      ...(!singleOrganization
+        ? { tenant_binding: configuredAuthority?.tenant_binding ?? "tenant_id" }
+        : {}),
+      ...(configuredAuthority?.principal_binding
+        ? { principal_binding: configuredAuthority.principal_binding }
+        : {}),
     },
     capabilities: [],
     generated_authority: {

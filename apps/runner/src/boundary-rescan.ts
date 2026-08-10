@@ -6,6 +6,10 @@ import {
 } from "@synapsor-runner/schema-inspector";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
+  loadRuntimeConfigFromFile,
+} from "@synapsor-runner/mcp-server";
+import {
+  CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION,
   assertReviewedDerivedMeasureForBoundary,
   assertReviewedAutoBandForBoundary,
   assertReviewedNumericBandForBoundary,
@@ -16,10 +20,12 @@ import {
   loadStructuredProjectEvidence,
   persistGenerationLockSnapshot,
   pruneAutoBoundaryReviewOverrides,
+  seedConfiguredPrincipalBindingReview,
   writeAutoBoundaryArtifacts,
   type AutoBoundaryBuild,
   type AutoBoundaryReviewOverrides,
   type BuildAutoBoundaryInput,
+  type ConfiguredTrustedContextAuthority,
   type ExplorationBoundaryDraft,
   type GenerationLock,
 } from "./auto-boundary.js";
@@ -40,6 +46,7 @@ import {
   boundaryReviewOverridesForCandidate,
 } from "./boundary-review-policy.js";
 import { detectProjectContext } from "./project-detection.js";
+import { resolveSynapsorProject } from "./project-resolution.js";
 import { safeTerminalText } from "./terminal-syntax.js";
 
 export const BOUNDARY_RESCAN_REPORT_VERSION = "synapsor.boundary-rescan-report.v1" as const;
@@ -90,8 +97,12 @@ export type BoundaryRescanReport = {
   schema_fingerprint: `sha256:${string}`;
   previous_role_posture_fingerprint: `sha256:${string}`;
   role_posture_fingerprint: `sha256:${string}`;
+  previous_trusted_context_fingerprint?: `sha256:${string}`;
+  trusted_context_fingerprint?: `sha256:${string}`;
   schema_changed: boolean;
   role_posture_changed: boolean;
+  trusted_context_changed?: boolean;
+  trusted_context_changes?: string[];
   changed: boolean;
   boundaries: BoundaryRescanEntry[];
   totals: {
@@ -166,11 +177,40 @@ export async function prepareBoundaryRescan(input: {
     currentCandidate,
     ...(currentProgress ? { currentProgress } : {}),
   });
+  const now = input.now ?? new Date().toISOString();
   const oldPolicyBaseline = await optionalOldPolicyBaseline(projectRoot, oldDraft);
+  const selectedPrevious = previousLibrary.boundaries[previousLibrary.selected_name];
+  if (!selectedPrevious) throw new Error("Schema rescan could not load the selected boundary.");
+  const selectedPreviousOverrides = boundaryReviewOverridesForCandidate({
+    progress: selectedPrevious,
+    baseline: oldPolicyBaseline,
+    candidate: selectedPrevious.candidate,
+    actor: selectedPrevious.confirmations.at(-1)?.actor ?? "boundary-rescan",
+    now: selectedPrevious.updated_at,
+  });
+  const configuredTrustedContext = await resolveConfiguredTrustedContextAuthority({
+    projectRoot,
+    sourceEnv: oldLock.source_env,
+    candidate: selectedPrevious.candidate,
+    fallbackAuthority: oldLock.trusted_context_authority,
+  });
+  const previousTrustedContext = oldLock.trusted_context_authority
+    ?? inferLegacyTrustedContextAuthority({
+      candidate: selectedPrevious.candidate,
+      inspection,
+      current: configuredTrustedContext,
+      overrides: selectedPreviousOverrides,
+    });
+  const comparableOldLock: GenerationLock = oldLock.trusted_context_fingerprint
+    ? oldLock
+    : {
+        ...oldLock,
+        trusted_context_authority: previousTrustedContext,
+        trusted_context_fingerprint: canonicalJsonDigest(previousTrustedContext),
+      };
   const nextBoundaries: Record<string, BoundaryReviewProgress> = {};
   const builds = new Map<string, AutoBoundaryBuild>();
   const entries: BoundaryRescanEntry[] = [];
-  const now = input.now ?? new Date().toISOString();
 
   for (const [boundaryName, previous] of Object.entries(previousLibrary.boundaries)
     .sort(([left], [right]) => left.localeCompare(right))) {
@@ -180,14 +220,23 @@ export async function prepareBoundaryRescan(input: {
       evidence,
       lock: oldLock,
       candidate: previous.candidate,
+      configuredTrustedContext,
     });
     const cleanBuild = buildAutoBoundary(buildInput);
-    const previousOverrides = boundaryReviewOverridesForCandidate({
+    let previousOverrides = boundaryReviewOverridesForCandidate({
       progress: previous,
       baseline: oldPolicyBaseline,
       candidate: previous.candidate,
       actor: previous.confirmations.at(-1)?.actor ?? "boundary-rescan",
       now: previous.updated_at,
+    });
+    previousOverrides = reconcileConfiguredScopeOverrides({
+      inspection,
+      cleanBuild,
+      previous: previousTrustedContext,
+      current: configuredTrustedContext,
+      overrides: previousOverrides,
+      now,
     });
     const pruned = pruneAutoBoundaryReviewOverrides(
       inspection,
@@ -198,7 +247,7 @@ export async function prepareBoundaryRescan(input: {
         existingContracts: evidence.existingContracts,
       },
     );
-    const sharedFactsUnchanged = generationLockSharedFactsDigest(oldLock)
+    const sharedFactsUnchanged = generationLockSharedFactsDigest(comparableOldLock)
       === generationLockSharedFactsDigest(cleanBuild.lock);
     if (sharedFactsUnchanged && pruned.removed.length === 0) {
       const progress = structuredClone(previous);
@@ -287,7 +336,15 @@ export async function prepareBoundaryRescan(input: {
     boundaries: nextBoundaries,
     updated_at: now,
   };
-  const report = rescanReport({ oldLock, selectedBuild, inspection, entries, now });
+  const report = rescanReport({
+    oldLock,
+    selectedBuild,
+    inspection,
+    entries,
+    now,
+    previousTrustedContext,
+    configuredTrustedContext,
+  });
   const { generated_at: _generatedAt, ...stableReport } = report;
   if (await boundaryRescanBaseStateDigest(projectRoot, boundaryRoot) !== baseStateDigest) {
     throw new Error(
@@ -380,7 +437,7 @@ export async function readBoundaryRescanReport(
 
 export function formatBoundaryRescanReport(report: BoundaryRescanReport): string {
   if (!report.changed) {
-    return "Rescan complete: the reviewed schema and database-role posture are unchanged. No boundary revision was created.";
+    return "Rescan complete: the reviewed schema, database-role posture, and trusted-context authority are unchanged. No boundary revision was created.";
   }
   const lines = [
     "RESCAN RECONCILIATION",
@@ -392,6 +449,12 @@ export function formatBoundaryRescanReport(report: BoundaryRescanReport): string
       + `${report.totals.newly_available_relationships} relationships`,
     `Removed: ${report.totals.removed_resources} tables, ${report.totals.removed_fields} columns, `
       + `${report.totals.removed_relationships} relationships`,
+    ...(report.trusted_context_changed
+      ? [
+          "Trusted context changed:",
+          ...(report.trusted_context_changes ?? []).map((change) => `  - ${change}`),
+        ]
+      : []),
   ];
   for (const boundary of report.boundaries) {
     const details = [
@@ -437,12 +500,287 @@ export function formatBoundaryRescanReport(report: BoundaryRescanReport): string
   return safeTerminalText(lines.join("\n"));
 }
 
+function configuredTrustedContextFromBoundary(
+  candidate: ExplorationBoundaryDraft,
+): ConfiguredTrustedContextAuthority {
+  return candidate.trusted_context.provider === "http_claims"
+    ? {
+        schema_version: CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION,
+        provider: "http_claims",
+        ...(candidate.trusted_context.tenant_claim
+          ? { tenant_claim: candidate.trusted_context.tenant_claim }
+          : {}),
+        principal_claim: candidate.trusted_context.principal_claim,
+      }
+    : {
+        schema_version: CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION,
+        provider: "environment",
+        tenant_env: candidate.trusted_context.tenant_env,
+        principal_env: candidate.trusted_context.principal_env,
+      };
+}
+
+function optionalConfigString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+async function resolveConfiguredTrustedContextAuthority(input: {
+  projectRoot: string;
+  sourceEnv: string;
+  candidate: ExplorationBoundaryDraft;
+  fallbackAuthority?: ConfiguredTrustedContextAuthority;
+}): Promise<ConfiguredTrustedContextAuthority> {
+  const fallback = structuredClone(
+    input.fallbackAuthority ?? configuredTrustedContextFromBoundary(input.candidate),
+  );
+  const project = await resolveSynapsorProject(input.projectRoot, process.env);
+  if (!project) return fallback;
+  const config = loadRuntimeConfigFromFile(project.config_path);
+  const source = config.sources?.[input.candidate.source]
+    ?? Object.values(config.sources ?? {}).find((item) => item.read_url_env === input.sourceEnv);
+  if (!source || source.read_url_env !== input.sourceEnv) {
+    throw new Error(
+      `Runner config ${project.config_path} does not contain reviewed source ${input.candidate.source} using ${input.sourceEnv}.`,
+    );
+  }
+  const context = config.trusted_context;
+  if (!context) return fallback;
+  const tenantBinding = optionalConfigString(context.tenant_binding);
+  const principalBinding = optionalConfigString(context.principal_binding);
+  if (context.provider === "environment") {
+    if (input.candidate.deployment_profile === "production") {
+      throw new Error(
+        "The Runner config now uses trusted_context.provider=environment, but this reviewed boundary is production HTTP. Create or select a non-production boundary instead of changing its trust provider in place.",
+      );
+    }
+    const values = context.values ?? {};
+    return {
+      schema_version: CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION,
+      provider: "environment",
+      ...(tenantBinding ? { tenant_binding: tenantBinding } : {}),
+      ...(principalBinding ? { principal_binding: principalBinding } : {}),
+      tenant_env: optionalConfigString(values.tenant_id_env) ?? fallback.tenant_env
+        ?? "SYNAPSOR_TENANT_ID",
+      principal_env: optionalConfigString(values.principal_env) ?? fallback.principal_env
+        ?? "SYNAPSOR_PRINCIPAL",
+    };
+  }
+  if (context.provider === "http_claims") {
+    if (input.candidate.deployment_profile !== "production") {
+      throw new Error(
+        "The Runner config now uses trusted_context.provider=http_claims, but this reviewed boundary is local/staging. Create a separately reviewed production boundary; provider changes cannot silently convert deployment profiles.",
+      );
+    }
+    const tenantClaim = input.candidate.organization_scope
+      ? undefined
+      : optionalConfigString(config.session_auth?.tenant_claim)
+        ?? fallback.tenant_claim
+        ?? "tenant_id";
+    const principalClaim = optionalConfigString(config.session_auth?.principal_claim)
+      ?? fallback.principal_claim
+      ?? "sub";
+    return {
+      schema_version: CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION,
+      provider: "http_claims",
+      ...(tenantBinding ? { tenant_binding: tenantBinding } : {}),
+      ...(principalBinding ? { principal_binding: principalBinding } : {}),
+      ...(tenantClaim ? { tenant_claim: tenantClaim } : {}),
+      principal_claim: principalClaim,
+    };
+  }
+  throw new Error(
+    `Scoped Explore reconciliation does not accept trusted_context.provider=${context.provider}; use environment locally or http_claims for production HTTP.`,
+  );
+}
+
+function runnerConfigDecision(value: {
+  actor: string;
+  reason: string;
+} | undefined): boolean {
+  return value?.actor === "runner-config"
+    || /^Runner config (?:principal|tenant)_binding explicitly names /i.test(value?.reason ?? "");
+}
+
+function reflectedDirectBinding(input: {
+  candidate: ExplorationBoundaryDraft;
+  inspection: SchemaInspection;
+  binding: string | undefined;
+  kind: "tenant" | "principal";
+}): boolean {
+  if (!input.binding) return false;
+  const tables = new Map(input.inspection.tables.map((table) => [
+    `${table.schema}.${table.name}`,
+    table,
+  ]));
+  const applicable = input.candidate.pack.resources.filter((resource) =>
+    tables.get(resource.id)?.columns.some((column) =>
+      column.name === input.binding && column.nullable === false));
+  if (!applicable.length) return false;
+  return applicable.every((resource) =>
+    (input.kind === "tenant" ? resource.tenant_key : resource.principal_key) === input.binding);
+}
+
+function inferredRunnerConfigBinding(
+  overrides: AutoBoundaryReviewOverrides,
+  kind: "tenant" | "principal",
+): string | undefined {
+  const values = new Set(Object.values(overrides.resources).flatMap((resource) => {
+    const decision = kind === "tenant" ? resource.tenant_key : resource.principal_key;
+    return decision && decision.value && runnerConfigDecision(decision) ? [decision.value] : [];
+  }));
+  return values.size === 1 ? [...values][0] : undefined;
+}
+
+function inferLegacyTrustedContextAuthority(input: {
+  candidate: ExplorationBoundaryDraft;
+  inspection: SchemaInspection;
+  current: ConfiguredTrustedContextAuthority;
+  overrides: AutoBoundaryReviewOverrides;
+}): ConfiguredTrustedContextAuthority {
+  const legacy = configuredTrustedContextFromBoundary(input.candidate);
+  const tenantBinding = inferredRunnerConfigBinding(input.overrides, "tenant")
+    ?? (reflectedDirectBinding({
+      candidate: input.candidate,
+      inspection: input.inspection,
+      binding: input.current.tenant_binding,
+      kind: "tenant",
+    }) ? input.current.tenant_binding : undefined);
+  const principalBinding = inferredRunnerConfigBinding(input.overrides, "principal")
+    ?? (reflectedDirectBinding({
+      candidate: input.candidate,
+      inspection: input.inspection,
+      binding: input.current.principal_binding,
+      kind: "principal",
+    }) ? input.current.principal_binding : undefined);
+  return {
+    ...legacy,
+    ...(tenantBinding ? { tenant_binding: tenantBinding } : {}),
+    ...(principalBinding ? { principal_binding: principalBinding } : {}),
+  };
+}
+
+function removeChangedConfigBindingOverrides(input: {
+  overrides: AutoBoundaryReviewOverrides;
+  previous: ConfiguredTrustedContextAuthority;
+  current: ConfiguredTrustedContextAuthority;
+}): void {
+  if (input.previous.principal_binding !== input.current.principal_binding) {
+    for (const resource of Object.values(input.overrides.resources)) {
+      if (runnerConfigDecision(resource.principal_key)
+        && resource.principal_key?.value === input.previous.principal_binding) {
+        delete resource.principal_key;
+      }
+    }
+  }
+  if (input.previous.tenant_binding !== input.current.tenant_binding) {
+    for (const resource of Object.values(input.overrides.resources)) {
+      if (runnerConfigDecision(resource.tenant_key)
+        && resource.tenant_key?.value === input.previous.tenant_binding) {
+        delete resource.tenant_key;
+      }
+    }
+  }
+}
+
+function seedConfiguredTenantBindingReview(input: {
+  inspection: SchemaInspection;
+  cleanBuild: AutoBoundaryBuild;
+  binding: string;
+  overrides: AutoBoundaryReviewOverrides;
+  now: string;
+}): void {
+  const generated = new Map(input.cleanBuild.exploration_boundary.pack.resources.map(
+    (resource) => [resource.id, resource],
+  ));
+  for (const table of input.inspection.tables) {
+    const column = table.columns.find((candidate) =>
+      candidate.name === input.binding
+      && candidate.nullable === false
+      && candidate.suggestions.large_or_binary !== true);
+    if (!column) continue;
+    const resourceId = `${table.schema}.${table.name}`;
+    if (generated.get(resourceId)?.tenant_key === column.name) continue;
+    const review = input.overrides.resources[resourceId] ?? {};
+    if (review.tenant_key || review.tenant_scope_path || review.shared_reference_scope) continue;
+    review.tenant_key = {
+      value: column.name,
+      actor: "runner-config",
+      reason: `Runner config tenant_binding explicitly names inspected non-null column ${column.name}; exact boundary activation is still required.`,
+      decided_at: input.now,
+    };
+    input.overrides.resources[resourceId] = review;
+  }
+}
+
+function reconcileConfiguredScopeOverrides(input: {
+  inspection: SchemaInspection;
+  cleanBuild: AutoBoundaryBuild;
+  previous: ConfiguredTrustedContextAuthority;
+  current: ConfiguredTrustedContextAuthority;
+  overrides: AutoBoundaryReviewOverrides;
+  now: string;
+}): AutoBoundaryReviewOverrides {
+  let overrides = structuredClone(input.overrides);
+  removeChangedConfigBindingOverrides({
+    overrides,
+    previous: input.previous,
+    current: input.current,
+  });
+  if (input.current.principal_binding) {
+    overrides = seedConfiguredPrincipalBindingReview({
+      inspection: input.inspection,
+      principalBinding: input.current.principal_binding,
+      overrides,
+      actor: "runner-config",
+      decidedAt: input.now,
+    });
+  }
+  if (input.current.tenant_binding) {
+    seedConfiguredTenantBindingReview({
+      inspection: input.inspection,
+      cleanBuild: input.cleanBuild,
+      binding: input.current.tenant_binding,
+      overrides,
+      now: input.now,
+    });
+  }
+  return overrides;
+}
+
+function describeTrustedContextChanges(
+  previous: ConfiguredTrustedContextAuthority,
+  current: ConfiguredTrustedContextAuthority,
+): string[] {
+  const labels: Record<Exclude<keyof ConfiguredTrustedContextAuthority, "schema_version">, string> = {
+    provider: "provider",
+    tenant_binding: "tenant binding",
+    principal_binding: "principal binding",
+    tenant_env: "tenant environment variable",
+    principal_env: "principal environment variable",
+    tenant_claim: "tenant JWT claim",
+    principal_claim: "principal JWT claim",
+  };
+  const changes: string[] = [];
+  for (const key of Object.keys(labels) as Array<keyof typeof labels>) {
+    if (previous[key] === current[key]) continue;
+    const before = previous[key];
+    const after = current[key];
+    changes.push(before === undefined
+      ? `${labels[key]} ${after} added`
+      : after === undefined
+        ? `${labels[key]} ${before} removed`
+        : `${labels[key]} changed from ${before} to ${after}`);
+  }
+  return changes;
+}
+
 function buildInputForBoundary(input: {
   inspection: SchemaInspection;
   project: Awaited<ReturnType<typeof detectProjectContext>>;
   evidence: Awaited<ReturnType<typeof loadStructuredProjectEvidence>>;
   lock: GenerationLock;
   candidate: ExplorationBoundaryDraft;
+  configuredTrustedContext: ConfiguredTrustedContextAuthority;
 }): BuildAutoBoundaryInput {
   return {
     inspection: input.inspection,
@@ -453,11 +791,12 @@ function buildInputForBoundary(input: {
     sourceName: input.candidate.source,
     inspectedSchema: input.lock.inspected_schema,
     deploymentProfile: input.candidate.deployment_profile,
-    ...(input.candidate.trusted_context.provider === "http_claims"
+    configuredTrustedContext: input.configuredTrustedContext,
+    ...(input.configuredTrustedContext.provider === "http_claims"
       ? {
           httpClaims: {
-            tenantClaim: input.candidate.trusted_context.tenant_claim,
-            principalClaim: input.candidate.trusted_context.principal_claim,
+            tenantClaim: input.configuredTrustedContext.tenant_claim,
+            principalClaim: input.configuredTrustedContext.principal_claim!,
           },
         }
       : {}),
@@ -641,9 +980,18 @@ function rescanReport(input: {
   inspection: SchemaInspection;
   entries: BoundaryRescanEntry[];
   now: string;
+  previousTrustedContext: ConfiguredTrustedContextAuthority;
+  configuredTrustedContext: ConfiguredTrustedContextAuthority;
 }): BoundaryRescanReport {
   const schemaChanged = input.oldLock.schema_fingerprint !== input.selectedBuild.lock.schema_fingerprint;
   const roleChanged = input.oldLock.role_posture_fingerprint !== input.selectedBuild.lock.role_posture_fingerprint;
+  const previousTrustedContextFingerprint = canonicalJsonDigest(input.previousTrustedContext);
+  const trustedContextFingerprint = canonicalJsonDigest(input.configuredTrustedContext);
+  const trustedContextChanged = previousTrustedContextFingerprint !== trustedContextFingerprint;
+  const trustedContextChanges = describeTrustedContextChanges(
+    input.previousTrustedContext,
+    input.configuredTrustedContext,
+  );
   const totals = {
     boundaries: input.entries.length,
     kept_confirmations: sum(input.entries, (entry) => entry.kept_confirmations),
@@ -668,9 +1016,13 @@ function rescanReport(input: {
     schema_fingerprint: input.selectedBuild.lock.schema_fingerprint,
     previous_role_posture_fingerprint: input.oldLock.role_posture_fingerprint,
     role_posture_fingerprint: input.selectedBuild.lock.role_posture_fingerprint,
+    previous_trusted_context_fingerprint: previousTrustedContextFingerprint,
+    trusted_context_fingerprint: trustedContextFingerprint,
     schema_changed: schemaChanged,
     role_posture_changed: roleChanged,
-    changed: schemaChanged || roleChanged || policyChanged,
+    trusted_context_changed: trustedContextChanged,
+    trusted_context_changes: trustedContextChanges,
+    changed: schemaChanged || roleChanged || trustedContextChanged || policyChanged,
     boundaries: input.entries,
     totals,
     source_database_changed: false,

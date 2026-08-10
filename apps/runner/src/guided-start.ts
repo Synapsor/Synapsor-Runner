@@ -12,6 +12,7 @@ import readline from "node:readline/promises";
 import runnerPackage from "../package.json" with { type: "json" };
 import { recordOwnDataActivationTiming } from "./activation-report.js";
 import {
+  CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION,
   buildAutoBoundary,
   compareGenerationLock,
   generationLockRemediation,
@@ -21,6 +22,7 @@ import {
   seedConfiguredPrincipalBindingReview,
   writeAutoBoundaryArtifacts,
   type ExplorationBudgets,
+  type ConfiguredTrustedContextAuthority,
   type GenerationLock
 } from "./auto-boundary.js";
 import {
@@ -899,8 +901,13 @@ export async function boundaryCommand(
     }
     const project = await detectProjectContext(projectRoot);
     const existingProject = await resolveSynapsorProject(projectRoot, process.env);
-    const configuredPrincipal = existingProject?.config_path
-      ? await configuredPrincipalBinding(existingProject.config_path, sourceEnv)
+    const configuredTrustedContext = existingProject?.config_path
+      ? await configuredExploreTrustedContext({
+          configPath: existingProject.config_path,
+          sourceEnv,
+          deploymentProfile,
+          singleOrganization,
+        })
       : undefined;
     const inspection = await schemaInspector({
       engine: (optionalArg(rest, "--engine") ?? "auto") as InspectEngine,
@@ -915,15 +922,18 @@ export async function boundaryCommand(
       parsedEvidence: evidence.parsed,
       existingContracts: evidence.existingContracts,
       sourceEnv,
-      ...(configuredPrincipal
+      ...(configuredTrustedContext?.authority.principal_binding
         ? {
             overrides: seedConfiguredPrincipalBindingReview({
               inspection,
-              principalBinding: configuredPrincipal.binding,
+              principalBinding: configuredTrustedContext.authority.principal_binding,
               actor: "runner-config",
-              decidedAt: configuredPrincipal.decidedAt,
+              decidedAt: configuredTrustedContext.decidedAt,
             }),
           }
+        : {}),
+      ...(configuredTrustedContext
+        ? { configuredTrustedContext: configuredTrustedContext.authority }
         : {}),
       inspectedSchema: optionalArg(rest, "--schema"),
       deploymentProfile,
@@ -1150,21 +1160,55 @@ export async function boundaryCommand(
   return 2;
 }
 
-async function configuredPrincipalBinding(
-  configPath: string,
-  sourceEnv: string,
-): Promise<{ binding: string; decidedAt: string } | undefined> {
-  const config = loadRuntimeConfigFromFile(configPath);
+async function configuredExploreTrustedContext(input: {
+  configPath: string;
+  sourceEnv: string;
+  deploymentProfile: "development" | "staging" | "production";
+  singleOrganization: boolean;
+}): Promise<{
+  authority: ConfiguredTrustedContextAuthority;
+  decidedAt: string;
+} | undefined> {
+  const config = loadRuntimeConfigFromFile(input.configPath);
   const sourceMatches = Object.values(config.sources ?? {}).some((source) =>
-    source.read_url_env === sourceEnv);
+    source.read_url_env === input.sourceEnv);
+  if (!sourceMatches || !config.trusted_context) return undefined;
   const context = config.trusted_context;
-  const binding = context?.principal_binding?.trim();
-  const hasTrustedPrincipal = context?.provider === "http_claims"
-    || context?.provider === "cloud_session"
-    || typeof context?.values?.principal_env === "string";
-  if (!sourceMatches || !binding || !hasTrustedPrincipal) return undefined;
-  const stat = await fs.stat(configPath);
-  return { binding, decidedAt: stat.mtime.toISOString() };
+  const tenantBinding = context.tenant_binding?.trim();
+  const principalBinding = context.principal_binding?.trim();
+  let authority: ConfiguredTrustedContextAuthority;
+  if (context.provider === "environment" && input.deploymentProfile !== "production") {
+    authority = {
+      schema_version: CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION,
+      provider: "environment",
+      ...(tenantBinding ? { tenant_binding: tenantBinding } : {}),
+      ...(principalBinding ? { principal_binding: principalBinding } : {}),
+      tenant_env: typeof context.values?.tenant_id_env === "string"
+        ? context.values.tenant_id_env
+        : "SYNAPSOR_TENANT_ID",
+      principal_env: typeof context.values?.principal_env === "string"
+        ? context.values.principal_env
+        : "SYNAPSOR_PRINCIPAL",
+    };
+  } else if (context.provider === "http_claims" && input.deploymentProfile === "production") {
+    const tenantClaim = input.singleOrganization
+      ? undefined
+      : config.session_auth?.tenant_claim ?? "tenant_id";
+    authority = {
+      schema_version: CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION,
+      provider: "http_claims",
+      ...(tenantBinding ? { tenant_binding: tenantBinding } : {}),
+      ...(principalBinding ? { principal_binding: principalBinding } : {}),
+      ...(tenantClaim ? { tenant_claim: tenantClaim } : {}),
+      principal_claim: config.session_auth?.principal_claim ?? "sub",
+    };
+  } else {
+    throw new Error(
+      `Runner config trusted_context.provider=${context.provider} does not match the requested ${input.deploymentProfile} Explore profile.`,
+    );
+  }
+  const stat = await fs.stat(input.configPath);
+  return { authority, decidedAt: stat.mtime.toISOString() };
 }
 
 async function boundaryOperationalStatus(
