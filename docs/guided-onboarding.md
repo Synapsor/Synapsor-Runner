@@ -224,6 +224,23 @@ previous exact revision until a human reviews and activates the disabled update.
 On this Start path, `--force` performs the same guarded reconciliation; prefer
 `--rescan` because it states the intent clearly.
 
+The three related commands have different jobs:
+
+- `synapsor-runner boundary rescan` inspects the database and writes a disabled,
+  reconciled revision plus a change report. It does not open an editor or
+  activate anything.
+- `synapsor-runner boundary review --access` opens the focused table, column,
+  relationship, and scope-path editor without inspecting again. This is the
+  same editor opened by `/access` inside the Ask shell.
+- `synapsor-runner start --from-env DATABASE_URL --cli --rescan` performs the
+  rescan, review, activation, and Ask handoff as one guided flow. After running
+  standalone `boundary rescan`, use the same `start` command without
+  `--rescan`; the saved reconciliation is already waiting for review.
+
+When standalone review activates a boundary, Runner prints the exact command
+to resume the guided Ask flow. It also prints a direct `try ask` command for an
+operator who has already selected a provider and model.
+
 Workbench requires no additional terminal command. If you choose the CLI
 fallbacks below after the first success, install Runner once:
 
@@ -256,6 +273,14 @@ trusted scope, visible fields, kept-out fields, and any aggregate-only fields.
 Then confirm the displayed review. Runner binds its digest to that human action
 internally; the developer does not copy or type a hash. Changing a reviewed
 decision creates a new disabled digest that must be reviewed again.
+
+When a database uses opaque or legacy names, add a reviewed table or column
+label and description in the same access editor. In the terminal press `I` on
+the selected table or column; Workbench shows **Reviewed label** and **Reviewed
+description**. These words help the human and `app.describe_data` explain the
+schema, but grant no operation and are not valid plan identifiers. Exact
+database IDs remain visible beside them. A label on a kept-out field stays
+human-only and does not expose that field to a model.
 
 Choose **Try first safe read**. Runner calls the real local runtime and shows:
 
@@ -327,8 +352,8 @@ The first release supports bounded:
 
 - `count` and reviewed `count_distinct`;
 - `sum`, `avg`, standard deviation, and variance over reviewed numeric measures;
-- reviewed missing-data measures, named ratios, fixed numeric bands, and safe
-  child-count metrics;
+- reviewed missing-data measures, named ratios, fixed numeric bands,
+  reviewer-approved automatic numeric bands, and safe child-count metrics;
 - reviewed categorical dimensions;
 - hour, day, week, month, quarter, year, and day-of-week buckets;
 - reviewed running totals, ranks, lag changes, moving averages, and shares,

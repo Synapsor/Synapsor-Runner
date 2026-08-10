@@ -86,6 +86,38 @@ describe("Scoped Explore MySQL executor session state", () => {
     expect(mocks.end).toHaveBeenCalledOnce();
   });
 
+  it("borrows schema inspections from the same bounded pool as reviewed queries", async () => {
+    const inspection = { engine: "mysql", tables: [] };
+    const inspectDatabaseWithConnectionFn = vi.fn(async () => inspection);
+    const executor = createScopedExploreDatabaseExecutor({
+      engine: "mysql",
+      databaseUrl: "mysql://reader:secret@example.test/app",
+      maxConnections: 2,
+    }, { inspectDatabaseWithConnectionFn: inspectDatabaseWithConnectionFn as never });
+
+    await expect(executor.inspectDatabase?.({
+      engine: "mysql",
+      databaseUrlEnv: "DATABASE_URL",
+      env: { DATABASE_URL: "mysql://reader:secret@example.test/app" },
+    })).resolves.toBe(inspection);
+
+    expect(mocks.createPool).toHaveBeenCalledWith(expect.objectContaining({
+      connectionLimit: 2,
+    }));
+    expect(mocks.getConnection).toHaveBeenCalledOnce();
+    expect(inspectDatabaseWithConnectionFn).toHaveBeenCalledWith(
+      expect.objectContaining({ engine: "mysql" }),
+      expect.objectContaining({
+        engine: "mysql",
+        connection: expect.objectContaining({ query: mocks.query }),
+      }),
+    );
+    expect(mocks.release).toHaveBeenCalledOnce();
+    expect(mocks.query).not.toHaveBeenCalled();
+
+    await executor.close();
+  });
+
   it("destroys a connection whose original timezone cannot be restored", async () => {
     let timeZoneAssignments = 0;
     mocks.query.mockImplementation(async (sql: string) => {

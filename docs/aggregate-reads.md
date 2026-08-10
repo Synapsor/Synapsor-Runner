@@ -89,8 +89,9 @@ Measures](reviewed-database-views.md).
 Scoped Aggregate Explore reuses and extends this suppression machinery. Its
 reviewed boundary additionally fixes aggregate-safe measures,
 `count_distinct` identifiers, numeric dispersion, missing-data measures,
-reviewer-named derived measures, fixed numeric bands, hour through year and
-day-of-week buckets, typed filters, up to three activated relationship paths
+reviewer-named derived measures, fixed numeric bands, reviewer-approved
+automatic numeric-band methods, hour through year and day-of-week buckets,
+typed filters, up to three activated relationship paths
 (one or two proven many-to-one links per path), maximum groups,
 response/query/rate limits, and durable extraction/differencing budgets. A
 field may be approved for
@@ -109,6 +110,19 @@ values contributed; sample standard deviation also requires at least two.
 Lowering a table's ordinary group threshold therefore never lowers the
 dispersion floor. `min`, `max`, median, percentile, mode, covariance, and
 correlation remain unavailable because they need separate disclosure analysis.
+
+Automatic numeric bands are a reviewed middle ground between unsafe raw numeric
+grouping and pre-authoring every fixed band. The reviewer enables `quantile`,
+`equal_width`, or both for one exact numeric measure and fixes a 2-16 bucket
+range. Equal-width policies also fix a minimum width. The model chooses only an
+allowed method and count; explicit edges, widths, labels, formulas, and offsets
+remain invalid. Runner computes boundaries from the already tenant/principal-
+scoped rows in the same read-only transaction. It keeps equal values together,
+suppresses every bucket below an effective cohort floor of five, exposes only
+ordinal or outward-rounded labels, and never records raw computed edges in
+model output or evidence. Fixed and automatic band variants consume the same
+root-resource differencing allowance. The policy is off until a reviewer saves
+and activates it through the `G` analytics editor in CLI or Workbench.
 
 Reviewers can save ratio, percentage, and per-unit definitions assembled from
 reviewed base aggregates. They can also save running total, rank, lag change,
@@ -136,6 +150,10 @@ Those are the documented tested database lines for the expanded grammar; this
 release makes no broader server-version claim. Standard deviation and variance
 compile to each engine's `STDDEV_*` and `VAR_*` aggregate functions. Calendar
 grouping and correlated child counts compile through engine-specific fixed SQL.
+Automatic quantiles use each engine's `CUME_DIST` window function inside a
+scoped CTE; equal-width bands use scoped `MIN`/`MAX` bounds. This is one reason
+the compatibility claim is limited to PostgreSQL 16 and MySQL 8 rather than
+older server releases.
 Post-suppression running totals, lag changes, ranks, moving averages, and shares
 run in Runner after bounded groups are returned, so they do not depend on
 database window-function support. Already-correct plans have one shared

@@ -12,11 +12,13 @@ import {
   loadGenerationLockSnapshot,
   normalizeAutoBoundaryReviewOverrides,
   normalizeExplorationDerivedMeasure,
+  normalizeExplorationAutoBandPolicy,
   normalizeExplorationNumericBand,
   reviewExplorationBoundaryCandidate,
   type AutoBoundaryReviewOverrides,
   type ExplorationBoundaryDraft,
   type ExplorationDerivedMeasure,
+  type ExplorationAutoBandPolicy,
   type ExplorationNumericBand,
 } from "./auto-boundary.js";
 import {
@@ -47,6 +49,25 @@ export type BoundaryReviewProgress = BoundaryReviewProgressArtifact<
 >;
 
 export type ManagedBoundaryReviewDecision =
+  | {
+      kind: "resource_metadata";
+      resource_id: string;
+      label?: string | null;
+      description?: string | null;
+      actor: string;
+      reason: string;
+      decided_at?: string;
+    }
+  | {
+      kind: "field_metadata";
+      resource_id: string;
+      field: string;
+      label?: string | null;
+      description?: string | null;
+      actor: string;
+      reason: string;
+      decided_at?: string;
+    }
   | {
       kind: "field_exposure";
       resource_id: string;
@@ -116,6 +137,16 @@ export type ManagedBoundaryReviewDecision =
       actor: string;
       reason: string;
       decided_at?: string;
+    }
+  | {
+      kind: "auto_band";
+      resource_id: string;
+      field: string;
+      definition: ExplorationAutoBandPolicy | null;
+      remove?: true;
+      actor: string;
+      reason: string;
+      decided_at?: string;
     };
 
 export function normalizeManagedBoundaryReviewDecision(
@@ -129,6 +160,24 @@ export function normalizeManagedBoundaryReviewDecision(
   const decidedAt = input.decided_at === undefined
     ? now
     : requiredTimestamp(input.decided_at, "decided_at");
+
+  if (kind === "resource_metadata" || kind === "field_metadata") {
+    if (!Object.hasOwn(input, "label") && !Object.hasOwn(input, "description")) {
+      throw new Error(`${kind} review requires label and/or description; use null to clear a value.`);
+    }
+    const label = optionalMetadataText(input.label, "label", 64);
+    const description = optionalMetadataText(input.description, "description", 280);
+    return {
+      kind,
+      resource_id: resourceId,
+      ...(kind === "field_metadata" ? { field: requiredText(input.field, "field") } : {}),
+      ...(Object.hasOwn(input, "label") ? { label } : {}),
+      ...(Object.hasOwn(input, "description") ? { description } : {}),
+      actor,
+      reason,
+      decided_at: decidedAt,
+    } as ManagedBoundaryReviewDecision;
+  }
 
   if (kind === "field_exposure") {
     const exposure = input.exposure;
@@ -213,6 +262,25 @@ export function normalizeManagedBoundaryReviewDecision(
       decided_at: decidedAt,
     };
   }
+  if (kind === "auto_band") {
+    const field = requiredText(input.field, "field");
+    const definition = input.definition === null
+      ? null
+      : normalizeExplorationAutoBandPolicy(input.definition, `${resourceId}.${field} auto band`);
+    if (definition && definition.field !== field) {
+      throw new Error("auto_band review field must match its policy field.");
+    }
+    return {
+      kind,
+      resource_id: resourceId,
+      field,
+      definition,
+      ...(input.remove === true ? { remove: true } : {}),
+      actor,
+      reason,
+      decided_at: decidedAt,
+    };
+  }
   if (kind === "row_identity" || kind === "tenant_key" || kind === "tenant_scope_path") {
     return {
       kind,
@@ -262,7 +330,7 @@ export function normalizeManagedBoundaryReviewDecision(
     };
   }
   throw new Error(
-    "Managed boundary review kind must be field_exposure, field_enum, derived_measure, numeric_band, row_identity, tenant_key, tenant_scope_path, shared_reference_scope, principal_key, principal_scope_path, or minimum_cohort.",
+    "Managed boundary review kind must be resource_metadata, field_metadata, field_exposure, field_enum, derived_measure, numeric_band, auto_band, row_identity, tenant_key, tenant_scope_path, shared_reference_scope, principal_key, principal_scope_path, or minimum_cohort.",
   );
 }
 
@@ -277,7 +345,44 @@ export function applyManagedBoundaryReviewDecision(
   const resource = next.resources[input.resource_id] ?? {};
   const decidedAt = input.decided_at ?? new Date().toISOString();
 
-  if (input.kind === "field_exposure") {
+  if (input.kind === "resource_metadata" || input.kind === "field_metadata") {
+    const currentMetadata = input.kind === "resource_metadata"
+      ? resource.metadata
+      : resource.field_metadata?.[input.field];
+    const label = input.label === undefined ? currentMetadata?.label : input.label ?? undefined;
+    const description = input.description === undefined
+      ? currentMetadata?.description
+      : input.description ?? undefined;
+    if (input.kind === "resource_metadata") {
+      if (!label && !description) {
+        delete resource.metadata;
+      } else {
+        resource.metadata = {
+          ...(label ? { label } : {}),
+          ...(description ? { description } : {}),
+          actor: input.actor,
+          reason: input.reason,
+          decided_at: decidedAt,
+        };
+      }
+    } else if (!label && !description) {
+      if (resource.field_metadata) {
+        delete resource.field_metadata[input.field];
+        if (Object.keys(resource.field_metadata).length === 0) delete resource.field_metadata;
+      }
+    } else {
+      resource.field_metadata = {
+        ...(resource.field_metadata ?? {}),
+        [input.field]: {
+          ...(label ? { label } : {}),
+          ...(description ? { description } : {}),
+          actor: input.actor,
+          reason: input.reason,
+          decided_at: decidedAt,
+        },
+      };
+    }
+  } else if (input.kind === "field_exposure") {
     resource.fields = {
       ...(resource.fields ?? {}),
       [input.field]: {
@@ -324,6 +429,23 @@ export function applyManagedBoundaryReviewDecision(
       resource.numeric_bands = {
         ...(resource.numeric_bands ?? {}),
         [input.name]: {
+          definition: structuredClone(input.definition),
+          actor: input.actor,
+          reason: input.reason,
+          decided_at: decidedAt,
+        },
+      };
+    }
+  } else if (input.kind === "auto_band") {
+    if (input.remove || input.definition === null) {
+      if (resource.auto_bands) {
+        delete resource.auto_bands[input.field];
+        if (Object.keys(resource.auto_bands).length === 0) delete resource.auto_bands;
+      }
+    } else {
+      resource.auto_bands = {
+        ...(resource.auto_bands ?? {}),
+        [input.field]: {
           definition: structuredClone(input.definition),
           actor: input.actor,
           reason: input.reason,
@@ -821,6 +943,13 @@ export function boundaryReviewDecisions(candidate: ExplorationBoundaryDraft): Bo
         kept_out_fields: resource.kept_out_fields,
       }, resourceId);
     }
+    if (detail === "confirm reviewed labels and descriptions") {
+      return reviewDecision(`resource.${resourceId}.metadata`, "metadata", decision, {
+        ...(resource.label ? { label: resource.label } : {}),
+        ...(resource.description ? { description: resource.description } : {}),
+        field_metadata: resource.field_metadata ?? {},
+      }, resourceId);
+    }
     if (detail === "confirm filter/sort/group/aggregate-only field permissions") {
       return reviewDecision(`resource.${resourceId}.field_permissions`, "field_permissions", decision, {
         filterable_fields: resource.filterable_fields,
@@ -835,6 +964,12 @@ export function boundaryReviewDecisions(candidate: ExplorationBoundaryDraft): Bo
           : {}),
         ...(resource.derived_measures?.length
           ? { derived_measures: resource.derived_measures }
+          : {}),
+        ...(resource.numeric_bands?.length
+          ? { numeric_bands: resource.numeric_bands }
+          : {}),
+        ...(resource.auto_bands?.length
+          ? { auto_bands: resource.auto_bands }
           : {}),
         count_distinct_fields: resource.count_distinct_fields,
         time_bucket_fields: resource.time_bucket_fields,
@@ -1067,6 +1202,15 @@ function boundedReviewText(value: unknown, label: string, maximum: number): stri
     throw new Error(`Managed boundary review ${label} must be at most ${maximum} characters.`);
   }
   return normalized;
+}
+
+function optionalMetadataText(
+  value: unknown,
+  label: string,
+  maximum: number,
+): string | null | undefined {
+  if (value === undefined || value === null) return value;
+  return boundedReviewText(value, label, maximum);
 }
 
 function requiredTimestamp(value: unknown, label: string): string {

@@ -94,6 +94,19 @@ export async function localDoctor(args: string[]): Promise<number> {
           + "privacy budgets, and any independently reviewed principal scope remain enforced.",
       });
     }
+    for (const resource of boundary.pack.resources) {
+      for (const policy of resource.auto_bands ?? []) {
+        checks.push({
+          name: `auto-band:${boundary.pack.name}:${resource.id}:${policy.field}`,
+          ok: true,
+          level: "pass",
+          message:
+            `${boundary.pack.name}.${resource.id}.${policy.field} permits reviewed automatic numeric bands: `
+            + `${policy.methods.join(" or ")}, ${policy.min_buckets}-${policy.max_buckets} buckets, `
+            + `${policy.label_style} labels. Edges are computed from trusted scoped rows and are never returned raw.`,
+        });
+      }
+    }
   }
   if ((parsed.capabilities ?? []).some((capability) => capability.protected_read)) {
     try {

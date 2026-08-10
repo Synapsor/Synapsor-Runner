@@ -15,6 +15,7 @@ import {
   explorationBoundaryCandidateDigest,
   writeAutoBoundaryArtifacts,
   type ActivatedExplorationBoundary,
+  type ReviewedMetadataDecision,
 } from "./auto-boundary.js";
 import {
   assertPreparedExplorePlanAuthority,
@@ -28,7 +29,7 @@ import {
   type CompiledExploreQuery,
   type ScopedExploreExecutor,
 } from "./scoped-explore.js";
-import { createScopedExploreMcpServer } from "./authoring-mcp.js";
+import { createScopedExploreMcpServer, projectDescribeDataForModel } from "./authoring-mcp.js";
 import { compileOperatorExploreEvidence } from "./explore-operator-evidence.js";
 
 const temporaryRoots: string[] = [];
@@ -700,6 +701,218 @@ describe("Scoped Explore", () => {
     }
   });
 
+  it("compiles one reviewed quantile auto band over scoped rows on both engines", async () => {
+    const fixture = await activatedFixture((candidate) => {
+      candidate.pack.resources[0]!.auto_bands = [{
+        field: "monthly_revenue_cents",
+        methods: ["quantile"],
+        min_buckets: 3,
+        max_buckets: 8,
+        label_style: "ordinal",
+      }];
+    });
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "avg", field: "monthly_revenue_cents" }],
+      dimensions: [{ numeric_band: {
+        field: "monthly_revenue_cents",
+        method: "quantile",
+        buckets: 5,
+      } }],
+      top_n: 10,
+    }, fixture.boundary);
+
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [compiled] = compileExplorePlan(plan, fixture.boundary, {
+        tenant: "tenant-acme",
+        principal: "pm-1",
+      }, engine);
+      expect(compiled?.sql).toContain("CUME_DIST() OVER");
+      expect(compiled?.sql).toContain("PARTITION BY CASE WHEN");
+      expect(compiled?.sql).toContain("__synapsor_auto_scope");
+      expect(compiled?.sql).toContain("__synapsor_auto_banded");
+      expect(compiled?.sql).toContain("__auto_bucket");
+      expect(compiled?.sql).toContain("COUNT(ab.");
+      expect(compiled?.sql).not.toMatch(/NTILE|PERCENTILE/i);
+      expect(compiled?.params).toContain("tenant-acme");
+    }
+  });
+
+  it("labels auto bands without releasing raw edges and enforces a cohort floor of five", async () => {
+    const fixture = await activatedFixture((candidate) => {
+      candidate.pack.resources[0]!.auto_bands = [{
+        field: "monthly_revenue_cents",
+        methods: ["quantile"],
+        min_buckets: 3,
+        max_buckets: 8,
+        label_style: "ordinal",
+      }];
+    }, churnInspection(), 1);
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+      executor: fixedExecutor([
+        { dimension_0: 1, measure_0: 100, __cohort_size: 4, __auto_effective_buckets: 5 },
+        { dimension_0: 2, measure_0: 250, __cohort_size: 5, __auto_effective_buckets: 5 },
+        { dimension_0: 5, measure_0: 900, __cohort_size: 8, __auto_effective_buckets: 5 },
+      ]),
+    });
+    try {
+      const result = await runtime.explore({
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ function: "count" }],
+        dimensions: [{ numeric_band: {
+          field: "monthly_revenue_cents",
+          method: "quantile",
+          buckets: 5,
+        } }],
+        top_n: 10,
+      }) as any;
+      expect(result.data).toEqual([
+        { monthly_revenue_cents_quantile_band: "Q2 of 5", count: 250 },
+        { monthly_revenue_cents_quantile_band: "Q5 of 5", count: 900 },
+      ]);
+      expect(result.privacy).toMatchObject({
+        effective_minimum_cohort_size: 5,
+        suppressed_groups: 1,
+        auto_bands: [{
+          field: "monthly_revenue_cents",
+          method: "quantile",
+          requested_buckets: 5,
+          effective_buckets: 3,
+          reduced: true,
+          raw_edges_returned: false,
+        }],
+      });
+      expect(JSON.stringify(result)).not.toContain("__auto_");
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("uses reviewed outward rounding for auto-band labels and reduces unsafe equal widths", async () => {
+    const fixture = await activatedFixture((candidate) => {
+      candidate.pack.resources[0]!.auto_bands = [{
+        field: "monthly_revenue_cents",
+        methods: ["equal_width"],
+        min_buckets: 2,
+        max_buckets: 10,
+        min_bucket_width: 1_000,
+        label_style: "rounded",
+        label_round_to: 1_000,
+      }];
+    });
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ numeric_band: {
+        field: "monthly_revenue_cents",
+        method: "equal_width",
+        buckets: 8,
+      } }],
+      top_n: 10,
+    }, fixture.boundary);
+    const [compiled] = compileExplorePlan(plan, fixture.boundary, {
+      tenant: "tenant-acme",
+      principal: "pm-1",
+    }, "mysql");
+    expect(compiled?.sql).toContain("GREATEST(1, FLOOR");
+    expect(compiled?.sql).toContain("__synapsor_auto_labeled");
+    expect(compiled?.sql).toContain("MIN(b.`__auto_value`) OVER");
+    expect(compiled?.params).not.toContain(1_000);
+
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+      executor: fixedExecutor([{
+        dimension_0: 1,
+        measure_0: 12,
+        __cohort_size: 12,
+        __auto_effective_buckets: 3,
+        __auto_bucket_min: 2_000,
+        __auto_bucket_max: 2_900,
+      }]),
+    });
+    try {
+      const result = await runtime.explore(plan) as any;
+      expect(result.data).toEqual([{
+        monthly_revenue_cents_equal_width_band: "1000 to 3000",
+        count: 12,
+      }]);
+      expect(result.privacy.auto_bands).toEqual([expect.objectContaining({
+        requested_buckets: 8,
+        effective_buckets: 3,
+        reduced: true,
+        label_style: "rounded",
+      })]);
+      expect(JSON.stringify(result)).not.toContain("2000");
+      expect(JSON.stringify(result)).not.toContain("2900");
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("refuses unreviewed or malformed adaptive numeric grouping before execution", async () => {
+    const fixture = await activatedFixture((candidate) => {
+      candidate.pack.resources[0]!.auto_bands = [{
+        field: "monthly_revenue_cents",
+        methods: ["quantile"],
+        min_buckets: 3,
+        max_buckets: 6,
+        label_style: "ordinal",
+      }];
+    });
+    const base = {
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      top_n: 10,
+    };
+    expect(() => validateExplorePlan({
+      ...base,
+      dimensions: [{ numeric_band: { field: "monthly_revenue_cents", method: "equal_width", buckets: 4 } }],
+    }, fixture.boundary)).toThrow(/not a reviewed auto-band method/i);
+    expect(() => validateExplorePlan({
+      ...base,
+      dimensions: [{ numeric_band: { field: "monthly_revenue_cents", method: "quantile", buckets: 7 } }],
+    }, fixture.boundary)).toThrow(/from 3 through 6/i);
+    expect(() => validateExplorePlan({
+      ...base,
+      dimensions: [{ numeric_band: {
+        field: "monthly_revenue_cents",
+        method: "quantile",
+        buckets: 4,
+        edges: [1, 2],
+      } }],
+    }, fixture.boundary)).toThrow(/unsupported fields: edges/i);
+    expect(() => validateExplorePlan({
+      ...base,
+      dimensions: [
+        { numeric_band: { field: "monthly_revenue_cents", method: "quantile", buckets: 4 } },
+        { numeric_band: { field: "monthly_revenue_cents", method: "quantile", buckets: 5 } },
+      ],
+    }, fixture.boundary)).toThrow(/at most one reviewed auto-band/i);
+    expect(() => validateExplorePlan({
+      ...base,
+      dimensions: [{ numeric_band: { field: "monthly_revenue_cents", method: "quantile", buckets: 4 } }],
+      time_bucket: { field: "churned_at", bucket: "month" },
+      comparison: {
+        field: "churned_at",
+        ranges: [
+          { start: "2026-01-01T00:00:00.000Z", end: "2026-02-01T00:00:00.000Z" },
+          { start: "2026-02-01T00:00:00.000Z", end: "2026-03-01T00:00:00.000Z" },
+        ],
+      },
+    }, fixture.boundary)).toThrow(/cannot be combined with a two-period comparison/i);
+  });
+
   it("suppresses field aggregates by non-null contributors and keeps a fixed dispersion floor of five", async () => {
     const fixture = await activatedFixture(undefined, churnInspection(), 4);
     const responses = [
@@ -1112,7 +1325,7 @@ describe("Scoped Explore", () => {
           valid_plan_example: {
             kind: "aggregate",
             resource: "public.subscriptions",
-            measures: [{ function: "sum", field: "monthly_revenue_cents" }],
+            measures: [{ function: "count" }],
             dimensions: [{ field: "region" }],
           },
         }],
@@ -2095,6 +2308,98 @@ describe("Scoped Explore", () => {
         });
       }
       expect(JSON.stringify(resource)).not.toMatch(/billing_token|sql/i);
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("describes reviewed metadata without exposing kept-out metadata or accepting labels as authority", async () => {
+    const reviewedAt = "2026-08-10T12:00:00.000Z";
+    const metadata = {
+      resource: {
+        label: "Customer subscriptions",
+        description: "One reviewed subscription record per customer account.",
+        actor: "analytics-owner@example.test",
+        reason: "Give people and AI clients business context without changing authority.",
+        decided_at: reviewedAt,
+      },
+      fields: {
+        region: {
+          label: "Sales region",
+          description: "Reviewed account territory used for regional grouping.",
+          actor: "analytics-owner@example.test",
+          reason: "Clarify an existing reviewed dimension.",
+          decided_at: reviewedAt,
+        },
+        billing_token: {
+          label: "Internal billing credential",
+          description: "Kept out of every model-facing response.",
+          actor: "analytics-owner@example.test",
+          reason: "Help the human reviewer identify a field that remains kept out.",
+          decided_at: reviewedAt,
+        },
+      },
+    } satisfies {
+      resource: ReviewedMetadataDecision;
+      fields: Record<string, ReviewedMetadataDecision>;
+    };
+    const fixture = await activatedFixture(
+      undefined,
+      churnInspection(),
+      undefined,
+      undefined,
+      metadata,
+    );
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([]),
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    try {
+      const description = await runtime.describe({ resource: "public.subscriptions" }) as any;
+      const resource = description.resources[0];
+      expect(resource).toMatchObject({
+        id: "public.subscriptions",
+        label: "Customer subscriptions",
+        description: "One reviewed subscription record per customer account.",
+      });
+      expect(resource.fields).toContainEqual({
+        id: "region",
+        label: "Sales region",
+        description: "Reviewed account territory used for regional grouping.",
+      });
+      expect(JSON.stringify(resource.fields)).not.toMatch(/billing_token|Internal billing credential|Kept out/i);
+      expect(resource.suggested_questions.map((question: { text: string }) => question.text).join("\n"))
+        .toMatch(/sales regions|customer subscriptions/i);
+
+      const projected = projectDescribeDataForModel(description, false) as any;
+      expect(projected.resources[0]).toMatchObject({
+        id: "public.subscriptions",
+        label: "Customer subscriptions",
+        description: "One reviewed subscription record per customer account.",
+        fields: expect.arrayContaining([{
+          id: "region",
+          label: "Sales region",
+          description: "Reviewed account territory used for regional grouping.",
+        }]),
+      });
+      expect(JSON.stringify(projected.resources[0].fields))
+        .not.toMatch(/billing_token|Internal billing credential|Kept out/i);
+
+      expect(() => validateExplorePlan({
+        kind: "aggregate",
+        resource: "Customer subscriptions",
+        measures: [{ function: "count" }],
+        top_n: 10,
+      }, fixture.boundary)).toThrow(/not in|not reviewed|outside/i);
+      expect(validateExplorePlan({
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ function: "count" }],
+        top_n: 10,
+      }, fixture.boundary)).toMatchObject({ resource: "public.subscriptions" });
     } finally {
       await runtime.close();
     }
@@ -3084,6 +3389,73 @@ describe("Scoped Explore", () => {
       top_n: 3,
     })).rejects.toMatchObject({ code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED" });
     await runtime.close();
+  });
+
+  it("accounts fixed and automatic bucket-count variants in one differencing family", async () => {
+    const fixture = await activatedFixture((candidate) => {
+      candidate.budgets.max_differencing_queries = 2;
+      candidate.budgets.max_queries_per_session = 20;
+      candidate.budgets.rate_limit_per_minute = 20;
+      candidate.budgets.max_extracted_cells_per_session = 200;
+      candidate.pack.resources[0]!.numeric_bands = [{
+        name: "monthly_revenue_band",
+        label: "Monthly revenue band",
+        field: "monthly_revenue_cents",
+        edges: [1_000, 5_000],
+        bucket_labels: ["under 10", "10 to 49", "50 or more"],
+      }];
+      candidate.pack.resources[0]!.auto_bands = [{
+        field: "monthly_revenue_cents",
+        methods: ["quantile"],
+        min_buckets: 3,
+        max_buckets: 8,
+        label_style: "ordinal",
+      }];
+    });
+    let executions = 0;
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: {
+        execute: async () => [],
+        executeBatch: async ({ queries }) => {
+          executions += 1;
+          return queries.map(() => [{
+            dimension_0: 1,
+            measure_0: 10,
+            __cohort_size: 10,
+            __auto_effective_buckets: 5,
+          }]);
+        },
+        close: async () => undefined,
+      },
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => Date.parse("2026-07-24T12:00:00.000Z"),
+    });
+    const planFor = (numeric_band: string | { field: string; method: "quantile"; buckets: number }) => ({
+      kind: "aggregate" as const,
+      resource: "public.subscriptions",
+      measures: [{ function: "count" as const }],
+      dimensions: [{ numeric_band }],
+      top_n: 10,
+    });
+    try {
+      await expect(runtime.explore(planFor("monthly_revenue_band"))).resolves.toMatchObject({ ok: true });
+      await expect(runtime.explore(planFor({
+        field: "monthly_revenue_cents",
+        method: "quantile",
+        buckets: 4,
+      }))).resolves.toMatchObject({ ok: true });
+      await expect(runtime.explore(planFor({
+        field: "monthly_revenue_cents",
+        method: "quantile",
+        buckets: 5,
+      }))).rejects.toMatchObject({ code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED" });
+      expect(executions).toBe(2);
+    } finally {
+      await runtime.close();
+    }
   });
 
   it("keeps differencing use across restart and UTC midnight until the rolling window expires", async () => {
@@ -4196,6 +4568,10 @@ async function activatedFixture(
   inspection = churnInspection(),
   minimumCohort?: 1 | 2 | 3 | 4,
   trustedScopeExposure?: "runner_only" | "model_visible",
+  metadata?: {
+    resource?: ReviewedMetadataDecision;
+    fields?: Record<string, ReviewedMetadataDecision>;
+  },
 ): Promise<{
   root: string;
   boundary: ActivatedExplorationBoundary;
@@ -4205,6 +4581,8 @@ async function activatedFixture(
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-scoped-explore-"));
   temporaryRoots.push(root);
   const reviewedResource = {
+    ...(metadata?.resource ? { metadata: metadata.resource } : {}),
+    ...(metadata?.fields ? { field_metadata: metadata.fields } : {}),
     ...(minimumCohort
       ? {
         minimum_cohort: {
@@ -4242,7 +4620,7 @@ async function activatedFixture(
       database_env_names: ["DATABASE_URL"],
     },
     sourceEnv: "DATABASE_URL",
-    ...(minimumCohort || trustedScopeExposure
+    ...(minimumCohort || trustedScopeExposure || metadata
       ? {
         overrides: {
           schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,

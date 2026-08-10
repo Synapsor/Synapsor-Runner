@@ -674,7 +674,11 @@ function analysisDisplayTitle(analysis: AnalyticsAnalysis): string {
   const resource = businessLabel(plan.resource.split(".").at(-1) ?? plan.resource);
   if (plan.kind === "rows") return `${resource} rows`;
   const dimensions = (plan.dimensions ?? []).map((dimension) =>
-    businessLabel("numeric_band" in dimension ? dimension.numeric_band : dimension.field));
+    businessLabel("numeric_band" in dimension
+      ? typeof dimension.numeric_band === "string"
+        ? dimension.numeric_band
+        : `${dimension.numeric_band.field} ${dimension.numeric_band.method} band`
+      : dimension.field));
   const time = plan.time_bucket?.bucket;
   const groups = [...dimensions, ...(time ? [time] : [])];
   return groups.length ? `${resource} by ${naturalList(groups)}` : `${resource} summary`;

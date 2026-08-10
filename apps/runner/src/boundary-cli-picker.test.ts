@@ -95,6 +95,27 @@ describe("boundary review terminal picker", () => {
     await expect(confirmed).resolves.toBe(true);
   });
 
+  it("keeps a multiline review explanation above a short visible text-entry line", async () => {
+    const terminal = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(terminal.input, terminal.output);
+    const answer = session.promptText([
+      "SHARED REFERENCE REVIEW",
+      "Table: public.lab_catalog",
+      "Explain why this table contains the same rows for every tenant.",
+      "A concrete reason is required; Enter alone does not save.",
+      "Required reason",
+    ].join("\n"));
+
+    await send(terminal.input, "Centrally managed reference data.\n");
+    await expect(answer).resolves.toBe("Centrally managed reference data.");
+
+    const rendered = stripAnsi(terminal.output.read()?.toString() ?? "");
+    expect(rendered).toContain("  SHARED REFERENCE REVIEW\n");
+    expect(rendered).toContain("  Table: public.lab_catalog\n");
+    expect(rendered).toContain("  Required reason [Esc Back]: ");
+    expect(terminal.input.isRaw).toBe(false);
+  });
+
   it("requires an explicit activation key and restores terminal state", async () => {
     const acceptedTerminal = fakeTerminal();
     const acceptedSession = createBoundaryReviewInteractiveSession(
@@ -296,6 +317,23 @@ describe("boundary review terminal picker", () => {
     await expect(selected).resolves.toEqual({
       resource_id: "public.orders",
       action: "analytics",
+    });
+  });
+
+  it("makes reviewed table metadata a first-class focused-access action", async () => {
+    const { input, output } = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const selected = session.chooseResource(
+      [summary("public.orders", 0)],
+      undefined,
+      { initialView: "access" },
+    );
+    expect(stripAnsi(output.read()?.toString() ?? ""))
+      .toContain("I Table label and description");
+    await send(input, "i");
+    await expect(selected).resolves.toEqual({
+      resource_id: "public.orders",
+      action: "metadata",
     });
   });
 
@@ -1092,6 +1130,22 @@ describe("boundary review terminal picker", () => {
     expect(rendered).toContain("Removed values are refused even if guessed");
     expect(rendered).toContain("Selecting none disables filtering and grouping");
     expect(rendered).toContain("Save allowed values and return to columns");
+  });
+
+  it("opens selected-column metadata without losing staged access choices", async () => {
+    const terminal = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(terminal.input, terminal.output);
+    const action = session.editFieldTiers(reviewView(), { focusedAccess: true });
+    await send(terminal.input, "w");
+    await send(terminal.input, "i");
+
+    await expect(action).resolves.toMatchObject({
+      action: "metadata",
+      field: "outcome",
+      tiers: { outcome: "withheld_from_model" },
+    });
+    expect(stripAnsi(terminal.output.read()?.toString() ?? ""))
+      .toContain("I Edit the selected column's reviewed label and description");
   });
 
   it("opens user-owner scope review without losing staged column choices", async () => {

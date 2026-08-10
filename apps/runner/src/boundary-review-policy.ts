@@ -90,6 +90,25 @@ export function reconstructBoundaryReviewOverrides(input: {
       || candidate.minimum_cohort_overridden === true) {
       resource.minimum_cohort = decision(candidate.minimum_cohort_size);
     }
+    if (candidate.label || candidate.description) {
+      resource.metadata = {
+        ...(candidate.label ? { label: candidate.label } : {}),
+        ...(candidate.description ? { description: candidate.description } : {}),
+        actor: boundedMigrationText(input.actor, "migration actor", 128),
+        reason: `Reconstructed from exact saved boundary ${input.candidate.pack.name}; no project-wide resource metadata was assigned.`,
+        decided_at: input.decidedAt,
+      };
+    }
+    if (candidate.field_metadata && Object.keys(candidate.field_metadata).length) {
+      resource.field_metadata = Object.fromEntries(
+        Object.entries(candidate.field_metadata).map(([field, metadata]) => [field, {
+          ...structuredClone(metadata),
+          actor: boundedMigrationText(input.actor, "migration actor", 128),
+          reason: `Reconstructed from exact saved boundary ${input.candidate.pack.name}; no project-wide field metadata was assigned.`,
+          decided_at: input.decidedAt,
+        }]),
+      );
+    }
 
     const fields = reconstructFieldExposureOverrides(baseline, candidate, input);
     if (Object.keys(fields).length) resource.fields = fields;
@@ -113,6 +132,17 @@ export function reconstructBoundaryReviewOverrides(input: {
           definition: structuredClone(definition),
           actor: boundedMigrationText(input.actor, "migration actor", 128),
           reason: `Reconstructed from exact saved boundary ${input.candidate.pack.name}; no project-wide numeric-band policy was assigned.`,
+          decided_at: input.decidedAt,
+        },
+      ]));
+    }
+    if (candidate.auto_bands?.length) {
+      resource.auto_bands = Object.fromEntries(candidate.auto_bands.map((definition) => [
+        definition.field,
+        {
+          definition: structuredClone(definition),
+          actor: boundedMigrationText(input.actor, "migration actor", 128),
+          reason: `Reconstructed from exact saved boundary ${input.candidate.pack.name}; no project-wide auto-band policy was assigned.`,
           decided_at: input.decidedAt,
         },
       ]));

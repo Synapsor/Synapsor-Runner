@@ -58,7 +58,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     .badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}.badge{display:inline-flex;padding:3px 7px;border-radius:999px;border:1px solid var(--line);font-size:12px;color:var(--muted);background:var(--surface-2)}
     .badge.bad{color:var(--bad);background:var(--bad-soft);border-color:var(--bad)}.badge.warn{color:var(--warn);background:var(--warn-soft);border-color:var(--warn)}.badge.good{color:var(--good);background:var(--good-soft);border-color:var(--good)}
     .risk-list{display:grid;gap:8px;margin-top:12px}.risk{border-left:3px solid var(--line);padding:9px 11px;background:var(--surface-2)}.risk.high{border-color:var(--bad)}.risk.unresolved{border-color:var(--warn)}
-    .review-form{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+    .review-form{margin-top:10px;padding-top:10px;border-top:1px solid var(--line);scroll-margin-top:78px}
      .scope-grid,.form-grid,.preflight{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.form-grid-contents{display:contents}.preflight{grid-template-columns:repeat(3,minmax(0,1fr))}.preflight>div{min-width:0}.preflight p{overflow-wrap:anywhere}
     .check{display:flex;align-items:flex-start;gap:8px}.check input{flex:0 0 auto;margin-top:3px}
     details{border-top:1px solid var(--line);margin-top:14px;padding-top:10px}summary{cursor:pointer;color:var(--accent);font-weight:700}
@@ -155,7 +155,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	    .access-column-tier{display:grid;gap:4px;color:var(--muted);font-size:11px;font-weight:700}.access-column-tier select{min-height:38px}.access-column-consequence{font-weight:500;line-height:1.35}.access-column .review-form{grid-column:1/-1;margin:2px 0 4px}
 	    .enum-review{grid-column:1/-1;margin:2px 0 4px;padding:10px 12px;border:1px solid var(--line);border-radius:7px;background:var(--bg)}.enum-review>summary{cursor:pointer;font-weight:700}.enum-review-values{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:7px;margin:10px 0}.enum-review-values .check{margin:0;padding:7px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface)}
 	    .access-secondary{margin-top:10px}.access-secondary>summary{font-weight:700}.access-secondary[open]{padding-bottom:6px}
-	    .access-final{position:sticky;bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:16px;margin:18px 0 0 auto;max-width:calc(100% - 318px);padding:12px 14px;border:1px solid var(--accent);border-radius:8px;background:color-mix(in srgb,var(--surface) 96%,transparent);box-shadow:0 10px 32px rgba(0,0,0,.18);backdrop-filter:blur(10px);z-index:2}.access-final p{margin:0}.access-final strong{color:var(--text)}
+	    .access-final{position:sticky;bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:16px;margin:18px 0 0 auto;max-width:calc(100% - 318px);padding:12px 14px;border:1px solid var(--accent);border-radius:8px;background:color-mix(in srgb,var(--surface) 96%,transparent);box-shadow:0 10px 32px rgba(0,0,0,.18);backdrop-filter:blur(10px);z-index:2}.access-final p{min-width:0;margin:0;overflow-wrap:anywhere}.access-final strong{color:var(--text);overflow-wrap:anywhere}
 	    .hidden{display:none!important}.screen-reader{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 	    @media(max-width:960px){.workbench-layout{grid-template-columns:1fr;gap:18px}.workflow-rail{position:static}.rail-label,.rail-note{display:none}.steps{display:flex;overflow-x:auto;border-bottom:1px solid var(--line);padding-bottom:1px}.step{flex:0 0 auto;min-width:150px;border-left:0;border-bottom:3px solid transparent;border-radius:6px 6px 0 0}.step.active{border-left:0;border-bottom-color:var(--accent)}}
 	    @media(max-width:820px){header>div,main,body.quick-start-mode header>div,body.quick-start-mode main,body.ask-focus-mode header>div,body.ask-focus-mode main,body.access-focus-mode header>div,body.access-focus-mode main{width:calc(100% - 24px)}.summary{grid-template-columns:1fr 1fr}.metric:nth-child(2){border-right:0}.resource-list,.scope-grid,.form-grid,.preflight,.journey,.ask-grid,.instant-reveal,.access-editor,.access-column,.boundary-version-list{grid-template-columns:1fr}.boundary-overview-head{flex-direction:column}.access-editor-head{align-items:flex-start;flex-direction:column}.access-nav{position:static}.access-resource-list{max-height:270px}.access-final{position:static;max-width:none;flex-direction:column;align-items:stretch}.instant-reveal{gap:28px;min-height:auto;padding:28px 0 44px}.instant-copy{display:contents}.instant-copy .instant-kicker{order:1}.instant-copy h2{order:2;font-size:36px}.instant-copy>p{order:3}.instant-boundary{order:4;padding:18px}.instant-actions{order:5}.instant-trust{order:6}.instant-flow{min-height:160px}.footer-actions{position:static}.ask-head{grid-template-columns:1fr}.ask-state{text-align:left}.ask-state .badge{margin:0 5px 0 0}body.ask-focus-mode .ask-state{position:static}}
@@ -238,6 +238,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	    .boundary-catalog-path{border-left:2px solid #75e3b7;background:#0b1511}.boundary-catalog-path.unproven{border-left-color:#f0aa68}.boundary-catalog-path .boundary-catalog-edge{border-left:0;background:transparent}.boundary-catalog-question{margin:0;padding:0 12px 11px;color:#cbd6d0;font-size:12px}.boundary-catalog-question strong{color:#75e3b7}.boundary-catalog-questions{margin:12px 0;padding:12px 14px;border-left:2px solid #75e3b7;background:#0b1511}.boundary-catalog-questions strong{color:#75e3b7}.boundary-catalog-questions ul{margin:8px 0 0;padding-left:20px}.boundary-catalog-questions li+li{margin-top:5px}.boundary-catalog-capabilities{color:#aab8b1!important}
 	    .boundary-proof-report{margin:0 0 18px;padding:18px;border:1px solid var(--line);border-left:3px solid var(--good);border-radius:8px;background:var(--good-soft)}.boundary-proof-report.failed{border-left-color:var(--bad);background:var(--bad-soft)}.boundary-proof-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}.boundary-proof-head h3{margin:3px 0}.boundary-proof-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:14px 0}.boundary-proof-item{padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:var(--surface)}.boundary-proof-item strong,.boundary-proof-item small{display:block}.boundary-proof-item small{margin-top:3px;color:var(--muted)}
 	    .ask-proof-actions{order:1;display:flex;justify-content:flex-end;gap:8px;margin:-6px 0 14px}#boundary-proof-result{order:1}
+	    .ask-history{order:1;margin:0 0 14px;border:1px solid #304239;border-radius:8px;background:#0f1915}.ask-history>summary{padding:12px 16px;cursor:pointer;font-weight:750}.ask-history-body{padding:0 16px 16px}.ask-history-table-wrap{overflow-x:auto}.ask-history table{width:100%;min-width:680px}.ask-history td{vertical-align:top}.ask-history td code{color:#75e3b7;overflow-wrap:anywhere}.ask-history .history-status-latest{color:var(--good);font-weight:750}.ask-history .history-status-refused{color:var(--warn)}.history-durable-table th:nth-child(3),.history-durable-table td:nth-child(3){min-width:220px}.history-durable-table th:nth-child(6),.history-durable-table td:nth-child(6){min-width:230px}
     body.ask-focus-mode #ask-chat>.ask-disclosure{order:4;margin-top:26px;color:#77857e}
     body.ask-focus-mode #ask-starters{order:3;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:38px}
     body.ask-focus-mode #ask-starters>strong,body.ask-focus-mode #ask-starters>p{grid-column:1/-1}
@@ -315,6 +316,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       body.ask-focus-mode .ask-verified{padding:20px}.ask-verified-head{align-items:flex-start}.runner-verified{font-size:10px}
 	      .ask-boundary-grid,.boundary-proof-grid,.boundary-catalog-nodes{grid-template-columns:1fr}.ask-boundary-summary{display:grid;gap:2px}.ask-boundary-resource{padding:13px}.ask-boundary-actions{align-items:stretch;flex-direction:column}.ask-boundary-actions button{width:100%}.boundary-catalog-controls{grid-template-columns:1fr}.boundary-catalog-edge{grid-template-columns:1fr;gap:5px}.boundary-catalog-edge span{text-align:left}
       .ask-boundary-pagination{align-items:stretch;flex-direction:column}.ask-boundary-pagination-actions{display:grid;grid-template-columns:1fr 1fr}.ask-boundary-pagination-actions button{width:100%}
+	      .ask-history-body{padding:0 16px 16px}.ask-history-table-wrap{overflow:visible}.ask-history table{min-width:0}.ask-history thead{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.ask-history tbody,.ask-history tr,.ask-history td{display:block;width:100%}.ask-history tr{padding:10px 0;border-top:1px solid #26372f}.ask-history td{display:grid;grid-template-columns:88px minmax(0,1fr);gap:8px;padding:5px 0;border:0}.ask-history td::before{content:attr(data-label);color:#839189;font-size:10px;font-weight:800;text-transform:uppercase}.history-durable-table td:nth-child(3),.history-durable-table td:nth-child(6){min-width:0}
       body.ask-result-mode main{padding-top:28px}.ask-result-mode .ask-transcript>.ask-turn:not(.answer)>p{font-size:30px}body.ask-result-mode .ask-answer-grid{grid-template-columns:1fr}.ask-result-mode .ask-model-panel,.ask-result-mode .ask-verified{padding:20px}.ask-result-mode .ask-composer{grid-template-columns:1fr;padding:16px}
     }
     /* Ask chat redesign: model reply is the primary bubble; verified result is a labeled collapsed disclosure */
@@ -565,6 +567,15 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
               <div id="ask-boundary-body" class="ask-boundary-body"></div>
             </details>
             <div class="ask-proof-actions"><button id="prove-boundary-chat" data-prove-boundary class="secondary" type="button">Prove this boundary</button><button data-tune-boundary class="quiet" type="button">Tune access</button></div>
+            <details id="ask-history" class="ask-history">
+              <summary>Query history</summary>
+              <div class="ask-history-body">
+                <p>Recent references can still be inspected or protected. Durable history contains bounded audit metadata only; Runner does not persist model conversations, result values, trusted scope values, or raw SQL.</p>
+                <div class="actions"><button id="load-ask-history" class="secondary" type="button">Load query history</button></div>
+                <div id="ask-history-status" class="status-message" role="status" aria-live="polite"></div>
+                <div id="ask-history-content"></div>
+              </div>
+            </details>
             <div id="ask-starters" class="question-list"></div>
             <div id="ask-transcript" class="ask-transcript" aria-live="polite"></div>
             <div class="ask-composer">
@@ -1580,7 +1591,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		      const resources=inspected
 		        .filter(resource=>showAllAccessResources||Boolean(currentResource(resource.id))
 		          ||accessRelationshipConnections(resource.id).length>0||resource.id===selectedResource)
-		        .filter(resource=>!query||resource.id.toLowerCase().includes(query)||humanizeIdentifier(resource.id.split(".").pop()||resource.id).toLowerCase().includes(query))
+		        .filter(resource=>{const metadata=currentResource(resource.id);return !query||resource.id.toLowerCase().includes(query)||humanizeIdentifier(resource.id.split(".").pop()||resource.id).toLowerCase().includes(query)||(metadata?.label||"").toLowerCase().includes(query)||(metadata?.description||"").toLowerCase().includes(query)})
 		        .sort((left,right)=>{
 		          const riskDifference=accessNavigationRiskRank(right.id)-accessNavigationRiskRank(left.id);
 		          return riskDifference||left.id.localeCompare(right.id);
@@ -1604,11 +1615,12 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		              ?"Included"
 		              :risks?"Sign-off needed":"Ready";
 		        const stateClass=blocked?"blocked":!included||risks?"pending":"ready";
-		        const label=humanizeIdentifier(review.id.split(".").pop()||review.id);
+		        const label=includedResource?.label||humanizeIdentifier(review.id.split(".").pop()||review.id);
+		        const description=includedResource?.description?'<small>'+esc(includedResource.description)+'</small>':'';
 		      const path=connection
 		        ?'<small>Related to '+esc(accessBoundaryEndpoint(connection)+' via '+connection.relationship)+'</small>'
 		          :'';
-		        return '<button class="access-resource secondary '+(review.id===selectedResource?"selected":"")+'" data-access-resource="'+esc(review.id)+'" data-access-included="'+esc(String(included))+'" data-access-blocked="'+esc(String(blocked))+'" type="button" aria-pressed="'+esc(String(review.id===selectedResource))+'"><span><strong>'+esc(label)+'</strong><small>'+esc(review.id)+'</small>'+privacy+path+'</span><span class="access-resource-state '+stateClass+'">'+esc(state)+'</span></button>';
+		        return '<button class="access-resource secondary '+(review.id===selectedResource?"selected":"")+'" data-access-resource="'+esc(review.id)+'" data-access-included="'+esc(String(included))+'" data-access-blocked="'+esc(String(blocked))+'" type="button" aria-pressed="'+esc(String(review.id===selectedResource))+'"><span><strong>'+esc(label)+'</strong><small>'+esc(review.id)+'</small>'+description+privacy+path+'</span><span class="access-resource-state '+stateClass+'">'+esc(state)+'</span></button>';
 	      }).join("")||'<p>No '+esc(reviewedCollectionLabel())+' match this view. '+(showAllAccessResources?'Try another search.':'Use All inspected only when you intentionally need an unrelated table.')+'</p>';
 		      document.querySelectorAll("[data-access-resource]").forEach(button=>button.onclick=()=>{
 		        selectedResource=button.dataset.accessResource;
@@ -2003,6 +2015,53 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       return '<div class="review-form hidden" data-managed-review-form data-field="'+esc(field)+'" data-exposure="'+esc(exposure)+'"><label class="field">Human reviewer<input data-review-actor type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><label class="field">Reason<textarea data-review-reason maxlength="500" rows="2" placeholder="'+esc(placeholder)+'"></textarea></label><div class="actions"><button data-submit-field-review="'+esc(field)+'" data-exposure="'+esc(exposure)+'" type="button">Save this reviewed choice</button><button class="quiet" data-cancel-field-review type="button">Cancel</button></div><span data-review-status class="status-message"></span></div>';
     }
 
+    function managedMetadataReviewPanel(kind,field,metadata){
+      const subject=field?"Column name and description":"Table name and description";
+      const exact=field?selectedResource+"."+field:selectedResource;
+      return '<details class="access-secondary metadata-review" data-metadata-review-form data-metadata-kind="'+esc(kind)+'" data-metadata-field="'+esc(field||"")+'" data-metadata-current-label="'+esc(metadata?.label||"")+'" data-metadata-current-description="'+esc(metadata?.description||"")+'"><summary>'+esc(subject)+(metadata?.label||metadata?.description?' · reviewed':'')+'</summary>'
+        +'<p>Help people and AI clients understand <code>'+esc(exact)+'</code>. This metadata grants no access; plans still use the exact id.</p>'
+        +'<div class="form-grid"><label class="field">Reviewed label<input data-metadata-label type="text" maxlength="64" value="'+esc(metadata?.label||"")+'" placeholder="Short human-readable name"></label><label class="field">Reviewed description<textarea data-metadata-description maxlength="280" rows="2" placeholder="What this '+(field?'column':'table')+' means">'+esc(metadata?.description||"")+'</textarea></label><label class="field">Human reviewer<input data-metadata-actor type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><label class="field">Reason<textarea data-metadata-reason maxlength="500" rows="2" placeholder="Why these words accurately describe the exact database id"></textarea></label></div>'
+        +'<div class="actions"><button data-submit-metadata-review type="button">Save reviewed metadata</button></div><span data-metadata-status class="status-message"></span></details>';
+    }
+
+    async function submitManagedMetadataReview(form){
+      const status=form.querySelector("[data-metadata-status]");
+      try{
+        const label=form.querySelector("[data-metadata-label]").value.trim();
+        const description=form.querySelector("[data-metadata-description]").value.trim();
+        const currentLabel=form.dataset.metadataCurrentLabel||"";
+        const currentDescription=form.dataset.metadataCurrentDescription||"";
+        if(label===currentLabel&&description===currentDescription){
+          status.className="status-message";
+          status.textContent="Unchanged: these reviewed words are already saved. No boundary revision was created.";
+          return;
+        }
+        const actor=form.querySelector("[data-metadata-actor]").value.trim();
+        const reason=form.querySelector("[data-metadata-reason]").value.trim();
+        if(!actor||!reason)throw new Error("Enter the human reviewer identity and a concrete reason. No change was made.");
+        status.className="status-message";
+        status.textContent="Saving reviewed metadata in the disabled boundary...";
+        await post("/api/boundary/regenerate",{
+          kind:form.dataset.metadataKind,
+          resource_id:selectedResource,
+          ...(form.dataset.metadataField?{field:form.dataset.metadataField}:{}),
+          label:label||null,
+          description:description||null,
+          actor,
+          reason
+        });
+        candidateDigest=undefined;
+        focusedAccessReview=true;
+        document.body.classList.remove("quick-start-mode");
+        await load();
+        offerStagedActivation();
+        byId("access-staged-summary").textContent="Recorded reviewed metadata for "+selectedResource+(form.dataset.metadataField?"."+form.dataset.metadataField:"")+". Review the complete boundary, then activate it.";
+      }catch(error){
+        status.className="status-message error";
+        status.textContent=error.message;
+      }
+    }
+
     async function submitManagedScopeReview(kind,form){
       const status=form.querySelector("[data-scope-review-status]");
       const button=form.querySelector("[data-submit-scope-review]");
@@ -2157,18 +2216,24 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 
     function reviewedAnalyticsPanel(resource){
       const bands=resource.numeric_bands||[];
+      const autoBands=resource.auto_bands||[];
       const measures=resource.derived_measures||[];
       const fields=reviewedAnalyticsFieldChoices(resource);
+      const autoBandFields=(resource.aggregate_measures||[]).slice().sort();
       const operands=reviewedAnalyticsOperandChoices(resource);
       const childCounts=reviewedChildCountChoices(resource);
       const actor=esc(byId("actor").value.trim());
       const option=value=>esc(JSON.stringify(value));
       const bandRows=bands.length?bands.map(band=>'<div class="risk"><strong>'+esc(band.label)+'</strong><p><code>'+esc(band.name)+'</code> groups '+esc(band.relationship?band.relationship+" -> "+band.field:band.field)+' into '+esc(band.bucket_labels.length)+' fixed buckets: '+esc(band.bucket_labels.join(" | "))+'</p><button class="quiet" data-remove-numeric-band="'+esc(band.name)+'" type="button">Remove this band</button></div>').join(""):'<p>No numeric bands are reviewed for this table.</p>';
+      const autoBandRows=autoBands.length?autoBands.map(policy=>'<div class="risk"><strong>Automatic bands for '+esc(policy.field)+'</strong><p>The AI may choose '+esc(policy.methods.map(method=>method.replace(/_/g," ")).join(" or "))+' and '+esc(policy.min_buckets)+'-'+esc(policy.max_buckets)+' buckets. Labels are '+esc(policy.label_style)+'. Raw computed edges are never shown.</p><button class="quiet" data-remove-auto-band="'+esc(policy.field)+'" type="button">Disable automatic bands</button></div>').join(""):'<p>No automatic numeric bands are reviewed for this table.</p>';
       const measureRows=measures.length?measures.map(measure=>'<div class="risk"><strong>'+esc(measure.label)+'</strong><p><code>'+esc(measure.name)+'</code> is a fixed '+esc(measure.shape.replace(/_/g," "))+'. The AI can select its name but cannot change its reviewed definition.'+(measure.base_measure?' Runner applies it only after small-group suppression.':measure.child_resource?' Runner counts scoped child rows through '+esc(measure.child_resource)+" -> "+esc(resource.id)+" without a raw one-to-many join.":'')+'</p><button class="quiet" data-remove-derived-measure="'+esc(measure.name)+'" type="button">Remove this metric</button></div>').join(""):'<p>No named derived metrics are reviewed for this table.</p>';
-      const commonReview='<div class="form-grid"><label class="field">Human reviewer<input id="analytics-review-actor" type="text" maxlength="128" value="'+actor+'"></label><label class="field">Reason for this analytics definition<textarea id="analytics-review-reason" maxlength="500" rows="2" placeholder="Explain why this fixed metric or grouping is appropriate for this boundary."></textarea></label></div>';
+      const commonReview='<div class="form-grid"><label class="field">Human reviewer<input id="analytics-review-actor" type="text" maxlength="128" value="'+actor+'"></label><label class="field">Reason for this analytics setting<textarea id="analytics-review-reason" maxlength="500" rows="2" placeholder="Explain why this metric or grouping policy is appropriate for this boundary."></textarea></label></div>';
       const bandForm=fields.length
         ?'<div class="review-form"><h4>Add a fixed numeric band</h4><p>Choose a reviewed numeric field and fixed bucket boundaries. The AI receives only the saved name and labels; it cannot supply edges.</p><div class="form-grid"><label class="field">Numeric field<select id="analytics-band-field">'+fields.map(item=>'<option value="'+option(item)+'">'+esc(item.label)+'</option>').join("")+'</select></label><label class="field">Saved name<input id="analytics-band-name" type="text" maxlength="64" placeholder="order_value_band"></label><label class="field">Plain-language label<input id="analytics-band-label" type="text" maxlength="120" placeholder="Order value band"></label><label class="field">Bucket edges<input id="analytics-band-edges" type="text" maxlength="512" placeholder="1000, 5000"></label><label class="field">Labels, lowest to highest<input id="analytics-band-labels" type="text" maxlength="2048" placeholder="Under 10 | 10 to 49 | 50 or more"></label></div><div class="actions"><button id="save-numeric-band" type="button">Save numeric band</button></div></div>'
         :'<div class="risk high"><strong>No reviewed numeric field is available.</strong><p>Review a numeric aggregate field before defining a band.</p></div>';
+      const autoBandForm=autoBandFields.length
+        ?'<div class="review-form"><h4>Allow automatic numeric bands</h4><p>Approve a bounded method once. The AI may choose only the method and bucket count; Runner computes bands from trusted scoped rows and never exposes raw edges.</p><div class="form-grid"><label class="field">Numeric field<select id="analytics-auto-band-field">'+autoBandFields.map(field=>'<option value="'+esc(field)+'">'+esc(field)+'</option>').join("")+'</select></label><label class="field">Allowed method<select id="analytics-auto-band-method"><option value="quantile">Quantile only (recommended)</option><option value="equal_width">Equal width only</option><option value="both">Quantile or equal width</option></select></label><label class="field">Fewest buckets<input id="analytics-auto-band-min" type="number" min="2" max="16" value="3"></label><label class="field">Most buckets<input id="analytics-auto-band-max" type="number" min="2" max="16" value="10"></label><label class="field">Minimum bucket width<input id="analytics-auto-band-width" type="number" min="0" step="any" placeholder="Required for equal width" disabled></label><label class="field">Labels<select id="analytics-auto-band-label-style"><option value="ordinal">Ordinal (recommended; no data-derived numbers)</option><option value="rounded">Outward-rounded ranges</option></select></label><label class="field">Round labels outward to<input id="analytics-auto-band-round" type="number" min="0" step="any" placeholder="Required for rounded labels" disabled></label></div><div class="actions"><button id="save-auto-band" type="button">Save automatic-band policy</button></div></div>'
+        :'<div class="risk high"><strong>No reviewed numeric field is available for automatic bands.</strong><p>Review a numeric aggregate field first.</p></div>';
       const derivedForm=operands.length
         ?'<div class="review-form"><h4>Add a named derived metric</h4><p>Choose two existing reviewed aggregates. Runner fixes the calculation; there is no formula or SQL input.</p><div class="form-grid"><label class="field">Numerator<select id="analytics-derived-numerator">'+operands.map(item=>'<option data-relationship="'+esc(item.relationship)+'" value="'+option(item.value)+'">'+esc(item.label)+'</option>').join("")+'</select></label><label class="field">Denominator<select id="analytics-derived-denominator">'+operands.map(item=>'<option data-relationship="'+esc(item.relationship)+'" value="'+option(item.value)+'">'+esc(item.label)+'</option>').join("")+'</select></label><label class="field">Released result<select id="analytics-derived-shape"><option value="ratio">Ratio</option><option value="percentage">Percentage (ratio x 100)</option><option value="per_unit_average">Per-unit average</option></select></label><label class="field">Saved name<input id="analytics-derived-name" type="text" maxlength="64" placeholder="average_order_value"></label><label class="field">Plain-language label<input id="analytics-derived-label" type="text" maxlength="120" placeholder="Average order value"></label></div><div class="actions"><button id="save-derived-measure" type="button">Save named metric</button></div></div>'
         :'<div class="risk high"><strong>No reviewed aggregate is available.</strong><p>Review aggregate operations before defining a metric.</p></div>';
@@ -2178,7 +2243,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const childCountForm=childCounts.length
         ?'<div class="review-form"><h4>Add a safe child-count metric</h4><p>Count child records without a raw one-to-many join. Runner fixes the catalog-proven child path, applies trusted child scope, and releases only parent cohorts of at least five.</p><div class="form-grid"><label class="field">Child relationship<select id="analytics-child-count-path">'+childCounts.map(item=>'<option value="'+option(item)+'">'+esc(item.label)+'</option>').join("")+'</select></label><label class="field">Released result<select id="analytics-child-count-shape"><option value="child_count_total">Total child rows</option><option value="child_count_average">Average child rows per parent</option></select></label><label class="field">Saved name<input id="analytics-child-count-name" type="text" maxlength="64" placeholder="orders_count"></label><label class="field">Plain-language label<input id="analytics-child-count-label" type="text" maxlength="120" placeholder="Order count"></label></div><div class="actions"><button id="save-child-count" type="button">Save child-count metric</button></div></div>'
         :'<div class="risk"><strong>No safe child-count path is available for this table.</strong><p>Add and review a child table with one non-null many-to-one foreign key into this table.</p></div>';
-      return '<details class="access-secondary" data-access-secondary data-reviewed-analytics><summary>Reviewed metrics and numeric bands · '+esc(measures.length+bands.length)+'</summary><p>These are fixed, digest-bound human decisions. Saving creates a disabled revision; press <strong>Review and activate</strong> after checking the complete boundary.</p><div class="risk-list">'+measureRows+bandRows+'</div>'+commonReview+bandForm+derivedForm+postForm+childCountForm+'<span id="analytics-review-status" class="status-message"></span></details>';
+      return '<details class="access-secondary" data-access-secondary data-reviewed-analytics><summary>Reviewed metrics and numeric bands · '+esc(measures.length+bands.length+autoBands.length)+'</summary><p>These are digest-bound human decisions. Saving creates a disabled revision; press <strong>Review and activate</strong> after checking the complete boundary.</p><div class="risk-list">'+measureRows+bandRows+autoBandRows+'</div>'+commonReview+bandForm+autoBandForm+derivedForm+postForm+childCountForm+'<span id="analytics-review-status" class="status-message"></span></details>';
     }
 
     function safeAnalyticsName(value){
@@ -2222,6 +2287,17 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       };
       field?.addEventListener("change",suggestBand);
       suggestBand();
+      const autoMethod=byId("analytics-auto-band-method");
+      const autoLabelStyle=byId("analytics-auto-band-label-style");
+      const refreshAutoBandControls=()=>{
+        const width=byId("analytics-auto-band-width");
+        const round=byId("analytics-auto-band-round");
+        if(width)width.disabled=autoMethod?.value==="quantile";
+        if(round)round.disabled=autoLabelStyle?.value!=="rounded";
+      };
+      autoMethod?.addEventListener("change",refreshAutoBandControls);
+      autoLabelStyle?.addEventListener("change",refreshAutoBandControls);
+      refreshAutoBandControls();
       const numerator=byId("analytics-derived-numerator");
       const denominator=byId("analytics-derived-denominator");
       const refreshDenominators=()=>{
@@ -2299,6 +2375,31 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           const status=byId("analytics-review-status");status.className="status-message error";status.textContent=error.message;
         }
       });
+      byId("save-auto-band")?.addEventListener("click",()=>{
+        try{
+          const review=analyticsReviewIdentity();
+          const fieldName=byId("analytics-auto-band-field").value;
+          const methodChoice=autoMethod.value;
+          const methods=methodChoice==="both"?["quantile","equal_width"]:[methodChoice];
+          const minBuckets=Number(byId("analytics-auto-band-min").value);
+          const maxBuckets=Number(byId("analytics-auto-band-max").value);
+          if(!Number.isSafeInteger(minBuckets)||!Number.isSafeInteger(maxBuckets)||minBuckets<2||maxBuckets>16||minBuckets>maxBuckets)throw new Error("Choose a whole-number bucket range from 2 through 16, with the fewest no greater than the most.");
+          const definition={field:fieldName,methods,min_buckets:minBuckets,max_buckets:maxBuckets,label_style:autoLabelStyle.value};
+          if(methods.includes("equal_width")){
+            const width=Number(byId("analytics-auto-band-width").value);
+            if(!Number.isFinite(width)||width<=0)throw new Error("Enter a positive minimum bucket width for equal-width bands.");
+            definition.min_bucket_width=width;
+          }
+          if(autoLabelStyle.value==="rounded"){
+            const roundTo=Number(byId("analytics-auto-band-round").value);
+            if(!Number.isFinite(roundTo)||roundTo<=0)throw new Error("Enter a positive unit for outward-rounded labels.");
+            definition.label_round_to=roundTo;
+          }
+          saveReviewedAnalyticsDecision({kind:"auto_band",resource_id:selectedResource,field:fieldName,definition,...review},"Saved automatic numeric bands for "+selectedResource+"."+fieldName+".");
+        }catch(error){
+          const status=byId("analytics-review-status");status.className="status-message error";status.textContent=error.message;
+        }
+      });
       byId("save-derived-measure")?.addEventListener("click",()=>{
         try{
           const review=analyticsReviewIdentity();
@@ -2357,6 +2458,14 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           const definition=(resource.numeric_bands||[]).find(item=>item.name===button.dataset.removeNumericBand);
           if(!definition)throw new Error("That numeric band is no longer in this disabled revision.");
           saveReviewedAnalyticsDecision({kind:"numeric_band",resource_id:selectedResource,name:definition.name,definition,remove:true,...review},"Removed numeric band "+definition.name+" from "+selectedResource+".");
+        }catch(error){const status=byId("analytics-review-status");status.className="status-message error";status.textContent=error.message;}
+      });
+      document.querySelectorAll("[data-remove-auto-band]").forEach(button=>button.onclick=()=>{
+        try{
+          const review=analyticsReviewIdentity();
+          const definition=(resource.auto_bands||[]).find(item=>item.field===button.dataset.removeAutoBand);
+          if(!definition)throw new Error("That automatic-band policy is no longer in this disabled revision.");
+          saveReviewedAnalyticsDecision({kind:"auto_band",resource_id:selectedResource,field:definition.field,definition,remove:true,...review},"Disabled automatic numeric bands for "+selectedResource+"."+definition.field+".");
         }catch(error){const status=byId("analytics-review-status");status.className="status-message error";status.textContent=error.message;}
       });
       document.querySelectorAll("[data-remove-derived-measure]").forEach(button=>button.onclick=()=>{
@@ -2609,17 +2718,29 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		        const enumControl=enumReviewable
 		          ?managedEnumReviewPanel(field.name,schemaEnum,reviewedEnum,field.enum_review_override)
 		          :"";
+		        const fieldMetadata=resource?.field_metadata?.[field.name];
+		        const metadataControl=resource
+		          ?managedMetadataReviewPanel("field_metadata",field.name,fieldMetadata)
+		          :"";
+		        const fieldName=fieldMetadata?.label
+		          ?'<strong>'+esc(fieldMetadata.label)+'</strong><small><code>'+esc(field.name)+'</code></small>'
+		          :'<strong><code>'+esc(field.name)+'</code></strong>';
 		        const highlighted=field.name===highlightedAccessField;
 		        return '<div class="access-column '+(highlighted?"highlighted":"")+'" data-access-column="'+esc(field.name)+'" data-column-kept-out="'+esc(String(kept))+'" '+(highlighted?'data-access-highlighted="true"':"")+'>'
-		          +'<span class="access-column-copy"><strong><code>'+esc(field.name)+'</code></strong><small>'+esc(field.data_type||source?.field_types?.[field.name]||"unknown type")+'</small><span class="access-column-risk">'+stateBadge+unavailableBadge+'</span></span>'
+		          +'<span class="access-column-copy">'+fieldName+'<small>'+esc(field.data_type||source?.field_types?.[field.name]||"unknown type")+'</small>'+(fieldMetadata?.description?'<small>'+esc(fieldMetadata.description)+'</small>':"")+'<span class="access-column-risk">'+stateBadge+unavailableBadge+'</span></span>'
 		          +tierControl
 		          +reviewForms
 		          +enumControl
+		          +metadataControl
 		          +'</div>';
 	      };
 	      const columnList='<div class="access-column-list" data-access-column-list>'+orderedFields.map(renderColumnRow).join("")+'</div>';
 		      const privacyButton=resource?'<button class="quiet" id="open-resource-privacy" type="button">Privacy · minimum group '+esc(resource.minimum_cohort_size)+'</button>':"";
-		      const header='<div class="split-actions"><div><h3>'+esc(selectedResource)+'</h3><p>'+(source
+		      const resourceMetadata=resource?managedMetadataReviewPanel("resource_metadata",undefined,{label:resource.label,description:resource.description}):"";
+		      const resourceHeading=resource?.label
+		        ?'<h3>'+esc(resource.label)+'</h3><p><code>'+esc(selectedResource)+'</code></p>'
+		        :'<h3>'+esc(selectedResource)+'</h3>';
+		      const header='<div class="split-actions"><div>'+resourceHeading+'<p>'+(source
 	        ?'Choose one explicit tier per column. Visible values may enter model context. Runner-only raw fields remain usable: raw values stay local or become response-only tokens, while reviewed derived results remain available. Kept-out columns cannot be used.'
 		        :'<span class="badge bad">Blocked</span> Its columns remain visible for diagnosis, but no authority can be activated yet.')+'</p></div><div class="actions">'+privacyButton+'<button class="secondary" id="back-resources" type="button">Back to '+esc(reviewedCollectionLabel())+'</button></div></div>'
 	        +'<div class="split-actions"><div><h3>Columns</h3><p>'+(focusedAccessReview
@@ -2714,7 +2835,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      const resourceSignoff=focusedAccessReview
 	        ?'<div class="band notice"><strong>One final confirmation, not one checkbox per table.</strong><p>Step 2 shows this table together with the complete boundary, then records every exact digest-bound decision at once.</p></div>'
 	        :'<div class="actions"><label class="check"><input id="resource-signoff" type="checkbox" data-review-decision="'+esc(selectedResource)+'" '+(resourceConfirmed?"checked":"")+(resource&&!unresolvedRelationship?"":" disabled")+'><span>I reviewed which records and fields this agent may use, including privacy limits and related data.</span></label></div>';
-	      byId("resource-detail").innerHTML=header+columnList+scopeReview+relationshipReview+cohortReview+reviewedAnalytics+advanced+resourceSignoff;
+	      byId("resource-detail").innerHTML=header+resourceMetadata+columnList+scopeReview+relationshipReview+cohortReview+reviewedAnalytics+advanced+resourceSignoff;
 	      byId("back-resources").onclick=backFromResourceDetail;
 	      if(byId("open-resource-privacy"))byId("open-resource-privacy").onclick=()=>{
 	        const section=document.querySelector("[data-cohort-review-section]");
@@ -2753,6 +2874,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      document.querySelectorAll("[data-submit-field-review]").forEach(button=>button.onclick=()=>submitManagedFieldReview(button.dataset.submitFieldReview,button.dataset.exposure));
 	      document.querySelectorAll("[data-cancel-field-review]").forEach(button=>button.onclick=()=>button.closest("[data-managed-review-form]").classList.add("hidden"));
 	      document.querySelectorAll("[data-submit-enum-review]").forEach(button=>button.onclick=()=>submitManagedEnumReview(button.dataset.submitEnumReview,button.closest("[data-enum-review-form]")));
+      document.querySelectorAll("[data-submit-metadata-review]").forEach(button=>button.onclick=()=>submitManagedMetadataReview(button.closest("[data-metadata-review-form]")));
       document.querySelectorAll("[data-submit-scope-review]").forEach(button=>button.onclick=()=>submitManagedScopeReview(button.dataset.submitScopeReview,button.closest("[data-scope-review-form]")));
       document.querySelectorAll("[data-submit-cohort-review]").forEach(button=>button.onclick=()=>submitManagedCohortReview(button.closest("[data-cohort-review-form]")));
       if(resource)wireReviewedAnalytics(resource);
@@ -2805,6 +2927,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       }
       if(decision.includes(": confirm principal scope "))return decision.slice(0,decision.indexOf(":"))+": confirm whether each user is limited to their own rows.";
       if(decision.endsWith(": confirm visible and kept-out fields"))return decision.slice(0,decision.indexOf(":"))+": confirm which fields are model-visible, withheld from the model, or kept out.";
+      if(decision.endsWith(": confirm reviewed labels and descriptions"))return decision.slice(0,decision.indexOf(":"))+": confirm the reviewed human-readable names and descriptions for these exact database IDs.";
       if(decision.endsWith(": confirm filter/sort/group/aggregate-only field permissions"))return decision.slice(0,decision.indexOf(":"))+": confirm how fields may be searched, sorted, grouped, or totaled.";
       if(decision.endsWith(": confirm minimum cohort and extraction/differencing budgets"))return decision.slice(0,decision.indexOf(":"))+": confirm privacy and result-size limits.";
       if(decision.includes(": review relationship "))return decision.slice(0,decision.indexOf(":"))+": confirm this reviewed table relationship cannot widen access.";
@@ -2852,10 +2975,12 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	            ...Object.entries(resource.field_enums||{}).map(([field,values])=>field+": "+values.join(" | ")),
 	            ...disabledEnums.map(field=>field+": none (filter/group disabled)")
 	          ];
-	          const fieldCell=(fields,label)=>'<strong>'+esc(fields.length)+'</strong> '+esc(label)+'<small>'+esc(fields.join(", ")||"None")+'</small>';
-	          const tenantScope=reviewedTenantScopeLabel(resource,resourceReview);
-	          const principalScope=reviewedPrincipalScopeLabel(resource,resourceReview);
-	          return '<tr><td><strong>'+esc(resource.id)+'</strong><small>Tenant scope: '+esc(tenantScope)+' · Principal scope: '+esc(principalScope)+' · minimum group '+esc(resource.minimum_cohort_size)+'</small><small>Allowed categorical values: '+esc(enumSummary.join("; ")||"None")+'</small></td>'
+		          const fieldDisplay=field=>resource.field_metadata?.[field]?.label?resource.field_metadata[field].label+" ("+field+")":field;
+		          const fieldCell=(fields,label)=>'<strong>'+esc(fields.length)+'</strong> '+esc(label)+'<small>'+esc(fields.map(fieldDisplay).join(", ")||"None")+'</small>';
+		          const tenantScope=reviewedTenantScopeLabel(resource,resourceReview);
+		          const principalScope=reviewedPrincipalScopeLabel(resource,resourceReview);
+		          const resourceName=resource.label?resource.label+" ("+resource.id+")":resource.id;
+		          return '<tr><td><strong>'+esc(resourceName)+'</strong>'+(resource.description?'<small>'+esc(resource.description)+'</small>':'')+'<small>Tenant scope: '+esc(tenantScope)+' · Principal scope: '+esc(principalScope)+' · minimum group '+esc(resource.minimum_cohort_size)+'</small><small>Allowed categorical values: '+esc(enumSummary.join("; ")||"None")+'</small></td>'
             +'<td>'+fieldCell(modelFields,"model-visible")+'</td>'
             +'<td>'+fieldCell(runnerFields,"Runner-only")+'</td>'
             +'<td>'+fieldCell(resource.kept_out_fields||[],"kept out")+'</td>'
@@ -3433,7 +3558,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         const joins=(catalogBoundary?.relationships||[]).filter(relationship=>
           relationship.source_table===(resource.id||resource.table)
         );
-        return '<section class="ask-boundary-resource"><h4>'+esc(describedResourceLabel(resource))+'</h4>'
+	        return '<section class="ask-boundary-resource"><h4>'+esc(describedResourceLabel(resource))+'</h4>'
+	          +(resource.label?'<p><code>'+esc(resource.id)+'</code></p>':'')
+	          +(resource.description?'<p>'+esc(resource.description)+'</p>':'')
           +'<div class="ask-boundary-row"><strong>Calculate</strong><span>'+esc(measures.join(" · ")||"Record count")+'</span></div>'
           +'<div class="ask-boundary-row"><strong>Compare by</strong><span>'+esc(groups.join(" · ")||"No reviewed grouping")+'</span></div>'
           +'<div class="ask-boundary-row"><strong>Time</strong><span>'+esc(dates.join(" · ")||"No reviewed time field")+'</span></div>'
@@ -3487,6 +3614,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           if((table.count_distinct_fields||[]).length)analysis.push('unique counts: '+table.count_distinct_fields.join(', '));
           if((table.groupable_fields||[]).length)analysis.push('group by: '+table.groupable_fields.join(', '));
           if((table.time_bucket_fields||[]).length)analysis.push('time: '+table.time_bucket_fields.join(', '));
+          if((table.numeric_bands||[]).length)analysis.push('reviewed numeric bands: '+table.numeric_bands.map(band=>band.name+' ('+band.field+')').join(', '));
+          if((table.auto_bands||[]).length)analysis.push('automatic numeric bands: '+table.auto_bands.map(policy=>policy.field+' ('+policy.methods.map(method=>method.replaceAll('_',' ')).join(' or ')+' · '+policy.min_buckets+'-'+policy.max_buckets+' buckets · '+policy.label_style+' labels)').join(', '));
           const runnerOnly=table.runner_only_analysis||{};
           const runnerAnalysis=[];
           if((runnerOnly.aggregate_measures||[]).length)runnerAnalysis.push('totals/averages: '+runnerOnly.aggregate_measures.join(', ')+' (raw values withheld)');
@@ -4003,6 +4132,56 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       }
     }
 
+    function historyPlanSentence(query){
+      try{return planSentence(query.normalized_plan)}
+      catch{return (query.kind==="aggregate"?"Aggregate":"Bounded rows")+" on "+query.resource+"."}
+    }
+
+    async function loadAskHistory(){
+      const button=byId("load-ask-history");
+      const status=byId("ask-history-status");
+      const content=byId("ask-history-content");
+      button.disabled=true;
+      button.textContent="Loading...";
+      status.className="status-message";
+      status.textContent="Reading metadata-only local history...";
+      try{
+        const payload=await getJson("/api/explore/history");
+        const recent=payload.recent||[];
+        const durable=payload.durable||[];
+        const recentHtml=recent.length
+          ?'<h4>Recent references</h4><div class="ask-history-table-wrap"><table class="history-recent-table"><thead><tr><th>Reference</th><th>Request</th><th>Status</th><th>Expires</th></tr></thead><tbody>'+recent.map((query,index)=>'<tr><td data-label="Reference"><code>'+esc(query.query_ref)+'</code></td><td data-label="Request">'+esc(historyPlanSentence(query))+'</td><td data-label="Status" class="'+(index===0?'history-status-latest':'')+'">'+(index===0?'Latest':'Available')+'</td><td data-label="Expires">'+esc(new Date(query.expires_at).toLocaleString())+'</td></tr>').join("")+'</tbody></table></div><p class="muted">Open Make reusable to inspect or protect one of these references.</p>'
+          :'<h4>Recent references</h4><p class="muted">No unexpired analysis reference is available in this Workbench session.</p>';
+        const durableHtml=durable.length
+          ?'<h4>Durable query ledger</h4><div class="ask-history-table-wrap"><table class="history-durable-table"><thead><tr><th>Audit</th><th>When</th><th>Resource</th><th>Outcome</th><th>Rows / groups</th><th>Evidence</th></tr></thead><tbody>'+durable.map(audit=>'<tr><td data-label="Audit"><button class="quiet" data-history-audit="'+esc(audit.audit_id)+'" type="button">'+esc(audit.audit_id)+'</button></td><td data-label="When">'+esc(new Date(audit.created_at).toLocaleString())+'</td><td data-label="Resource"><code>'+esc(audit.resource)+'</code></td><td data-label="Outcome" class="'+(String(audit.status).startsWith("refused")?'history-status-refused':'')+'">'+esc(String(audit.status).replaceAll("_"," "))+(audit.error_code?' · '+esc(audit.error_code):'')+'</td><td data-label="Rows / groups">'+esc(audit.returned_rows_or_groups)+'</td><td data-label="Evidence">'+esc(audit.evidence_bundle_id||"None")+'</td></tr>').join("")+'</tbody></table></div><div id="ask-history-detail"></div>'
+          :'<h4>Durable query ledger</h4><p class="muted">No Explore audit metadata has been recorded yet.</p>';
+        content.innerHTML=recentHtml+durableHtml;
+        content.querySelectorAll("[data-history-audit]").forEach(item=>item.onclick=()=>loadAskHistoryDetail(item.dataset.historyAudit));
+        status.textContent=recent.length+" recent "+(recent.length===1?"reference":"references")+" · "+durable.length+" durable audit "+(durable.length===1?"record":"records")+". Result and trusted-scope values are not persisted.";
+      }catch(error){
+        content.innerHTML="";
+        status.className="status-message error";
+        status.textContent=error.message;
+      }finally{
+        button.disabled=false;
+        button.textContent="Refresh query history";
+      }
+    }
+
+    async function loadAskHistoryDetail(auditId){
+      const target=byId("ask-history-detail");
+      if(!target)return;
+      target.innerHTML='<p class="muted">Loading audit '+esc(auditId)+'...</p>';
+      try{
+        const payload=await getJson("/api/explore/history?audit_id="+encodeURIComponent(auditId));
+        const audit=payload.audit;
+        target.innerHTML='<details open><summary>Audit '+esc(audit.audit_id)+' details</summary><p>Metadata only. Any filter literals in the normalized plan are keyed fingerprints, not source values.</p><pre id="ask-history-json"></pre></details>';
+        renderSyntaxCode("ask-history-json",JSON.stringify(audit,null,2),"JSON");
+      }catch(error){
+        target.innerHTML='<p class="error">'+esc(error.message)+'</p>';
+      }
+    }
+
     function askAnswerHtml(payload){
       const fullAnswer=String(payload.answer||"").trim();
       const answer=String(payload.display_answer||fullAnswer).trim();
@@ -4317,7 +4496,13 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const dimensions=(Array.isArray(question.dimensions)?question.dimensions:[question.dimension]).filter(Boolean);
       if(!dimensions.every(dimension=>typeof dimension.numeric_band==="string"
         ?(resource.numeric_bands||[]).some(item=>item.name===dimension.numeric_band)
-        :activeQuestionField(resource,"groupable_fields",dimension)))return false;
+        :dimension.numeric_band&&typeof dimension.numeric_band==="object"
+          ?(resource.auto_bands||[]).some(policy=>policy.field===dimension.numeric_band.field
+            &&policy.methods.includes(dimension.numeric_band.method)
+            &&Number.isSafeInteger(dimension.numeric_band.buckets)
+            &&dimension.numeric_band.buckets>=policy.min_buckets
+            &&dimension.numeric_band.buckets<=policy.max_buckets)
+          :activeQuestionField(resource,"groupable_fields",dimension)))return false;
       if(question.time_field){
         const time=normalizedSuggestedField(question.time_field);
         if(!activeQuestionField(resource,"time_bucket_fields",time))return false;
@@ -4445,7 +4630,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     }
 
     function fieldLabel(resource,field){
-      return resource?.field_labels?.[field]||String(field).replace(/_/g," ");
+      return resource?.fields?.find(item=>item.id===field)?.label||String(field).replace(/_/g," ");
     }
 
     function fieldChoices(resource,key){
@@ -4491,6 +4676,14 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         ...(resource.numeric_bands||[]).map(band=>({
           numeric_band:band.name,
           label:(band.label||band.name)+" — reviewed fixed buckets"
+        })),
+        ...(resource.auto_bands||[]).flatMap(policy=>policy.methods.flatMap(method=>{
+          const choices=[];
+          for(let buckets=policy.min_buckets;buckets<=policy.max_buckets;buckets++)choices.push({
+            numeric_band:{field:policy.field,method,buckets},
+            label:fieldLabel(resource,policy.field)+" — automatic "+method.replace(/_/g," ")+", "+buckets+" buckets"
+          });
+          return choices;
         }))
       ];
     }
@@ -4505,6 +4698,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       if(!value)return null;
       const parsed=JSON.parse(value);
       if(parsed&&typeof parsed.numeric_band==="string"&&Object.keys(parsed).length===1)return parsed;
+      if(parsed&&parsed.numeric_band&&typeof parsed.numeric_band==="object"&&Object.keys(parsed).length===1){
+        const band=parsed.numeric_band;
+        if(typeof band.field==="string"&&["quantile","equal_width"].includes(band.method)&&Number.isSafeInteger(band.buckets)&&Object.keys(band).every(key=>["field","method","buckets"].includes(key)))return parsed;
+      }
       if(parsed&&typeof parsed.field==="string")return parsed;
       throw new Error("The selected reviewed grouping is invalid.");
     }
@@ -4524,8 +4721,11 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     function fieldReferenceLabel(resource,reference){
       if(!reference)return "";
       if(reference.numeric_band){
-        const band=(resource.numeric_bands||[]).find(item=>item.name===reference.numeric_band);
-        return band?.label||reference.numeric_band;
+        if(typeof reference.numeric_band==="string"){
+          const band=(resource.numeric_bands||[]).find(item=>item.name===reference.numeric_band);
+          return band?.label||reference.numeric_band;
+        }
+        return fieldLabel(resource,reference.numeric_band.field)+" (automatic "+reference.numeric_band.method.replace(/_/g," ")+", "+reference.numeric_band.buckets+" buckets)";
       }
       if(!reference.relationship)return fieldLabel(resource,reference.field);
       const relationship=(resource.relationships||[]).find(item=>item.id===reference.relationship);
@@ -4767,6 +4967,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       if(new Set(dimensionKeys).size!==dimensionKeys.length){
         throw new Error("Choose each reviewed grouping field only once.");
       }
+      const autoBandDimensions=dimensions.filter(dimension=>dimension.numeric_band&&typeof dimension.numeric_band==="object");
+      if(autoBandDimensions.length>1)throw new Error("Choose at most one automatic numeric band per question.");
       const timeField=parseFieldChoice(byId("aggregate-time").value);
       if(measure.derived_measure){
         const definition=(resource.derived_measures||[]).find(item=>item.name===measure.derived_measure);
@@ -4798,6 +5000,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
             :{kind:"measure",index:0,direction:orderDirection},
         top_n:Number(byId("aggregate-top").value)
       };
+      if(autoBandDimensions.length&&byId("aggregate-compare").checked)throw new Error("Automatic numeric bands cannot be combined with a two-period comparison.");
       if(byId("aggregate-compare").checked){
         const ranges=[
           {start:isoValue("period-1-start"),end:isoValue("period-1-end")},
@@ -5693,6 +5896,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     });
     byId("cancel-ask").onclick=cancelAsk;
     byId("clear-ask").onclick=clearAsk;
+    byId("load-ask-history").onclick=loadAskHistory;
     byId("refresh-protect").onclick=loadProtect;
     byId("load-action").onclick=loadGuidedAction;
     byId("create-action").onclick=createGuidedAction;

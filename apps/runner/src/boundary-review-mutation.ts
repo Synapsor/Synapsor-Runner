@@ -13,6 +13,7 @@ import {
   loadActivatedExplorationBoundary,
   loadStructuredProjectEvidence,
   normalizeExplorationDerivedMeasure,
+  normalizeExplorationAutoBandPolicy,
   normalizeExplorationNumericBand,
   reviewExplorationBoundaryCandidate,
   writeAutoBoundaryArtifacts,
@@ -24,6 +25,7 @@ import {
   type ExplorationBoundaryDraft,
   type ExplorationDerivedBaseMeasure,
   type ExplorationDerivedMeasure,
+  type ExplorationAutoBandPolicy,
   type ExplorationPostAggregateOperation,
   type GenerationLock,
   type SharedReferenceScopeInference,
@@ -59,6 +61,15 @@ type JsonRecord = Record<string, unknown>;
 
 export type BoundaryResourceReviewRequest = {
   resource_id: string;
+  metadata?: {
+    label?: string | null;
+    description?: string | null;
+  };
+  field_metadata?: Array<{
+    field: string;
+    label?: string | null;
+    description?: string | null;
+  }>;
   include?: boolean;
   exclude?: boolean;
   row_identity?: string;
@@ -117,6 +128,7 @@ export type BoundaryResourceReviewRequest = {
     bucket_labels: string[];
     remove?: boolean;
   };
+  auto_band?: ExplorationAutoBandPolicy & { remove?: boolean };
   minimum_cohort_size?: number;
   max_ranked_groups?: number;
   relationship_ids?: string[];
@@ -907,6 +919,20 @@ function managedDecisionsForRequest(
     ...(request.decided_at ? { decided_at: request.decided_at } : {}),
   };
   const decisions: ManagedBoundaryReviewDecision[] = [];
+  if (request.metadata) {
+    decisions.push(normalizeManagedBoundaryReviewDecision({
+      ...common,
+      kind: "resource_metadata",
+      ...request.metadata,
+    }));
+  }
+  for (const metadata of request.field_metadata ?? []) {
+    decisions.push(normalizeManagedBoundaryReviewDecision({
+      ...common,
+      kind: "field_metadata",
+      ...metadata,
+    }));
+  }
   if (request.row_identity !== undefined) {
     decisions.push(normalizeManagedBoundaryReviewDecision({
       ...common,
@@ -1008,6 +1034,18 @@ function managedDecisionsForRequest(
           edges: reviewed.edges,
           bucket_labels: reviewed.bucket_labels,
         }, `${request.resource_id}.${reviewed.name} numeric band`),
+    }));
+  }
+  if (request.auto_band) {
+    const reviewed = request.auto_band;
+    const { remove: _remove, ...definition } = reviewed;
+    decisions.push(normalizeManagedBoundaryReviewDecision({
+      ...common,
+      kind: "auto_band",
+      field: reviewed.field,
+      definition: reviewed.remove
+        ? null
+        : normalizeExplorationAutoBandPolicy(definition, `${request.resource_id}.${reviewed.field} auto band`),
     }));
   }
   if (request.minimum_cohort_size !== undefined) {
@@ -1125,6 +1163,18 @@ function buildReviewedCandidate(input: {
         .sort((left, right) => left.name.localeCompare(right.name));
     if (!resource.numeric_bands.length) delete resource.numeric_bands;
   }
+  if (input.request.auto_band) {
+    const reviewed = input.request.auto_band;
+    const { remove: _remove, ...definition } = reviewed;
+    const retained = (resource.auto_bands ?? []).filter((policy) => policy.field !== reviewed.field);
+    resource.auto_bands = reviewed.remove
+      ? retained
+      : [...retained, normalizeExplorationAutoBandPolicy(
+        definition,
+        `${input.request.resource_id}.${reviewed.field} auto band`,
+      )].sort((left, right) => left.field.localeCompare(right.field));
+    if (!resource.auto_bands.length) delete resource.auto_bands;
+  }
   if (input.request.relationship_ids) {
     const allowed = new Set(input.request.relationship_ids);
     resource.relationships = resource.relationships.filter((relationship) => allowed.has(relationship.id));
@@ -1204,6 +1254,11 @@ function preserveBoundaryResourcePolicy(
     generated.numeric_bands = structuredClone(previous.numeric_bands);
   } else {
     delete generated.numeric_bands;
+  }
+  if (previous.auto_bands?.length) {
+    generated.auto_bands = structuredClone(previous.auto_bands);
+  } else {
+    delete generated.auto_bands;
   }
   generated.count_distinct_fields = preserveReviewedList(
     generated.count_distinct_fields,
@@ -1383,6 +1438,9 @@ function hasAuthorityNarrowing(request: BoundaryResourceReviewRequest): boolean 
     request.field_enum ? [request.field_enum.field] : undefined,
     request.derived_measure ? [request.derived_measure.name] : undefined,
     request.numeric_band ? [request.numeric_band.name] : undefined,
+    request.auto_band ? [request.auto_band.field] : undefined,
+    request.metadata ? [request.resource_id] : undefined,
+    request.field_metadata?.map((metadata) => metadata.field),
   ].some((value) => value !== undefined)
     || request.minimum_cohort_size !== undefined
     || request.max_ranked_groups !== undefined
@@ -1413,6 +1471,9 @@ function canStageIncompleteScopeResolution(
     request.field_enum ? [request.field_enum.field] : undefined,
     request.derived_measure ? [request.derived_measure.name] : undefined,
     request.numeric_band ? [request.numeric_band.name] : undefined,
+    request.auto_band ? [request.auto_band.field] : undefined,
+    request.metadata ? [request.resource_id] : undefined,
+    request.field_metadata?.map((metadata) => metadata.field),
   ].some((value) => value !== undefined)
     || request.minimum_cohort_size !== undefined
     || request.max_ranked_groups !== undefined
@@ -1660,6 +1721,41 @@ function validateBoundaryResourceRequest(request: BoundaryResourceReviewRequest)
       bucket_labels: request.numeric_band.bucket_labels,
     }, `${request.resource_id}.${request.numeric_band.name} numeric band`);
   }
+  if (request.auto_band) {
+    normalizeExplorationAutoBandPolicy(
+      {
+        field: request.auto_band.field,
+        methods: request.auto_band.methods,
+        min_buckets: request.auto_band.min_buckets,
+        max_buckets: request.auto_band.max_buckets,
+        ...(request.auto_band.min_bucket_width === undefined
+          ? {}
+          : { min_bucket_width: request.auto_band.min_bucket_width }),
+        label_style: request.auto_band.label_style,
+        ...(request.auto_band.label_round_to === undefined
+          ? {}
+          : { label_round_to: request.auto_band.label_round_to }),
+      },
+      `${request.resource_id}.${request.auto_band.field} auto band`,
+    );
+  }
+  for (const [kind, metadata] of [
+    ["resource", request.metadata],
+    ...(request.field_metadata ?? []).map((value) => ["field", value] as const),
+  ] as const) {
+    if (!metadata) continue;
+    if (!Object.hasOwn(metadata, "label") && !Object.hasOwn(metadata, "description")) {
+      throw new Error(`Reviewed ${kind} metadata requires a label and/or description; use null to clear a value.`);
+    }
+    if (metadata.label !== undefined && metadata.label !== null
+      && (!metadata.label.trim() || metadata.label.trim().length > 64)) {
+      throw new Error(`Reviewed ${kind} label must be 1-64 characters, or null to clear it.`);
+    }
+    if (metadata.description !== undefined && metadata.description !== null
+      && (!metadata.description.trim() || metadata.description.trim().length > 280)) {
+      throw new Error(`Reviewed ${kind} description must be 1-280 characters, or null to clear it.`);
+    }
+  }
   const values = [
     request.resource_id,
     request.actor,
@@ -1698,6 +1794,7 @@ function validateBoundaryRequestAgainstResource(
     ...(request.count_distinct_fields ?? []),
     ...(request.time_bucket_fields ?? []),
     ...(request.field_enum ? [request.field_enum.field] : []),
+    ...(request.field_metadata ?? []).map((metadata) => metadata.field),
   ].filter((field): field is string => typeof field === "string");
   const unknown = [...new Set(requestedColumns.filter((field) => !known.has(field)))].sort();
   if (unknown.length) {
@@ -1836,6 +1933,35 @@ function assertRequestedExposureState(
       );
     }
   }
+  if (request.auto_band) {
+    const actual = resource.auto_bands?.find((policy) => policy.field === request.auto_band!.field);
+    if (request.auto_band.remove ? actual !== undefined : actual === undefined) {
+      throw new Error(
+        `Reviewed auto-band decision for ${request.resource_id}.${request.auto_band.field} was not reflected in the disabled candidate.`,
+      );
+    }
+  }
+  if (request.metadata) {
+    const expected = request.metadata;
+    if (expected.label !== undefined
+      && (resource.label ?? null) !== expected.label) {
+      throw new Error(`Reviewed label for ${request.resource_id} was not reflected in the disabled candidate.`);
+    }
+    if (expected.description !== undefined
+      && (resource.description ?? null) !== expected.description) {
+      throw new Error(`Reviewed description for ${request.resource_id} was not reflected in the disabled candidate.`);
+    }
+  }
+  for (const expected of request.field_metadata ?? []) {
+    const actual = resource.field_metadata?.[expected.field];
+    if (expected.label !== undefined && (actual?.label ?? null) !== expected.label) {
+      throw new Error(`Reviewed label for ${request.resource_id}.${expected.field} was not reflected in the disabled candidate.`);
+    }
+    if (expected.description !== undefined
+      && (actual?.description ?? null) !== expected.description) {
+      throw new Error(`Reviewed description for ${request.resource_id}.${expected.field} was not reflected in the disabled candidate.`);
+    }
+  }
 }
 
 function canonicalReviewRequest(request: BoundaryResourceReviewRequest): JsonRecord {
@@ -1866,6 +1992,8 @@ function canonicalReviewRequest(request: BoundaryResourceReviewRequest): JsonRec
     field_enum: request.field_enum
       ? { field: request.field_enum.field, values: [...request.field_enum.values] }
       : null,
+    metadata: request.metadata ? structuredClone(request.metadata) : null,
+    field_metadata: request.field_metadata ? structuredClone(request.field_metadata) : null,
     derived_measure: request.derived_measure
       ? structuredClone(request.derived_measure)
       : null,
@@ -1876,6 +2004,7 @@ function canonicalReviewRequest(request: BoundaryResourceReviewRequest): JsonRec
         bucket_labels: [...request.numeric_band.bucket_labels],
       }
       : null,
+    auto_band: request.auto_band ? structuredClone(request.auto_band) : null,
     minimum_cohort_size: request.minimum_cohort_size ?? null,
     max_ranked_groups: request.max_ranked_groups ?? null,
     relationship_ids: sortedOrNull(request.relationship_ids),
@@ -1934,6 +2063,11 @@ function requestArrays(request: BoundaryResourceReviewRequest): string[] {
       request.numeric_band.field,
       ...(request.numeric_band.relationship ? [request.numeric_band.relationship] : []),
       ...request.numeric_band.bucket_labels,
+    ] : []),
+    ...(request.auto_band ? [
+      request.auto_band.field,
+      ...request.auto_band.methods,
+      request.auto_band.label_style,
     ] : []),
     ...(request.relationship_ids ?? []),
   ];

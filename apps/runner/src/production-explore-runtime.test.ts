@@ -468,9 +468,14 @@ describe("production Explore startup posture", () => {
     let executorCloses = 0;
     let sessionRuntimeCloses = 0;
     const executorsSeen: unknown[] = [];
+    const inspectorsSeen: unknown[] = [];
+    const inspectDatabase = async () => {
+      throw new Error("not invoked by this wiring test");
+    };
     const executor = {
       execute: async () => [],
       executeBatch: async () => [],
+      inspectDatabase,
       close: async () => { executorCloses += 1; },
     };
     const dependencies: NonNullable<Parameters<typeof productionExploreSessionFactory>[2]> = {
@@ -482,6 +487,7 @@ describe("production Explore startup posture", () => {
       },
       createBoundarySetRuntime: (async (input) => {
         executorsSeen.push(input.executor);
+        inspectorsSeen.push(input.inspectDatabaseFn);
         return {
           close: async () => { sessionRuntimeCloses += 1; },
         };
@@ -511,6 +517,7 @@ describe("production Explore startup posture", () => {
     ]);
     expect(executorCreations).toBe(1);
     expect(executorsSeen).toEqual([executor, executor, executor]);
+    expect(inspectorsSeen).toEqual([inspectDatabase, inspectDatabase, inspectDatabase]);
     expect(factory.maxSessionsPerPrincipal).toBe(2);
 
     await Promise.all([first.close(), second.close(), third.close()]);

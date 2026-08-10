@@ -38,6 +38,7 @@ import {
 } from "./terminal-layout.js";
 import {
   renderTerminalFact,
+  renderTerminalCommandFrame,
   renderTerminalJson,
   renderTerminalJsonFrame,
   renderTerminalSql,
@@ -52,12 +53,15 @@ import {
   renderBoundaryCatalogTopologyAscii,
   type BoundaryCatalogModel,
 } from "./boundary-catalog.js";
+import { cliCommandName } from "./cli-command-meta.js";
+import { shellQuote } from "./cli-format.js";
 
 export { renderTerminalJson, renderTerminalSql } from "./terminal-syntax.js";
 
 const COMMANDS = [
   "/help",
   "/catalog",
+  "/history",
   "/analyses",
   "/protect",
   "/details",
@@ -72,7 +76,8 @@ const COMMANDS = [
 const COMMAND_DESCRIPTIONS: Record<string, string> = {
   "/help": "List shell actions",
   "/catalog": "Show reviewed tables, joins, and allowed analysis",
-  "/analyses": "List recent protectable analyses",
+  "/history": "Show recent requests and durable query history",
+  "/analyses": "Alias for /history",
   "/protect": "Protect the latest eligible analysis",
   "/details": "Show safe execution metadata",
   "/attempts": "Inspect refused model attempts",
@@ -202,6 +207,18 @@ function shellArgumentTokens(value: string): string[] | undefined {
 
 function argumentCommandSuggestions(line: string): SlashCommandSuggestion[] | undefined {
   const normalized = line.toLowerCase();
+
+  if (normalized === "/history" || normalized.startsWith("/history ")) {
+    return line.slice("/history".length).trim()
+      ? []
+      : [suggestion("/history", "Show recent requests and durable query history")];
+  }
+
+  if (normalized === "/analyses" || normalized.startsWith("/analyses ")) {
+    return line.slice("/analyses".length).trim()
+      ? []
+      : [suggestion("/analyses", "Alias for /history")];
+  }
 
   if (normalized === "/catalog" || normalized.startsWith("/catalog ")) {
     const rawRest = line.slice("/catalog".length);
@@ -488,6 +505,8 @@ export type AnalyticsShellIo = {
 
 export type AnalyticsShellInput = {
   projectRoot?: string;
+  configPath?: string;
+  storePath?: string;
   providerLabel: string;
   modelLabel?: string;
   boundaryLabel?: string;
@@ -1093,7 +1112,8 @@ async function handleShellCommand(
       "                               Select one directly for scripts or automation",
       "  /catalog --diagram --boundary <name> --export [path]",
       "                               Export the complete terminal map as Markdown",
-      "  /analyses                    List recent protectable analyses",
+      "  /history                     Show recent requests and durable query history",
+      "  /analyses                    Alias for /history",
       "  /protect                     Protect the latest eligible analysis",
       "  /protect A2 as <name>        Protect one explicit analysis",
       "  /details [last|A2]           Show what the model requested and Runner executed",
@@ -1168,8 +1188,8 @@ async function handleShellCommand(
     input.io.write("Conversation cleared. Durable evidence and protected drafts were not deleted.\n\n");
     return "continue";
   }
-  if (line === "/analyses") {
-    await showAnalyses(input, current);
+  if (line === "/history" || line === "/analyses") {
+    await showHistory(input, current);
     return "continue";
   }
   if (line === "/details" || line.startsWith("/details ")) {
@@ -1562,28 +1582,125 @@ function isPathInside(root: string, candidate: string, allowRoot = false): boole
     && !path.isAbsolute(relative);
 }
 
-async function showAnalyses(
+async function showHistory(
   input: AnalyticsShellInput,
   current: CurrentAnalyticsAnswer | undefined,
 ): Promise<void> {
   const analyses = await input.listAnalyses();
-  if (analyses.length === 0) {
-    input.io.write("No unexpired protectable analyses are available yet.\n\n");
-    return;
-  }
   const currentReferences = new Set(current?.analyses.flatMap((analysis) =>
     analysis.reference ? [analysis.reference] : []) ?? []);
-  const exampleReference = analyses[0]!.token;
+  const projectRoot = path.resolve(input.projectRoot ?? process.cwd());
+  const configPath = path.resolve(
+    input.configPath ?? path.join(projectRoot, "synapsor/synapsor.runner.json"),
+  );
+  const storePath = path.resolve(
+    input.storePath ?? path.join(projectRoot, ".synapsor/local.db"),
+  );
+  const command = cliCommandName();
+  const ledgerSuffix = `--config ${shellQuote(configPath)} --store ${shellQuote(storePath)}`;
+  const color = input.io.isTerminal?.() === true && !("NO_COLOR" in process.env);
+  const theme = terminalTheme(color);
+  const recentLines = analyses.length === 0
+    ? [theme.dim("No unexpired analysis references are available in this shell.")]
+    : renderHistoryReferenceTable(
+        analyses.map((analysis) => ({
+          reference: analysis.token,
+          request: safeTerminalText(analysis.description),
+          status: currentReferences.has(analysis.token) ? "latest" : "available",
+        })),
+        input.io.columns(),
+        theme,
+      );
+  const commands = [
+    `${command} query-audit list ${ledgerSuffix}`,
+    `${command} query-audit show <audit_id> --details ${ledgerSuffix}`,
+    `${command} evidence list ${ledgerSuffix}`,
+  ];
   input.io.write([
     "",
-    "Recent analyses",
+    theme.title("RECENT QUERY HISTORY"),
+    theme.dim("These references are available for /details and /protect while they remain eligible."),
     "",
-    ...analyses.map((analysis) =>
-      `${analysis.token.padEnd(4)} ${safeTerminalText(analysis.description)}${currentReferences.has(analysis.token) ? "  latest" : ""}`),
+    ...recentLines,
+    ...(analyses[0]
+      ? [
+          "",
+          `${theme.key("Next:")} ${theme.value(`/details ${analyses[0].token}`)} ${theme.dim("or")} ${theme.value(`/protect ${analyses[0].token}`)}`,
+        ]
+      : []),
     "",
-    `Use /protect, /protect ${exampleReference}, or /details ${exampleReference}.`,
+    theme.title("DURABLE QUERY LEDGER"),
+    theme.dim("This history survives /clear and session exit. It stores bounded audit metadata, not result values."),
+    "",
+    renderTerminalCommandFrame(commands, {
+      title: "COPY-PASTE COMMANDS",
+      metadata: ["Filter query-audit list with --table <schema.table> when needed."],
+      color,
+      columns: input.io.columns(),
+    }),
     "",
   ].join("\n"));
+}
+
+function renderHistoryReferenceTable(
+  rows: Array<{ reference: string; request: string; status: "latest" | "available" }>,
+  requestedWidth: number,
+  theme: ReturnType<typeof terminalTheme>,
+): string[] {
+  const width = Math.max(50, Math.min(120, requestedWidth));
+  const referenceWidth = Math.max(9, ...rows.map((row) => row.reference.length));
+  const statusWidth = 9;
+  const requestWidth = Math.max(20, width - referenceWidth - statusWidth - 10);
+  const borderValue = `+${"-".repeat(referenceWidth + 2)}+${"-".repeat(requestWidth + 2)}+${"-".repeat(statusWidth + 2)}+`;
+  const border = theme.dim(borderValue);
+  const edge = theme.dim("|");
+  const line = (reference: string, request: string, status: string, heading = false) => {
+    const referenceCell = reference.padEnd(referenceWidth);
+    const requestCell = request.padEnd(requestWidth);
+    const statusCell = status.padEnd(statusWidth);
+    return `${edge} ${heading ? theme.key(referenceCell) : theme.focus(referenceCell)} ${edge} ${heading ? theme.key(requestCell) : requestCell} ${edge} ${heading ? theme.key(statusCell) : status === "latest" ? theme.success(statusCell) : theme.dim(statusCell)} ${edge}`;
+  };
+  const output = [border, line("Reference", "Request", "Status", true), border];
+  for (const row of rows) {
+    const requestLines = wrapHistoryCell(row.request, requestWidth);
+    requestLines.forEach((request, index) => {
+      output.push(line(
+        index === 0 ? row.reference : "",
+        request,
+        index === 0 ? row.status : "",
+      ));
+    });
+  }
+  output.push(border);
+  return output;
+}
+
+function wrapHistoryCell(value: string, width: number): string[] {
+  const words = value.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [""];
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    if (word.length > width) {
+      if (current) {
+        lines.push(current);
+        current = "";
+      }
+      for (let offset = 0; offset < word.length; offset += width) {
+        lines.push(word.slice(offset, offset + width));
+      }
+      continue;
+    }
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length > width) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
 }
 
 async function showDetails(
@@ -1598,7 +1715,7 @@ async function showDetails(
   const analyses = await input.listAnalyses();
   const selected = resolveAnalysisReference(requested, analyses, current);
   if (!selected) {
-    input.io.write("That analysis is unavailable, expired, or ambiguous. Run /analyses.\n\n");
+    input.io.write("That analysis is unavailable, expired, or ambiguous. Run /history.\n\n");
     return;
   }
   const live = liveEvidence.get(selected.token);
@@ -1766,7 +1883,7 @@ async function protectAnalysis(
     }
   }
   if (!selected) {
-    input.io.write("No single eligible analysis was selected. Run /analyses and choose an explicit reference.\n\n");
+    input.io.write("No single eligible analysis was selected. Run /history and choose an explicit reference.\n\n");
     return;
   }
   const suggested = parsed.capabilityName ?? selected.suggested_capability;

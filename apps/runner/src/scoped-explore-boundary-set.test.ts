@@ -81,6 +81,24 @@ describe("Scoped Explore active boundary routing", () => {
     }));
   });
 
+  it("does not turn reviewer-authored labels into resource authority aliases", () => {
+    const labeled = boundary("finance", ["public.invoices"]);
+    labeled.pack.resources[0]!.label = "Quarterly revenue ledger";
+
+    expect(selectActiveExploreBoundary([labeled], undefined, "invoices").pack.name)
+      .toBe("finance");
+    expect(() => selectActiveExploreBoundary(
+      [labeled],
+      undefined,
+      "Quarterly revenue ledger",
+    )).toThrowError(expect.objectContaining({
+      code: "EXPLORE_RESOURCE_FORBIDDEN",
+      details: expect.objectContaining({
+        valid_resources: [{ boundary: "finance", resource: "public.invoices" }],
+      }),
+    }));
+  });
+
   it("refuses unknown boundaries and resources instead of widening or combining authority", () => {
     expect(() => selectActiveExploreBoundary(boundaries, "unknown", "public.tickets"))
       .toThrowError(expect.objectContaining({ code: "EXPLORE_BOUNDARY_FORBIDDEN" }));

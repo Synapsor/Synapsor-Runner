@@ -267,7 +267,8 @@ The Workbench requires a human to narrow and confirm:
 - timestamp fields and permitted hour/day/week/month/quarter/year/day-of-week
   buckets;
 - named derived measures, post-suppression calculations, fixed numeric bands,
-  and safe child-count paths;
+  reviewer-approved automatic numeric-band methods, and safe child-count paths;
+- optional reviewed labels and descriptions for resources and fields;
 - whether each usable field is model-visible or model-withheld;
 - kept-out fields;
 - counted entity and relationship cardinality;
@@ -315,6 +316,43 @@ Raw visibility and aggregate use are separate permissions. A reviewer may
 allow `count_distinct(customer_id)` while keeping every `customer_id` value out
 of results.
 
+### Reviewed Names And Descriptions
+
+Legacy or abbreviated database names can be given bounded business context
+without changing the database or granting new authority. In `/access`, press
+`I` on a selected table or column. Workbench exposes the same **Reviewed label**
+and **Reviewed description** controls. The noninteractive equivalent is:
+
+```bash
+synapsor-runner boundary review resource public.t_0031 \
+  --label "Customer subscriptions" \
+  --description "One reviewed subscription record per customer account" \
+  --field-label "c7=Subscription state" \
+  --field-description "c7=Reviewed billing lifecycle state" \
+  --actor reviewer@example.com \
+  --reason "Clarify legacy identifiers without changing access"
+```
+
+Labels are at most 64 characters and descriptions at most 280 characters.
+Control characters, multiline text, and secret-like material are rejected.
+Each change records actor, reason, and decision time, changes the disabled
+boundary digest, and requires the normal exact activation. Use `-` as one flag
+value to clear that value.
+
+`app.describe_data`, `/catalog`, and Workbench show the reviewed words beside
+the exact database ID. Plans still reference only exact field IDs and the
+canonical reviewed resource ID. A custom label is never accepted as a resource,
+field, relationship, or formula. Runner retains its bounded recovery for one
+unambiguous bare table name, but does not add custom labels to that resolver.
+
+This metadata is descriptive only. It cannot make a field selectable,
+filterable, groupable, sortable, aggregatable, or relationship-reachable. A
+label on a kept-out field remains available to the human reviewer but is absent
+from model-facing catalog output. Relabeling an opaque field as `SSN` does not
+automatically classify or expose it; the reviewer must still explicitly keep
+that field out. Metadata survives unrelated rescans and is removed when its
+exact table or field disappears.
+
 For model-visible, non-sensitive categorical fields, Runner may derive a small
 complete value vocabulary from schema metadata: native enum types or simple
 `CHECK field IN (...)` / `field = ANY(...)` constraints. It never samples
@@ -339,9 +377,10 @@ final sign-off with a default-yes prompt; the operator does not copy a digest.
 Noninteractive automation still supplies the complete
 `ACTIVATE sha256:...` confirmation with a verified signed-key or OIDC decision.
 
-The immutable digest covers the reviewed resources, field permissions,
-relationships, scope, role posture, generation lock, compiler/spec version,
-profile, and every query/privacy budget. Model arguments cannot widen it.
+The immutable digest covers the reviewed resources, labels/descriptions, field
+permissions, relationships, scope, role posture, generation lock, compiler/spec
+version, profile, and every query/privacy budget. Model arguments cannot widen
+it.
 
 Workbench and CLI use the same review domain. A terminal operator can inspect
 or narrow one blocked resource without reading rows or activating authority:
@@ -354,6 +393,8 @@ synapsor-runner boundary review resource public.orders \
   --no-principal \
   --visible-fields id,status,internal_segment \
   --withhold-from-model internal_segment \
+  --label "Orders" \
+  --field-label "status=Order state" \
   --actor reviewer@example.com \
   --reason "Reviewed tenant-scoped order access"
 ```
@@ -401,8 +442,9 @@ columns for review. `S` signs off the complete table
 review, `P` explains what that sign-off covers, `R` stages its removal, and
 `Esc` returns to the boundary list. `A` reveals every inspected table so another
 can be added, `B` is the visible back action or returns to the boundary's table
-list, `M` opens the paginated complete map, `N` renames the pack, and `C` guides
-every remaining sign-off. One table sign-off records the exact individual
+list, `I` edits a selected table or field's reviewed display metadata, `M` opens
+the paginated complete map, `N` renames the pack, and `C` guides every remaining
+sign-off. One table sign-off records the exact individual
 decisions for column access, allowed operations, trusted scope, privacy limits,
 and relationship paths. Those decisions remain separately digest-bound
 underneath; they are not separate boundaries or unsaved column changes.
@@ -414,8 +456,9 @@ CLI. These actions update only disabled drafts.
 Active boundaries add reviewed choices to one authoring catalog; they do not
 create more tools or merge authority. `app.describe_data` lists each boundary
 and tags its resources. The model-facing catalog exposes one canonical ID for
-each resource, field, and relationship. It does not advertise a second label or
-alias for the same plan input. The catalog still includes the reviewed
+each resource, field, and relationship, plus any optional reviewed label and
+description as display metadata. Those words are not aliases and are never
+accepted as plan input. The catalog still includes the reviewed
 operations, enum allowlists, time coverage, relationship paths and cardinality
 proof, scope posture, privacy limits, and suggested plan shapes the model needs
 to form a legal request. Every `app.explore_data` request routes to exactly one
@@ -529,6 +572,22 @@ with the exact command, including `--apply`, that records the disabled
 decision. Unknown column names fail before a preview and the error lists the
 table's inspected columns. `--json` retains exact digests and the full semantic
 diff for automation.
+
+Use the boundary commands according to the step you need:
+
+- `boundary rescan` re-inspects schema and database-role posture and writes a
+  disabled reconciliation report. It does not open review or activate.
+- `boundary review --access` opens the focused table, column, relationship, and
+  scope-path editor without another inspection. It is the shell equivalent of
+  `/access` in an active Ask session.
+- `start --from-env DATABASE_URL --cli --rescan` combines those steps and then
+  enters Ask. If `boundary rescan` has already run, omit `--rescan` from
+  `start`; the existing reconciled revision is reused instead of inspecting the
+  database twice.
+
+After standalone activation, Runner prints both a guided `start` command and a
+direct `try ask` command, so returning to analytics does not depend on knowing
+an undocumented handoff.
 
 Auto Boundary generates a minimum cohort of 5 for every analytical resource.
 Without a separate owner decision, review may keep that value or increase it;
@@ -799,7 +858,7 @@ analytics database tool. It supports:
 - reviewed missing-value counts and completion rates;
 - reviewer-named ratios, percentages, and per-unit averages assembled only from
   reviewed base aggregates;
-- reviewer-fixed numeric bands;
+- reviewer-fixed numeric bands and reviewer-approved automatic numeric bands;
 - reviewed categorical dimensions;
 - hour, day, week, month, quarter, year, and day-of-week buckets on reviewed
   timestamps;
@@ -851,6 +910,54 @@ recover the hidden aggregate. Pagination cannot bypass the maximum group count.
 New generated boundaries review at most 16 distinct cohort-protected variants
 per root resource in that window. Existing boundaries keep their exact prior
 value, and an operator may narrow the generated allowance during review.
+
+### Reviewed Automatic Numeric Bands
+
+A reviewer may opt one model-visible numeric measure into automatic grouping.
+The policy fixes the allowed method (`quantile`, `equal_width`, or both), the
+minimum and maximum bucket count, and the label style. Equal-width policies
+also fix a minimum bucket width. Rounded-label policies fix an outward-rounding
+unit. The model may then choose only an allowed method and an integer bucket
+count in the reviewed range:
+
+```json
+{
+  "numeric_band": {
+    "field": "monthly_revenue_cents",
+    "method": "quantile",
+    "buckets": 5
+  }
+}
+```
+
+The model cannot send edges, widths, offsets, formulas, or labels. Runner
+computes bands inside the same read-only transaction after applying every
+trusted tenant, principal, and derived-scope predicate. Quantile computation
+uses cumulative distribution rather than `NTILE`, so equal values stay in the
+same bucket. Ties may therefore collapse requested buckets. Equal-width
+grouping reduces the effective bucket count when the reviewed minimum width
+would otherwise be violated. The response says when a reduction occurred.
+
+Computed edges never enter model-facing results, `app.describe_data`, evidence,
+or query audit. Ordinal labels such as `Q1 of 5` contain no data-derived value.
+A reviewed rounded label widens both endpoints to the configured unit; it never
+prints the exact computed edge. Operator-only execution diagnostics may inspect
+internal edge metadata, but the model-facing two-tool surface may not.
+
+Automatic bands do not make arbitrary numeric grouping safe by themselves.
+Each released bucket still needs at least `max(reviewed minimum group size, 5)`
+contributors, including when the ordinary owner-reviewed cohort is one. Ties
+remain together, undersized groups are suppressed, and fixed and automatic
+bands share the existing root-resource differencing pool. Changing the method
+or bucket count is a variant in that same family, not a new privacy allowance.
+The reviewed policy is absent by default, digest-bound, audited with actor,
+reason, and time, and revalidated on rescan.
+
+Automatic bands use the same compiler for local stdio and production HTTP
+Explore. They are not currently Protect-convertible: use a reviewer-fixed named
+band when a local analysis must become a fixed protected capability. This keeps
+computed-edge semantics out of the protected DSL until that authority has a
+separate design.
 
 If the owner explicitly reviewed a lower threshold, `app.describe_data`,
 Workbench, and the safe analytics catalog show both the effective value and an

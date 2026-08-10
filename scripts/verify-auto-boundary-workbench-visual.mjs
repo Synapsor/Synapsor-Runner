@@ -9,6 +9,7 @@ import {
 } from "../apps/runner/dist/auto-boundary.js";
 import { initializeGuidedProject } from "../apps/runner/dist/guided-project.js";
 import { startLocalUiServer } from "../apps/runner/dist/local-ui.js";
+import { createScopedExploreRuntime } from "../apps/runner/dist/scoped-explore.js";
 import { ProposalStore } from "../packages/proposal-store/dist/index.js";
 import {
   captureScreenshot,
@@ -460,6 +461,79 @@ try {
       { firstVerifiedResultMs },
     );
     await screenshot(page, "workbench-model-first-analyze-desktop.png");
+    const activeBoundary = JSON.parse(activeArtifact);
+    const historyRuntime = await createScopedExploreRuntime({
+      projectRoot,
+      transport: "loopback_workbench",
+      env: { ...process.env, DATABASE_URL: "postgresql://visual.invalid/workbench" },
+      inspectDatabaseFn: async () => inspection,
+      resolveTrustedScopeFn: async () => ({
+        tenant: "visual-tenant-from-operator-environment",
+        principal: "",
+        tenant_source: "environment",
+        tenant_binding: "SYNAPSOR_TENANT_ID",
+        principal_source: "not_required",
+      }),
+      executor: {
+        execute: async () => [],
+        executeBatch: async ({ queries }) => queries.map(() => [{
+          measure_0: 12,
+          __cohort_size: 12,
+        }]),
+        close: async () => undefined,
+      },
+    });
+    try {
+      await historyRuntime.explore({
+        kind: "aggregate",
+        resource: activeBoundary.pack.resources[0].id,
+        measures: [{ function: "count" }],
+        top_n: 1,
+      });
+    } finally {
+      await historyRuntime.close();
+    }
+    await clickSelector(page, "#ask-history > summary");
+    await clickSelector(page, "#load-ask-history");
+    await waitForExpression(page, "document.querySelector('#ask-history-status')?.textContent.includes('recent reference')");
+    const historyReport = await evaluate(page, `(() => ({
+      recentRows:document.querySelectorAll("#ask-history-content table tbody tr").length,
+      text:document.querySelector("#ask-history")?.textContent||"",
+      horizontalOverflow:document.documentElement.scrollWidth>document.documentElement.clientWidth+1,
+    }))()`);
+    assert(
+      historyReport.recentRows >= 1
+        && /Recent references/.test(historyReport.text)
+        && /Latest/.test(historyReport.text),
+      "Workbench query history did not render the completed Ask reference",
+      historyReport,
+    );
+    assert(
+      !historyReport.text.includes("visual-provider-key-never-rendered")
+        && !historyReport.text.includes("visual-tenant-from-operator-environment"),
+      "Workbench query history rendered a credential or trusted-scope value",
+      historyReport,
+    );
+    assert(historyReport.horizontalOverflow === false, "desktop query history overflowed the viewport", historyReport);
+    await screenshot(page, "workbench-query-history-desktop.png");
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true,
+      screenWidth: 390,
+      screenHeight: 844,
+    });
+    await assertWorkbenchDom(page, "mobile query history", { expectedView: "explore" });
+    await screenshot(page, "workbench-query-history-mobile.png");
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 1440,
+      height: 1100,
+      deviceScaleFactor: 1,
+      mobile: false,
+      screenWidth: 1440,
+      screenHeight: 1100,
+    });
     await clickSelector(page, "#prove-boundary-chat");
     await waitForExpression(page, "document.querySelector('#boundary-proof-result')?.textContent.includes('Boundary held')");
     assert(
@@ -540,8 +614,9 @@ try {
     await waitForExpression(page, "document.querySelector('[data-access-column-list]')?.offsetParent !== null");
     const immediateColumns = await evaluate(page, `(() => {
       const list=document.querySelector("[data-access-column-list]");
-      const tier=[...list.querySelectorAll("[data-field-tier]")]
-        .find(input=>input.dataset.currentTier==="visible"&&!input.disabled);
+      const visibleTiers=[...list.querySelectorAll("[data-field-tier]")]
+        .filter(input=>input.dataset.currentTier==="visible"&&!input.disabled);
+      const tier=visibleTiers.find(input=>input.dataset.fieldName!=="amount_cents")||visibleTiers[0];
       const secondary=[...document.querySelectorAll("#resource-detail details[data-access-secondary]")];
       const rect=tier?.getBoundingClientRect();
       return {
@@ -655,6 +730,299 @@ try {
       ) === activeArtifact,
       "reviewing categorical values changed active authority before confirmation",
     );
+    const resourceMetadataEditor = await evaluate(page, `(() => {
+      const form=document.querySelector('[data-metadata-review-form][data-metadata-kind="resource_metadata"]');
+      if(!form)return null;
+      form.open=true;
+      form.querySelector('[data-metadata-label]').value='Reviewed operational records';
+      form.querySelector('[data-metadata-description]').value='Reviewed records used for operational trend analysis.';
+      form.querySelector('[data-metadata-actor]').value='visual-reviewer@example.test';
+      form.querySelector('[data-metadata-reason]').value='Give people and AI clients clear business context without changing the exact database id.';
+      form.scrollIntoView({block:'center'});
+      const rect=form.getBoundingClientRect();
+      return {
+        copy:form.textContent||'',
+        exact:form.querySelector('code')?.textContent||'',
+        visible:rect.top<innerHeight&&rect.bottom>0,
+        withinWidth:rect.left>=0&&rect.right<=innerWidth,
+        horizontalOverflow:document.documentElement.scrollWidth>document.documentElement.clientWidth+1,
+      };
+    })()`);
+    assert(
+      resourceMetadataEditor
+        && resourceMetadataEditor.exact === twoClickResource
+        && resourceMetadataEditor.visible
+        && resourceMetadataEditor.withinWidth
+        && !resourceMetadataEditor.horizontalOverflow
+        && /grants no access/i.test(resourceMetadataEditor.copy)
+        && /plans still use the exact id/i.test(resourceMetadataEditor.copy),
+      "Workbench did not present bounded table metadata as non-authority beside the exact id",
+      resourceMetadataEditor,
+    );
+    await screenshot(page, "workbench-reviewed-metadata-editor-desktop.png");
+    await clickSelector(page, '[data-metadata-review-form][data-metadata-kind="resource_metadata"] [data-submit-metadata-review]');
+    await waitForExpression(page, `(document.querySelector('#access-staged-summary')?.textContent||'').includes(${JSON.stringify(`Recorded reviewed metadata for ${twoClickResource}`)})`);
+    const resourceMetadataSaved = await evaluate(page, `(() => {
+      const form=document.querySelector('[data-metadata-review-form][data-metadata-kind="resource_metadata"]');
+      return {
+        heading:document.querySelector('#resource-detail h3')?.textContent||'',
+        exact:document.querySelector('#resource-detail h3 + p code')?.textContent||'',
+        label:form?.dataset.metadataCurrentLabel||'',
+        description:form?.dataset.metadataCurrentDescription||'',
+      };
+    })()`);
+    assert(
+      resourceMetadataSaved.heading === "Reviewed operational records"
+        && resourceMetadataSaved.exact === twoClickResource
+        && resourceMetadataSaved.label === "Reviewed operational records"
+        && resourceMetadataSaved.description === "Reviewed records used for operational trend analysis.",
+      "Workbench did not persist the table label while retaining its exact authority id",
+      resourceMetadataSaved,
+    );
+    const metadataField = immediateColumns.tierField;
+    const fieldMetadataEditor = await evaluate(page, `(() => {
+      const row=[...document.querySelectorAll('[data-access-column]')]
+        .find(item=>item.dataset.accessColumn===${JSON.stringify(immediateColumns.tierField)});
+      const form=row?.querySelector('[data-metadata-review-form][data-metadata-kind="field_metadata"]');
+      if(!form)return null;
+      form.open=true;
+      form.querySelector('[data-metadata-label]').value='Reviewed analysis field';
+      form.querySelector('[data-metadata-description]').value='Reviewed field used in this operational boundary.';
+      form.querySelector('[data-metadata-actor]').value='visual-reviewer@example.test';
+      form.querySelector('[data-metadata-reason]').value='Explain this exact field without changing its reviewed operations or visibility.';
+      form.scrollIntoView({block:'center'});
+      return {copy:form.textContent||'',exact:form.querySelector('code')?.textContent||''};
+    })()`);
+    assert(
+      fieldMetadataEditor
+        && fieldMetadataEditor.exact === `${twoClickResource}.${metadataField}`
+        && /grants no access/i.test(fieldMetadataEditor.copy)
+        && /plans still use the exact id/i.test(fieldMetadataEditor.copy),
+      "Workbench did not present field metadata beside its exact plan id",
+      fieldMetadataEditor,
+    );
+    await clickSelector(page, `[data-access-column="${metadataField}"] [data-metadata-review-form][data-metadata-kind="field_metadata"] [data-submit-metadata-review]`);
+    await waitForExpression(page, `(document.querySelector('#access-staged-summary')?.textContent||'').includes(${JSON.stringify(`Recorded reviewed metadata for ${twoClickResource}.${metadataField}`)})`);
+    const fieldMetadataSaved = await evaluate(page, `(() => {
+      const row=[...document.querySelectorAll('[data-access-column]')]
+        .find(item=>item.dataset.accessColumn===${JSON.stringify(immediateColumns.tierField)});
+      const form=row?.querySelector('[data-metadata-review-form][data-metadata-kind="field_metadata"]');
+      if(form)form.open=true;
+      return {
+        label:row?.querySelector('.access-column-copy > strong')?.textContent||'',
+        exact:row?.querySelector('.access-column-copy > small code')?.textContent||'',
+        description:row?.querySelector('.access-column-copy')?.textContent||'',
+        currentLabel:form?.dataset.metadataCurrentLabel||'',
+      };
+    })()`);
+    assert(
+      fieldMetadataSaved.label === "Reviewed analysis field"
+        && fieldMetadataSaved.exact === metadataField
+        && fieldMetadataSaved.currentLabel === "Reviewed analysis field"
+        && /Reviewed field used in this operational boundary/.test(fieldMetadataSaved.description),
+      "Workbench did not persist field metadata while retaining the exact field id",
+      fieldMetadataSaved,
+    );
+    assert(
+      await fs.readFile(
+        path.join(projectRoot, ".synapsor", "exploration-boundary.active.json"),
+        "utf8",
+      ) === activeArtifact,
+      "saving reviewed metadata changed active authority before confirmation",
+    );
+    await screenshot(page, "workbench-reviewed-metadata-saved-desktop.png");
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true,
+      screenWidth: 390,
+      screenHeight: 844,
+    });
+    await evaluate(page, `document.querySelector('[data-access-column="${metadataField}"] [data-metadata-review-form][data-metadata-kind="field_metadata"]')?.scrollIntoView({block:'start'})`);
+    const metadataMobileLayout = await evaluate(page, `(() => {
+      const form=document.querySelector('[data-access-column="${metadataField}"] [data-metadata-review-form][data-metadata-kind="field_metadata"]');
+      const rect=form?.getBoundingClientRect();
+      return {
+        visible:Boolean(rect&&rect.top<innerHeight&&rect.bottom>0),
+        withinWidth:Boolean(rect&&rect.left>=0&&rect.right<=innerWidth),
+        horizontalOverflow:document.documentElement.scrollWidth>document.documentElement.clientWidth+1,
+        controls:[...form.querySelectorAll('input,textarea,button')].every(control=>{
+          const box=control.getBoundingClientRect();
+          return box.left>=0&&box.right<=innerWidth;
+        }),
+      };
+    })()`);
+    assert(
+      metadataMobileLayout.visible
+        && metadataMobileLayout.withinWidth
+        && !metadataMobileLayout.horizontalOverflow
+        && metadataMobileLayout.controls,
+      "Workbench metadata controls overflowed the mobile viewport",
+      metadataMobileLayout,
+    );
+    await screenshot(page, "workbench-reviewed-metadata-editor-mobile.png");
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 1440,
+      height: 1100,
+      deviceScaleFactor: 1,
+      mobile: false,
+      screenWidth: 1440,
+      screenHeight: 1100,
+    });
+    await evaluate(page, `(() => {
+      const panel=document.querySelector("[data-reviewed-analytics]");
+      if(panel)panel.open=true;
+    })()`);
+    await waitForExpression(page, "document.querySelector('#save-auto-band')?.offsetParent !== null");
+    const automaticBandForm = await evaluate(page, `(() => {
+      const panel=document.querySelector("[data-reviewed-analytics]");
+      const method=document.querySelector("#analytics-auto-band-method");
+      const labels=document.querySelector("#analytics-auto-band-label-style");
+      const width=document.querySelector("#analytics-auto-band-width");
+      const round=document.querySelector("#analytics-auto-band-round");
+      return {
+        text:panel?.textContent||"",
+        fields:[...document.querySelectorAll("#analytics-auto-band-field option")].map(option=>option.value),
+        methods:[...method.options].map(option=>option.value),
+        labels:[...labels.options].map(option=>option.value),
+        minimum:Number(document.querySelector("#analytics-auto-band-min")?.min),
+        maximum:Number(document.querySelector("#analytics-auto-band-max")?.max),
+        widthDisabled:Boolean(width?.disabled),
+        roundDisabled:Boolean(round?.disabled),
+        forbiddenInputs:Boolean(panel?.querySelector("#analytics-auto-band-edges,#analytics-auto-band-offset,#analytics-auto-band-labels")),
+      };
+    })()`);
+    assert(
+      automaticBandForm.fields.includes("amount_cents")
+        && JSON.stringify(automaticBandForm.methods) === JSON.stringify(["quantile", "equal_width", "both"])
+        && JSON.stringify(automaticBandForm.labels) === JSON.stringify(["ordinal", "rounded"])
+        && automaticBandForm.minimum === 2
+        && automaticBandForm.maximum === 16
+        && automaticBandForm.widthDisabled
+        && automaticBandForm.roundDisabled
+        && !automaticBandForm.forbiddenInputs
+        && /never exposes raw edges/i.test(automaticBandForm.text),
+      "Workbench automatic-band review did not expose the bounded reviewer controls",
+      automaticBandForm,
+    );
+    await evaluate(page, `(() => {
+      const method=document.querySelector("#analytics-auto-band-method");
+      method.value="both";
+      method.dispatchEvent(new Event("change",{bubbles:true}));
+      const labels=document.querySelector("#analytics-auto-band-label-style");
+      labels.value="rounded";
+      labels.dispatchEvent(new Event("change",{bubbles:true}));
+    })()`);
+    assert(
+      await evaluate(page, `!document.querySelector("#analytics-auto-band-width").disabled
+        &&!document.querySelector("#analytics-auto-band-round").disabled`),
+      "Workbench did not require width and rounding controls for the selected methods",
+    );
+    await evaluate(page, `(() => {
+      document.querySelector("#analytics-auto-band-method").value="quantile";
+      document.querySelector("#analytics-auto-band-method").dispatchEvent(new Event("change",{bubbles:true}));
+      document.querySelector("#analytics-auto-band-label-style").value="ordinal";
+      document.querySelector("#analytics-auto-band-label-style").dispatchEvent(new Event("change",{bubbles:true}));
+      document.querySelector("#analytics-auto-band-field").value="amount_cents";
+      document.querySelector("#analytics-auto-band-min").value="3";
+      document.querySelector("#analytics-auto-band-max").value="7";
+      document.querySelector("#analytics-review-actor").value="visual-reviewer@example.test";
+      document.querySelector("#analytics-review-reason").value="Allow bounded revenue bands without model-authored edges.";
+      document.querySelector("#analytics-auto-band-field").scrollIntoView({block:"center"});
+    })()`);
+    const automaticBandLayout = await evaluate(page, `(() => {
+      const panel=document.querySelector("[data-reviewed-analytics]");
+      const form=document.querySelector("#analytics-auto-band-field")?.closest(".review-form");
+      const rect=form?.getBoundingClientRect();
+      return {
+        visible:Boolean(rect&&rect.top<innerHeight&&rect.bottom>0),
+        withinWidth:Boolean(rect&&rect.left>=0&&rect.right<=innerWidth),
+        horizontalOverflow:document.documentElement.scrollWidth>document.documentElement.clientWidth+1,
+        saveVisible:Boolean(document.querySelector("#save-auto-band")?.offsetParent),
+        text:form?.textContent||"",
+        panelOpen:Boolean(panel?.open),
+      };
+    })()`);
+    assert(
+      automaticBandLayout.visible
+        && automaticBandLayout.withinWidth
+        && !automaticBandLayout.horizontalOverflow
+        && automaticBandLayout.saveVisible
+        && automaticBandLayout.panelOpen
+        && /Fewest buckets/.test(automaticBandLayout.text)
+        && /Most buckets/.test(automaticBandLayout.text)
+        && /Minimum bucket width/.test(automaticBandLayout.text)
+        && /Round labels outward to/.test(automaticBandLayout.text),
+      "Workbench automatic-band form was clipped, incomplete, or outside the viewport",
+      automaticBandLayout,
+    );
+    await screenshot(page, "workbench-auto-band-controls-desktop.png");
+    await clickSelector(page, "#save-auto-band");
+    await waitForExpression(page, "/Saved automatic numeric bands/.test(document.querySelector('#access-staged-summary')?.textContent||'')");
+    await evaluate(page, `(() => {
+      const panel=document.querySelector("[data-reviewed-analytics]");
+      if(panel)panel.open=true;
+    })()`);
+    const automaticBandSaved = await evaluate(page, `(() => {
+      const panel=document.querySelector("[data-reviewed-analytics]");
+      return {text:panel?.textContent||"",staged:document.querySelector("#access-staged-summary")?.textContent||""};
+    })()`);
+    assert(
+      /Automatic bands for amount_cents/.test(automaticBandSaved.text)
+        && /quantile and 3-7 buckets/.test(automaticBandSaved.text)
+        && /Raw computed edges are never shown/.test(automaticBandSaved.text)
+        && /Review the complete boundary, then activate it/.test(automaticBandSaved.staged),
+      "Workbench did not persist and explain the reviewed automatic-band policy",
+      automaticBandSaved,
+    );
+    assert(
+      await fs.readFile(
+        path.join(projectRoot, ".synapsor", "exploration-boundary.active.json"),
+        "utf8",
+      ) === activeArtifact,
+      "saving an automatic-band policy changed active authority before confirmation",
+    );
+    await screenshot(page, "workbench-auto-band-review-desktop.png");
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true,
+      screenWidth: 390,
+      screenHeight: 844,
+    });
+    await evaluate(page, `document.querySelector("#analytics-auto-band-field")?.scrollIntoView({block:"start"})`);
+    const automaticBandMobileLayout = await evaluate(page, `(() => {
+      const form=document.querySelector("#analytics-auto-band-field")?.closest(".review-form");
+      const rect=form?.getBoundingClientRect();
+      return {
+        visible:Boolean(rect&&rect.top<innerHeight&&rect.bottom>0),
+        withinWidth:Boolean(rect&&rect.left>=0&&rect.right<=innerWidth),
+        horizontalOverflow:document.documentElement.scrollWidth>document.documentElement.clientWidth+1,
+        controls:[...form.querySelectorAll("input,select,button")].every(control=>{
+          const box=control.getBoundingClientRect();
+          return box.left>=0&&box.right<=innerWidth;
+        }),
+      };
+    })()`);
+    assert(
+      automaticBandMobileLayout.visible
+        && automaticBandMobileLayout.withinWidth
+        && !automaticBandMobileLayout.horizontalOverflow
+        && automaticBandMobileLayout.controls,
+      "Workbench automatic-band controls overflowed the mobile viewport",
+      automaticBandMobileLayout,
+    );
+    await screenshot(page, "workbench-auto-band-controls-mobile.png");
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 1440,
+      height: 1100,
+      deviceScaleFactor: 1,
+      mobile: false,
+      screenWidth: 1440,
+      screenHeight: 1100,
+    });
     await screenshot(page, "workbench-access-editor-columns-desktop.png");
     await clickSelector(page, "#show-all-access");
     await waitForExpression(page, "document.querySelectorAll('[data-access-resource]').length === 40");
@@ -1320,6 +1688,10 @@ try {
       "instant-ready",
       "instant-success-desktop",
       "instant-success-mobile",
+      "query-history-desktop",
+      "query-history-mobile",
+      "reviewed-metadata-desktop",
+      "reviewed-metadata-mobile",
       "attention-unhealthy-sink",
       "attention-large-backlog",
       "worker-disabled",

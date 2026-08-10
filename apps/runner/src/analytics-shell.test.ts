@@ -1461,6 +1461,9 @@ describe("Synapsor Analytics shell", () => {
       "/details <A#>",
       "/details <A#> --sql",
     ]);
+    expect(slashCommandSuggestions("/history")).toEqual(["/history"]);
+    expect(slashCommandSuggestions("/history ")).toEqual(["/history"]);
+    expect(slashCommandSuggestions("/analyses ")).toEqual(["/analyses"]);
     expect(slashCommandSuggestions("/protect")).toEqual([
       "/protect last",
       "/protect <A#>",
@@ -1911,8 +1914,8 @@ describe("Synapsor Analytics shell", () => {
     expect(io.output()).toContain("Durable evidence and protected drafts were not deleted");
   });
 
-  it("lists and inspects safe metadata while redacting plan literals", async () => {
-    const io = fakeIo(["/analyses", "/details A1", "/exit"]);
+  it("lists recent and durable query history while redacting plan literals", async () => {
+    const io = fakeIo(["/history", "/details A1", "/exit"]);
     const stored = storedAnalysis("A1");
     const normalizedPlan = stored.normalized_plan!;
     stored.normalized_plan = {
@@ -1924,6 +1927,9 @@ describe("Synapsor Analytics shell", () => {
     stored.returned_rows_or_groups = 2;
     stored.returned_cells = 4;
     await runAnalyticsShell({
+      projectRoot: "/tmp/synapsor-history-project",
+      configPath: "/tmp/synapsor-history-project/synapsor.runner.json",
+      storePath: "/tmp/synapsor-history-project/.synapsor/history.db",
       providerLabel: "OpenAI",
       profileLabel: "staging",
       reviewedDataAreas: 1,
@@ -1935,12 +1941,83 @@ describe("Synapsor Analytics shell", () => {
       cancel: vi.fn(() => false),
     });
 
-    expect(io.output()).toContain("Recent analyses");
-    expect(io.output()).toContain("Use /protect, /protect A1, or /details A1.");
+    expect(io.output()).toContain("RECENT QUERY HISTORY");
+    expect(io.output()).toContain("| Reference | Request");
+    expect(io.output()).toContain("| A1");
+    expect(io.output()).toContain("available");
+    expect(io.output()).toContain("Next: /details A1 or /protect A1");
+    expect(io.output()).toContain("DURABLE QUERY LEDGER");
+    expect(io.output()).toContain("+-- COPY-PASTE COMMANDS");
+    expect(io.output()).toContain("query-audit list --config '/tmp/synapsor-history-project/synapsor.runner.json'");
+    expect(io.output()).toContain("--store '/tmp/synapsor-history-project/.synapsor/history.db'");
+    expect(io.output()).toContain("query-audit show <audit_id> --details");
+    expect(io.output()).toContain("evidence list");
     expect(io.output()).toContain("Evidence: ev_safe_metadata");
     expect(io.output()).toContain("Source database changed: no");
     expect(io.output()).toContain("<redacted>");
     expect(io.output()).not.toContain("secret-region-value");
+  });
+
+  it("renders history references and commands as distinct color-terminal controls", async () => {
+    const previousNoColor = process.env.NO_COLOR;
+    delete process.env.NO_COLOR;
+    const io = fakeIo([
+      "How many sessions are in each region?",
+      "/history",
+      "/exit",
+    ], 100, true);
+    const liveAnalysis = analysis("A6", 0);
+    try {
+      await runAnalyticsShell({
+        providerLabel: "Local model",
+        profileLabel: "development",
+        reviewedDataAreas: 1,
+        io,
+        ask: async () => ({
+          turn: turn("West has the most sessions."),
+          analyses: [liveAnalysis],
+          answer_id: "ans_colored_history",
+        }),
+        listAnalyses: async () => [storedAnalysis("A6")],
+        protect: vi.fn(),
+        clearConversation: vi.fn(),
+        cancel: vi.fn(() => false),
+      });
+    } finally {
+      if (previousNoColor === undefined) delete process.env.NO_COLOR;
+      else process.env.NO_COLOR = previousNoColor;
+    }
+
+    const output = io.output();
+    expect(output).toContain("\u001b[1;36mRECENT QUERY HISTORY\u001b[0m");
+    expect(output).toContain("\u001b[1;96mA6");
+    expect(output).toContain("\u001b[1;32mlatest");
+    expect(output).toContain("\u001b[1;32msynapsor-runner\u001b[0m");
+    expect(output).toContain("\u001b[1;36m--config\u001b[0m");
+    const plain = stripAnsi(output);
+    expect(plain).toContain("| Reference | Request");
+    expect(plain).toContain("| A6");
+    expect(plain).toContain("| latest");
+    expect(plain).toContain("+-- COPY-PASTE COMMANDS");
+  });
+
+  it("keeps /analyses as a history alias and shows durable guidance when recent references are empty", async () => {
+    const io = fakeIo(["/analyses", "/exit"]);
+    await runAnalyticsShell({
+      providerLabel: "Local model",
+      profileLabel: "development",
+      reviewedDataAreas: 1,
+      io,
+      ask: vi.fn(),
+      listAnalyses: async () => [],
+      protect: vi.fn(),
+      clearConversation: vi.fn(),
+      cancel: vi.fn(() => false),
+    });
+
+    expect(io.output()).toContain("No unexpired analysis references are available in this shell.");
+    expect(io.output()).toContain("This history survives /clear and session exit.");
+    expect(io.output()).toContain("query-audit list");
   });
 
   it("shows the live question and exact typed tool request without exposing SQL by default", async () => {
@@ -2551,6 +2628,8 @@ function reviewedCatalog(): BoundaryCatalogModel {
           aggregate_measures: ["total_cents"],
           count_distinct_fields: ["id"],
           time_bucket_fields: ["created_at"],
+          numeric_bands: [],
+          auto_bands: [],
           suggested_questions: [
             "What is total order cents by status?",
             "How did total order cents change by week?",
@@ -2577,6 +2656,8 @@ function reviewedCatalog(): BoundaryCatalogModel {
           aggregate_measures: [],
           count_distinct_fields: ["id"],
           time_bucket_fields: [],
+          numeric_bands: [],
+          auto_bands: [],
           suggested_questions: ["How many customers are there by region?"],
           runner_only_analysis: {
             groupable_fields: [],

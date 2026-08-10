@@ -50,6 +50,21 @@ behave identically. Production additionally requires the verified principal,
 per-principal and tenant budgets, rate limits, atomic reservations, and secured
 transport described below.
 
+Reviewed resource and field labels/descriptions have the same parity. They are
+bounded, digest-bound display metadata returned by `app.describe_data`; they do
+not change field operations, row scope, suppression, or budgets. Plans still
+use exact reviewed IDs. Custom labels are never accepted as plan aliases, and
+metadata attached to a kept-out field is omitted from the model-facing HTTP
+response. No additional MCP tool or HTTP endpoint is created.
+
+Reviewed automatic numeric bands have the same parity. A model may choose only
+an activated field, method, and bounded bucket count; it cannot provide edges,
+widths, labels, or formulas. Runner computes boundaries after JWT-derived
+tenant/principal predicates are applied, enforces an effective cohort floor of
+five, and never returns or audits raw computed edges. Different methods and
+bucket counts share the same durable differencing pool. Production adds no
+special escape or weaker default for this grammar.
+
 Safe child counts fix one reviewed child resource and one catalog-proven,
 non-null many-to-one child-to-parent relationship. The generated SQL is a
 correlated subaggregate, never a raw one-to-many join. Runner independently
@@ -62,7 +77,9 @@ The 1.7.0 production gates execute the expanded grammar on PostgreSQL 16 and
 MySQL 8. These are the documented tested server lines. Fixed post-suppression
 operations run in Runner rather than database window SQL, so their behavior is
 identical across those engines. No compatibility claim is made here for older
-database releases.
+database releases. Automatic quantiles specifically rely on the reviewed
+PostgreSQL 16/MySQL 8 `CUME_DIST` implementation; equal-width bands use scoped
+`MIN`/`MAX` bounds in the same read-only transaction.
 
 ## 1. Create Separate Production Authority
 

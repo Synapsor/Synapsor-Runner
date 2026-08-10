@@ -105,11 +105,8 @@ try {
     assert(tools.tools.length === 2, "Scaled authoring surface exposed more than two model tools.");
     assert(bytes <= MAX_TOOLS_LIST_BYTES, `tools/list ${bytes} bytes exceeds ${MAX_TOOLS_LIST_BYTES}.`);
     assert(estimatedTokens <= MAX_ESTIMATED_TOKENS, `tools/list estimate ${estimatedTokens} exceeds ${MAX_ESTIMATED_TOKENS}.`);
-    for (const resource of boundary.pack.resources) {
-      assert(serialized.includes(resource.id), `Activated resource ${resource.id} is absent from tools/list.`);
-    }
-    for (const resource of first.exploration_boundary.pack.resources.slice(ACTIVE_PACK_SIZE)) {
-      assert(!serialized.includes(resource.id), `Unactivated catalog resource ${resource.id} leaked into tools/list.`);
+    for (const resource of first.exploration_boundary.pack.resources) {
+      assert(!serialized.includes(resource.id), `Resource ${resource.id} leaked into static tools/list discovery.`);
     }
     const firstPage = await client.callTool({
       name: "app.describe_data",
@@ -118,6 +115,9 @@ try {
     const payload = firstPage.structuredContent;
     assert(Array.isArray(payload?.resources) && payload.resources.length === 2 && payload.next_cursor === 2,
       "app.describe_data is not bounded and paginated.", payload);
+    for (const resource of boundary.pack.resources.slice(0, 2)) {
+      assert(JSON.stringify(payload).includes(resource.id), `Activated resource ${resource.id} is absent from app.describe_data.`);
+    }
     process.stdout.write(`${JSON.stringify({
       ok: true,
       schema_tables: TABLE_COUNT,

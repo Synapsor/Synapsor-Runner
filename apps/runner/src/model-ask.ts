@@ -851,12 +851,43 @@ async function runOpenAiCompatibleTurn(input: {
       if (input.authorityGuard) {
         await assertAskAuthorityCurrent(input.authorityDigest, input.authorityGuard);
       }
+      const canonicalName = input.prepared.canonicalByProvider.get(call.name);
+      const directArguments = safeToolArguments(call.arguments);
+      const requirements = input.configuration.provider === "openai_compatible"
+        && canonicalName === "app.explore_data"
+        ? localPlanRequirementsForDirectCall(input.question, traces, directArguments)
+        : undefined;
+      if (requirements && !directLocalPlanMatchesRequirements(directArguments, requirements)) {
+        const providerResult = {
+          ok: false,
+          error_code: "LOCAL_PLAN_INTENT_MISMATCH",
+          message: `The plan was not executed because it did not match the question. ${requirements.instruction}`,
+          source_database_changed: false,
+        };
+        const trace: AskToolTrace = {
+          call_id: safeProviderIdentifier(call.id, "tool call"),
+          tool: "app.explore_data",
+          provider_tool: call.name,
+          status: "refused",
+          error_code: "LOCAL_PLAN_INTENT_MISMATCH",
+          arguments: directArguments,
+          result: providerResult,
+        };
+        traces.push(trace);
+        providerHistory.push(providerHistoryEntry(trace, providerResult));
+        messages.push({
+          role: "tool",
+          tool_call_id: call.id,
+          content: boundedToolResult(providerResult),
+        });
+        continue;
+      }
       const executed = await executeProviderTool(
         input.gateway,
         input.prepared,
         call.id,
         call.name,
-        call.arguments,
+        directArguments,
         input.onProgress,
       );
       const trace = executed.trace;
@@ -1961,6 +1992,68 @@ function localPlanMatchesRequirements(
     const actual = measures[0]!;
     return actual.function === requirements.measure.function
       && (actual.field ?? undefined) === requirements.measure.field;
+  }
+  return measures.length > 0;
+}
+
+function localPlanRequirementsForDirectCall(
+  question: string,
+  traces: AskToolTrace[],
+  args: Record<string, unknown>,
+): LocalPlanRequirements | undefined {
+  const plan = isRecord(args.plan) ? args.plan : undefined;
+  if (!plan || typeof plan.resource !== "string") return undefined;
+  for (const trace of [...traces].reverse()) {
+    if (trace.tool !== "app.describe_data" || trace.status !== "ok" || !Array.isArray(trace.result.resources)) continue;
+    const resource = trace.result.resources.filter(isRecord).find((candidate) =>
+      candidate.id === plan.resource
+      && (typeof args.boundary !== "string" || !args.boundary || candidate.boundary_name === args.boundary));
+    if (resource) return localPlanRequirements(question, { resources: [resource] });
+  }
+  return undefined;
+}
+
+function directLocalPlanMatchesRequirements(
+  args: Record<string, unknown>,
+  requirements: LocalPlanRequirements,
+): boolean {
+  const boundary = typeof args.boundary === "string" && args.boundary.length > 0
+    ? args.boundary
+    : undefined;
+  if (boundary !== undefined && boundary !== requirements.boundary) return false;
+  const plan = isRecord(args.plan) ? args.plan : undefined;
+  if (!plan || plan.kind !== requirements.kind || plan.resource !== requirements.resource) return false;
+  if (!requirements.timeBucketAllowed && plan.time_bucket !== undefined) return false;
+  if (!requirements.comparisonAllowed && plan.comparison !== undefined) return false;
+  const filters = Array.isArray(plan.where) ? plan.where.filter(isRecord) : [];
+  if (requirements.filter) {
+    if (filters.length !== 1) return false;
+    const actual = filters[0]!;
+    if (actual.field !== requirements.filter.field || actual.op !== "eq" || actual.value !== requirements.filter.value) {
+      return false;
+    }
+  } else if (filters.length > 0) {
+    return false;
+  }
+  if (requirements.kind === "rows") {
+    if (!requirements.select?.length) return true;
+    const selected = safeStringList(plan.select);
+    return selected.length === requirements.select.length
+      && requirements.select.every((field) => selected.includes(field));
+  }
+  const measures = Array.isArray(plan.measures) ? plan.measures.filter(isRecord) : [];
+  if (requirements.measure) {
+    if (measures.length !== 1) return false;
+    const actual = measures[0]!;
+    if (actual.function !== requirements.measure.function
+      || (actual.field ?? undefined) !== requirements.measure.field) return false;
+  }
+  if (requirements.dimension) {
+    const dimensions = Array.isArray(plan.dimensions) ? plan.dimensions.filter(isRecord) : [];
+    if (dimensions.length !== 1) return false;
+    const actual = dimensions[0]!;
+    if (actual.field !== requirements.dimension.field
+      || (actual.relationship ?? undefined) !== requirements.dimension.relationship) return false;
   }
   return measures.length > 0;
 }

@@ -481,6 +481,52 @@ describe("local UI", () => {
       expect(serialized).not.toContain("postgresql://fixture.invalid");
       expect(serialized).not.toContain("<trusted-tenant>");
       expect(serialized).not.toContain("<trusted-principal>");
+
+      const historyResponse = await fetch(
+        `http://${server.host}:${server.port}/api/explore/history`,
+        { headers: { "x-synapsor-ui-token": "explore-evidence-token" } },
+      );
+      expect(historyResponse.status).toBe(200);
+      const history = await historyResponse.json();
+      expect(history).toMatchObject({
+        ok: true,
+        recent: [expect.objectContaining({ query_ref: queryRef, resource: "public.members" })],
+        durable: [expect.objectContaining({
+          resource: "public.members",
+          status: "ok",
+          returned_rows_or_groups: 1,
+          source_query_executed: true,
+        })],
+        persisted: {
+          model_conversation: false,
+          result_values: false,
+          trusted_scope_values: false,
+          raw_sql: false,
+        },
+      });
+      const historyText = JSON.stringify(history);
+      expect(historyText).not.toContain("tenant-secret-value");
+      expect(historyText).not.toContain("postgresql://fixture.invalid");
+      const auditId = history.durable[0].audit_id;
+      const auditResponse = await fetch(
+        `http://${server.host}:${server.port}/api/explore/history?audit_id=${auditId}`,
+        { headers: { "x-synapsor-ui-token": "explore-evidence-token" } },
+      );
+      expect(auditResponse.status).toBe(200);
+      const audit = await auditResponse.json();
+      expect(audit).toMatchObject({
+        ok: true,
+        audit: {
+          audit_id: auditId,
+          resource: "public.members",
+          status: "ok",
+          result_values_persisted: false,
+          trusted_scope_values_persisted: false,
+          raw_sql_included: false,
+          source_database_changed: false,
+        },
+      });
+      expect(JSON.stringify(audit)).not.toContain("tenant-secret-value");
     } finally {
       await server.close();
       await fs.rm(tempDir, { recursive: true, force: true });
@@ -2360,6 +2406,21 @@ export default defineCapability({
       "paused",
       "cancelled",
     ];
+    inspection.tables[0]!.columns.push({
+      name: "duration_ms",
+      data_type: "integer",
+      nullable: false,
+      generated: false,
+      ordinal_position: inspection.tables[0]!.columns.length + 1,
+      suggestions: {
+        tenant: false,
+        conflict: false,
+        sensitive: false,
+        immutable: false,
+        large_or_binary: false,
+      },
+    });
+    inspection.tables[0]!.suggestions.default_visible_columns.push("duration_ms");
     let currentInspection = inspection;
     const project = {
       root: tempDir,
@@ -2484,6 +2545,132 @@ export default defineCapability({
             field_enums: {
               membership_status: {
                 values: ["active", "paused"],
+                actor: "owner@example.test",
+              },
+            },
+          },
+        },
+      });
+      const autoBandReview = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        mutationHeaders,
+        {
+          kind: "auto_band",
+          resource_id: "public.members",
+          field: "duration_ms",
+          definition: {
+            field: "duration_ms",
+            methods: ["quantile", "equal_width"],
+            min_buckets: 3,
+            max_buckets: 8,
+            min_bucket_width: 100,
+            label_style: "ordinal",
+          },
+          actor: "owner@example.test",
+          reason: "Allow bounded duration groups without model-authored edges.",
+        },
+      );
+      expect(autoBandReview).toMatchObject({
+        ok: true,
+        draft: {
+          pack: {
+            resources: [{
+              id: "public.members",
+              auto_bands: [{
+                field: "duration_ms",
+                methods: ["quantile", "equal_width"],
+                min_buckets: 3,
+                max_buckets: 8,
+                min_bucket_width: 100,
+                label_style: "ordinal",
+              }],
+            }],
+          },
+        },
+        source_database_changed: false,
+      });
+      expect(JSON.parse(
+        await fs.readFile(path.join(tempDir, ".synapsor/review-overrides.json"), "utf8"),
+      )).toMatchObject({
+        resources: {
+          "public.members": {
+            auto_bands: {
+              duration_ms: {
+                actor: "owner@example.test",
+                reason: "Allow bounded duration groups without model-authored edges.",
+              },
+            },
+          },
+        },
+      });
+      const resourceMetadata = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        mutationHeaders,
+        {
+          kind: "resource_metadata",
+          resource_id: "public.members",
+          label: "Gym members",
+          description: "Reviewed membership records for the current tenant.",
+          actor: "owner@example.test",
+          reason: "Clarify legacy database naming without changing access.",
+        },
+      );
+      expect(resourceMetadata).toMatchObject({
+        ok: true,
+        draft: {
+          pack: {
+            resources: [{
+              id: "public.members",
+              label: "Gym members",
+              description: "Reviewed membership records for the current tenant.",
+            }],
+          },
+        },
+        source_database_changed: false,
+      });
+      const fieldMetadata = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        mutationHeaders,
+        {
+          kind: "field_metadata",
+          resource_id: "public.members",
+          field: "membership_status",
+          label: "Membership state",
+          description: "Reviewed active, paused, or cancelled lifecycle state.",
+          actor: "owner@example.test",
+          reason: "Give the reviewed categorical field a precise business meaning.",
+        },
+      );
+      expect(fieldMetadata).toMatchObject({
+        ok: true,
+        draft: {
+          pack: {
+            resources: [{
+              id: "public.members",
+              label: "Gym members",
+              field_metadata: {
+                membership_status: {
+                  label: "Membership state",
+                  description: "Reviewed active, paused, or cancelled lifecycle state.",
+                },
+              },
+            }],
+          },
+        },
+        source_database_changed: false,
+      });
+      expect(JSON.parse(
+        await fs.readFile(path.join(tempDir, ".synapsor/review-overrides.json"), "utf8"),
+      )).toMatchObject({
+        resources: {
+          "public.members": {
+            metadata: {
+              label: "Gym members",
+              actor: "owner@example.test",
+            },
+            field_metadata: {
+              membership_status: {
+                label: "Membership state",
                 actor: "owner@example.test",
               },
             },
@@ -2618,6 +2805,7 @@ export default defineCapability({
             resources: [{
               id: "public.members",
               kept_out_fields: expect.arrayContaining(["member_since"]),
+              auto_bands: [expect.objectContaining({ field: "duration_ms" })],
             }],
           },
         },
@@ -2833,6 +3021,7 @@ export default defineCapability({
       runnerVersion: "1.6.4",
     });
     const candidate = structuredClone(build.exploration_boundary);
+    candidate.pack.name = "reviewed_members";
     const member = candidate.pack.resources.find((resource) => resource.id === "public.members")!;
     member.relationships = [];
     const staleProgress = createBoundaryReviewProgress({

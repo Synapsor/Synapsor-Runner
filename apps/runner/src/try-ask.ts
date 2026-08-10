@@ -392,6 +392,8 @@ export async function tryAsk(
       const uiFactory = dependencies.uiServerFactory ?? startLocalUiServer;
       const shellExit = await runAnalyticsShell({
       projectRoot,
+      configPath,
+      storePath,
       providerLabel: providerDisplayLabel(provider, configuration.endpoint_scope),
       modelLabel: model,
       boundaryLabel: activeBoundary?.name,

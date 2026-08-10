@@ -99,6 +99,13 @@ export function createScopedExploreMcpServer(
       z.object({
         numeric_band: numericBandId,
       }).strict(),
+      z.object({
+        numeric_band: z.object({
+          field: fieldId,
+          buckets: modelInteger(z.number().int().min(2).max(16)),
+          method: z.enum(["quantile", "equal_width"]),
+        }).strict(),
+      }).strict(),
     ])))),
     time_bucket: optionalModelArgument(modelObject(z.object({
       field: fieldId,
@@ -144,6 +151,15 @@ export function createScopedExploreMcpServer(
     boundary: optionalBoundarySelector,
     plan,
   }).strict();
+  const exploreDiscoveryInput = z.object({
+    boundary: optionalBoundarySelector,
+    plan: z.object({
+      kind: z.string().describe('Exactly "rows" or "aggregate".'),
+      resource: resourceId,
+    }).passthrough().describe(
+      'Copy one complete plan from app.describe_data or this tool description. Optional reviewed controls include order_by kind "comparison_change" and auto-band methods "quantile" or "equal_width". Dimension-by-time returns one row per dimension/time combination. Runner strictly validates every nested key before execution.',
+    ),
+  }).strict();
 
   const server = new McpServer(
     { name: production ? "synapsor-runner-production-explore" : "synapsor-runner-authoring", version: runnerPackage.version },
@@ -188,7 +204,7 @@ export function createScopedExploreMcpServer(
   server.registerTool(SCOPED_EXPLORE_QUERY_TOOL, {
     title: "Explore reviewed data",
     description: exploreToolDescription(production),
-    inputSchema: exploreInput,
+    inputSchema: exploreDiscoveryInput,
     outputSchema: scopedExploreQueryToolOutputSchema,
     annotations: {
       readOnlyHint: true,
@@ -205,22 +221,40 @@ export function createScopedExploreMcpServer(
       "synapsor.approval_tool": false,
       "synapsor.commit_tool": false,
     },
-  }, async ({ boundary: selectedBoundary, plan: parsedPlan }) => {
-    const boundary = selectedBoundary || undefined;
-    const plan = omitUndefinedModelArguments(parsedPlan);
+  }, async (discoveryInput) => {
+    let boundary: string | undefined;
+    let parsedPlan: z.infer<typeof plan> | undefined;
     return toolResult(
-      () => isBoundarySetRuntime(runtime)
-        ? runtime.explore(plan, boundary)
-        : runtime.explore(plan),
+      () => {
+        const validated = exploreInput.safeParse(discoveryInput);
+        if (!validated.success) {
+          const issue = validated.error.issues[0];
+          const path = issue?.path.length ? issue.path.join(".") : "plan";
+          throw new ScopedExploreError(
+            "EXPLORE_PLAN_INVALID",
+            `Invalid Explore plan at ${path}: ${issue?.message ?? "the plan did not match the reviewed grammar"}`,
+            { issues: validated.error.issues.map((item) => ({ path: item.path, message: item.message })) },
+          );
+        }
+        boundary = validated.data.boundary || undefined;
+        parsedPlan = validated.data.plan;
+        const normalizedPlan = omitUndefinedModelArguments(parsedPlan);
+        return isBoundarySetRuntime(runtime)
+          ? runtime.explore(normalizedPlan, boundary)
+          : runtime.explore(normalizedPlan);
+      },
       (result) => isBoundarySetRuntime(runtime)
         ? runtime.projectResultForModel({
           tool: SCOPED_EXPLORE_QUERY_TOOL,
-          arguments: { ...(boundary ? { boundary } : {}), plan },
+          arguments: {
+            ...(boundary ? { boundary } : {}),
+            plan: omitUndefinedModelArguments(parsedPlan ?? {}),
+          },
           result,
         })
         : projectScopedExploreResultForModel({
           tool: SCOPED_EXPLORE_QUERY_TOOL,
-          arguments: { plan },
+          arguments: { plan: omitUndefinedModelArguments(parsedPlan ?? {}) },
           result,
           boundary: runtime.boundary,
         }),
@@ -253,10 +287,11 @@ function exploreToolDescription(production: boolean): string {
   return [
     `Runs one reviewed read-only ${production ? "production" : "local"} plan.`,
     "Call app.describe_data first and copy exact ids. Send {boundary?,plan:{...}}; plan.kind is exactly rows or aggregate.",
-    'Aggregate: {"plan":{"kind":"aggregate","resource":"<exact resource id>","measures":[{"function":"sum","field":"<field>"}],"dimensions":[{"field":"<field>"}]}}. Omitted top_n uses Runner\'s reviewed bound.',
+    'Aggregate: {"plan":{"kind":"aggregate","resource":"<exact resource id>","measures":[{"function":"count"}],"dimensions":[{"field":"<field>"}]}}. For totals or averages, use sum or avg with one exact reviewed measure field. Omitted top_n uses Runner\'s reviewed bound.',
     'Relationship: keep "relationship":"<id>" separate from the related field; never concatenate them.',
     'Rows: {"plan":{"kind":"rows","resource":"<exact resource id>","select":["<field>"]}}. Omitted limit uses Runner\'s reviewed bound.',
-    'Named controls use {"derived_measure":"<name>"} in measures or {"numeric_band":"<name>"} in dimensions; never send formulas or edges.',
+    'Named controls use {"derived_measure":"<name>"} in measures or {"numeric_band":"<name>"} in dimensions.',
+    'Reviewed auto-band example: {"numeric_band":{"field":"amount_cents","method":"quantile","buckets":5}}. Copy the field, method, and bucket range from app.describe_data; never send edges, widths, offsets, formulas, or labels.',
     "Filter values must be concrete, not null. Use null_count, non_null_count, or completion_rate for reviewed missing-data analysis.",
     "No cross-boundary joins, SQL, model-selected tenant/principal, mutation, approval, or commit.",
   ].join(" ");
@@ -288,12 +323,17 @@ function modelResourceIndex(resource: Record<string, unknown>): Record<string, u
   const relationships = modelRecords(resource.relationships).map((relationship) => ({
     id: modelString(relationship.id),
     target_resource: modelString(relationship.target_resource),
+    target_label: modelString(relationship.target_label),
+    target_description: modelString(relationship.target_description),
     activation: modelString(relationship.activation),
     path_depth: modelNumber(relationship.path_depth),
   }));
   return withoutUndefined({
     id: modelString(resource.id),
+    label: modelString(resource.label),
+    description: modelString(resource.description),
     boundary_name: modelString(resource.boundary_name),
+    fields: modelReviewedFields(resource.fields),
     selectable_fields: modelStrings(resource.selectable_fields),
     filter_operators: modelStringArrayRecord(resource.filter_operators),
     sortable_fields: modelStrings(resource.sortable_fields),
@@ -303,6 +343,14 @@ function modelResourceIndex(resource: Record<string, unknown>): Record<string, u
     presence_measure_functions: modelStrings(resource.presence_measure_functions),
     derived_measures: modelRecords(resource.derived_measures),
     numeric_bands: modelRecords(resource.numeric_bands),
+    auto_bands: modelRecords(resource.auto_bands).map((policy) => withoutUndefined({
+      field: modelString(policy.field),
+      methods: modelStrings(policy.methods),
+      min_buckets: modelNumber(policy.min_buckets),
+      max_buckets: modelNumber(policy.max_buckets),
+      label_style: modelString(policy.label_style),
+      raw_edges_returned: false,
+    })),
     count_distinct_fields: modelStrings(resource.count_distinct_fields),
     time_bucket_fields: modelStringArrayRecord(resource.time_bucket_fields),
     time_coverage: modelRecordOrEmpty(resource.time_coverage),
@@ -317,29 +365,13 @@ function modelResourceIndex(resource: Record<string, unknown>): Record<string, u
 
 function modelValidAggregatePlan(resource: Record<string, unknown>): Record<string, unknown> {
   const resourceId = modelString(resource.id) ?? "";
-  const aggregateFunctions = modelStringArrayRecord(resource.aggregate_measure_functions);
-  const measured = Object.entries(aggregateFunctions).find(([field, functions]) =>
-    isUsefulExampleMeasure(field) && functions.some((name) => name === "sum" || name === "avg"));
-  const measure = measured
-    ? {
-      function: measured[1].includes("sum") ? "sum" : "avg",
-      field: measured[0],
-    }
-    : { function: "count" };
   const dimension = modelStrings(resource.groupable_fields)[0];
   return {
     kind: "aggregate",
     resource: resourceId,
-    measures: [measure],
+    measures: [{ function: "count" }],
     ...(dimension ? { dimensions: [{ field: dimension }] } : {}),
   };
-}
-
-function isUsefulExampleMeasure(field: string): boolean {
-  const normalized = field.toLowerCase();
-  return normalized !== "id"
-    && !normalized.endsWith("_id")
-    && !/(?:^|_)(?:version|revision|sequence|seq|ordinal|position|rank)(?:$|_)/.test(normalized);
 }
 
 function modelResourceDetail(resource: Record<string, unknown>): Record<string, unknown> {
@@ -351,12 +383,15 @@ function modelResourceDetail(resource: Record<string, unknown>): Record<string, 
       ? relationship.operator_review_required
       : undefined,
     target_resource: modelString(relationship.target_resource),
+    target_label: modelString(relationship.target_label),
+    target_description: modelString(relationship.target_description),
     cardinality: modelString(relationship.cardinality),
     counted_entity: modelString(relationship.counted_entity),
     path_depth: modelNumber(relationship.path_depth),
     nullable: typeof relationship.nullable === "boolean" ? relationship.nullable : undefined,
     unmatched_rows: modelString(relationship.unmatched_rows),
     model_withheld_fields: withheldFieldNames(relationship.field_egress),
+    fields: modelReviewedFields(relationship.fields),
     filter_operators: modelStringArrayRecord(relationship.filter_operators),
     groupable_fields: modelStrings(relationship.groupable_fields),
     aggregate_measure_functions: modelStringArrayRecord(relationship.aggregate_measure_functions),
@@ -381,6 +416,18 @@ function modelRecord(value: unknown): value is Record<string, unknown> {
 
 function modelRecords(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.filter(modelRecord) : [];
+}
+
+function modelReviewedFields(value: unknown): Array<Record<string, unknown>> {
+  return modelRecords(value).flatMap((field) => {
+    const id = modelString(field.id);
+    if (!id) return [];
+    return [withoutUndefined({
+      id,
+      label: modelString(field.label),
+      description: modelString(field.description),
+    })];
+  });
 }
 
 function modelRecordOrEmpty(value: unknown): Record<string, unknown> {

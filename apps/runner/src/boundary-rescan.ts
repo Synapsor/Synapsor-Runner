@@ -7,6 +7,7 @@ import {
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
   assertReviewedDerivedMeasureForBoundary,
+  assertReviewedAutoBandForBoundary,
   assertReviewedNumericBandForBoundary,
   buildAutoBoundary,
   explorationBoundaryCandidateDigest,
@@ -683,6 +684,7 @@ function withoutAdvancedAggregateOverrides(
   for (const [resourceId, resource] of Object.entries(result.resources)) {
     delete resource.derived_measures;
     delete resource.numeric_bands;
+    delete resource.auto_bands;
     if (Object.keys(resource).length === 0) delete result.resources[resourceId];
   }
   return result;
@@ -693,6 +695,7 @@ function withoutAdvancedAggregates(input: ExplorationBoundaryDraft): Exploration
   result.pack.resources.forEach((resource) => {
     delete resource.derived_measures;
     delete resource.numeric_bands;
+    delete resource.auto_bands;
   });
   return result;
 }
@@ -729,6 +732,19 @@ function pruneInvalidAdvancedAggregateOverrides(
     }
     if (resource.numeric_bands && Object.keys(resource.numeric_bands).length === 0) {
       delete resource.numeric_bands;
+    }
+    for (const [field, decision] of Object.entries(resource.auto_bands ?? {})) {
+      try {
+        assertReviewedAutoBandForBoundary(boundary, resourceId, decision.definition);
+      } catch (error) {
+        delete resource.auto_bands![field];
+        removed.push(
+          `${resourceId}.${field}: reviewed auto band no longer validates against current authority (${safeTerminalText(error instanceof Error ? error.message : String(error))})`,
+        );
+      }
+    }
+    if (resource.auto_bands && Object.keys(resource.auto_bands).length === 0) {
+      delete resource.auto_bands;
     }
     if (Object.keys(resource).length === 0) delete overrides.resources[resourceId];
   }

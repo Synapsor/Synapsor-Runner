@@ -547,6 +547,10 @@ export type InspectOptions = {
   env?: NodeJS.ProcessEnv;
 };
 
+export type SchemaInspectionConnection =
+  | { engine: "postgres"; connection: PoolClient }
+  | { engine: "mysql"; connection: mysql.PoolConnection };
+
 export function schemaFingerprintForInspection(inspection: SchemaInspection): `sha256:${string}` {
   return canonicalJsonDigest({
     engine: inspection.engine,
@@ -722,6 +726,38 @@ export async function inspectDatabase(options: InspectOptions): Promise<SchemaIn
   }
 }
 
+/**
+ * Run the same read-only inspection using a connection borrowed from a caller-owned
+ * pool. Production HTTP Explore uses this so drift checks and data queries share one
+ * configured source-connection ceiling.
+ */
+export async function inspectDatabaseWithConnection(
+  options: InspectOptions,
+  source: SchemaInspectionConnection,
+): Promise<SchemaInspection> {
+  const env = options.env ?? process.env;
+  if (!isEnvName(options.databaseUrlEnv)) {
+    throw new Error("database-url-env must be an environment variable name.");
+  }
+  const url = env[options.databaseUrlEnv];
+  if (!url) {
+    throw new Error(`${options.databaseUrlEnv} is not set.`);
+  }
+  const engine = options.engine && options.engine !== "auto" ? options.engine : inferEngine(url);
+  if (engine !== source.engine) {
+    throw new Error(
+      `schema inspection connection engine ${source.engine} does not match requested engine ${engine}.`,
+    );
+  }
+  try {
+    return source.engine === "postgres"
+      ? await inspectPostgres({ ...options, env, engine: "postgres", url }, source.connection)
+      : await inspectMysql({ ...options, env, engine: "mysql", url }, source.connection);
+  } catch (error) {
+    throw new Error(`schema inspection failed for ${engine} using ${options.databaseUrlEnv}: ${sanitizeError(error)}`);
+  }
+}
+
 export function generateRunnerConfigFromSpec(spec: OnboardingSelectionSpec): GeneratedOnboardingFiles {
   validateSelectionSpec(spec);
   const mode = spec.mode ?? "shadow";
@@ -869,11 +905,19 @@ export function summarizeInspection(inspection: SchemaInspection): string {
   return `${lines.join("\n")}\n`;
 }
 
-async function inspectPostgres(options: InspectOptions & { engine: "postgres"; url: string }): Promise<SchemaInspection> {
-  const pool = new Pool({ connectionString: options.url, connectionTimeoutMillis: options.statementTimeoutMs ?? 3000 });
-  let client: PoolClient | undefined;
+async function inspectPostgres(
+  options: InspectOptions & { engine: "postgres"; url: string },
+  borrowedClient?: PoolClient,
+): Promise<SchemaInspection> {
+  const pool = borrowedClient
+    ? undefined
+    : new Pool({
+      connectionString: options.url,
+      connectionTimeoutMillis: options.statementTimeoutMs ?? 3000,
+    });
+  let client = borrowedClient;
   try {
-    client = await pool.connect();
+    client ??= await pool!.connect();
     await client.query("BEGIN READ ONLY");
     await client.query(`SET LOCAL statement_timeout = ${Number(options.statementTimeoutMs ?? 3000)}`);
     const version = await client.query<{
@@ -1089,13 +1133,22 @@ async function inspectPostgres(options: InspectOptions & { engine: "postgres"; u
     await client?.query("ROLLBACK").catch(() => undefined);
     throw error;
   } finally {
-    try { client?.release(); } catch { /* preserve the inspection outcome */ }
-    await pool.end().catch(() => undefined);
+    if (!borrowedClient) {
+      try { client?.release(); } catch { /* preserve the inspection outcome */ }
+      await pool!.end().catch(() => undefined);
+    }
   }
 }
 
-async function inspectMysql(options: InspectOptions & { engine: "mysql"; url: string }): Promise<SchemaInspection> {
-  const connection = await mysql.createConnection({ uri: options.url, connectTimeout: options.statementTimeoutMs ?? 3000, dateStrings: true });
+async function inspectMysql(
+  options: InspectOptions & { engine: "mysql"; url: string },
+  borrowedConnection?: mysql.PoolConnection,
+): Promise<SchemaInspection> {
+  const connection = borrowedConnection ?? await mysql.createConnection({
+    uri: options.url,
+    connectTimeout: options.statementTimeoutMs ?? 3000,
+    dateStrings: true,
+  });
   let inspectionFailed = false;
   try {
     await connection.query("START TRANSACTION READ ONLY").catch(() => connection.query("START TRANSACTION"));
@@ -1267,9 +1320,11 @@ async function inspectMysql(options: InspectOptions & { engine: "mysql"; url: st
     await connection.query("ROLLBACK").catch(() => undefined);
     throw error;
   } finally {
-    await connection.end().catch((error) => {
-      if (!inspectionFailed) throw error;
-    });
+    if (!borrowedConnection) {
+      await connection.end().catch((error) => {
+        if (!inspectionFailed) throw error;
+      });
+    }
   }
 }
 

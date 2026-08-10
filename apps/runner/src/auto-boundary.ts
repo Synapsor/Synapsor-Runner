@@ -126,6 +126,21 @@ export type ExplorationNumericBand = {
   edges: number[];
   bucket_labels: string[];
 };
+export const EXPLORATION_AUTO_BAND_METHODS = ["quantile", "equal_width"] as const;
+export type ExplorationAutoBandMethod = typeof EXPLORATION_AUTO_BAND_METHODS[number];
+export const EXPLORATION_AUTO_BAND_LABEL_STYLES = ["ordinal", "rounded"] as const;
+export type ExplorationAutoBandLabelStyle = typeof EXPLORATION_AUTO_BAND_LABEL_STYLES[number];
+export const MIN_AUTO_BAND_BUCKETS = 2;
+export const MAX_AUTO_BAND_BUCKETS = 16;
+export type ExplorationAutoBandPolicy = {
+  field: string;
+  methods: ExplorationAutoBandMethod[];
+  min_buckets: number;
+  max_buckets: number;
+  min_bucket_width?: number;
+  label_style: ExplorationAutoBandLabelStyle;
+  label_round_to?: number;
+};
 
 const MAX_STATIC_INPUT_BYTES = 2 * 1024 * 1024;
 const MAX_DIRECT_RELATIONSHIP_CANDIDATES_PER_RESOURCE = 4;
@@ -252,6 +267,7 @@ export type AutoBoundaryField = {
   time_bucket_suggestion: boolean;
   evidence: string[];
   enum_review_override?: ReviewedEnumValuesDecision;
+  metadata_review_override?: ReviewedMetadataDecision;
   review_override?: {
     exposure: "keep_out" | "withhold_from_model" | "allow_reviewed_use";
     actor: string;
@@ -301,6 +317,7 @@ export type AutoBoundaryResource = {
     verified: boolean;
   };
   minimum_cohort_override?: ReviewedMinimumCohortDecision;
+  metadata_review_override?: ReviewedMetadataDecision;
   status: "draft_read" | "blocked_scope" | "blocked_identifier" | "blocked_role";
   blockers: string[];
 };
@@ -409,6 +426,13 @@ export type ExplorationBoundaryDraft = {
       id: string;
       schema: string;
       table: string;
+      /** Human-reviewed semantic metadata. It never changes plan authority. */
+      label?: string;
+      description?: string;
+      field_metadata?: Record<string, {
+        label?: string;
+        description?: string;
+      }>;
       primary_key: string;
       tenant_key?: string;
       tenant_scope?: DerivedScopePath;
@@ -430,6 +454,8 @@ export type ExplorationBoundaryDraft = {
       derived_measures?: ExplorationDerivedMeasure[];
       /** Fixed reviewed numeric buckets; plans select one by name and cannot choose edges. */
       numeric_bands?: ExplorationNumericBand[];
+      /** Reviewed adaptive grouping policy; plans choose only method and bounded count. */
+      auto_bands?: ExplorationAutoBandPolicy[];
       count_distinct_fields: string[];
       time_bucket_fields: Record<string, ExplorationTimeBucket[]>;
       kept_out_fields: string[];
@@ -601,6 +627,9 @@ export type AutoBoundaryReviewOverrides = {
     field_enums?: Record<string, ReviewedEnumValuesDecision>;
     derived_measures?: Record<string, ReviewedDerivedMeasureDecision>;
     numeric_bands?: Record<string, ReviewedNumericBandDecision>;
+    auto_bands?: Record<string, ReviewedAutoBandDecision>;
+    metadata?: ReviewedMetadataDecision;
+    field_metadata?: Record<string, ReviewedMetadataDecision>;
     fields?: Record<string, {
       exposure: "keep_out" | "withhold_from_model" | "allow_reviewed_use";
       actor: string;
@@ -640,6 +669,21 @@ export type ReviewedDerivedMeasureDecision = {
 
 export type ReviewedNumericBandDecision = {
   definition: ExplorationNumericBand;
+  actor: string;
+  reason: string;
+  decided_at: string;
+};
+
+export type ReviewedAutoBandDecision = {
+  definition: ExplorationAutoBandPolicy;
+  actor: string;
+  reason: string;
+  decided_at: string;
+};
+
+export type ReviewedMetadataDecision = {
+  label?: string;
+  description?: string;
   actor: string;
   reason: string;
   decided_at: string;
@@ -720,6 +764,7 @@ export function pruneAutoBoundaryReviewOverrides(
       ...table.indexes.filter((index) => index.unique === true && index.columns?.length === 1).map((index) => index.columns![0]!),
     ]);
     const retained: AutoBoundaryReviewOverrides["resources"][string] = {};
+    if (decision.metadata) retained.metadata = decision.metadata;
     if (decision.row_identity) {
       if (provenIdentifiers.has(decision.row_identity.value)) retained.row_identity = decision.row_identity;
       else removed.push(`${resourceId}: reviewed row identity ${decision.row_identity.value} is no longer source-proven`);
@@ -797,6 +842,28 @@ export function pruneAutoBoundaryReviewOverrides(
       numericBands[name] = bandDecision;
     }
     if (Object.keys(numericBands).length) retained.numeric_bands = numericBands;
+    const autoBands: NonNullable<
+      AutoBoundaryReviewOverrides["resources"][string]["auto_bands"]
+    > = {};
+    for (const [field, autoBandDecision] of Object.entries(decision.auto_bands ?? {})) {
+      if (!columns.has(field)) {
+        removed.push(`${resourceId}.${field}: reviewed auto-band field no longer exists`);
+        continue;
+      }
+      autoBands[field] = autoBandDecision;
+    }
+    if (Object.keys(autoBands).length) retained.auto_bands = autoBands;
+    const fieldMetadata: NonNullable<
+      AutoBoundaryReviewOverrides["resources"][string]["field_metadata"]
+    > = {};
+    for (const [fieldName, metadata] of Object.entries(decision.field_metadata ?? {})) {
+      if (!columns.has(fieldName)) {
+        removed.push(`${resourceId}.${fieldName}: reviewed label or description was removed because the field no longer exists`);
+        continue;
+      }
+      fieldMetadata[fieldName] = metadata;
+    }
+    if (Object.keys(fieldMetadata).length) retained.field_metadata = fieldMetadata;
     const fieldEnums: NonNullable<
       AutoBoundaryReviewOverrides["resources"][string]["field_enums"]
     > = {};
@@ -976,6 +1043,7 @@ function buildAutoBoundaryOnce(input: BuildAutoBoundaryInput): AutoBoundaryBuild
   );
   applyReviewedDerivedMeasureOverrides(provisionalBoundary, overrides);
   applyReviewedNumericBandOverrides(provisionalBoundary, overrides);
+  applyReviewedAutoBandOverrides(provisionalBoundary, overrides);
   const lock: GenerationLock = {
     ...baseLock,
     authority_dependencies: buildGenerationAuthorityDependencies(input.inspection, provisionalBoundary),
@@ -1052,6 +1120,29 @@ function reviewOverrideAuthority(overrides: AutoBoundaryReviewOverrides): Record
                   .map(([name, decision]) => [name, decision.definition]),
               ),
             } : {}),
+            ...(resource.auto_bands ? {
+              auto_bands: Object.fromEntries(
+                Object.entries(resource.auto_bands)
+                  .sort(([left], [right]) => left.localeCompare(right))
+                  .map(([field, decision]) => [field, decision.definition]),
+              ),
+            } : {}),
+            ...(resource.metadata ? {
+              metadata: {
+                ...(resource.metadata.label ? { label: resource.metadata.label } : {}),
+                ...(resource.metadata.description ? { description: resource.metadata.description } : {}),
+              },
+            } : {}),
+            ...(resource.field_metadata ? {
+              field_metadata: Object.fromEntries(
+                Object.entries(resource.field_metadata)
+                  .sort(([left], [right]) => left.localeCompare(right))
+                  .map(([field, decision]) => [field, {
+                    ...(decision.label ? { label: decision.label } : {}),
+                    ...(decision.description ? { description: decision.description } : {}),
+                  }]),
+              ),
+            } : {}),
             ...(resource.field_enums ? {
               field_enums: Object.fromEntries(
                 Object.entries(resource.field_enums)
@@ -1075,6 +1166,18 @@ function reviewOverrideAuthority(overrides: AutoBoundaryReviewOverrides): Record
 function generationEvidenceAuthority(resources: AutoBoundaryResource[]): unknown[] {
   return resources.map((resource) => ({
     ...resource,
+    ...(resource.metadata_review_override
+      ? {
+        metadata_review_override: {
+          ...(resource.metadata_review_override.label
+            ? { label: resource.metadata_review_override.label }
+            : {}),
+          ...(resource.metadata_review_override.description
+            ? { description: resource.metadata_review_override.description }
+            : {}),
+        },
+      }
+      : {}),
     ...(resource.minimum_cohort_override
       ? {
         minimum_cohort_override: {
@@ -1086,6 +1189,18 @@ function generationEvidenceAuthority(resources: AutoBoundaryResource[]): unknown
       ...field,
       ...(field.enum_review_override
         ? { enum_review_override: { values: field.enum_review_override.values } }
+        : {}),
+      ...(field.metadata_review_override
+        ? {
+          metadata_review_override: {
+            ...(field.metadata_review_override.label
+              ? { label: field.metadata_review_override.label }
+              : {}),
+            ...(field.metadata_review_override.description
+              ? { description: field.metadata_review_override.description }
+              : {}),
+          },
+        }
         : {}),
       ...(field.review_override
         ? { review_override: { exposure: field.review_override.exposure } }
@@ -1716,6 +1831,17 @@ function normalizeDependentAggregateAuthority(
       });
       if (!resource.numeric_bands.length) delete resource.numeric_bands;
     }
+    if (resource.auto_bands) {
+      resource.auto_bands = resource.auto_bands.filter((definition) => {
+        try {
+          assertReviewedAutoBandForBoundary(normalized, resource.id, definition);
+          return true;
+        } catch {
+          return false;
+        }
+      });
+      if (!resource.auto_bands.length) delete resource.auto_bands;
+    }
   }
   return normalized;
 }
@@ -2273,11 +2399,20 @@ export function normalizeAutoBoundaryReviewOverrides(input: unknown): AutoBounda
         "field_enums",
         "derived_measures",
         "numeric_bands",
+        "auto_bands",
+        "metadata",
+        "field_metadata",
         "fields",
       ],
       `${resourceId} review overrides`,
     );
     const resource: AutoBoundaryReviewOverrides["resources"][string] = {};
+    if (rawResource.metadata !== undefined) {
+      resource.metadata = normalizeReviewedMetadataDecision(
+        rawResource.metadata,
+        `${resourceId} metadata`,
+      );
+    }
     if (rawResource.row_identity !== undefined) {
       resource.row_identity = normalizeReviewedValueDecision(rawResource.row_identity, `${resourceId} row identity`, false) as ReviewedValueDecision;
     }
@@ -2370,6 +2505,41 @@ export function normalizeAutoBoundaryReviewOverrides(input: unknown): AutoBounda
         }
       }
       resource.numeric_bands = numericBands;
+    }
+    if (rawResource.auto_bands !== undefined) {
+      if (!isRecord(rawResource.auto_bands)) {
+        throw new Error(`${resourceId} auto-band review overrides must be an object.`);
+      }
+      const autoBands: NonNullable<
+        AutoBoundaryReviewOverrides["resources"][string]["auto_bands"]
+      > = {};
+      for (const field of Object.keys(rawResource.auto_bands).sort()) {
+        assertSafeMapKey(field, "reviewed auto-band field");
+        autoBands[field] = normalizeReviewedAutoBandDecision(
+          rawResource.auto_bands[field],
+          `${resourceId}.${field} reviewed auto band`,
+        );
+        if (autoBands[field]!.definition.field !== field) {
+          throw new Error(`${resourceId}.${field} reviewed auto-band key must match its definition field.`);
+        }
+      }
+      resource.auto_bands = autoBands;
+    }
+    if (rawResource.field_metadata !== undefined) {
+      if (!isRecord(rawResource.field_metadata)) {
+        throw new Error(`${resourceId} field metadata review overrides must be an object.`);
+      }
+      const fieldMetadata: NonNullable<
+        AutoBoundaryReviewOverrides["resources"][string]["field_metadata"]
+      > = {};
+      for (const fieldName of Object.keys(rawResource.field_metadata).sort()) {
+        assertSafeMapKey(fieldName, "reviewed metadata field");
+        fieldMetadata[fieldName] = normalizeReviewedMetadataDecision(
+          rawResource.field_metadata[fieldName],
+          `${resourceId}.${fieldName} metadata`,
+        );
+      }
+      resource.field_metadata = fieldMetadata;
     }
     if (rawResource.fields !== undefined) {
       if (!isRecord(rawResource.fields)) throw new Error(`${resourceId} field review overrides must be an object.`);
@@ -2489,6 +2659,44 @@ function normalizeReviewedNumericBandDecision(
   };
 }
 
+function normalizeReviewedAutoBandDecision(
+  value: unknown,
+  label: string,
+): ReviewedAutoBandDecision {
+  if (!isRecord(value)) throw new Error(`${label} decision must be an object.`);
+  assertOnlyKeys(value, ["definition", "actor", "reason", "decided_at"], `${label} decision`);
+  return {
+    definition: normalizeExplorationAutoBandPolicy(value.definition, `${label} definition`),
+    actor: reviewedText(value.actor, `${label} actor`, 128),
+    reason: reviewedText(value.reason, `${label} reason`, 500),
+    decided_at: reviewedTimestamp(value.decided_at, `${label} decided_at`),
+  };
+}
+
+function normalizeReviewedMetadataDecision(
+  input: unknown,
+  label: string,
+): ReviewedMetadataDecision {
+  if (!isRecord(input)) throw new Error(`${label} review decision must be an object.`);
+  assertOnlyKeys(input, ["label", "description", "actor", "reason", "decided_at"], `${label} review decision`);
+  const reviewedLabel = input.label === undefined
+    ? undefined
+    : reviewedText(input.label, `${label} label`, 64);
+  const reviewedDescription = input.description === undefined
+    ? undefined
+    : reviewedText(input.description, `${label} description`, 280);
+  if (!reviewedLabel && !reviewedDescription) {
+    throw new Error(`${label} review decision requires a label or description.`);
+  }
+  return {
+    ...(reviewedLabel ? { label: reviewedLabel } : {}),
+    ...(reviewedDescription ? { description: reviewedDescription } : {}),
+    actor: reviewedText(input.actor, `${label} actor`, 128),
+    reason: reviewedText(input.reason, `${label} reason`, 500),
+    decided_at: reviewedTimestamp(input.decided_at, `${label} decided_at`),
+  };
+}
+
 export function normalizeExplorationNumericBand(
   value: unknown,
   label: string,
@@ -2523,6 +2731,71 @@ export function normalizeExplorationNumericBand(
       : { relationship: reviewedText(value.relationship, `${label} relationship`, 256) }),
     edges,
     bucket_labels: value.bucket_labels.map((item) => item.trim()),
+  };
+}
+
+export function normalizeExplorationAutoBandPolicy(
+  value: unknown,
+  label: string,
+): ExplorationAutoBandPolicy {
+  if (!isRecord(value)) throw new Error(`${label} must be an object.`);
+  assertOnlyKeys(
+    value,
+    ["field", "methods", "min_buckets", "max_buckets", "min_bucket_width", "label_style", "label_round_to"],
+    label,
+  );
+  if (!Array.isArray(value.methods)
+    || value.methods.length < 1
+    || value.methods.length > EXPLORATION_AUTO_BAND_METHODS.length
+    || value.methods.some((method) => !EXPLORATION_AUTO_BAND_METHODS.includes(method as ExplorationAutoBandMethod))) {
+    throw new Error(`${label} methods must contain quantile and/or equal_width.`);
+  }
+  const selectedMethods = new Set(value.methods as ExplorationAutoBandMethod[]);
+  const methods = EXPLORATION_AUTO_BAND_METHODS.filter((method) => selectedMethods.has(method));
+  if (methods.length !== value.methods.length) throw new Error(`${label} methods cannot contain duplicates.`);
+  const minBuckets = Number(value.min_buckets);
+  const maxBuckets = Number(value.max_buckets);
+  if (!Number.isSafeInteger(minBuckets)
+    || !Number.isSafeInteger(maxBuckets)
+    || minBuckets < MIN_AUTO_BAND_BUCKETS
+    || maxBuckets > MAX_AUTO_BAND_BUCKETS
+    || minBuckets > maxBuckets) {
+    throw new Error(
+      `${label} bucket range must be whole numbers from ${MIN_AUTO_BAND_BUCKETS} through ${MAX_AUTO_BAND_BUCKETS}.`,
+    );
+  }
+  const labelStyle = value.label_style;
+  if (!EXPLORATION_AUTO_BAND_LABEL_STYLES.includes(labelStyle as ExplorationAutoBandLabelStyle)) {
+    throw new Error(`${label} label_style must be ordinal or rounded.`);
+  }
+  const minBucketWidth = value.min_bucket_width === undefined
+    ? undefined
+    : Number(value.min_bucket_width);
+  if (methods.includes("equal_width")
+    && (minBucketWidth === undefined || !Number.isFinite(minBucketWidth) || minBucketWidth <= 0)) {
+    throw new Error(`${label} requires a positive min_bucket_width when equal_width is enabled.`);
+  }
+  if (!methods.includes("equal_width") && minBucketWidth !== undefined) {
+    throw new Error(`${label} min_bucket_width is available only for equal_width.`);
+  }
+  const labelRoundTo = value.label_round_to === undefined
+    ? undefined
+    : Number(value.label_round_to);
+  if (labelStyle === "rounded"
+    && (labelRoundTo === undefined || !Number.isFinite(labelRoundTo) || labelRoundTo <= 0)) {
+    throw new Error(`${label} requires a positive label_round_to for rounded labels.`);
+  }
+  if (labelStyle !== "rounded" && labelRoundTo !== undefined) {
+    throw new Error(`${label} label_round_to is available only for rounded labels.`);
+  }
+  return {
+    field: reviewedText(value.field, `${label} field`, 256),
+    methods,
+    min_buckets: minBuckets,
+    max_buckets: maxBuckets,
+    ...(minBucketWidth === undefined ? {} : { min_bucket_width: minBucketWidth }),
+    label_style: labelStyle as ExplorationAutoBandLabelStyle,
+    ...(labelRoundTo === undefined ? {} : { label_round_to: labelRoundTo }),
   };
 }
 
@@ -2657,6 +2930,22 @@ function applyReviewedNumericBandOverrides(
   }
 }
 
+function applyReviewedAutoBandOverrides(
+  boundary: ExplorationBoundaryDraft,
+  overrides: AutoBoundaryReviewOverrides,
+): void {
+  const resources = new Map(boundary.pack.resources.map((resource) => [resource.id, resource]));
+  for (const [resourceId, review] of Object.entries(overrides.resources)) {
+    if (!review.auto_bands) continue;
+    const resource = resources.get(resourceId);
+    if (!resource) throw new Error(`Auto-band review override references unavailable resource ${resourceId}.`);
+    resource.auto_bands = Object.values(review.auto_bands)
+      .map((decision) => structuredClone(decision.definition))
+      .sort((left, right) => left.field.localeCompare(right.field));
+  }
+  for (const resource of boundary.pack.resources) assertReviewedAutoBands(resource);
+}
+
 function applyReviewOverrides(
   graph: AutoBoundaryEvidenceGraph,
   overrides: AutoBoundaryReviewOverrides,
@@ -2666,6 +2955,15 @@ function applyReviewOverrides(
     const resource = resources.get(resourceId);
     if (!resource) throw new Error(`Review override references unknown resource ${resourceId}.`);
     const columns = new Set(resource.fields.map((field) => field.name));
+
+    if (override.metadata) {
+      resource.metadata_review_override = structuredClone(override.metadata);
+    }
+    for (const [fieldName, metadata] of Object.entries(override.field_metadata ?? {})) {
+      const field = resource.fields.find((candidate) => candidate.name === fieldName);
+      if (!field) throw new Error(`Metadata review override references unknown field ${resourceId}.${fieldName}.`);
+      field.metadata_review_override = structuredClone(metadata);
+    }
 
     if (override.row_identity) {
       if (!resource.primary_key.candidates.includes(override.row_identity.value)) {
@@ -3241,6 +3539,17 @@ function assertBoundaryCandidateNarrowsDraft(
       || JSON.stringify(resource.rls_session ?? null) !== JSON.stringify(original.rls_session ?? null)) {
       throw new Error(`${resource.id} field types and RLS session bindings cannot change during review.`);
     }
+    if (JSON.stringify({
+      label: resource.label,
+      description: resource.description,
+      field_metadata: resource.field_metadata,
+    }) !== JSON.stringify({
+      label: original.label,
+      description: original.description,
+      field_metadata: original.field_metadata,
+    })) {
+      throw new Error(`${resource.id} reviewed labels and descriptions must be changed through the reviewed metadata editor.`);
+    }
     assertSubset(
       Object.keys(resource.field_enums),
       Object.keys(original.field_enums),
@@ -3295,6 +3604,7 @@ function assertBoundaryCandidateNarrowsDraft(
     }
     assertReviewedDerivedMeasures(resource, candidate.pack.resources, Boolean(candidate.organization_scope));
     assertReviewedNumericBands(resource, candidate.pack.resources);
+    assertReviewedAutoBands(resource);
     assertSubset(resource.count_distinct_fields, original.count_distinct_fields, `${resource.id} count-distinct fields`);
     assertSubset(original.kept_out_fields, resource.kept_out_fields, `${resource.id} generated kept-out fields`);
     assertSubset(resource.kept_out_fields, Object.keys(original.field_types), `${resource.id} kept-out fields`);
@@ -3556,6 +3866,39 @@ export function assertReviewedNumericBandForBoundary(
     { ...resource, numeric_bands: [structuredClone(definition)] },
     boundary.pack.resources,
   );
+}
+
+function assertReviewedAutoBands(
+  resource: ExplorationBoundaryDraft["pack"]["resources"][number],
+): void {
+  const definitions = resource.auto_bands ?? [];
+  if (definitions.length > 16) throw new Error(`${resource.id} may review at most 16 auto-band policies.`);
+  const fields = new Set<string>();
+  for (const definition of definitions) {
+    const normalized = normalizeExplorationAutoBandPolicy(
+      definition,
+      `${resource.id}.${definition.field || "auto_band"}`,
+    );
+    if (fields.has(normalized.field)) throw new Error(`${resource.id} auto-band fields must be unique.`);
+    fields.add(normalized.field);
+    if (!resource.aggregate_measures.includes(normalized.field)) {
+      throw new Error(`${resource.id}.${normalized.field} is not a reviewed numeric aggregate field.`);
+    }
+    if ((resource.model_withheld_fields ?? []).includes(normalized.field)
+      || resource.kept_out_fields.includes(normalized.field)) {
+      throw new Error(`${resource.id}.${normalized.field} must be model-visible before it can expose adaptive band labels.`);
+    }
+  }
+}
+
+export function assertReviewedAutoBandForBoundary(
+  boundary: ExplorationBoundaryDraft,
+  resourceId: string,
+  definition: ExplorationAutoBandPolicy,
+): void {
+  const resource = boundary.pack.resources.find((candidate) => candidate.id === resourceId);
+  if (!resource) throw new Error(`${resourceId} is no longer in the reviewed boundary.`);
+  assertReviewedAutoBands({ ...resource, auto_bands: [structuredClone(definition)] });
 }
 
 function derivedBaseMeasureRelationship(
@@ -4418,6 +4761,27 @@ function buildExplorationBoundaryDraft(
       id: resource.id,
       schema: resource.schema,
       table: resource.table,
+      ...(resource.metadata_review_override?.label
+        ? { label: resource.metadata_review_override.label }
+        : {}),
+      ...(resource.metadata_review_override?.description
+        ? { description: resource.metadata_review_override.description }
+        : {}),
+      ...(resource.fields.some((field) => field.metadata_review_override)
+        ? {
+          field_metadata: Object.fromEntries(resource.fields
+            .filter((field) => field.metadata_review_override)
+            .sort((left, right) => left.name.localeCompare(right.name))
+            .map((field) => [field.name, {
+              ...(field.metadata_review_override!.label
+                ? { label: field.metadata_review_override!.label }
+                : {}),
+              ...(field.metadata_review_override!.description
+                ? { description: field.metadata_review_override!.description }
+                : {}),
+            }])),
+        }
+        : {}),
       primary_key: resource.primary_key.selected!,
       ...(!options.organizationScope
         ? resource.tenant_key.selected
@@ -4703,6 +5067,11 @@ function unresolvedDecisions(
       `${resource.id}: confirm visible and kept-out fields`,
       `${resource.id}: confirm filter/sort/group/aggregate-only field permissions`,
       `${resource.id}: confirm minimum cohort and extraction/differencing budgets`,
+      ...(boundaryResources.get(resource.id)?.label
+        || boundaryResources.get(resource.id)?.description
+        || Object.keys(boundaryResources.get(resource.id)?.field_metadata ?? {}).length
+        ? [`${resource.id}: confirm reviewed labels and descriptions`]
+        : []),
       ...(boundaryResources.get(resource.id)?.relationships ?? resource.relationships
         .filter((relationship) => relationship.cardinality_proven)
         .map((relationship) => ({
@@ -4728,6 +5097,18 @@ function reviewMarkdown(build: AutoBoundaryBuild): string {
   const sharedReferences = build.exploration_boundary.pack.resources
     .filter((resource) => Boolean(resource.shared_reference_scope))
     .map((resource) => resource.id);
+  const autoBands = build.exploration_boundary.pack.resources.flatMap((resource) =>
+    (resource.auto_bands ?? []).map((policy) => ({ resource: resource.id, policy })));
+  const reviewedMetadata = build.exploration_boundary.pack.resources
+    .filter((resource) => resource.label || resource.description
+      || Object.keys(resource.field_metadata ?? {}).length)
+    .map((resource) => ({
+      resource: resource.id,
+      label: resource.label,
+      description: resource.description,
+      fields: Object.entries(resource.field_metadata ?? {})
+        .sort(([left], [right]) => left.localeCompare(right)),
+    }));
   const lines = [
     "# Auto Boundary Review",
     "",
@@ -4757,6 +5138,31 @@ function reviewMarkdown(build: AutoBoundaryBuild): string {
           "These tables apply no tenant predicate because a human asserted that every tenant may receive the same reviewed rows. Field visibility, cohort suppression, privacy budgets, and principal scope remain enforced.",
           "",
           ...sharedReferences.map((resource) => `- ${resource}`),
+        ]
+      : []),
+    ...(autoBands.length
+      ? [
+          "",
+          "## Reviewed Automatic Numeric Bands",
+          "",
+          "The model may select only the reviewed method and bucket count. Runner computes boundaries from trusted scoped rows, applies cohort suppression, and never returns raw computed edges.",
+          "",
+          ...autoBands.map(({ resource, policy }) =>
+            `- ${resource}.${policy.field}: ${policy.methods.join(" or ")}; ${policy.min_buckets}-${policy.max_buckets} buckets; ${policy.label_style} labels`),
+        ]
+      : []),
+    ...(reviewedMetadata.length
+      ? [
+          "",
+          "## Reviewed Names And Descriptions",
+          "",
+          "These bounded descriptions explain exact database IDs. They grant no authority, and plans must continue to use the exact IDs shown here.",
+          "",
+          ...reviewedMetadata.flatMap((metadata) => [
+            `- ${metadata.resource}: label ${JSON.stringify(metadata.label ?? null)}; description ${JSON.stringify(metadata.description ?? null)}`,
+            ...metadata.fields.map(([field, fieldMetadata]) =>
+              `  - ${metadata.resource}.${field}: label ${JSON.stringify(fieldMetadata.label ?? null)}; description ${JSON.stringify(fieldMetadata.description ?? null)}`),
+          ]),
         ]
       : []),
     ...(derivedScopes.length

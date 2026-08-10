@@ -54,7 +54,17 @@ describe("analytical MCP output schemas", () => {
 
     const canonicalResource = {
       id: "public.orders",
+      label: "Customer orders",
+      description: "Reviewed customer orders available for aggregate analysis.",
       primary_key: "id",
+      fields: [
+        { id: "id" },
+        {
+          id: "status",
+          label: "Order status",
+          description: "Reviewed order lifecycle status.",
+        },
+      ],
       field_egress: {
         id: { model_egress: "visible" },
         status: { model_egress: "visible" },
@@ -88,7 +98,7 @@ describe("analytical MCP output schemas", () => {
     }).success).toBe(true);
     expect(scopedExploreDescribeOutputSchema.safeParse({
       ...success,
-      resources: [{ ...canonicalResource, label: "Orders" }],
+      resources: [{ ...canonicalResource, label: "x".repeat(65) }],
     }).success).toBe(false);
     expect(scopedExploreDescribeOutputSchema.safeParse({
       ...success,
@@ -152,6 +162,13 @@ describe("analytical MCP output schemas", () => {
       next_action: "Call app.explore_data for values.",
       resources: [{
         id: "public.orders",
+        label: "Customer orders",
+        description: "Reviewed customer orders available for aggregate analysis.",
+        fields: [{
+          id: "status",
+          label: "Order status",
+          description: "Reviewed order lifecycle status.",
+        }],
         selectable_fields: ["id", "status"],
         filter_operators: { status: ["eq", "neq", "in"] },
         sortable_fields: [],

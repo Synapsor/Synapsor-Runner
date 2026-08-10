@@ -8,6 +8,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import mysql from "../packages/mysql/node_modules/mysql2/promise.js";
 import { Pool } from "pg";
+import { ProposalStore } from "../packages/proposal-store/dist/index.js";
 import { inspectDatabase } from "../packages/schema-inspector/dist/index.js";
 import { startStreamableHttpMcpServer } from "../packages/mcp-server/dist/index.js";
 import {
@@ -30,6 +31,17 @@ import {
   stopProductionExploreCli,
   verifyJwtRejectionMatrix,
 } from "./production-explore-http-e2e-helpers.mjs";
+import {
+  applyProductionExploreSoakBudgets,
+  assertExactNumericBandResult,
+  productionExploreSoakIdentities,
+  productionExploreSoakRequested,
+  runProductionExploreHttpSoak,
+  runProductionExploreRecovery,
+  waitForSourceConnectionQuiescence,
+  verifyLocalExploreAuditRecords,
+  verifyProductionExploreAuditSink,
+} from "./production-explore-http-soak.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const compose = path.join(root, "examples/runner-fleet/docker-compose.yml");
@@ -130,6 +142,22 @@ async function seedSource(connection) {
     INSERT INTO ${sourceSchema}.events (id, tenant_id, owner_id, category, amount_cents, occurred_at)
     SELECT CONCAT('band-', id), tenant_id, 'band', category, amount_cents, occurred_at
     FROM ${sourceSchema}.events WHERE tenant_id = 'acme' AND owner_id = 'alice';
+    INSERT INTO ${sourceSchema}.events (id, tenant_id, owner_id, category, amount_cents, occurred_at)
+    SELECT CONCAT('auto-', id), tenant_id, 'auto', category, amount_cents, occurred_at
+    FROM ${sourceSchema}.events WHERE tenant_id = 'acme' AND owner_id = 'alice';
+    INSERT INTO ${sourceSchema}.events (id, tenant_id, owner_id, category, amount_cents, occurred_at)
+    SELECT CONCAT('auto-equal-', id), tenant_id, 'auto-equal', category, amount_cents, occurred_at
+    FROM ${sourceSchema}.events WHERE tenant_id = 'acme' AND owner_id = 'alice';
+    INSERT INTO ${sourceSchema}.events (id, tenant_id, owner_id, category, amount_cents, occurred_at)
+    SELECT CONCAT('auto-ties-', id), tenant_id, 'auto-ties', category, amount_cents, occurred_at
+    FROM ${sourceSchema}.events WHERE tenant_id = 'acme' AND owner_id = 'alice';
+    UPDATE ${sourceSchema}.events AS event
+    JOIN (
+      SELECT id, ROW_NUMBER() OVER (ORDER BY id) AS rn
+      FROM ${sourceSchema}.events
+      WHERE tenant_id = 'acme' AND owner_id = 'auto-ties'
+    ) AS ranked ON ranked.id = event.id
+    SET event.amount_cents = CASE WHEN ranked.rn <= 6 THEN 100 ELSE 200 END;
     INSERT INTO ${sourceSchema}.events (id, tenant_id, owner_id, category, amount_cents, occurred_at)
     SELECT CONCAT('running-', id), tenant_id, 'running', category, amount_cents, occurred_at
     FROM ${sourceSchema}.events WHERE tenant_id = 'acme' AND owner_id = 'alice';
@@ -304,6 +332,215 @@ function mcpClient(url, bearer) {
   return { client, transport };
 }
 
+async function seedMysqlSoakPrincipals(connection, identities) {
+  const eventRows = [];
+  const orderRows = [];
+  const itemRows = [];
+  for (const identity of identities) {
+    const lowValue = 100 + identity.index;
+    const highValue = 200 + identity.index;
+    for (let item = 1; item <= 10; item += 1) {
+      eventRows.push([
+        `${identity.principal}-event-${item}`,
+        identity.tenant,
+        identity.principal,
+        item <= 5 ? "growth" : "retained",
+        (item <= 5 ? lowValue : highValue) + (item <= 5 ? item : item - 5),
+        item <= 5 ? "2026-08-03 12:00:00" : "2026-08-10 12:00:00",
+      ]);
+    }
+    const category = identity.index % 2 === 0 ? "trail" : "enterprise";
+    orderRows.push([
+      `${identity.principal}-order`,
+      identity.tenant,
+      identity.principal,
+      category,
+      "2026-08-03 12:00:00",
+    ]);
+    for (let item = 1; item <= 5; item += 1) {
+      itemRows.push([
+        `${identity.principal}-item-${item}`,
+        `${identity.principal}-order`,
+        "standard",
+        item,
+        "2026-08-03 12:00:00",
+      ]);
+    }
+  }
+  const insertRows = async (table, columns, rows) => {
+    for (let start = 0; start < rows.length; start += 500) {
+      const chunk = rows.slice(start, start + 500);
+      const placeholders = chunk.map((row) => `(${row.map(() => "?").join(", ")})`).join(", ");
+      await connection.query(
+        `INSERT INTO ${sourceSchema}.${table} (${columns.join(", ")}) VALUES ${placeholders}`,
+        chunk.flat(),
+      );
+    }
+  };
+  await insertRows("events", ["id", "tenant_id", "owner_id", "category", "amount_cents", "occurred_at"], eventRows);
+  await insertRows("scoped_orders", ["id", "tenant_id", "owner_id", "category", "occurred_at"], orderRows);
+  await insertRows("scoped_order_items", ["id", "order_id", "item_kind", "quantity", "occurred_at"], itemRows);
+}
+
+function assertSoak(condition, message, detail) {
+  if (!condition) throw new Error(`${message}${detail === undefined ? "" : ` ${JSON.stringify(detail)}`}`);
+}
+
+function mysqlSoakOperations() {
+  const aggregatePlan = {
+    kind: "aggregate",
+    resource: sourceId,
+    measures: [{ function: "count" }, { function: "sum", field: "amount_cents" }],
+    dimensions: [{ field: "category" }],
+    order_by: { kind: "measure", index: 0, direction: "desc" },
+    top_n: 10,
+  };
+  const validateBase = (payload, identity) => {
+    const byCategory = new Map((payload.data ?? []).map((row) => [row.category, row]));
+    const lowValue = 100 + identity.index;
+    const highValue = 200 + identity.index;
+    assertSoak(payload.ok === true && payload.source_database_changed === false,
+      "MySQL result was not verified against the locked source.", payload);
+    assertSoak(byCategory.size === 2
+      && byCategory.get("growth")?.count === 5
+      && byCategory.get("growth")?.sum_amount_cents === lowValue * 5 + 15
+      && byCategory.get("retained")?.count === 5
+      && byCategory.get("retained")?.sum_amount_cents === highValue * 5 + 15,
+    "MySQL exact tenant/principal scope isolation failed.", payload.data);
+  };
+  const legal = (name, weight, plan, validate) => ({
+    name,
+    weight,
+    request: () => ({ name: "app.explore_data", arguments: { plan } }),
+    validate,
+  });
+  return [
+    {
+      name: "catalog",
+      weight: 5,
+      request: () => ({ name: "app.describe_data", arguments: {} }),
+      validate: (payload) => assertSoak(payload.ok === true
+        && payload.resources?.length === 4
+        && payload.resources.some((resource) => resource.id === scopedOrderItemsId)
+        && payload.resources.some((resource) => resource.id === sharedProductCatalogId),
+      "MySQL metadata catalog changed during soak.", payload),
+    },
+    legal("grouped_count_sum", 25, aggregatePlan, validateBase),
+    legal("weekly_grouping", 10, {
+      ...aggregatePlan,
+      measures: [{ function: "count" }],
+      time_bucket: { field: "occurred_at", bucket: "week" },
+      order_by: { kind: "time_bucket", direction: "asc" },
+    }, (payload) => assertSoak((payload.data ?? []).reduce((sum, row) => sum + row.count, 0) === 10,
+      "MySQL weekly grouping escaped exact scope.", payload.data)),
+    legal("numeric_band", 10, {
+      kind: "aggregate",
+      resource: sourceId,
+      measures: [{ function: "count" }],
+      dimensions: [{ numeric_band: "amount_band" }],
+      top_n: 10,
+    }, (payload, identity) => assertExactNumericBandResult(payload, {
+      field: "amount_band",
+      values: [
+        ...Array.from({ length: 5 }, (_unused, index) => 100 + identity.index + index + 1),
+        ...Array.from({ length: 5 }, (_unused, index) => 200 + identity.index + index + 1),
+      ],
+      edges: [150, 300],
+      labels: ["under 150", "150 to 299", "300 or more"],
+      minimum_count: 5,
+      context: "MySQL numeric-band result did not match the exact scoped cohorts.",
+    })),
+    legal("auto_band", 10, {
+      kind: "aggregate",
+      resource: sourceId,
+      measures: [{ function: "count" }],
+      dimensions: [{
+        numeric_band: {
+          field: "amount_cents",
+          method: "quantile",
+          buckets: 2,
+        },
+      }],
+      top_n: 10,
+    }, (payload) => assertSoak(payload.ok === true
+      && payload.data?.length === 2
+      && payload.data.every((row) => /^Q[12] of 2$/.test(row.amount_cents_quantile_band)
+        && row.count === 5)
+      && payload.privacy?.auto_bands?.[0]?.requested_buckets === 2
+      && payload.privacy?.auto_bands?.[0]?.raw_edges_returned === false
+      && !JSON.stringify(payload).includes("__auto_"),
+    "MySQL automatic quantile bands leaked internals or escaped the reviewed scope.", payload)),
+    legal("dispersion", 10, {
+      kind: "aggregate",
+      resource: sourceId,
+      measures: [
+        { function: "stddev_pop", field: "amount_cents" },
+        { function: "var_pop", field: "amount_cents" },
+      ],
+      dimensions: [{ field: "category" }],
+      top_n: 10,
+    }, (payload) => assertSoak(payload.data?.length === 2
+      && payload.data.every((row) => Number.isFinite(row.stddev_pop_amount_cents)
+        && Number.isFinite(row.var_pop_amount_cents)),
+    "MySQL contributor-safe dispersion did not return two reviewed cohorts.", payload.data)),
+    legal("running_total", 10, {
+      kind: "aggregate",
+      resource: sourceId,
+      measures: [{ derived_measure: "amount_running_total" }],
+      dimensions: [{ field: "category" }],
+      time_bucket: { field: "occurred_at", bucket: "week" },
+      order_by: { kind: "time_bucket", direction: "asc" },
+      top_n: 25,
+    }, (payload) => assertSoak(payload.data?.length === 2
+      && payload.data.every((row) => Number.isFinite(row.amount_running_total)),
+    "MySQL reviewed running total failed during soak.", payload.data)),
+    legal("derived_relationship", 20, {
+      kind: "aggregate",
+      resource: scopedOrderItemsId,
+      measures: [{ function: "count" }, { function: "sum", field: "quantity" }],
+      dimensions: [{ field: "category", relationship: "scoped_order_items_order_id_fkey" }],
+      top_n: 10,
+    }, (payload, identity) => assertSoak(payload.data?.length === 1
+      && payload.data[0].scoped_orders_category === (identity.index % 2 === 0 ? "trail" : "enterprise")
+      && payload.data[0].count === 5
+      && payload.data[0].sum_quantity === 15,
+    "MySQL derived tenant/principal scope isolation failed.", payload.data)),
+    legal("shared_reference", 5, {
+      kind: "aggregate",
+      resource: sharedProductCatalogId,
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "category" }],
+      top_n: 10,
+    }, (payload) => assertSoak(payload.data?.length === 2
+      && payload.data.every((row) => row.count === 6),
+    "MySQL shared-reference result changed across tenants.", payload.data)),
+    {
+      name: "invalid_enum_refusal",
+      weight: 3,
+      expected_refusal: true,
+      request: () => ({
+        name: "app.explore_data",
+        arguments: { plan: { ...aggregatePlan, where: [{ field: "category", op: "eq", value: "not-reviewed" }] } },
+      }),
+      validate_refusal: (result) => /not a reviewed value|EXPLORE_FIELD_ENUM_VALUE_FORBIDDEN/i.test(JSON.stringify(result)),
+    },
+    {
+      name: "model_scope_refusal",
+      weight: 2,
+      expected_refusal: true,
+      request: () => ({
+        name: "app.explore_data",
+        arguments: {
+          tenant_id: "wrong-tenant",
+          principal: "wrong-principal",
+          plan: { ...aggregatePlan, tenant_id: "wrong-tenant", principal: "wrong-principal" },
+        },
+      }),
+      validate_refusal: (result) => /unrecognized|unsupported|invalid/i.test(JSON.stringify(result)),
+    },
+  ];
+}
+
 function resultPayload(result) {
   if (result.structuredContent && typeof result.structuredContent === "object") return result.structuredContent;
   const text = result.content?.find((item) => item.type === "text")?.text;
@@ -320,13 +557,13 @@ async function productionControlCounts(control, schema) {
   return result.rows[0];
 }
 
-async function runLocalParityPlan(env, principal, plan) {
+async function runLocalParityPlan(env, principal, plan, tenant = "acme") {
   const runtime = await createScopedExploreRuntime({
     projectRoot: localParityProjectRoot,
     transport: "stdio",
     env: {
       ...env,
-      SYNAPSOR_TENANT_ID: "acme",
+      SYNAPSOR_TENANT_ID: tenant,
       SYNAPSOR_PRINCIPAL: principal,
     },
   });
@@ -334,6 +571,47 @@ async function runLocalParityPlan(env, principal, plan) {
     return await runtime.explore(plan);
   } finally {
     await runtime.close();
+  }
+}
+
+async function verifyMysqlLocalExploreAudit(env, identity, operations, outputRoot) {
+  const successful = operations.filter((operation) => [
+    "grouped_count_sum",
+    "numeric_band",
+    "auto_band",
+    "derived_relationship",
+  ].includes(operation.name));
+  for (const operation of successful) {
+    const plan = operation.request(identity).arguments.plan;
+    const result = await runLocalParityPlan(env, identity.principal, plan, identity.tenant);
+    operation.validate(result, identity);
+  }
+  const refusal = operations.find((operation) => operation.name === "invalid_enum_refusal");
+  let refused = false;
+  try {
+    await runLocalParityPlan(
+      env,
+      identity.principal,
+      refusal.request(identity).arguments.plan,
+      identity.tenant,
+    );
+  } catch (error) {
+    refused = /not a reviewed value|EXPLORE_FIELD_ENUM_VALUE_FORBIDDEN/i.test(String(error));
+  }
+  assert(refused, "Local MySQL Explore did not refuse an unreviewed enum value before source execution.");
+  const store = new ProposalStore(path.join(localParityProjectRoot, ".synapsor/local.db"));
+  try {
+    return verifyLocalExploreAuditRecords({
+      engine: "mysql",
+      evidence: store.listEvidenceBundles(),
+      audits: store.listQueryAudit(),
+      expected_successes: successful.length,
+      expected_refusals: 1,
+      forbidden_values: [identity.tenant, identity.principal, "not-reviewed", "operator-only"],
+      result_path: path.join(outputRoot, "mysql-local-audit.json"),
+    });
+  } finally {
+    store.close();
   }
 }
 
@@ -573,11 +851,14 @@ async function main() {
   run("docker", ["compose", "-p", composeProject, "-f", compose, "up", "-d", "--wait", "postgres", "mysql"], { inherit: true });
   const mysqlAdmin = await mysql.createConnection({ uri: mysqlAdminUrl, multipleStatements: true });
   const control = new Pool({ connectionString: controlUrl, max: 1 });
+  const soakRequested = productionExploreSoakRequested();
+  const soakIdentities = soakRequested ? productionExploreSoakIdentities() : [];
   let server;
   let tenantBudgetServer;
   const clients = [];
   try {
     await seedSource(mysqlAdmin);
+    if (soakRequested) await seedMysqlSoakPrincipals(mysqlAdmin, soakIdentities);
     const before = await sourceSnapshot(mysqlAdmin);
     const env = { ...process.env, MYSQL_DATABASE_URL: mysqlReadUrl };
     const inspection = await inspectDatabase({
@@ -605,6 +886,22 @@ async function main() {
         schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
         resources: {
           [sourceId]: {
+            metadata: {
+              label: "Customer events",
+              description: "Reviewed customer events used for account analysis.",
+              actor: "production-owner@example.test",
+              reason: "Give operators and AI clients business context without changing resource authority.",
+              decided_at: "2026-08-10T12:00:00.000Z",
+            },
+            field_metadata: {
+              category: {
+                label: "Event category",
+                description: "Reviewed category used to group customer events.",
+                actor: "production-owner@example.test",
+                reason: "Clarify an existing reviewed grouping field.",
+                decided_at: "2026-08-10T12:01:00.000Z",
+              },
+            },
             tenant_key: {
               value: "tenant_id",
               actor: "production-owner@example.test",
@@ -647,6 +944,23 @@ async function main() {
             },
           },
           [sharedProductCatalogId]: {
+            field_metadata: {
+              internal_notes: {
+                label: "Operator internal notes",
+                description: "Human-only catalog context that must remain outside model metadata.",
+                actor: "production-owner@example.test",
+                reason: "Help the human reviewer recognize a field that remains kept out.",
+                decided_at: "2026-08-10T12:02:00.000Z",
+              },
+            },
+            fields: {
+              internal_notes: {
+                exposure: "keep_out",
+                actor: "production-owner@example.test",
+                reason: "Internal catalog notes are never part of reviewed model access.",
+                decided_at: "2026-08-10T12:02:00.000Z",
+              },
+            },
             shared_reference_scope: {
               value: SHARED_REFERENCE_ACKNOWLEDGEMENT,
               actor: "production-owner@example.test",
@@ -676,6 +990,15 @@ async function main() {
     assert(resource && scopedOrders && scopedOrderItems?.tenant_scope && scopedOrderItems?.principal_scope
       && sharedProductCatalog?.shared_reference_scope?.acknowledgement === SHARED_REFERENCE_ACKNOWLEDGEMENT,
     "MySQL production fixture did not preserve its derived scope and explicit shared-reference authority.", candidate.pack.resources);
+    assert(resource.label === "Customer events"
+      && resource.description === "Reviewed customer events used for account analysis."
+      && resource.field_metadata?.category?.label === "Event category"
+      && sharedProductCatalog.field_metadata?.internal_notes?.label === "Operator internal notes"
+      && sharedProductCatalog.kept_out_fields.includes("internal_notes"),
+    "MySQL production fixture did not bind reviewed metadata while keeping internal_notes out.", {
+      resource,
+      sharedProductCatalog,
+    });
     assert(
       JSON.stringify(resource.field_enums.category)
         === JSON.stringify(["growth", "retained", "private-small", "enterprise", "partner"]),
@@ -698,6 +1021,14 @@ async function main() {
       field: "amount_cents",
       edges: [150, 300],
       bucket_labels: ["under 150", "150 to 299", "300 or more"],
+    }];
+    resource.auto_bands = [{
+      field: "amount_cents",
+      methods: ["quantile", "equal_width"],
+      min_buckets: 2,
+      max_buckets: 8,
+      min_bucket_width: 250,
+      label_style: "ordinal",
     }];
     resource.derived_measures = [{
       name: "amount_running_total",
@@ -762,10 +1093,12 @@ async function main() {
       currentInspection: inspection,
     });
 
-    candidate.budgets.max_queries_per_session = 1;
-    candidate.budgets.rate_limit_per_minute = 10;
-    candidate.budgets.max_extracted_cells_per_session = 100;
-    candidate.budgets.max_differencing_queries = 10;
+    if (!soakRequested) {
+      candidate.budgets.max_queries_per_session = 1;
+      candidate.budgets.rate_limit_per_minute = 10;
+      candidate.budgets.max_extracted_cells_per_session = 100;
+      candidate.budgets.max_differencing_queries = 10;
+    }
     const boundaryDigest = explorationBoundaryCandidateDigest(candidate);
     await activateExplorationBoundary({
       projectRoot,
@@ -838,6 +1171,7 @@ async function main() {
         },
       },
     };
+    if (soakRequested) applyProductionExploreSoakBudgets(undefined, runtimeConfig);
     Object.assign(env, {
       SYNAPSOR_CONTROL_DATABASE_URL: controlUrl,
       SYNAPSOR_SESSION_PUBLIC_KEY: publicKey.export({ type: "spki", format: "pem" }),
@@ -897,6 +1231,105 @@ async function main() {
         after: authCountsAfter,
       });
 
+    if (soakRequested) {
+      const outputRoot = process.env.SYNAPSOR_SOAK_OUTPUT_DIR?.trim()
+        || path.resolve(root, "..", "synapsor-1.7.0-soak");
+      const operations = mysqlSoakOperations();
+      const groupedOperation = operations.find((operation) => operation.name === "grouped_count_sum");
+      const recoveryIdentity = soakIdentities.at(-1);
+      const loadIdentities = soakIdentities.slice(0, -1);
+      const result = await runProductionExploreHttpSoak({
+        engine: "mysql",
+        server_pid: server.child.pid,
+        source_connection_ceiling: runtimeConfig.production_explore.source_max_connections,
+        source_connection_count: async () => {
+          const [rows] = await mysqlAdmin.query(`
+            SELECT COUNT(*) AS count
+            FROM information_schema.PROCESSLIST
+            WHERE USER = 'synapsor_production_reader'
+          `);
+          return Number(rows[0]?.count ?? 0);
+        },
+        identities: loadIdentities,
+        create_client: async (identity) => mcpClient(server.url, signedToken(privateKey, identity)),
+        operations,
+        result_path: path.join(outputRoot, "mysql-http-soak.json"),
+      });
+      const countsAfterSoak = await productionControlCounts(control, controlSchema);
+      assert(Number(countsAfterSoak.audit_events) > Number(authCountsAfter.audit_events)
+        && Number(countsAfterSoak.budget_reservations) > Number(authCountsAfter.budget_reservations),
+      "MySQL soak traffic did not produce durable budget and metadata-only audit records.", {
+        before: authCountsAfter,
+        after: countsAfterSoak,
+      });
+      const audit = await verifyProductionExploreAuditSink({
+        engine: "mysql",
+        control,
+        schema: controlSchema,
+        soak: result,
+        forbidden_values: [
+          "soak-",
+          "operator-only",
+          "synthetic kept-out",
+        ],
+        result_path: path.join(outputRoot, "mysql-http-audit.json"),
+      });
+
+      await stopProductionExploreCli(server);
+      await waitForSourceConnectionQuiescence({
+        engine: "mysql",
+        source_connection_count: async () => {
+          const [rows] = await mysqlAdmin.query(`
+            SELECT COUNT(*) AS count
+            FROM information_schema.PROCESSLIST
+            WHERE USER = 'synapsor_production_reader'
+          `);
+          return Number(rows[0]?.count ?? 0);
+        },
+      });
+      server = await startProductionExploreCli({ root, configPath, env });
+      const recovery = await runProductionExploreRecovery({
+        engine: "mysql",
+        server_pid: server.child.pid,
+        source_connection_ceiling: runtimeConfig.production_explore.source_max_connections,
+        source_connection_count: async () => {
+          const [rows] = await mysqlAdmin.query(`
+            SELECT COUNT(*) AS count
+            FROM information_schema.PROCESSLIST
+            WHERE USER = 'synapsor_production_reader'
+          `);
+          return Number(rows[0]?.count ?? 0);
+        },
+        identity: recoveryIdentity,
+        create_client: async (identity) => mcpClient(server.url, signedToken(privateKey, identity)),
+        request: groupedOperation.request,
+        validate: groupedOperation.validate,
+        result_path: path.join(outputRoot, "mysql-http-recovery.json"),
+      });
+      await stopProductionExploreCli(server);
+      server = undefined;
+      const localAudit = await verifyMysqlLocalExploreAudit(
+        env,
+        soakIdentities[0],
+        operations,
+        outputRoot,
+      );
+      const after = await sourceSnapshot(mysqlAdmin);
+      assert(JSON.stringify(after) === JSON.stringify(before),
+        "MySQL production HTTP soak mutated the source database.", { before, after });
+      process.stdout.write(`${JSON.stringify({
+        ok: true,
+        engine: "mysql",
+        soak: result,
+        local_audit: localAudit,
+        audit,
+        recovery,
+        auth_rejections: authRefusals.length,
+        source_database_changed: false,
+      }, null, 2)}\n`);
+      return;
+    }
+
     const plan = {
       kind: "aggregate",
       resource: sourceId,
@@ -919,7 +1352,21 @@ async function main() {
       && described.resources?.length === 4
       && JSON.stringify(describedEvents?.field_enums?.category)
         === JSON.stringify(["growth", "retained", "private-small", "enterprise", "partner"])
+      && describedEvents?.label === "Customer events"
+      && describedEvents?.description === "Reviewed customer events used for account analysis."
+      && describedEvents?.fields?.some((field) => field.id === "category"
+        && field.label === "Event category"
+        && field.description === "Reviewed category used to group customer events.")
+      && !described.resources?.some((candidateResource) => candidateResource.fields?.some((field) =>
+        field.id === "internal_notes" || field.label === "Operator internal notes"))
       && describedEvents?.numeric_bands?.some((band) => band.name === "amount_band")
+      && describedEvents?.auto_bands?.some((policy) => policy.field === "amount_cents"
+        && JSON.stringify(policy.methods) === JSON.stringify(["quantile", "equal_width"])
+        && policy.min_buckets === 2
+        && policy.max_buckets === 8
+        && policy.label_style === "ordinal"
+        && policy.raw_edges_returned === false
+        && !Object.hasOwn(policy, "min_bucket_width"))
       && describedEvents?.derived_measures?.some((measure) => measure.name === "amount_running_total")
       && describedItems?.relationships?.some((relationship) =>
         relationship.id === "scoped_order_items_order_id_fkey" && relationship.activation === "active"),
@@ -1015,6 +1462,142 @@ async function main() {
       local: comparableAnalyticsResult(localBandResult),
       http: comparableAnalyticsResult(bandResult),
     });
+
+    const autoBandPlan = {
+      kind: "aggregate",
+      resource: sourceId,
+      measures: [{ function: "count" }],
+      dimensions: [{
+        numeric_band: {
+          field: "amount_cents",
+          method: "quantile",
+          buckets: 2,
+        },
+      }],
+      top_n: 10,
+    };
+    const autoBandClient = mcpClient(server.url, signedToken(privateKey, {
+      tenant: "acme",
+      principal: "auto",
+    }));
+    clients.push(autoBandClient.client);
+    await autoBandClient.client.connect(autoBandClient.transport);
+    const autoBandResult = resultPayload(await autoBandClient.client.callTool({
+      name: "app.explore_data",
+      arguments: { plan: autoBandPlan },
+    }));
+    const localAutoBandResult = await runLocalParityPlan(env, "auto", autoBandPlan);
+    const autoBandSerialized = JSON.stringify(autoBandResult);
+    assert(autoBandResult.ok === true
+      && autoBandResult.data?.length === 2
+      && autoBandResult.data.every((row) => /^Q[12] of 2$/.test(row.amount_cents_quantile_band)
+        && row.count === 6)
+      && autoBandResult.privacy?.minimum_cohort_size === 5
+      && autoBandResult.privacy?.auto_bands?.[0]?.requested_buckets === 2
+      && autoBandResult.privacy?.auto_bands?.[0]?.effective_buckets === 2
+      && autoBandResult.privacy?.auto_bands?.[0]?.raw_edges_returned === false
+      && !autoBandSerialized.includes("__auto_")
+      && !autoBandSerialized.match(/SELECT\s|amount_cents\s*[<>]=?\s*\d/i)
+      && JSON.stringify(comparableAnalyticsResult(localAutoBandResult))
+        === JSON.stringify(comparableAnalyticsResult(autoBandResult)),
+    "MySQL reviewed automatic bands differed between local stdio and production HTTP or exposed raw edges.", {
+      local: comparableAnalyticsResult(localAutoBandResult),
+      http: comparableAnalyticsResult(autoBandResult),
+    });
+
+    const tieBandPlan = {
+      ...autoBandPlan,
+      dimensions: [{
+        numeric_band: {
+          field: "amount_cents",
+          method: "quantile",
+          buckets: 8,
+        },
+      }],
+    };
+    const tieBandClient = mcpClient(server.url, signedToken(privateKey, {
+      tenant: "acme",
+      principal: "auto-ties",
+    }));
+    clients.push(tieBandClient.client);
+    await tieBandClient.client.connect(tieBandClient.transport);
+    const tieBandResult = resultPayload(await tieBandClient.client.callTool({
+      name: "app.explore_data",
+      arguments: { plan: tieBandPlan },
+    }));
+    const localTieBandResult = await runLocalParityPlan(env, "auto-ties", tieBandPlan);
+    const tieCounts = new Map(tieBandResult.data?.map((row) => [
+      row.amount_cents_quantile_band,
+      row.count,
+    ]));
+    assert(tieBandResult.ok === true
+      && tieCounts.size === 2
+      && tieCounts.get("Q4 of 8") === 6
+      && tieCounts.get("Q8 of 8") === 6
+      && tieBandResult.privacy?.auto_bands?.[0]?.requested_buckets === 8
+      && tieBandResult.privacy?.auto_bands?.[0]?.effective_buckets === 2
+      && tieBandResult.privacy?.auto_bands?.[0]?.reduced === true
+      && tieBandResult.privacy?.auto_bands?.[0]?.raw_edges_returned === false
+      && JSON.stringify(comparableAnalyticsResult(localTieBandResult))
+        === JSON.stringify(comparableAnalyticsResult(tieBandResult)),
+    "MySQL tie-heavy quantiles did not collapse without splitting equal values.", {
+      local: comparableAnalyticsResult(localTieBandResult),
+      http: comparableAnalyticsResult(tieBandResult),
+    });
+
+    const equalWidthPlan = {
+      ...autoBandPlan,
+      dimensions: [{
+        numeric_band: {
+          field: "amount_cents",
+          method: "equal_width",
+          buckets: 8,
+        },
+      }],
+    };
+    const equalWidthClient = mcpClient(server.url, signedToken(privateKey, {
+      tenant: "acme",
+      principal: "auto-equal",
+    }));
+    clients.push(equalWidthClient.client);
+    await equalWidthClient.client.connect(equalWidthClient.transport);
+    const equalWidthResult = resultPayload(await equalWidthClient.client.callTool({
+      name: "app.explore_data",
+      arguments: { plan: equalWidthPlan },
+    }));
+    const localEqualWidthResult = await runLocalParityPlan(env, "auto-equal", equalWidthPlan);
+    assert(equalWidthResult.ok === true
+      && equalWidthResult.data?.length === 1
+      && equalWidthResult.data[0].amount_cents_equal_width_band === "Band 1 of 3"
+      && equalWidthResult.data[0].count === 10
+      && equalWidthResult.privacy?.suppressed_groups === 1
+      && equalWidthResult.privacy?.auto_bands?.[0]?.requested_buckets === 8
+      && equalWidthResult.privacy?.auto_bands?.[0]?.effective_buckets === 3
+      && equalWidthResult.privacy?.auto_bands?.[0]?.reduced === true
+      && equalWidthResult.privacy?.auto_bands?.[0]?.raw_edges_returned === false
+      && !JSON.stringify(equalWidthResult).includes("__auto_")
+      && JSON.stringify(comparableAnalyticsResult(localEqualWidthResult))
+        === JSON.stringify(comparableAnalyticsResult(equalWidthResult)),
+    "MySQL equal-width auto bands did not honor the reviewed minimum width and suppression.", {
+      local: comparableAnalyticsResult(localEqualWidthResult),
+      http: comparableAnalyticsResult(equalWidthResult),
+    });
+    const autoBandEvidenceRows = await control.query(`
+      SELECT event_kind, payload_json
+      FROM "${controlSchema}".production_explore_audit_events
+      WHERE event_id = $1 OR payload_json::text LIKE $2
+      ORDER BY event_kind
+    `, [
+      tieBandResult.evidence_bundle_id,
+      `%${tieBandResult.evidence_bundle_id}%`,
+    ]);
+    const autoBandEvidence = JSON.stringify(autoBandEvidenceRows.rows);
+    assert(autoBandEvidenceRows.rows.some((row) => row.event_kind === "evidence_bundle")
+      && /"result_values_persisted":false/i.test(autoBandEvidence)
+      && !/__auto_|"edges"|"raw_edges"|"bucket_min"|"bucket_max"/i.test(autoBandEvidence)
+      && !autoBandEvidence.includes("auto-ties"),
+    "MySQL automatic-band evidence persisted raw edges, result values, or principal identity.",
+    autoBandEvidenceRows.rows);
 
     const runningTotalPlan = {
       kind: "aggregate",

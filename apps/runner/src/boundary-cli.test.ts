@@ -315,6 +315,10 @@ describe("boundary operator-plane CLI", () => {
         "--no-principal",
         "--visible-fields", "id,status,scheduled_at",
         "--withhold-from-model", "status",
+        "--label", "Service visits",
+        "--description", "Reviewed customer service appointments.",
+        "--field-label", "status=Visit state",
+        "--field-description", "status=Reviewed appointment lifecycle state.",
         "--max-ranked-groups", "200",
         "--actor", "alice",
         "--reason", "Service visits are isolated by the reviewed tenant column.",
@@ -363,6 +367,14 @@ describe("boundary operator-plane CLI", () => {
       expect(regenerated.pack.resources).toEqual([
         expect.objectContaining({
           id: "public.service_visits",
+          label: "Service visits",
+          description: "Reviewed customer service appointments.",
+          field_metadata: {
+            status: {
+              label: "Visit state",
+              description: "Reviewed appointment lifecycle state.",
+            },
+          },
           tenant_key: "tenant_id",
         }),
       ]);
@@ -376,6 +388,14 @@ describe("boundary operator-plane CLI", () => {
           pack: {
             resources: [{
               id: "public.service_visits",
+              label: "Service visits",
+              description: "Reviewed customer service appointments.",
+              field_metadata: {
+                status: {
+                  label: "Visit state",
+                  description: "Reviewed appointment lifecycle state.",
+                },
+              },
               selectable_fields: ["id", "status", "scheduled_at"],
               model_withheld_fields: ["status"],
             }],
@@ -1048,9 +1068,47 @@ describe("boundary operator-plane CLI", () => {
       ], async () => structuredClone(inspection))).resolves.toBe(0);
       expect(output).toContain("boundary draft used the reconciling rescan path");
       expect(output).toContain("No curated review state was discarded");
+
+      const changed = structuredClone(inspection);
+      changed.tables[0]!.columns.push({
+        ...structuredClone(changed.tables[0]!.columns.at(-1)!),
+        name: "reviewed_source_note",
+        ordinal_position: changed.tables[0]!.columns.length + 1,
+      });
+      output = "";
+      await expect(boundaryCommand([
+        "rescan",
+        "--from-env", "DATABASE_URL",
+        "--project-root", root,
+      ], async () => changed)).resolves.toBe(0);
+      expect(output).toContain("Review and activate in the focused access editor (no second rescan)");
+      expect(output).toContain("boundary review --project-root");
+      expect(output).toContain("--access opens the same table, column, and path editor as /access");
+      expect(output).toContain("resume guided review, activate, and continue to Ask (no second rescan)");
+      expect(output).toContain(`cd '${root}' && synapsor-runner start --from-env DATABASE_URL --cli`);
+      expect(output).toContain("start --from-env DATABASE_URL --cli");
+      expect(output).not.toContain("start --from-env DATABASE_URL --cli --rescan");
+      expect(output).toContain("Use start --rescan only when you want to inspect the database again");
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
+  });
+
+  it("distinguishes rescan, focused access review, and guided rescan in boundary help", async () => {
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+
+    await expect(main(["boundary", "--help"])).resolves.toBe(0);
+
+    expect(output).toContain("Choose the boundary workflow by intent:");
+    expect(output).toContain("boundary rescan\n    Inspects the current schema");
+    expect(output).toContain("boundary review --access\n    Opens the focused table");
+    expect(output).toContain("same editor as /access inside the Ask shell");
+    expect(output).toContain("start --from-env DATABASE_URL --cli --rescan");
+    expect(output).toContain("omit --rescan");
   });
 
   it("renames the one disabled multi-table boundary without activating authority", async () => {
@@ -2158,6 +2216,59 @@ describe("boundary operator-plane CLI", () => {
     }
   });
 
+  it("prints direct routes back to guided or explicit Ask after standalone activation", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-activation-resume-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => undefined,
+      editFieldTiers: async () => undefined,
+      promptText: async () => "alice",
+      confirm: async () => true,
+    };
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({
+        draft: build.exploration_boundary,
+        candidate: build.exploration_boundary,
+        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        actor: "alice",
+        revision: 1,
+      }));
+
+      await expect(boundaryActivateCommandInternal(
+        ["--project-root", root, "--actor", "alice"],
+        async () => inspection,
+        session,
+      )).resolves.toBe(0);
+
+      expect(output).toContain("Resume the guided CLI and choose a model or MCP client:");
+      expect(output).toContain(`cd '${root}' && synapsor-runner start --from-env DATABASE_URL --cli`);
+      expect(output).toContain("start --from-env DATABASE_URL --cli");
+      expect(output).toContain("Or open Ask directly with an explicit provider:");
+      expect(output).toContain("try ask --project-root");
+      expect(output).toContain("--provider openai --model gpt-5-mini");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("records the same disabled candidate through the picker and flag paths", async () => {
     const flagRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-flag-equivalence-"));
     const pickerRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-picker-equivalence-"));
@@ -2463,7 +2574,10 @@ describe("boundary operator-plane CLI", () => {
       await expect(boundaryReviewCommandInternal([
         "--project-root", root,
       ], async () => inspection, session)).resolves.toBe(0);
-      expect(prompts[0]).toMatch(/why does public\.service_visits contain the same rows/i);
+      expect(prompts[0]).toContain("SHARED REFERENCE REVIEW");
+      expect(prompts[0]).toContain("Table: public.service_visits");
+      expect(prompts[0]).toContain("Explain why this table contains the same rows for every tenant.");
+      expect(prompts[0]?.split("\n").at(-1)).toBe("Required reason");
       expect(confirmations[0]).toMatch(/has no per-tenant rows.*every tenant/i);
       expect(output).toContain("Row scope: Shared reference (no tenant predicate");
       const reviews = await listBoundaryResourceReviews(root);
@@ -3854,6 +3968,84 @@ describe("boundary operator-plane CLI", () => {
       const context = await loadBoundaryReviewContext(root);
       expect(context.candidate.pack.resources.find((resource) =>
         resource.id === "public.orders")?.derived_measures?.[0]?.name).toBe("order_item_count");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("records and removes reviewed automatic numeric bands through the shared CLI and Workbench mutation path", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-auto-band-review-"));
+    const inspection = boundaryInspection();
+    inspection.tables[0]!.columns.push({
+      name: "duration_ms",
+      data_type: "integer",
+      nullable: false,
+      generated: false,
+      ordinal_position: inspection.tables[0]!.columns.length + 1,
+      suggestions: {
+        tenant: false,
+        conflict: false,
+        sensitive: false,
+        immutable: false,
+        large_or_binary: false,
+      },
+    });
+    inspection.tables[0]!.suggestions.default_visible_columns.push("duration_ms");
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const policy = {
+      field: "duration_ms",
+      methods: ["quantile", "equal_width"] as Array<"quantile" | "equal_width">,
+      min_buckets: 3,
+      max_buckets: 8,
+      min_bucket_width: 100,
+      label_style: "ordinal" as const,
+    };
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const preview = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.service_visits",
+        auto_band: policy,
+        actor: "analytics-owner",
+        reason: "Allow bounded duration groups without model-authored edges.",
+      }, async () => inspection);
+      expect(preview.candidate.pack.resources[0]!.auto_bands).toEqual([policy]);
+      expect(preview.build.overrides.resources["public.service_visits"]?.auto_bands)
+        .toMatchObject({
+          duration_ms: {
+            actor: "analytics-owner",
+            reason: "Allow bounded duration groups without model-authored edges.",
+          },
+        });
+      await commitBoundaryResourceReviewMutation(root, preview);
+
+      let context = await loadBoundaryReviewContext(root);
+      expect(context.candidate.pack.resources[0]!.auto_bands).toEqual([policy]);
+      expect(formatFocusedBoundaryActivationReview(context.bundle, false)).toContain(
+        "duration_ms: automatic quantile or equal_width, 3-8 buckets, ordinal labels",
+      );
+
+      const removal = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.service_visits",
+        auto_band: { ...policy, remove: true },
+        actor: "analytics-owner",
+        reason: "Return duration grouping to fixed reviewed bands only.",
+      }, async () => inspection);
+      await commitBoundaryResourceReviewMutation(root, removal);
+      context = await loadBoundaryReviewContext(root);
+      expect(context.candidate.pack.resources[0]!.auto_bands).toBeUndefined();
+      expect(context.progress?.review_overrides.resources["public.service_visits"]?.auto_bands)
+        .toBeUndefined();
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

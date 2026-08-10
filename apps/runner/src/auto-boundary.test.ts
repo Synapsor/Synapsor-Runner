@@ -26,6 +26,7 @@ import {
 import {
   applyManagedBoundaryReviewDecision,
   boundaryReviewDecisions,
+  normalizeManagedBoundaryReviewDecision,
 } from "./boundary-review-domain.js";
 import { reconstructBoundaryReviewOverrides } from "./boundary-review-policy.js";
 
@@ -112,6 +113,151 @@ describe("Auto Boundary compiler", () => {
       .toEqual({ region: ["north"] });
     expect(explorationBoundaryCandidateDigest(narrowed.exploration_boundary))
       .not.toBe(explorationBoundaryCandidateDigest(generated.exploration_boundary));
+  });
+
+  it("binds reviewed labels and descriptions without changing resource authority", () => {
+    const inspection = churnInspection();
+    const input = {
+      inspection,
+      project: projectSummary("/workspace/reviewed-metadata"),
+      sourceEnv: "DATABASE_URL",
+    };
+    const baseline = buildAutoBoundary(input);
+    let overrides: AutoBoundaryReviewOverrides = {
+      schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+      resources: {},
+    };
+    overrides = applyManagedBoundaryReviewDecision(overrides, {
+      kind: "resource_metadata",
+      resource_id: "public.subscriptions",
+      label: "Customer subscriptions",
+      description: "One reviewed subscription record per customer account.",
+      actor: "analytics-owner@example.test",
+      reason: "Give people and AI clients business context without changing authority.",
+      decided_at: "2026-08-10T12:00:00.000Z",
+    });
+    overrides = applyManagedBoundaryReviewDecision(overrides, {
+      kind: "field_metadata",
+      resource_id: "public.subscriptions",
+      field: "region",
+      label: "Sales region",
+      description: "Reviewed account territory used for regional grouping.",
+      actor: "analytics-owner@example.test",
+      reason: "Clarify an existing reviewed dimension.",
+      decided_at: "2026-08-10T12:01:00.000Z",
+    });
+    overrides = applyManagedBoundaryReviewDecision(overrides, {
+      kind: "field_metadata",
+      resource_id: "public.subscriptions",
+      field: "billing_token",
+      label: "Internal billing credential",
+      actor: "analytics-owner@example.test",
+      reason: "Help the human reviewer identify a field that remains kept out.",
+      decided_at: "2026-08-10T12:02:00.000Z",
+    });
+
+    const reviewed = buildAutoBoundary({ ...input, overrides });
+    const before = baseline.exploration_boundary.pack.resources[0]!;
+    const after = reviewed.exploration_boundary.pack.resources[0]!;
+    expect(after).toMatchObject({
+      id: "public.subscriptions",
+      label: "Customer subscriptions",
+      description: "One reviewed subscription record per customer account.",
+      field_metadata: {
+        region: {
+          label: "Sales region",
+          description: "Reviewed account territory used for regional grouping.",
+        },
+        billing_token: { label: "Internal billing credential" },
+      },
+    });
+    expect({
+      selectable_fields: after.selectable_fields,
+      filterable_fields: after.filterable_fields,
+      sortable_fields: after.sortable_fields,
+      groupable_fields: after.groupable_fields,
+      aggregate_measures: after.aggregate_measures,
+      kept_out_fields: after.kept_out_fields,
+      model_withheld_fields: after.model_withheld_fields,
+      relationships: after.relationships,
+      minimum_cohort_size: after.minimum_cohort_size,
+    }).toEqual({
+      selectable_fields: before.selectable_fields,
+      filterable_fields: before.filterable_fields,
+      sortable_fields: before.sortable_fields,
+      groupable_fields: before.groupable_fields,
+      aggregate_measures: before.aggregate_measures,
+      kept_out_fields: before.kept_out_fields,
+      model_withheld_fields: before.model_withheld_fields,
+      relationships: before.relationships,
+      minimum_cohort_size: before.minimum_cohort_size,
+    });
+    expect(reviewed.lock.reviewed_overrides_digest)
+      .not.toBe(baseline.lock.reviewed_overrides_digest);
+    expect(explorationBoundaryCandidateDigest(reviewed.exploration_boundary))
+      .not.toBe(explorationBoundaryCandidateDigest(baseline.exploration_boundary));
+
+    const reconstructed = reconstructBoundaryReviewOverrides({
+      baseline: baseline.exploration_boundary,
+      candidate: reviewed.exploration_boundary,
+      actor: "boundary-policy-migration",
+      decidedAt: "2026-08-10T13:00:00.000Z",
+    });
+    expect(buildAutoBoundary({ ...input, overrides: reconstructed }).exploration_boundary)
+      .toEqual(reviewed.exploration_boundary);
+
+    const droppedRegion = structuredClone(inspection);
+    droppedRegion.tables[0]!.columns = droppedRegion.tables[0]!.columns.filter(
+      (column) => column.name !== "region",
+    );
+    const pruned = pruneAutoBoundaryReviewOverrides(droppedRegion, overrides);
+    expect(pruned.overrides.resources["public.subscriptions"]?.metadata?.label)
+      .toBe("Customer subscriptions");
+    expect(pruned.overrides.resources["public.subscriptions"]?.field_metadata)
+      .not.toHaveProperty("region");
+    expect(pruned.overrides.resources["public.subscriptions"]?.field_metadata)
+      .toHaveProperty("billing_token");
+    expect(pruned.removed).toContain(
+      "public.subscriptions.region: reviewed label or description was removed because the field no longer exists",
+    );
+  });
+
+  it("rejects unbounded, multiline, and secret-bearing reviewed metadata", () => {
+    const decision = {
+      resource_id: "public.subscriptions",
+      actor: "analytics-owner@example.test",
+      reason: "Bound reviewed metadata before it reaches an AI client.",
+      decided_at: "2026-08-10T12:00:00.000Z",
+    } as const;
+    expect(() => normalizeManagedBoundaryReviewDecision({
+      ...decision,
+      kind: "resource_metadata",
+      label: "x".repeat(65),
+    })).toThrow(/at most 64 characters/i);
+    expect(() => normalizeManagedBoundaryReviewDecision({
+      ...decision,
+      kind: "field_metadata",
+      field: "region",
+      description: "First line\nsecond line",
+    })).toThrow(/invalid/i);
+    expect(() => buildAutoBoundary({
+      inspection: churnInspection(),
+      project: projectSummary("/workspace/secret-metadata"),
+      sourceEnv: "DATABASE_URL",
+      overrides: {
+        schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+        resources: {
+          "public.subscriptions": {
+            metadata: {
+              label: "Bearer abcdefghijklmnopqrstuvwxyz",
+              actor: decision.actor,
+              reason: decision.reason,
+              decided_at: decision.decided_at,
+            },
+          },
+        },
+      },
+    })).toThrow(/must not contain credentials or secret material/i);
   });
 
   it("stores reviewed derived measures as audited boundary policy and prunes invalidated inputs", () => {
@@ -284,6 +430,62 @@ describe("Auto Boundary compiler", () => {
     expect(pruned.overrides.resources["public.subscriptions"]?.numeric_bands).toBeUndefined();
     expect(pruned.removed).toContain(
       "public.subscriptions.monthly_revenue_band: reviewed numeric-band field monthly_revenue_cents no longer exists",
+    );
+  });
+
+  it("stores reviewed auto-band policy per boundary and prunes it when its field disappears", () => {
+    const inspection = churnInspection();
+    const input = {
+      inspection,
+      project: projectSummary("/workspace/auto-band-policy"),
+      sourceEnv: "DATABASE_URL",
+    };
+    const baseline = buildAutoBoundary(input);
+    const definition = {
+      field: "monthly_revenue_cents",
+      methods: ["quantile", "equal_width"] as Array<"quantile" | "equal_width">,
+      min_buckets: 3,
+      max_buckets: 10,
+      min_bucket_width: 1_000,
+      label_style: "ordinal" as const,
+    };
+    const overrides = applyManagedBoundaryReviewDecision(
+      { schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION, resources: {} },
+      {
+        kind: "auto_band",
+        resource_id: "public.subscriptions",
+        field: definition.field,
+        definition,
+        actor: "analytics-owner@example.test",
+        reason: "Allow bounded adaptive groups without model-authored edges.",
+        decided_at: "2026-08-10T12:00:00.000Z",
+      },
+    );
+    const reviewed = buildAutoBoundary({ ...input, overrides });
+
+    expect(reviewed.exploration_boundary.pack.resources[0]!.auto_bands).toEqual([definition]);
+    expect(reviewed.overrides.resources["public.subscriptions"]?.auto_bands)
+      .toMatchObject({ monthly_revenue_cents: { definition } });
+    expect(reviewed.lock.reviewed_overrides_digest)
+      .not.toBe(baseline.lock.reviewed_overrides_digest);
+
+    const reconstructed = reconstructBoundaryReviewOverrides({
+      baseline: baseline.exploration_boundary,
+      candidate: reviewed.exploration_boundary,
+      actor: "boundary-policy-migration",
+      decidedAt: "2026-08-10T13:00:00.000Z",
+    });
+    expect(buildAutoBoundary({ ...input, overrides: reconstructed }).exploration_boundary)
+      .toEqual(reviewed.exploration_boundary);
+
+    const drifted = structuredClone(inspection);
+    drifted.tables[0]!.columns = drifted.tables[0]!.columns.filter(
+      (column) => column.name !== definition.field,
+    );
+    const pruned = pruneAutoBoundaryReviewOverrides(drifted, overrides);
+    expect(pruned.overrides.resources["public.subscriptions"]?.auto_bands).toBeUndefined();
+    expect(pruned.removed).toContain(
+      "public.subscriptions.monthly_revenue_cents: reviewed auto-band field no longer exists",
     );
   });
 

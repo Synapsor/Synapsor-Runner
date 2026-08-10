@@ -325,7 +325,7 @@ export async function inspectProductionExploreStartup(
   add(
     "source-connection-ceiling",
     true,
-    `Every production Explore session shares one process-wide source pool capped at ${production.source_max_connections ?? 8} connections. Size this below the source database connection allowance.`,
+    `Schema/role drift checks and reviewed queries share one process-wide source pool capped at ${production.source_max_connections ?? 8} total connections. Size this below the source database connection allowance.`,
   );
   add(
     "principal-session-ceiling",
@@ -636,6 +636,7 @@ export function productionExploreSessionFactory(
       productionAccountingNamespace: production.accounting_namespace,
       productionTenantLimits: tenantLimits,
       executor,
+      ...(executor.inspectDatabase ? { inspectDatabaseFn: executor.inspectDatabase } : {}),
     });
     const server = (dependencies.createMcpServer ?? createScopedExploreMcpServer)(runtime, { mode: "production_http" });
     return {

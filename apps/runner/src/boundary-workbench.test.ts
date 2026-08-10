@@ -3,6 +3,33 @@ import { describe, expect, it } from "vitest";
 import { renderBoundaryWorkbench } from "./boundary-workbench.js";
 
 describe("Auto Boundary Workbench renderer", () => {
+  it("keeps the 1.7.0 reviewed-access controls discoverable in both Workbench and CLI", () => {
+    const html = renderBoundaryWorkbench("test-csrf");
+    const parityMarkers: Array<[string, string[]]> = [
+      ["independent boundary lifecycle", ["Your boundaries", "New boundary", "Deactivate selected boundary", "Review and activate now"]],
+      ["field tiers and sensitive widening", ["Model + Runner", "Withheld from model", "Kept out", "Changing a tier opens a recorded human review"]],
+      ["reviewed enum allowlists", ["Allowed values", "Save allowed values", "Removed values are refused even if guessed"]],
+      ["reviewed labels and descriptions", ["Reviewed label", "Reviewed description", "Save reviewed metadata", "plans still use the exact id"]],
+      ["direct and relationship-carried tenant scope", ["tenant_scope_path", "mandatory proven relationship path"]],
+      ["direct and relationship-carried principal scope", ["principal_scope_path", "user/owner limit"]],
+      ["shared-reference scope", ["Shared reference - same rows for every tenant", "I confirm this table has no per-tenant rows"]],
+      ["per-table and whole-boundary privacy", ["Privacy for all tables", "Save privacy change", "Save for all"]],
+      ["reviewed relationships and visual map", ["Reviewed data map", "renderBoundaryGraphSvg", "Each reviewed join uses its own labeled connection lane"]],
+      ["numeric bands", ["Add a fixed numeric band", "kind:\"numeric_band\""]],
+      ["automatic numeric bands", ["Allow automatic numeric bands", "kind:\"auto_band\"", "raw edges"]],
+      ["named and post-suppression measures", ["Add a named derived metric", "Add a post-suppression calculation", "kind:\"derived_measure\""]],
+      ["safe child-count measures", ["Add a safe child-count metric", "Count child records without a raw one-to-many join"]],
+      ["reconciling rescan", ["Rescan and review changes", "boundary_rescan_report", "Active authority did not change"]],
+      ["query history and evidence", ["Query history", "Durable query ledger", "/api/explore/history?audit_id="]],
+      ["local-model provider controls", ["OpenAI-compatible or local", "Model request timeout (seconds)"]],
+      ["external MCP client setup", ["Use an existing AI or MCP client", "Generic stdio MCP", "Managed project installers"]],
+    ];
+    for (const [feature, markers] of parityMarkers) {
+      for (const marker of markers) expect(html, feature).toContain(marker);
+    }
+    expect(html).not.toMatch(/execute_sql|model can activate|model can approve|model can apply/i);
+  });
+
   it("assigns distinct graph lanes to multiple relationships from one table", () => {
     const html = renderBoundaryWorkbench("test-csrf");
     const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? "";
@@ -49,10 +76,21 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("Advanced field operations");
     expect(html).toContain("Reviewed metrics and numeric bands");
     expect(html).toContain("Add a fixed numeric band");
+    expect(html).toContain("Allow automatic numeric bands");
     expect(html).toContain("Add a named derived metric");
     expect(html).toContain("Add a safe child-count metric");
     expect(html).toContain("Count child records without a raw one-to-many join");
     expect(html).toContain('kind:"numeric_band"');
+    expect(html).toContain('kind:"auto_band"');
+    expect(html).toContain('managedMetadataReviewPanel("resource_metadata"');
+    expect(html).toContain('managedMetadataReviewPanel("field_metadata"');
+    expect(html).toContain('data-metadata-review-form');
+    expect(html).toContain('data-submit-metadata-review');
+    expect(html).toContain("This metadata grants no access; plans still use the exact id.");
+    expect(html).toContain('id="analytics-auto-band-method"');
+    expect(html).toContain('id="analytics-auto-band-min"');
+    expect(html).toContain('id="analytics-auto-band-max"');
+    expect(html).toContain("Runner computes bands from trusted scoped rows and never exposes raw edges.");
     expect(html).toContain('kind:"derived_measure"');
     expect(html).toContain('<option value="child_count_total">Total child rows</option>');
     expect(html).toContain("definition:{name,label,shape,child_resource:selected.child_resource");
@@ -253,6 +291,14 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("not SQL, credentials, tenant choice, model-withheld values, kept-out fields, or write authority");
     expect(html).toContain("the model still cannot activate, approve, apply, or widen any tool");
     expect(html).toContain("Session-only conversation");
+    expect(html).toContain('id="ask-history" class="ask-history"');
+    expect(html).toContain("Query history");
+    expect(html).toContain("Load query history");
+    expect(html).toContain('getJson("/api/explore/history")');
+    expect(html).toContain('getJson("/api/explore/history?audit_id="');
+    expect(html).toContain("Recent references");
+    expect(html).toContain("Durable query ledger");
+    expect(html).toContain("Runner does not persist model conversations, result values, trusted scope values, or raw SQL.");
     expect(html).toContain('id="ask-submit-consent"');
     expect(html).toContain("Submitting your first question confirms");
     expect(html).toContain("No provider request occurs before you submit.");

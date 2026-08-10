@@ -643,6 +643,18 @@ function rebaseBoundaryResource(current: BoundaryResource, stored: BoundaryResou
   } else {
     delete resource.numeric_bands;
   }
+  if (stored.auto_bands?.length && current.auto_bands?.length) {
+    const currentlyValid = new Map(current.auto_bands.map((definition) => [
+      definition.field,
+      definition,
+    ]));
+    resource.auto_bands = stored.auto_bands
+      .filter((definition) => JSON.stringify(currentlyValid.get(definition.field)) === JSON.stringify(definition))
+      .map((definition) => structuredClone(definition));
+    if (!resource.auto_bands.length) delete resource.auto_bands;
+  } else {
+    delete resource.auto_bands;
+  }
   resource.count_distinct_fields = intersectStoredList(
     stored.count_distinct_fields,
     current.count_distinct_fields,

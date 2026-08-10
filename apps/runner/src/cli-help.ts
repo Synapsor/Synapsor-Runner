@@ -379,8 +379,9 @@ review and does not inspect the database again. Add \`--rescan\` when you
 deliberately want Runner to inspect the current schema and role posture for any
 single-organization or multi-tenant project. A rescan creates a disabled update;
 the previous exact boundary remains active until you review and activate the
-new revision. Use \`--force\` only for its separate overwrite/reset behavior, not
-as the ordinary way to rescan.
+new revision. On an existing reviewed project, \`--force\` also uses guarded
+reconciliation and does not discard curated review; prefer \`--rescan\` because it
+states the intent clearly.
 
 In a terminal, selectors such as --table seed the interactive wizard instead
 of disabling its prompts. For CI, provide --table, --mode, and either
@@ -413,6 +414,7 @@ the local reviewed contract and proposal before writeback.
   ${cmd} boundary review resource public.order_items --include --tenant-scope-path order_items_order_id_fkey --actor reviewer@example.com --reason "Order items inherit tenant scope through their required order"
   ${cmd} boundary review resource public.product_catalog --include --shared-reference --acknowledge-table-has-no-per-tenant-rows --actor owner@example.com --reason "Every tenant receives the same reviewed catalog rows"
   ${cmd} boundary review resource public.orders --withhold-from-model customer_segment --actor reviewer@example.com --reason "Use this grouping locally without sending segment values to the model"
+  ${cmd} boundary review resource public.orders --label "Orders" --description "Customer purchases recorded at checkout" --field-label total_cents="Order total" --field-description total_cents="Gross amount in cents" --actor reviewer@example.com --reason "Document legacy database identifiers"
   ${cmd} boundary review resource public.orders --minimum-cohort 3 --actor owner@example.com --reason "Reviewed owner decision for this staging dataset"
   ${cmd} boundary review resource public.orders --max-ranked-groups 200 --actor reviewer@example.com --reason "Reviewed bounded ranking across this known customer population"
   ${cmd} boundary review --apply-decisions boundary-decisions.json [--project-root .] [--json]
@@ -450,6 +452,19 @@ enters the existing \`try ask\` analytics shell immediately; it does not create
 another authority path. Existing MCP client setup and Later leave the reviewed
 boundary active without starting a provider. JSON and headless routes never
 show this menu or launch Ask.
+
+Choose the boundary workflow by intent:
+  boundary rescan
+    Inspects the current schema and database-role posture, reconciles every saved
+    boundary, and prints a change report. It does not open review or activate.
+  boundary review --access
+    Opens the focused table, column, relationship, and scope-path editor without
+    inspecting again. This is the same editor as /access inside the Ask shell.
+  start --from-env DATABASE_URL --cli --rescan
+    Combines inspection, reconciliation, interactive review, activation, and the
+    local Ask handoff. After a standalone boundary rescan, omit --rescan when
+    starting this guided flow so the database is not inspected twice.
+
 Headless automation still requires the complete digest and a verified signed
 operator decision.
 
@@ -584,6 +599,8 @@ asks for one confirmation; automation must bind the exact active digest with
 
 Resource decision flags:
   --include | --exclude
+  --label <text> | --description <text>
+  --field-label <column>=<text> | --field-description <column>=<text>  (repeatable)
   --row-identity <column>
   --tenant-key <column>
   --tenant-scope-path <path-id>
@@ -611,6 +628,11 @@ fields or relationships. It previews a semantic diff and saves disabled review
 state; it never activates authority. A versioned decision file can apply several
 resource decisions atomically, but the file is not authority: application still
 requires an exact digest gesture or a verified signed-key/OIDC operator proof.
+Reviewed labels (64 characters) and descriptions (280 characters) are bounded
+metadata for people and AI clients. They never grant access and are never valid
+plan identifiers; plans continue to use exact table and column IDs. Use \`-\` as
+the value of a metadata flag to clear that value. In \`/access\`, press I on a
+table or selected column to edit the same metadata in the focused editor.
 Auto Boundary keeps the minimum group size at 5 by default. An owner may lower it
 to 1-4 only through --minimum-cohort with a recorded actor and reason. A value
 of 1 disables small-group suppression and can identify individuals; Protect and

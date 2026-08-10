@@ -19,7 +19,11 @@ import {
   canonicalJsonDigest,
   shapePrivacySuppressedGroups,
 } from "@synapsor-runner/protocol";
-import { inspectDatabase, type SchemaInspection } from "@synapsor-runner/schema-inspector";
+import {
+  inspectDatabase,
+  inspectDatabaseWithConnection,
+  type SchemaInspection,
+} from "@synapsor-runner/schema-inspector";
 import {
   AUTHORITY_DEPENDENCIES_VERSION,
   AUTO_BOUNDARY_COMPILER_VERSION,
@@ -45,6 +49,7 @@ import {
   type ExplorationDerivedBaseMeasure,
   type ExplorationDerivedMeasure,
   type ExplorationNumericBand,
+  type ExplorationAutoBandPolicy,
   type GenerationAuthorityDependencies,
   type GenerationLock,
   type ExplorationTimeBucket,
@@ -113,6 +118,7 @@ const PRESENCE_MEASURE_FUNCTIONS = new Set<AggregateMeasureFunction>([
 ]);
 const LEGACY_NUMERIC_AGGREGATE_FUNCTIONS = ["sum", "avg"] as const;
 export const MINIMUM_DISPERSION_COHORT_SIZE = 5;
+export const MINIMUM_AUTO_BAND_COHORT_SIZE = 5;
 
 export type ExploreFilter = {
   field: string;
@@ -144,6 +150,13 @@ export type AggregateDimension =
     }
   | {
       numeric_band: string;
+    }
+  | {
+      numeric_band: {
+        field: string;
+        buckets: number;
+        method: "quantile" | "equal_width";
+      };
     };
 
 export type AggregateExplorePlan = {
@@ -254,6 +267,7 @@ export type ScopedExploreExecutor = {
     context: { tenant: string; principal: string };
     timeoutMs: number;
   }): Promise<Array<Record<string, unknown>[]>>;
+  inspectDatabase?: InspectDatabaseFn;
   close(): Promise<void>;
 };
 
@@ -917,6 +931,7 @@ export async function createScopedExploreRuntime(input: {
             : {}),
           suppressed_groups: response.suppressed,
           totals_returned: false,
+          ...(response.autoBands.length ? { auto_bands: response.autoBands } : {}),
           ...(response.reviewedValueControls.bucketed.length
             || response.reviewedValueControls.excluded.length
             ? {
@@ -1396,9 +1411,31 @@ function validateAggregatePlan(input: Record<string, unknown>, boundary: Activat
   const dimensions = input.dimensions === undefined ? [] : recordArray(input.dimensions, "dimensions", 0, boundary.budgets.max_dimensions).map((dimension): AggregateDimension => {
     if (dimension.numeric_band !== undefined) {
       assertKeys(dimension, ["numeric_band"], "reviewed numeric-band dimension");
-      const name = requiredString(dimension.numeric_band, "dimension.numeric_band");
-      reviewedNumericBand(resource, name);
-      return { numeric_band: name };
+      if (typeof dimension.numeric_band === "string") {
+        const name = requiredString(dimension.numeric_band, "dimension.numeric_band");
+        reviewedNumericBand(resource, name);
+        return { numeric_band: name };
+      }
+      if (!isRecord(dimension.numeric_band)) {
+        throw planError("dimension.numeric_band must be one reviewed name or an auto-band request");
+      }
+      assertKeys(dimension.numeric_band, ["field", "buckets", "method"], "reviewed auto-band request");
+      const field = requiredString(dimension.numeric_band.field, "dimension.numeric_band.field");
+      const policy = reviewedAutoBand(resource, field);
+      const method = requiredString(dimension.numeric_band.method, "dimension.numeric_band.method");
+      if (method !== "quantile" && method !== "equal_width") {
+        throw planError("dimension.numeric_band.method must be quantile or equal_width");
+      }
+      if (!policy.methods.includes(method)) {
+        throw planError(`${method} is not a reviewed auto-band method for ${resource.id}.${field}`);
+      }
+      const buckets = positiveInteger(dimension.numeric_band.buckets, "dimension.numeric_band.buckets");
+      if (buckets < policy.min_buckets || buckets > policy.max_buckets) {
+        throw planError(
+          `dimension.numeric_band.buckets must be from ${policy.min_buckets} through ${policy.max_buckets} for ${resource.id}.${field}`,
+        );
+      }
+      return { numeric_band: { field, buckets, method } };
     }
     assertKeys(dimension, ["field", "relationship"], "dimension");
     const relation = optionalString(dimension.relationship, "dimension.relationship");
@@ -1422,6 +1459,24 @@ function validateAggregatePlan(input: Record<string, unknown>, boundary: Activat
   }
   const where = validateFilters(input.where, resource, boundary);
   const comparison = input.comparison === undefined ? undefined : validateComparison(input.comparison, resource, boundary);
+  const autoBandDimensions = dimensions.filter(isAutoBandDimension);
+  if (autoBandDimensions.length > 1) {
+    throw planError("one aggregate plan may use at most one reviewed auto-band dimension");
+  }
+  if (comparison && autoBandDimensions.length) {
+    throw planError("reviewed auto-banding cannot be combined with a two-period comparison because each period would derive different buckets");
+  }
+  if (autoBandDimensions.length) {
+    const autoField = autoBandDimensions[0]!.numeric_band.field;
+    const duplicatesField = dimensions.some((dimension) => {
+      if (!("numeric_band" in dimension) || typeof dimension.numeric_band !== "string") return false;
+      const fixed = reviewedNumericBand(resource, dimension.numeric_band);
+      return !fixed.relationship && fixed.field === autoField;
+    });
+    if (duplicatesField) {
+      throw planError(`one plan cannot cross a fixed and adaptive band over ${resource.id}.${autoField}`);
+    }
+  }
   const orderBy = input.order_by === undefined ? undefined : validateAggregateOrder(input.order_by, measures, Boolean(timeBucket));
   const maximumResultGroups = orderBy?.kind === "measure" || orderBy?.kind === "comparison_change"
     ? reviewedRankedGroupLimit(boundary.budgets)
@@ -1627,6 +1682,16 @@ function compileAggregatePlan(
   comparison?: { range: { start: string; end: string }; period: "period_1" | "period_2" },
 ): Omit<CompiledExploreQuery, "reporting_timezone"> {
   const root = resourceFor(boundary, plan.resource);
+  if ((plan.dimensions ?? []).some(isAutoBandDimension)) {
+    return compileAutoBandAggregatePlan(
+      plan,
+      boundary,
+      context,
+      engine,
+      enumBucketMarker,
+      comparison,
+    );
+  }
   const relationshipIds = unique([
     plan.relationship,
     ...plan.measures.flatMap((measure) => measureRelationships(measure, root)),
@@ -1705,6 +1770,9 @@ function compileAggregatePlan(
   const derivedResources: BoundaryResource[] = [];
   (plan.dimensions ?? []).forEach((dimension, index) => {
     if ("numeric_band" in dimension) {
+      if (typeof dimension.numeric_band !== "string") {
+        throw planError("adaptive numeric bands use the dedicated auto-band compiler");
+      }
       const definition = reviewedNumericBand(root, dimension.numeric_band);
       const target = definition.relationship
         ? joined.targets.get(definition.relationship)!
@@ -1820,6 +1888,297 @@ function compileAggregatePlan(
   };
 }
 
+function compileAutoBandAggregatePlan(
+  plan: AggregateExplorePlan,
+  boundary: ActivatedExplorationBoundary,
+  context: { tenant: string; principal: string },
+  engine: "postgres" | "mysql",
+  enumBucketMarker: string,
+  comparison?: { range: { start: string; end: string }; period: "period_1" | "period_2" },
+): Omit<CompiledExploreQuery, "reporting_timezone"> {
+  if (comparison || plan.comparison) {
+    throw planError("reviewed auto-banding cannot compile a two-period comparison");
+  }
+  const root = resourceFor(boundary, plan.resource);
+  const autoDimensionIndex = (plan.dimensions ?? []).findIndex(isAutoBandDimension);
+  const autoDimension = (plan.dimensions ?? [])[autoDimensionIndex];
+  if (!autoDimension || !isAutoBandDimension(autoDimension)) {
+    throw planError("reviewed auto-band dimension is missing");
+  }
+  const request = autoDimension.numeric_band;
+  const policy = reviewedAutoBand(root, request.field);
+  const relationshipIds = unique([
+    plan.relationship,
+    ...plan.measures.flatMap((measure) => measureRelationships(measure, root)),
+    ...(plan.dimensions ?? []).flatMap((dimension) => dimensionRelationships(dimension, root)),
+    plan.time_bucket?.relationship,
+    ...(plan.where ?? []).map((filter) => filter.relationship),
+  ].filter((value): value is string => Boolean(value)));
+  const params: Scalar[] = [];
+  const joined = compileReviewedRelationshipJoins(
+    root,
+    relationshipIds,
+    boundary,
+    context,
+    params,
+    engine,
+  );
+  const rootScope = compileScopePredicates(root, boundary, "t0", context, params, engine);
+  const where = rootScope.predicates;
+  for (const filter of plan.where ?? []) {
+    const target = filter.relationship ? joined.targets.get(filter.relationship) : undefined;
+    where.push(filterSql(filter, target?.resource ?? root, target?.alias ?? "t0", params, engine));
+  }
+  if (plan.time_bucket && plan.measures.some((measure) => {
+    if (!("derived_measure" in measure)) return false;
+    return isSequentialDerivedMeasureShape(reviewedDerivedMeasure(root, measure.derived_measure).shape);
+  })) {
+    const target = plan.time_bucket.relationship
+      ? joined.targets.get(plan.time_bucket.relationship)
+      : undefined;
+    where.push(`${target?.alias ?? "t0"}.${quote(plan.time_bucket.field, engine)} IS NOT NULL`);
+  }
+  const appliedEnumAllowlist = new Set<string>();
+  const reviewedValueControls: CompiledReviewedValueControl[] = [];
+  for (const filter of plan.where ?? []) {
+    const target = filter.relationship ? joined.targets.get(filter.relationship) : undefined;
+    const targetResource = target?.resource ?? root;
+    if (!targetResource.field_enums[filter.field]?.length) continue;
+    const key = `${target?.alias ?? "t0"}.${filter.field}`;
+    if (appliedEnumAllowlist.has(key)) continue;
+    appliedEnumAllowlist.add(key);
+    where.push(reviewedEnumAllowlistSql(
+      targetResource,
+      filter.field,
+      target?.alias ?? "t0",
+      params,
+      engine,
+    ));
+    reviewedValueControls.push({
+      kind: "exclude_unreviewed_rows",
+      resource: targetResource.id,
+      field: filter.field,
+    });
+  }
+
+  const parametersBeforeProjection = params.length;
+  const projected: string[] = [];
+  const derivedResources: BoundaryResource[] = [];
+  const autoColumn = `t0.${quote(request.field, engine)}`;
+  const nullPartition = `CASE WHEN ${autoColumn} IS NULL THEN 0 ELSE 1 END`;
+  projected.push(`${autoColumn} AS ${quote("__auto_value", engine)}`);
+  if (request.method === "quantile") {
+    projected.push(
+      `CUME_DIST() OVER (PARTITION BY ${nullPartition} ORDER BY ${autoColumn}) AS ${quote("__auto_metric", engine)}`,
+    );
+  } else {
+    projected.push(`MIN(${autoColumn}) OVER (PARTITION BY ${nullPartition}) AS ${quote("__auto_min", engine)}`);
+    projected.push(`MAX(${autoColumn}) OVER (PARTITION BY ${nullPartition}) AS ${quote("__auto_max", engine)}`);
+  }
+
+  (plan.dimensions ?? []).forEach((dimension, index) => {
+    if (index === autoDimensionIndex) return;
+    if ("numeric_band" in dimension) {
+      if (typeof dimension.numeric_band !== "string") throw planError("one aggregate plan may use at most one reviewed auto band");
+      const definition = reviewedNumericBand(root, dimension.numeric_band);
+      const target = definition.relationship ? joined.targets.get(definition.relationship)! : undefined;
+      projected.push(
+        `${reviewedNumericBandSql(definition, target?.alias ?? "t0", params, engine)} AS ${quote(`__dimension_${index}`, engine)}`,
+      );
+      return;
+    }
+    const target = dimension.relationship ? joined.targets.get(dimension.relationship)! : undefined;
+    const targetResource = target?.resource ?? root;
+    const alias = target?.alias ?? "t0";
+    if (targetResource.field_enums[dimension.field]?.length) {
+      projected.push(
+        `${reviewedEnumBucketSql(targetResource, dimension.field, alias, params, engine, enumBucketMarker)} AS ${quote(`__dimension_${index}`, engine)}`,
+      );
+      reviewedValueControls.push({
+        kind: "bucket_unreviewed_values",
+        resource: targetResource.id,
+        field: dimension.field,
+        output_column: `dimension_${index}`,
+        marker: enumBucketMarker,
+      });
+      return;
+    }
+    projected.push(`${alias}.${quote(dimension.field, engine)} AS ${quote(`__dimension_${index}`, engine)}`);
+  });
+  if (plan.time_bucket) {
+    const target = plan.time_bucket.relationship ? joined.targets.get(plan.time_bucket.relationship)! : undefined;
+    projected.push(
+      `${timeBucketSql(`${target?.alias ?? "t0"}.${quote(plan.time_bucket.field, engine)}`, plan.time_bucket.bucket, engine)} AS ${quote("__time_bucket", engine)}`,
+    );
+  }
+
+  type ProjectedOperand = { function: ExplorationDerivedBaseMeasure["function"]; field?: string };
+  const projectOperand = (
+    operand: ExplorationDerivedBaseMeasure,
+    aliasName: string,
+  ): ProjectedOperand => {
+    if (operand.function === "count") return { function: "count" };
+    const target = operand.relationship ? joined.targets.get(operand.relationship) : undefined;
+    projected.push(
+      `${target?.alias ?? "t0"}.${quote(operand.field, engine)} AS ${quote(aliasName, engine)}`,
+    );
+    return { function: operand.function, field: `ab.${quote(aliasName, engine)}` };
+  };
+  const projectedOperandSql = (operand: ProjectedOperand): { value: string; contributors: string } => {
+    if (operand.function === "count") return { value: "COUNT(*)", contributors: "COUNT(*)" };
+    return {
+      value: aggregateMeasureSql(operand.function, operand.field),
+      contributors: `COUNT(${operand.field})`,
+    };
+  };
+  const outerMeasures: Array<{ value: string; contributor?: string }> = [];
+  plan.measures.forEach((measure, index) => {
+    if (!("derived_measure" in measure)) {
+      if (measure.function === "count") {
+        outerMeasures.push({ value: "COUNT(*)" });
+        return;
+      }
+      const target = measure.relationship ? joined.targets.get(measure.relationship)! : undefined;
+      const projectedName = `__measure_input_${index}`;
+      projected.push(
+        `${target?.alias ?? "t0"}.${quote(measure.field!, engine)} AS ${quote(projectedName, engine)}`,
+      );
+      const field = `ab.${quote(projectedName, engine)}`;
+      outerMeasures.push({
+        value: aggregateMeasureSql(measure.function, field),
+        ...(CONTRIBUTOR_AWARE_MEASURE_FUNCTIONS.has(measure.function)
+          ? { contributor: `COUNT(${field})` }
+          : {}),
+      });
+      return;
+    }
+    const definition = reviewedDerivedMeasure(root, measure.derived_measure);
+    if ("child_resource" in definition) {
+      const reviewed = resolveReviewedChildCountLink(
+        root.id,
+        definition,
+        boundary.pack.resources,
+        Boolean(boundary.organization_scope),
+      );
+      const childAlias = `abc${index}`;
+      const childScope = compileScopePredicates(
+        reviewed.child,
+        boundary,
+        childAlias,
+        context,
+        params,
+        engine,
+      );
+      const correlation = reviewed.link.source_columns.map((column, columnIndex) =>
+        `${childAlias}.${quote(column, engine)} = t0.${quote(reviewed.link.target_columns[columnIndex]!, engine)}`);
+      const projectedName = `__measure_child_${index}`;
+      projected.push(
+        `(SELECT COUNT(*) FROM ${qualified(reviewed.child, engine)} ${childAlias} WHERE ${[...correlation, ...childScope.predicates].join(" AND ")}) AS ${quote(projectedName, engine)}`,
+      );
+      const field = `ab.${quote(projectedName, engine)}`;
+      outerMeasures.push({
+        value: definition.shape === "child_count_total" ? `SUM(${field})` : `AVG(1.0 * ${field})`,
+        contributor: "COUNT(*)",
+      });
+      derivedResources.push(...childScope.resources);
+      return;
+    }
+    if ("base_measure" in definition) {
+      const operand = projectedOperandSql(projectOperand(definition.base_measure, `__measure_base_${index}`));
+      outerMeasures.push({ value: operand.value, contributor: operand.contributors });
+      return;
+    }
+    const numerator = projectedOperandSql(projectOperand(definition.numerator, `__measure_numerator_${index}`));
+    const denominator = projectedOperandSql(projectOperand(definition.denominator, `__measure_denominator_${index}`));
+    const scale = definition.shape === "percentage" ? "100.0" : "1.0";
+    outerMeasures.push({
+      value: `CASE WHEN ${denominator.value} IS NULL OR ${denominator.value} = 0 THEN NULL ELSE (${scale} * ${numerator.value} / ${denominator.value}) END`,
+      contributor: `LEAST(COUNT(*), ${numerator.contributors}, ${denominator.contributors})`,
+    });
+  });
+  const parametersAfterProjection = params.length;
+
+  const integerCast = (expression: string): string => engine === "postgres"
+    ? `CAST(${expression} AS INTEGER)`
+    : `CAST(${expression} AS SIGNED)`;
+  let bucketExpression: string;
+  let effectiveExpression: string;
+  if (request.method === "quantile") {
+    effectiveExpression = String(request.buckets);
+    bucketExpression = `CASE WHEN s.${quote("__auto_value", engine)} IS NULL THEN NULL ELSE ${integerCast(
+      `LEAST(${request.buckets}, CEIL(s.${quote("__auto_metric", engine)} * ${request.buckets}))`,
+    )} END`;
+  } else {
+    const minimumWidth = String(policy.min_bucket_width!);
+    const range = `(s.${quote("__auto_max", engine)} - s.${quote("__auto_min", engine)})`;
+    effectiveExpression = `CASE WHEN ${range} <= 0 THEN 1 ELSE ${integerCast(
+      `LEAST(${request.buckets}, GREATEST(1, FLOOR(${range} / ${minimumWidth})))`,
+    )} END`;
+    const width = `(${range} / NULLIF(${effectiveExpression}, 0))`;
+    bucketExpression = `CASE WHEN s.${quote("__auto_value", engine)} IS NULL THEN NULL WHEN ${range} <= 0 THEN 1 ELSE ${integerCast(
+      `LEAST(${effectiveExpression}, FLOOR((s.${quote("__auto_value", engine)} - s.${quote("__auto_min", engine)}) / NULLIF(${width}, 0)) + 1)`,
+    )} END`;
+  }
+  const scopedCte = `${quote("__synapsor_auto_scope", engine)} AS (SELECT ${projected.join(", ")} FROM ${qualified(root, engine)} t0${joined.sql}${where.length ? ` WHERE ${where.join(" AND ")}` : ""})`;
+  const bandedCte = `${quote("__synapsor_auto_banded", engine)} AS (SELECT s.*, ${bucketExpression} AS ${quote("__auto_bucket", engine)}, ${effectiveExpression} AS ${quote("__auto_effective", engine)} FROM ${quote("__synapsor_auto_scope", engine)} s)`;
+  const rounded = policy.label_style === "rounded";
+  const labeledCte = rounded
+    ? `, ${quote("__synapsor_auto_labeled", engine)} AS (SELECT b.*, MIN(b.${quote("__auto_value", engine)}) OVER (PARTITION BY b.${quote("__auto_bucket", engine)}) AS ${quote("__auto_bucket_min", engine)}, MAX(b.${quote("__auto_value", engine)}) OVER (PARTITION BY b.${quote("__auto_bucket", engine)}) AS ${quote("__auto_bucket_max", engine)} FROM ${quote("__synapsor_auto_banded", engine)} b)`
+    : "";
+  const bandedSource = rounded
+    ? quote("__synapsor_auto_labeled", engine)
+    : quote("__synapsor_auto_banded", engine);
+
+  const select: string[] = [];
+  const groupBy: string[] = [];
+  (plan.dimensions ?? []).forEach((_dimension, index) => {
+    const expression = index === autoDimensionIndex
+      ? `ab.${quote("__auto_bucket", engine)}`
+      : `ab.${quote(`__dimension_${index}`, engine)}`;
+    select.push(`${expression} AS ${quote(`dimension_${index}`, engine)}`);
+    groupBy.push(String(select.length));
+  });
+  if (plan.time_bucket) {
+    select.push(`ab.${quote("__time_bucket", engine)} AS ${quote("time_bucket", engine)}`);
+    groupBy.push(String(select.length));
+  }
+  outerMeasures.forEach((measure, index) => {
+    select.push(`${measure.value} AS ${quote(`measure_${index}`, engine)}`);
+    if (measure.contributor) {
+      select.push(`${measure.contributor} AS ${quote(`__measure_cohort_${index}`, engine)}`);
+    }
+  });
+  select.push(`COUNT(*) AS ${quote("__cohort_size", engine)}`);
+  select.push(`MIN(ab.${quote("__auto_effective", engine)}) AS ${quote("__auto_effective_buckets", engine)}`);
+  if (rounded) {
+    select.push(`MIN(ab.${quote("__auto_bucket_min", engine)}) AS ${quote("__auto_bucket_min", engine)}`);
+    select.push(`MAX(ab.${quote("__auto_bucket_max", engine)}) AS ${quote("__auto_bucket_max", engine)}`);
+  }
+  const order = plan.order_by?.kind === "measure"
+    ? ` ORDER BY ${quote(`measure_${plan.order_by.index}`, engine)} ${plan.order_by.direction.toUpperCase()}`
+    : plan.order_by?.kind === "time_bucket"
+      ? ` ORDER BY ${quote("time_bucket", engine)} ${plan.order_by.direction.toUpperCase()}`
+      : groupBy.length
+        ? ` ORDER BY ${groupBy.join(", ")}`
+        : "";
+  params.push(aggregateUnderlyingGroupLimit(plan, boundary) + 1);
+  const queryParams = engine === "mysql"
+    ? [
+      ...params.slice(parametersBeforeProjection, parametersAfterProjection),
+      ...params.slice(0, parametersBeforeProjection),
+      ...params.slice(parametersAfterProjection),
+    ]
+    : params;
+  return {
+    sql: `WITH ${scopedCte}, ${bandedCte}${labeledCte} SELECT ${select.join(", ")} FROM ${bandedSource} ab${groupBy.length ? ` GROUP BY ${groupBy.join(", ")}` : ""}${order} LIMIT ${placeholder(params.length, engine)}`,
+    params: queryParams,
+    resources: uniqueResources([...joined.resources, ...rootScope.resources, ...derivedResources]),
+    ...(reviewedValueControls.length
+      ? { reviewed_value_controls: uniqueReviewedValueControls(reviewedValueControls) }
+      : {}),
+  };
+}
+
 function compileReviewedRelationshipJoins(
   root: BoundaryResource,
   relationshipIds: string[],
@@ -1900,6 +2259,15 @@ function shapeExploreResponse(
       effect: "rows_outside_reviewed_values_excluded";
     }>;
   };
+  autoBands: Array<{
+    field: string;
+    method: "quantile" | "equal_width";
+    requested_buckets: number;
+    effective_buckets: number;
+    reduced: boolean;
+    label_style: "ordinal" | "rounded";
+    raw_edges_returned: false;
+  }>;
 } {
   const compiledControls = uniqueReviewedValueControls(
     compiledQueries.flatMap((query) => query.reviewed_value_controls ?? []),
@@ -1921,6 +2289,7 @@ function shapeExploreResponse(
       status: data.length ? "ok" : "empty",
       incompleteComparisons: 0,
       reviewedValueControls: { bucketed: [], excluded },
+      autoBands: [],
     };
   }
   const resource = resourceFor(boundary, plan.resource);
@@ -1941,8 +2310,10 @@ function shapeExploreResponse(
       ? Math.min(rowCohort, ...contributorCounts)
       : rowCohort;
     const output: Record<string, unknown> = { __cohort_size: effectiveCohort };
-    (plan.dimensions ?? []).forEach((_dimension, index) => {
-      output[`dimension_${index}`] = safeDatabaseValue(row[`dimension_${index}`]);
+    (plan.dimensions ?? []).forEach((dimension, index) => {
+      output[`dimension_${index}`] = isAutoBandDimension(dimension)
+        ? autoBandLabel(resource, dimension.numeric_band, row, index)
+        : safeDatabaseValue(row[`dimension_${index}`]);
     });
     if (plan.time_bucket && !plan.comparison) output.time_bucket = safeDatabaseValue(row.time_bucket);
     plan.measures.forEach((_measure, index) => {
@@ -2028,6 +2399,28 @@ function shapeExploreResponse(
         : incompleteComparisons > 0
           ? "incomplete_comparison"
           : "empty";
+    const autoBands = (plan.dimensions ?? []).flatMap((dimension, index) => {
+      if (!isAutoBandDimension(dimension)) return [];
+      const policy = reviewedAutoBand(resource, dimension.numeric_band.field);
+      const occupied = new Set(rows.flatMap((row) => {
+        const bucket = finiteNumberOrNull(row[`dimension_${index}`]);
+        return bucket === null ? [] : [bucket];
+      })).size;
+      const reportedEffective = rows.reduce((maximum, row) =>
+        Math.max(maximum, finiteNumberOrNull(row.__auto_effective_buckets) ?? 0), 0);
+      const effectiveBuckets = dimension.numeric_band.method === "quantile"
+        ? occupied
+        : Math.max(occupied, reportedEffective);
+      return [{
+        field: dimension.numeric_band.field,
+        method: dimension.numeric_band.method,
+        requested_buckets: dimension.numeric_band.buckets,
+        effective_buckets: effectiveBuckets,
+        reduced: effectiveBuckets < dimension.numeric_band.buckets,
+        label_style: policy.label_style,
+        raw_edges_returned: false as const,
+      }];
+    });
     return {
       data: ordered,
       rowCount: ordered.length,
@@ -2036,6 +2429,7 @@ function shapeExploreResponse(
       status,
       incompleteComparisons,
       reviewedValueControls: { bucketed, excluded },
+      autoBands,
     };
   } catch (error) {
     if (error instanceof PrivacyBoundaryError) {
@@ -2050,6 +2444,41 @@ function shapeExploreResponse(
     }
     throw error;
   }
+}
+
+function autoBandLabel(
+  resource: BoundaryResource,
+  request: { field: string; buckets: number; method: "quantile" | "equal_width" },
+  row: Record<string, unknown>,
+  dimensionIndex: number,
+): Scalar {
+  const compiledBucket = finiteNumberOrNull(row[`dimension_${dimensionIndex}`]);
+  if (compiledBucket === null) return null;
+  const policy = reviewedAutoBand(resource, request.field);
+  const effective = Math.max(1, Math.floor(finiteNumberOrNull(row.__auto_effective_buckets) ?? request.buckets));
+  const ordinal = Math.max(1, Math.floor(compiledBucket));
+  if (policy.label_style === "ordinal") {
+    return request.method === "quantile"
+      ? `Q${ordinal} of ${request.buckets}`
+      : `Band ${ordinal} of ${effective}`;
+  }
+  const minimum = finiteNumberOrNull(row.__auto_bucket_min);
+  const maximum = finiteNumberOrNull(row.__auto_bucket_max);
+  if (minimum === null || maximum === null) return null;
+  const step = policy.label_round_to!;
+  let lower = Math.floor(minimum / step) * step;
+  let upper = Math.ceil(maximum / step) * step;
+  const tolerance = Math.max(Number.EPSILON * Math.max(1, Math.abs(minimum), Math.abs(maximum)), step * 1e-12);
+  if (Math.abs(lower - minimum) <= tolerance) lower -= step;
+  if (Math.abs(upper - maximum) <= tolerance) upper += step;
+  if (Object.is(lower, -0)) lower = 0;
+  if (Object.is(upper, -0)) upper = 0;
+  return `${formatAutoBandBoundary(lower)} to ${formatAutoBandBoundary(upper)}`;
+}
+
+function formatAutoBandBoundary(value: number): string {
+  if (!Number.isFinite(value)) throw planError("reviewed auto-band label could not be bounded");
+  return Number(value.toPrecision(15)).toString();
 }
 
 type AggregateOutputAliases = {
@@ -2081,7 +2510,9 @@ function aggregateOutputAliases(
   };
   const dimensions = (plan.dimensions ?? []).map((dimension) =>
     claim("numeric_band" in dimension
-      ? dimension.numeric_band
+      ? typeof dimension.numeric_band === "string"
+        ? dimension.numeric_band
+        : `${dimension.numeric_band.field}_${dimension.numeric_band.method}_band`
       : reviewedFieldAlias(dimension.field, dimension.relationship)));
   const measures = plan.measures.map((measure) => claim(
     "derived_measure" in measure
@@ -2253,11 +2684,39 @@ function reviewedNumericBand(
   );
 }
 
+function reviewedAutoBand(
+  resource: BoundaryResource,
+  field: string,
+): ExplorationAutoBandPolicy {
+  const definition = resource.auto_bands?.find((candidate) => candidate.field === field);
+  if (definition) return definition;
+  const available = (resource.auto_bands ?? []).map((candidate) => candidate.field).sort();
+  throw new ScopedExploreError(
+    "EXPLORE_FIELD_FORBIDDEN",
+    `${JSON.stringify(field)} is not reviewed for auto-banding on ${resource.id}. ` +
+      `Reviewed auto-band fields: ${available.join(", ") || "none"}. No source query was executed.`,
+    {
+      reason: "auto_band_not_reviewed",
+      resource: resource.id,
+      field,
+      reviewed_auto_band_fields: available,
+      source_query_executed: false,
+    },
+  );
+}
+
+function isAutoBandDimension(
+  dimension: AggregateDimension,
+): dimension is Extract<AggregateDimension, { numeric_band: { field: string } }> {
+  return "numeric_band" in dimension && typeof dimension.numeric_band !== "string";
+}
+
 function dimensionRelationships(
   dimension: AggregateDimension,
   root: BoundaryResource,
 ): string[] {
   if ("numeric_band" in dimension) {
+    if (isAutoBandDimension(dimension)) return [];
     const relationship = reviewedNumericBand(root, dimension.numeric_band).relationship;
     return relationship ? [relationship] : [];
   }
@@ -2344,10 +2803,14 @@ function effectiveMinimumCohortSize(
   plan: AggregateExplorePlan,
   resource: BoundaryResource,
 ): number {
-  return plan.measures.some((measure) =>
+  const measureFloor = plan.measures.some((measure) =>
     "derived_measure" in measure || DISPERSION_MEASURE_FUNCTIONS.has(measure.function))
-    ? Math.max(resource.minimum_cohort_size, MINIMUM_DISPERSION_COHORT_SIZE)
-    : resource.minimum_cohort_size;
+    ? MINIMUM_DISPERSION_COHORT_SIZE
+    : 1;
+  const autoBandFloor = (plan.dimensions ?? []).some(isAutoBandDimension)
+    ? MINIMUM_AUTO_BAND_COHORT_SIZE
+    : 1;
+  return Math.max(resource.minimum_cohort_size, measureFloor, autoBandFloor);
 }
 
 function aggregateUnderlyingGroupLimit(
@@ -2369,6 +2832,7 @@ function describeExploreResult(input: {
     suppressed: number;
     incompleteComparisons: number;
     reviewedValueControls: ReturnType<typeof shapeExploreResponse>["reviewedValueControls"];
+    autoBands: ReturnType<typeof shapeExploreResponse>["autoBands"];
   };
   queryFingerprint: `sha256:${string}`;
   serializedBytes: number;
@@ -2431,6 +2895,22 @@ function describeExploreResult(input: {
   const dimensions = input.plan.kind === "aggregate"
     ? (input.plan.dimensions ?? []).map((dimension, index) => {
       if ("numeric_band" in dimension) {
+        if (isAutoBandDimension(dimension)) {
+          const policy = reviewedAutoBand(resource, dimension.numeric_band.field);
+          return {
+            alias: aliases!.dimensions[index],
+            field: dimension.numeric_band.field,
+            relationship: null,
+            auto_band: {
+              method: dimension.numeric_band.method,
+              requested_buckets: dimension.numeric_band.buckets,
+              reviewed_bucket_range: [policy.min_buckets, policy.max_buckets],
+              label_style: policy.label_style,
+              raw_edges_returned: false,
+            },
+            null_label: "Not set (database null)" as const,
+          };
+        }
         const definition = reviewedNumericBand(resource, dimension.numeric_band);
         return {
           alias: aliases!.dimensions[index],
@@ -2503,6 +2983,7 @@ function describeExploreResult(input: {
     measures,
     dimensions,
     filters,
+    ...(input.response.autoBands.length ? { adaptive_numeric_bands: input.response.autoBands } : {}),
     relationship_paths: relationships,
     reporting_timezone: {
       name: reportingTimezone,
@@ -2606,13 +3087,26 @@ function describeBoundary(
         ...resource.count_distinct_fields,
         ...Object.keys(resource.time_bucket_fields),
       ]);
+      const describedFields = reviewedFields.filter((field) =>
+        !resource.kept_out_fields.includes(field));
       const fieldLabels = Object.fromEntries(
-        reviewedFields.map((field) => [field, businessLabel(field)]),
+        describedFields.map((field) => [field, reviewedFieldLabel(resource, field)]),
       );
       const modelWithheld = new Set(resource.model_withheld_fields ?? []);
       return {
         id: resource.id,
+        ...(resource.label ? { label: resource.label } : {}),
+        ...(resource.description ? { description: resource.description } : {}),
         primary_key: resource.primary_key,
+        fields: describedFields.map((field) => ({
+          id: field,
+          ...(resource.field_metadata?.[field]?.label
+            ? { label: resource.field_metadata[field]!.label }
+            : {}),
+          ...(resource.field_metadata?.[field]?.description
+            ? { description: resource.field_metadata[field]!.description }
+            : {}),
+        })),
         field_egress: Object.fromEntries(reviewedFields.map((field) => [
           field,
           { model_egress: modelWithheld.has(field) ? "withheld" : "visible" },
@@ -2641,6 +3135,17 @@ function describeBoundary(
           edges: [...band.edges],
           bucket_labels: [...band.bucket_labels],
         })),
+        auto_bands: (resource.auto_bands ?? []).map((policy) => ({
+          field: policy.field,
+          methods: [...policy.methods],
+          min_buckets: policy.min_buckets,
+          max_buckets: policy.max_buckets,
+          min_bucket_width: policy.min_bucket_width ?? null,
+          label_style: policy.label_style,
+          label_round_to: policy.label_round_to ?? null,
+          model_selects: ["field", "method", "buckets"],
+          raw_edges_returned: false,
+        })),
         count_distinct_fields: resource.count_distinct_fields,
         time_bucket_fields: resource.time_bucket_fields,
         time_coverage: timeCoverage[resource.id] ?? {},
@@ -2667,11 +3172,15 @@ function describeBoundary(
             ...Object.keys(target.time_bucket_fields),
           ]);
           const targetModelWithheld = new Set(target.model_withheld_fields ?? []);
+          const describedTargetFields = targetFields.filter((field) =>
+            !target.kept_out_fields.includes(field));
           return {
             id: relationship.id,
             activation,
             operator_review_required: activation === "review_required",
             target_resource: relationship.target_resource,
+            ...(target.label ? { target_label: target.label } : {}),
+            ...(target.description ? { target_description: target.description } : {}),
             cardinality: relationship.cardinality,
             counted_entity: relationship.counted_entity,
             path_depth: relationship.path_depth ?? 1,
@@ -2691,6 +3200,15 @@ function describeBoundary(
               field,
               { model_egress: targetModelWithheld.has(field) ? "withheld" : "visible" },
             ])),
+            fields: describedTargetFields.map((field) => ({
+              id: field,
+              ...(target.field_metadata?.[field]?.label
+                ? { label: target.field_metadata[field]!.label }
+                : {}),
+              ...(target.field_metadata?.[field]?.description
+                ? { description: target.field_metadata[field]!.description }
+                : {}),
+            })),
             filterable_fields: Object.keys(target.filterable_fields),
             filter_operators: target.filterable_fields,
             groupable_fields: target.groupable_fields,
@@ -2900,7 +3418,7 @@ function suggestedAggregateQuestions(
     .sort((left, right) => suggestedMeasureUsefulness(resource, right)
       - suggestedMeasureUsefulness(resource, left)
       || left.localeCompare(right))[0];
-  const resourceLabel = businessLabel(resource.table).toLowerCase();
+  const resourceLabel = (resource.label ?? businessLabel(resource.table)).toLowerCase();
   const measureLabel = measure
     ? labels[measure]?.toLowerCase().replace(/\s+cents$/, "")
     : undefined;
@@ -3038,13 +3556,17 @@ function suggestedDimension(fields: string[], allowGenericLabel = false): string
 
 function dimensionSubject(resource: BoundaryResource, field: string): string {
   if (/^(?:name|title|label|display_name)$/i.test(field)) {
-    return businessLabel(resource.table).toLowerCase();
+    return (resource.label ?? businessLabel(resource.table)).toLowerCase();
   }
-  const label = businessLabel(field).toLowerCase();
+  const label = reviewedFieldLabel(resource, field).toLowerCase();
   if (label.endsWith("status")) return `${label}es`;
   if (label.endsWith("category")) return `${label.slice(0, -1)}ies`;
   if (label.endsWith("s")) return label;
   return `${label}s`;
+}
+
+function reviewedFieldLabel(resource: BoundaryResource, field: string): string {
+  return resource.field_metadata?.[field]?.label ?? businessLabel(field);
 }
 
 function businessLabel(identifier: string): string {
@@ -3185,7 +3707,7 @@ function requiresDifferencingProtection(
 ): boolean {
   if (plan.kind !== "aggregate") return false;
   const resource = resourceFor(boundary, plan.resource);
-  if (resource.minimum_cohort_size <= 1) return false;
+  if (effectiveMinimumCohortSize(plan, resource) <= 1) return false;
   return true;
 }
 
@@ -3204,7 +3726,7 @@ async function enforcePrivacyComplementRelease(
 ): Promise<void> {
   if (input.plan.kind !== "aggregate") return;
   const resource = resourceFor(input.boundary, input.plan.resource);
-  if (resource.minimum_cohort_size <= 1) return;
+  if (effectiveMinimumCohortSize(input.plan, resource) <= 1) return;
   const hasGrouping = (input.plan.dimensions?.length ?? 0) > 0
     || Boolean(input.plan.time_bucket)
     || Boolean(input.plan.comparison);
@@ -3785,10 +4307,25 @@ export function createScopedExploreDatabaseExecutor(input: {
   engine: "postgres" | "mysql";
   databaseUrl: string;
   maxConnections?: number;
-}): ScopedExploreExecutor {
+}, dependencies: {
+  inspectDatabaseWithConnectionFn?: typeof inspectDatabaseWithConnection;
+} = {}): ScopedExploreExecutor {
   const maxConnections = Math.max(1, Math.min(input.maxConnections ?? 4, 100));
+  const inspectWithConnection = dependencies.inspectDatabaseWithConnectionFn
+    ?? inspectDatabaseWithConnection;
   if (input.engine === "postgres") {
     const pool = new Pool({ connectionString: input.databaseUrl, max: maxConnections, connectionTimeoutMillis: 3000, idleTimeoutMillis: 10_000 });
+    const inspectFromPool: InspectDatabaseFn = async (options) => {
+      const client = await pool.connect();
+      try {
+        return await inspectWithConnection(options, {
+          engine: "postgres",
+          connection: client,
+        });
+      } finally {
+        client.release();
+      }
+    };
     const executeBatch: ScopedExploreExecutor["executeBatch"] = async (batch) => {
       const client = await pool.connect();
       try {
@@ -3819,10 +4356,22 @@ export function createScopedExploreDatabaseExecutor(input: {
         timeoutMs: query.timeoutMs,
       }))[0]!,
       executeBatch,
+      inspectDatabase: inspectFromPool,
       close: () => pool.end(),
     };
   }
   const pool = mysql.createPool({ uri: input.databaseUrl, connectionLimit: maxConnections, connectTimeout: 3000, dateStrings: true });
+  const inspectFromPool: InspectDatabaseFn = async (options) => {
+    const connection = await pool.getConnection();
+    try {
+      return await inspectWithConnection(options, {
+        engine: "mysql",
+        connection,
+      });
+    } finally {
+      connection.release();
+    }
+  };
   const executeBatch: ScopedExploreExecutor["executeBatch"] = async (batch) => {
     const connection = await pool.getConnection();
     let previousTimeZone: string | undefined;
@@ -3881,6 +4430,7 @@ export function createScopedExploreDatabaseExecutor(input: {
       timeoutMs: query.timeoutMs,
     }))[0]!,
     executeBatch,
+    inspectDatabase: inspectFromPool,
     close: () => pool.end(),
   };
 }

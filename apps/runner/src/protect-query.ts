@@ -232,7 +232,11 @@ export function describeProtectableAnalysis(plan: ExplorePlan): string {
   }).join(" and ");
   const groups = [
     ...(plan.dimensions ?? []).map((dimension) =>
-      humanWords("numeric_band" in dimension ? dimension.numeric_band : dimension.field)),
+      humanWords("numeric_band" in dimension
+        ? typeof dimension.numeric_band === "string"
+          ? dimension.numeric_band
+          : `${dimension.numeric_band.field}_${dimension.numeric_band.method}_band`
+        : dimension.field)),
     ...(plan.time_bucket ? [`${plan.time_bucket.bucket} ${humanWords(plan.time_bucket.field)}`] : []),
   ];
   const comparison = plan.comparison ? " across two reviewed periods" : "";
@@ -250,7 +254,11 @@ export function suggestProtectedCapabilityName(plan: ExplorePlan): string {
     : safeCapabilitySegment(`${measure?.function ?? "measure"}_${measure?.field ?? "value"}`);
   const groupSegments = [
     ...(plan.dimensions ?? []).map((dimension) =>
-      safeCapabilitySegment("numeric_band" in dimension ? dimension.numeric_band : dimension.field)),
+      safeCapabilitySegment("numeric_band" in dimension
+        ? typeof dimension.numeric_band === "string"
+          ? dimension.numeric_band
+          : `${dimension.numeric_band.field}_${dimension.numeric_band.method}_band`
+        : dimension.field)),
     ...(plan.time_bucket ? [safeCapabilitySegment(plan.time_bucket.bucket)] : []),
   ];
   const candidate = `analytics.${resource}_${measureSegment}${groupSegments.length ? `_by_${groupSegments.join("_and_")}` : ""}`;
@@ -693,6 +701,11 @@ function aggregateDsl(
   });
   for (const [index, dimension] of (plan.dimensions ?? []).entries()) {
     if ("numeric_band" in dimension) {
+      if (typeof dimension.numeric_band !== "string") {
+        throw new Error(
+          "Protect conversion is unavailable for adaptive numeric bands. Use the reviewed plan through local or production HTTP Explore, or protect a fixed named band.",
+        );
+      }
       const band = protectedNumericBand(root, dimension.numeric_band);
       lines.push(
         `  GROUP DIMENSION ${aliases.dimensions[index]} BY BAND OF ${protectedFieldName(band.field, band.relationship)} ` +
@@ -803,7 +816,9 @@ function relationshipsForPlan(
     }
     for (const dimension of plan.dimensions ?? []) {
       const relationship = "numeric_band" in dimension
-        ? protectedNumericBand(root, dimension.numeric_band).relationship
+        ? typeof dimension.numeric_band === "string"
+          ? protectedNumericBand(root, dimension.numeric_band).relationship
+          : undefined
         : dimension.relationship;
       if (relationship) names.add(relationship);
     }
@@ -940,7 +955,9 @@ function aggregateAliases(plan: AggregateExplorePlan): {
       : `${measure.function}_${measure.relationship ? `${measure.relationship}_` : ""}${measure.field}`)),
     dimensions: (plan.dimensions ?? []).map((dimension) => uniqueAlias(
       "numeric_band" in dimension
-        ? dimension.numeric_band
+        ? typeof dimension.numeric_band === "string"
+          ? dimension.numeric_band
+          : `${dimension.numeric_band.field}_${dimension.numeric_band.method}_band`
         : `${dimension.relationship ? `${dimension.relationship}_` : ""}${dimension.field}`,
     )),
     timeBucket: uniqueAlias(`${plan.time_bucket?.relationship ? `${plan.time_bucket.relationship}_` : ""}${plan.time_bucket?.field ?? "time"}_${plan.time_bucket?.bucket ?? "bucket"}`),

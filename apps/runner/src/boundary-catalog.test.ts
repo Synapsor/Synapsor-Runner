@@ -155,6 +155,52 @@ describe("active boundary catalog", () => {
     expect(renderBoundaryCatalogMermaid(model)).not.toContain("risk_band");
   });
 
+  it("shows fixed and automatic numeric grouping consistently in the shared CLI and Workbench model", () => {
+    const boundary = activeBoundary();
+    const orders = boundary.pack.resources.find((resource) => resource.id === "public.orders")!;
+    orders.numeric_bands = [{
+      name: "order_value_band",
+      label: "Order value band",
+      field: "total_cents",
+      edges: [10_000, 50_000],
+      bucket_labels: ["under 100", "100 to 499", "500 or more"],
+    }];
+    orders.auto_bands = [{
+      field: "total_cents",
+      methods: ["quantile", "equal_width"],
+      min_buckets: 3,
+      max_buckets: 8,
+      min_bucket_width: 1_000,
+      label_style: "ordinal",
+    }];
+
+    const model = buildBoundaryCatalogModel([boundary]);
+    const table = model.boundaries[0]!.tables.find((candidate) => candidate.id === "public.orders")!;
+    expect(table.numeric_bands).toEqual([{
+      name: "order_value_band",
+      label: "Order value band",
+      field: "total_cents",
+    }]);
+    expect(table.auto_bands).toEqual([{
+      field: "total_cents",
+      methods: ["quantile", "equal_width"],
+      min_buckets: 3,
+      max_buckets: 8,
+      label_style: "ordinal",
+    }]);
+    expect(table.suggested_questions).toContain(
+      "How many orders fall into 5 automatic quantile bands of total cents?",
+    );
+
+    const ascii = renderBoundaryCatalogAscii(model, { width: 100 });
+    expect(ascii).toContain("reviewed numeric bands order_value_band (total_cents)");
+    expect(ascii).toContain(
+      "automatic numeric bands total_cents (quantile or equal width; 3-8 buckets; ordinal labels)",
+    );
+    expect(ascii).not.toContain("1000");
+    expect(ascii).not.toContain("10000");
+  });
+
   it("turns a one-table boundary into a useful analysis map instead of an empty join diagram", async () => {
     const boundary = activeBoundary();
     const orders = boundary.pack.resources.find((resource) => resource.id === "public.orders")!;
@@ -178,6 +224,49 @@ describe("active boundary catalog", () => {
     expect(exported.markdown).toContain("## Relationships");
     expect(exported.markdown).toContain("no reviewed join to draw");
     expect(exported.markdown).not.toContain("```mermaid");
+  });
+
+  it("renders reviewed business metadata while retaining exact resource and field ids", () => {
+    const boundary = activeBoundary();
+    const orders = boundary.pack.resources.find((resource) => resource.id === "public.orders")!;
+    orders.label = "Purchase orders";
+    orders.description = "Reviewed commercial orders placed by customer accounts.";
+    orders.field_metadata = {
+      status: {
+        label: "Order state",
+        description: "Reviewed fulfillment and payment state.",
+      },
+      customer_email: {
+        label: "Customer email address",
+        description: "This field remains kept out.",
+      },
+    };
+
+    const model = buildBoundaryCatalogModel([boundary]);
+    const table = model.boundaries[0]!.tables.find((candidate) => candidate.id === "public.orders")!;
+    expect(table).toMatchObject({
+      id: "public.orders",
+      label: "Purchase orders",
+      description: "Reviewed commercial orders placed by customer accounts.",
+    });
+    expect(table.model_visible_fields).toContainEqual(expect.objectContaining({
+      name: "status",
+      label: "Order state",
+      description: "Reviewed fulfillment and payment state.",
+    }));
+    expect(JSON.stringify(table)).not.toMatch(/Customer email address|This field remains kept out/i);
+
+    const ascii = renderBoundaryCatalogAscii(model);
+    expect(ascii).toContain("[Purchase orders]  public.orders");
+    expect(ascii).toContain("Reviewed commercial orders placed by customer accounts.");
+    expect(ascii).toContain("Order state (status)");
+    expect(ascii).not.toContain("Customer email address");
+
+    const mermaid = renderBoundaryCatalogMermaid(model);
+    expect(mermaid).toContain("Purchase orders");
+    expect(mermaid).toContain("public.orders");
+    expect(mermaid).toContain("Order state (status)");
+    expect(mermaid).not.toContain("Customer email address");
   });
 
   it("emits safe directional Mermaid for collisions, special identifiers, disconnected nodes, and nullable links", () => {

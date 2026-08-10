@@ -9,11 +9,14 @@ export const BOUNDARY_CATALOG_SCHEMA_VERSION = "synapsor.boundary-catalog.v1" as
 export type BoundaryCatalogField = {
   name: string;
   data_type: string;
+  label?: string;
+  description?: string;
 };
 
 export type BoundaryCatalogTable = {
   id: string;
   label: string;
+  description?: string;
   model_visible_fields: BoundaryCatalogField[];
   runner_only_field_count: number;
   kept_out_field_count: number;
@@ -23,6 +26,18 @@ export type BoundaryCatalogTable = {
   aggregate_measures: string[];
   count_distinct_fields: string[];
   time_bucket_fields: string[];
+  numeric_bands: Array<{
+    name: string;
+    label: string;
+    field: string;
+  }>;
+  auto_bands: Array<{
+    field: string;
+    methods: Array<"quantile" | "equal_width">;
+    min_buckets: number;
+    max_buckets: number;
+    label_style: "ordinal" | "rounded";
+  }>;
   suggested_questions: string[];
   runner_only_analysis: {
     groupable_fields: string[];
@@ -147,10 +162,17 @@ export function buildBoundaryCatalogModel(
           .map((field) => ({
             name: field,
             data_type: resource.field_types[field] ?? "reviewed",
+            ...(resource.field_metadata?.[field]?.label
+              ? { label: resource.field_metadata[field]!.label }
+              : {}),
+            ...(resource.field_metadata?.[field]?.description
+              ? { description: resource.field_metadata[field]!.description }
+              : {}),
           }));
         return {
           id: resource.id,
-          label: humanizeIdentifier(resource.table),
+          label: resource.label ?? humanizeIdentifier(resource.table),
+          ...(resource.description ? { description: resource.description } : {}),
           model_visible_fields: visibleFields,
           runner_only_field_count: withheld.size,
           kept_out_field_count: resource.kept_out_fields.length,
@@ -163,6 +185,18 @@ export function buildBoundaryCatalogModel(
             Object.keys(resource.time_bucket_fields),
             resource,
           ),
+          numeric_bands: (resource.numeric_bands ?? [])
+            .filter((band) => !hiddenFields(resource).has(band.field))
+            .map((band) => ({ name: band.name, label: band.label, field: band.field })),
+          auto_bands: (resource.auto_bands ?? [])
+            .filter((policy) => !hiddenFields(resource).has(policy.field))
+            .map((policy) => ({
+              field: policy.field,
+              methods: [...policy.methods],
+              min_buckets: policy.min_buckets,
+              max_buckets: policy.max_buckets,
+              label_style: policy.label_style,
+            })),
           suggested_questions: reviewedTableQuestions(resource),
           runner_only_analysis: {
             groupable_fields: runnerOnlyOperationFields(resource.groupable_fields, resource),
@@ -217,9 +251,12 @@ export function renderBoundaryCatalogAscii(
       "TABLES AND REVIEWED ANALYSIS",
     );
     for (const table of boundary.tables) {
-      lines.push(`[${table.id}]`);
+      lines.push(`[${table.label}]  ${table.id}`);
+      if (table.description) {
+        lines.push(...wrapWithPrefixes(table.description, width, "  ", "  "));
+      }
       lines.push(...wrapWithPrefixes(
-        `Model-visible: ${table.model_visible_fields.map((field) => field.name).join(", ") || "none"}`,
+        `Model-visible: ${table.model_visible_fields.map(catalogFieldDisplay).join(", ") || "none"}`,
         width,
         "  ",
         "    ",
@@ -322,6 +359,7 @@ export function renderBoundaryCatalogTopologyAscii(
   const lines: string[] = [];
   for (const boundary of model.boundaries) {
     const links = physicalLinks(boundary.relationships);
+    const tablesById = new Map(boundary.tables.map((table) => [table.id, table]));
     lines.push(
       ...wrapWithPrefixes(`Boundary ${boundary.name}`, width, "", "  "),
       ...wrapWithPrefixes(
@@ -337,7 +375,7 @@ export function renderBoundaryCatalogTopologyAscii(
     if (!links.length) {
       lines.push("ANALYSIS NODE", "");
       for (const table of boundary.tables) {
-        lines.push(...renderTopologyNode(table.id, width), "");
+        lines.push(...renderTopologyNode(table, width), "");
       }
       lines.push(...wrapLine(
         boundary.tables.length === 1
@@ -360,7 +398,7 @@ export function renderBoundaryCatalogTopologyAscii(
       ), "");
       routes.forEach((route, index) => {
         if (routes.length > 1) lines.push(`Route ${index + 1} of ${routes.length}`, "");
-        lines.push(...renderTopologyRoute(route, width));
+        lines.push(...renderTopologyRoute(route, width, tablesById));
         if (index < routes.length - 1) lines.push("");
       });
       const linkedTables = new Set(links.flatMap((link) => [link.source_table, link.target_table]));
@@ -368,7 +406,7 @@ export function renderBoundaryCatalogTopologyAscii(
       if (disconnected.length > 0) {
         lines.push("", "REVIEWED TABLES WITHOUT A JOIN PATH", "");
         disconnected.forEach((table, index) => {
-          lines.push(...renderTopologyNode(table.id, width));
+          lines.push(...renderTopologyNode(table, width));
           if (index < disconnected.length - 1) lines.push("");
         });
       }
@@ -404,8 +442,9 @@ export function renderBoundaryCatalogMermaid(model: BoundaryCatalogModel): strin
     for (const table of boundary.tables) {
       const identifier = identifiers.get(tableKey(boundary.name, table.id))!;
       const nodeLines = [
+        table.label,
         table.id,
-        ...table.model_visible_fields.map((field) => field.name),
+        ...table.model_visible_fields.map(catalogFieldDisplay),
         ...(table.runner_only_field_count > 0
           ? [`${table.runner_only_field_count} Runner-only ${plural(table.runner_only_field_count, "field")}`]
           : []),
@@ -577,7 +616,7 @@ function reviewedRelationshipQuestions(source: BoundaryResource, target: Boundar
       || left.localeCompare(right))[0];
   const time = Object.keys(source.time_bucket_fields).find((field) =>
     !source.kept_out_fields.includes(field));
-  const sourcePlural = humanizeIdentifier(source.table).toLowerCase();
+  const sourcePlural = reviewedResourceLabel(source).toLowerCase();
   const groupPhrase = reviewedDimensionPhrase(target, group);
   const metric = reviewedMetricPhrase(source, measure);
   return unique([
@@ -596,10 +635,15 @@ function reviewedTableQuestions(resource: BoundaryResource): string[] {
     .sort((left, right) => measureUsefulness(right) - measureUsefulness(left)
       || left.localeCompare(right));
   const times = Object.keys(resource.time_bucket_fields).filter((field) => !hidden.has(field));
-  const pluralNoun = humanizeIdentifier(resource.table).toLowerCase();
+  const pluralNoun = reviewedResourceLabel(resource).toLowerCase();
   const group = groups[0];
   const measure = measures[0];
   const metric = reviewedMetricPhrase(resource, measure);
+  const fixedBand = (resource.numeric_bands ?? []).find((band) => !hidden.has(band.field));
+  const autoBand = (resource.auto_bands ?? []).find((policy) => !hidden.has(policy.field));
+  const automaticBucketCount = autoBand
+    ? Math.min(autoBand.max_buckets, Math.max(autoBand.min_buckets, 5))
+    : undefined;
   return unique([
     ...(group
       ? [measure
@@ -608,15 +652,21 @@ function reviewedTableQuestions(resource: BoundaryResource): string[] {
       : []),
     ...(group && measure ? [`How many ${pluralNoun} are there by ${reviewedDimensionPhrase(resource, group)}?`] : []),
     ...(times.length ? [`How did ${metricForTrend(metric)} change by week?`] : []),
+    ...(fixedBand
+      ? [`How many ${pluralNoun} are there by ${humanizeIdentifier(fixedBand.label).toLowerCase()}?`]
+      : []),
+    ...(autoBand && automaticBucketCount
+      ? [`How many ${pluralNoun} fall into ${automaticBucketCount} automatic ${autoBand.methods[0]!.replace("_", "-")} bands of ${reviewedFieldLabel(resource, autoBand.field).toLowerCase()}?`]
+      : []),
     ...(!group && !times ? [`How many ${pluralNoun} are there?`] : []),
-  ]).slice(0, 3);
+  ]).slice(0, 5);
 }
 
 function reviewedMetricPhrase(resource: BoundaryResource, measure?: string): string {
-  const pluralNoun = humanizeIdentifier(resource.table).toLowerCase();
+  const pluralNoun = reviewedResourceLabel(resource).toLowerCase();
   if (!measure) return `number of ${pluralNoun}`;
   const sourceNoun = singularize(pluralNoun);
-  const normalized = humanizeIdentifier(measure)
+  const normalized = reviewedFieldLabel(resource, measure)
     .toLowerCase()
     .replace(/\s+cents?$/, "")
     .trim();
@@ -627,8 +677,8 @@ function reviewedMetricPhrase(resource: BoundaryResource, measure?: string): str
 }
 
 function reviewedDimensionPhrase(resource: BoundaryResource, field: string): string {
-  const resourceWords = singularize(humanizeIdentifier(resource.table).toLowerCase()).split(/\s+/);
-  const fieldWords = humanizeIdentifier(field).toLowerCase().split(/\s+/);
+  const resourceWords = singularize(reviewedResourceLabel(resource).toLowerCase()).split(/\s+/);
+  const fieldWords = reviewedFieldLabel(resource, field).toLowerCase().split(/\s+/);
   if (/^(?:name|title|label|display name)$/.test(fieldWords.join(" "))) {
     return resourceWords.join(" ");
   }
@@ -706,6 +756,14 @@ function tableAnalysisSummary(table: BoundaryCatalogTable): string {
     ...(table.time_bucket_fields.length
       ? [`day/week/month using ${table.time_bucket_fields.join(", ")}`]
       : []),
+    ...((table.numeric_bands ?? []).length
+      ? [`reviewed numeric bands ${(table.numeric_bands ?? []).map((band) => `${band.name} (${band.field})`).join(", ")}`]
+      : []),
+    ...((table.auto_bands ?? []).length
+      ? [`automatic numeric bands ${(table.auto_bands ?? []).map((policy) =>
+        `${policy.field} (${policy.methods.map((method) => method.replace("_", " ")).join(" or ")}; `
+        + `${policy.min_buckets}-${policy.max_buckets} buckets; ${policy.label_style} labels)`).join(", ")}`]
+      : []),
   ].join("; ");
 }
 
@@ -764,14 +822,25 @@ function topologyRoutes(links: BoundaryCatalogPathLink[]): BoundaryCatalogTopolo
   return routes;
 }
 
-function renderTopologyRoute(route: BoundaryCatalogTopologyRoute, width: number): string[] {
+function renderTopologyRoute(
+  route: BoundaryCatalogTopologyRoute,
+  width: number,
+  tablesById: Map<string, BoundaryCatalogTable>,
+): string[] {
   const insideWidth = Math.max(
     18,
-    Math.min(width - 6, Math.max(...route.tables.map((table) => table.length))),
+    Math.min(width - 6, Math.max(...route.tables.map((id) => {
+      const table = tablesById.get(id);
+      return Math.max(id.length, table?.label.length ?? 0);
+    }))),
   );
   const boxWidth = insideWidth + 4;
   const connectorColumn = 2 + Math.floor(boxWidth / 2);
-  const lines = renderTopologyNode(route.tables[0]!, width, insideWidth);
+  const lines = renderTopologyNode(
+    tablesById.get(route.tables[0]!) ?? { id: route.tables[0]!, label: route.tables[0]! } as BoundaryCatalogTable,
+    width,
+    insideWidth,
+  );
   route.links.forEach((link, index) => {
     lines.push(" ".repeat(connectorColumn) + "|");
     lines.push(...renderTopologyConnectorLine(
@@ -786,24 +855,42 @@ function renderTopologyRoute(route: BoundaryCatalogTopologyRoute, width: number)
       width,
     ));
     lines.push(" ".repeat(connectorColumn) + "v");
-    lines.push(...renderTopologyNode(route.tables[index + 1]!, width, insideWidth));
+    const tableId = route.tables[index + 1]!;
+    lines.push(...renderTopologyNode(
+      tablesById.get(tableId) ?? { id: tableId, label: tableId } as BoundaryCatalogTable,
+      width,
+      insideWidth,
+    ));
   });
   return lines;
 }
 
 function renderTopologyNode(
-  table: string,
+  table: BoundaryCatalogTable,
   width: number,
   requestedInsideWidth?: number,
 ): string[] {
-  const insideWidth = requestedInsideWidth ?? Math.max(18, Math.min(width - 6, table.length));
-  const chunks = hardWrapText(table, insideWidth);
+  const insideWidth = requestedInsideWidth
+    ?? Math.max(18, Math.min(width - 6, Math.max(table.label.length, table.id.length)));
+  const chunks = [table.label, table.id].flatMap((value) => hardWrapText(value, insideWidth));
   const border = `  +${"-".repeat(insideWidth + 2)}+`;
   return [
     border,
     ...chunks.map((chunk) => `  | ${chunk.padEnd(insideWidth)} |`),
     border,
   ];
+}
+
+function catalogFieldDisplay(field: BoundaryCatalogField): string {
+  return field.label ? `${field.label} (${field.name})` : field.name;
+}
+
+function reviewedResourceLabel(resource: BoundaryResource): string {
+  return resource.label ?? humanizeIdentifier(resource.table);
+}
+
+function reviewedFieldLabel(resource: BoundaryResource, field: string): string {
+  return resource.field_metadata?.[field]?.label ?? humanizeIdentifier(field);
 }
 
 function renderTopologyConnectorLine(

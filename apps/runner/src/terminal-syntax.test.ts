@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  renderTerminalCommandFrame,
   renderTerminalFact,
   renderTerminalJson,
   renderTerminalJsonFrame,
@@ -10,6 +11,47 @@ import {
 } from "./terminal-syntax.js";
 
 describe("terminal syntax rendering", () => {
+  it("frames copy-paste commands and distinguishes executables, flags, paths, and placeholders", () => {
+    const plain = renderTerminalCommandFrame([
+      "synapsor-runner query-audit show <audit_id> --details --config '/tmp/project/synapsor.runner.json'",
+    ], {
+      title: "COPY-PASTE COMMANDS",
+      metadata: ["Filter with --table <schema.table> when needed."],
+      columns: 80,
+    });
+    expect(plain).toContain("+-- COPY-PASTE COMMANDS");
+    expect(plain).toContain("<audit_id>");
+    expect(plain).toContain("--details");
+
+    const colored = renderTerminalCommandFrame([
+      "synapsor-runner query-audit show <audit_id> --details --config '/tmp/project/synapsor.runner.json'",
+    ], {
+      title: "COPY-PASTE COMMANDS",
+      metadata: ["Filter with --table <schema.table> when needed."],
+      color: true,
+      columns: 80,
+    });
+    expect(colored).toContain("\u001b[1;32msynapsor-runner\u001b[0m");
+    expect(colored).toContain("\u001b[1;33m<audit_id>\u001b[0m");
+    expect(colored).toContain("\u001b[1;36m--details\u001b[0m");
+    expect(colored).toContain("\u001b[1;35m'/tmp/project/synapsor.runner.json'\u001b[0m");
+    expect(stripAnsi(colored)).toBe(plain);
+  });
+
+  it("wraps an unbroken command argument longer than the frame without looping", () => {
+    const longPath = `'/home/developer/${"deeply-nested-project/".repeat(8)}synapsor.runner.json'`;
+    const rendered = renderTerminalCommandFrame([
+      `synapsor-runner query-audit list --config ${longPath}`,
+    ], {
+      title: "COPY-PASTE COMMANDS",
+      columns: 60,
+    });
+    const lines = rendered.split("\n");
+    expect(lines.length).toBeGreaterThan(4);
+    expect(new Set(lines.map((line) => line.length))).toEqual(new Set([58]));
+    expect(rendered).toContain(".json'");
+  });
+
   it("keeps JSON byte-clean without color and highlights typed tokens with color", () => {
     const value = {
       boundary: "reviewed_orders",

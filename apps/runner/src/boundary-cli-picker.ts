@@ -31,6 +31,11 @@ export type BoundaryFieldTierEditResult =
       action: "principal";
       tiers: Record<string, BoundaryFieldTier>;
     }
+  | {
+      action: "metadata";
+      field: string;
+      tiers: Record<string, BoundaryFieldTier>;
+    }
   | `enum:${string}`
   | "back"
   | "privacy"
@@ -54,7 +59,7 @@ export type BoundaryBlockedResolution =
 export type BoundaryResourceSelection =
   | {
       resource_id: string;
-      action: "add" | "review" | "remove" | "signoff" | "privacy" | "analytics";
+      action: "add" | "review" | "remove" | "signoff" | "privacy" | "analytics" | "metadata";
     }
   | {
       action: "create" | "rename" | "confirm" | "limits" | "privacy_all";
@@ -820,6 +825,9 @@ async function chooseResource(
         ...(focusedAccess && resourceView === "boundary" && highlighted.included
           ? [`${theme.key("G")} Reviewed metrics and numeric bands`]
           : []),
+        ...(focusedAccess && resourceView === "boundary" && highlighted.included
+          ? [`${theme.key("I")} Table label and description`]
+          : []),
       ];
       const boundaryActions = [
         `${theme.key("B/Esc")} ${resourceView === "boundary"
@@ -958,6 +966,9 @@ async function chooseResource(
       if (key.name === "g" && focusedAccess && resourceView === "boundary" && highlighted.included) {
         return { resource_id: highlighted.resource_id, action: "analytics" };
       }
+      if (key.name === "i" && focusedAccess && resourceView === "boundary" && highlighted.included) {
+        return { resource_id: highlighted.resource_id, action: "metadata" };
+      }
       if (key.name === "n") return { action: "rename" };
       if (key.name === "l") return { action: "limits" };
       if (key.name === "c") return { action: "confirm" };
@@ -1069,6 +1080,7 @@ async function editFieldTiers(
         ...(enumValues
           ? [`${theme.key("E")} Edit allowed values for selected column: ${reviewedEnumValues!.length} of ${enumValues.length}`]
           : []),
+        `${theme.key("I")} Edit the selected column's reviewed label and description`,
         "Space cycles: MODEL + RUNNER -> RUNNER ONLY -> KEPT OUT",
         "",
         theme.bold(fieldAccessRow("COLUMN", "TYPE", "ACCESS", "REVIEW NOTE", accessLayout)),
@@ -1111,6 +1123,13 @@ async function editFieldTiers(
       }
       if (key.name === "p") return "privacy";
       if (key.name === "o") return { action: "principal", tiers: { ...tiers } };
+      if (key.name === "i") {
+        return {
+          action: "metadata",
+          field: highlighted.name,
+          tiers: { ...tiers },
+        };
+      }
       if (key.name === "e" && enumValues) {
         return {
           action: "enum",

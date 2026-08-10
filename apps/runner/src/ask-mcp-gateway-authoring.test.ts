@@ -7,6 +7,7 @@ const fixture = vi.hoisted(() => ({
   closes: 0,
   digest: `sha256:${"b".repeat(64)}` as const,
   errorCode: undefined as string | undefined,
+  exploredPlans: [] as unknown[],
 }));
 
 vi.mock("./scoped-explore.js", async (importOriginal) => {
@@ -33,11 +34,14 @@ vi.mock("./scoped-explore.js", async (importOriginal) => {
         resources: [{ id: "public.sessions" }],
         source_database_changed: false,
       }),
-      explore: async () => ({
-        ok: true,
-        rows: [],
-        source_database_changed: false,
-      }),
+      explore: async (plan: unknown) => {
+        fixture.exploredPlans.push(structuredClone(plan));
+        return {
+          ok: true,
+          rows: [],
+          source_database_changed: false,
+        };
+      },
       close: async () => {
         fixture.closes += 1;
       },
@@ -73,11 +77,14 @@ vi.mock("./scoped-explore-boundary-set.js", async () => ({
         resources: [{ id: "public.sessions" }],
         source_database_changed: false,
       }),
-      explore: async () => ({
-        ok: true,
-        data: [],
-        source_database_changed: false,
-      }),
+      explore: async (plan: unknown) => {
+        fixture.exploredPlans.push(structuredClone(plan));
+        return {
+          ok: true,
+          data: [],
+          source_database_changed: false,
+        };
+      },
       projectResultForModel: ({ result }: { result: Record<string, unknown> }) => ({
         value: result,
         withheld: false,
@@ -99,6 +106,7 @@ const roots: string[] = [];
 afterEach(async () => {
   fixture.closes = 0;
   fixture.errorCode = undefined;
+  fixture.exploredPlans.length = 0;
   await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
 });
 
@@ -196,6 +204,11 @@ describe("Ask authoring/runtime separation", () => {
         .toContain("never concatenate them");
       expect(JSON.stringify(listed.find((tool) => tool.name === "app.explore_data")?.input_schema))
         .toContain("one row per dimension/time combination");
+      expect(listed.find((tool) => tool.name === "app.explore_data")?.description)
+        .toContain('"method":"quantile","buckets":5');
+      const exploreSchema = JSON.stringify(listed.find((tool) => tool.name === "app.explore_data")?.input_schema);
+      expect(exploreSchema).toContain("equal_width");
+      expect(exploreSchema).not.toMatch(/"edges"|"width"|"offset"|"labels"/);
       await expect(gateway.callTool("app.describe_data", { limit: 99 })).resolves.toMatchObject({
         ok: false,
         error_code: "MCP_TOOL_ARGUMENTS_INVALID",
@@ -212,6 +225,49 @@ describe("Ask authoring/runtime separation", () => {
           message: expect.stringContaining("Do not send empty ids"),
         },
       });
+      await gateway.callTool("app.explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.sessions",
+          measures: [{ function: "count" }],
+          dimensions: [{
+            numeric_band: {
+              field: "duration_ms",
+              method: "quantile",
+              buckets: "2",
+            },
+          }],
+        },
+      });
+      expect(fixture.exploredPlans.at(-1)).toMatchObject({
+        dimensions: [{
+          numeric_band: {
+            field: "duration_ms",
+            method: "quantile",
+            buckets: 2,
+          },
+        }],
+      });
+      const callsBeforeUnsafeBand = fixture.exploredPlans.length;
+      await expect(gateway.callTool("app.explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.sessions",
+          measures: [{ function: "count" }],
+          dimensions: [{
+            numeric_band: {
+              field: "duration_ms",
+              method: "quantile",
+              buckets: 2,
+              edges: [100, 200],
+            },
+          }],
+        },
+      })).resolves.toMatchObject({
+        ok: false,
+        error_code: "EXPLORE_PLAN_INVALID",
+      });
+      expect(fixture.exploredPlans).toHaveLength(callsBeforeUnsafeBand);
     } finally {
       await gateway.close();
     }

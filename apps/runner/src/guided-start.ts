@@ -667,6 +667,39 @@ function friendlyIdentifier(value: string): string {
     .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
+function boundaryRescanFollowUp(input: {
+  projectRoot: string;
+  sourceEnv: string;
+  deploymentProfile: "development" | "staging" | "production";
+}): {
+  editor: string;
+  guided: string;
+  lines: string[];
+} {
+  const displayedProjectRoot = displayPath(input.projectRoot);
+  const projectRoot = shellQuote(displayedProjectRoot);
+  const editor = `${cliCommandName()} boundary review --project-root ${projectRoot} --access`;
+  const start = `${cliCommandName()} start --from-env ${input.sourceEnv} --cli`;
+  const guided = displayedProjectRoot === "."
+    ? start
+    : `cd ${projectRoot} && ${start}`;
+  return {
+    editor,
+    guided,
+    lines: [
+      "NEXT",
+      "Review and activate in the focused access editor (no second rescan):",
+      `  ${editor}`,
+      "  --access opens the same table, column, and path editor as /access in the Ask shell.",
+      input.deploymentProfile === "production"
+        ? "Or resume the guided review and production HTTP setup (no second rescan):"
+        : "Or resume guided review, activate, and continue to Ask (no second rescan):",
+      `  ${guided}`,
+      "Use start --rescan only when you want to inspect the database again.",
+    ],
+  };
+}
+
 
 async function rollbackFreshAutoBoundaryWrite(
   projectRoot: string,
@@ -731,21 +764,28 @@ export async function boundaryCommand(
         authorityActive: activeBoundaryExists,
       });
     }
+    const followUp = boundaryRescanFollowUp({
+      projectRoot,
+      sourceEnv: prepared.report.source_env,
+      deploymentProfile: prepared.selectedProgress.candidate.deployment_profile,
+    });
     if (rest.includes("--json")) {
       process.stdout.write(`${JSON.stringify({
         ok: true,
         reconciled: true,
         report: prepared.report,
         ...(prepared.report.changed
-          ? { next: `${cliCommandName()} boundary review --project-root ${shellQuote(displayPath(projectRoot))} --access` }
+          ? {
+              next: followUp.editor,
+              next_guided: followUp.guided,
+              access_editor: "Same focused editor as /access; does not rescan.",
+            }
           : {}),
       }, null, 2)}\n`);
     } else {
       process.stdout.write(`${formatBoundaryRescanReport(prepared.report)}\n`);
       if (prepared.report.changed) {
-        process.stdout.write(
-          `\nNext: ${cliCommandName()} boundary review --project-root ${shellQuote(displayPath(projectRoot))} --access\n`,
-        );
+        process.stdout.write(`\n${followUp.lines.join("\n")}\n`);
       }
     }
     return 0;
@@ -824,12 +864,24 @@ export async function boundaryCommand(
         );
       }
       await commitBoundaryRescan(prepared);
+      const followUp = boundaryRescanFollowUp({
+        projectRoot,
+        sourceEnv: prepared.report.source_env,
+        deploymentProfile: prepared.selectedProgress.candidate.deployment_profile,
+      });
       if (rest.includes("--json")) {
         process.stdout.write(`${JSON.stringify({
           ok: true,
           reconciled: true,
           destructive_regeneration: false,
           report: prepared.report,
+          ...(prepared.report.changed
+            ? {
+                next: followUp.editor,
+                next_guided: followUp.guided,
+                access_editor: "Same focused editor as /access; does not rescan.",
+              }
+            : {}),
         }, null, 2)}\n`);
       } else {
         process.stdout.write([
@@ -838,7 +890,7 @@ export async function boundaryCommand(
           "",
           formatBoundaryRescanReport(prepared.report),
           ...(prepared.report.changed
-            ? ["", `Next: ${cliCommandName()} boundary review --project-root ${shellQuote(displayPath(projectRoot))} --access`]
+            ? ["", ...followUp.lines]
             : []),
           "",
         ].join("\n"));

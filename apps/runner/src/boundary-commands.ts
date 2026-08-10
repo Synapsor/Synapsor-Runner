@@ -11,6 +11,9 @@ import path from "node:path";
 import process from "node:process";
 import readline from "node:readline/promises";
 import {
+  EXPLORATION_AUTO_BAND_METHODS,
+  MAX_AUTO_BAND_BUCKETS,
+  MIN_AUTO_BAND_BUCKETS,
   SHARED_REFERENCE_ACKNOWLEDGEMENT,
   activateExplorationBoundary,
   explorationBoundaryCandidateDigest,
@@ -19,6 +22,8 @@ import {
   resolveReviewedChildCountLink,
   reviewExplorationBoundaryCandidate,
   type ExplorationDerivedBaseMeasure,
+  type ExplorationAutoBandLabelStyle,
+  type ExplorationAutoBandMethod,
   type ExplorationBoundaryDraft,
   type GenerationLock
 } from "./auto-boundary.js";
@@ -27,7 +32,7 @@ import { fileExists, readJsonFileWithLocation } from "./cli-files.js";
 import { shellQuote } from "./cli-format.js";
 import { usage } from "./cli-help.js";
 import { redactCliErrorMessage } from "./cli-logging.js";
-import { assertKnownOptions, envValue, listArg, optionalArg, positional } from "./cli-options.js";
+import { assertKnownOptions, envValue, listArg, optionalArg, positional, repeatedArgs } from "./cli-options.js";
 import { readRuntimeConfig } from "./cli-project.js";
 import {
   readGuidedOnboardingState,
@@ -630,6 +635,10 @@ async function boundaryResourceReviewCommand(
     "--map",
     "--include",
     "--exclude",
+    "--label",
+    "--description",
+    "--field-label",
+    "--field-description",
     "--row-identity",
     "--tenant-key",
     "--tenant-scope-path",
@@ -673,6 +682,10 @@ async function boundaryResourceReviewCommand(
   const mutationRequested = args.some((arg) => [
     "--include",
     "--exclude",
+    "--label",
+    "--description",
+    "--field-label",
+    "--field-description",
     "--row-identity",
     "--tenant-key",
     "--tenant-scope-path",
@@ -814,8 +827,11 @@ async function boundaryResourceReviewCommand(
     || (!nullableRelationship && unmatchedRows)) {
     throw new Error("--nullable-relationship <id> requires --unmatched-rows exclude|keep_null.");
   }
+  const reviewedMetadata = reviewedMetadataFromArgs(args);
   const request: BoundaryResourceReviewRequest = {
     resource_id: resourceId,
+    ...(reviewedMetadata.resource ? { metadata: reviewedMetadata.resource } : {}),
+    ...(reviewedMetadata.fields.length ? { field_metadata: reviewedMetadata.fields } : {}),
     ...(args.includes("--include") ? { include: true } : {}),
     ...(args.includes("--exclude") ? { exclude: true } : {}),
     ...(optionalArg(args, "--row-identity") ? { row_identity: optionalArg(args, "--row-identity") } : {}),
@@ -1261,6 +1277,16 @@ async function interactiveBoundaryReviewLoop(input: {
     // list after any table-level action.
     startAtBoundaryList = false;
     const view = await inspectBoundaryResourceReview(input.projectRoot, selected.resource_id);
+    if (selected.action === "metadata") {
+      await interactiveReviewedMetadataReview({
+        projectRoot: input.projectRoot,
+        resourceId: selected.resource_id,
+        view,
+        schemaInspector: input.schemaInspector,
+        session: input.session,
+      });
+      continue;
+    }
     if (selected.action === "privacy") {
       const result = await interactiveMinimumCohortReview({
         projectRoot: input.projectRoot,
@@ -1437,16 +1463,18 @@ async function interactiveReviewedAnalyticsReview(input: {
   }
   process.stdout.write([
     `\nREVIEWED ANALYTICS - ${input.resourceId}`,
-    "These definitions are fixed human-reviewed authority. The AI may select a saved name, but cannot send formulas, bucket edges, fields, or joins.",
-    "1  Add a numeric band",
-    "2  Remove a numeric band",
-    "3  Add a named ratio or per-unit metric",
-    "4  Add a post-suppression calculation",
-    "5  Add a safe child-count metric",
-    "6  Remove a named reviewed metric",
+    "These are human-reviewed limits. The AI can select only the choices shown by Runner; it cannot send formulas, bucket edges, or joins.",
+    "1  Add a fixed numeric band",
+    "2  Remove a fixed numeric band",
+    "3  Enable automatic numeric bands",
+    "4  Disable automatic numeric bands",
+    "5  Add a named ratio or per-unit metric",
+    "6  Add a post-suppression calculation",
+    "7  Add a safe child-count metric",
+    "8  Remove a named reviewed metric",
     "",
   ].join("\n"));
-  const entered = await input.session.promptText("Choose 1-6; Esc returns without changes");
+  const entered = await input.session.promptText("Choose 1-8; Esc returns without changes");
   if (entered === undefined || !entered.trim()) {
     process.stdout.write("Returned to boundary tables. No analytics setting changed.\n\n");
     return 0;
@@ -1459,18 +1487,24 @@ async function interactiveReviewedAnalyticsReview(input: {
       return removeReviewedNumericBand(input, resource);
     }
     if (entered.trim() === "3") {
-      return addReviewedDerivedMeasure(input, context.candidate, resource);
+      return addReviewedAutoBand(input, resource);
     }
     if (entered.trim() === "4") {
-      return addReviewedPostAggregateMeasure(input, context.candidate, resource);
+      return removeReviewedAutoBand(input, resource);
     }
     if (entered.trim() === "5") {
-      return addReviewedChildCountMeasure(input, context.candidate, resource);
+      return addReviewedDerivedMeasure(input, context.candidate, resource);
     }
     if (entered.trim() === "6") {
+      return addReviewedPostAggregateMeasure(input, context.candidate, resource);
+    }
+    if (entered.trim() === "7") {
+      return addReviewedChildCountMeasure(input, context.candidate, resource);
+    }
+    if (entered.trim() === "8") {
       return removeReviewedDerivedMeasure(input, resource);
     }
-    process.stdout.write("Choose a number from 1 through 6. No analytics setting changed.\n\n");
+    process.stdout.write("Choose a number from 1 through 8. No analytics setting changed.\n\n");
     return 0;
   } catch (error) {
     process.stdout.write([
@@ -1480,6 +1514,180 @@ async function interactiveReviewedAnalyticsReview(input: {
     ].join("\n"));
     return 0;
   }
+}
+
+async function addReviewedAutoBand(
+  input: Parameters<typeof interactiveReviewedAnalyticsReview>[0],
+  resource: ExplorationBoundaryDraft["pack"]["resources"][number],
+): Promise<number> {
+  const fields = [...resource.aggregate_measures].sort();
+  if (!fields.length) {
+    process.stdout.write(
+      "No reviewed numeric measure field is available for automatic bands. No change was made.\n\n",
+    );
+    return 0;
+  }
+  process.stdout.write([
+    "Choose a numeric field. Runner computes bands from only the trusted scoped rows.",
+    ...fields.map((field, index) => `  ${index + 1}  ${resource.id}.${field}`),
+    "",
+  ].join("\n"));
+  const field = await chooseNumberedReviewOption(input.session, "Field number", fields);
+  if (!field) return cancelledAnalyticsEdit();
+
+  process.stdout.write([
+    "Band calculation:",
+    "  1  Quantile (recommended) - near-equal group populations; ties stay together",
+    "  2  Equal width - equal numeric ranges with a reviewer-set minimum width",
+    "  3  Allow either method",
+    "",
+  ].join("\n"));
+  const methodInput = await input.session.promptText("Method [1]");
+  if (methodInput === undefined) return cancelledAnalyticsEdit();
+  const methodChoice = methodInput.trim() || "1";
+  const methods: ExplorationAutoBandMethod[] = methodChoice === "1"
+    ? ["quantile"]
+    : methodChoice === "2"
+      ? ["equal_width"]
+      : methodChoice === "3"
+        ? [...EXPLORATION_AUTO_BAND_METHODS]
+        : [];
+  if (!methods.length) throw new Error("Choose 1, 2, or 3 for the automatic band method.");
+
+  const minBuckets = await reviewedAutoBandInteger(
+    input.session,
+    "Fewest buckets the AI may request",
+    3,
+  );
+  if (minBuckets === undefined) return cancelledAnalyticsEdit();
+  const maxBuckets = await reviewedAutoBandInteger(
+    input.session,
+    "Most buckets the AI may request",
+    10,
+  );
+  if (maxBuckets === undefined) return cancelledAnalyticsEdit();
+  if (minBuckets > maxBuckets) {
+    throw new Error("The fewest bucket count cannot be greater than the most bucket count.");
+  }
+
+  let minBucketWidth: number | undefined;
+  if (methods.includes("equal_width")) {
+    minBucketWidth = await reviewedAutoBandPositiveNumber(
+      input.session,
+      "Smallest allowed numeric width for an equal-width bucket (required)",
+    );
+    if (minBucketWidth === undefined) return cancelledAnalyticsEdit();
+  }
+
+  process.stdout.write([
+    "Labels shown to the AI:",
+    "  1  Ordinal (recommended) - Q1 of 5, Q2 of 5; no data-derived numbers",
+    "  2  Rounded ranges - outward-rounded numeric ranges at a reviewer-set precision",
+    "",
+  ].join("\n"));
+  const labelInput = await input.session.promptText("Label style [1]");
+  if (labelInput === undefined) return cancelledAnalyticsEdit();
+  const labelStyle: ExplorationAutoBandLabelStyle = (labelInput.trim() || "1") === "1"
+    ? "ordinal"
+    : labelInput.trim() === "2"
+      ? "rounded"
+      : (() => { throw new Error("Choose 1 or 2 for the automatic band label style."); })();
+  let labelRoundTo: number | undefined;
+  if (labelStyle === "rounded") {
+    labelRoundTo = await reviewedAutoBandPositiveNumber(
+      input.session,
+      "Round displayed range labels outward to this unit (required)",
+    );
+    if (labelRoundTo === undefined) return cancelledAnalyticsEdit();
+  }
+
+  const reason = await requiredReviewedAnalyticsReason(input.session);
+  if (reason === undefined) return cancelledAnalyticsEdit();
+  const preview = await prepareBoundaryResourceReviewMutation(input.projectRoot, {
+    resource_id: input.resourceId,
+    auto_band: {
+      field,
+      methods,
+      min_buckets: minBuckets,
+      max_buckets: maxBuckets,
+      ...(minBucketWidth === undefined ? {} : { min_bucket_width: minBucketWidth }),
+      label_style: labelStyle,
+      ...(labelRoundTo === undefined ? {} : { label_round_to: labelRoundTo }),
+    },
+    actor: localInteractiveActor(),
+    reason,
+  }, input.schemaInspector);
+  const committed = await commitBoundaryResourceReviewMutation(input.projectRoot, preview);
+  process.stdout.write([
+    `Saved automatic numeric bands for ${input.resourceId}.${field} in disabled boundary revision ${committed.review_revision}.`,
+    `The AI may choose only ${methods.join(" or ")} and ${minBuckets}-${maxBuckets} buckets. It cannot choose or see raw edges.`,
+    "Press C in /access to review and activate this exact boundary revision.",
+    "",
+  ].join("\n"));
+  return 0;
+}
+
+async function removeReviewedAutoBand(
+  input: Parameters<typeof interactiveReviewedAnalyticsReview>[0],
+  resource: ExplorationBoundaryDraft["pack"]["resources"][number],
+): Promise<number> {
+  const policies = resource.auto_bands ?? [];
+  if (!policies.length) {
+    process.stdout.write("This table has no automatic numeric bands to disable.\n\n");
+    return 0;
+  }
+  process.stdout.write([
+    "Choose the automatic numeric-band policy to disable:",
+    ...policies.map((policy, index) =>
+      `  ${index + 1}  ${resource.id}.${policy.field} (${policy.methods.join(" or ")}; ${policy.min_buckets}-${policy.max_buckets} buckets)`),
+    "",
+  ].join("\n"));
+  const selected = await chooseNumberedReviewOption(input.session, "Policy number", policies);
+  if (!selected) return cancelledAnalyticsEdit();
+  const reason = await requiredReviewedAnalyticsReason(input.session);
+  if (reason === undefined) return cancelledAnalyticsEdit();
+  const preview = await prepareBoundaryResourceReviewMutation(input.projectRoot, {
+    resource_id: input.resourceId,
+    auto_band: { ...structuredClone(selected), remove: true },
+    actor: localInteractiveActor(),
+    reason,
+  }, input.schemaInspector);
+  const committed = await commitBoundaryResourceReviewMutation(input.projectRoot, preview);
+  process.stdout.write([
+    `Disabled automatic numeric bands for ${input.resourceId}.${selected.field} in boundary revision ${committed.review_revision}.`,
+    "The field remains usable for its other reviewed operations. Press C in /access to activate this revision.",
+    "",
+  ].join("\n"));
+  return 0;
+}
+
+async function reviewedAutoBandInteger(
+  session: BoundaryReviewInteractiveSession,
+  prompt: string,
+  defaultValue: number,
+): Promise<number | undefined> {
+  const entered = await session.promptText(`${prompt} [${defaultValue}]`);
+  if (entered === undefined) return undefined;
+  const value = Number(entered.trim() || defaultValue);
+  if (!Number.isSafeInteger(value) || value < MIN_AUTO_BAND_BUCKETS || value > MAX_AUTO_BAND_BUCKETS) {
+    throw new Error(
+      `Bucket counts must be whole numbers from ${MIN_AUTO_BAND_BUCKETS} through ${MAX_AUTO_BAND_BUCKETS}.`,
+    );
+  }
+  return value;
+}
+
+async function reviewedAutoBandPositiveNumber(
+  session: BoundaryReviewInteractiveSession,
+  prompt: string,
+): Promise<number | undefined> {
+  const entered = await session.promptText(prompt);
+  if (entered === undefined) return undefined;
+  const value = Number(entered.trim());
+  if (!entered.trim() || !Number.isFinite(value) || value <= 0) {
+    throw new Error("Enter a positive finite number. No analytics setting was saved.");
+  }
+  return value;
 }
 
 async function addReviewedNumericBand(
@@ -2075,7 +2283,13 @@ async function resolveBlockedBoundaryResource(input: {
   if (sharedReference) {
     while (true) {
       const answer = await input.session.promptText(
-        `Why does ${input.view.resource_id} contain the same rows for every tenant? A concrete reason is required; Enter alone does not save`,
+        [
+          "SHARED REFERENCE REVIEW",
+          `Table: ${input.view.resource_id}`,
+          "Explain why this table contains the same rows for every tenant.",
+          "A concrete reason is required; Enter alone does not save.",
+          "Required reason",
+        ].join("\n"),
       );
       if (answer === undefined) {
         process.stdout.write("Cancelled - no change was made.\n\n");
@@ -2335,22 +2549,33 @@ export function formatFocusedBoundaryActivationReview(
 ): string {
   const theme = terminalTheme(color);
   const accessRows = bundle.candidate.pack.resources.flatMap((resource, index) => {
+    const displayField = (field: string) => resource.field_metadata?.[field]?.label
+      ? `${resource.field_metadata[field]!.label} (${field})`
+      : field;
     const modelFields = resource.selectable_fields.filter(
       (field) => !(resource.model_withheld_fields ?? []).includes(field),
-    );
+    ).map(displayField);
     const relationships = resource.relationships.map(
       (relationship) => `${relationship.target_resource} (${relationship.cardinality.replaceAll("_", "-")})`,
     );
     const reviewedValues = Object.entries(resource.field_enums).map(
       ([field, values]) => `${field}: ${values.join(" | ")}`,
     );
+    const numericGroupings = [
+      ...(resource.numeric_bands ?? []).map((band) =>
+        `${band.name}: ${band.bucket_labels.length} fixed buckets`),
+      ...(resource.auto_bands ?? []).map((policy) =>
+        `${policy.field}: automatic ${policy.methods.join(" or ")}, ${policy.min_buckets}-${policy.max_buckets} buckets, ${policy.label_style} labels`),
+    ];
     return [
       ...(index === 0 ? [] : [["", ""]]),
-      ["Table", resource.id],
+      ["Table", resource.label ? `${resource.label} (${resource.id})` : resource.id],
+      ...(resource.description ? [["Description", resource.description]] : []),
       ["Model + Runner", fieldList(modelFields)],
-      ["Runner only", fieldList(resource.model_withheld_fields ?? [])],
-      ["Kept out", fieldList(resource.kept_out_fields)],
+      ["Runner only", fieldList((resource.model_withheld_fields ?? []).map(displayField))],
+      ["Kept out", fieldList(resource.kept_out_fields.map(displayField))],
       ["Value allowlists", reviewedValues.length ? reviewedValues.join("; ") : "None"],
+      ["Numeric grouping", numericGroupings.length ? numericGroupings.join("; ") : "None"],
       ["Reviewed links", relationships.length ? relationships.join(", ") : "None"],
     ];
   });
@@ -2472,7 +2697,7 @@ function styleReviewValue(
   if (label === "Model + Runner") return theme.visible(value);
   if (label === "Runner only") return theme.runnerOnly(value);
   if (label === "Kept out") return theme.keptOut(value);
-  if (label === "Value allowlists" || label === "Reviewed links") {
+  if (label === "Value allowlists" || label === "Numeric grouping" || label === "Reviewed links") {
     return theme.relationship(value);
   }
   if (label === "Small-group privacy") return theme.warning(value);
@@ -2845,6 +3070,24 @@ async function interactiveBoundaryResourceReview(input: {
     }
     return principalResult;
   }
+  if (isMetadataFieldTierAction(selected)) {
+    const metadataResult = await interactiveReviewedMetadataReview({
+      projectRoot: input.projectRoot,
+      resourceId: input.resourceId,
+      field: selected.field,
+      view: input.view,
+      schemaInspector: input.schemaInspector,
+      session: input.session,
+    });
+    const updatedView = metadataResult === "saved"
+      ? await inspectBoundaryResourceReview(input.projectRoot, input.resourceId)
+      : input.view;
+    return interactiveBoundaryResourceReview({
+      ...input,
+      view: updatedView,
+      initialTiers: selected.tiers,
+    });
+  }
   if (isEnumFieldTierAction(selected)) {
     const enumResult = await interactiveBoundaryEnumReview({
       ...input,
@@ -3053,6 +3296,123 @@ function isEnumFieldTierAction(value: unknown): value is {
     && Boolean((value as { tiers?: unknown }).tiers)
     && typeof (value as { tiers?: unknown }).tiers === "object"
     && !Array.isArray((value as { tiers?: unknown }).tiers);
+}
+
+function isMetadataFieldTierAction(value: unknown): value is {
+  action: "metadata";
+  field: string;
+  tiers: Record<string, BoundaryFieldTier>;
+} {
+  return Boolean(value)
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && (value as { action?: unknown }).action === "metadata"
+    && typeof (value as { field?: unknown }).field === "string"
+    && Boolean((value as { tiers?: unknown }).tiers)
+    && typeof (value as { tiers?: unknown }).tiers === "object"
+    && !Array.isArray((value as { tiers?: unknown }).tiers);
+}
+
+async function interactiveReviewedMetadataReview(input: {
+  projectRoot: string;
+  resourceId: string;
+  field?: string;
+  view: BoundaryResourceReviewView;
+  schemaInspector: typeof inspectDatabase;
+  session: BoundaryReviewInteractiveSession;
+}): Promise<"saved" | "unchanged" | "cancelled"> {
+  const candidate = input.view.candidate ?? input.view.generated_candidate;
+  if (!candidate) {
+    process.stdout.write("Rejected: include and resolve this table before adding reviewed metadata. No change was made.\n\n");
+    return "cancelled";
+  }
+  const current = input.field
+    ? candidate.field_metadata?.[input.field]
+    : candidate;
+  const subject = input.field
+    ? `${input.resourceId}.${input.field}`
+    : input.resourceId;
+  process.stdout.write([
+    `REVIEWED NAME AND DESCRIPTION - ${subject}`,
+    "This metadata helps people and AI clients understand the exact database id. It grants no data access.",
+    "Plans must still use the exact id. Enter keeps the current value; type - to clear it; Esc cancels.",
+    `Current label: ${current?.label ?? "None"}`,
+    `Current description: ${current?.description ?? "None"}`,
+    "",
+  ].join("\n"));
+  const labelInput = await input.session.promptText("Label (maximum 64 characters)");
+  if (labelInput === undefined) {
+    process.stdout.write("Cancelled - no reviewed metadata change was made.\n\n");
+    return "cancelled";
+  }
+  const descriptionInput = await input.session.promptText("Description (maximum 280 characters)");
+  if (descriptionInput === undefined) {
+    process.stdout.write("Cancelled - no reviewed metadata change was made.\n\n");
+    return "cancelled";
+  }
+  const label = reviewedMetadataPromptValue(labelInput);
+  const description = reviewedMetadataPromptValue(descriptionInput);
+  const effectiveLabel = label === undefined ? current?.label : label ?? undefined;
+  const effectiveDescription = description === undefined
+    ? current?.description
+    : description ?? undefined;
+  if (effectiveLabel === current?.label && effectiveDescription === current?.description) {
+    process.stdout.write(`Unchanged: ${subject} already has the reviewed metadata shown; no change was made.\n\n`);
+    return "unchanged";
+  }
+  let reason: string | undefined;
+  while (!reason) {
+    const entered = await input.session.promptText("Required reason for this reviewed metadata change");
+    if (entered === undefined) {
+      process.stdout.write("Cancelled - no reviewed metadata change was made.\n\n");
+      return "cancelled";
+    }
+    reason = entered.trim();
+    if (!reason) {
+      process.stdout.write("Rejected: a concrete reason is required; no change was made. Enter it now, or press Esc to cancel.\n");
+    }
+  }
+  const actor = localInteractiveActor();
+  const metadata = {
+    ...(label !== undefined ? { label } : {}),
+    ...(description !== undefined ? { description } : {}),
+  };
+  try {
+    const preview = await prepareBoundaryResourceReviewMutation(
+      input.projectRoot,
+      {
+        resource_id: input.resourceId,
+        ...(input.field
+          ? { field_metadata: [{ field: input.field, ...metadata }] }
+          : { metadata }),
+        actor,
+        reason,
+      },
+      input.schemaInspector,
+    );
+    const committed = await commitBoundaryResourceReviewMutation(input.projectRoot, preview);
+    process.stdout.write([
+      `Recorded: ${subject} -> label=${JSON.stringify(effectiveLabel ?? null)}, description=${JSON.stringify(effectiveDescription ?? null)}.`,
+      `Actor: ${actor}; reason: ${JSON.stringify(reason)}.`,
+      `Saved in disabled boundary revision ${committed.review_revision}. Agent authority changed: no.`,
+      "Use C Review + activate before this metadata reaches an AI client.",
+      "",
+    ].join("\n"));
+    return "saved";
+  } catch (error) {
+    process.stdout.write([
+      `Rejected: ${redactCliErrorMessage(error instanceof Error ? error.message : String(error))}`,
+      "No reviewed metadata change was made or activated.",
+      "",
+    ].join("\n"));
+    return "cancelled";
+  }
+}
+
+function reviewedMetadataPromptValue(value: string): string | null | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  return trimmed === "-" ? null : trimmed;
 }
 
 function isPrincipalFieldTierAction(value: unknown): value is {
@@ -3554,6 +3914,20 @@ function boundaryRequestCommandArgs(
   ];
   if (request.include) args.push("--include");
   if (request.exclude) args.push("--exclude");
+  if (request.metadata?.label !== undefined) {
+    args.push("--label", request.metadata.label ?? "-");
+  }
+  if (request.metadata?.description !== undefined) {
+    args.push("--description", request.metadata.description ?? "-");
+  }
+  for (const metadata of request.field_metadata ?? []) {
+    if (metadata.label !== undefined) {
+      args.push("--field-label", `${metadata.field}=${metadata.label ?? "-"}`);
+    }
+    if (metadata.description !== undefined) {
+      args.push("--field-description", `${metadata.field}=${metadata.description ?? "-"}`);
+    }
+  }
   if (request.keep_out_fields?.length) args.push("--keep-out", request.keep_out_fields.join(","));
   if (request.withhold_from_model_fields?.length) {
     args.push("--withhold-from-model", request.withhold_from_model_fields.join(","));
@@ -3563,6 +3937,51 @@ function boundaryRequestCommandArgs(
   }
   args.push("--actor", request.actor, "--reason", request.reason);
   return args;
+}
+
+function reviewedMetadataFromArgs(args: string[]): {
+  resource?: NonNullable<BoundaryResourceReviewRequest["metadata"]>;
+  fields: NonNullable<BoundaryResourceReviewRequest["field_metadata"]>;
+} {
+  const resource: NonNullable<BoundaryResourceReviewRequest["metadata"]> = {};
+  if (args.includes("--label")) {
+    resource.label = reviewedMetadataFlagValue(args, "--label");
+  }
+  if (args.includes("--description")) {
+    resource.description = reviewedMetadataFlagValue(args, "--description");
+  }
+  const byField = new Map<string, NonNullable<BoundaryResourceReviewRequest["field_metadata"]>[number]>();
+  for (const [flag, property] of [
+    ["--field-label", "label"],
+    ["--field-description", "description"],
+  ] as const) {
+    for (const assignment of repeatedArgs(args, flag)) {
+      const separator = assignment.indexOf("=");
+      const field = assignment.slice(0, separator).trim();
+      const rawValue = separator >= 0 ? assignment.slice(separator + 1).trim() : "";
+      if (separator < 1 || !field || !rawValue) {
+        throw new Error(`${flag} must use <field>=<text>; use <field>=- to clear it.`);
+      }
+      const current = byField.get(field) ?? { field };
+      if (current[property] !== undefined) {
+        throw new Error(`${flag} repeats ${field}; provide each field metadata value once.`);
+      }
+      current[property] = rawValue === "-" ? null : rawValue;
+      byField.set(field, current);
+    }
+  }
+  return {
+    ...(Object.keys(resource).length ? { resource } : {}),
+    fields: [...byField.values()].sort((left, right) => left.field.localeCompare(right.field)),
+  };
+}
+
+function reviewedMetadataFlagValue(args: string[], flag: string): string | null {
+  const raw = optionalArg(args, flag);
+  if (raw === undefined || raw.startsWith("--") || !raw.trim()) {
+    throw new Error(`${flag} requires text; use - to clear the reviewed value.`);
+  }
+  return raw.trim() === "-" ? null : raw.trim();
 }
 
 function boundaryResourceApplyCommand(args: string[]): string {
@@ -3830,6 +4249,22 @@ function formatRequestedBoundaryChanges(
   view: BoundaryResourceReviewView,
 ): string[] {
   const lines: string[] = [];
+  if (request.metadata) {
+    if (request.metadata.label !== undefined) {
+      lines.push(`Reviewed table label: ${request.metadata.label === null ? "clear" : JSON.stringify(request.metadata.label)}`);
+    }
+    if (request.metadata.description !== undefined) {
+      lines.push(`Reviewed table description: ${request.metadata.description === null ? "clear" : JSON.stringify(request.metadata.description)}`);
+    }
+  }
+  for (const metadata of request.field_metadata ?? []) {
+    if (metadata.label !== undefined) {
+      lines.push(`Reviewed label for ${metadata.field}: ${metadata.label === null ? "clear" : JSON.stringify(metadata.label)}`);
+    }
+    if (metadata.description !== undefined) {
+      lines.push(`Reviewed description for ${metadata.field}: ${metadata.description === null ? "clear" : JSON.stringify(metadata.description)}`);
+    }
+  }
   for (const field of request.withhold_from_model_fields ?? []) {
     lines.push(`Withhold from model: ${describeReviewedField(view, field)}`);
   }
@@ -4277,13 +4712,25 @@ export async function boundaryActivateCommand(
     });
   }
   if (!headless && !args.includes("--json") && activatedBoundary) {
+    const displayedProjectRoot = displayPath(projectRoot);
+    const guidedStart = `${cliCommandName()} start --from-env ${context.lock.source_env} --cli`;
+    const guidedStartFromProject = displayedProjectRoot === "."
+      ? guidedStart
+      : `cd ${shellQuote(displayedProjectRoot)} && ${guidedStart}`;
     process.stdout.write(activatedBoundary.deployment_profile === "production"
       ? [
         "Next: configure the secured production HTTP runtime, initialize its shared accounting ledger, and run doctor.",
         "Guide: docs/production-scoped-explore-http.md",
         "",
       ].join("\n")
-      : `Next: ${cliCommandName()} try ask --provider openai --model gpt-5-mini\n`);
+      : [
+        "NEXT",
+        "Resume the guided CLI and choose a model or MCP client:",
+        `  ${guidedStartFromProject}`,
+        "Or open Ask directly with an explicit provider:",
+        `  ${cliCommandName()} try ask --project-root ${shellQuote(displayPath(projectRoot))} --provider openai --model gpt-5-mini`,
+        "",
+      ].join("\n"));
   }
   return 0;
 }
@@ -4516,10 +4963,13 @@ function formatBoundaryResourceSignoff(
   resource: ExplorationBoundaryDraft["pack"]["resources"][number],
   decisionCount: number,
 ): string {
+  const displayField = (field: string) => resource.field_metadata?.[field]?.label
+    ? `${resource.field_metadata[field]!.label} (${field})`
+    : field;
   const modelFields = resource.selectable_fields.filter(
     (field) => !(resource.model_withheld_fields ?? []).includes(field),
-  );
-  const localFields = resource.model_withheld_fields ?? [];
+  ).map(displayField);
+  const localFields = (resource.model_withheld_fields ?? []).map(displayField);
   const operationCounts = [
     `return ${resource.selectable_fields.length}`,
     `filter ${Object.keys(resource.filterable_fields).length}`,
@@ -4530,14 +4980,15 @@ function formatBoundaryResourceSignoff(
     `time ${Object.keys(resource.time_bucket_fields).length}`,
   ].join(", ");
   return [
-    `TABLE SIGN-OFF - ${resource.id}`,
+    `TABLE SIGN-OFF - ${resource.label ? `${resource.label} (${resource.id})` : resource.id}`,
+    ...(resource.description ? [resource.description] : []),
     "",
     ...formatTextTable(
       ["ACCESS", "FIELDS"],
       [
         ["Model + Runner", fieldList(modelFields)],
         ["Raw values: Runner only", fieldList(localFields)],
-        ["Kept out", fieldList(resource.kept_out_fields)],
+        ["Kept out", fieldList(resource.kept_out_fields.map(displayField))],
       ],
       [20, 56],
     ),

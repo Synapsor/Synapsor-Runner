@@ -61,6 +61,33 @@ describe("boundary rescan reconciliation", () => {
       reason: "The product catalog contains the same reviewed rows for every tenant.",
       decided_at: "2026-08-08T00:00:00.000Z",
     });
+    overrides = applyManagedBoundaryReviewDecision(overrides, {
+      kind: "auto_band",
+      resource_id: "public.order_items",
+      field: "quantity",
+      definition: reviewedQuantityAutoBand(),
+      actor: "owner@example.test",
+      reason: "Allow bounded adaptive quantity groups without model-authored edges.",
+      decided_at: "2026-08-08T00:00:00.000Z",
+    });
+    overrides = applyManagedBoundaryReviewDecision(overrides, {
+      kind: "resource_metadata",
+      resource_id: "public.order_items",
+      label: "Order line items",
+      description: "Reviewed products and quantities attached to tenant-scoped orders.",
+      actor: "owner@example.test",
+      reason: "Clarify a normalized legacy table without changing its reviewed authority.",
+      decided_at: "2026-08-08T00:00:00.000Z",
+    });
+    overrides = applyManagedBoundaryReviewDecision(overrides, {
+      kind: "field_metadata",
+      resource_id: "public.order_items",
+      field: "quantity",
+      label: "Units ordered",
+      actor: "owner@example.test",
+      reason: "Clarify the reviewed numeric field used by adaptive bands.",
+      decided_at: "2026-08-08T00:00:00.000Z",
+    });
     const build = buildAutoBoundary({
       inspection,
       project,
@@ -139,6 +166,12 @@ describe("boundary rescan reconciliation", () => {
         (resource) => resource.id === "public.order_items",
       )!;
       expect(reconciledItems.tenant_scope?.path_id).toBe("order_items_order_id_fkey");
+      expect(reconciledItems.auto_bands).toEqual([reviewedQuantityAutoBand()]);
+      expect(reconciledItems).toMatchObject({
+        label: "Order line items",
+        description: "Reviewed products and quantities attached to tenant-scoped orders.",
+        field_metadata: { quantity: { label: "Units ordered" } },
+      });
       expect(reconciledItems.kept_out_fields).toContain("product_id");
       expect(reconciledItems.relationships.map((relationship) => relationship.id))
         .not.toContain("order_items_product_id_fkey");
@@ -179,6 +212,12 @@ describe("boundary rescan reconciliation", () => {
       ));
       expect(storedOverrides.resources["public.order_items"].tenant_scope_path.value)
         .toBe("order_items_order_id_fkey");
+      expect(storedOverrides.resources["public.order_items"].auto_bands.quantity.definition)
+        .toEqual(reviewedQuantityAutoBand());
+      expect(storedOverrides.resources["public.order_items"].metadata.label)
+        .toBe("Order line items");
+      expect(storedOverrides.resources["public.order_items"].field_metadata.quantity.label)
+        .toBe("Units ordered");
       expect(storedOverrides.resources["public.product_catalog"].shared_reference_scope.value)
         .toBe("table_has_no_per_tenant_rows");
       await expect(readBoundaryRescanReport(root)).resolves.toMatchObject({
@@ -332,6 +371,40 @@ describe("boundary rescan reconciliation", () => {
       expect(preview.selectedProgress.candidate.pack.resources.find(
         (resource) => resource.id === "public.order_items",
       )?.tenant_scope?.path_id).toBe("order_items_order_id_fkey");
+      expect(preview.selectedProgress.candidate.pack.resources.find(
+        (resource) => resource.id === "public.order_items",
+      )?.auto_bands).toEqual([reviewedQuantityAutoBand()]);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("invalidates an adaptive-band review when its numeric field type changes", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-auto-band-type-rescan-"));
+    try {
+      const setup = await writeReviewedCommerceProject(root);
+      const changed = structuredClone(setup.inspection);
+      const quantity = changed.tables.find((table) => table.name === "order_items")!
+        .columns.find((field) => field.name === "quantity")!;
+      quantity.data_type = "text";
+
+      const preview = await prepareBoundaryRescan({ projectRoot: root, inspection: changed });
+      const entry = preview.report.boundaries[0]!;
+      expect(entry.changed_field_types).toContainEqual({
+        resource_id: "public.order_items",
+        field: "quantity",
+      });
+      expect(entry.pruned_review_inputs).toEqual(expect.arrayContaining([
+        expect.stringMatching(/quantity.*reviewed auto band no longer validates/i),
+      ]));
+      expect(entry.invalidated_decisions.map((decision) => decision.id)).toContain(
+        "resource.public.order_items.field_permissions",
+      );
+      expect(preview.selectedProgress.candidate.pack.resources.find(
+        (resource) => resource.id === "public.order_items",
+      )?.auto_bands).toBeUndefined();
+      expect(preview.selectedProgress.review_overrides.resources["public.order_items"]?.auto_bands)
+        .toBeUndefined();
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -682,6 +755,15 @@ async function writeReviewedCommerceProject(root: string, activate = false): Pro
     reason: "The product catalog contains the same reviewed rows for every tenant.",
     decided_at: "2026-08-08T00:00:00.000Z",
   });
+  overrides = applyManagedBoundaryReviewDecision(overrides, {
+    kind: "auto_band",
+    resource_id: "public.order_items",
+    field: "quantity",
+    definition: reviewedQuantityAutoBand(),
+    actor: "owner@example.test",
+    reason: "Allow bounded adaptive quantity groups without model-authored edges.",
+    decided_at: "2026-08-08T00:00:00.000Z",
+  });
   const build = buildAutoBoundary({
     inspection,
     project,
@@ -719,6 +801,17 @@ async function writeReviewedCommerceProject(root: string, activate = false): Pro
     currentInspection: inspection,
   });
   return { inspection, activeDigest };
+}
+
+function reviewedQuantityAutoBand() {
+  return {
+    field: "quantity",
+    methods: ["quantile", "equal_width"] as Array<"quantile" | "equal_width">,
+    min_buckets: 2,
+    max_buckets: 8,
+    min_bucket_width: 2,
+    label_style: "ordinal" as const,
+  };
 }
 
 function normalizedCommerceInspection(): SchemaInspection {

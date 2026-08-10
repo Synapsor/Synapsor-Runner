@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Pool } from "pg";
+import { ProposalStore } from "../packages/proposal-store/dist/index.js";
 import { inspectDatabase } from "../packages/schema-inspector/dist/index.js";
 import {
   AUTO_BOUNDARY_OVERRIDES_VERSION,
@@ -28,6 +29,18 @@ import {
   secureAskJsonRequest,
 } from "../apps/runner/dist/model-ask.js";
 import { verifyJwtRejectionMatrix } from "./production-explore-http-e2e-helpers.mjs";
+import {
+  applyProductionExploreSoakBudgets,
+  assertExactNumericBandResult,
+  processGroupSnapshot,
+  productionExploreSoakIdentities,
+  productionExploreSoakRequested,
+  runProductionExploreHttpSoak,
+  runProductionExploreRecovery,
+  waitForSourceConnectionQuiescence,
+  verifyLocalExploreAuditRecords,
+  verifyProductionExploreAuditSink,
+} from "./production-explore-http-soak.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const fixture = path.join(root, "examples/auto-boundary-churn");
@@ -96,6 +109,7 @@ async function startProductionExploreCli(configPath, env) {
     cwd: root,
     env,
     stdio: ["ignore", "pipe", "pipe"],
+    detached: true,
   });
   child.stdout.setEncoding("utf8");
   child.stderr.setEncoding("utf8");
@@ -148,13 +162,20 @@ function productionExploreRunnerInvocation(args) {
 
 async function stopProductionExploreCli(handle) {
   if (!handle || handle.child.exitCode !== null || handle.child.signalCode !== null) return;
+  const killGroup = (signal) => {
+    try {
+      process.kill(-handle.child.pid, signal);
+    } catch {
+      handle.child.kill(signal);
+    }
+  };
   await new Promise((resolve) => {
-    const timeout = setTimeout(() => handle.child.kill("SIGKILL"), 5_000);
+    const timeout = setTimeout(() => killGroup("SIGKILL"), 5_000);
     handle.child.once("exit", () => {
       clearTimeout(timeout);
       resolve();
     });
-    handle.child.kill("SIGTERM");
+    killGroup("SIGTERM");
   });
 }
 
@@ -233,6 +254,18 @@ async function seedDerivedSource(pool) {
     INSERT INTO public.shared_product_catalog (id, category, internal_notes)
     SELECT 'software-' || item, 'software', 'operator-only software note ' || item
       FROM generate_series(1, 6) AS item;
+    DELETE FROM public.churn_events
+    WHERE tenant_id = 'acme'
+      AND owner_id IN (
+        'pm-band', 'pm-auto', 'pm-auto-equal', 'pm-auto-ties',
+        'pm-running', 'pm-ollama', 'pm-other'
+      );
+    DELETE FROM public.accounts
+    WHERE tenant_id = 'acme'
+      AND owner_id IN (
+        'pm-band', 'pm-auto', 'pm-auto-equal', 'pm-auto-ties',
+        'pm-running', 'pm-ollama', 'pm-other'
+      );
     INSERT INTO public.accounts (
       id, tenant_id, owner_id, region, segment, customer_email, internal_risk_score
     )
@@ -245,7 +278,14 @@ async function seedDerivedSource(pool) {
       principal || '-' || source.id || '@example.invalid',
       source.internal_risk_score
     FROM public.accounts AS source
-    CROSS JOIN (VALUES ('pm-band'), ('pm-running'), ('pm-ollama')) AS copies(principal)
+    CROSS JOIN (VALUES
+      ('pm-band'),
+      ('pm-auto'),
+      ('pm-auto-equal'),
+      ('pm-auto-ties'),
+      ('pm-running'),
+      ('pm-ollama')
+    ) AS copies(principal)
     WHERE source.tenant_id = 'acme' AND source.owner_id = 'pm-1';
     INSERT INTO public.churn_events (
       id, tenant_id, owner_id, account_id, reason_category,
@@ -261,8 +301,24 @@ async function seedDerivedSource(pool) {
       source.churned_at,
       'synthetic kept-out note ' || principal || '-' || source.id
     FROM public.churn_events AS source
-    CROSS JOIN (VALUES ('pm-band'), ('pm-running'), ('pm-ollama')) AS copies(principal)
+    CROSS JOIN (VALUES
+      ('pm-band'),
+      ('pm-auto'),
+      ('pm-auto-equal'),
+      ('pm-auto-ties'),
+      ('pm-running'),
+      ('pm-ollama')
+    ) AS copies(principal)
     WHERE source.tenant_id = 'acme' AND source.owner_id = 'pm-1';
+    WITH ranked AS (
+      SELECT id, ROW_NUMBER() OVER (ORDER BY id) AS row_number
+      FROM public.churn_events
+      WHERE tenant_id = 'acme' AND owner_id = 'pm-auto-ties'
+    )
+    UPDATE public.churn_events AS event
+    SET monthly_revenue_cents = CASE WHEN ranked.row_number <= 17 THEN 10000 ELSE 20000 END
+    FROM ranked
+    WHERE event.id = ranked.id;
     INSERT INTO public.accounts (
       id, tenant_id, owner_id, region, segment, customer_email, internal_risk_score
     )
@@ -409,6 +465,203 @@ function clientFor(url, bearer, query = {}) {
   };
 }
 
+async function seedPostgresSoakPrincipals(pool, identities) {
+  for (const identity of identities) {
+    const lowValue = 7_000 + identity.index * 10;
+    const highValue = 11_000 + identity.index * 10;
+    await pool.query(`
+      INSERT INTO public.accounts (
+        id, tenant_id, owner_id, region, segment, customer_email, internal_risk_score
+      )
+      SELECT $2 || '-account-' || item, $1, $2, 'west', 'growth',
+        $2 || '-' || item || '@example.invalid', 500 + item
+      FROM generate_series(1, 10) AS item
+    `, [identity.tenant, identity.principal]);
+    await pool.query(`
+      INSERT INTO public.churn_events (
+        id, tenant_id, owner_id, account_id, reason_category,
+        monthly_revenue_cents, churned_at, private_note
+      )
+      SELECT $2 || '-event-' || item, $1, $2, $2 || '-account-' || item,
+        CASE WHEN item <= 5 THEN 'onboarding' ELSE 'price' END,
+        CASE WHEN item <= 5 THEN $3 + item ELSE $4 + (item - 5) END,
+        CASE WHEN item <= 5 THEN '2026-08-03T12:00:00Z'::timestamptz
+          ELSE '2026-08-10T12:00:00Z'::timestamptz END,
+        'synthetic kept-out soak note ' || $2 || '-' || item
+      FROM generate_series(1, 10) AS item
+    `, [identity.tenant, identity.principal, lowValue, highValue]);
+    const category = identity.index % 2 === 0 ? "trail" : "enterprise";
+    await pool.query(`
+      INSERT INTO public.scoped_orders (id, tenant_id, owner_id, category, occurred_at)
+      VALUES ($2 || '-order', $1, $2, $3, '2026-08-03T12:00:00Z')
+    `, [identity.tenant, identity.principal, category]);
+    await pool.query(`
+      INSERT INTO public.scoped_order_items (id, order_id, item_kind, quantity, occurred_at)
+      SELECT $1 || '-item-' || item, $1 || '-order', 'standard', item, '2026-08-03T12:00:00Z'
+      FROM generate_series(1, 5) AS item
+    `, [identity.principal]);
+  }
+}
+
+function assertSoak(condition, message, detail) {
+  if (!condition) throw new Error(`${message}${detail === undefined ? "" : ` ${JSON.stringify(detail)}`}`);
+}
+
+function postgresSoakOperations() {
+  const aggregatePlan = {
+    kind: "aggregate",
+    resource: "public.churn_events",
+    measures: [{ function: "count" }, { function: "sum", field: "monthly_revenue_cents" }],
+    dimensions: [{ field: "reason_category" }],
+    order_by: { kind: "measure", index: 0, direction: "desc" },
+    top_n: 10,
+  };
+  const validateBase = (payload, identity) => {
+    const byCategory = new Map((payload.data ?? []).map((row) => [row.reason_category, row]));
+    const lowValue = 7_000 + identity.index * 10;
+    const highValue = 11_000 + identity.index * 10;
+    assertSoak(payload.ok === true && payload.source_database_changed === false,
+      "PostgreSQL result was not verified against the locked source.", payload);
+    assertSoak(byCategory.size === 2
+      && byCategory.get("onboarding")?.count === 5
+      && byCategory.get("onboarding")?.sum_monthly_revenue_cents === lowValue * 5 + 15
+      && byCategory.get("price")?.count === 5
+      && byCategory.get("price")?.sum_monthly_revenue_cents === highValue * 5 + 15,
+    "PostgreSQL exact tenant/principal scope isolation failed.", payload.data);
+  };
+  const legal = (name, weight, plan, validate) => ({
+    name,
+    weight,
+    request: () => ({ name: "app.explore_data", arguments: { plan } }),
+    validate,
+  });
+  return [
+    {
+      name: "catalog",
+      weight: 5,
+      request: () => ({ name: "app.describe_data", arguments: {} }),
+      validate: (payload) => assertSoak(payload.ok === true
+        && payload.resources?.length === 4
+        && payload.resources.some((resource) => resource.id === "public.scoped_order_items")
+        && payload.resources.some((resource) => resource.id === "public.shared_product_catalog"),
+      "PostgreSQL metadata catalog changed during soak.", payload),
+    },
+    legal("grouped_count_sum", 25, aggregatePlan, validateBase),
+    legal("weekly_grouping", 10, {
+      ...aggregatePlan,
+      measures: [{ function: "count" }],
+      time_bucket: { field: "churned_at", bucket: "week" },
+      order_by: { kind: "time_bucket", direction: "asc" },
+    }, (payload) => assertSoak((payload.data ?? []).reduce((sum, row) => sum + row.count, 0) === 10,
+      "PostgreSQL weekly grouping escaped exact scope.", payload.data)),
+    legal("numeric_band", 10, {
+      kind: "aggregate",
+      resource: "public.churn_events",
+      measures: [{ function: "count" }],
+      dimensions: [{ numeric_band: "monthly_revenue_band" }],
+      top_n: 10,
+    }, (payload, identity) => assertExactNumericBandResult(payload, {
+      field: "monthly_revenue_band",
+      values: [
+        ...Array.from({ length: 5 }, (_unused, index) => 7_000 + identity.index * 10 + index + 1),
+        ...Array.from({ length: 5 }, (_unused, index) => 11_000 + identity.index * 10 + index + 1),
+      ],
+      edges: [6_500, 10_000, 20_000],
+      labels: ["under 65", "65 to 99", "100 to 199", "200 or more"],
+      minimum_count: 5,
+      context: "PostgreSQL numeric-band result did not match the exact scoped cohorts.",
+    })),
+    legal("auto_band", 10, {
+      kind: "aggregate",
+      resource: "public.churn_events",
+      measures: [{ function: "count" }],
+      dimensions: [{
+        numeric_band: {
+          field: "monthly_revenue_cents",
+          method: "quantile",
+          buckets: 2,
+        },
+      }],
+      top_n: 10,
+    }, (payload) => assertSoak(payload.ok === true
+      && payload.data?.length === 2
+      && payload.data.every((row) => /^Q[12] of 2$/.test(row.monthly_revenue_cents_quantile_band)
+        && row.count === 5)
+      && payload.privacy?.auto_bands?.[0]?.requested_buckets === 2
+      && payload.privacy?.auto_bands?.[0]?.raw_edges_returned === false
+      && !JSON.stringify(payload).includes("__auto_"),
+    "PostgreSQL automatic quantile bands leaked internals or escaped the reviewed scope.", payload)),
+    legal("dispersion", 10, {
+      kind: "aggregate",
+      resource: "public.churn_events",
+      measures: [
+        { function: "stddev_pop", field: "monthly_revenue_cents" },
+        { function: "var_pop", field: "monthly_revenue_cents" },
+      ],
+      dimensions: [{ field: "reason_category" }],
+      top_n: 10,
+    }, (payload) => assertSoak(payload.data?.length === 2
+      && payload.data.every((row) => Number.isFinite(row.stddev_pop_monthly_revenue_cents)
+        && Number.isFinite(row.var_pop_monthly_revenue_cents)),
+    "PostgreSQL contributor-safe dispersion did not return two reviewed cohorts.", payload.data)),
+    legal("running_total", 10, {
+      kind: "aggregate",
+      resource: "public.churn_events",
+      measures: [{ derived_measure: "revenue_running_total" }],
+      dimensions: [{ field: "reason_category" }],
+      time_bucket: { field: "churned_at", bucket: "week" },
+      order_by: { kind: "time_bucket", direction: "asc" },
+      top_n: 25,
+    }, (payload) => assertSoak(payload.data?.length === 2
+      && payload.data.every((row) => Number.isFinite(row.revenue_running_total)),
+    "PostgreSQL reviewed running total failed during soak.", payload.data)),
+    legal("derived_relationship", 20, {
+      kind: "aggregate",
+      resource: "public.scoped_order_items",
+      measures: [{ function: "count" }, { function: "sum", field: "quantity" }],
+      dimensions: [{ field: "category", relationship: "scoped_order_items_order_id_fkey" }],
+      top_n: 10,
+    }, (payload, identity) => assertSoak(payload.data?.length === 1
+      && payload.data[0].scoped_orders_category === (identity.index % 2 === 0 ? "trail" : "enterprise")
+      && payload.data[0].count === 5
+      && payload.data[0].sum_quantity === 15,
+    "PostgreSQL derived tenant/principal scope isolation failed.", payload.data)),
+    legal("shared_reference", 5, {
+      kind: "aggregate",
+      resource: "public.shared_product_catalog",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "category" }],
+      top_n: 10,
+    }, (payload) => assertSoak(payload.data?.length === 2
+      && payload.data.every((row) => row.count === 6),
+    "PostgreSQL shared-reference result changed across tenants.", payload.data)),
+    {
+      name: "invalid_enum_refusal",
+      weight: 3,
+      expected_refusal: true,
+      request: () => ({
+        name: "app.explore_data",
+        arguments: { plan: { ...aggregatePlan, where: [{ field: "reason_category", op: "eq", value: "not-reviewed" }] } },
+      }),
+      validate_refusal: (result) => /not a reviewed value|EXPLORE_FIELD_ENUM_VALUE_FORBIDDEN/i.test(JSON.stringify(result)),
+    },
+    {
+      name: "model_scope_refusal",
+      weight: 2,
+      expected_refusal: true,
+      request: () => ({
+        name: "app.explore_data",
+        arguments: {
+          tenant_id: "wrong-tenant",
+          principal: "wrong-principal",
+          plan: { ...aggregatePlan, tenant_id: "wrong-tenant", principal: "wrong-principal" },
+        },
+      }),
+      validate_refusal: (result) => /unrecognized|unsupported|invalid/i.test(JSON.stringify(result)),
+    },
+  ];
+}
+
 async function verifyOllamaAgentOverProductionHttp(input) {
   const bearer = await token(input.privateKey, {
     tenant: "acme",
@@ -486,6 +739,299 @@ async function verifyOllamaAgentOverProductionHttp(input) {
   }
 }
 
+function ollamaSoakIntegerEnv(name, fallback, minimum = 1, maximum = Number.MAX_SAFE_INTEGER) {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
+    throw new Error(`${name} must be an integer from ${minimum} through ${maximum}.`);
+  }
+  return value;
+}
+
+function writeOllamaSoakResult(file, value) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const temporary = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  fs.renameSync(temporary, file);
+}
+
+function ollamaSoakQuestions() {
+  const aggregate = (plan) => plan?.kind === "aggregate";
+  const hasMeasure = (plan, functions, field) => Array.isArray(plan?.measures)
+    && plan.measures.some((measure) => functions.includes(measure?.function)
+      && (field === undefined || measure?.field === field));
+  const hasDimension = (plan, field, relationship) => Array.isArray(plan?.dimensions)
+    && plan.dimensions.some((dimension) => dimension?.field === field
+      && (relationship === undefined || dimension?.relationship === relationship));
+  return [
+    {
+      question: "How many churn events are there by reason category?",
+      validate: (plan) => aggregate(plan)
+        && plan.resource === "public.churn_events"
+        && hasMeasure(plan, ["count", "non_null_count"], undefined)
+        && hasDimension(plan, "reason_category"),
+    },
+    {
+      question: "What is the total monthly revenue in cents by churn reason category?",
+      validate: (plan) => aggregate(plan)
+        && plan.resource === "public.churn_events"
+        && hasMeasure(plan, ["sum"], "monthly_revenue_cents")
+        && hasDimension(plan, "reason_category"),
+    },
+    {
+      question: "Show weekly churn event counts, oldest week first.",
+      validate: (plan) => aggregate(plan)
+        && plan.resource === "public.churn_events"
+        && hasMeasure(plan, ["count", "non_null_count"], undefined)
+        && plan.time_bucket?.field === "churned_at"
+        && plan.time_bucket?.bucket === "week",
+    },
+    {
+      question: "How many churn events fall in each reviewed monthly revenue band?",
+      validate: (plan) => aggregate(plan)
+        && plan.resource === "public.churn_events"
+        && hasMeasure(plan, ["count", "non_null_count"], undefined)
+        && Array.isArray(plan.dimensions)
+        && plan.dimensions.some((dimension) => dimension?.numeric_band === "monthly_revenue_band"),
+    },
+    {
+      question: "What is the population standard deviation of monthly revenue cents by churn reason?",
+      validate: (plan) => aggregate(plan)
+        && plan.resource === "public.churn_events"
+        && hasMeasure(plan, ["stddev_pop"], "monthly_revenue_cents")
+        && hasDimension(plan, "reason_category"),
+    },
+    {
+      question: "Show the reviewed running revenue total by week and churn reason.",
+      validate: (plan) => aggregate(plan)
+        && plan.resource === "public.churn_events"
+        && Array.isArray(plan.measures)
+        && plan.measures.some((measure) => measure?.derived_measure === "revenue_running_total")
+        && plan.time_bucket?.field === "churned_at",
+    },
+    {
+      question: "How many scoped order items are there by their order category?",
+      validate: (plan) => aggregate(plan)
+        && plan.resource === "public.scoped_order_items"
+        && hasMeasure(plan, ["count", "non_null_count"], undefined)
+        && hasDimension(plan, "category", "scoped_order_items_order_id_fkey"),
+    },
+    {
+      question: "How many shared products are there by product category?",
+      validate: (plan) => aggregate(plan)
+        && plan.resource === "public.shared_product_catalog"
+        && hasMeasure(plan, ["count", "non_null_count"], undefined)
+        && hasDimension(plan, "category"),
+    },
+  ];
+}
+
+async function createOllamaProductionGateway(input) {
+  const bearer = await token(input.privateKey, input.identity);
+  const handle = clientFor(input.url, bearer);
+  let closed = false;
+  await handle.client.connect(handle.transport);
+  try {
+    const listed = await handle.client.listTools();
+    const tools = listed.tools.map((tool) => ({
+      name: tool.name,
+      title: tool.title,
+      description: tool.description ?? "",
+      input_schema: tool.inputSchema,
+      metadata: tool._meta,
+    }));
+    assert(tools.map((tool) => tool.name).join(",") === "app.describe_data,app.explore_data",
+      "Ollama soak received a production tool surface other than the exact reviewed two tools.", tools);
+    return {
+      tools,
+      gateway: {
+        mode: "runtime",
+        listTools: () => tools,
+        callTool: async (name, args) => {
+          const result = await handle.client.callTool({ name, arguments: args });
+          const value = resultPayload(result);
+          return {
+            ok: result.isError !== true && value.ok !== false,
+            value,
+            provider_value: value,
+            ...(typeof value.error_code === "string" ? { error_code: value.error_code } : {}),
+          };
+        },
+        close: async () => {
+          if (closed) return;
+          closed = true;
+          await handle.client.close();
+        },
+      },
+    };
+  } catch (error) {
+    if (!closed) await handle.client.close().catch(() => undefined);
+    throw error;
+  }
+}
+
+async function runOllamaAgentSoak(input) {
+  const durationMs = ollamaSoakIntegerEnv("SYNAPSOR_SOAK_OLLAMA_DURATION_MS", 60 * 60 * 1_000, 1_000);
+  const targetQuestions = ollamaSoakIntegerEnv("SYNAPSOR_SOAK_OLLAMA_QUESTIONS", 100, 1, 1_000);
+  const questionsPerIdentity = ollamaSoakIntegerEnv("SYNAPSOR_SOAK_OLLAMA_QUESTIONS_PER_IDENTITY", 6, 1, 10);
+  const requiredIdentities = Math.ceil(targetQuestions / questionsPerIdentity);
+  assert(input.identities.length >= requiredIdentities,
+    "Ollama soak did not reserve enough independently budgeted principals.", {
+      required: requiredIdentities,
+      available: input.identities.length,
+    });
+  const startedAt = Date.now();
+  const deadline = startedAt + durationMs;
+  const intervalMs = durationMs / targetQuestions;
+  const questions = ollamaSoakQuestions();
+  const state = {
+    schema_version: "synapsor.production-explore-ollama-soak.v1",
+    model: input.model,
+    started_at: new Date(startedAt).toISOString(),
+    duration_ms: durationMs,
+    target_questions: targetQuestions,
+    attempted: 0,
+    accepted_explore_queries: 0,
+    expected_refusals: 0,
+    semantic_matches: 0,
+    no_tool_answers: 0,
+    provider_errors: 0,
+    security_failures: 0,
+    identity_rotations: 0,
+    conversation_clears: 0,
+    maximum_source_connections: 0,
+    process_samples: [],
+    latencies_ms: [],
+    failures: [],
+  };
+  let session;
+  let identity;
+
+  const persist = () => writeOllamaSoakResult(input.result_path, {
+    ...state,
+    completed_at: state.completed_at,
+  });
+
+  for (let index = 0; index < targetQuestions && Date.now() < deadline; index += 1) {
+    const scheduledAt = startedAt + Math.floor(index * intervalMs);
+    if (Date.now() < scheduledAt) {
+      await new Promise((resolve) => setTimeout(resolve, scheduledAt - Date.now()));
+    }
+    const identityIndex = Math.floor(index / questionsPerIdentity);
+    if (!session || identity !== input.identities[identityIndex]) {
+      identity = input.identities[identityIndex];
+      session = new WorkbenchAskSession();
+      state.identity_rotations += 1;
+    } else if (index % 3 === 0) {
+      session.clearConversation();
+      state.conversation_clears += 1;
+    }
+    const testCase = questions[index % questions.length];
+    const began = performance.now();
+    let gateway;
+    try {
+      const connected = await createOllamaProductionGateway({
+        url: input.url,
+        privateKey: input.privateKey,
+        identity,
+      });
+      gateway = connected.gateway;
+      if (!session.status().configured) {
+        session.configure({
+          provider: "openai_compatible",
+          model: input.model,
+          base_url: process.env.SYNAPSOR_TEST_OLLAMA_BASE_URL?.trim() || "http://127.0.0.1:11434/v1",
+          request_timeout_seconds: 180,
+          authority_digest: askToolSurfaceDigest(connected.tools),
+          egress_acknowledged: true,
+        });
+      }
+      const result = await session.run(
+        testCase.question,
+        gateway,
+        { requestJson: secureAskJsonRequest },
+      );
+      gateway = undefined;
+      const scopeAttempt = result.tool_calls.some((call) =>
+        /tenant|principal/i.test(JSON.stringify(call.arguments)));
+      const scopeDisclosure = JSON.stringify(result.tool_calls).includes(identity.tenant)
+        || JSON.stringify(result.tool_calls).includes(identity.principal);
+      if (scopeAttempt || scopeDisclosure || result.source_database_changed) {
+        state.security_failures += 1;
+        throw new Error("Ollama supplied or received trusted scope, or the source changed.");
+      }
+      const accepted = [...result.tool_calls].reverse().find((call) =>
+        call.tool === "app.explore_data" && call.status === "ok");
+      const refused = result.tool_calls.some((call) =>
+        call.tool === "app.explore_data" && call.status === "refused");
+      if (accepted) {
+        state.accepted_explore_queries += 1;
+        if (testCase.validate(accepted.arguments?.plan)) state.semantic_matches += 1;
+      } else if (refused) {
+        state.expected_refusals += 1;
+      } else {
+        state.no_tool_answers += 1;
+      }
+    } catch (error) {
+      state.provider_errors += 1;
+      state.failures.push({
+        at: new Date().toISOString(),
+        question: testCase.question,
+        error: String(error instanceof Error ? error.message : error).slice(0, 1_000),
+      });
+      state.failures = state.failures.slice(-100);
+      if (state.security_failures > 0) {
+        persist();
+        throw error;
+      }
+    } finally {
+      if (gateway) await gateway.close().catch(() => undefined);
+      state.attempted += 1;
+      state.latencies_ms.push(Math.round((performance.now() - began) * 100) / 100);
+      const sourceConnections = await input.source_connection_count();
+      state.maximum_source_connections = Math.max(state.maximum_source_connections, sourceConnections);
+      if (sourceConnections > input.source_connection_ceiling) {
+        state.security_failures += 1;
+        persist();
+        throw new Error(
+          `Ollama soak exceeded source connection ceiling: ${sourceConnections} > ${input.source_connection_ceiling}.`,
+        );
+      }
+      const processSample = processGroupSnapshot(input.server_pid);
+      if (processSample) state.process_samples.push(processSample);
+      persist();
+      if (state.attempted % 10 === 0) {
+        process.stderr.write(`[soak:ollama] attempted=${state.attempted} accepted=${state.accepted_explore_queries} semantic=${state.semantic_matches} errors=${state.provider_errors}\n`);
+      }
+    }
+  }
+
+  state.completed_at = new Date().toISOString();
+  const acceptanceRate = state.attempted === 0 ? 0 : state.accepted_explore_queries / state.attempted;
+  const semanticRate = state.accepted_explore_queries === 0
+    ? 0
+    : state.semantic_matches / state.accepted_explore_queries;
+  state.acceptance_rate = acceptanceRate;
+  state.semantic_match_rate = semanticRate;
+  state.pass = state.security_failures === 0
+    && state.attempted >= Math.max(1, Math.floor(targetQuestions * 0.8))
+    && acceptanceRate >= 0.8
+    && semanticRate >= 0.7;
+  persist();
+  if (!state.pass) {
+    throw new Error(`Ollama production Explore soak missed its usability gate: ${JSON.stringify({
+      attempted: state.attempted,
+      accepted: state.accepted_explore_queries,
+      acceptanceRate,
+      semanticRate,
+      providerErrors: state.provider_errors,
+      securityFailures: state.security_failures,
+    })}.`);
+  }
+  return state;
+}
+
 async function productionControlCounts(control, schema) {
   const result = await control.query(`
     SELECT
@@ -495,13 +1041,13 @@ async function productionControlCounts(control, schema) {
   return result.rows[0];
 }
 
-async function runLocalParityPlan(env, principal, plan) {
+async function runLocalParityPlan(env, principal, plan, tenant = "acme") {
   const runtime = await createScopedExploreRuntime({
     projectRoot: localParityProjectRoot,
     transport: "stdio",
     env: {
       ...env,
-      SYNAPSOR_TENANT_ID: "acme",
+      SYNAPSOR_TENANT_ID: tenant,
       SYNAPSOR_PRINCIPAL: principal,
     },
   });
@@ -509,6 +1055,47 @@ async function runLocalParityPlan(env, principal, plan) {
     return await runtime.explore(plan);
   } finally {
     await runtime.close();
+  }
+}
+
+async function verifyPostgresLocalExploreAudit(env, identity, operations, outputRoot) {
+  const successful = operations.filter((operation) => [
+    "grouped_count_sum",
+    "numeric_band",
+    "auto_band",
+    "derived_relationship",
+  ].includes(operation.name));
+  for (const operation of successful) {
+    const plan = operation.request(identity).arguments.plan;
+    const result = await runLocalParityPlan(env, identity.principal, plan, identity.tenant);
+    operation.validate(result, identity);
+  }
+  const refusal = operations.find((operation) => operation.name === "invalid_enum_refusal");
+  let refused = false;
+  try {
+    await runLocalParityPlan(
+      env,
+      identity.principal,
+      refusal.request(identity).arguments.plan,
+      identity.tenant,
+    );
+  } catch (error) {
+    refused = /not a reviewed value|EXPLORE_FIELD_ENUM_VALUE_FORBIDDEN/i.test(String(error));
+  }
+  assert(refused, "Local PostgreSQL Explore did not refuse an unreviewed enum value before source execution.");
+  const store = new ProposalStore(path.join(localParityProjectRoot, ".synapsor/local.db"));
+  try {
+    return verifyLocalExploreAuditRecords({
+      engine: "postgres",
+      evidence: store.listEvidenceBundles(),
+      audits: store.listQueryAudit(),
+      expected_successes: successful.length,
+      expected_refusals: 1,
+      forbidden_values: [identity.tenant, identity.principal, "not-reviewed", "synthetic kept-out", "@example.invalid"],
+      result_path: path.join(outputRoot, "postgres-local-audit.json"),
+    });
+  } finally {
+    store.close();
   }
 }
 
@@ -761,6 +1348,8 @@ async function main() {
   run("docker", ["compose", "-f", compose, "up", "-d", "--wait", "postgres"], { inherit: true });
   const admin = new Pool({ connectionString: adminUrl, max: 1 });
   const control = new Pool({ connectionString: controlUrl, max: 1 });
+  const soakRequested = productionExploreSoakRequested();
+  const soakIdentities = soakRequested ? productionExploreSoakIdentities() : [];
   let server;
   let tenantBudgetServer;
   const clients = [];
@@ -782,6 +1371,7 @@ async function main() {
       });
     }
     await seedDerivedSource(admin);
+    if (soakRequested) await seedPostgresSoakPrincipals(admin, soakIdentities);
     const before = await sourceSnapshot(admin);
     const env = { ...process.env, DATABASE_URL: readUrl };
     const inspection = await inspectDatabase({
@@ -806,6 +1396,39 @@ async function main() {
       overrides: {
         schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
         resources: {
+          "public.churn_events": {
+            metadata: {
+              label: "Customer churn events",
+              description: "Reviewed customer churn events used for retention analysis.",
+              actor: "production-owner@example.test",
+              reason: "Give operators and AI clients business context without changing resource authority.",
+              decided_at: "2026-08-10T12:00:00.000Z",
+            },
+            field_metadata: {
+              reason_category: {
+                label: "Churn reason",
+                description: "Reviewed category describing why the customer churned.",
+                actor: "production-owner@example.test",
+                reason: "Clarify an existing reviewed grouping field.",
+                decided_at: "2026-08-10T12:01:00.000Z",
+              },
+              private_note: {
+                label: "Operator private note",
+                description: "Human-only context that must remain outside model metadata.",
+                actor: "production-owner@example.test",
+                reason: "Help the human reviewer recognize a field that remains kept out.",
+                decided_at: "2026-08-10T12:02:00.000Z",
+              },
+            },
+            fields: {
+              private_note: {
+                exposure: "keep_out",
+                actor: "production-owner@example.test",
+                reason: "Private operator notes are never part of reviewed model access.",
+                decided_at: "2026-08-10T12:02:00.000Z",
+              },
+            },
+          },
           "public.scoped_order_items": {
             tenant_scope_path: {
               value: "scoped_order_items_order_id_fkey",
@@ -850,6 +1473,12 @@ async function main() {
     assert(churnResource && scopedOrders && scopedOrderItems?.tenant_scope && scopedOrderItems?.principal_scope
       && sharedProductCatalog?.shared_reference_scope?.acknowledgement === SHARED_REFERENCE_ACKNOWLEDGEMENT,
     "Production fixture did not preserve its derived scope and explicit shared-reference authority.", candidate.pack.resources);
+    assert(churnResource.label === "Customer churn events"
+      && churnResource.description === "Reviewed customer churn events used for retention analysis."
+      && churnResource.field_metadata?.reason_category?.label === "Churn reason"
+      && churnResource.field_metadata?.private_note?.label === "Operator private note"
+      && churnResource.kept_out_fields.includes("private_note"),
+    "Production fixture did not bind reviewed metadata while keeping private_note out.", churnResource);
     assert(
       JSON.stringify(churnResource.field_enums.reason_category)
         === JSON.stringify(["onboarding", "price", "product", "service"]),
@@ -863,6 +1492,14 @@ async function main() {
       field: "monthly_revenue_cents",
       edges: [6_500, 10_000, 20_000],
       bucket_labels: ["under 65", "65 to 99", "100 to 199", "200 or more"],
+    }];
+    churnResource.auto_bands = [{
+      field: "monthly_revenue_cents",
+      methods: ["quantile", "equal_width"],
+      min_buckets: 2,
+      max_buckets: 8,
+      min_bucket_width: 5_000,
+      label_style: "ordinal",
     }];
     churnResource.derived_measures = [{
       name: "revenue_running_total",
@@ -941,10 +1578,12 @@ async function main() {
       currentInspection: inspection,
     });
 
-    candidate.budgets.max_queries_per_session = 1;
-    candidate.budgets.rate_limit_per_minute = 10;
-    candidate.budgets.max_extracted_cells_per_session = 100;
-    candidate.budgets.max_differencing_queries = 10;
+    if (!soakRequested) {
+      candidate.budgets.max_queries_per_session = 1;
+      candidate.budgets.rate_limit_per_minute = 10;
+      candidate.budgets.max_extracted_cells_per_session = 100;
+      candidate.budgets.max_differencing_queries = 10;
+    }
     const boundaryDigest = explorationBoundaryCandidateDigest(candidate);
     await activateExplorationBoundary({
       projectRoot,
@@ -1018,6 +1657,7 @@ async function main() {
         },
       },
     };
+    if (soakRequested) applyProductionExploreSoakBudgets(undefined, runtimeConfig);
     Object.assign(env, {
       SYNAPSOR_CONTROL_DATABASE_URL: controlUrl,
       SYNAPSOR_SESSION_PUBLIC_KEY: publicKeyPem,
@@ -1082,7 +1722,7 @@ async function main() {
     assert(doctor.checks?.some((check) => check.name === "production-explore:verified-principal-scope" && check.ok === true),
       "Production Explore doctor did not attest verified tenant/principal scope.", doctor.checks);
     assert(doctor.checks?.some((check) => check.name === "production-explore:source-connection-ceiling"
-      && check.ok === true && check.message.includes("2 connections")),
+      && check.ok === true && check.message.includes("capped at 2 total connections")),
     "Production Explore doctor did not attest the process-wide source connection ceiling.", doctor.checks);
     assert(doctor.checks?.some((check) => check.name === "derived-scope-indexes:complete"
       && check.level === "pass" && check.message.includes("2 reviewed derived-scope paths")),
@@ -1116,6 +1756,137 @@ async function main() {
         before: authCountsBefore,
         after: authCountsAfter,
       });
+
+    if (soakRequested) {
+      const outputRoot = process.env.SYNAPSOR_SOAK_OUTPUT_DIR?.trim()
+        || path.resolve(root, "..", "synapsor-1.7.0-soak");
+      const operations = postgresSoakOperations();
+      const groupedOperation = operations.find((operation) => operation.name === "grouped_count_sum");
+      const recoveryIdentity = soakIdentities.at(-1);
+      const ollamaTargetQuestions = ollamaSoakIntegerEnv("SYNAPSOR_SOAK_OLLAMA_QUESTIONS", 100, 1, 1_000);
+      const ollamaQuestionsPerIdentity = ollamaSoakIntegerEnv(
+        "SYNAPSOR_SOAK_OLLAMA_QUESTIONS_PER_IDENTITY",
+        6,
+        1,
+        10,
+      );
+      const ollamaIdentityCount = Math.ceil(ollamaTargetQuestions / ollamaQuestionsPerIdentity);
+      const ollamaIdentities = soakIdentities.slice(-(ollamaIdentityCount + 1), -1);
+      const loadIdentities = soakIdentities.slice(0, -(ollamaIdentityCount + 1));
+      const result = await runProductionExploreHttpSoak({
+        engine: "postgres",
+        server_pid: server.child.pid,
+        source_connection_ceiling: runtimeConfig.production_explore.source_max_connections,
+        source_connection_count: async () => {
+          const count = await admin.query(`
+            SELECT COUNT(*)::int AS count
+            FROM pg_stat_activity
+            WHERE datname = current_database() AND usename = 'synapsor_churn_reader'
+          `);
+          return Number(count.rows[0]?.count ?? 0);
+        },
+        identities: loadIdentities,
+        create_client: async (identity) => clientFor(server.url, await token(privateKey, identity), {
+          tenant_id: "query-tenant-must-not-win",
+          principal: "query-principal-must-not-win",
+        }),
+        operations,
+        result_path: path.join(outputRoot, "postgres-http-soak.json"),
+      });
+      const ollama = await runOllamaAgentSoak({
+        url: server.url,
+        privateKey,
+        model: process.env.SYNAPSOR_TEST_OLLAMA_MODEL?.trim() || "qwen2.5:7b",
+        identities: ollamaIdentities,
+        server_pid: server.child.pid,
+        source_connection_ceiling: runtimeConfig.production_explore.source_max_connections,
+        source_connection_count: async () => {
+          const count = await admin.query(`
+            SELECT COUNT(*)::int AS count
+            FROM pg_stat_activity
+            WHERE datname = current_database() AND usename = 'synapsor_churn_reader'
+          `);
+          return Number(count.rows[0]?.count ?? 0);
+        },
+        result_path: path.join(outputRoot, "postgres-http-ollama-soak.json"),
+      });
+      const countsAfterSoak = await productionControlCounts(control, controlSchema);
+      assert(Number(countsAfterSoak.audit_events) > Number(authCountsAfter.audit_events)
+        && Number(countsAfterSoak.budget_reservations) > Number(authCountsAfter.budget_reservations),
+      "PostgreSQL soak traffic did not produce durable budget and metadata-only audit records.", {
+        before: authCountsAfter,
+        after: countsAfterSoak,
+      });
+      const audit = await verifyProductionExploreAuditSink({
+        engine: "postgres",
+        control,
+        schema: controlSchema,
+        soak: result,
+        additional_successful_explore_queries: ollama.accepted_explore_queries,
+        additional_expected_refusals: ollama.expected_refusals,
+        forbidden_values: [
+          "soak-",
+          "synthetic kept-out",
+          "@example.invalid",
+        ],
+        result_path: path.join(outputRoot, "postgres-http-audit.json"),
+      });
+
+      await stopProductionExploreCli(server);
+      await waitForSourceConnectionQuiescence({
+        engine: "postgres",
+        source_connection_count: async () => {
+          const count = await admin.query(`
+            SELECT COUNT(*)::int AS count
+            FROM pg_stat_activity
+            WHERE datname = current_database() AND usename = 'synapsor_churn_reader'
+          `);
+          return Number(count.rows[0]?.count ?? 0);
+        },
+      });
+      server = await startProductionExploreCli(configPath, env);
+      const recovery = await runProductionExploreRecovery({
+        engine: "postgres",
+        server_pid: server.child.pid,
+        source_connection_ceiling: runtimeConfig.production_explore.source_max_connections,
+        source_connection_count: async () => {
+          const count = await admin.query(`
+            SELECT COUNT(*)::int AS count
+            FROM pg_stat_activity
+            WHERE datname = current_database() AND usename = 'synapsor_churn_reader'
+          `);
+          return Number(count.rows[0]?.count ?? 0);
+        },
+        identity: recoveryIdentity,
+        create_client: async (identity) => clientFor(server.url, await token(privateKey, identity)),
+        request: groupedOperation.request,
+        validate: groupedOperation.validate,
+        result_path: path.join(outputRoot, "postgres-http-recovery.json"),
+      });
+      await stopProductionExploreCli(server);
+      server = undefined;
+      const localAudit = await verifyPostgresLocalExploreAudit(
+        env,
+        soakIdentities[0],
+        operations,
+        outputRoot,
+      );
+      const after = await sourceSnapshot(admin);
+      assert(JSON.stringify(after) === JSON.stringify(before),
+        "PostgreSQL production HTTP soak mutated the source database.", { before, after });
+      process.stdout.write(`${JSON.stringify({
+        ok: true,
+        engine: "postgres",
+        soak: result,
+        ollama,
+        local_audit: localAudit,
+        audit,
+        recovery,
+        auth_rejections: authRefusals.length,
+        source_database_changed: false,
+      }, null, 2)}\n`);
+      return;
+    }
 
     const plan = {
       kind: "aggregate",
@@ -1159,7 +1930,21 @@ async function main() {
       && described.resources?.length === 4
       && JSON.stringify(describedChurn?.field_enums?.reason_category)
         === JSON.stringify(["onboarding", "price", "product", "service"])
+      && describedChurn?.label === "Customer churn events"
+      && describedChurn?.description === "Reviewed customer churn events used for retention analysis."
+      && describedChurn?.fields?.some((field) => field.id === "reason_category"
+        && field.label === "Churn reason"
+        && field.description === "Reviewed category describing why the customer churned.")
+      && !describedChurn?.fields?.some((field) => field.id === "private_note"
+        || field.label === "Operator private note")
       && describedChurn?.numeric_bands?.some((band) => band.name === "monthly_revenue_band")
+      && describedChurn?.auto_bands?.some((policy) => policy.field === "monthly_revenue_cents"
+        && JSON.stringify(policy.methods) === JSON.stringify(["quantile", "equal_width"])
+        && policy.min_buckets === 2
+        && policy.max_buckets === 8
+        && policy.label_style === "ordinal"
+        && policy.raw_edges_returned === false
+        && !Object.hasOwn(policy, "min_bucket_width"))
       && describedChurn?.derived_measures?.some((measure) => measure.name === "revenue_running_total")
       && describedItems?.relationships?.some((relationship) =>
         relationship.id === "scoped_order_items_order_id_fkey" && relationship.activation === "active"),
@@ -1273,6 +2058,147 @@ async function main() {
       local: comparableAnalyticsResult(localBandResult),
       http: comparableAnalyticsResult(bandResult),
     });
+
+    const autoBandPlan = {
+      kind: "aggregate",
+      resource: "public.churn_events",
+      measures: [{ function: "count" }],
+      dimensions: [{
+        numeric_band: {
+          field: "monthly_revenue_cents",
+          method: "quantile",
+          buckets: 2,
+        },
+      }],
+      top_n: 10,
+    };
+    const autoBandClient = clientFor(server.url, await token(privateKey, {
+      tenant: "acme",
+      principal: "pm-auto",
+    }));
+    clients.push(autoBandClient.client);
+    await autoBandClient.client.connect(autoBandClient.transport);
+    const autoBandResult = resultPayload(await autoBandClient.client.callTool({
+      name: "app.explore_data",
+      arguments: { plan: autoBandPlan },
+    }));
+    const localAutoBandResult = await runLocalParityPlan(env, "pm-auto", autoBandPlan);
+    const autoBandSerialized = JSON.stringify(autoBandResult);
+    assert(autoBandResult.ok === true
+      && autoBandResult.data?.length === 2
+      && autoBandResult.data.every((row) => /^Q[12] of 2$/.test(row.monthly_revenue_cents_quantile_band)
+        && Number.isInteger(row.count)
+        && row.count >= 5)
+      && autoBandResult.privacy?.minimum_cohort_size === 5
+      && autoBandResult.privacy?.auto_bands?.[0]?.requested_buckets === 2
+      && autoBandResult.privacy?.auto_bands?.[0]?.effective_buckets === 2
+      && autoBandResult.privacy?.auto_bands?.[0]?.raw_edges_returned === false
+      && !autoBandSerialized.includes("__auto_")
+      && !autoBandSerialized.match(/SELECT\s|monthly_revenue_cents\s*[<>]=?\s*\d/i)
+      && JSON.stringify(comparableAnalyticsResult(localAutoBandResult))
+        === JSON.stringify(comparableAnalyticsResult(autoBandResult)),
+    "Reviewed automatic bands differed between local stdio and production HTTP or exposed raw edges.", {
+      local: comparableAnalyticsResult(localAutoBandResult),
+      http: comparableAnalyticsResult(autoBandResult),
+    });
+
+    const tieBandPlan = {
+      ...autoBandPlan,
+      dimensions: [{
+        numeric_band: {
+          field: "monthly_revenue_cents",
+          method: "quantile",
+          buckets: 8,
+        },
+      }],
+    };
+    const tieBandClient = clientFor(server.url, await token(privateKey, {
+      tenant: "acme",
+      principal: "pm-auto-ties",
+    }));
+    clients.push(tieBandClient.client);
+    await tieBandClient.client.connect(tieBandClient.transport);
+    const tieBandResult = resultPayload(await tieBandClient.client.callTool({
+      name: "app.explore_data",
+      arguments: { plan: tieBandPlan },
+    }));
+    const localTieBandResult = await runLocalParityPlan(env, "pm-auto-ties", tieBandPlan);
+    const tieCounts = new Map(tieBandResult.data?.map((row) => [
+      row.monthly_revenue_cents_quantile_band,
+      row.count,
+    ]));
+    assert(tieBandResult.ok === true
+      && tieCounts.size === 2
+      && tieCounts.get("Q4 of 8") === 17
+      && tieCounts.get("Q8 of 8") === 18
+      && tieBandResult.privacy?.auto_bands?.[0]?.requested_buckets === 8
+      && tieBandResult.privacy?.auto_bands?.[0]?.effective_buckets === 2
+      && tieBandResult.privacy?.auto_bands?.[0]?.reduced === true
+      && tieBandResult.privacy?.auto_bands?.[0]?.raw_edges_returned === false
+      && JSON.stringify(comparableAnalyticsResult(localTieBandResult))
+        === JSON.stringify(comparableAnalyticsResult(tieBandResult)),
+    "PostgreSQL tie-heavy quantiles did not collapse without splitting equal values.", {
+      local: comparableAnalyticsResult(localTieBandResult),
+      http: comparableAnalyticsResult(tieBandResult),
+    });
+
+    const equalWidthPlan = {
+      ...autoBandPlan,
+      dimensions: [{
+        numeric_band: {
+          field: "monthly_revenue_cents",
+          method: "equal_width",
+          buckets: 8,
+        },
+      }],
+    };
+    const equalWidthClient = clientFor(server.url, await token(privateKey, {
+      tenant: "acme",
+      principal: "pm-auto-equal",
+    }));
+    clients.push(equalWidthClient.client);
+    await equalWidthClient.client.connect(equalWidthClient.transport);
+    const equalWidthResult = resultPayload(await equalWidthClient.client.callTool({
+      name: "app.explore_data",
+      arguments: { plan: equalWidthPlan },
+    }));
+    const localEqualWidthResult = await runLocalParityPlan(env, "pm-auto-equal", equalWidthPlan);
+    const equalWidthCounts = new Map(equalWidthResult.data?.map((row) => [
+      row.monthly_revenue_cents_equal_width_band,
+      row.count,
+    ]));
+    assert(equalWidthResult.ok === true
+      && equalWidthCounts.size === 3
+      && equalWidthCounts.get("Band 1 of 3") === 8
+      && equalWidthCounts.get("Band 2 of 3") === 15
+      && equalWidthCounts.get("Band 3 of 3") === 12
+      && equalWidthResult.privacy?.auto_bands?.[0]?.requested_buckets === 8
+      && equalWidthResult.privacy?.auto_bands?.[0]?.effective_buckets === 3
+      && equalWidthResult.privacy?.auto_bands?.[0]?.reduced === true
+      && equalWidthResult.privacy?.auto_bands?.[0]?.raw_edges_returned === false
+      && !JSON.stringify(equalWidthResult).includes("__auto_")
+      && JSON.stringify(comparableAnalyticsResult(localEqualWidthResult))
+        === JSON.stringify(comparableAnalyticsResult(equalWidthResult)),
+    "PostgreSQL equal-width auto bands did not honor the reviewed minimum width.", {
+      local: comparableAnalyticsResult(localEqualWidthResult),
+      http: comparableAnalyticsResult(equalWidthResult),
+    });
+    const autoBandEvidenceRows = await control.query(`
+      SELECT event_kind, payload_json
+      FROM "${controlSchema}".production_explore_audit_events
+      WHERE event_id = $1 OR payload_json::text LIKE $2
+      ORDER BY event_kind
+    `, [
+      tieBandResult.evidence_bundle_id,
+      `%${tieBandResult.evidence_bundle_id}%`,
+    ]);
+    const autoBandEvidence = JSON.stringify(autoBandEvidenceRows.rows);
+    assert(autoBandEvidenceRows.rows.some((row) => row.event_kind === "evidence_bundle")
+      && /"result_values_persisted":false/i.test(autoBandEvidence)
+      && !/__auto_|"edges"|"raw_edges"|"bucket_min"|"bucket_max"/i.test(autoBandEvidence)
+      && !autoBandEvidence.includes("pm-auto-ties"),
+    "PostgreSQL automatic-band evidence persisted raw edges, result values, or principal identity.",
+    autoBandEvidenceRows.rows);
 
     const runningTotalPlan = {
       kind: "aggregate",

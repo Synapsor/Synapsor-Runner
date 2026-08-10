@@ -41,6 +41,7 @@ import {
   loadActivatedExplorationBoundaries,
   loadGenerationLockSnapshot,
   loadStructuredProjectEvidence,
+  normalizeExplorationAutoBandPolicy,
   normalizeExplorationDerivedMeasure,
   normalizeExplorationNumericBand,
   pruneAutoBoundaryReviewOverrides,
@@ -1260,10 +1261,10 @@ async function handleRequest(input: {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;
     });
-    if (!active || active.pack.name !== draft.pack.name) {
+    if (!active || active.generation_lock_fingerprint !== draft.generation_lock_fingerprint) {
       sendJson(response, 409, {
         ok: false,
-        error: "The active boundary changed after this refusal. Retry the analysis before reviewing a relationship.",
+        error: "The active boundary or its catalog proof changed after this refusal. Retry the analysis before reviewing a relationship.",
       });
       return;
     }
@@ -1984,6 +1985,98 @@ async function handleRequest(input: {
       }
       throw error;
     }
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/explore/history") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Explore history is available only in a local Auto Boundary Workbench." });
+      return;
+    }
+    const requestedAuditId = url.searchParams.get("audit_id");
+    if (requestedAuditId !== null) {
+      const auditId = Number(requestedAuditId);
+      if (!Number.isSafeInteger(auditId) || auditId < 1) {
+        sendJson(response, 400, { ok: false, error: "Explore history requires a positive audit_id." });
+        return;
+      }
+      const record = await storeAccess(
+        "read",
+        "workbench-explore-history-detail",
+        (store) => store.getQueryAudit(auditId),
+      );
+      const payload = asRecord(record?.payload);
+      if (!record || typeof payload.scoped_explore_version !== "string") {
+        sendJson(response, 404, { ok: false, error: "That Explore audit record was not found." });
+        return;
+      }
+      sendJson(response, 200, {
+        ok: true,
+        audit: {
+          audit_id: auditId,
+          created_at: String(record.created_at ?? payload.recorded_at ?? ""),
+          resource: String(record.table_name ?? "app.explore_data"),
+          status: String(payload.status ?? "recorded"),
+          error_code: typeof payload.error_code === "string" ? payload.error_code : null,
+          boundary_digest: typeof payload.boundary_digest === "string" ? payload.boundary_digest : null,
+          query_fingerprint: String(record.query_fingerprint ?? ""),
+          evidence_bundle_id: typeof record.evidence_bundle_id === "string"
+            ? record.evidence_bundle_id
+            : null,
+          normalized_plan: isRecord(payload.normalized_plan) ? payload.normalized_plan : null,
+          returned_rows_or_groups: Number(payload.returned_rows_or_groups ?? record.row_count ?? 0),
+          returned_cells: Number(payload.returned_cells ?? 0),
+          suppressed_groups: Number(payload.suppressed_groups ?? 0),
+          source_query_executed: payload.source_query_executed === true,
+          result_values_persisted: payload.result_values_persisted === true,
+          trusted_scope_values_persisted: payload.trusted_scope_values_persisted === true,
+          raw_sql_included: payload.raw_sql_included === true,
+          source_database_changed: payload.source_database_changed === true,
+        },
+      });
+      return;
+    }
+    let recent: Awaited<ReturnType<typeof listProtectableQueries>> = [];
+    try {
+      recent = await listProtectableQueries({ projectRoot });
+    } catch (error) {
+      if (!isInactiveExplorationBoundary(error)) throw error;
+    }
+    const durableRecords = await storeAccess(
+      "read",
+      "workbench-explore-history-list",
+      (store) => store.listQueryAudit({ limit: 50 }),
+    );
+    const durable = durableRecords
+      .filter((record) => typeof asRecord(record.payload).scoped_explore_version === "string")
+      .map((record) => {
+        const payload = asRecord(record.payload);
+        return {
+          audit_id: Number(record.audit_id),
+          created_at: String(record.created_at ?? payload.recorded_at ?? ""),
+          resource: String(record.table_name ?? "app.explore_data"),
+          status: String(payload.status ?? "recorded"),
+          returned_rows_or_groups: Number(payload.returned_rows_or_groups ?? record.row_count ?? 0),
+          suppressed_groups: Number(payload.suppressed_groups ?? 0),
+          source_query_executed: payload.source_query_executed === true,
+          evidence_bundle_id: typeof record.evidence_bundle_id === "string"
+            ? record.evidence_bundle_id
+            : null,
+          error_code: typeof payload.error_code === "string" ? payload.error_code : null,
+        };
+      });
+    sendJson(response, 200, {
+      ok: true,
+      recent: recent.map(({ token, ...query }) => ({ ...query, query_ref: token })),
+      durable,
+      durable_limit: 50,
+      persisted: {
+        model_conversation: false,
+        result_values: false,
+        trusted_scope_values: false,
+        raw_sql: false,
+      },
+    });
     return;
   }
 
@@ -7960,6 +8053,25 @@ function managedReviewMutationRequest(
     reason: decision.reason,
     ...(decision.decided_at ? { decided_at: decision.decided_at } : {}),
   };
+  if (decision.kind === "resource_metadata") {
+    return {
+      ...common,
+      metadata: {
+        ...(decision.label !== undefined ? { label: decision.label } : {}),
+        ...(decision.description !== undefined ? { description: decision.description } : {}),
+      },
+    };
+  }
+  if (decision.kind === "field_metadata") {
+    return {
+      ...common,
+      field_metadata: [{
+        field: decision.field,
+        ...(decision.label !== undefined ? { label: decision.label } : {}),
+        ...(decision.description !== undefined ? { description: decision.description } : {}),
+      }],
+    };
+  }
   if (decision.kind === "field_exposure") {
     return {
       ...common,
@@ -8039,6 +8151,18 @@ function managedReviewMutationRequest(
           : {}),
         edges: [...decision.definition.edges],
         bucket_labels: [...decision.definition.bucket_labels],
+        ...(decision.remove ? { remove: true } : {}),
+      },
+    };
+  }
+  if (decision.kind === "auto_band") {
+    if (decision.definition === null) {
+      throw new Error("Workbench automatic-band removal requires the reviewed resource editor.");
+    }
+    return {
+      ...common,
+      auto_band: {
+        ...structuredClone(decision.definition),
         ...(decision.remove ? { remove: true } : {}),
       },
     };
@@ -8170,6 +8294,26 @@ function applyManagedBoundaryReviewDecision(
         [name]: { definition, actor, reason, decided_at: decidedAt },
       };
     }
+  } else if (kind === "auto_band") {
+    const field = requiredReviewText(body.field, "field");
+    if (body.remove === true || body.definition === null) {
+      if (resource.auto_bands) {
+        delete resource.auto_bands[field];
+        if (Object.keys(resource.auto_bands).length === 0) delete resource.auto_bands;
+      }
+    } else {
+      const definition = normalizeExplorationAutoBandPolicy(
+        body.definition,
+        `${resourceId}.${field} auto band`,
+      );
+      if (definition.field !== field) {
+        throw new Error("auto_band review field must match its policy field.");
+      }
+      resource.auto_bands = {
+        ...(resource.auto_bands ?? {}),
+        [field]: { definition, actor, reason, decided_at: decidedAt },
+      };
+    }
   } else if (kind === "row_identity" || kind === "tenant_key" || kind === "tenant_scope_path") {
     const decision = {
       value: requiredReviewText(body.value, "value"),
@@ -8226,7 +8370,7 @@ function applyManagedBoundaryReviewDecision(
     }
   } else {
     throw new Error(
-      "Managed boundary review kind must be field_exposure, field_enum, derived_measure, numeric_band, row_identity, tenant_key, tenant_scope_path, shared_reference_scope, principal_key, principal_scope_path, or minimum_cohort.",
+      "Managed boundary review kind must be field_exposure, field_enum, derived_measure, numeric_band, auto_band, row_identity, tenant_key, tenant_scope_path, shared_reference_scope, principal_key, principal_scope_path, or minimum_cohort.",
     );
   }
 

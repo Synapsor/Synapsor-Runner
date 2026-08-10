@@ -1,7 +1,11 @@
 import crypto from "node:crypto";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { deriveSchemaDeclaredEnumValues, inspectDatabase } from "./index.js";
+import {
+  deriveSchemaDeclaredEnumValues,
+  inspectDatabase,
+  inspectDatabaseWithConnection,
+} from "./index.js";
 
 
 const databaseUrl = process.env.SYNAPSOR_TEST_POSTGRES_URL;
@@ -48,5 +52,23 @@ describePostgres("PostgreSQL native enum inspection", () => {
       column_name: "fulfillment",
       native_values: fulfillment?.enum_values,
     })).toEqual(["pending", "fulfilled", "cancelled"]);
+  });
+
+  it("can inspect through a caller-owned bounded PostgreSQL pool", async () => {
+    const client = await pool.connect();
+    try {
+      const inspection = await inspectDatabaseWithConnection({
+        engine: "postgres",
+        databaseUrlEnv: "SYNAPSOR_TEST_POSTGRES_URL",
+        schema,
+        env: { SYNAPSOR_TEST_POSTGRES_URL: databaseUrl! },
+      }, {
+        engine: "postgres",
+        connection: client,
+      });
+      expect(inspection.tables.map((table) => table.name)).toEqual(["order_items"]);
+    } finally {
+      client.release();
+    }
   });
 });

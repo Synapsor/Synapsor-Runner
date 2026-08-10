@@ -147,6 +147,24 @@ export function renderTerminalSqlFrame(
   });
 }
 
+export function renderTerminalCommandFrame(
+  commands: string[],
+  options: {
+    title: string;
+    metadata?: string[];
+    color?: boolean;
+    columns?: number;
+  },
+): string {
+  return renderTerminalSyntaxFrame(commands.join("\n"), {
+    title: options.title,
+    metadata: options.metadata,
+    color: options.color,
+    columns: options.columns,
+    highlight: highlightTerminalCommand,
+  });
+}
+
 function renderTerminalSyntaxFrame(
   bodyValue: string,
   options: {
@@ -194,6 +212,17 @@ function highlightTerminalMetadata(value: string): string {
   const separator = value.indexOf(":");
   if (separator < 0) return style("1", value);
   return `${style("1;36", value.slice(0, separator + 1))}${style("1", value.slice(separator + 1))}`;
+}
+
+function highlightTerminalCommand(value: string): string {
+  const token = /'(?:'\\''|[^'])*'|<[^>]+>|--[A-Za-z0-9][A-Za-z0-9-]*|^[A-Za-z0-9][A-Za-z0-9._-]*/g;
+  return value.replace(token, (match, offset: number) => {
+    if (offset === 0) return style("1;32", match);
+    if (match.startsWith("--")) return style("1;36", match);
+    if (match.startsWith("<")) return style("1;33", match);
+    if (match.startsWith("'")) return style("1;35", match);
+    return match;
+  });
 }
 
 function highlightTerminalSql(statement: string): string {
@@ -245,7 +274,8 @@ function wrapTerminalFrameLine(value: string, width: number): string[] {
   while (remaining.length > width) {
     const candidate = remaining.slice(0, width + 1);
     const wordBreak = candidate.lastIndexOf(" ");
-    const splitAt = wordBreak > Math.max(0, initialIndent.length)
+    const currentIndent = remaining.match(/^\s*/)?.[0].length ?? 0;
+    const splitAt = wordBreak > currentIndent
       ? wordBreak
       : width;
     lines.push(remaining.slice(0, splitAt).trimEnd());

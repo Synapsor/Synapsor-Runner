@@ -59,6 +59,7 @@ export async function startProductionExploreCli({ root, configPath, env }) {
     cwd: root,
     env,
     stdio: ["ignore", "pipe", "pipe"],
+    detached: true,
   });
   child.stdout.setEncoding("utf8");
   child.stderr.setEncoding("utf8");
@@ -104,13 +105,20 @@ export async function startProductionExploreCli({ root, configPath, env }) {
 
 export async function stopProductionExploreCli(handle) {
   if (!handle || handle.child.exitCode !== null || handle.child.signalCode !== null) return;
+  const killGroup = (signal) => {
+    try {
+      process.kill(-handle.child.pid, signal);
+    } catch {
+      handle.child.kill(signal);
+    }
+  };
   await new Promise((resolve) => {
-    const timeout = setTimeout(() => handle.child.kill("SIGKILL"), 5_000);
+    const timeout = setTimeout(() => killGroup("SIGKILL"), 5_000);
     handle.child.once("exit", () => {
       clearTimeout(timeout);
       resolve();
     });
-    handle.child.kill("SIGTERM");
+    killGroup("SIGTERM");
   });
 }
 
