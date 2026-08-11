@@ -55,6 +55,7 @@ const PROTECTED_READ_KEYS = new Set([
   "predicates",
   "relationship",
   "relationships",
+  "time_window",
   "row_order_by",
   "aggregate",
   "limits",
@@ -118,6 +119,7 @@ const PROTECTED_SEQUENTIAL_AGGREGATE_SHAPES = new Set([
 const PROTECTED_DIMENSION_KEYS = new Set(["name", "field", "relationship", "numeric_band"]);
 const PROTECTED_NUMERIC_BAND_KEYS = new Set(["edges", "bucket_labels"]);
 const PROTECTED_TIME_BUCKET_KEYS = new Set(["name", "field", "bucket", "relationship"]);
+const PROTECTED_TIME_WINDOW_KEYS = new Set(["field", "relationship", "start", "end"]);
 const PROTECTED_COMPARISON_KEYS = new Set(["field", "relationship", "ranges"]);
 const PROTECTED_RANGE_KEYS = new Set(["start", "end"]);
 const PROTECTED_AGGREGATE_ORDER_KEYS = new Set(["kind", "measure", "change", "direction"]);
@@ -558,6 +560,34 @@ function validateProtectedRead(capability: JsonRecord, path: string, errors: Val
     errors,
   );
 
+  if (protectedRead.time_window !== undefined) {
+    const timeWindowPath = `${path}.protected_read.time_window`;
+    if (!isRecord(protectedRead.time_window)) {
+      errors.push({ path: timeWindowPath, code: "PROTECTED_TIME_WINDOW_NOT_OBJECT", message: "time_window must be a fixed reviewed UTC range." });
+    } else {
+      checkUnknownKeys(protectedRead.time_window, PROTECTED_TIME_WINDOW_KEYS, timeWindowPath, errors);
+      validateProtectedFieldReference(
+        protectedRead.time_window.field,
+        protectedRead.time_window.relationship,
+        relationshipNames,
+        keptOut,
+        trustedScopeFields,
+        timeWindowPath,
+        errors,
+      );
+      const start = protectedRead.time_window.start;
+      const end = protectedRead.time_window.end;
+      if (!isCanonicalUtcInstant(start) || !isCanonicalUtcInstant(end)
+        || Date.parse(start) >= Date.parse(end)) {
+        errors.push({
+          path: timeWindowPath,
+          code: "INVALID_PROTECTED_TIME_WINDOW",
+          message: "time_window must freeze one canonical half-open UTC range with start < end; dynamic arguments are not allowed.",
+        });
+      }
+    }
+  }
+
   if (!isRecord(capability.evidence) || capability.evidence.required !== true || capability.evidence.query_audit !== true) {
     errors.push({
       path: `${path}.evidence`,
@@ -641,6 +671,15 @@ function validateProtectedRead(capability: JsonRecord, path: string, errors: Val
       path: `${path}.protected_read.aggregate`,
       errors,
     });
+    if (protectedRead.time_window !== undefined
+      && isRecord(protectedRead.aggregate)
+      && protectedRead.aggregate.comparison !== undefined) {
+      errors.push({
+        path: `${path}.protected_read`,
+        code: "PROTECTED_TIME_SELECTION_CONFLICT",
+        message: "protected_read must use either one fixed time_window or an aggregate comparison, not both.",
+      });
+    }
   }
 
   for (const [name, arg] of Object.entries(args)) {
@@ -1922,6 +1961,12 @@ function isQualifiedOrSafeName(value: unknown): value is string {
 
 function isSha256Digest(value: unknown): value is `sha256:${string}` {
   return typeof value === "string" && /^sha256:[a-f0-9]{64}$/.test(value);
+}
+
+function isCanonicalUtcInstant(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
 }
 
 function isPositiveInteger(value: unknown): boolean {

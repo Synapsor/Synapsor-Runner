@@ -296,6 +296,15 @@ export type ProtectedReadTimeBucketSpec = ExtensionFields & {
   relationship?: string;
 };
 
+export type ProtectedReadTimeWindowSpec = ExtensionFields & {
+  field: string;
+  relationship?: string;
+  /** Frozen UTC ISO instant captured when the reviewed Explore analysis ran. */
+  start: string;
+  /** Exclusive frozen UTC ISO instant captured when the reviewed Explore analysis ran. */
+  end: string;
+};
+
 export type ProtectedReadAggregateSpec = ExtensionFields & {
   counted_entity: "subject";
   measures: ProtectedReadMeasureSpec[];
@@ -356,6 +365,11 @@ export type ProtectedReadSpec = ExtensionFields & {
    * human-reviewed authority; runtime plans may reference names only.
    */
   relationships?: ProtectedReadRelationshipPathSpec[];
+  /**
+   * A fixed half-open time predicate. Protect freezes resolved relative windows
+   * here; it never turns them into dynamic model arguments.
+   */
+  time_window?: ProtectedReadTimeWindowSpec;
   row_order_by?: Array<{
     field: string;
     direction: "asc" | "desc";

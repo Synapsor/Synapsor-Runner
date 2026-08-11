@@ -206,6 +206,8 @@ describe("Ask authoring/runtime separation", () => {
         .toContain("one row per dimension/time combination");
       expect(listed.find((tool) => tool.name === "app.explore_data")?.description)
         .toContain('"method":"quantile","buckets":5');
+      expect(listed.find((tool) => tool.name === "app.explore_data")?.description)
+        .toContain('"time_window"');
       const exploreSchema = JSON.stringify(listed.find((tool) => tool.name === "app.explore_data")?.input_schema);
       expect(exploreSchema).toContain("equal_width");
       expect(exploreSchema).not.toMatch(/"edges"|"width"|"offset"|"labels"/);
@@ -268,6 +270,58 @@ describe("Ask authoring/runtime separation", () => {
         error_code: "EXPLORE_PLAN_INVALID",
       });
       expect(fixture.exploredPlans).toHaveLength(callsBeforeUnsafeBand);
+
+      await gateway.callTool("app.explore_data", {
+        plan: {
+          kind: "rows",
+          resource: "public.sessions",
+          select: ["id"],
+          time_window: {
+            field: "started_at",
+            window: "previous_month",
+          },
+        },
+      });
+      expect(fixture.exploredPlans.at(-1)).toMatchObject({
+        time_window: { field: "started_at", window: "previous_month" },
+      });
+      await gateway.callTool("app.explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.sessions",
+          measures: [{ function: "count" }],
+          time_bucket: { field: "started_at", bucket: "month" },
+          comparison: {
+            field: "started_at",
+            window: "previous_month",
+            compare_to: "preceding_period",
+          },
+        },
+      });
+      expect(fixture.exploredPlans.at(-1)).toMatchObject({
+        comparison: {
+          field: "started_at",
+          window: "previous_month",
+          compare_to: "preceding_period",
+        },
+      });
+      const callsBeforeUnsafeWindow = fixture.exploredPlans.length;
+      await expect(gateway.callTool("app.explore_data", {
+        plan: {
+          kind: "rows",
+          resource: "public.sessions",
+          select: ["id"],
+          time_window: {
+            field: "started_at",
+            window: "previous_month",
+            offset: "-1 month",
+          },
+        },
+      })).resolves.toMatchObject({
+        ok: false,
+        error_code: "EXPLORE_PLAN_INVALID",
+      });
+      expect(fixture.exploredPlans).toHaveLength(callsBeforeUnsafeWindow);
     } finally {
       await gateway.close();
     }

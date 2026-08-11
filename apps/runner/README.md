@@ -95,9 +95,10 @@ app.describe_data
 app.explore_data
 ```
 
-The agent receives reviewed names and legal operations, not a SQL tool. It can
+Agents receive reviewed operations, never SQL. They can
 combine reviewed totals, distinct counts, dimensions, filters, comparisons,
-time buckets, top-N rankings, and many-to-one relationships. Every plan is
+time buckets, Runner-resolved relative UTC windows, top-N rankings, and
+many-to-one relationships. Every plan is
 scope-injected, read-only, budget-bounded, and small-cohort suppressed.
 
 ```text

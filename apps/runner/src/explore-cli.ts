@@ -3,8 +3,15 @@ import type {
   AggregateDimension,
   AggregateExplorePlan,
   AggregateMeasure,
+  CanonicalTimeWindow,
   ExploreFilter,
 } from "./scoped-explore.js";
+import {
+  RELATIVE_TIME_COMPARISONS,
+  RELATIVE_TIME_WINDOWS,
+  type RelativeTimeComparison,
+  type RelativeTimeWindow,
+} from "./relative-time-window.js";
 
 export type FriendlyExploreOptions = {
   resource?: string;
@@ -17,12 +24,33 @@ export type FriendlyExploreOptions = {
   groupBy?: string[];
   groupBands?: string[];
   timeBucket?: string;
+  timeWindow?: string;
   compareField?: string;
   period?: string;
   versusPeriod?: string;
+  compareWindow?: string;
+  compareTo?: RelativeTimeComparison;
   comparisonChange?: "absolute" | "percentage";
   filters?: string[];
   top?: number;
+};
+
+type FriendlyRelativeTimeWindow = {
+  field: string;
+  relationship?: string;
+  window: RelativeTimeWindow;
+};
+
+type FriendlyRelativeComparison = FriendlyRelativeTimeWindow & {
+  compare_to: RelativeTimeComparison;
+};
+
+export type FriendlyAggregateExplorePlan = Omit<
+  AggregateExplorePlan,
+  "time_window" | "comparison"
+> & {
+  time_window?: CanonicalTimeWindow | FriendlyRelativeTimeWindow;
+  comparison?: AggregateExplorePlan["comparison"] | FriendlyRelativeComparison;
 };
 
 type FriendlyExploreBoundary = Pick<ActivatedExplorationBoundary, "pack" | "budgets">;
@@ -30,7 +58,7 @@ type FriendlyExploreBoundary = Pick<ActivatedExplorationBoundary, "pack" | "budg
 export function buildFriendlyAggregatePlan(
   boundary: FriendlyExploreBoundary,
   options: FriendlyExploreOptions,
-): AggregateExplorePlan {
+): FriendlyAggregateExplorePlan {
   const resource = chooseResource(boundary, options);
   let relationship: string | undefined;
   const bindRelationship = (candidate: string | undefined): void => {
@@ -108,8 +136,24 @@ export function buildFriendlyAggregatePlan(
     timeBucket = { field: reference.field, bucket, ...(reference.relationship ? { relationship: reference.relationship } : {}) };
   }
 
-  let comparison: AggregateExplorePlan["comparison"];
-  if (options.compareField || options.period || options.versusPeriod) {
+  let timeWindow: FriendlyAggregateExplorePlan["time_window"];
+  if (options.timeWindow) {
+    const parsed = parseRelativeTimeOption(options.timeWindow, "--time-window");
+    bindRelationship(parsed.relationship);
+    timeWindow = parsed;
+  }
+
+  let comparison: FriendlyAggregateExplorePlan["comparison"];
+  const absoluteComparisonRequested = Boolean(
+    options.compareField || options.period || options.versusPeriod,
+  );
+  const relativeComparisonRequested = Boolean(options.compareWindow || options.compareTo);
+  if (absoluteComparisonRequested && relativeComparisonRequested) {
+    throw new Error(
+      "Use either --compare/--period/--vs-period or --compare-window/--compare-to, not both.",
+    );
+  }
+  if (absoluteComparisonRequested) {
     if (!options.compareField || !options.period || !options.versusPeriod) {
       throw new Error("A period comparison requires --compare <time-field>, --period <start>..<end>, and --vs-period <start>..<end>.");
     }
@@ -123,6 +167,23 @@ export function buildFriendlyAggregatePlan(
       ranges: [parsePeriod(options.period, "--period"), parsePeriod(options.versusPeriod, "--vs-period")],
       ...(reference.relationship ? { relationship: reference.relationship } : {}),
     };
+  } else if (relativeComparisonRequested) {
+    if (!options.compareWindow || !options.compareTo) {
+      throw new Error(
+        `A relative comparison requires --compare-window <field[@relationship]>:<window> and --compare-to ${RELATIVE_TIME_COMPARISONS.join("|")}.`,
+      );
+    }
+    if (!timeBucket) {
+      throw new Error(
+        "A relative comparison requires --time-bucket <time-field>:hour|day|week|month|quarter|year|day_of_week to state its reviewed reporting grain.",
+      );
+    }
+    const parsed = parseRelativeTimeOption(options.compareWindow, "--compare-window");
+    bindRelationship(parsed.relationship);
+    comparison = { ...parsed, compare_to: options.compareTo };
+  }
+  if (timeWindow && comparison) {
+    throw new Error("--time-window cannot be combined with a period comparison.");
   }
 
   const where: ExploreFilter[] = [];
@@ -142,6 +203,7 @@ export function buildFriendlyAggregatePlan(
     measures,
     ...(dimensions.length ? { dimensions } : {}),
     ...(timeBucket ? { time_bucket: timeBucket } : {}),
+    ...(timeWindow ? { time_window: timeWindow } : {}),
     ...(where.length ? { where } : {}),
     order_by: comparison
       ? {
@@ -156,6 +218,22 @@ export function buildFriendlyAggregatePlan(
     top_n: top,
     ...(comparison ? { comparison } : {}),
   };
+}
+
+function parseRelativeTimeOption(
+  value: string,
+  option: "--time-window" | "--compare-window",
+): FriendlyRelativeTimeWindow {
+  const separator = value.lastIndexOf(":");
+  if (separator < 1) {
+    throw new Error(`${option} must use <field[@reviewed_relationship]>:<window>.`);
+  }
+  const reference = parseFieldReference(value.slice(0, separator));
+  const window = value.slice(separator + 1);
+  if (!(RELATIVE_TIME_WINDOWS as readonly string[]).includes(window)) {
+    throw new Error(`${option} window must be one of ${RELATIVE_TIME_WINDOWS.join(", ")}.`);
+  }
+  return { ...reference, window: window as RelativeTimeWindow };
 }
 
 function chooseResource(

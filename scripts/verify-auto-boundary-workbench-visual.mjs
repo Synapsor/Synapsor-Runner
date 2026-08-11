@@ -97,9 +97,21 @@ try {
       return {
       boundary,
       session_fingerprint: `sha256:${"c".repeat(64)}`,
-      describe: () => ({ resources: boundary.pack.resources }),
+      describe: () => ({
+        resources: boundary.pack.resources.map((resource) => ({
+          ...resource,
+          relative_time_window_fields: Object.keys(resource.time_bucket_fields ?? {}),
+        })),
+        relative_time_windows: {
+          available: true,
+          reporting_timezone: "UTC",
+          windows: ["last_30_days", "previous_month"],
+          comparison_partners: ["preceding_period", "same_period_last_year"],
+        },
+      }),
       explore: async (plan) => {
         const grouped = plan.dimensions?.[0]?.field;
+        const relativeWindow = plan.time_window;
         return {
           ok: true,
           outcome: {
@@ -116,6 +128,22 @@ try {
             returned_rows_or_groups: 1,
             returned_cells: grouped ? 2 : 1,
           },
+          ...(relativeWindow ? {
+            operator_time_windows: [{
+              source: "reviewed_relative_time",
+              location: "time_window",
+              field: relativeWindow.field,
+              ...(relativeWindow.relationship ? { relationship: relativeWindow.relationship } : {}),
+              window: relativeWindow.window,
+              reporting_timezone: "UTC",
+              resolved_at: "2026-08-11T06:00:00.000Z",
+              ranges: [{
+                id: "selected",
+                start_inclusive: "2026-07-12T06:00:00.000Z",
+                end_exclusive: "2026-08-11T06:00:00.000Z",
+              }],
+            }],
+          } : {}),
           source_database_changed: false,
         };
       },
@@ -543,6 +571,95 @@ try {
     await screenshot(page, "workbench-boundary-proof-desktop.png");
     await evaluate(page, `(() => {
       document.body.classList.remove("ask-result-mode");
+      showAskConfiguration();
+    })()`);
+    await waitForExpression(page, "document.querySelector('#open-client-setup')?.offsetParent !== null");
+    await clickSelector(page, "#ask-open-no-model");
+    await waitForExpression(page, `[...document.querySelectorAll('#aggregate-window-field option')]
+      .some(option=>{try{return JSON.parse(option.value).field==='created_at'}catch{return false}})`);
+    await evaluate(page, `(() => {
+      const select=document.querySelector("#aggregate-window-field");
+      const option=[...select.options].find(item=>{try{return JSON.parse(item.value).field==="created_at"}catch{return false}});
+      select.value=option.value;
+      select.dispatchEvent(new Event("change",{bubbles:true}));
+    })()`);
+    await selectOptionByValue(page, "#aggregate-window-name", "last_30_days");
+    await waitForExpression(page, "document.querySelector('#aggregate-window-wrap')?.classList.contains('hidden') === false");
+    const relativeWindowComposer = await evaluate(page, `(() => {
+      document.querySelector("#aggregate-window-field")?.scrollIntoView({block:"center"});
+      const form=document.querySelector("#aggregate-controls");
+      const preview=document.querySelector("#plan-preview")?.textContent||"";
+      const rect=form?.getBoundingClientRect();
+      return {
+        field:document.querySelector("#aggregate-window-field")?.value,
+        window:document.querySelector("#aggregate-window-name")?.value,
+        preview,
+        withinWidth:Boolean(rect&&rect.left>=0&&rect.right<=innerWidth),
+        horizontalOverflow:document.documentElement.scrollWidth>document.documentElement.clientWidth+1,
+      };
+    })()`);
+    assert(
+      JSON.parse(relativeWindowComposer.field).field === "created_at"
+        && relativeWindowComposer.window === "last_30_days"
+        && /"time_window"/.test(relativeWindowComposer.preview)
+        && /"last_30_days"/.test(relativeWindowComposer.preview)
+        && relativeWindowComposer.withinWidth
+        && !relativeWindowComposer.horizontalOverflow,
+      "Workbench relative-window composer did not produce a bounded reviewed plan",
+      relativeWindowComposer,
+    );
+    await screenshot(page, "workbench-relative-window-controls-desktop.png");
+    await clickSelector(page, "#run-explore");
+    await waitForExpression(page, "document.querySelector('#explore-status')?.textContent.includes('Reviewed result returned')");
+    const relativeWindowResult = await evaluate(page, `(() => {
+      const result=document.querySelector("#explore-result");
+      const text=result?.textContent||"";
+      return {
+        text,
+        operatorDetails:Boolean(result?.querySelector(".ask-execution-evidence")),
+        horizontalOverflow:document.documentElement.scrollWidth>document.documentElement.clientWidth+1,
+      };
+    })()`);
+    assert(
+      relativeWindowResult.operatorDetails
+        && /Operator-only resolved UTC window/.test(relativeWindowResult.text)
+        && /Last 30 days/.test(relativeWindowResult.text)
+        && /2026-07-12T06:00:00.000Z/.test(relativeWindowResult.text)
+        && /2026-08-11T06:00:00.000Z/.test(relativeWindowResult.text)
+        && !relativeWindowResult.horizontalOverflow,
+      "Workbench did not render the Runner-resolved range as operator-only evidence",
+      relativeWindowResult,
+    );
+    await evaluate(page, `(() => {
+      const details=document.querySelector("#explore-result .ask-execution-evidence");
+      details.open=true;
+      details.scrollIntoView({block:"center"});
+    })()`);
+    await screenshot(page, "workbench-relative-window-result-desktop.png");
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true,
+      screenWidth: 390,
+      screenHeight: 844,
+    });
+    await evaluate(page, `document.querySelector("#explore-result")?.scrollIntoView({block:"start"})`);
+    assert(
+      await evaluate(page, "document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1"),
+      "Workbench relative-window evidence overflowed the mobile viewport",
+    );
+    await screenshot(page, "workbench-relative-window-result-mobile.png");
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 1440,
+      height: 1100,
+      deviceScaleFactor: 1,
+      mobile: false,
+      screenWidth: 1440,
+      screenHeight: 1100,
+    });
+    await evaluate(page, `(() => {
+      document.body.classList.remove("no-model-focus");
       showAskConfiguration();
     })()`);
     await waitForExpression(page, "document.querySelector('#open-client-setup')?.offsetParent !== null");

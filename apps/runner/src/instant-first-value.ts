@@ -1,12 +1,14 @@
 import type { ExplorationBoundaryDraft } from "./auto-boundary.js";
-import { buildFriendlyAggregatePlan } from "./explore-cli.js";
-import type { AggregateExplorePlan } from "./scoped-explore.js";
+import {
+  buildFriendlyAggregatePlan,
+  type FriendlyAggregateExplorePlan,
+} from "./explore-cli.js";
 
 export type InstantFirstValue = {
   resource: string;
   question: string;
   operation: string;
-  plan: AggregateExplorePlan;
+  plan: FriendlyAggregateExplorePlan;
   agent_can_see: string[];
   agent_can_see_labels: string[];
   agent_cannot_see: string[];

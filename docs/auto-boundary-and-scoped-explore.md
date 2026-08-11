@@ -731,6 +731,32 @@ synapsor-runner try explore \
   --change percentage
 ```
 
+Let Runner resolve a reviewed relative UTC window instead of asking an AI client
+to calculate dates:
+
+```bash
+synapsor-runner try explore \
+  --resource public.orders \
+  --count \
+  --group-by channel \
+  --time-window created_at:previous_month
+
+synapsor-runner try explore \
+  --resource public.orders \
+  --sum total_cents \
+  --group-by channel \
+  --time-bucket created_at:month \
+  --compare-window created_at:previous_month \
+  --compare-to preceding_period
+```
+
+Relative windows are available only for fields already reviewed for time
+bucketing. Runner captures one clock instant and resolves a fixed vocabulary in
+the boundary's authority-bound UTC timezone. `this_month` is the complete UTC
+calendar month; `month_to_date` ends at the captured instant. The same distinction
+applies to week, quarter, and year. Ranges are half-open `[start, end)`. Existing
+absolute ISO ranges remain supported.
+
 `app.describe_data` reports cohort-safe minimum and maximum dates for reviewed
 time fields. It returns dates only when at least the reviewed minimum cohort has
 a value; otherwise coverage is marked empty, withheld, or unavailable. The
@@ -886,6 +912,9 @@ analytics database tool. It supports:
 - ordering by a returned aggregate;
 - bounded top-N and bottom-N results;
 - one range or an exact comparison of at most two reviewed time ranges;
+- one reviewed relative UTC window on rows or aggregates, or a relative
+  two-period comparison against the preceding period or the same period last
+  year; the model supplies a fixed name, never date arithmetic;
 - ordering an exact two-period comparison by signed absolute or percentage
   change;
 - one resource by default;
@@ -1016,6 +1045,12 @@ snapshot and returns period values, absolute change, and percentage change only
 when the earlier denominator is nonzero. Results distinguish an empty result,
 a fully suppressed result, and an incomplete comparison rather than silently
 turning any of them into zero.
+
+Relative windows use that same UTC authority and the same compiler in local
+stdio and production HTTP. The operator-facing result and evidence record the
+original name, captured instant, and resolved range. Model-facing results omit
+the resolved timestamps. A protected analysis freezes those absolute timestamps;
+it does not become a moving "previous month whenever invoked" capability.
 
 ## Structured Results And Safe Catalog
 

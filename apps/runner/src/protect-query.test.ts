@@ -127,6 +127,65 @@ describe("Protect This Query", () => {
     });
   });
 
+  it("freezes a resolved relative window as fixed protected authority", async () => {
+    const fixture = await activatedFixture(churnInspection());
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([{
+        dimension_0: "west",
+        measure_0: 8,
+        __cohort_size: 8,
+      }]),
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => Date.parse("2026-07-22T12:00:00.000Z"),
+    });
+    const result = await runtime.explore({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "region" }],
+      time_window: { field: "churned_at", window: "previous_month" },
+      top_n: 10,
+    });
+    await runtime.close();
+
+    const token = (result.protect as { token: string }).token;
+    const [protectable] = await listProtectableQueries({
+      projectRoot: fixture.root,
+      now: Date.parse("2026-07-22T12:00:01.000Z"),
+    });
+    expect(protectable?.token).toBe(token);
+    expect(protectable?.literal_positions.map((position) => position.location)).not.toContain(
+      "time_window.start",
+    );
+    expect(protectable?.literal_positions.map((position) => position.location)).not.toContain(
+      "time_window.end",
+    );
+
+    const created = await createProtectedQueryDraft({
+      projectRoot: fixture.root,
+      token,
+      capabilityName: "analytics.previous_month_churn_by_region",
+      description: "Count reviewed churn rows from the resolved previous UTC month.",
+      returnsHint: "Returns privacy-suppressed reviewed regional counts.",
+      now: Date.parse("2026-07-22T12:00:01.000Z"),
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+
+    expect(created.dsl).toContain(
+      "PROTECTED TIME WINDOW churned_at FROM FIXED '2026-06-01T00:00:00.000Z' TO FIXED '2026-07-01T00:00:00.000Z'",
+    );
+    expect(created.dsl).not.toMatch(/PROTECTED TIME WINDOW .* ARG/i);
+    expect(created.contract.capabilities[0]?.protected_read?.time_window).toEqual({
+      field: "churned_at",
+      start: "2026-06-01T00:00:00.000Z",
+      end: "2026-07-01T00:00:00.000Z",
+    });
+    expect(created.contract.capabilities[0]?.args).toEqual({});
+  });
+
   it("freezes a ranked two-period mover with its reviewed candidate-set ceiling", async () => {
     const fixture = await activatedFixture(churnInspection());
     const runtime = await createScopedExploreRuntime({

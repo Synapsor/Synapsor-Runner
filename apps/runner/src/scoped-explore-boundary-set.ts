@@ -24,6 +24,10 @@ import {
   type ScopedExploreTransport,
 } from "./scoped-explore.js";
 import type { ExploreHttpSessionContext } from "./explore-trusted-scope.js";
+import {
+  RELATIVE_TIME_COMPARISONS,
+  RELATIVE_TIME_WINDOWS,
+} from "./relative-time-window.js";
 import { runAllCleanups } from "./resource-lifecycle.js";
 
 export type BoundarySetDescribeInput = {
@@ -197,11 +201,22 @@ export async function createScopedExploreBoundarySetRuntime(input: {
         }
       }
       const page = catalog.slice(cursor, cursor + limit);
+      const relativeTimeAvailable = boundaries.some((boundary) =>
+        boundary.reporting_timezone === "UTC");
       return {
         ok: true,
         outcome: { type: "success" },
         active_boundary_set_digest: setDigest,
         boundaries: boundarySummaries(boundaries),
+        relative_time_windows: {
+          available: relativeTimeAvailable,
+          reporting_timezone: relativeTimeAvailable ? "UTC" : null,
+          windows: relativeTimeAvailable ? [...RELATIVE_TIME_WINDOWS] : [],
+          comparison_partners: relativeTimeAvailable ? [...RELATIVE_TIME_COMPARISONS] : [],
+          range_semantics: "half-open [start, end)",
+          week_starts_on: "Monday",
+          model_supplied_date_arithmetic: false,
+        },
         resources: page,
         next_cursor: cursor + page.length < catalog.length ? cursor + page.length : null,
         raw_sql_available: false,
@@ -239,7 +254,18 @@ export async function createScopedExploreBoundarySetRuntime(input: {
       const boundary = name
         ? boundaries.find((candidate) => candidate.pack.name === name)
         : undefined;
-      if (!boundary) return { value: structuredClone(result), withheld: false };
+      if (!boundary) {
+        const value = structuredClone(result);
+        const operatorMetadataWithheld = Object.hasOwn(value, "operator_budget")
+          || Object.hasOwn(value, "operator_time_windows");
+        delete value.operator_budget;
+        delete value.operator_time_windows;
+        return {
+          value,
+          withheld: false,
+          ...(operatorMetadataWithheld ? { operator_metadata_withheld: true } : {}),
+        };
+      }
       const rawPlan = isRecord(args.plan) ? args.plan : undefined;
       const target = rawPlan && typeof rawPlan.resource === "string"
         ? resolveActiveExploreTarget(boundaries, boundary.pack.name, rawPlan.resource)

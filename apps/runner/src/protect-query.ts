@@ -29,6 +29,7 @@ import {
   type ExploreFilter,
   type ExplorePlan,
 } from "./scoped-explore.js";
+import type { ResolvedRelativeTimeWindow } from "./relative-time-window.js";
 
 const PROTECTED_QUERY_VERSION = "synapsor.protected-query.v1";
 const PROTECTED_DIR = "synapsor/protected";
@@ -174,6 +175,7 @@ export async function listProtectableQueries(input: {
   returned_rows_or_groups?: number;
   returned_cells?: number;
   suppressed_groups?: number;
+  resolved_time_windows?: ResolvedRelativeTimeWindow[];
   minimum_cohort_override?: {
     resource: string;
     minimum_cohort_size: number;
@@ -646,6 +648,9 @@ function emitProtectedQueryDsl(input: {
     `  BOUNDARY DIGEST ${input.boundary.activation.digest}`,
     `  GENERATION LOCK ${input.boundary.generation_lock_fingerprint}`,
     ...relationshipsDsl(relationships),
+    ...(input.plan.time_window
+      ? [`  PROTECTED TIME WINDOW ${protectedFieldName(input.plan.time_window.field, input.plan.time_window.relationship)} FROM FIXED ${dslLiteral(input.plan.time_window.start)} TO FIXED ${dslLiteral(input.plan.time_window.end)}`]
+      : []),
     ...predicateDsl(input.plan.where ?? [], input.selections),
   ];
   if (input.plan.kind === "rows") {
@@ -797,6 +802,7 @@ function relationshipsForPlan(
   const names = new Set<string>();
   if (plan.kind === "aggregate" && plan.relationship) names.add(plan.relationship);
   for (const filter of plan.where ?? []) if (filter.relationship) names.add(filter.relationship);
+  if (plan.time_window?.relationship) names.add(plan.time_window.relationship);
   if (plan.kind === "aggregate") {
     for (const measure of plan.measures) {
       if ("derived_measure" in measure) {

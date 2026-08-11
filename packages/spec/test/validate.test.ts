@@ -250,6 +250,52 @@ describe("@synapsor/spec validation", () => {
       .toContain("INVALID_PROTECTED_RANKED_GROUP_LIMIT");
   });
 
+  it("accepts only canonical fixed protected time windows", () => {
+    const contract = protectedAggregateContract();
+    contract.capabilities[0].protected_read.time_window = {
+      field: "churned_at",
+      start: "2026-06-01T00:00:00.000Z",
+      end: "2026-07-01T00:00:00.000Z",
+    };
+    expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+    expect(normalizeContract(contract).capabilities[0]?.protected_read?.time_window).toEqual({
+      field: "churned_at",
+      start: "2026-06-01T00:00:00.000Z",
+      end: "2026-07-01T00:00:00.000Z",
+    });
+
+    const dynamic = structuredClone(contract);
+    dynamic.capabilities[0].protected_read.time_window.start = { from_arg: "period_start" };
+    expect(validateContract(dynamic).errors.map((error) => error.code))
+      .toContain("INVALID_PROTECTED_TIME_WINDOW");
+
+    const nonCanonical = structuredClone(contract);
+    nonCanonical.capabilities[0].protected_read.time_window.start = "2026-06-01T00:00:00Z";
+    expect(validateContract(nonCanonical).errors.map((error) => error.code))
+      .toContain("INVALID_PROTECTED_TIME_WINDOW");
+
+    const reversed = structuredClone(contract);
+    reversed.capabilities[0].protected_read.time_window.end = "2026-05-01T00:00:00.000Z";
+    expect(validateContract(reversed).errors.map((error) => error.code))
+      .toContain("INVALID_PROTECTED_TIME_WINDOW");
+
+    const unknown = structuredClone(contract);
+    unknown.capabilities[0].protected_read.time_window.offset = "P1M";
+    expect(validateContract(unknown).errors.map((error) => error.code))
+      .toContain("UNKNOWN_CORE_FIELD");
+
+    const conflicting = structuredClone(contract);
+    conflicting.capabilities[0].protected_read.aggregate.comparison = {
+      field: "churned_at",
+      ranges: [
+        { start: { fixed: "2026-05-01T00:00:00.000Z" }, end: { fixed: "2026-06-01T00:00:00.000Z" } },
+        { start: { fixed: "2026-06-01T00:00:00.000Z" }, end: { fixed: "2026-07-01T00:00:00.000Z" } },
+      ],
+    };
+    expect(validateContract(conflicting).errors.map((error) => error.code))
+      .toContain("PROTECTED_TIME_SELECTION_CONFLICT");
+  });
+
   it("accepts only fixed contributor-safe reviewed derived measures", () => {
     const contract = protectedAggregateContract();
     contract.capabilities[0].protected_read.aggregate.measures = [{

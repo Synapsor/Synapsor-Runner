@@ -924,6 +924,7 @@ describe("Workbench BYOM Ask", () => {
               resources: [{
                 id: "public.invoices",
                 groupable_fields: ["status"],
+                aggregate_measure_functions: { amount_cents: ["sum", "avg"] },
                 valid_plan_example: {
                   kind: "aggregate",
                   resource: "public.invoices",
@@ -1002,6 +1003,85 @@ describe("Workbench BYOM Ask", () => {
     ]);
   });
 
+  it("recovers an empty first response from a local model through the reviewed catalog", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        return name === "app.describe_data"
+          ? {
+            ok: true,
+            value: {
+              ok: true,
+              resources: [{
+                id: "public.churn_events",
+                groupable_fields: ["reason_category"],
+                aggregate_measure_functions: {},
+                valid_plan_example: {
+                  kind: "aggregate",
+                  resource: "public.churn_events",
+                  measures: [{ function: "count" }],
+                  dimensions: [{ field: "reason_category" }],
+                },
+              }],
+              source_database_changed: false,
+            },
+          }
+          : {
+            ok: true,
+            value: {
+              ok: true,
+              data: [{ reason_category: "price", count: 12 }],
+              source_database_changed: false,
+            },
+          };
+      },
+      close: async () => undefined,
+    };
+    const responses = [
+      openAiText(""),
+      openAiText(JSON.stringify({
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "reason_category" }],
+        },
+      })),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run("How many churn events are there by reason category?", gateway, {
+      requestJson: async () => responses.shift()!,
+    });
+
+    expect(result).toMatchObject({
+      answer_source: "runner",
+      answer_is_untrusted_model_output: false,
+      tool_calls: [
+        { tool: "app.describe_data", status: "ok" },
+        { tool: "app.describe_data", status: "ok" },
+        { tool: "app.explore_data", status: "ok" },
+      ],
+    });
+    expect(calls).toEqual([
+      { name: "app.describe_data", args: { limit: 10 } },
+      { name: "app.describe_data", args: { resource: "public.churn_events" } },
+      {
+        name: "app.explore_data",
+        args: {
+          plan: {
+            kind: "aggregate",
+            resource: "public.churn_events",
+            measures: [{ function: "count" }],
+            dimensions: [{ field: "reason_category" }],
+          },
+        },
+      },
+    ]);
+  });
+
   it("refuses a semantically wrong direct local-model plan before source execution and accepts its correction", async () => {
     const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
     const gateway: AskToolGateway = {
@@ -1050,15 +1130,14 @@ describe("Workbench BYOM Ask", () => {
           dimensions: [{ field: "reason_category" }],
         },
       }),
-      openAiToolCall("corrected", "app__explore_data", {
+      openAiText(JSON.stringify({
         plan: {
           kind: "aggregate",
           resource: "public.churn_events",
           measures: [{ function: "count" }],
           dimensions: [{ field: "reason_category" }],
         },
-      }),
-      openAiText("Runner returned the reviewed counts."),
+      })),
     ];
     const session = configuredSession(askToolSurfaceDigest(authoringTools));
     const result = await session.run("How many churn events are there by reason category?", gateway, {
@@ -1080,6 +1159,412 @@ describe("Workbench BYOM Ask", () => {
         },
       },
     }]);
+  });
+
+  it("refuses an unsolicited grouping on a scalar local-model total before source execution", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        return name === "app.describe_data"
+          ? {
+            ok: true,
+            value: {
+              ok: true,
+              resources: [{
+                id: "public.churn_events",
+                groupable_fields: ["reason_category"],
+                aggregate_measure_functions: { monthly_revenue_cents: ["sum", "avg"] },
+              }],
+              source_database_changed: false,
+            },
+          }
+          : {
+            ok: true,
+            value: {
+              ok: true,
+              data: [{ sum_monthly_revenue_cents: 42 }],
+              source_database_changed: false,
+            },
+          };
+      },
+      close: async () => undefined,
+    };
+    const responses = [
+      openAiToolCall("catalog", "app__describe_data", {}),
+      openAiToolCall("grouped", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "sum", field: "monthly_revenue_cents" }],
+          dimensions: [{ field: "reason_category" }],
+        },
+      }),
+      openAiText(JSON.stringify({
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "sum", field: "monthly_revenue_cents" }],
+        },
+      })),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run("What is the total monthly revenue in cents?", gateway, {
+      requestJson: async () => responses.shift()!,
+    });
+
+    expect(result.tool_calls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ tool: "app.explore_data", status: "refused", error_code: "LOCAL_PLAN_INTENT_MISMATCH" }),
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]));
+    expect(calls.filter((call) => call.name === "app.explore_data")).toEqual([{
+      name: "app.explore_data",
+      args: {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "sum", field: "monthly_revenue_cents" }],
+        },
+      },
+    }]);
+  });
+
+  it("distinguishes a monthly measure name from a requested month time bucket", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        return name === "app.describe_data"
+          ? {
+            ok: true,
+            value: {
+              ok: true,
+              resources: [{
+                id: "public.churn_events",
+                groupable_fields: ["reason_category"],
+                aggregate_measure_functions: { monthly_revenue_cents: ["sum", "avg"] },
+                time_bucket_fields: { churned_at: ["week", "month"] },
+              }],
+              source_database_changed: false,
+            },
+          }
+          : {
+            ok: true,
+            value: { ok: true, data: [{ reason_category: "price", sum_monthly_revenue_cents: 42 }], source_database_changed: false },
+          };
+      },
+      close: async () => undefined,
+    };
+    const responses = [
+      openAiToolCall("wrong", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "reason_category" }],
+        },
+      }),
+      openAiText(JSON.stringify({
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "sum", field: "monthly_revenue_cents" }],
+          dimensions: [{ field: "reason_category" }],
+        },
+      })),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run("What is the total monthly revenue in cents by churn reason category?", gateway, {
+      requestJson: async () => responses.shift()!,
+    });
+
+    expect(result.tool_calls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ tool: "app.explore_data", status: "refused", error_code: "LOCAL_PLAN_INTENT_MISMATCH" }),
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]));
+    expect(calls.filter((call) => call.name === "app.explore_data")).toEqual([{
+      name: "app.explore_data",
+      args: {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "sum", field: "monthly_revenue_cents" }],
+          dimensions: [{ field: "reason_category" }],
+        },
+      },
+    }]);
+  });
+
+  it("requires the reviewed time grain and order named by a local-model question", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        return name === "app.describe_data"
+          ? {
+            ok: true,
+            value: {
+              ok: true,
+              resources: [{
+                id: "public.churn_events",
+                groupable_fields: ["reason_category"],
+                aggregate_measure_functions: {},
+                time_bucket_fields: { churned_at: ["day", "week", "month"] },
+              }],
+              source_database_changed: false,
+            },
+          }
+          : {
+            ok: true,
+            value: { ok: true, data: [{ time_bucket: "2026-08-03T00:00:00Z", count: 12 }], source_database_changed: false },
+          };
+      },
+      close: async () => undefined,
+    };
+    const responses = [
+      openAiText("Weekly counts are available."),
+      openAiText("{}"),
+      openAiText("{}"),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run("Show weekly churn event counts, oldest week first.", gateway, {
+      requestJson: async () => responses.shift()!,
+    });
+
+    expect(result).toMatchObject({
+      answer_source: "runner",
+      tool_calls: [
+        { tool: "app.describe_data", status: "ok" },
+        { tool: "app.describe_data", status: "ok" },
+        { tool: "app.explore_data", status: "ok" },
+      ],
+    });
+    expect(calls.at(-1)).toEqual({
+      name: "app.explore_data",
+      args: {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "count" }],
+          time_bucket: { field: "churned_at", bucket: "week" },
+          order_by: { kind: "time_bucket", direction: "asc" },
+        },
+      },
+    });
+  });
+
+  it("requires a reviewed relative window when a local-model question names one", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        return name === "app.describe_data"
+          ? {
+            ok: true,
+            value: {
+              ok: true,
+              resources: [{
+                id: "public.churn_events",
+                groupable_fields: ["reason_category"],
+                aggregate_measure_functions: { monthly_revenue_cents: ["sum", "avg"] },
+                relative_time_window_fields: ["churned_at"],
+                valid_plan_example: {
+                  kind: "aggregate",
+                  resource: "public.churn_events",
+                  measures: [{ function: "count" }],
+                  dimensions: [{ field: "reason_category" }],
+                },
+              }],
+              source_database_changed: false,
+            },
+          }
+          : {
+            ok: true,
+            value: {
+              ok: true,
+              data: [{ reason_category: "price", count: 12 }],
+              source_database_changed: false,
+            },
+          };
+      },
+      close: async () => undefined,
+    };
+    const responses = [
+      openAiToolCall("catalog", "app__describe_data", {}),
+      openAiToolCall("missing_window", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "reason_category" }],
+        },
+      }),
+      openAiText(JSON.stringify({
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "reason_category" }],
+          time_window: { field: "churned_at", window: "last_30_days" },
+        },
+      })),
+    ];
+    const requests: Array<Record<string, unknown>> = [];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run(
+      "How many churn events were there in the last 30 days by reason category?",
+      gateway,
+      {
+        requestJson: async (request) => {
+          requests.push(structuredClone(request.body));
+          return responses.shift()!;
+        },
+      },
+    );
+
+    expect(result.tool_calls).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        tool: "app.explore_data",
+        status: "refused",
+        error_code: "LOCAL_PLAN_INTENT_MISMATCH",
+      }),
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]));
+    expect(calls.filter((call) => call.name === "app.explore_data")).toEqual([{
+      name: "app.explore_data",
+      args: {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "reason_category" }],
+          time_window: { field: "churned_at", window: "last_30_days" },
+        },
+      },
+    }]);
+    expect(JSON.stringify(requests[0])).toContain("Runner owns UTC calendar arithmetic");
+    expect(JSON.stringify(requests[0])).toContain("do not calculate them");
+  });
+
+  it("recovers one exact row plan with its reviewed relative window", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        return name === "app.describe_data"
+          ? {
+            ok: true,
+            value: {
+              ok: true,
+              catalog_view: args.resource ? "resource_detail" : "resource_index",
+              resources: [{
+                id: "public.churn_events",
+                fields: [{ id: "reason_category" }, { id: "churned_at" }],
+                selectable_fields: ["reason_category", "churned_at"],
+                groupable_fields: ["reason_category"],
+                aggregate_measure_functions: {},
+                relative_time_window_fields: ["churned_at"],
+              }],
+              source_database_changed: false,
+            },
+          }
+          : {
+            ok: true,
+            value: {
+              ok: true,
+              data: [{ reason_category: "price" }],
+              source_database_changed: false,
+            },
+          };
+      },
+      close: async () => undefined,
+    };
+    const responses = [
+      openAiText("I can list those records."),
+      openAiText("{}"),
+      openAiText("{}"),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run(
+      "List all churn event records from the last 30 days with reason category.",
+      gateway,
+      { requestJson: async () => responses.shift()! },
+    );
+
+    expect(result.answer_source).toBe("runner");
+    expect(calls.filter((call) => call.name === "app.explore_data")).toEqual([{
+      name: "app.explore_data",
+      args: {
+        plan: {
+          kind: "rows",
+          resource: "public.churn_events",
+          select: ["reason_category"],
+          time_window: { field: "churned_at", window: "last_30_days" },
+        },
+      },
+    }]);
+  });
+
+  it("does not guess one numeric field when a local-model question names several", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        return {
+          ok: true,
+          value: {
+            ok: true,
+            resources: [{
+              id: "public.churn_events",
+              aggregate_measure_functions: {
+                monthly_revenue_cents: ["sum", "avg"],
+                lost_revenue_cents: ["sum", "avg"],
+              },
+              groupable_fields: [],
+            }],
+            source_database_changed: false,
+          },
+        };
+      },
+      close: async () => undefined,
+    };
+    const responses = [
+      openAiToolCall("ambiguous", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "sum", field: "monthly_revenue_cents" }],
+        },
+      }),
+      openAiText("{}"),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run(
+      "What is the total monthly revenue and lost revenue for churn events?",
+      gateway,
+      { requestJson: async () => responses.shift()! },
+    );
+
+    expect(result.answer_source).toBe("runner");
+    expect(result.answer).toContain("did not match the question");
+    expect(result.tool_calls).toContainEqual(expect.objectContaining({
+      tool: "app.explore_data",
+      status: "refused",
+      error_code: "LOCAL_PLAN_INTENT_MISMATCH",
+    }));
+    expect(calls.some((call) => call.name === "app.explore_data")).toBe(false);
   });
 
   it("executes one exact reviewed relationship plan for a corrected local model", async () => {
@@ -1226,7 +1711,7 @@ describe("Workbench BYOM Ask", () => {
     ]);
   });
 
-  it("returns a Runner-owned no-query outcome when a model ignores the catalog correction", async () => {
+  it("returns a Runner-owned no-query outcome when focused metadata cannot identify the measure", async () => {
     const gateway = testGateway(authoringTools, {
       ok: true,
       value: {
@@ -1247,7 +1732,7 @@ describe("Workbench BYOM Ask", () => {
       },
     });
 
-    expect(request).toBe(3);
+    expect(request).toBe(2);
     expect(result).toMatchObject({
       answer_source: "runner",
       answer_is_untrusted_model_output: false,
@@ -1256,7 +1741,7 @@ describe("Workbench BYOM Ask", () => {
         { tool: "app.describe_data", status: "ok" },
       ],
     });
-    expect(result.answer).toContain("did not execute app.explore_data");
+    expect(result.answer).toContain("did not match the question");
     expect(result.answer).toContain("No source query ran");
     expect(gateway.calls.map((call) => call.name)).toEqual([
       "app.describe_data",
@@ -1400,6 +1885,7 @@ describe("Workbench BYOM Ask", () => {
     expect(result.answer).toContain("EXPLORE_RESOURCE_FORBIDDEN");
     expect(result.answer).not.toContain("tenant");
     expect(calls).toEqual([
+      { name: "app.describe_data", args: { resource: "public.members" } },
       {
         name: "app.explore_data",
         args: {

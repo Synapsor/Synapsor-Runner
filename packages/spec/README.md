@@ -208,6 +208,12 @@ Current additive safety fields:
   exactly two comparison periods by signed absolute or percentage change.
   Contracts omitting these fields retain their prior group ceiling,
   normalization, and digest.
+- capability `protected_read.time_window`: one optional fixed half-open UTC
+  range with `field`, optional reviewed `relationship`, and canonical `start`
+  and exclusive `end` timestamps. It is valid for protected rows or aggregates,
+  cannot coexist with an aggregate comparison, and cannot contain argument or
+  relative-window expressions. Protect uses it to freeze the absolute range
+  resolved by a relative Explore analysis.
 
 Receipt authority, receipt-table provisioning, credentials, and Runner ledger
 topology are deliberately not canonical fields. They remain deployment choices

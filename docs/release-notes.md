@@ -58,6 +58,13 @@ for the Synapsor Cloud CLI.
   bands, named ratios, and post-suppression running/rank/lag/moving-average/share
   operations. The model selects only reviewed names and never supplies formulas,
   SQL, window frames, or bucket edges.
+- Rows and aggregates can use a fixed reviewed relative-time vocabulary such as
+  `previous_month`, `last_30_days`, and `month_to_date`. Runner captures one
+  instant, resolves one half-open range under the boundary's reviewed UTC
+  authority, compiles only bound timestamps, and records the resolution for the
+  operator and audit trail without returning it to the model. Relative and
+  equivalent absolute ranges share differencing accounting; Protect freezes the
+  resolved range rather than creating a dynamic date capability.
 - A reviewer may add total or average child-count measures through one exact
   non-null child-to-parent catalog proof. Runner uses a correlated scoped
   subaggregate instead of a one-to-many join, applies tenant/principal scope to

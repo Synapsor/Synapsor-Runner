@@ -37,7 +37,8 @@ Current `1.7.0` scope:
   child counts,
   ranked high-cardinality candidate populations under a separate reviewed
   ceiling, signed absolute/percentage movers from an exact two-period
-  comparison in one read-only snapshot, and at
+  comparison in one read-only snapshot, reviewed relative UTC windows resolved
+  once by Runner for rows/aggregates/comparisons, and at
   most three activated star/depth-two relationship paths, each containing one
   or two proven many-to-one links with fan-out one;
 - demand-driven operator review for an exact inactive catalog-proven path,
@@ -48,7 +49,7 @@ Current `1.7.0` scope:
 - Protect This Query from a successful local plan to public DSL, canonical
   Spec, tests, and a disabled digest-bound named production capability.
   Protect is optional during authoring and freezes only the selected analysis;
-- semantic analytical aliases, reviewed UTC time-bucket authority, explicit
+- semantic analytical aliases, reviewed UTC time-bucket/window authority, explicit
   empty/fully-suppressed/incomplete-comparison outcomes, and durable redacted
   analysis references across refresh, tabs, and CLI processes;
 - shared MCP analytical output schemas plus a deterministic

@@ -55,6 +55,7 @@ import {
 } from "./boundary-catalog.js";
 import { cliCommandName } from "./cli-command-meta.js";
 import { shellQuote } from "./cli-format.js";
+import type { ResolvedRelativeTimeWindow } from "./relative-time-window.js";
 
 export { renderTerminalJson, renderTerminalSql } from "./terminal-syntax.js";
 
@@ -472,6 +473,7 @@ export type ShellAnalysisRecord = {
   returned_rows_or_groups?: number;
   returned_cells?: number;
   suppressed_groups?: number;
+  resolved_time_windows?: ResolvedRelativeTimeWindow[];
   minimum_cohort_override?: {
     resource: string;
     minimum_cohort_size: number;
@@ -1761,6 +1763,10 @@ async function showDetails(
     asRecord(liveResult?.operator_budget),
     color,
   );
+  const resolvedTimeDetails = renderResolvedTimeWindowDetails(
+    liveResult?.operator_time_windows ?? selected.resolved_time_windows,
+    color,
+  );
   const outcomeTone = /^(?:ok|success)$/i.test(outcome)
     ? "success" as const
     : /(?:fail|error|refus)/i.test(outcome)
@@ -1791,6 +1797,7 @@ async function showDetails(
     renderTerminalFact("Trusted principal scope", operatorInspection?.trusted_scope.principal ?? "bound outside model arguments or not required", { color, tone: "value" }),
     renderTerminalFact("Database role", operatorInspection ? "verified read-only before execution" : "verified by the recorded Explore execution", { color, tone: "success" }),
     renderTerminalFact("Transaction", operatorInspection?.transaction ?? stringRecordValue(freshness.snapshot_consistency) ?? "single_read_only_transaction", { color, tone: "identifier" }),
+    ...resolvedTimeDetails,
     renderTerminalJsonFrame(redactPlanLiterals(selected.normalized_plan), {
       title: "Normalized validated plan",
       color,
@@ -1832,6 +1839,46 @@ async function showDetails(
       : ["", "Use /details --sql for the local operator-only parameterized statement."]),
     "",
   ].join("\n"));
+}
+
+function renderResolvedTimeWindowDetails(value: unknown, color: boolean): string[] {
+  const items = Array.isArray(value) ? value.map(asRecord).filter((item) =>
+    item.source === "reviewed_relative_time") : [];
+  if (!items.length) return [];
+  const theme = terminalTheme(color);
+  const lines = [
+    "",
+    theme.title("RESOLVED TIME - OPERATOR ONLY"),
+    theme.dim("Runner captured one instant and resolved each reviewed name as a half-open UTC range before fingerprinting and SQL compilation."),
+  ];
+  for (const item of items) {
+    const location = item.location === "comparison" ? "Comparison" : "Time window";
+    const request = item.location === "comparison"
+      ? `${stringRecordValue(item.window) ?? "unknown"} vs ${stringRecordValue(item.compare_to) ?? "unknown"}`
+      : stringRecordValue(item.window) ?? "unknown";
+    lines.push(theme.bold(location));
+    lines.push(renderTerminalFact("Reviewed request", request, { color, tone: "identifier" }));
+    lines.push(renderTerminalFact(
+      "Field",
+      `${stringRecordValue(item.field) ?? "unknown"}${stringRecordValue(item.relationship) ? ` via ${stringRecordValue(item.relationship)}` : ""}`,
+      { color, tone: "value" },
+    ));
+    lines.push(renderTerminalFact("Reporting timezone", "UTC", { color, tone: "success" }));
+    lines.push(renderTerminalFact(
+      "Resolved at",
+      stringRecordValue(item.resolved_at) ?? "unavailable",
+      { color, tone: "value" },
+    ));
+    const ranges = Array.isArray(item.ranges) ? item.ranges.map(asRecord) : [];
+    for (const range of ranges) {
+      lines.push(renderTerminalFact(
+        stringRecordValue(range.id) ?? "range",
+        `[${stringRecordValue(range.start_inclusive) ?? "?"}, ${stringRecordValue(range.end_exclusive) ?? "?"})`,
+        { color, tone: "value" },
+      ));
+    }
+  }
+  return lines;
 }
 
 function renderOperatorBudgetDetails(

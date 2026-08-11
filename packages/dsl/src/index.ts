@@ -72,6 +72,7 @@ export type AgentDslCapabilityAst = {
     predicates: ProtectedReadPredicateSpec[];
     relationship?: ProtectedReadRelationshipSpec;
     relationships: ProtectedReadRelationshipPathSpec[];
+    timeWindow?: ProtectedReadSpec["time_window"];
     rowOrderBy: Array<{ field: string; direction: "asc" | "desc" }>;
     aggregate?: Partial<ProtectedReadAggregateSpec> & {
       measures?: ProtectedReadAggregateSpec["measures"];
@@ -314,6 +315,7 @@ function protectedReadSpecFromDsl(capability: AgentDslCapabilityAst): ProtectedR
     ...(protectedRead.predicates.length ? { predicates: protectedRead.predicates } : {}),
     ...(protectedRead.relationship ? { relationship: protectedRead.relationship } : {}),
     ...(protectedRead.relationships.length ? { relationships: protectedRead.relationships } : {}),
+    ...(protectedRead.timeWindow ? { time_window: protectedRead.timeWindow } : {}),
     ...(protectedRead.rowOrderBy.length ? { row_order_by: protectedRead.rowOrderBy } : {}),
     ...(protectedRead.aggregate ? { aggregate: protectedRead.aggregate as ProtectedReadAggregateSpec } : {}),
     limits: protectedRead.limits,
@@ -663,6 +665,24 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
           value: parseProtectedValueBinding(protectedFilter[3], item.line),
         });
       }
+      continue;
+    }
+    const protectedTimeWindow = item.text.match(/^PROTECTED\s+TIME\s+WINDOW\s+([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?)\s+FROM\s+FIXED\s+(.+?)\s+TO\s+FIXED\s+(.+)$/i);
+    if (protectedTimeWindow?.[1] && protectedTimeWindow[2] && protectedTimeWindow[3]) {
+      const reviewed = requireProtectedRead(capability, item);
+      if (reviewed.timeWindow) {
+        throw dslError(item.line, 1, "PROTECTED_TIME_WINDOW_DUPLICATE", "PROTECTED READ permits one fixed time window");
+      }
+      const start = parseProtectedLiteral(protectedTimeWindow[2], item.line, 1);
+      const end = parseProtectedLiteral(protectedTimeWindow[3], item.line, 1);
+      if (typeof start !== "string" || typeof end !== "string") {
+        throw dslError(item.line, 1, "PROTECTED_TIME_WINDOW_FIXED_STRING_REQUIRED", "PROTECTED TIME WINDOW requires fixed UTC timestamp strings");
+      }
+      reviewed.timeWindow = {
+        ...parseProtectedFieldReference(protectedTimeWindow[1]),
+        start,
+        end,
+      };
       continue;
     }
     const rowOrder = item.text.match(/^ROW\s+ORDER\s+BY\s+([A-Za-z_][A-Za-z0-9_]*)\s+(ASC|DESC)$/i);

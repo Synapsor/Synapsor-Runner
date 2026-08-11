@@ -251,6 +251,10 @@ async function seedSource(connection) {
     INSERT INTO ${sourceSchema}.events (id, tenant_id, owner_id, category, amount_cents, occurred_at)
     SELECT CONCAT('running-', id), tenant_id, 'running', category, amount_cents, occurred_at
     FROM ${sourceSchema}.events WHERE tenant_id = 'acme' AND owner_id = 'alice';
+    INSERT INTO ${sourceSchema}.events (id, tenant_id, owner_id, category, amount_cents, occurred_at)
+    SELECT CONCAT('relative-', id), tenant_id, 'relative', category, amount_cents,
+      UTC_TIMESTAMP() - INTERVAL 1 DAY
+    FROM ${sourceSchema}.events WHERE tenant_id = 'acme' AND owner_id = 'alice';
     INSERT INTO ${sourceSchema}.scoped_orders (id, tenant_id, owner_id, category, occurred_at) VALUES
       ('derived-acme-order', 'acme', 'derived-acme', 'trail', '2026-07-01 00:00:00'),
       ('derived-globex-order', 'globex', 'derived-globex', 'enterprise', '2026-07-01 00:00:00'),
@@ -423,6 +427,9 @@ function mcpClient(url, bearer) {
 }
 
 async function seedMysqlSoakPrincipals(connection, identities) {
+  const capturedAt = Date.now();
+  const recent = mysqlUtcTimestamp(capturedAt - 24 * 60 * 60 * 1_000);
+  const priorWeek = mysqlUtcTimestamp(capturedAt - 8 * 24 * 60 * 60 * 1_000);
   const eventRows = [];
   const orderRows = [];
   const itemRows = [];
@@ -436,7 +443,7 @@ async function seedMysqlSoakPrincipals(connection, identities) {
         identity.principal,
         item <= 5 ? "growth" : "retained",
         (item <= 5 ? lowValue : highValue) + (item <= 5 ? item : item - 5),
-        item <= 5 ? "2026-08-03 12:00:00" : "2026-08-10 12:00:00",
+        item <= 5 ? priorWeek : recent,
       ]);
     }
     const category = identity.index % 2 === 0 ? "trail" : "enterprise";
@@ -445,7 +452,7 @@ async function seedMysqlSoakPrincipals(connection, identities) {
       identity.tenant,
       identity.principal,
       category,
-      "2026-08-03 12:00:00",
+      priorWeek,
     ]);
     for (let item = 1; item <= 5; item += 1) {
       itemRows.push([
@@ -453,7 +460,7 @@ async function seedMysqlSoakPrincipals(connection, identities) {
         `${identity.principal}-order`,
         "standard",
         item,
-        "2026-08-03 12:00:00",
+        priorWeek,
       ]);
     }
   }
@@ -470,6 +477,10 @@ async function seedMysqlSoakPrincipals(connection, identities) {
   await insertRows("events", ["id", "tenant_id", "owner_id", "category", "amount_cents", "occurred_at"], eventRows);
   await insertRows("scoped_orders", ["id", "tenant_id", "owner_id", "category", "occurred_at"], orderRows);
   await insertRows("scoped_order_items", ["id", "order_id", "item_kind", "quantity", "occurred_at"], itemRows);
+}
+
+function mysqlUtcTimestamp(milliseconds) {
+  return new Date(milliseconds).toISOString().slice(0, 19).replace("T", " ");
 }
 
 function assertSoak(condition, message, detail) {
@@ -523,6 +534,17 @@ function mysqlSoakOperations() {
       order_by: { kind: "time_bucket", direction: "asc" },
     }, (payload) => assertSoak((payload.data ?? []).reduce((sum, row) => sum + row.count, 0) === 10,
       "MySQL weekly grouping escaped exact scope.", payload.data)),
+    legal("relative_time_window", 10, {
+      ...aggregatePlan,
+      measures: [{ function: "count" }],
+      time_window: { field: "occurred_at", window: "last_30_days" },
+    }, (payload) => assertSoak(
+      (payload.data ?? []).reduce((sum, row) => sum + row.count, 0) === 10
+        && payload.operator_time_windows === undefined
+        && payload.resolved_time_windows === undefined,
+      "MySQL relative window escaped scope or exposed operator-only resolution metadata.",
+      payload,
+    )),
     legal("numeric_band", 10, {
       kind: "aggregate",
       resource: sourceId,
@@ -1443,6 +1465,10 @@ async function main() {
 
     const described = resultPayload(await alice.client.callTool({ name: "app.describe_data", arguments: {} }));
     const describedEvents = described.resources?.find((candidateResource) => candidateResource.id === sourceId);
+    const focusedTimeDescription = resultPayload(await alice.client.callTool({
+      name: "app.describe_data",
+      arguments: { resource: sourceId },
+    }));
     const describedItems = described.resources?.find((candidateResource) => candidateResource.id === scopedOrderItemsId);
     assert(described.ok === true
       && described.resources?.length === 4
@@ -1464,6 +1490,11 @@ async function main() {
         && policy.raw_edges_returned === false
         && !Object.hasOwn(policy, "min_bucket_width"))
       && describedEvents?.derived_measures?.some((measure) => measure.name === "amount_running_total")
+      && !Object.hasOwn(described, "relative_time_windows")
+      && focusedTimeDescription.relative_time_windows?.available === true
+      && focusedTimeDescription.relative_time_windows?.reporting_timezone === "UTC"
+      && focusedTimeDescription.relative_time_windows?.windows?.includes("last_7_days")
+      && describedEvents?.relative_time_window_fields?.includes("occurred_at")
       && describedItems?.relationships?.some((relationship) =>
         relationship.id === "scoped_order_items_order_id_fkey" && relationship.activation === "active"),
     "MySQL production describe_data did not return the complete reviewed metadata catalog.", described);
@@ -1531,6 +1562,57 @@ async function main() {
       && !evidenceSerialized.includes("operator-only"),
     "MySQL production evidence did not preserve keyed scope, metadata-only audit, and fingerprint invariants.",
     evidenceRows.rows);
+
+    const relativePlan = {
+      kind: "aggregate",
+      resource: sourceId,
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "category" }],
+      time_window: { field: "occurred_at", window: "last_7_days" },
+      order_by: { kind: "measure", index: 0, direction: "desc" },
+      top_n: 10,
+    };
+    const relativeClient = mcpClient(server.url, signedToken(privateKey, {
+      tenant: "acme",
+      principal: "relative",
+    }));
+    clients.push(relativeClient.client);
+    await relativeClient.client.connect(relativeClient.transport);
+    const relativeResult = resultPayload(await relativeClient.client.callTool({
+      name: "app.explore_data",
+      arguments: { plan: relativePlan },
+    }));
+    const localRelativeResult = await runLocalParityPlan(env, "relative", relativePlan);
+    assert(relativeResult.ok === true
+      && relativeResult.data?.length > 0
+      && JSON.stringify(comparableAnalyticsResult(localRelativeResult))
+        === JSON.stringify(comparableAnalyticsResult(relativeResult))
+      && localRelativeResult.operator_time_windows?.[0]?.window === "last_7_days"
+      && !Object.hasOwn(relativeResult, "operator_time_windows")
+      && !JSON.stringify(relativeResult).match(/resolved_time_windows|start_inclusive|end_exclusive/i),
+    "MySQL reviewed relative time differed between local stdio and production HTTP or exposed operator timestamps to the model.", {
+      local: comparableAnalyticsResult(localRelativeResult),
+      http: comparableAnalyticsResult(relativeResult),
+    });
+    const relativeEvidenceRows = await control.query(`
+      SELECT event_kind, payload_json
+      FROM "${controlSchema}".production_explore_audit_events
+      WHERE event_id = $1 OR payload_json::text LIKE $2
+      ORDER BY event_kind
+    `, [
+      relativeResult.evidence_bundle_id,
+      `%${relativeResult.evidence_bundle_id}%`,
+    ]);
+    const relativeEvidence = JSON.stringify(relativeEvidenceRows.rows);
+    assert(relativeEvidenceRows.rows.some((row) => row.event_kind === "evidence_bundle")
+      && relativeEvidence.includes('"resolved_time_windows"')
+      && relativeEvidence.includes('"window":"last_7_days"')
+      && relativeEvidence.includes('"reporting_timezone":"UTC"')
+      && /"start_inclusive":"[^"]+Z"/.test(relativeEvidence)
+      && /"end_exclusive":"[^"]+Z"/.test(relativeEvidence)
+      && !relativeEvidence.includes('"principal":"relative"'),
+    "MySQL relative-window evidence did not preserve the exact resolved UTC range without raw principal identity.",
+    relativeEvidenceRows.rows);
 
     const numericBandPlan = {
       kind: "aggregate",

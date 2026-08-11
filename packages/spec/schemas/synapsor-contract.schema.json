@@ -580,6 +580,20 @@
         "relationship": { "$ref": "#/$defs/safeIdentifier" }
       }
     },
+    "protectedReadTimeWindow": {
+      "type": "object",
+      "required": ["field", "start", "end"],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "field": { "$ref": "#/$defs/safeIdentifier" },
+        "relationship": { "$ref": "#/$defs/safeIdentifier" },
+        "start": { "type": "string", "format": "date-time" },
+        "end": { "type": "string", "format": "date-time" }
+      }
+    },
     "protectedReadAggregate": {
       "type": "object",
       "required": ["counted_entity", "measures", "top_n", "minimum_group_size"],
@@ -694,6 +708,7 @@
           "maxItems": 3,
           "items": { "$ref": "#/$defs/protectedReadRelationshipPath" }
         },
+        "time_window": { "$ref": "#/$defs/protectedReadTimeWindow" },
         "row_order_by": {
           "type": "array",
           "minItems": 1,

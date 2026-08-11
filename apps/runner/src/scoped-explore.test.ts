@@ -26,6 +26,7 @@ import {
   projectScopedExploreResultForModel,
   ScopedExploreError,
   validateExplorePlan,
+  validateExploreRequest,
   type CompiledExploreQuery,
   type ScopedExploreExecutor,
 } from "./scoped-explore.js";
@@ -2325,6 +2326,228 @@ describe("Scoped Explore", () => {
     } finally {
       await runtime.close();
     }
+  });
+
+  it("resolves relative rows once, compiles the same bounded UTC predicates on both engines, and freezes Protect", async () => {
+    const fixture = await activatedFixture();
+    const now = Date.parse("2026-08-10T15:30:45.123Z");
+    const request = {
+      kind: "rows",
+      resource: "public.subscriptions",
+      select: ["region"],
+      time_window: { field: "churned_at", window: "previous_month" },
+      limit: 5,
+    };
+    const validated = validateExploreRequest(request, fixture.boundary, { now });
+    expect(validated.plan).toMatchObject({
+      time_window: {
+        field: "churned_at",
+        start: "2026-07-01T00:00:00.000Z",
+        end: "2026-08-01T00:00:00.000Z",
+      },
+    });
+    expect(validated.resolved_time_windows).toEqual([expect.objectContaining({
+      location: "time_window",
+      window: "previous_month",
+      reporting_timezone: "UTC",
+      resolved_at: "2026-08-10T15:30:45.123Z",
+    })]);
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [query] = compileExplorePlan(
+        validated.plan,
+        fixture.boundary,
+        { tenant: "tenant-acme", principal: "pm-1" },
+        engine,
+      );
+      expect(query?.sql).toContain(engine === "postgres"
+        ? 't0."churned_at" >= $2'
+        : "t0.`churned_at` >= ?");
+      expect(query?.sql).toContain(engine === "postgres"
+        ? 't0."churned_at" < $3'
+        : "t0.`churned_at` < ?");
+      expect(query?.params).toContain("2026-07-01T00:00:00.000Z");
+      expect(query?.params).toContain("2026-08-01T00:00:00.000Z");
+    }
+
+    const store = new ProposalStore(path.join(fixture.root, ".synapsor/relative-time.db"));
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      store,
+      clock: () => now,
+      inspectDatabaseFn: async () => fixture.inspection,
+      executor: fixedExecutor([{ region: "west" }]),
+    });
+    try {
+      const description = await runtime.describe({ resource: "public.subscriptions" }) as any;
+      expect(description.relative_time_windows).toMatchObject({
+        available: true,
+        reporting_timezone: "UTC",
+        windows: expect.arrayContaining(["previous_month", "month_to_date"]),
+        comparison_partners: ["preceding_period", "same_period_last_year"],
+        range_semantics: "half-open [start, end)",
+        week_starts_on: "Monday",
+        model_supplied_date_arithmetic: false,
+      });
+      expect(description.resources[0]?.relative_time_window_fields).toEqual(["churned_at"]);
+      const compactProjection = projectDescribeDataForModel(await runtime.describe(), false);
+      expect(compactProjection).not.toHaveProperty("relative_time_windows");
+      const focusedProjection = projectDescribeDataForModel(description, true);
+      expect(focusedProjection).toHaveProperty("relative_time_windows.windows");
+
+      const relative = await runtime.explore(request);
+      const absolute = await runtime.explore({
+        ...request,
+        time_window: {
+          field: "churned_at",
+          start: "2026-07-01T00:00:00Z",
+          end: "2026-08-01T00:00:00Z",
+        },
+      });
+      expect(relative.audit).toMatchObject({ query_fingerprint: (absolute.audit as any).query_fingerprint });
+      expect(relative.operator_time_windows).toEqual(validated.resolved_time_windows);
+      expect(absolute).not.toHaveProperty("operator_time_windows");
+      const projected = projectScopedExploreResultForModel({
+        tool: "app.explore_data",
+        arguments: { plan: request },
+        result: relative,
+        boundary: fixture.boundary,
+      });
+      expect(projected.value).not.toHaveProperty("operator_time_windows");
+      expect(projected.operator_metadata_withheld).toBe(true);
+
+      const token = (relative.protect as { token: string }).token;
+      const protectedPlan = await loadProtectedPlan({ projectRoot: fixture.root, token, now });
+      expect(protectedPlan.plan).toMatchObject(validated.plan);
+      expect(JSON.stringify(protectedPlan.plan)).not.toContain("previous_month");
+      const evidence = JSON.stringify(store.listEvidenceBundles());
+      expect(evidence).toContain("previous_month");
+      expect(evidence).toContain("2026-07-01T00:00:00.000Z");
+    } finally {
+      await runtime.close();
+      await store.close();
+    }
+  });
+
+  it("lowers relative comparisons before fingerprinting and withholds resolved timestamps from the model", async () => {
+    const fixture = await activatedFixture();
+    const now = Date.parse("2026-08-10T15:30:45.123Z");
+    const request = {
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "region" }],
+      time_bucket: { field: "churned_at", bucket: "month" },
+      comparison: {
+        field: "churned_at",
+        window: "previous_month",
+        compare_to: "preceding_period",
+      },
+      top_n: 10,
+    };
+    const validated = validateExploreRequest(request, fixture.boundary, { now });
+    expect(validated.plan).toMatchObject({
+      comparison: {
+        ranges: [
+          { start: "2026-06-01T00:00:00.000Z", end: "2026-07-01T00:00:00.000Z" },
+          { start: "2026-07-01T00:00:00.000Z", end: "2026-08-01T00:00:00.000Z" },
+        ],
+      },
+    });
+    expect(compileExplorePlan(
+      validated.plan,
+      fixture.boundary,
+      { tenant: "tenant-acme", principal: "pm-1" },
+      "postgres",
+    )).toHaveLength(2);
+
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      clock: () => now,
+      inspectDatabaseFn: async () => fixture.inspection,
+      executor: {
+        execute: async () => [],
+        executeBatch: async ({ queries }) => queries.map((query) => [{
+          dimension_0: "west",
+          measure_0: query.period === "period_1" ? 10 : 12,
+          __cohort_size: 10,
+        }]),
+        close: async () => undefined,
+      },
+    });
+    try {
+      const result = await runtime.explore(request);
+      expect(result.operator_time_windows).toEqual([expect.objectContaining({
+        location: "comparison",
+        window: "previous_month",
+        compare_to: "preceding_period",
+      })]);
+      const projected = projectScopedExploreResultForModel({
+        tool: "app.explore_data",
+        arguments: { plan: request },
+        result,
+        boundary: fixture.boundary,
+      });
+      expect(JSON.stringify(projected.value)).not.toContain("2026-06-01T00:00:00.000Z");
+      expect(projected.value).not.toHaveProperty("operator_time_windows");
+      expect(projected.value).toMatchObject({
+        outcome: {
+          result: {
+            grain: {
+              kind: "period_comparison",
+              relative_window: [{
+                window: "previous_month",
+                compare_to: "preceding_period",
+                resolved_timestamps_withheld_from_model: true,
+              }],
+            },
+          },
+        },
+      });
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("refuses relative-time authority and shape errors before source execution", async () => {
+    const fixture = await activatedFixture();
+    const base = {
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      top_n: 10,
+    };
+    expect(() => validateExplorePlan({
+      ...base,
+      time_window: { field: "churned_at", window: "last_decade" },
+    }, fixture.boundary)).toThrow(/must be one of today/i);
+    expect(() => validateExplorePlan({
+      ...base,
+      time_window: { field: "region", window: "previous_month" },
+    }, fixture.boundary)).toThrow(/not reviewed for time window/i);
+    expect(() => validateExplorePlan({
+      ...base,
+      time_window: { field: "churned_at", window: "previous_month", offset: "-1 month" },
+    }, fixture.boundary)).toThrow(/unsupported fields: offset/i);
+    expect(() => validateExplorePlan({
+      ...base,
+      time_window: { field: "churned_at", window: "previous_month" },
+      time_bucket: { field: "churned_at", bucket: "month" },
+      comparison: {
+        field: "churned_at",
+        window: "previous_month",
+        compare_to: "preceding_period",
+      },
+    }, fixture.boundary)).toThrow(/mutually exclusive/i);
+    const legacy = structuredClone(fixture.boundary) as any;
+    delete legacy.reporting_timezone;
+    expect(() => validateExplorePlan({
+      ...base,
+      time_window: { field: "churned_at", window: "previous_month" },
+    }, legacy)).toThrow(/authority-bound UTC/i);
   });
 
   it("describes only activated one-hop relationship fields for the guided PM composer", async () => {

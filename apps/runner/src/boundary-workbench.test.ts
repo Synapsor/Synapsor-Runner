@@ -18,6 +18,7 @@ describe("Auto Boundary Workbench renderer", () => {
       ["reviewed relationships and visual map", ["Reviewed data map", "renderBoundaryGraphSvg", "Each reviewed join uses its own labeled connection lane"]],
       ["numeric bands", ["Add a fixed numeric band", "kind:\"numeric_band\""]],
       ["automatic numeric bands", ["Allow automatic numeric bands", "kind:\"auto_band\"", "raw edges"]],
+      ["reviewed relative UTC windows", ["Reviewed UTC window", "Reviewed relative UTC window", "Exact UTC date ranges", "Operator-only resolved UTC window", "time_window", "compare_to"]],
       ["named and post-suppression measures", ["Add a named derived metric", "Add a post-suppression calculation", "kind:\"derived_measure\""]],
       ["safe child-count measures", ["Add a safe child-count metric", "Count child records without a raw one-to-many join"]],
       ["reconciling rescan", ["Rescan and review changes", "boundary_rescan_report", "Active authority did not change"]],

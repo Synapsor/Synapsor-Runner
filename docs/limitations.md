@@ -89,10 +89,14 @@ enterprise SLA.
 - Reviewed bounded aggregate Explore with `count`, `count_distinct`, `sum`,
   `avg`, categorical dimensions, fixed UTC time buckets, typed filters,
   bounded top/bottom-N over a separately reviewed candidate population,
-  signed absolute/percentage movers from an exact two-range comparison, up to
+  Runner-resolved fixed relative UTC windows, signed absolute/percentage movers
+  from an exact or relative two-range comparison, up to
   three reviewed relationship paths of at most two proven
   many-to-one links each, cohort suppression, and durable
   extraction/differencing budgets.
+- Relative windows in Runner 1.7.0 require reviewed UTC authority. Arbitrary
+  IANA business timezones and DST-aware relative calendar semantics are not yet
+  supported; use exact ISO ranges where UTC is not the intended authority.
 - Demand-driven operator review for an exact catalog-proven relationship,
   including an explicit missing-row choice for nullable links. The model cannot
   activate a relationship, and every participating relation receives trusted

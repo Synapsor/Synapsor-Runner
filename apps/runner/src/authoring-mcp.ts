@@ -20,6 +20,10 @@ import {
   createScopedExploreBoundarySetRuntime,
   type ScopedExploreBoundarySetRuntime,
 } from "./scoped-explore-boundary-set.js";
+import {
+  RELATIVE_TIME_COMPARISONS,
+  RELATIVE_TIME_WINDOWS,
+} from "./relative-time-window.js";
 
 const filterScalar = z.union([z.string().max(512), z.number().finite(), z.boolean()]).describe(
   "A concrete filter value. Null is not a filter literal; use null_count, non_null_count, or completion_rate for missing-data analysis.",
@@ -62,10 +66,34 @@ export function createScopedExploreMcpServer(
   options: { mode?: "local_authoring" | "production_http" } = {},
 ): McpServer {
   const production = options.mode === "production_http";
+  const absoluteRowTimeWindow = z.object({
+    field: fieldId,
+    start: z.string().datetime(),
+    end: z.string().datetime(),
+  }).strict();
+  const relativeRowTimeWindow = z.object({
+    field: fieldId,
+    window: z.enum(RELATIVE_TIME_WINDOWS),
+  }).strict();
+  const absoluteAggregateTimeWindow = z.object({
+    field: fieldId,
+    relationship: optionalModelArgument(relationshipId),
+    start: z.string().datetime(),
+    end: z.string().datetime(),
+  }).strict();
+  const relativeAggregateTimeWindow = z.object({
+    field: fieldId,
+    relationship: optionalModelArgument(relationshipId),
+    window: z.enum(RELATIVE_TIME_WINDOWS),
+  }).strict();
   const rowPlan = z.object({
     kind: z.literal("rows"),
     resource: resourceId,
     select: modelArray(z.array(fieldId).min(1).max(20)),
+    time_window: optionalModelArgument(modelObject(z.union([
+      absoluteRowTimeWindow,
+      relativeRowTimeWindow,
+    ]))),
     where: optionalModelArgument(modelArray(z.array(filter).max(8))),
     order_by: optionalModelArgument(modelArray(z.array(z.object({
       field: fieldId,
@@ -112,6 +140,10 @@ export function createScopedExploreMcpServer(
       bucket: z.enum(EXPLORATION_TIME_BUCKETS),
       relationship: optionalModelArgument(relationshipId),
     }).strict())),
+    time_window: optionalModelArgument(modelObject(z.union([
+      absoluteAggregateTimeWindow,
+      relativeAggregateTimeWindow,
+    ]))),
     where: optionalModelArgument(modelArray(z.array(filter).max(8))),
     order_by: optionalModelArgument(modelObject(z.union([
       z.object({
@@ -133,14 +165,22 @@ export function createScopedExploreMcpServer(
     top_n: optionalModelArgument(modelInteger(z.number().int().positive().describe(
       "Maximum aggregate rows; omit to use Runner's conservative reviewed default. Dimension-by-time uses one row per dimension/time combination; comparisons need both periods.",
     ))),
-    comparison: optionalModelArgument(modelObject(z.object({
-      field: fieldId,
-      relationship: optionalModelArgument(relationshipId),
-      ranges: modelArray(z.array(z.object({
-        start: z.string().datetime(),
-        end: z.string().datetime(),
-      }).strict()).length(2).describe("Two non-overlapping ranges, earlier then later.")),
-    }).strict())),
+    comparison: optionalModelArgument(modelObject(z.union([
+      z.object({
+        field: fieldId,
+        relationship: optionalModelArgument(relationshipId),
+        ranges: modelArray(z.array(z.object({
+          start: z.string().datetime(),
+          end: z.string().datetime(),
+        }).strict()).length(2).describe("Two non-overlapping ranges, earlier then later.")),
+      }).strict(),
+      z.object({
+        field: fieldId,
+        relationship: optionalModelArgument(relationshipId),
+        window: z.enum(RELATIVE_TIME_WINDOWS),
+        compare_to: z.enum(RELATIVE_TIME_COMPARISONS),
+      }).strict(),
+    ]))),
   }).strict();
   const plan = z.discriminatedUnion("kind", [rowPlan, aggregatePlan], {
     errorMap: (issue, context) => issue.code === z.ZodIssueCode.invalid_union_discriminator
@@ -157,7 +197,7 @@ export function createScopedExploreMcpServer(
       kind: z.string().describe('Exactly "rows" or "aggregate".'),
       resource: resourceId,
     }).passthrough().describe(
-      'Copy one complete plan from app.describe_data or this tool description. Optional reviewed controls include order_by kind "comparison_change" and auto-band methods "quantile" or "equal_width". Dimension-by-time returns one row per dimension/time combination. Runner strictly validates every nested key before execution.',
+      'Copy one complete plan from app.describe_data or this tool description. Optional reviewed controls include time_window, order_by kind "comparison_change", and auto-band methods "quantile" or "equal_width". Dimension-by-time returns one row per dimension/time combination. Runner strictly validates every nested key before execution.',
     ),
   }).strict();
 
@@ -292,6 +332,7 @@ function exploreToolDescription(production: boolean): string {
     'Rows: {"plan":{"kind":"rows","resource":"<exact resource id>","select":["<field>"]}}. Omitted limit uses Runner\'s reviewed bound.',
     'Named controls use {"derived_measure":"<name>"} in measures or {"numeric_band":"<name>"} in dimensions.',
     'Reviewed auto-band example: {"numeric_band":{"field":"amount_cents","method":"quantile","buckets":5}}. Copy the field, method, and bucket range from app.describe_data; never send edges, widths, offsets, formulas, or labels.',
+    'Reviewed relative time uses {"time_window":{"field":"<reviewed time field>","window":"<exact name from app.describe_data>"}}; Runner resolves it once in authority-bound UTC. Never calculate dates or invent offsets.',
     "Filter values must be concrete, not null. Use null_count, non_null_count, or completion_rate for reviewed missing-data analysis.",
     "No cross-boundary joins, SQL, model-selected tenant/principal, mutation, approval, or commit.",
   ].join(" ");
@@ -307,7 +348,7 @@ export function projectDescribeDataForModel(
     .map((resource) => resourceDetail
       ? modelResourceDetail(resource)
       : modelResourceIndex(resource));
-  return {
+  const projected: Record<string, unknown> = {
     ...structuredClone(result),
     resources,
     catalog_view: resourceDetail ? "resource_detail" : "resource_index",
@@ -317,6 +358,10 @@ export function projectDescribeDataForModel(
       ? "For application-data values, call app.explore_data with one smallest valid plan. Do not answer from this metadata."
       : "Choose an exact resource id. Call app.describe_data with that resource only when focused relationship or filter details are needed, then call app.explore_data for values. Do not answer from this metadata.",
   };
+  // Keep the compact index small for weaker models. The fixed vocabulary is
+  // useful only after one resource and its reviewed time fields are selected.
+  if (!resourceDetail) delete projected.relative_time_windows;
+  return projected;
 }
 
 function modelResourceIndex(resource: Record<string, unknown>): Record<string, unknown> {
@@ -353,6 +398,7 @@ function modelResourceIndex(resource: Record<string, unknown>): Record<string, u
     })),
     count_distinct_fields: modelStrings(resource.count_distinct_fields),
     time_bucket_fields: modelStringArrayRecord(resource.time_bucket_fields),
+    relative_time_window_fields: modelStrings(resource.relative_time_window_fields),
     time_coverage: modelRecordOrEmpty(resource.time_coverage),
     field_enums: modelRecordOrEmpty(resource.field_enums),
     relationships,
@@ -400,6 +446,7 @@ function modelResourceDetail(resource: Record<string, unknown>): Record<string, 
     derived_measures: modelRecords(relationship.derived_measures),
     count_distinct_fields: modelStrings(relationship.count_distinct_fields),
     time_bucket_fields: modelStringArrayRecord(relationship.time_bucket_fields),
+    relative_time_window_fields: modelStrings(relationship.relative_time_window_fields),
   }));
   return withoutUndefined({
     ...indexed,

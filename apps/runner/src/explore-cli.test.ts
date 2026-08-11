@@ -78,6 +78,53 @@ describe("friendly Scoped Explore CLI", () => {
     });
   });
 
+  it("builds reviewed relative time windows and comparisons without date arithmetic", () => {
+    expect(buildFriendlyAggregatePlan(boundary(), {
+      resource: "public.check_ins",
+      count: true,
+      groupBy: ["outcome"],
+      timeWindow: "checked_in_at:previous_month",
+    })).toMatchObject({
+      time_window: { field: "checked_in_at", window: "previous_month" },
+    });
+    expect(buildFriendlyAggregatePlan(boundary(), {
+      resource: "public.check_ins",
+      count: true,
+      groupBy: ["outcome"],
+      timeBucket: "checked_in_at:month",
+      compareWindow: "checked_in_at:previous_month",
+      compareTo: "same_period_last_year",
+    })).toMatchObject({
+      comparison: {
+        field: "checked_in_at",
+        window: "previous_month",
+        compare_to: "same_period_last_year",
+      },
+      order_by: { kind: "comparison_change" },
+    });
+  });
+
+  it("keeps friendly relative time fixed and mutually exclusive", () => {
+    expect(() => buildFriendlyAggregatePlan(boundary(), {
+      resource: "public.check_ins",
+      count: true,
+      timeWindow: "checked_in_at:last_decade",
+    })).toThrow(/must be one of today/i);
+    expect(() => buildFriendlyAggregatePlan(boundary(), {
+      resource: "public.check_ins",
+      count: true,
+      compareWindow: "checked_in_at:previous_month",
+    })).toThrow(/requires --compare-window.*--compare-to/i);
+    expect(() => buildFriendlyAggregatePlan(boundary(), {
+      resource: "public.check_ins",
+      count: true,
+      timeBucket: "checked_in_at:month",
+      timeWindow: "checked_in_at:previous_month",
+      compareWindow: "checked_in_at:previous_month",
+      compareTo: "preceding_period",
+    })).toThrow(/cannot be combined/i);
+  });
+
   it("builds advanced reviewed measures and every reviewed calendar grain without plan JSON", () => {
     expect(buildFriendlyAggregatePlan(boundary(), {
       resource: "public.check_ins",

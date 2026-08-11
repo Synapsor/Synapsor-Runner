@@ -995,6 +995,27 @@ END
     expect(compileAgentDsl(formatAgentDsl(source))).toEqual(contract);
   });
 
+  it("round-trips a fixed protected time window without accepting dynamic dates", () => {
+    const source = protectedAggregateSource().replace(
+      `PROTECTED FILTER status EQ FIXED 'churned'`,
+      [
+        "PROTECTED TIME WINDOW churned_at FROM FIXED '2026-06-01T00:00:00.000Z' TO FIXED '2026-07-01T00:00:00.000Z'",
+        `  PROTECTED FILTER status EQ FIXED 'churned'`,
+      ].join("\n"),
+    );
+    const contract = compileAgentDsl(source);
+    expect(contract.capabilities[0]?.protected_read?.time_window).toEqual({
+      field: "churned_at",
+      start: "2026-06-01T00:00:00.000Z",
+      end: "2026-07-01T00:00:00.000Z",
+    });
+    expect(compileAgentDsl(formatAgentDsl(source))).toEqual(contract);
+    expect(() => compileAgentDsl(source.replace(
+      "FROM FIXED '2026-06-01T00:00:00.000Z'",
+      "FROM ARG period_start",
+    ))).toThrow(/UNSUPPORTED_DSL_CLAUSE/);
+  });
+
   it("compiles reviewed star paths while preserving the legacy one-link syntax", () => {
     const source = protectedAggregateSource()
       .replace(

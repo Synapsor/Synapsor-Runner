@@ -423,6 +423,9 @@ export async function tryAsk(
           }),
           ...(item.returned_cells === undefined ? {} : { returned_cells: item.returned_cells }),
           ...(item.suppressed_groups === undefined ? {} : { suppressed_groups: item.suppressed_groups }),
+          ...(item.resolved_time_windows?.length
+            ? { resolved_time_windows: item.resolved_time_windows }
+            : {}),
           ...(item.minimum_cohort_override
             ? { minimum_cohort_override: item.minimum_cohort_override }
             : {}),

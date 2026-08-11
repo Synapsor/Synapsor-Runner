@@ -62,6 +62,17 @@ import {
   type ExploreTrustedScope,
 } from "./explore-trusted-scope.js";
 import { runAllCleanups } from "./resource-lifecycle.js";
+import {
+  RELATIVE_TIME_COMPARISONS,
+  RELATIVE_TIME_WINDOWS,
+  isRelativeTimeComparison,
+  isRelativeTimeWindow,
+  resolveRelativeTimeComparison,
+  resolveRelativeTimeWindow,
+  type RelativeTimeComparison,
+  type RelativeTimeWindow,
+  type ResolvedRelativeTimeWindow,
+} from "./relative-time-window.js";
 
 export const SCOPED_EXPLORE_DESCRIBE_TOOL = "app.describe_data";
 export const SCOPED_EXPLORE_QUERY_TOOL = "app.explore_data";
@@ -131,6 +142,7 @@ export type RowExplorePlan = {
   kind: "rows";
   resource: string;
   select: string[];
+  time_window?: CanonicalTimeWindow;
   where?: ExploreFilter[];
   order_by?: Array<{ field: string; direction: Direction }>;
   limit: number;
@@ -166,6 +178,7 @@ export type AggregateExplorePlan = {
   measures: AggregateMeasure[];
   dimensions?: AggregateDimension[];
   time_bucket?: { field: string; bucket: TimeBucket; relationship?: string };
+  time_window?: CanonicalTimeWindow;
   where?: ExploreFilter[];
   order_by?:
     | { kind: "measure"; index: number; direction: Direction }
@@ -177,6 +190,18 @@ export type AggregateExplorePlan = {
     relationship?: string;
     ranges: Array<{ start: string; end: string }>;
   };
+};
+
+export type CanonicalTimeWindow = {
+  field: string;
+  relationship?: string;
+  start: string;
+  end: string;
+};
+
+export type ValidatedExploreRequest = {
+  plan: ExplorePlan;
+  resolved_time_windows: ResolvedRelativeTimeWindow[];
 };
 
 export type ExplorePlan = RowExplorePlan | AggregateExplorePlan;
@@ -553,9 +578,15 @@ export async function createScopedExploreRuntime(input: {
         });
         throw error;
       }
+      const executionStartedAt = clock();
       let plan: ExplorePlan;
+      let resolvedTimeWindows: ResolvedRelativeTimeWindow[] = [];
       try {
-        plan = validateExplorePlan(unknownPlan, currentPrepared.boundary);
+        const validated = validateExploreRequest(unknownPlan, currentPrepared.boundary, {
+          now: executionStartedAt,
+        });
+        plan = validated.plan;
+        resolvedTimeWindows = validated.resolved_time_windows;
       } catch (error) {
         const refusal = enrichReviewableRelationshipError(
           error,
@@ -572,7 +603,7 @@ export async function createScopedExploreRuntime(input: {
           unknownPlan,
           stage: "validation",
           error: refusal,
-          now: clock(),
+          now: executionStartedAt,
         });
         throw refusal;
       }
@@ -593,7 +624,6 @@ export async function createScopedExploreRuntime(input: {
         });
         throw error;
       }
-      const executionStartedAt = clock();
       // Production budget variants must be stable across replicas. The shared
       // HMAC key keeps literals opaque while making accounting deterministic.
       const normalizedAuditPlan = normalizedAudit(plan, privacyHmacKey);
@@ -739,6 +769,7 @@ export async function createScopedExploreRuntime(input: {
           familyFingerprint,
           variantFingerprint,
           normalizedPlan: normalizedAuditPlan,
+          resolvedTimeWindows,
           plan,
           status: "failed",
           rowCount: 0,
@@ -768,6 +799,7 @@ export async function createScopedExploreRuntime(input: {
           familyFingerprint,
           variantFingerprint,
           normalizedPlan: normalizedAuditPlan,
+          resolvedTimeWindows,
           plan,
           status: "refused_privacy_boundary",
           rowCount: 0,
@@ -790,6 +822,7 @@ export async function createScopedExploreRuntime(input: {
           familyFingerprint,
           variantFingerprint,
           normalizedPlan: normalizedAuditPlan,
+          resolvedTimeWindows,
           plan,
           status: "refused_response_budget",
           rowCount: 0,
@@ -822,6 +855,7 @@ export async function createScopedExploreRuntime(input: {
           familyFingerprint,
           variantFingerprint,
           normalizedPlan: normalizedAuditPlan,
+          resolvedTimeWindows,
           plan,
           status: "refused_privacy_complement",
           rowCount: 0,
@@ -854,6 +888,7 @@ export async function createScopedExploreRuntime(input: {
           familyFingerprint,
           variantFingerprint,
           normalizedPlan: normalizedAuditPlan,
+          resolvedTimeWindows,
           plan,
           status: "refused_budget_completion",
           rowCount: 0,
@@ -896,6 +931,7 @@ export async function createScopedExploreRuntime(input: {
         familyFingerprint,
         variantFingerprint,
         normalizedPlan: normalizedAuditPlan,
+        resolvedTimeWindows,
         plan,
         status: response.status,
         rowCount: response.rowCount,
@@ -919,6 +955,9 @@ export async function createScopedExploreRuntime(input: {
             returned_rows_or_groups: response.rowCount,
             returned_cells: response.cells,
             suppressed_groups: response.suppressed,
+            ...(resolvedTimeWindows.length
+              ? { resolved_time_windows: resolvedTimeWindows }
+              : {}),
           },
         })
         : undefined;
@@ -1007,6 +1046,7 @@ export async function createScopedExploreRuntime(input: {
           returnedCells: response.cells,
           completedAt,
         }),
+        ...(resolvedTimeWindows.length ? { operator_time_windows: resolvedTimeWindows } : {}),
         evidence_bundle_id: evidence.evidence_bundle_id,
         evidence_resource: `synapsor://evidence/${evidence.evidence_bundle_id}`,
         ...(protectToken ? {
@@ -1179,15 +1219,41 @@ function requestedRelationshipIds(input: Record<string, unknown>): string[] {
     for (const item of input[key]) if (isRecord(item)) add(item.relationship);
   }
   if (isRecord(input.time_bucket)) add(input.time_bucket.relationship);
+  if (isRecord(input.time_window)) add(input.time_window.relationship);
   if (isRecord(input.comparison)) add(input.comparison.relationship);
   return unique(ids);
 }
 
-export function validateExplorePlan(input: unknown, boundary: ActivatedExplorationBoundary): ExplorePlan {
+type ExploreValidationContext = {
+  now: number;
+  resolvedTimeWindows: ResolvedRelativeTimeWindow[];
+};
+
+export function validateExploreRequest(
+  input: unknown,
+  boundary: ActivatedExplorationBoundary,
+  options: { now?: number } = {},
+): ValidatedExploreRequest {
   if (!isRecord(input)) throw planError("plan must be an object");
-  if (input.kind === "rows") return validateRowPlan(input, boundary);
-  if (input.kind === "aggregate") return validateAggregatePlan(input, boundary);
-  throw planError("kind must be rows or aggregate");
+  const context: ExploreValidationContext = {
+    now: options.now ?? Date.now(),
+    resolvedTimeWindows: [],
+  };
+  const plan = input.kind === "rows"
+    ? validateRowPlan(input, boundary, context)
+    : input.kind === "aggregate"
+      ? validateAggregatePlan(input, boundary, context)
+      : undefined;
+  if (!plan) throw planError("kind must be rows or aggregate");
+  return { plan, resolved_time_windows: context.resolvedTimeWindows };
+}
+
+export function validateExplorePlan(
+  input: unknown,
+  boundary: ActivatedExplorationBoundary,
+  options: { now?: number } = {},
+): ExplorePlan {
+  return validateExploreRequest(input, boundary, options).plan;
 }
 
 export function projectScopedExploreResultForModel(input: {
@@ -1204,10 +1270,35 @@ export function projectScopedExploreResultForModel(input: {
     return { value: structuredClone(input.result), withheld: false };
   }
   const rawPlan = input.arguments.plan;
-  const plan = validateExplorePlan(rawPlan, input.boundary);
+  const operatorTimeWindows = Array.isArray(input.result.operator_time_windows)
+    ? input.result.operator_time_windows.filter(isRecord)
+    : [];
+  const resolvedAt = operatorTimeWindows.find((item) => typeof item.resolved_at === "string")?.resolved_at;
+  const projectionNow = typeof resolvedAt === "string" && Number.isFinite(Date.parse(resolvedAt))
+    ? Date.parse(resolvedAt)
+    : Date.now();
+  const plan = validateExplorePlan(rawPlan, input.boundary, { now: projectionNow });
   const projected = structuredClone(input.result);
-  const operatorMetadataWithheld = Object.hasOwn(projected, "operator_budget");
+  const operatorMetadataWithheld = Object.hasOwn(projected, "operator_budget")
+    || Object.hasOwn(projected, "operator_time_windows");
   delete projected.operator_budget;
+  delete projected.operator_time_windows;
+  if (operatorTimeWindows.some((item) => item.location === "comparison")) {
+    const outcome = isRecord(projected.outcome) ? projected.outcome : undefined;
+    const result = outcome && isRecord(outcome.result) ? outcome.result : undefined;
+    const grain = result && isRecord(result.grain) ? result.grain : undefined;
+    if (grain?.kind === "period_comparison") {
+      delete grain.periods;
+      grain.relative_window = operatorTimeWindows
+        .filter((item) => item.location === "comparison")
+        .map((item) => ({
+          window: item.window,
+          compare_to: item.compare_to,
+          reporting_timezone: "UTC",
+          resolved_timestamps_withheld_from_model: true,
+        }));
+    }
+  }
   const columns = new Set(modelWithheldExploreOutputColumns(plan, input.boundary));
   if (columns.size === 0) {
     return {
@@ -1352,6 +1443,7 @@ export type ProtectedPlanMetadata = {
   returned_rows_or_groups?: number;
   returned_cells?: number;
   suppressed_groups?: number;
+  resolved_time_windows?: ResolvedRelativeTimeWindow[];
 };
 
 export type ProtectedPlanRecord = {
@@ -1404,12 +1496,19 @@ export async function bindProtectedPlansToAnswer(input: {
   await writeProtectState(projectRoot, { ...state, items });
 }
 
-function validateRowPlan(input: Record<string, unknown>, boundary: ActivatedExplorationBoundary): RowExplorePlan {
-  assertKeys(input, ["kind", "resource", "select", "where", "order_by", "limit"], "row plan");
+function validateRowPlan(
+  input: Record<string, unknown>,
+  boundary: ActivatedExplorationBoundary,
+  context: ExploreValidationContext,
+): RowExplorePlan {
+  assertKeys(input, ["kind", "resource", "select", "time_window", "where", "order_by", "limit"], "row plan");
   const resource = requestedResource(boundary, input.resource);
   const select = stringArray(input.select, "select", 1, Math.min(20, boundary.budgets.max_response_cells));
   assertSubsetAllowed(select, resource.selectable_fields, resource, "select");
   const where = validateFilters(input.where, resource, boundary);
+  const timeWindow = input.time_window === undefined
+    ? undefined
+    : validateTimeWindow(input.time_window, resource, boundary, context, false);
   const orderBy = input.order_by === undefined ? undefined : recordArray(input.order_by, "order_by", 0, 3).map((order) => {
     assertKeys(order, ["field", "direction"], "order_by item");
     const field = requiredString(order.field, "order_by.field");
@@ -1427,14 +1526,19 @@ function validateRowPlan(input: Record<string, unknown>, boundary: ActivatedExpl
     kind: "rows",
     resource: resource.id,
     select,
+    ...(timeWindow ? { time_window: timeWindow } : {}),
     ...(where.length ? { where } : {}),
     ...(orderBy?.length ? { order_by: orderBy } : {}),
     limit,
   };
 }
 
-function validateAggregatePlan(input: Record<string, unknown>, boundary: ActivatedExplorationBoundary): AggregateExplorePlan {
-  assertKeys(input, ["kind", "resource", "relationship", "measures", "dimensions", "time_bucket", "where", "order_by", "top_n", "comparison"], "aggregate plan");
+function validateAggregatePlan(
+  input: Record<string, unknown>,
+  boundary: ActivatedExplorationBoundary,
+  context: ExploreValidationContext,
+): AggregateExplorePlan {
+  assertKeys(input, ["kind", "resource", "relationship", "measures", "dimensions", "time_bucket", "time_window", "where", "order_by", "top_n", "comparison"], "aggregate plan");
   const resource = requestedResource(boundary, input.resource);
   const relationship = optionalString(input.relationship, "relationship");
   if (relationship) reviewedRelationship(resource, relationship, boundary);
@@ -1526,7 +1630,15 @@ function validateAggregatePlan(input: Record<string, unknown>, boundary: Activat
     // A scalar aggregate remains valid, but it is still privacy-suppressed.
   }
   const where = validateFilters(input.where, resource, boundary);
-  const comparison = input.comparison === undefined ? undefined : validateComparison(input.comparison, resource, boundary);
+  const timeWindow = input.time_window === undefined
+    ? undefined
+    : validateTimeWindow(input.time_window, resource, boundary, context, true);
+  const comparison = input.comparison === undefined
+    ? undefined
+    : validateComparison(input.comparison, resource, boundary, context);
+  if (timeWindow && comparison) {
+    throw planError("time_window and comparison are mutually exclusive; send one reviewed time selection per plan");
+  }
   const autoBandDimensions = dimensions.filter(isAutoBandDimension);
   if (autoBandDimensions.length > 1) {
     throw planError("one aggregate plan may use at most one reviewed auto-band dimension");
@@ -1595,6 +1707,7 @@ function validateAggregatePlan(input: Record<string, unknown>, boundary: Activat
     ...measures.flatMap((measure) => measureRelationships(measure, resource)),
     ...dimensions.flatMap((dimension) => dimensionRelationships(dimension, resource)),
     timeBucket?.relationship,
+    timeWindow?.relationship,
     ...where.map((filter) => filter.relationship),
     comparison?.relationship,
   ].filter((value): value is string => Boolean(value)));
@@ -1614,6 +1727,7 @@ function validateAggregatePlan(input: Record<string, unknown>, boundary: Activat
     measures,
     ...(dimensions.length ? { dimensions } : {}),
     ...(timeBucket ? { time_bucket: timeBucket } : {}),
+    ...(timeWindow ? { time_window: timeWindow } : {}),
     ...(where.length ? { where } : {}),
     ...(orderBy ? { order_by: orderBy } : {}),
     top_n: topN,
@@ -1648,13 +1762,112 @@ function validateFilters(input: unknown, root: BoundaryResource, boundary: Activ
   });
 }
 
-function validateComparison(input: unknown, root: BoundaryResource, boundary: ActivatedExplorationBoundary): NonNullable<AggregateExplorePlan["comparison"]> {
+function validateTimeWindow(
+  input: unknown,
+  root: BoundaryResource,
+  boundary: ActivatedExplorationBoundary,
+  context: ExploreValidationContext,
+  allowRelationship: boolean,
+): CanonicalTimeWindow {
+  if (!isRecord(input)) throw planError("time_window must be an object");
+  const relationship = allowRelationship
+    ? optionalString(input.relationship, "time_window.relationship")
+    : undefined;
+  const target = relationship ? relationshipResource(root, relationship, boundary) : root;
+  const field = requiredString(input.field, "time_window.field");
+  if (!target.time_bucket_fields[field]) throw fieldError(target, field, "time window");
+  if (input.window !== undefined) {
+    assertKeys(
+      input,
+      allowRelationship ? ["field", "relationship", "window"] : ["field", "window"],
+      "relative time_window",
+    );
+    assertReviewedUtcRelativeTime(boundary);
+    const window = requiredString(input.window, "time_window.window");
+    if (!isRelativeTimeWindow(window)) {
+      throw planError(`time_window.window must be one of ${RELATIVE_TIME_WINDOWS.join(", ")}`);
+    }
+    let resolved;
+    try {
+      resolved = resolveRelativeTimeWindow(window, context.now);
+    } catch (error) {
+      throw planError(error instanceof Error ? error.message : "relative time window could not be resolved");
+    }
+    context.resolvedTimeWindows.push({
+      source: "reviewed_relative_time",
+      location: "time_window",
+      field,
+      ...(relationship ? { relationship } : {}),
+      window,
+      reporting_timezone: "UTC",
+      resolved_at: new Date(context.now).toISOString(),
+      ranges: [{
+        id: "window",
+        start_inclusive: resolved.start,
+        end_exclusive: resolved.end,
+      }],
+    });
+    return { field, ...(relationship ? { relationship } : {}), ...resolved };
+  }
+  assertKeys(
+    input,
+    allowRelationship ? ["field", "relationship", "start", "end"] : ["field", "start", "end"],
+    "absolute time_window",
+  );
+  const start = requiredString(input.start, "time_window.start");
+  const end = requiredString(input.end, "time_window.end");
+  if (!isIsoTime(start) || !isIsoTime(end) || Date.parse(start) >= Date.parse(end)) {
+    throw planError("time_window requires a bounded ISO start < end");
+  }
+  return { field, ...(relationship ? { relationship } : {}), start, end };
+}
+
+function validateComparison(
+  input: unknown,
+  root: BoundaryResource,
+  boundary: ActivatedExplorationBoundary,
+  context: ExploreValidationContext,
+): NonNullable<AggregateExplorePlan["comparison"]> {
   if (!isRecord(input)) throw planError("comparison must be an object");
-  assertKeys(input, ["field", "relationship", "ranges"], "comparison");
   const relationship = optionalString(input.relationship, "comparison.relationship");
   const resource = relationship ? relationshipResource(root, relationship, boundary) : root;
   const field = requiredString(input.field, "comparison.field");
   if (!resource.time_bucket_fields[field]) throw fieldError(resource, field, "time comparison");
+  if (input.window !== undefined || input.compare_to !== undefined) {
+    assertKeys(input, ["field", "relationship", "window", "compare_to"], "relative comparison");
+    assertReviewedUtcRelativeTime(boundary);
+    const window = requiredString(input.window, "comparison.window");
+    if (!isRelativeTimeWindow(window)) {
+      throw planError(`comparison.window must be one of ${RELATIVE_TIME_WINDOWS.join(", ")}`);
+    }
+    const compareTo = requiredString(input.compare_to, "comparison.compare_to");
+    if (!isRelativeTimeComparison(compareTo)) {
+      throw planError(`comparison.compare_to must be one of ${RELATIVE_TIME_COMPARISONS.join(", ")}`);
+    }
+    let ranges;
+    try {
+      ranges = resolveRelativeTimeComparison(window, compareTo, context.now);
+    } catch (error) {
+      throw planError(error instanceof Error ? error.message : "relative comparison could not be resolved");
+    }
+    context.resolvedTimeWindows.push({
+      source: "reviewed_relative_time",
+      location: "comparison",
+      field,
+      ...(relationship ? { relationship } : {}),
+      window,
+      compare_to: compareTo,
+      reporting_timezone: "UTC",
+      resolved_at: new Date(context.now).toISOString(),
+      ranges: ranges.map((range, index) => ({
+        id: index === 0 ? "period_1" as const : "period_2" as const,
+        start_inclusive: range.start,
+        end_exclusive: range.end,
+      })),
+    });
+    return { field, ranges, ...(relationship ? { relationship } : {}) };
+  }
+  assertKeys(input, ["field", "relationship", "ranges"], "comparison");
   const ranges = recordArray(input.ranges, "comparison.ranges", 2, boundary.budgets.max_time_ranges).map((range) => {
     assertKeys(range, ["start", "end"], "comparison range");
     const start = requiredString(range.start, "comparison.start");
@@ -1669,6 +1882,14 @@ function validateComparison(input: unknown, root: BoundaryResource, boundary: Ac
     );
   }
   return { field, ranges, ...(relationship ? { relationship } : {}) };
+}
+
+function assertReviewedUtcRelativeTime(boundary: ActivatedExplorationBoundary): void {
+  if (boundary.reporting_timezone !== "UTC") {
+    throw planError(
+      "reviewed relative time requires an authority-bound UTC reporting timezone; use an absolute ISO range for this legacy boundary",
+    );
+  }
 }
 
 function validateAggregateOrder(
@@ -1713,6 +1934,9 @@ function compileRowPlan(
   const scope = compileScopePredicates(resource, boundary, alias, context, params, engine);
   const where = scope.predicates;
   for (const filter of plan.where ?? []) where.push(filterSql(filter, resource, alias, params, engine));
+  if (plan.time_window) {
+    appendTimeWindowPredicate(where, plan.time_window, alias, params, engine);
+  }
   const enumUses = unique([
     ...plan.select,
     ...(plan.where ?? []).map((filter) => filter.field),
@@ -1765,6 +1989,7 @@ function compileAggregatePlan(
     ...plan.measures.flatMap((measure) => measureRelationships(measure, root)),
     ...(plan.dimensions ?? []).flatMap((dimension) => dimensionRelationships(dimension, root)),
     plan.time_bucket?.relationship,
+    plan.time_window?.relationship,
     ...(plan.where ?? []).map((filter) => filter.relationship),
     plan.comparison?.relationship,
   ].filter((value): value is string => Boolean(value)));
@@ -1782,6 +2007,18 @@ function compileAggregatePlan(
   for (const filter of plan.where ?? []) {
     const target = filter.relationship ? joined.targets.get(filter.relationship) : undefined;
     where.push(filterSql(filter, target?.resource ?? root, target?.alias ?? "t0", params, engine));
+  }
+  if (plan.time_window) {
+    const target = plan.time_window.relationship
+      ? joined.targets.get(plan.time_window.relationship)
+      : undefined;
+    appendTimeWindowPredicate(
+      where,
+      plan.time_window,
+      target?.alias ?? "t0",
+      params,
+      engine,
+    );
   }
   if (plan.time_bucket && plan.measures.some((measure) => {
     if (!("derived_measure" in measure)) return false;
@@ -1980,6 +2217,7 @@ function compileAutoBandAggregatePlan(
     ...plan.measures.flatMap((measure) => measureRelationships(measure, root)),
     ...(plan.dimensions ?? []).flatMap((dimension) => dimensionRelationships(dimension, root)),
     plan.time_bucket?.relationship,
+    plan.time_window?.relationship,
     ...(plan.where ?? []).map((filter) => filter.relationship),
   ].filter((value): value is string => Boolean(value)));
   const params: Scalar[] = [];
@@ -1996,6 +2234,18 @@ function compileAutoBandAggregatePlan(
   for (const filter of plan.where ?? []) {
     const target = filter.relationship ? joined.targets.get(filter.relationship) : undefined;
     where.push(filterSql(filter, target?.resource ?? root, target?.alias ?? "t0", params, engine));
+  }
+  if (plan.time_window) {
+    const target = plan.time_window.relationship
+      ? joined.targets.get(plan.time_window.relationship)
+      : undefined;
+    appendTimeWindowPredicate(
+      where,
+      plan.time_window,
+      target?.alias ?? "t0",
+      params,
+      engine,
+    );
   }
   if (plan.time_bucket && plan.measures.some((measure) => {
     if (!("derived_measure" in measure)) return false;
@@ -3142,6 +3392,17 @@ function describeBoundary(
       name: boundary.reporting_timezone ?? "database_session",
       authority_bound: Boolean(boundary.reporting_timezone),
     },
+    relative_time_windows: {
+      available: boundary.reporting_timezone === "UTC",
+      reporting_timezone: boundary.reporting_timezone === "UTC" ? "UTC" : null,
+      windows: boundary.reporting_timezone === "UTC" ? [...RELATIVE_TIME_WINDOWS] : [],
+      comparison_partners: boundary.reporting_timezone === "UTC"
+        ? [...RELATIVE_TIME_COMPARISONS]
+        : [],
+      range_semantics: "half-open [start, end)",
+      week_starts_on: "Monday",
+      model_supplied_date_arithmetic: false,
+    },
     resources: selected.map((resource) => {
       const reviewableRelationships = inactiveReviewableRelationships(resource, boundary, reviewableBoundary);
       const reviewedFields = unique([
@@ -3216,6 +3477,9 @@ function describeBoundary(
         })),
         count_distinct_fields: resource.count_distinct_fields,
         time_bucket_fields: resource.time_bucket_fields,
+        relative_time_window_fields: boundary.reporting_timezone === "UTC"
+          ? Object.keys(resource.time_bucket_fields).sort()
+          : [],
         time_coverage: timeCoverage[resource.id] ?? {},
         field_types: Object.fromEntries(reviewedFields.map((field) => [field, resource.field_types[field]])),
         field_enums: Object.fromEntries(reviewedFields
@@ -3293,6 +3557,9 @@ function describeBoundary(
               describeReviewedDerivedMeasure(measure, target.minimum_cohort_size)),
             count_distinct_fields: target.count_distinct_fields,
             time_bucket_fields: target.time_bucket_fields,
+            relative_time_window_fields: boundary.reporting_timezone === "UTC"
+              ? Object.keys(target.time_bucket_fields).sort()
+              : [],
             field_types: Object.fromEntries(targetFields.map((field) => [field, target.field_types[field]])),
           };
         }),
@@ -4072,6 +4339,7 @@ function exploreComplexity(plan: ExplorePlan, boundary: ActivatedExplorationBoun
   if (plan.kind === "rows") {
     return 1
       + plan.select.length
+      + (plan.time_window ? 2 : 0)
       + (plan.where?.length ?? 0) * 2
       + (plan.order_by?.length ?? 0);
   }
@@ -4081,6 +4349,7 @@ function exploreComplexity(plan: ExplorePlan, boundary: ActivatedExplorationBoun
       measureRelationships(measure, resourceFor(boundary, plan.resource))),
     ...(plan.dimensions ?? []).flatMap((dimension) => dimensionRelationships(dimension, resourceFor(boundary, plan.resource))),
     plan.time_bucket?.relationship,
+    plan.time_window?.relationship,
     ...(plan.where ?? []).map((filter) => filter.relationship),
     plan.comparison?.relationship,
   ].filter((value): value is string => Boolean(value)));
@@ -4088,6 +4357,7 @@ function exploreComplexity(plan: ExplorePlan, boundary: ActivatedExplorationBoun
     + plan.measures.length * 2
     + (plan.dimensions?.length ?? 0) * 2
     + (plan.time_bucket ? 2 : 0)
+    + (plan.time_window ? 2 : 0)
     + (plan.where?.length ?? 0) * 2
     + (plan.comparison?.ranges.length ?? 0) * 2
     + relationships.length * 4;
@@ -4159,6 +4429,7 @@ async function recordExploreAudit(
     familyFingerprint: string;
     variantFingerprint: string;
     normalizedPlan: Record<string, unknown>;
+    resolvedTimeWindows: ResolvedRelativeTimeWindow[];
     plan: ExplorePlan;
     status: string;
     rowCount: number;
@@ -4182,6 +4453,9 @@ async function recordExploreAudit(
       differencing_family: input.familyFingerprint,
       differencing_variant: input.variantFingerprint,
       normalized_plan: input.normalizedPlan,
+      ...(input.resolvedTimeWindows.length
+        ? { resolved_time_windows: input.resolvedTimeWindows }
+        : {}),
       status: input.status,
       returned_rows_or_groups: input.rowCount,
       returned_cells: input.cells,
@@ -4225,6 +4499,7 @@ async function recordExploreEvidence(
     familyFingerprint: string;
     variantFingerprint: string;
     normalizedPlan: Record<string, unknown>;
+    resolvedTimeWindows: ResolvedRelativeTimeWindow[];
     plan: ExplorePlan;
     status: "ok" | "empty" | "fully_suppressed" | "incomplete_comparison";
     rowCount: number;
@@ -4251,6 +4526,9 @@ async function recordExploreEvidence(
     differencing_family: input.familyFingerprint,
     differencing_variant: input.variantFingerprint,
     normalized_plan: input.normalizedPlan,
+    ...(input.resolvedTimeWindows.length
+      ? { resolved_time_windows: input.resolvedTimeWindows }
+      : {}),
     status: input.status,
     returned_rows_or_groups: input.rowCount,
     returned_cells: input.cells,
@@ -4284,6 +4562,9 @@ async function recordExploreEvidence(
         values_persisted: false,
       },
       normalized_plan: input.normalizedPlan,
+      ...(input.resolvedTimeWindows.length
+        ? { resolved_time_windows: input.resolvedTimeWindows }
+        : {}),
       outcome: input.status,
       returned_rows_or_groups: input.rowCount,
       returned_cells: input.cells,
@@ -4378,6 +4659,20 @@ function normalizedAudit(plan: ExplorePlan, auditKey: Buffer): Record<string, un
   return mapLiterals(plan, (value) => ({ keyed_hash: hmac(auditKey, JSON.stringify(value)) })) as Record<string, unknown>;
 }
 
+function appendTimeWindowPredicate(
+  predicates: string[],
+  window: CanonicalTimeWindow,
+  alias: string,
+  params: Scalar[],
+  engine: "postgres" | "mysql",
+): void {
+  const column = `${alias}.${quote(window.field, engine)}`;
+  params.push(window.start);
+  predicates.push(`${column} >= ${placeholder(params.length, engine)}`);
+  params.push(window.end);
+  predicates.push(`${column} < ${placeholder(params.length, engine)}`);
+}
+
 function mapLiterals(value: unknown, map: (value: Scalar | Scalar[]) => unknown, parentKey?: string): unknown {
   if (Array.isArray(value)) {
     if (parentKey === "value") return map(value as Scalar[]);
@@ -4385,7 +4680,13 @@ function mapLiterals(value: unknown, map: (value: Scalar | Scalar[]) => unknown,
   }
   if (!isRecord(value)) return value;
   return Object.fromEntries(Object.entries(value).map(([key, item]) => {
-    if (key === "value" || key === "start" || key === "end") return [key, map(item as Scalar)];
+    if (key === "start" || key === "end") {
+      const canonicalTime = typeof item === "string" && isIsoTime(item)
+        ? new Date(item).toISOString()
+        : item;
+      return [key, map(canonicalTime as Scalar)];
+    }
+    if (key === "value") return [key, map(item as Scalar)];
     return [key, mapLiterals(item, map, key)];
   }));
 }
@@ -4924,6 +5225,7 @@ function relationshipAuthoritiesForPlan(
     ...plan.measures.flatMap((measure) => measureRelationships(measure, root)),
     ...(plan.dimensions ?? []).flatMap((dimension) => dimensionRelationships(dimension, root)),
     plan.time_bucket?.relationship,
+    plan.time_window?.relationship,
     ...(plan.where ?? []).map((filter) => filter.relationship),
     plan.comparison?.relationship,
   ].filter((value): value is string => Boolean(value))).map((relationshipId) => ({

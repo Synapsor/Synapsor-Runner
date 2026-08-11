@@ -224,9 +224,12 @@ async function tryScopedExplore(
       "--group-by",
       "--group-band",
       "--time-bucket",
+      "--time-window",
       "--compare",
       "--period",
       "--vs-period",
+      "--compare-window",
+      "--compare-to",
       "--change",
       "--where",
       "--top",
@@ -255,9 +258,12 @@ async function tryScopedExplore(
       || repeatedArgs(args, "--group-band").length > 0
       || repeatedArgs(args, "--where").length > 0
       || Boolean(optionalArg(args, "--time-bucket"))
+      || Boolean(optionalArg(args, "--time-window"))
       || Boolean(optionalArg(args, "--compare"))
       || Boolean(optionalArg(args, "--period"))
       || Boolean(optionalArg(args, "--vs-period"))
+      || Boolean(optionalArg(args, "--compare-window"))
+      || Boolean(optionalArg(args, "--compare-to"))
       || Boolean(optionalArg(args, "--change"))
       || Boolean(optionalArg(args, "--top"));
     if (!inline && !inputPath && !friendly) {
@@ -304,9 +310,14 @@ async function tryScopedExplore(
             groupBy: repeatedArgs(args, "--group-by"),
             groupBands: repeatedArgs(args, "--group-band"),
             timeBucket: optionalArg(args, "--time-bucket"),
+            timeWindow: optionalArg(args, "--time-window"),
             compareField: optionalArg(args, "--compare"),
             period: optionalArg(args, "--period"),
             versusPeriod: optionalArg(args, "--vs-period"),
+            compareWindow: optionalArg(args, "--compare-window"),
+            ...(optionalArg(args, "--compare-to")
+              ? { compareTo: relativeComparisonArg(optionalArg(args, "--compare-to")!) }
+              : {}),
             ...(optionalArg(args, "--change")
               ? { comparisonChange: comparisonChangeArg(optionalArg(args, "--change")!) }
               : {}),
@@ -404,6 +415,11 @@ export function formatTryExploreRefusal(
 function comparisonChangeArg(value: string): "absolute" | "percentage" {
   if (value === "absolute" || value === "percentage") return value;
   throw new Error("--change must be absolute or percentage.");
+}
+
+function relativeComparisonArg(value: string): "preceding_period" | "same_period_last_year" {
+  if (value === "preceding_period" || value === "same_period_last_year") return value;
+  throw new Error("--compare-to must be preceding_period or same_period_last_year.");
 }
 
 

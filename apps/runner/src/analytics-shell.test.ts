@@ -2058,6 +2058,52 @@ describe("Synapsor Analytics shell", () => {
     expect(inspectAnalysis).toHaveBeenCalledOnce();
   });
 
+  it("shows resolved relative UTC ranges only in operator details", async () => {
+    const io = fakeIo(["How many sessions last month?", "/details A1", "/exit"]);
+    const liveAnalysis = analysis("A1", 0);
+    liveAnalysis.arguments = {
+      boundary: "reviewed_sessions",
+      plan: {
+        ...liveAnalysis.plan!,
+        time_window: { field: "started_at", window: "previous_month" },
+      },
+    };
+    liveAnalysis.result.operator_time_windows = [{
+      source: "reviewed_relative_time",
+      location: "time_window",
+      field: "started_at",
+      window: "previous_month",
+      reporting_timezone: "UTC",
+      resolved_at: "2026-08-10T15:30:45.123Z",
+      ranges: [{
+        id: "window",
+        start_inclusive: "2026-07-01T00:00:00.000Z",
+        end_exclusive: "2026-08-01T00:00:00.000Z",
+      }],
+    }];
+    await runAnalyticsShell({
+      providerLabel: "OpenAI",
+      profileLabel: "staging",
+      reviewedDataAreas: 1,
+      io,
+      ask: async () => ({
+        turn: turn("There were 42 sessions."),
+        analyses: [liveAnalysis],
+        answer_id: "ans_relative_time",
+      }),
+      listAnalyses: async () => [storedAnalysis("A1")],
+      protect: vi.fn(),
+      clearConversation: vi.fn(),
+      cancel: vi.fn(() => false),
+    });
+
+    const output = stripAnsi(io.output());
+    expect(output).toContain("RESOLVED TIME - OPERATOR ONLY");
+    expect(output).toContain("previous_month");
+    expect(output).toContain("[2026-07-01T00:00:00.000Z, 2026-08-01T00:00:00.000Z)");
+    expect(output).toContain("Runner captured one instant");
+  });
+
   it("syntax-highlights detail JSON only for interactive color terminals", async () => {
     const value = {
       boundary: "reviewed_sessions",

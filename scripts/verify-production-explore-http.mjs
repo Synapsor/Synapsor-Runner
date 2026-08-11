@@ -354,13 +354,13 @@ async function seedDerivedSource(pool) {
     WHERE tenant_id = 'acme'
       AND owner_id IN (
         'pm-band', 'pm-auto', 'pm-auto-equal', 'pm-auto-ties',
-        'pm-running', 'pm-ollama', 'pm-other'
+        'pm-running', 'pm-ollama', 'pm-relative', 'pm-other'
       );
     DELETE FROM public.accounts
     WHERE tenant_id = 'acme'
       AND owner_id IN (
         'pm-band', 'pm-auto', 'pm-auto-equal', 'pm-auto-ties',
-        'pm-running', 'pm-ollama', 'pm-other'
+        'pm-running', 'pm-ollama', 'pm-relative', 'pm-other'
       );
     INSERT INTO public.accounts (
       id, tenant_id, owner_id, region, segment, customer_email, internal_risk_score
@@ -380,7 +380,8 @@ async function seedDerivedSource(pool) {
       ('pm-auto-equal'),
       ('pm-auto-ties'),
       ('pm-running'),
-      ('pm-ollama')
+      ('pm-ollama'),
+      ('pm-relative')
     ) AS copies(principal)
     WHERE source.tenant_id = 'acme' AND source.owner_id = 'pm-1';
     INSERT INTO public.churn_events (
@@ -403,9 +404,13 @@ async function seedDerivedSource(pool) {
       ('pm-auto-equal'),
       ('pm-auto-ties'),
       ('pm-running'),
-      ('pm-ollama')
+      ('pm-ollama'),
+      ('pm-relative')
     ) AS copies(principal)
     WHERE source.tenant_id = 'acme' AND source.owner_id = 'pm-1';
+    UPDATE public.churn_events
+    SET churned_at = CURRENT_TIMESTAMP - INTERVAL '1 day'
+    WHERE tenant_id = 'acme' AND owner_id = 'pm-relative';
     WITH ranked AS (
       SELECT id, ROW_NUMBER() OVER (ORDER BY id) AS row_number
       FROM public.churn_events
@@ -581,19 +586,20 @@ async function seedPostgresSoakPrincipals(pool, identities) {
       SELECT $2 || '-event-' || item, $1, $2, $2 || '-account-' || item,
         CASE WHEN item <= 5 THEN 'onboarding' ELSE 'price' END,
         CASE WHEN item <= 5 THEN $3 + item ELSE $4 + (item - 5) END,
-        CASE WHEN item <= 5 THEN '2026-08-03T12:00:00Z'::timestamptz
-          ELSE '2026-08-10T12:00:00Z'::timestamptz END,
+        CASE WHEN item <= 5 THEN CURRENT_TIMESTAMP - INTERVAL '8 days'
+          ELSE CURRENT_TIMESTAMP - INTERVAL '1 day' END,
         'synthetic kept-out soak note ' || $2 || '-' || item
       FROM generate_series(1, 10) AS item
     `, [identity.tenant, identity.principal, lowValue, highValue]);
     const category = identity.index % 2 === 0 ? "trail" : "enterprise";
     await pool.query(`
       INSERT INTO public.scoped_orders (id, tenant_id, owner_id, category, occurred_at)
-      VALUES ($2 || '-order', $1, $2, $3, '2026-08-03T12:00:00Z')
+      VALUES ($2 || '-order', $1, $2, $3, CURRENT_TIMESTAMP - INTERVAL '8 days')
     `, [identity.tenant, identity.principal, category]);
     await pool.query(`
       INSERT INTO public.scoped_order_items (id, order_id, item_kind, quantity, occurred_at)
-      SELECT $1 || '-item-' || item, $1 || '-order', 'standard', item, '2026-08-03T12:00:00Z'
+      SELECT $1 || '-item-' || item, $1 || '-order', 'standard', item,
+        CURRENT_TIMESTAMP - INTERVAL '8 days'
       FROM generate_series(1, 5) AS item
     `, [identity.principal]);
   }
@@ -650,6 +656,17 @@ function postgresSoakOperations() {
       order_by: { kind: "time_bucket", direction: "asc" },
     }, (payload) => assertSoak((payload.data ?? []).reduce((sum, row) => sum + row.count, 0) === 10,
       "PostgreSQL weekly grouping escaped exact scope.", payload.data)),
+    legal("relative_time_window", 10, {
+      ...aggregatePlan,
+      measures: [{ function: "count" }],
+      time_window: { field: "churned_at", window: "last_30_days" },
+    }, (payload) => assertSoak(
+      (payload.data ?? []).reduce((sum, row) => sum + row.count, 0) === 10
+        && payload.operator_time_windows === undefined
+        && payload.resolved_time_windows === undefined,
+      "PostgreSQL relative window escaped scope or exposed operator-only resolution metadata.",
+      payload,
+    )),
     legal("numeric_band", 10, {
       kind: "aggregate",
       resource: "public.churn_events",
@@ -884,6 +901,15 @@ function ollamaSoakQuestions() {
         && plan.time_bucket?.bucket === "week",
     },
     {
+      question: "How many churn events were there in the last 30 days by reason category?",
+      validate: (plan) => aggregate(plan)
+        && plan.resource === "public.churn_events"
+        && hasMeasure(plan, ["count", "non_null_count"], undefined)
+        && hasDimension(plan, "reason_category")
+        && plan.time_window?.field === "churned_at"
+        && plan.time_window?.window === "last_30_days",
+    },
+    {
       question: "How many churn events fall in each reviewed monthly revenue band?",
       validate: (plan) => aggregate(plan)
         && plan.resource === "public.churn_events"
@@ -999,10 +1025,12 @@ async function runOllamaAgentSoak(input) {
     maximum_source_connections: 0,
     process_samples: [],
     latencies_ms: [],
+    outcomes: [],
     failures: [],
   };
   let session;
   let identity;
+  let gateway;
   let expectedServerProcesses;
 
   const persist = () => writeOllamaSoakResult(input.result_path, {
@@ -1017,6 +1045,8 @@ async function runOllamaAgentSoak(input) {
     }
     const identityIndex = Math.floor(index / questionsPerIdentity);
     if (!session || identity !== input.identities[identityIndex]) {
+      if (gateway) await gateway.close().catch(() => undefined);
+      gateway = undefined;
       identity = input.identities[identityIndex];
       session = new WorkbenchAskSession();
       state.identity_rotations += 1;
@@ -1026,30 +1056,34 @@ async function runOllamaAgentSoak(input) {
     }
     const testCase = questions[index % questions.length];
     const began = performance.now();
-    let gateway;
     try {
-      const connected = await createOllamaProductionGateway({
-        url: input.url,
-        privateKey: input.privateKey,
-        identity,
-      });
-      gateway = connected.gateway;
-      if (!session.status().configured) {
-        session.configure({
-          provider: "openai_compatible",
-          model: input.model,
-          base_url: process.env.SYNAPSOR_TEST_OLLAMA_BASE_URL?.trim() || "http://127.0.0.1:11434/v1",
-          request_timeout_seconds: 180,
-          authority_digest: askToolSurfaceDigest(connected.tools),
-          egress_acknowledged: true,
+      if (!gateway) {
+        const connected = await createOllamaProductionGateway({
+          url: input.url,
+          privateKey: input.privateKey,
+          identity,
         });
+        gateway = connected.gateway;
+        if (!session.status().configured) {
+          session.configure({
+            provider: "openai_compatible",
+            model: input.model,
+            base_url: process.env.SYNAPSOR_TEST_OLLAMA_BASE_URL?.trim() || "http://127.0.0.1:11434/v1",
+            request_timeout_seconds: 180,
+            authority_digest: askToolSurfaceDigest(connected.tools),
+            egress_acknowledged: true,
+          });
+        }
       }
+      const turnGateway = {
+        ...gateway,
+        close: async () => undefined,
+      };
       const result = await session.run(
         testCase.question,
-        gateway,
+        turnGateway,
         { requestJson: secureAskJsonRequest },
       );
-      gateway = undefined;
       const scopeAttempt = result.tool_calls.some((call) =>
         /tenant|principal/i.test(JSON.stringify(call.arguments)));
       const scopeDisclosure = JSON.stringify(result.tool_calls).includes(identity.tenant)
@@ -1062,13 +1096,41 @@ async function runOllamaAgentSoak(input) {
         call.tool === "app.explore_data" && call.status === "ok");
       const refused = result.tool_calls.some((call) =>
         call.tool === "app.explore_data" && call.status === "refused");
+      const toolAttempts = result.tool_calls.map((call) => ({
+        tool: call.tool,
+        status: call.status,
+        error_code: call.error_code,
+        arguments: call.arguments,
+      }));
       if (accepted) {
         state.accepted_explore_queries += 1;
-        if (testCase.validate(accepted.arguments?.plan)) state.semantic_matches += 1;
+        const semanticMatch = testCase.validate(accepted.arguments?.plan);
+        if (semanticMatch) state.semantic_matches += 1;
+        state.outcomes.push({
+          question: testCase.question,
+          status: "accepted",
+          semantic_match: semanticMatch,
+          plan: accepted.arguments?.plan,
+          tool_attempts: toolAttempts,
+        });
       } else if (refused) {
         state.expected_refusals += 1;
+        const refusal = [...result.tool_calls].reverse().find((call) =>
+          call.tool === "app.explore_data" && call.status === "refused");
+        state.outcomes.push({
+          question: testCase.question,
+          status: "refused",
+          error_code: refusal?.error_code,
+          plan: refusal?.arguments?.plan,
+          tool_attempts: toolAttempts,
+        });
       } else {
         state.no_tool_answers += 1;
+        state.outcomes.push({
+          question: testCase.question,
+          status: "no_tool_answer",
+          tool_attempts: toolAttempts,
+        });
       }
     } catch (error) {
       state.provider_errors += 1;
@@ -1077,19 +1139,27 @@ async function runOllamaAgentSoak(input) {
         question: testCase.question,
         error: String(error instanceof Error ? error.message : error).slice(0, 1_000),
       });
+      state.outcomes.push({
+        question: testCase.question,
+        status: "provider_error",
+        error: String(error instanceof Error ? error.message : error).slice(0, 1_000),
+      });
       state.failures = state.failures.slice(-100);
       if (state.security_failures > 0) {
+        if (gateway) await gateway.close().catch(() => undefined);
+        gateway = undefined;
         persist();
         throw error;
       }
     } finally {
-      if (gateway) await gateway.close().catch(() => undefined);
       state.attempted += 1;
       state.latencies_ms.push(Math.round((performance.now() - began) * 100) / 100);
       const sourceConnections = await input.source_connection_count();
       state.maximum_source_connections = Math.max(state.maximum_source_connections, sourceConnections);
       if (sourceConnections > input.source_connection_ceiling) {
         state.security_failures += 1;
+        if (gateway) await gateway.close().catch(() => undefined);
+        gateway = undefined;
         persist();
         throw new Error(
           `Ollama soak exceeded source connection ceiling: ${sourceConnections} > ${input.source_connection_ceiling}.`,
@@ -1108,6 +1178,9 @@ async function runOllamaAgentSoak(input) {
       }
     }
   }
+
+  if (gateway) await gateway.close().catch(() => undefined);
+  gateway = undefined;
 
   state.completed_at = new Date().toISOString();
   const acceptanceRate = state.attempted === 0 ? 0 : state.accepted_explore_queries / state.attempted;
@@ -2030,6 +2103,10 @@ async function main() {
       arguments: {},
     }));
     const describedChurn = described.resources?.find((resource) => resource.id === "public.churn_events");
+    const focusedTimeDescription = resultPayload(await alice.client.callTool({
+      name: "app.describe_data",
+      arguments: { resource: "public.churn_events" },
+    }));
     const describedItems = described.resources?.find((resource) => resource.id === "public.scoped_order_items");
     assert(described.ok === true
       && described.resources?.length === 4
@@ -2051,6 +2128,13 @@ async function main() {
         && policy.raw_edges_returned === false
         && !Object.hasOwn(policy, "min_bucket_width"))
       && describedChurn?.derived_measures?.some((measure) => measure.name === "revenue_running_total")
+      && describedChurn?.aggregate_measure_functions?.monthly_revenue_cents?.includes("sum")
+      && describedChurn?.time_bucket_fields?.churned_at?.includes("week")
+      && !Object.hasOwn(described, "relative_time_windows")
+      && focusedTimeDescription.relative_time_windows?.available === true
+      && focusedTimeDescription.relative_time_windows?.reporting_timezone === "UTC"
+      && focusedTimeDescription.relative_time_windows?.windows?.includes("last_7_days")
+      && describedChurn?.relative_time_window_fields?.includes("churned_at")
       && describedItems?.relationships?.some((relationship) =>
         relationship.id === "scoped_order_items_order_id_fkey" && relationship.activation === "active"),
     "Production describe_data did not return the complete reviewed metadata catalog.", described);
@@ -2136,6 +2220,57 @@ async function main() {
       && !evidenceSerialized.includes("@example.invalid"),
     "Production evidence did not preserve keyed scope, metadata-only audit, and result fingerprint invariants.",
     evidenceRows.rows);
+
+    const relativePlan = {
+      kind: "aggregate",
+      resource: "public.churn_events",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "reason_category" }],
+      time_window: { field: "churned_at", window: "last_7_days" },
+      order_by: { kind: "measure", index: 0, direction: "desc" },
+      top_n: 10,
+    };
+    const relativeClient = clientFor(server.url, await token(privateKey, {
+      tenant: "acme",
+      principal: "pm-relative",
+    }));
+    clients.push(relativeClient.client);
+    await relativeClient.client.connect(relativeClient.transport);
+    const relativeResult = resultPayload(await relativeClient.client.callTool({
+      name: "app.explore_data",
+      arguments: { plan: relativePlan },
+    }));
+    const localRelativeResult = await runLocalParityPlan(env, "pm-relative", relativePlan);
+    assert(relativeResult.ok === true
+      && relativeResult.data?.length > 0
+      && JSON.stringify(comparableAnalyticsResult(localRelativeResult))
+        === JSON.stringify(comparableAnalyticsResult(relativeResult))
+      && localRelativeResult.operator_time_windows?.[0]?.window === "last_7_days"
+      && !Object.hasOwn(relativeResult, "operator_time_windows")
+      && !JSON.stringify(relativeResult).match(/resolved_time_windows|start_inclusive|end_exclusive/i),
+    "PostgreSQL reviewed relative time differed between local stdio and production HTTP or exposed operator timestamps to the model.", {
+      local: comparableAnalyticsResult(localRelativeResult),
+      http: comparableAnalyticsResult(relativeResult),
+    });
+    const relativeEvidenceRows = await control.query(`
+      SELECT event_kind, payload_json
+      FROM "${controlSchema}".production_explore_audit_events
+      WHERE event_id = $1 OR payload_json::text LIKE $2
+      ORDER BY event_kind
+    `, [
+      relativeResult.evidence_bundle_id,
+      `%${relativeResult.evidence_bundle_id}%`,
+    ]);
+    const relativeEvidence = JSON.stringify(relativeEvidenceRows.rows);
+    assert(relativeEvidenceRows.rows.some((row) => row.event_kind === "evidence_bundle")
+      && relativeEvidence.includes('"resolved_time_windows"')
+      && relativeEvidence.includes('"window":"last_7_days"')
+      && relativeEvidence.includes('"reporting_timezone":"UTC"')
+      && /"start_inclusive":"[^"]+Z"/.test(relativeEvidence)
+      && /"end_exclusive":"[^"]+Z"/.test(relativeEvidence)
+      && !relativeEvidence.includes("pm-relative"),
+    "PostgreSQL relative-window evidence did not preserve the exact resolved UTC range without raw principal identity.",
+    relativeEvidenceRows.rows);
 
     const numericBandPlan = {
       kind: "aggregate",

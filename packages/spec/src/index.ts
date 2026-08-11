@@ -30,6 +30,7 @@ export type {
   ProtectedReadRelationshipPathSpec,
   ProtectedReadSpec,
   ProtectedReadTimeBucketSpec,
+  ProtectedReadTimeWindowSpec,
   ProtectedReadValueSpec,
   ReceiptSpec,
   ReplaySpec,

@@ -142,6 +142,14 @@ export function buildProtectedReadQuery(
     const where: string[] = [];
     if (capability.target.tenant_key) where.push(`t0.${quoteIdentifier(capability.target.tenant_key, placeholderStyle)} = ${bind(context.tenant_id)}`);
     if (capability.target.principal_scope_key) where.push(`t0.${quoteIdentifier(capability.target.principal_scope_key, placeholderStyle)} = ${bind(context.principal)}`);
+    if (protectedRead.time_window) {
+      const reference = field(
+        protectedRead.time_window.field,
+        protectedRead.time_window.relationship,
+      );
+      where.push(`${reference} >= ${bind(protectedRead.time_window.start)}`);
+      where.push(`${reference} < ${bind(protectedRead.time_window.end)}`);
+    }
     for (const predicate of protectedRead.predicates ?? []) {
       const reference = field(predicate.field, predicate.relationship);
       if (predicate.operator === "in") {

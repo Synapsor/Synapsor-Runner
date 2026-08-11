@@ -176,6 +176,94 @@ describe("Scoped Explore active boundary routing", () => {
     }
   });
 
+  it("advertises relative UTC windows only when an active boundary has reviewed UTC authority", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-set-time-"));
+    const legacy = validBoundary("legacy", ["public.legacy_events"]);
+    const secondLegacy = validBoundary("second_legacy", ["public.other_events"]);
+    const reviewedUtc = validBoundary("reviewed_utc", ["public.utc_events"], "UTC");
+    const runtimeFactory = vi.fn(async (input: { boundaryName?: string }) => {
+      const selected = [legacy, secondLegacy, reviewedUtc].find((candidate) =>
+        candidate.pack.name === input.boundaryName)!;
+      return fakeChildRuntime(selected);
+    });
+    try {
+      await writeActiveSet(projectRoot, [legacy, secondLegacy], "legacy");
+      const runtime = await createScopedExploreBoundarySetRuntime({
+        projectRoot,
+        transport: "stdio",
+        runtimeFactory: runtimeFactory as never,
+      });
+      try {
+        await expect(runtime.describe({ limit: 10 })).resolves.toMatchObject({
+          relative_time_windows: {
+            available: false,
+            reporting_timezone: null,
+            windows: [],
+            comparison_partners: [],
+          },
+        });
+
+        await writeActiveSet(projectRoot, [legacy, secondLegacy, reviewedUtc], "reviewed_utc");
+        await expect(runtime.describe({ limit: 10 })).resolves.toMatchObject({
+          relative_time_windows: {
+            available: true,
+            reporting_timezone: "UTC",
+            windows: expect.arrayContaining(["previous_month", "month_to_date"]),
+            comparison_partners: ["preceding_period", "same_period_last_year"],
+          },
+        });
+      } finally {
+        await runtime.close();
+      }
+    } finally {
+      await fs.rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("withholds operator diagnostics even when an internal result has no boundary routing tag", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-set-projection-"));
+    const support = validBoundary("support", ["public.tickets"], "UTC");
+    try {
+      await writeActiveSet(projectRoot, [support], "support");
+      const runtime = await createScopedExploreBoundarySetRuntime({
+        projectRoot,
+        transport: "stdio",
+        runtimeFactory: (async () => fakeChildRuntime(support)) as never,
+      });
+      try {
+        expect(runtime.projectResultForModel({
+          tool: "app.explore_data",
+          arguments: {
+            plan: {
+              kind: "aggregate",
+              resource: "public.tickets",
+              measures: [{ function: "count" }],
+            },
+          },
+          result: {
+            ok: true,
+            operator_budget: { queries: { used: 1, limit: 1000 } },
+            operator_time_windows: [{
+              resolved_at: "2026-08-11T06:00:00.000Z",
+              ranges: [{
+                start_inclusive: "2026-07-12T06:00:00.000Z",
+                end_exclusive: "2026-08-11T06:00:00.000Z",
+              }],
+            }],
+          },
+        })).toEqual({
+          value: { ok: true },
+          withheld: false,
+          operator_metadata_withheld: true,
+        });
+      } finally {
+        await runtime.close();
+      }
+    } finally {
+      await fs.rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
   it("keeps the production MCP surface at two read-only tools and routes an explicit reviewed boundary", async () => {
     const support = validBoundary("support", ["public.tickets"]);
     const finance = validBoundary("finance", ["public.invoices"]);
@@ -500,7 +588,11 @@ function boundary(name: string, resources: string[]): ActivatedExplorationBounda
   } as unknown as ActivatedExplorationBoundary;
 }
 
-function validBoundary(name: string, resources: string[]): ActivatedExplorationBoundary {
+function validBoundary(
+  name: string,
+  resources: string[],
+  reportingTimezone?: "UTC",
+): ActivatedExplorationBoundary {
   const authority = {
     schema_version: "synapsor.exploration-boundary.v1",
     activation: "reviewed",
@@ -515,6 +607,7 @@ function validBoundary(name: string, resources: string[]): ActivatedExplorationB
     },
     generation_lock_fingerprint: `sha256:${"1".repeat(64)}`,
     role_posture_fingerprint: `sha256:${"2".repeat(64)}`,
+    ...(reportingTimezone ? { reporting_timezone: reportingTimezone } : {}),
     pack: {
       name,
       resources: resources.map((id) => ({ id, tenant_key: "tenant_id" })),

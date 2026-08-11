@@ -5,6 +5,7 @@ import https from "node:https";
 import net from "node:net";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { openaiToolNameAlias, toolNameExposures } from "@synapsor-runner/mcp-server";
+import type { RelativeTimeWindow } from "./relative-time-window.js";
 
 const DEFAULT_REMOTE_TIMEOUT_SECONDS = 30;
 const DEFAULT_LOOPBACK_TIMEOUT_SECONDS = 120;
@@ -63,6 +64,7 @@ const LOCAL_PLAN_JSON_INSTRUCTION = [
   "The shape is {\"plan\":{\"kind\":\"aggregate\"|\"rows\",...}} with an optional string boundary.",
   "Filters use plan.where with entries {\"field\":\"<exact id>\",\"op\":\"eq\",\"value\":...}; never use filters or operator keys.",
   "A related field uses {\"field\":\"<target field>\",\"relationship\":\"<exact relationship id>\"}; never qualify the field with a table name.",
+  "For a supported relative period, copy time_window.field and time_window.window from focused app.describe_data metadata. Runner owns UTC date arithmetic; never send calculated start/end timestamps for that period.",
   "Rows plans require select. Aggregate plans require measures. Omit empty optional arrays and objects.",
   "Never send empty ids, tenant, principal, SQL, formulas, or unknown keys.",
 ].join(" ");
@@ -691,6 +693,45 @@ async function runOpenAiCompatibleTurn(input: {
       ...(toolCalls.length ? { tool_calls: toolCalls.map((call) => call.raw) } : {}),
     });
     if (toolCalls.length === 0) {
+      if ((!safeAnswerIfPresent(message.content) || shouldRecoverLocalDataQuestion(input.question))
+        && traces.length === 0
+        && input.configuration.provider === "openai_compatible") {
+        const providerName = providerToolName(input.prepared, "app.describe_data");
+        if (providerName) {
+          const callId = `runner_local_catalog_${iteration + 1}`;
+          const argumentsValue = { limit: 10 };
+          const rawCall = {
+            id: callId,
+            type: "function",
+            function: {
+              name: providerName,
+              arguments: JSON.stringify(argumentsValue),
+            },
+          };
+          messages.push(
+            {
+              role: "user",
+              content: "No answer or tool call was produced. Runner is retrieving the compact reviewed catalog so the request can be recovered without guessing identifiers.",
+            },
+            { role: "assistant", content: null, tool_calls: [rawCall] },
+          );
+          const executed = await executeProviderTool(
+            input.gateway,
+            input.prepared,
+            callId,
+            providerName,
+            argumentsValue,
+            input.onProgress,
+          );
+          traces.push(executed.trace);
+          providerHistory.push(providerHistoryEntry(executed.trace, executed.providerResult));
+          messages.push({
+            role: "tool",
+            tool_call_id: callId,
+            content: boundedToolResult(executed.providerResult),
+          });
+        }
+      }
       if (requiresExploreAfterCatalog(input.question, traces, input.prepared)) {
         if (!catalogCorrectionSent) {
           catalogCorrectionSent = true;
@@ -735,13 +776,8 @@ async function runOpenAiCompatibleTurn(input: {
               ...(requirements ? { planInstruction: requirements.instruction } : {}),
             });
             usage = fallback.usage;
-            if (!fallback.arguments) {
-              return rememberProviderHistory(
-                completeCatalogOnlyAnswer(input.configuration, traces, usage),
-                providerHistory,
-              );
-            }
-            if (requirements && !localPlanMatchesRequirements(fallback.arguments, requirements)) {
+            let fallbackArguments = fallback.arguments;
+            if (requirements && (!fallbackArguments || !localPlanMatchesRequirements(fallbackArguments, requirements))) {
               const repaired = await requestOpenAiCompatiblePlanJson({
                 ...input,
                 messages,
@@ -749,13 +785,18 @@ async function runOpenAiCompatibleTurn(input: {
                 planInstruction: `The previous JSON plan did not satisfy the question. ${requirements.instruction}`,
               });
               usage = repaired.usage;
-              if (!repaired.arguments || !localPlanMatchesRequirements(repaired.arguments, requirements)) {
-                return rememberProviderHistory(
-                  completeLocalPlanMismatchAnswer(input.configuration, traces, usage),
-                  providerHistory,
-                );
+              fallbackArguments = repaired.arguments;
+              if (!fallbackArguments || !localPlanMatchesRequirements(fallbackArguments, requirements)) {
+                fallbackArguments = requirements.exactArguments;
               }
-              fallback.arguments = repaired.arguments;
+            }
+            if (!fallbackArguments) {
+              return rememberProviderHistory(
+                requirements
+                  ? completeLocalPlanMismatchAnswer(input.configuration, traces, usage)
+                  : completeCatalogOnlyAnswer(input.configuration, traces, usage),
+                providerHistory,
+              );
             }
             if (traces.length >= MAX_TOOL_CALLS_PER_TURN) {
               throw new AskError("ASK_TOOL_BUDGET_EXCEEDED", "The provider requested more tools than the bounded Ask session permits.", 422);
@@ -773,7 +814,7 @@ async function runOpenAiCompatibleTurn(input: {
               type: "function",
               function: {
                 name: providerName,
-                arguments: JSON.stringify(fallback.arguments),
+                arguments: JSON.stringify(fallbackArguments),
               },
             };
             messages.push(
@@ -785,7 +826,7 @@ async function runOpenAiCompatibleTurn(input: {
               input.prepared,
               callId,
               providerName,
-              fallback.arguments,
+              fallbackArguments,
               input.onProgress,
             );
             traces.push(executed.trace);
@@ -853,11 +894,47 @@ async function runOpenAiCompatibleTurn(input: {
       }
       const canonicalName = input.prepared.canonicalByProvider.get(call.name);
       const directArguments = safeToolArguments(call.arguments);
-      const requirements = input.configuration.provider === "openai_compatible"
+      let requirements = input.configuration.provider === "openai_compatible"
         && canonicalName === "app.explore_data"
         ? localPlanRequirementsForDirectCall(input.question, traces, directArguments)
         : undefined;
-      if (requirements && !directLocalPlanMatchesRequirements(directArguments, requirements)) {
+      if (input.configuration.provider === "openai_compatible" && canonicalName === "app.explore_data") {
+        const directPlan = isRecord(directArguments.plan) ? directArguments.plan : undefined;
+        const resource = typeof directPlan?.resource === "string" ? directPlan.resource : undefined;
+        const boundary = typeof directArguments.boundary === "string" && directArguments.boundary.length > 0
+          ? directArguments.boundary
+          : undefined;
+        const alreadyFocused = resource && traces.some((trace) =>
+          trace.tool === "app.describe_data"
+          && trace.status === "ok"
+          && trace.arguments.resource === resource
+          && (boundary === undefined || trace.arguments.boundary === boundary));
+        const describeProviderName = resource && !alreadyFocused
+          ? providerToolName(input.prepared, "app.describe_data")
+          : undefined;
+        if (resource && describeProviderName) {
+          const focusedArguments = { ...(boundary ? { boundary } : {}), resource };
+          const focused = await executeProviderTool(
+            input.gateway,
+            input.prepared,
+            `runner_local_intent_catalog_${iteration + 1}_${traces.length + 1}`,
+            describeProviderName,
+            focusedArguments,
+            input.onProgress,
+          );
+          if (focused.trace.status === "ok") {
+            const focusedResource = Array.isArray(focused.providerResult.resources)
+              ? focused.providerResult.resources.filter(isRecord).find((candidate) => candidate.id === resource)
+              : undefined;
+            if (focusedResource) {
+              requirements = localPlanRequirements(input.question, { resources: [focusedResource] });
+            }
+          }
+        }
+      }
+      if (requirements
+        && (requirements.unanswerable
+          || !directLocalPlanMatchesRequirements(directArguments, requirements))) {
         const providerResult = {
           ok: false,
           error_code: "LOCAL_PLAN_INTENT_MISMATCH",
@@ -880,7 +957,61 @@ async function runOpenAiCompatibleTurn(input: {
           tool_call_id: call.id,
           content: boundedToolResult(providerResult),
         });
-        continue;
+        const repaired = await requestOpenAiCompatiblePlanJson({
+          ...input,
+          messages,
+          usage,
+          planInstruction: requirements.instruction,
+        });
+        usage = repaired.usage;
+        const repairedArguments = repaired.arguments
+          && localPlanMatchesRequirements(repaired.arguments, requirements)
+          ? repaired.arguments
+          : requirements.exactArguments;
+        if (!repairedArguments || !localPlanMatchesRequirements(repairedArguments, requirements)) {
+          return rememberProviderHistory(
+            completeLocalPlanMismatchAnswer(input.configuration, traces, usage),
+            providerHistory,
+          );
+        }
+        const exploreProviderName = providerToolName(input.prepared, "app.explore_data");
+        if (!exploreProviderName || traces.length >= MAX_TOOL_CALLS_PER_TURN) {
+          return rememberProviderHistory(
+            completeLocalPlanMismatchAnswer(input.configuration, traces, usage),
+            providerHistory,
+          );
+        }
+        const repairedExecution = await executeProviderTool(
+          input.gateway,
+          input.prepared,
+          `runner_local_plan_repair_${iteration + 1}`,
+          exploreProviderName,
+          repairedArguments,
+          input.onProgress,
+        );
+        traces.push(repairedExecution.trace);
+        providerHistory.push(providerHistoryEntry(repairedExecution.trace, repairedExecution.providerResult));
+        if (repairedExecution.trace.status === "ok") {
+          return rememberProviderHistory(
+            completeAskResult(
+              input.configuration,
+              LOCAL_PLAN_EXECUTED_RUNNER_ANSWER,
+              traces,
+              usage,
+              "runner",
+            ),
+            providerHistory,
+          );
+        }
+        return rememberProviderHistory(await completeMissingProviderAnswer({
+          configuration: input.configuration,
+          traces,
+          usage,
+          gateway: input.gateway,
+          prepared: input.prepared,
+          authorityDigest: input.authorityDigest,
+          authorityGuard: input.authorityGuard,
+        }), providerHistory);
       }
       const executed = await executeProviderTool(
         input.gateway,
@@ -984,13 +1115,19 @@ function unambiguousQuestionResource(
 ): { resource: string; boundary?: string } | undefined {
   if (!Array.isArray(value)) return undefined;
   const normalizedQuestion = question.toLowerCase();
-  const matches = value
-    .filter(isRecord)
+  const resources = value.filter(isRecord);
+  const matches = resources
     .flatMap((resource) => {
       if (typeof resource.id !== "string") return [];
       const table = resource.id.split(".").at(-1)?.toLowerCase();
       if (!table) return [];
-      const variants = new Set([table, singularResourceName(table)]);
+      const readableTable = table.replace(/[_-]+/g, " ");
+      const variants = new Set([
+        table,
+        singularResourceName(table),
+        readableTable,
+        singularResourceName(readableTable),
+      ]);
       const positions = [...variants]
         .filter(Boolean)
         .map((variant) => wordPosition(normalizedQuestion, variant))
@@ -1004,15 +1141,64 @@ function unambiguousQuestionResource(
     })
     .sort((left, right) => left.position - right.position || left.resource.localeCompare(right.resource));
   const first = matches[0];
-  if (!first) return undefined;
-  const tied = matches.filter((match) => match.position === first.position);
-  if (new Set(tied.map((match) => `${match.boundary ?? ""}\u0000${match.resource}`)).size !== 1) {
+  if (first) {
+    const tied = matches.filter((match) => match.position === first.position);
+    if (new Set(tied.map((match) => `${match.boundary ?? ""}\u0000${match.resource}`)).size !== 1) {
+      return undefined;
+    }
+    return {
+      resource: first.resource,
+      ...(first.boundary ? { boundary: first.boundary } : {}),
+    };
+  }
+
+  const semanticMatches = resources.flatMap((resource) => {
+    if (typeof resource.id !== "string") return [];
+    const terms = modelResourceSemanticTerms(resource);
+    const matched = [...terms].filter((term) => wordPosition(normalizedQuestion, term) >= 0);
+    if (!matched.length) return [];
+    return [{
+      resource: resource.id,
+      boundary: typeof resource.boundary_name === "string" ? resource.boundary_name : undefined,
+      score: matched.length,
+      specificity: Math.max(...matched.map((term) => term.length)),
+    }];
+  }).sort((left, right) => right.score - left.score
+    || right.specificity - left.specificity
+    || left.resource.localeCompare(right.resource));
+  const semanticFirst = semanticMatches[0];
+  if (!semanticFirst) return undefined;
+  const semanticTies = semanticMatches.filter((match) =>
+    match.score === semanticFirst.score && match.specificity === semanticFirst.specificity);
+  if (new Set(semanticTies.map((match) => `${match.boundary ?? ""}\u0000${match.resource}`)).size !== 1) {
     return undefined;
   }
   return {
-    resource: first.resource,
-    ...(first.boundary ? { boundary: first.boundary } : {}),
+    resource: semanticFirst.resource,
+    ...(semanticFirst.boundary ? { boundary: semanticFirst.boundary } : {}),
   };
+}
+
+function modelResourceSemanticTerms(resource: Record<string, unknown>): Set<string> {
+  const terms = new Set<string>();
+  const add = (value: unknown) => {
+    if (typeof value !== "string") return;
+    const normalized = value.toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+    if (normalized.length >= 3) terms.add(normalized);
+  };
+  add(resource.label);
+  for (const field of Array.isArray(resource.fields) ? resource.fields.filter(isRecord) : []) {
+    add(field.id);
+    add(field.label);
+  }
+  for (const field of [
+    ...safeStringList(resource.selectable_fields),
+    ...safeStringList(resource.groupable_fields),
+    ...safeStringList(resource.relative_time_window_fields),
+    ...Object.keys(isRecord(resource.aggregate_measure_functions) ? resource.aggregate_measure_functions : {}),
+    ...Object.keys(isRecord(resource.time_bucket_fields) ? resource.time_bucket_fields : {}),
+  ]) add(field);
+  return terms;
 }
 
 function singularResourceName(value: string): string {
@@ -1821,11 +2007,15 @@ type LocalPlanRequirements = {
   measure?: { function: string; field?: string };
   filter?: { field: string; value: string | number | boolean };
   dimension?: { field: string; relationship?: string };
+  timeBucket?: { field: string; bucket: string; relationship?: string };
+  orderByTime?: { kind: "time_bucket"; direction: "asc" | "desc" };
+  timeWindow?: { field: string; relationship?: string; window: RelativeTimeWindow };
   select?: string[];
   dimensionsAllowed: boolean;
   filtersAllowed: boolean;
   timeBucketAllowed: boolean;
   comparisonAllowed: boolean;
+  exactArguments?: Record<string, unknown>;
   instruction: string;
   unanswerable: boolean;
 };
@@ -1840,11 +2030,11 @@ function localPlanRequirements(
   if (!resource || typeof resource.id !== "string") return undefined;
   const normalized = question.toLowerCase();
   const rowIntent = /\b(?:show|list|give)\b.*\b(?:every|all|rows?|records?|details?)\b/.test(normalized);
-  const countIntent = /\b(?:how many|number of|count)\b/.test(normalized);
+  const countIntent = /\b(?:how many|number of|counts?)\b/.test(normalized);
   const totalIntent = /\b(?:total|sum)\b/.test(normalized);
   const averageIntent = /\b(?:average|mean)\b/.test(normalized);
-  const timeBucketAllowed = /\b(?:hour|day|daily|week|weekly|month|monthly|quarter|quarterly|year|yearly|over time)\b/.test(normalized);
   const comparisonAllowed = /\b(?:compare|comparison|change|growth|decline|versus|vs\.?|previous|prior)\b/.test(normalized);
+  const requestedRelativeWindow = relativeTimeWindowFromQuestion(normalized);
   const selectable = safeStringList(resource.selectable_fields)
     .filter((field) => !isIdentifierLikeField(field));
   const mentionedSelectable = selectable.filter((field) => questionMentionsField(normalized, field));
@@ -1853,49 +2043,78 @@ function localPlanRequirements(
     : {};
   const mentionedNumeric = Object.keys(aggregateFunctions)
     .filter((field) => !isIdentifierLikeField(field) && questionMentionsField(normalized, field));
+  const requestedTimeBucket = timeBucketFromQuestion(normalized, mentionedNumeric);
+  const numericMeasureRequested = totalIntent || averageIntent;
+  const measureIntentCount = Number(countIntent) + Number(totalIntent) + Number(averageIntent);
   const measure = countIntent
     ? { function: "count" }
-    : (totalIntent || averageIntent) && mentionedNumeric[0]
+    : numericMeasureRequested && mentionedNumeric.length === 1
       ? { function: totalIntent ? "sum" : "avg", field: mentionedNumeric[0] }
       : undefined;
 
-  let filter: LocalPlanRequirements["filter"];
+  const filterCandidates: NonNullable<LocalPlanRequirements["filter"]>[] = [];
   if (isRecord(resource.field_enums)) {
     for (const [field, values] of Object.entries(resource.field_enums)) {
       if (!Array.isArray(values)) continue;
-      const matched = values.find((value) =>
+      for (const matched of values.filter((value) =>
         (typeof value === "string" || typeof value === "number" || typeof value === "boolean")
-        && wordPosition(normalized, String(value).toLowerCase()) >= 0);
-      if (typeof matched === "string" || typeof matched === "number" || typeof matched === "boolean") {
-        filter = { field, value: matched };
-        break;
+        && wordPosition(normalized, String(value).toLowerCase()) >= 0)) {
+        if (typeof matched === "string" || typeof matched === "number" || typeof matched === "boolean") {
+          filterCandidates.push({ field, value: matched });
+        }
       }
     }
   }
+  const uniqueFilterCandidates = uniqueByJson(filterCandidates);
+  const filter = uniqueFilterCandidates.length === 1 ? uniqueFilterCandidates[0] : undefined;
 
-  let dimension: LocalPlanRequirements["dimension"];
-  if (/\bby\b/.test(normalized)) {
-    const direct = safeStringList(resource.groupable_fields)
-      .find((field) => questionMentionsField(normalized, field));
-    if (direct) dimension = { field: direct };
-    if (!dimension && Array.isArray(resource.relationships)) {
+  const groupingRequested = /\bby\b/.test(normalized);
+  const dimensionCandidates: NonNullable<LocalPlanRequirements["dimension"]>[] = [];
+  if (groupingRequested) {
+    for (const field of safeStringList(resource.groupable_fields)
+      .filter((candidate) => questionMentionsField(normalized, candidate))) {
+      dimensionCandidates.push({ field });
+    }
+    if (Array.isArray(resource.relationships)) {
       for (const relationship of resource.relationships.filter(isRecord)) {
         if (typeof relationship.id !== "string" || typeof relationship.target_resource !== "string") continue;
         const targetTable = relationship.target_resource.split(".").at(-1)?.toLowerCase() ?? "";
         const targetMentioned = wordPosition(normalized, targetTable) >= 0
           || wordPosition(normalized, singularResourceName(targetTable)) >= 0;
-        const targetField = safeStringList(relationship.groupable_fields)
-          .find((field) => questionMentionsField(normalized, field));
-        if (targetMentioned && targetField) {
-          dimension = { field: targetField, relationship: relationship.id };
-          break;
+        if (!targetMentioned) continue;
+        for (const field of safeStringList(relationship.groupable_fields)
+          .filter((candidate) => questionMentionsField(normalized, candidate))) {
+          dimensionCandidates.push({ field, relationship: relationship.id });
         }
       }
     }
   }
+  const uniqueDimensionCandidates = uniqueByJson(dimensionCandidates);
+  const dimension = uniqueDimensionCandidates.length === 1
+    ? uniqueDimensionCandidates[0]
+    : undefined;
+
+  const timeWindow = requestedRelativeWindow
+    ? reviewedRelativeTimeField(resource, normalized, requestedRelativeWindow)
+    : undefined;
+  const timeBucket = requestedTimeBucket
+    ? reviewedTimeBucketField(resource, normalized, requestedTimeBucket)
+    : undefined;
+  const orderByTime = timeBucket && /\b(?:oldest|earliest|chronological)\b/.test(normalized)
+    ? { kind: "time_bucket" as const, direction: "asc" as const }
+    : timeBucket && /\b(?:newest|latest|most recent)\b/.test(normalized)
+      ? { kind: "time_bucket" as const, direction: "desc" as const }
+      : undefined;
 
   const select = rowIntent ? mentionedSelectable : undefined;
-  const unanswerable = rowIntent && (!select || select.length === 0);
+  const unanswerable = (rowIntent && (!select || select.length === 0 || Boolean(timeWindow?.relationship)))
+    || (rowIntent && (countIntent || numericMeasureRequested))
+    || measureIntentCount > 1
+    || (numericMeasureRequested && mentionedNumeric.length !== 1)
+    || uniqueFilterCandidates.length > 1
+    || (groupingRequested && uniqueDimensionCandidates.length !== 1)
+    || Boolean(requestedRelativeWindow && !timeWindow)
+    || Boolean(requestedTimeBucket && !timeBucket);
   const requirements: LocalPlanRequirements = {
     resource: resource.id,
     ...(typeof resource.boundary_name === "string" ? { boundary: resource.boundary_name } : {}),
@@ -1903,10 +2122,13 @@ function localPlanRequirements(
     ...(measure ? { measure } : {}),
     ...(filter ? { filter } : {}),
     ...(dimension ? { dimension } : {}),
+    ...(timeBucket ? { timeBucket } : {}),
+    ...(orderByTime ? { orderByTime } : {}),
+    ...(timeWindow ? { timeWindow } : {}),
     ...(select?.length ? { select } : {}),
     dimensionsAllowed: Boolean(dimension),
     filtersAllowed: Boolean(filter),
-    timeBucketAllowed,
+    timeBucketAllowed: Boolean(timeBucket),
     comparisonAllowed,
     instruction: "",
     unanswerable,
@@ -1924,8 +2146,16 @@ function localPlanRequirements(
     dimension
       ? `Use exactly one dimension: field ${dimension.field}${dimension.relationship ? ` with relationship ${dimension.relationship}` : " with no relationship"}.`
       : "Do not add dimensions because the question did not request a reviewed grouping.",
+    timeBucket
+      ? `Use exactly one time_bucket: field ${timeBucket.field}, bucket ${timeBucket.bucket}${timeBucket.relationship ? `, relationship ${timeBucket.relationship}` : ", with no relationship"}.`
+      : "Do not add a time_bucket because the question did not request an unambiguous reviewed time grain.",
+    orderByTime
+      ? `Use order_by kind time_bucket with direction ${orderByTime.direction}.`
+      : undefined,
+    timeWindow
+      ? `Use exactly one time_window: field ${timeWindow.field}, window ${timeWindow.window}${timeWindow.relationship ? `, relationship ${timeWindow.relationship}` : ", with no relationship"}. Do not send start or end.`
+      : "Do not add a time_window because the question did not request an unambiguous reviewed relative period.",
     select?.length ? `Select exactly these fields: ${select.join(", ")}.` : undefined,
-    !timeBucketAllowed ? "Do not add a time_bucket." : undefined,
     !comparisonAllowed ? "Do not add a comparison." : undefined,
   ].filter((clause): clause is string => Boolean(clause));
   const exactPlan = requirements.kind === "aggregate" && measure
@@ -1937,14 +2167,24 @@ function localPlanRequirements(
         measures: [measure],
         ...(filter ? { where: [{ field: filter.field, op: "eq", value: filter.value }] } : {}),
         ...(dimension ? { dimensions: [dimension] } : {}),
+        ...(timeBucket ? { time_bucket: timeBucket } : {}),
+        ...(orderByTime ? { order_by: orderByTime } : {}),
+        ...(timeWindow ? { time_window: timeWindow } : {}),
       },
     }
     : requirements.kind === "rows" && select?.length
       ? {
         boundary: requirements.boundary,
-        plan: { kind: "rows", resource: requirements.resource, select },
+        plan: {
+          kind: "rows",
+          resource: requirements.resource,
+          select,
+          ...(filter ? { where: [{ field: filter.field, op: "eq", value: filter.value }] } : {}),
+          ...(timeWindow ? { time_window: timeWindow } : {}),
+        },
       }
       : undefined;
+  if (exactPlan) requirements.exactArguments = exactPlan;
   requirements.instruction = [
     `Required semantic constraints for this question: ${clauses.join(" ")}`,
     exactPlan
@@ -1961,8 +2201,12 @@ function localPlanMatchesRequirements(
   if (args.boundary !== undefined && args.boundary !== requirements.boundary) return false;
   const plan = isRecord(args.plan) ? args.plan : undefined;
   if (!plan || plan.kind !== requirements.kind || plan.resource !== requirements.resource) return false;
+  if (plan.boundary !== undefined) return false;
   if (!requirements.timeBucketAllowed && plan.time_bucket !== undefined) return false;
   if (!requirements.comparisonAllowed && plan.comparison !== undefined) return false;
+  if (!localPlanTimeBucketMatches(plan, requirements.timeBucket)) return false;
+  if (!localPlanTimeOrderMatches(plan, requirements.orderByTime)) return false;
+  if (!localPlanTimeWindowMatches(plan, requirements.timeWindow)) return false;
   const dimensions = Array.isArray(plan.dimensions) ? plan.dimensions.filter(isRecord) : [];
   if (!requirements.dimensionsAllowed && dimensions.length > 0) return false;
   if (requirements.dimension) {
@@ -2023,8 +2267,12 @@ function directLocalPlanMatchesRequirements(
   if (boundary !== undefined && boundary !== requirements.boundary) return false;
   const plan = isRecord(args.plan) ? args.plan : undefined;
   if (!plan || plan.kind !== requirements.kind || plan.resource !== requirements.resource) return false;
+  if (plan.boundary !== undefined) return false;
   if (!requirements.timeBucketAllowed && plan.time_bucket !== undefined) return false;
   if (!requirements.comparisonAllowed && plan.comparison !== undefined) return false;
+  if (!localPlanTimeBucketMatches(plan, requirements.timeBucket)) return false;
+  if (!localPlanTimeOrderMatches(plan, requirements.orderByTime)) return false;
+  if (!localPlanTimeWindowMatches(plan, requirements.timeWindow)) return false;
   const filters = Array.isArray(plan.where) ? plan.where.filter(isRecord) : [];
   if (requirements.filter) {
     if (filters.length !== 1) return false;
@@ -2041,6 +2289,7 @@ function directLocalPlanMatchesRequirements(
     return selected.length === requirements.select.length
       && requirements.select.every((field) => selected.includes(field));
   }
+  const dimensions = Array.isArray(plan.dimensions) ? plan.dimensions.filter(isRecord) : [];
   const measures = Array.isArray(plan.measures) ? plan.measures.filter(isRecord) : [];
   if (requirements.measure) {
     if (measures.length !== 1) return false;
@@ -2049,13 +2298,150 @@ function directLocalPlanMatchesRequirements(
       || (actual.field ?? undefined) !== requirements.measure.field) return false;
   }
   if (requirements.dimension) {
-    const dimensions = Array.isArray(plan.dimensions) ? plan.dimensions.filter(isRecord) : [];
     if (dimensions.length !== 1) return false;
     const actual = dimensions[0]!;
     if (actual.field !== requirements.dimension.field
       || (actual.relationship ?? undefined) !== requirements.dimension.relationship) return false;
+  } else if (dimensions.length > 0) {
+    return false;
   }
   return measures.length > 0;
+}
+
+function uniqueByJson<T>(values: T[]): T[] {
+  const seen = new Set<string>();
+  return values.filter((value) => {
+    const key = JSON.stringify(value);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function localPlanTimeWindowMatches(
+  plan: Record<string, unknown>,
+  expected: LocalPlanRequirements["timeWindow"],
+): boolean {
+  if (!expected) return plan.time_window === undefined;
+  const actual = isRecord(plan.time_window) ? plan.time_window : undefined;
+  return Boolean(actual
+    && actual.field === expected.field
+    && actual.window === expected.window
+    && (actual.relationship ?? undefined) === expected.relationship
+    && actual.start === undefined
+    && actual.end === undefined);
+}
+
+function localPlanTimeBucketMatches(
+  plan: Record<string, unknown>,
+  expected: LocalPlanRequirements["timeBucket"],
+): boolean {
+  if (!expected) return plan.time_bucket === undefined;
+  const actual = isRecord(plan.time_bucket) ? plan.time_bucket : undefined;
+  return Boolean(actual
+    && actual.field === expected.field
+    && actual.bucket === expected.bucket
+    && (actual.relationship ?? undefined) === expected.relationship);
+}
+
+function localPlanTimeOrderMatches(
+  plan: Record<string, unknown>,
+  expected: LocalPlanRequirements["orderByTime"],
+): boolean {
+  if (!expected) return true;
+  const actual = isRecord(plan.order_by) ? plan.order_by : undefined;
+  return Boolean(actual && actual.kind === expected.kind && actual.direction === expected.direction);
+}
+
+function reviewedTimeBucketField(
+  resource: Record<string, unknown>,
+  question: string,
+  bucket: string,
+): LocalPlanRequirements["timeBucket"] | undefined {
+  const direct = isRecord(resource.time_bucket_fields)
+    ? Object.entries(resource.time_bucket_fields).flatMap(([field, buckets]) =>
+      Array.isArray(buckets) && buckets.includes(bucket) ? [{ field, bucket }] : [])
+    : [];
+  const related: Array<{ field: string; bucket: string; relationship: string }> = [];
+  if (Array.isArray(resource.relationships)) {
+    for (const relationship of resource.relationships.filter(isRecord)) {
+      if (relationship.activation !== "active"
+        || typeof relationship.id !== "string"
+        || !isRecord(relationship.time_bucket_fields)) continue;
+      for (const [field, buckets] of Object.entries(relationship.time_bucket_fields)) {
+        if (Array.isArray(buckets) && buckets.includes(bucket)) {
+          related.push({ field, bucket, relationship: relationship.id });
+        }
+      }
+    }
+  }
+  const candidates = [...direct, ...related];
+  const mentioned = candidates.filter((candidate) => questionMentionsField(question, candidate.field));
+  if (mentioned.length === 1) return mentioned[0];
+  if (direct.length === 1) return direct[0];
+  return candidates.length === 1 ? candidates[0] : undefined;
+}
+
+function timeBucketFromQuestion(question: string, mentionedNumericFields: string[]): string | undefined {
+  const buckets: Array<[string, RegExp, RegExp]> = [
+    ["hour", /\b(?:hourly|by hour|per hour|each hour)\b/, /^hourly_/],
+    ["day", /\b(?:daily|by day|per day|each day|day[- ]over[- ]day)\b/, /^daily_/],
+    ["week", /\b(?:weekly|by week|per week|each week|week[- ]over[- ]week)\b/, /^weekly_/],
+    ["month", /\b(?:monthly|by month|per month|each month|month[- ]over[- ]month)\b/, /^monthly_/],
+    ["quarter", /\b(?:quarterly|by quarter|per quarter|each quarter|quarter[- ]over[- ]quarter)\b/, /^quarterly_/],
+    ["year", /\b(?:yearly|annual|annually|by year|per year|each year|year[- ]over[- ]year)\b/, /^(?:yearly|annual)_/],
+  ];
+  for (const [bucket, pattern, metricPrefix] of buckets) {
+    if (!pattern.test(question)) continue;
+    if (mentionedNumericFields.some((field) => metricPrefix.test(field.toLowerCase()))) continue;
+    return bucket;
+  }
+  return undefined;
+}
+
+function reviewedRelativeTimeField(
+  resource: Record<string, unknown>,
+  question: string,
+  window: RelativeTimeWindow,
+): LocalPlanRequirements["timeWindow"] | undefined {
+  const direct = safeStringList(resource.relative_time_window_fields).map((field) => ({ field, window }));
+  const related: Array<{ field: string; relationship: string; window: RelativeTimeWindow }> = [];
+  if (Array.isArray(resource.relationships)) {
+    for (const relationship of resource.relationships.filter(isRecord)) {
+      if (relationship.activation !== "active" || typeof relationship.id !== "string") continue;
+      for (const field of safeStringList(relationship.relative_time_window_fields)) {
+        related.push({ field, relationship: relationship.id, window });
+      }
+    }
+  }
+  const candidates = [...direct, ...related];
+  const mentioned = candidates.filter((candidate) => questionMentionsField(question, candidate.field));
+  if (mentioned.length === 1) return mentioned[0];
+  if (direct.length === 1) return direct[0];
+  return candidates.length === 1 ? candidates[0] : undefined;
+}
+
+function relativeTimeWindowFromQuestion(question: string): RelativeTimeWindow | undefined {
+  const windows: Array<[RelativeTimeWindow, RegExp]> = [
+    ["day_to_date", /\b(?:day[ -]to[ -]date|today so far)\b/],
+    ["week_to_date", /\b(?:week[ -]to[ -]date|this week so far|wtd)\b/],
+    ["month_to_date", /\b(?:month[ -]to[ -]date|this month so far|mtd)\b/],
+    ["quarter_to_date", /\b(?:quarter[ -]to[ -]date|this quarter so far|qtd)\b/],
+    ["year_to_date", /\b(?:year[ -]to[ -]date|this year so far|ytd)\b/],
+    ["last_7_days", /\b(?:last|past|previous) (?:7|seven) days?\b/],
+    ["last_30_days", /\b(?:last|past|previous) (?:30|thirty) days?\b/],
+    ["last_90_days", /\b(?:last|past|previous) (?:90|ninety) days?\b/],
+    ["previous_week", /\b(?:last|previous) (?:calendar )?week\b/],
+    ["previous_month", /\b(?:last|previous) (?:calendar )?month\b/],
+    ["previous_quarter", /\b(?:last|previous) (?:calendar )?quarter\b/],
+    ["this_week", /\bthis (?:calendar )?week\b/],
+    ["this_month", /\bthis (?:calendar )?month\b/],
+    ["this_quarter", /\bthis (?:calendar )?quarter\b/],
+    ["this_year", /\bthis (?:calendar )?year\b/],
+    ["yesterday", /\byesterday\b/],
+    ["today", /\btoday\b/],
+  ];
+  return windows.find(([_window, pattern]) => pattern.test(question))?.[0];
 }
 
 function questionMentionsField(question: string, field: string): boolean {
@@ -2094,6 +2480,13 @@ function requiresExploreAfterCatalog(
   const exploreAttemptedAfterCatalog = traces.slice(latestCatalogIndex + 1)
     .some((trace) => trace.tool === "app.explore_data");
   return !exploreAttemptedAfterCatalog;
+}
+
+function shouldRecoverLocalDataQuestion(question: string): boolean {
+  if (isCatalogMetadataQuestion(question)) return false;
+  const normalized = question.toLowerCase().replace(/\s+/g, " ").trim();
+  return /\b(?:how many|counts?|total|sum|average|mean|standard deviation|stddev|variance|trend|running total)\b/.test(normalized)
+    || /\b(?:show|list|give)\b.*\b(?:all|every|rows?|records?|details?)\b/.test(normalized);
 }
 
 function isCatalogMetadataQuestion(question: string): boolean {
@@ -2311,7 +2704,7 @@ function currentQuestionWithRunnerContext(
   const contexts = history
     .map((turn) => turn.runner_context)
     .filter((value): value is string => Boolean(value));
-  const dateContext = `Runner current UTC date: ${currentUtcDate}. Use it only to resolve relative dates; it grants no authority.`;
+  const dateContext = `Runner current UTC date: ${currentUtcDate}. For a supported relative period, copy a reviewed time_window name and let Runner resolve UTC timestamps; do not calculate them. This date grants no authority.`;
   if (!contexts.length) return `${dateContext}\n\n${question}`;
   return [
     dateContext,
@@ -2395,12 +2788,12 @@ function askSystemPrompt(): string {
     "Use one aggregate measure unless the user explicitly asks for multiple measures or the requested reviewed calculation requires them; for example, a revenue-only question does not justify also requesting discounts.",
     "When a valid bounded plan can answer the question and only a date range, group limit, or presentation choice is omitted, use the boundary's conservative defaults and state what was returned instead of asking an unnecessary clarification.",
     "Treat an unqualified week-over-week, month-over-month, or day-over-day trend question as a chronological time-bucketed series over the available reviewed range. Use a two-range comparison only when the user explicitly asks for the latest, current, or two named periods.",
-    "For a two-range comparison, send non-overlapping half-open ranges in chronological order: period_1 is the earlier baseline, period_2 is the later period, and Runner computes change as period_2 minus period_1.",
+    "For a two-period comparison that names a supported relative period, copy the reviewed window and compare_to names from focused app.describe_data metadata so Runner resolves both UTC ranges. Otherwise send non-overlapping half-open absolute ranges in chronological order: period_1 is the earlier baseline, period_2 is the later period, and Runner computes change as period_2 minus period_1.",
     "For an unqualified fastest-growing or fastest-declining question, use one bounded comparison of the latest 28 reviewed days in app.describe_data time_coverage against the immediately preceding 28 days. Use the current UTC date only when the reviewed coverage actually reaches it. Include the reviewed week time_bucket and exact relationship aliases for the comparison field, dimension, and measure; order by comparison_change with percentage for relative growth or decline and absolute for value change; do not request an all-history dimension-by-week cube.",
     "For a time-series or trend question with no date range, use chronological order and the reviewed maximum group bound so the latest periods are not silently truncated; state the returned range.",
     "In a grouped time series, top_n counts every group-by-time row rather than only distinct group labels; request enough reviewed rows to return at least two visible periods for every group you compare.",
     "Never rank fastest growth or decline from a single returned period or substitute the largest absolute value for growth; if suppression or result bounds leave no comparable pair for a group, state that the returned result cannot rank that group's growth.",
-    "For relative periods such as last week, latest week, or last month, first inspect app.describe_data time_coverage. Anchor the bounded range to its latest reviewed date when the data is historical; use the current UTC date only when coverage reaches it. Never send an open-ended relative range and never invent coverage when its status is unavailable or withheld.",
+    "For supported relative periods such as last 30 days, previous week, or previous month, use the exact reviewed time_window field and window name from focused app.describe_data metadata. Runner owns UTC calendar arithmetic; never replace a supported name with model-calculated start/end timestamps. Never send an open-ended relative range or any free-form offset. If no reviewed relative window is available, do not invent one.",
     "Preserve units exactly as encoded by reviewed field ids and Runner results. For example, an amount_cents result is cents: never add a currency symbol, call it dollars, or convert it unless a reviewed derived measure explicitly performed that conversion.",
     "A proposal is not a database mutation. State clearly when a tool created only a proposal.",
     "If a reviewed tool refuses a request, explain the refusal without suggesting a bypass.",

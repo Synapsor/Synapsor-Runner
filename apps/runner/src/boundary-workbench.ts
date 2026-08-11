@@ -71,7 +71,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     .question-list{display:grid;gap:8px}.question{width:100%;text-align:left;background:var(--surface);color:var(--text);border-color:var(--line)}
     .question.selected{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
     .action-fields{display:grid;gap:10px;margin-top:10px}.action-field{border:1px solid var(--line);background:var(--surface-2);padding:12px;border-radius:6px}.action-field-settings{margin-top:10px}
-    .result-meta{display:flex;gap:12px;flex-wrap:wrap;margin:10px 0}.result-table{overflow:auto}
+    .result-meta{display:flex;gap:12px;flex-wrap:wrap;margin:10px 0}.result-table{overflow:auto}.resolved-time-table .utc-range{display:grid;gap:2px}.resolved-time-table .utc-range span{white-space:nowrap}
     .tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin-bottom:12px}.tab{background:transparent;color:var(--muted);border:0;border-bottom:3px solid transparent;border-radius:0}.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
     .ask-surface{margin-top:22px;padding:0;background:var(--surface);border:1px solid var(--line);border-radius:7px;overflow:hidden}
     #view-explore.active{display:flex;flex-direction:column}#view-explore>h2{order:0}#view-explore>p{order:1}#explore-preflight{order:2}#ask-shell{order:3}#explorer{order:4}
@@ -317,6 +317,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      .ask-boundary-grid,.boundary-proof-grid,.boundary-catalog-nodes{grid-template-columns:1fr}.ask-boundary-summary{display:grid;gap:2px}.ask-boundary-resource{padding:13px}.ask-boundary-actions{align-items:stretch;flex-direction:column}.ask-boundary-actions button{width:100%}.boundary-catalog-controls{grid-template-columns:1fr}.boundary-catalog-edge{grid-template-columns:1fr;gap:5px}.boundary-catalog-edge span{text-align:left}
       .ask-boundary-pagination{align-items:stretch;flex-direction:column}.ask-boundary-pagination-actions{display:grid;grid-template-columns:1fr 1fr}.ask-boundary-pagination-actions button{width:100%}
 	      .ask-history-body{padding:0 16px 16px}.ask-history-table-wrap{overflow:visible}.ask-history table{min-width:0}.ask-history thead{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.ask-history tbody,.ask-history tr,.ask-history td{display:block;width:100%}.ask-history tr{padding:10px 0;border-top:1px solid #26372f}.ask-history td{display:grid;grid-template-columns:88px minmax(0,1fr);gap:8px;padding:5px 0;border:0}.ask-history td::before{content:attr(data-label);color:#839189;font-size:10px;font-weight:800;text-transform:uppercase}.history-durable-table td:nth-child(3),.history-durable-table td:nth-child(6){min-width:0}
+	      .resolved-time-table{overflow:visible}.resolved-time-table table{min-width:0}.resolved-time-table thead{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.resolved-time-table tbody,.resolved-time-table tr,.resolved-time-table td{display:block;width:100%}.resolved-time-table tr{padding:10px 0;border-top:1px solid #26372f}.resolved-time-table td{display:grid;grid-template-columns:108px minmax(0,1fr);gap:8px;padding:5px 0;border:0}.resolved-time-table td::before{content:attr(data-label);color:#839189;font-size:10px;font-weight:800;text-transform:uppercase}.resolved-time-table .utc-range span{white-space:normal;overflow-wrap:normal;word-break:normal}
       body.ask-result-mode main{padding-top:28px}.ask-result-mode .ask-transcript>.ask-turn:not(.answer)>p{font-size:30px}body.ask-result-mode .ask-answer-grid{grid-template-columns:1fr}.ask-result-mode .ask-model-panel,.ask-result-mode .ask-verified{padding:20px}.ask-result-mode .ask-composer{grid-template-columns:1fr;padding:16px}
     }
     /* Ask chat redesign: model reply is the primary bubble; verified result is a labeled collapsed disclosure */
@@ -4254,7 +4255,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         boundary_name:result.boundary_name||call.arguments?.boundary||null,
         boundary_digest:result.boundary_digest||null,
         normalized_plan:planValidated?call.arguments?.plan:null,
-        result_semantics:planValidated?semantics:null
+        result_semantics:planValidated?semantics:null,
+        resolved_time_windows:planValidated?(result.operator_time_windows||null):null
       };
       return '<details class="ask-execution-evidence"><summary>What the model requested and Runner executed</summary>'
         +'<h4>What the model requested</h4><pre>'+esc(JSON.stringify({tool:call.tool,arguments:call.arguments},null,2))+'</pre>'
@@ -4332,6 +4334,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	          :null;
 	        const reviewedValueNotice=reviewedValueControlHtml(result);
 	        const budgetStatus=renderOperatorBudgetStatus(result);
+	        const resolvedTimeStatus=renderOperatorTimeWindowStatus(result);
 	        const verifiedData=rows.length
           ?'<details class="verified-data-details"><summary>View verified data ('+esc(returned)+' '+resultKind+(returned===1?"":"s")+')</summary><div class="verified-data-body">'+resultDataHtml(plan,rows,semantics,boundaryName)+'</div></details>'
           :'<p class="ask-verified-count">No rows or groups passed the reviewed scope and privacy thresholds.</p>';
@@ -4339,12 +4342,28 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           +(rows.length?'<p class="ask-verified-count">'+esc(returned)+' verified '+resultKind+(returned===1?"":"s")+' returned.</p>':"")
 	          +verifiedData
 		          +reviewedValueNotice
+		          +resolvedTimeStatus
 		          +budgetStatus
 		          +(privacyGuidance?'<p><strong>'+esc(suppressed)+' additional group'+(suppressed===1?" was":"s were")+' withheld because '+(suppressed===1?"it was":"they were")+' below the reviewed minimum group size'+(minimumCohort?' of '+esc(minimumCohort):'')+'.</strong></p>'+(privacyGuidance.shape?'<p>'+esc(privacyGuidance.shape)+'</p>':'')+'<p>'+esc(privacyGuidance.path)+'</p><button class="quiet" data-review-privacy-resource="'+esc(plan.resource)+'" type="button">Review privacy for '+esc(plan.resource)+'</button>':'')
           +(protectToken?'<button class="secondary" data-ask-protect="'+esc(protectToken)+'" type="button">Protect as reusable capability</button>':'')
 	          +exploreEvidenceDisclosure(call,result,true)+'</section>';
       }
 	      return '<section class="ask-tool-trace"><strong>Reviewed Runner tool completed</strong><details><summary>Advanced bounded result</summary><pre>'+esc(JSON.stringify({arguments:call.arguments,result},null,2))+'</pre></details></section>';
+	    }
+
+	    function renderOperatorTimeWindowStatus(result){
+	      const items=Array.isArray(result?.operator_time_windows)
+	        ?result.operator_time_windows.filter(item=>item&&item.source==="reviewed_relative_time")
+	        :[];
+	      if(!items.length)return "";
+	      const rows=items.flatMap(item=>(item.ranges||[]).map(range=>{
+	        const request=item.location==="comparison"
+	          ?relativeWindowLabel(item.window)+" vs "+relativeWindowLabel(item.compare_to)
+	          :relativeWindowLabel(item.window);
+	        const field=String(item.field||"unknown")+(item.relationship?" via "+item.relationship:"");
+	        return '<tr><td data-label="Reviewed request">'+esc(request)+'</td><td data-label="Field">'+esc(field)+'</td><td data-label="Range">'+esc(range.id||"range")+'</td><td data-label="UTC [start, end)"><code class="utc-range"><span>['+esc(range.start_inclusive||"?")+',</span><span>'+esc(range.end_exclusive||"?")+')</span></code></td></tr>';
+	      })).join("");
+	      return '<details class="ask-execution-evidence"><summary>Operator-only resolved UTC window</summary><p>Runner captured one instant, used the reviewed UTC authority, and compiled these half-open ranges. Resolved timestamps are withheld from the model.</p><div class="result-table resolved-time-table"><table><thead><tr><th>Reviewed request</th><th>Field</th><th>Range</th><th>UTC [start, end)</th></tr></thead><tbody>'+rows+'</tbody></table></div><p><strong>Resolved at:</strong> '+esc(items[0]?.resolved_at||"not available")+'</p></details>';
 	    }
 
 	    function renderOperatorBudgetStatus(result){
@@ -4665,6 +4684,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         return [
           "Read one exact "+resourceLabel(resource).toLowerCase()+" record",
           "Return only "+plan.select.map(field=>fieldLabel(resource,field)).join(", "),
+          plan.time_window?"Limit to "+relativeWindowLabel(plan.time_window.window)+" using "+fieldReferenceLabel(resource,plan.time_window):"No reviewed time window",
           "Maximum 1 record"
         ];
       }
@@ -4682,6 +4702,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         measureText,
         groups?"Group by "+groups:"No categorical grouping",
         plan.time_bucket?"Group time by "+plan.time_bucket.bucket+" using "+fieldReferenceLabel(resource,plan.time_bucket):"No time grouping",
+        plan.time_window?"Limit to "+relativeWindowLabel(plan.time_window.window)+" using "+fieldReferenceLabel(resource,plan.time_window):"No reviewed time window",
+        plan.comparison?.window?"Compare "+relativeWindowLabel(plan.comparison.window)+" with "+relativeWindowLabel(plan.comparison.compare_to):plan.comparison?"Compare two exact UTC ranges":"No period comparison",
         "Maximum "+plan.top_n+" groups",
         "Minimum group size "+resource.minimum_cohort_size+(resource.minimum_cohort_overridden?" (explicit owner override)":"")
       ];
@@ -4723,6 +4745,27 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         }));
       }
       return choices;
+    }
+
+    function relativeTimeCatalog(){
+      const catalog=exploreDescription?.relative_time_windows;
+      return catalog?.available&&Array.isArray(catalog.windows)
+        ?catalog
+        :{available:false,reporting_timezone:null,windows:[],comparison_partners:[]};
+    }
+
+    function relativeTimeFieldChoices(resource,includeRelationships=true){
+      return fieldChoices(resource,"time_bucket_fields").filter(choice=>{
+        if(choice.relationship&&!includeRelationships)return false;
+        if(!choice.relationship)return (resource?.relative_time_window_fields||[]).includes(choice.field);
+        const relationship=(resource?.relationships||[]).find(item=>item.id===choice.relationship&&item.activation==="active");
+        return (relationship?.relative_time_window_fields||[]).includes(choice.field);
+      });
+    }
+
+    function relativeWindowLabel(value){
+      const text=String(value||"").replace(/_/g," ");
+      return text?text.charAt(0).toUpperCase()+text.slice(1):"Reviewed window";
     }
 
     function fieldChoiceValue(choice){
@@ -4854,6 +4897,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const resource=describedResourceFromKey(resourceKey)||resources[0];
       const dimensions=dimensionChoices(resource);
       const timeFields=fieldChoices(resource,"time_bucket_fields");
+      const relativeTimeFields=relativeTimeFieldChoices(resource);
+      const relativeCatalog=relativeTimeCatalog();
+      const relativeWindows=relativeCatalog.windows||[];
+      const relativeComparisons=relativeCatalog.comparison_partners||[];
       const filters=fieldChoices(resource,"filterable_fields");
       const measures=measureOptions(resource);
       const suggestedMeasure=suggestion?.measure
@@ -4891,16 +4938,21 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         '<div id="aggregate-add-group-wrap" class="actions"><button id="aggregate-add-group" class="quiet" type="button">Add another grouping</button></div>'+
         '<label class="field">Show change over time using<select id="aggregate-time"><option value="">No time grouping</option>'+optionList(timeFields.map(fieldChoiceValue),suggestedTimeValue,value=>timeFields.find(choice=>fieldChoiceValue(choice)===value)?.label||value)+'</select></label>'+
         '<label id="aggregate-bucket-wrap" class="field '+(suggestedTime?"":"hidden")+'">Time interval<select id="aggregate-bucket"><option value="week" '+(suggestedBucket==="week"?"selected":"")+'>Week</option><option value="day" '+(suggestedBucket==="day"?"selected":"")+'>Day</option><option value="month" '+(suggestedBucket==="month"?"selected":"")+'>Month</option></select></label>'+
+        '<label class="field">Limit records to<select id="aggregate-window-field"><option value="">All reviewed dates</option>'+optionList(relativeTimeFields.map(fieldChoiceValue),undefined,value=>relativeTimeFields.find(choice=>fieldChoiceValue(choice)===value)?.label||value)+'</select></label>'+
+        '<label id="aggregate-window-wrap" class="field hidden">Reviewed UTC window<select id="aggregate-window-name">'+relativeWindows.map(window=>'<option value="'+esc(window)+'">'+esc(relativeWindowLabel(window))+'</option>').join("")+'</select></label>'+
         '<label class="field">Order result<select id="aggregate-order"><option value="measure:desc">Largest measure first</option><option value="measure:asc">Smallest measure first</option><option value="comparison_change:percentage:desc" data-comparison-order disabled>Fastest percentage growth</option><option value="comparison_change:absolute:desc" data-comparison-order disabled>Largest absolute increase</option><option value="comparison_change:percentage:asc" data-comparison-order disabled>Fastest percentage decline</option><option value="comparison_change:absolute:asc" data-comparison-order disabled>Largest absolute decrease</option><option value="time_bucket:asc">Oldest bucket first</option><option value="time_bucket:desc">Newest bucket first</option></select></label>'+
         '<label class="field">Maximum groups<input id="aggregate-top" type="number" min="1" max="'+esc(resource.maximum_groups||25)+'" value="'+esc(maximumGroups)+'"></label>'+
         '<label class="field">Optional filter<select id="aggregate-filter"><option value="">No filter</option>'+optionList(filters.map(fieldChoiceValue),undefined,value=>filters.find(choice=>fieldChoiceValue(choice)===value)?.label||value)+'</select></label>'+
         '<label id="aggregate-filter-op-wrap" class="field hidden">Filter operator<select id="aggregate-filter-op"><option value="eq">Equals</option></select></label>'+
         '<label id="aggregate-filter-value-wrap" class="field hidden">Filter value<input id="aggregate-filter-value" type="text" maxlength="256" placeholder="Enter a value"></label>'+
         '<label id="aggregate-compare-wrap" class="check '+(suggestedTime?"":"hidden")+'"><input id="aggregate-compare" type="checkbox" '+(timeFields.length?"":"disabled")+'><span>Compare two date ranges</span></label>'+
-        '<label class="field comparison hidden">Earlier period start<input id="period-1-start" type="datetime-local" value="'+ranges[0]+'"></label>'+
-        '<label class="field comparison hidden">Earlier period end<input id="period-1-end" type="datetime-local" value="'+ranges[1]+'"></label>'+
-        '<label class="field comparison hidden">Later period start<input id="period-2-start" type="datetime-local" value="'+ranges[2]+'"></label>'+
-        '<label class="field comparison hidden">Later period end<input id="period-2-end" type="datetime-local" value="'+ranges[3]+'"></label>'+
+        '<label class="field comparison hidden">Date range source<select id="aggregate-comparison-mode"><option value="relative" '+(relativeWindows.length?"":"disabled")+'>Reviewed relative UTC window</option><option value="absolute" '+(relativeWindows.length?"":"selected")+'>Exact UTC date ranges</option></select></label>'+
+        '<label class="field comparison comparison-relative hidden">Reviewed window<select id="aggregate-comparison-window">'+relativeWindows.map(window=>'<option value="'+esc(window)+'">'+esc(relativeWindowLabel(window))+'</option>').join("")+'</select></label>'+
+        '<label class="field comparison comparison-relative hidden">Compare with<select id="aggregate-comparison-partner">'+relativeComparisons.map(partner=>'<option value="'+esc(partner)+'">'+esc(relativeWindowLabel(partner))+'</option>').join("")+'</select></label>'+
+        '<label class="field comparison comparison-absolute hidden">Earlier period start<input id="period-1-start" type="datetime-local" value="'+ranges[0]+'"></label>'+
+        '<label class="field comparison comparison-absolute hidden">Earlier period end<input id="period-1-end" type="datetime-local" value="'+ranges[1]+'"></label>'+
+        '<label class="field comparison comparison-absolute hidden">Later period start<input id="period-2-start" type="datetime-local" value="'+ranges[2]+'"></label>'+
+        '<label class="field comparison comparison-absolute hidden">Later period end<input id="period-2-end" type="datetime-local" value="'+ranges[3]+'"></label>'+
         '<div id="explore-guardrails" class="band notice"><strong>This form cannot widen data access.</strong><p>Your application supplies the customer and user outside this form. Hidden fields never appear as choices. Results stop at '+esc(resource.maximum_groups||"the reviewed number of")+' groups, and groups smaller than '+esc(resource.minimum_cohort_size)+' are suppressed.'+(resource.minimum_cohort_overridden?' <strong>This threshold is an explicit owner override.</strong>':'')+'</p>'+(resource.minimum_cohort_size===1?'<p><strong>Small-group suppression is disabled; groups of one can identify individuals.</strong></p>':'')+'</div>';
       byId("aggregate-add-group").onclick=()=>{
         const second=byId("aggregate-dimension-2-wrap");
@@ -4915,15 +4967,17 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         byId("aggregate-add-group-wrap").classList.add("hidden");
       }
       byId("aggregate-compare").onchange=()=>{
-        document.querySelectorAll(".comparison").forEach(node=>node.classList.toggle("hidden",!byId("aggregate-compare").checked));
-        refreshComparisonOrderOptions();
+        refreshComparisonControls();
       };
+      byId("aggregate-comparison-mode").onchange=refreshComparisonControls;
       byId("aggregate-filter").onchange=refreshFilterOperators;
       byId("aggregate-time").onchange=refreshTimeBucketOptions;
+      byId("aggregate-window-field").onchange=refreshRelativeTimeWindowControls;
       document.querySelectorAll("#aggregate-controls input,#aggregate-controls select").forEach(input=>input.addEventListener("change",updatePlanPreview));
       refreshFilterOperators();
       refreshTimeBucketOptions();
-      refreshComparisonOrderOptions();
+      refreshRelativeTimeWindowControls();
+      refreshComparisonControls();
       updatePlanPreview();
     }
 
@@ -4949,10 +5003,26 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       byId("aggregate-compare-wrap").classList.toggle("hidden",!choice);
       if(!choice){
         byId("aggregate-compare").checked=false;
-        document.querySelectorAll(".comparison").forEach(node=>node.classList.add("hidden"));
       }
       const timeOrderOptions=byId("aggregate-order").querySelectorAll('option[value^="time_bucket:"]');
       timeOrderOptions.forEach(option=>option.disabled=!choice||byId("aggregate-compare").checked);
+      refreshComparisonOrderOptions();
+      refreshComparisonControls();
+    }
+
+    function refreshRelativeTimeWindowControls(){
+      const selected=Boolean(byId("aggregate-window-field")?.value);
+      byId("aggregate-window-wrap")?.classList.toggle("hidden",!selected);
+    }
+
+    function refreshComparisonControls(){
+      const comparing=Boolean(byId("aggregate-compare")?.checked);
+      const relative=byId("aggregate-comparison-mode")?.value==="relative";
+      document.querySelectorAll(".comparison").forEach(node=>node.classList.toggle("hidden",!comparing));
+      document.querySelectorAll(".comparison-relative").forEach(node=>node.classList.toggle("hidden",!comparing||!relative));
+      document.querySelectorAll(".comparison-absolute").forEach(node=>node.classList.toggle("hidden",!comparing||relative));
+      if(byId("aggregate-window-field"))byId("aggregate-window-field").disabled=comparing;
+      if(byId("aggregate-window-name"))byId("aggregate-window-name").disabled=comparing;
       refreshComparisonOrderOptions();
     }
 
@@ -4970,6 +5040,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     function populateRowBuilder(resourceKey){
       const resources=resourcesFromDescription();
       const resource=describedResourceFromKey(resourceKey)||resources[0];
+      const relativeTimeFields=relativeTimeFieldChoices(resource,false);
+      const relativeWindows=relativeTimeCatalog().windows||[];
       const fields=(resource.selectable_fields||[]).slice().sort((left,right)=>{
         const priority=field=>field===resource.primary_key?0:/(^|_)id$/i.test(field)?2:1;
         return priority(left)-priority(right);
@@ -4978,8 +5050,11 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         '<label class="field">Table or view<select id="row-resource">'+optionList(resources.map(describedResourceKey),describedResourceKey(resource),value=>describedResourceLabel(describedResourceFromKey(value)))+'</select></label>'+
         '<label class="field">Exact '+esc(fieldLabel(resource,resource.primary_key||"record ID"))+'<input id="row-id" type="text" maxlength="256" placeholder="Enter a real record ID"></label>'+
         '<label class="field">Values to return<select id="row-fields" multiple size="'+Math.min(6,Math.max(3,fields.length))+'">'+fields.map((field,index)=>'<option value="'+esc(field)+'" '+(index<Math.min(5,fields.length)?"selected":"")+'>'+esc(fieldLabel(resource,field))+'</option>').join("")+'</select></label>'+
+        '<label class="field">Limit record to<select id="row-window-field"><option value="">Any reviewed date</option>'+optionList(relativeTimeFields.map(fieldChoiceValue),undefined,value=>relativeTimeFields.find(choice=>fieldChoiceValue(choice)===value)?.label||value)+'</select></label>'+
+        '<label id="row-window-wrap" class="field hidden">Reviewed UTC window<select id="row-window-name">'+relativeWindows.map(window=>'<option value="'+esc(window)+'">'+esc(relativeWindowLabel(window))+'</option>').join("")+'</select></label>'+
         '<div class="band notice"><strong>The AI cannot choose another customer or user.</strong><p>Your application supplies those trusted values outside this form.</p></div>';
       byId("row-resource").onchange=()=>populateRowBuilder(byId("row-resource").value);
+      byId("row-window-field").onchange=()=>byId("row-window-wrap").classList.toggle("hidden",!byId("row-window-field").value);
       document.querySelectorAll("#row-builder input,#row-builder select").forEach(input=>input.addEventListener("change",updatePlanPreview));
       updatePlanPreview();
     }
@@ -5011,11 +5086,13 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         const resource=describedResourceFromKey(byId("row-resource").value);
         const id=byId("row-id").value.trim();
         const select=[...byId("row-fields").selectedOptions].map(option=>option.value);
+        const timeWindowField=parseFieldChoice(byId("row-window-field").value);
         return {
           kind:"rows",
           resource:resource.id,
           select,
           where:id?[{field:resource.primary_key,op:"eq",value:id}]:[],
+          ...(timeWindowField?{time_window:{...timeWindowField,window:byId("row-window-name").value}}:{}),
           limit:1
         };
       }
@@ -5032,6 +5109,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const autoBandDimensions=dimensions.filter(dimension=>dimension.numeric_band&&typeof dimension.numeric_band==="object");
       if(autoBandDimensions.length>1)throw new Error("Choose at most one automatic numeric band per question.");
       const timeField=parseFieldChoice(byId("aggregate-time").value);
+      const timeWindowField=parseFieldChoice(byId("aggregate-window-field").value);
       if(measure.derived_measure){
         const definition=(resource.derived_measures||[]).find(item=>item.name===measure.derived_measure);
         if(definition?.base_measure){
@@ -5054,6 +5132,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         measures:[measure],
         ...(dimensions.length?{dimensions}:{}),
         ...(timeField?{time_bucket:{...timeField,bucket:byId("aggregate-bucket").value}}:{}),
+        ...(!byId("aggregate-compare").checked&&timeWindowField?{time_window:{...timeWindowField,window:byId("aggregate-window-name").value}}:{}),
         ...(filterField&&filterText?{where:[{...filterField,op:filterOperator,value:typedFilterValue(resource,filterField,filterOperator,filterText)}]}:{}),
         order_by:orderKind==="time_bucket"
           ?{kind:"time_bucket",direction:orderDirection}
@@ -5064,18 +5143,23 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       };
       if(autoBandDimensions.length&&byId("aggregate-compare").checked)throw new Error("Automatic numeric bands cannot be combined with a two-period comparison.");
       if(byId("aggregate-compare").checked){
-        const ranges=[
-          {start:isoValue("period-1-start"),end:isoValue("period-1-end")},
-          {start:isoValue("period-2-start"),end:isoValue("period-2-end")}
-        ];
-        if(ranges.every(range=>range.start&&range.end)&&timeField)plan.comparison={...timeField,ranges};
+        if(byId("aggregate-comparison-mode").value==="relative"){
+          if(!byId("aggregate-comparison-window").value||!byId("aggregate-comparison-partner").value)throw new Error("Choose a reviewed relative window and comparison period.");
+          if(timeField)plan.comparison={...timeField,window:byId("aggregate-comparison-window").value,compare_to:byId("aggregate-comparison-partner").value};
+        }else{
+          const ranges=[
+            {start:isoValue("period-1-start"),end:isoValue("period-1-end")},
+            {start:isoValue("period-2-start"),end:isoValue("period-2-end")}
+          ];
+          if(ranges.every(range=>range.start&&range.end)&&timeField)plan.comparison={...timeField,ranges};
+        }
       }
       return plan;
     }
 
     function planSentence(plan,boundaryName){
       const resource=describedResourceForPlan(plan,boundaryName);
-      if(plan.kind==="rows")return "Read one exact "+resourceLabel(resource).toLowerCase()+" record and return only "+plan.select.map(field=>fieldLabel(resource,field)).join(", ")+".";
+      if(plan.kind==="rows")return "Read one exact "+resourceLabel(resource).toLowerCase()+" record and return only "+plan.select.map(field=>fieldLabel(resource,field)).join(", ")+(plan.time_window?", limited to "+relativeWindowLabel(plan.time_window.window)+" using "+fieldReferenceLabel(resource,plan.time_window):"")+".";
       const measures=plan.measures.map(measure=>{
         if(measure.derived_measure){
           const derived=(resource.derived_measures||[]).find(item=>item.name===measure.derived_measure);
@@ -5089,7 +5173,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       }).join(", ");
       const groups=(plan.dimensions||[]).map(item=>fieldReferenceLabel(resource,item)).join(", ");
       const filters=(plan.where||[]).map(item=>fieldReferenceLabel(resource,item)+" "+(item.op==="eq"?"equals":item.op)+" "+JSON.stringify(item.value)).join(", ");
-      return "Calculate "+measures+" for "+resourceLabel(resource).toLowerCase()+(groups?" grouped by "+groups:"")+(plan.time_bucket?" for each "+plan.time_bucket.bucket:"")+(filters?" where "+filters:"")+" with at most "+plan.top_n+" groups.";
+      const timeWindow=plan.time_window?" limited to "+relativeWindowLabel(plan.time_window.window)+" using "+fieldReferenceLabel(resource,plan.time_window):"";
+      const comparison=plan.comparison?.window?" comparing "+relativeWindowLabel(plan.comparison.window)+" with "+relativeWindowLabel(plan.comparison.compare_to):plan.comparison?" comparing two exact UTC ranges":"";
+      return "Calculate "+measures+" for "+resourceLabel(resource).toLowerCase()+(groups?" grouped by "+groups:"")+(plan.time_bucket?" for each "+plan.time_bucket.bucket:"")+timeWindow+comparison+(filters?" where "+filters:"")+" with at most "+plan.top_n+" groups.";
     }
 
     function resultColumnLabel(plan,key,semantics,boundaryName){
@@ -5211,7 +5297,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		        const privacyGuidance=result.privacy.suppressed_groups>0
 		          ?suppressionReviewGuidance(plan,selectedBoundary,result.privacy.minimum_cohort_size)
 		          :null;
-		        resultPanel.innerHTML='<section class="band success"><h3>Your reviewed question worked.</h3><p>'+esc(planSentence(plan,selectedBoundary))+'</p>'+resultDataHtml(plan,result.data,result.outcome?.result,selectedBoundary)+reviewedValueControlHtml(result)+renderOperatorBudgetStatus(result)+(privacyGuidance?'<p><strong>'+esc(result.privacy.suppressed_groups)+' additional group'+(result.privacy.suppressed_groups===1?" was":"s were")+' withheld because '+(result.privacy.suppressed_groups===1?"it was":"they were")+' below the reviewed minimum group size of '+esc(result.privacy.minimum_cohort_size)+'.</strong></p>'+(privacyGuidance.shape?'<p>'+esc(privacyGuidance.shape)+'</p>':'')+'<p>'+esc(privacyGuidance.path)+'</p><button id="review-result-privacy" class="quiet" type="button">Review privacy for '+esc(plan.resource)+'</button>':'')+'<p>Keep asking legal combinations inside this reviewed boundary without another approval. Protect is optional and creates a disabled reusable capability.</p><div class="split-actions"><button id="ask-another-result" type="button">Ask another question</button><button id="protect-result" class="secondary" type="button">Protect this '+esc(plan.kind==="aggregate"?"analysis":"read")+'</button></div><details><summary>What Runner enforced</summary><p><strong>Tool:</strong> <code>app.explore_data</code><br><strong>Reviewed fields used:</strong> '+esc(visible.join(", ")||"record count")+'<br><strong>Minimum group size:</strong> '+esc(result.privacy.minimum_cohort_size??"not applicable")+'<br><strong>Kept out:</strong> '+esc(unavailable)+'<br><strong>Trusted scope:</strong> supplied outside the question<br><strong>Source database changed:</strong> no</p><div class="result-meta"><span class="badge">'+esc(result.audit.returned_rows_or_groups)+' row(s) / group(s)</span><span class="badge">'+esc(result.audit.returned_cells)+' cells</span></div><p>'+esc(result.untrusted_data_notice)+'</p></details></section>';
+		        resultPanel.innerHTML='<section class="band success"><h3>Your reviewed question worked.</h3><p>'+esc(planSentence(plan,selectedBoundary))+'</p>'+resultDataHtml(plan,result.data,result.outcome?.result,selectedBoundary)+reviewedValueControlHtml(result)+renderOperatorTimeWindowStatus(result)+renderOperatorBudgetStatus(result)+(privacyGuidance?'<p><strong>'+esc(result.privacy.suppressed_groups)+' additional group'+(result.privacy.suppressed_groups===1?" was":"s were")+' withheld because '+(result.privacy.suppressed_groups===1?"it was":"they were")+' below the reviewed minimum group size of '+esc(result.privacy.minimum_cohort_size)+'.</strong></p>'+(privacyGuidance.shape?'<p>'+esc(privacyGuidance.shape)+'</p>':'')+'<p>'+esc(privacyGuidance.path)+'</p><button id="review-result-privacy" class="quiet" type="button">Review privacy for '+esc(plan.resource)+'</button>':'')+'<p>Keep asking legal combinations inside this reviewed boundary without another approval. Protect is optional and creates a disabled reusable capability.</p><div class="split-actions"><button id="ask-another-result" type="button">Ask another question</button><button id="protect-result" class="secondary" type="button">Protect this '+esc(plan.kind==="aggregate"?"analysis":"read")+'</button></div><details><summary>What Runner enforced</summary><p><strong>Tool:</strong> <code>app.explore_data</code><br><strong>Reviewed fields used:</strong> '+esc(visible.join(", ")||"record count")+'<br><strong>Minimum group size:</strong> '+esc(result.privacy.minimum_cohort_size??"not applicable")+'<br><strong>Kept out:</strong> '+esc(unavailable)+'<br><strong>Trusted scope:</strong> supplied outside the question<br><strong>Source database changed:</strong> no</p><div class="result-meta"><span class="badge">'+esc(result.audit.returned_rows_or_groups)+' row(s) / group(s)</span><span class="badge">'+esc(result.audit.returned_cells)+' cells</span></div><p>'+esc(result.untrusted_data_notice)+'</p></details></section>';
 			        byId("ask-another-result").onclick=()=>{if(plan.kind==="rows")switchExploreMode("aggregate");byId("explore-composer").open=true;byId("explore-composer").scrollIntoView({behavior:"auto",block:"start"})};
 		        if(byId("review-result-privacy"))byId("review-result-privacy").onclick=()=>openAccessEditor(plan.resource,undefined,true);
 		        byId("protect-result").onclick=async()=>{preferredProtectQueryRef=resultProtectQueryRef;await loadProtect(resultProtectQueryRef);setView("protect")};

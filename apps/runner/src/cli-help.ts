@@ -113,6 +113,8 @@ Global options:
   ${cmd} try explore
   ${cmd} try explore --suggested
   ${cmd} try explore --resource public.check_ins --count-distinct member_id --group-by outcome --time-bucket checked_in_at:week
+  ${cmd} try explore --resource public.orders --count --group-by channel --time-window created_at:previous_month
+  ${cmd} try explore --resource public.orders --sum total_cents --group-by channel --time-bucket created_at:month --compare-window created_at:previous_month --compare-to preceding_period
   ${cmd} try explore --resource public.orders --sum total_cents --group-by channel --time-bucket created_at:week --compare created_at --period 2026-06-01T00:00:00Z..2026-06-08T00:00:00Z --vs-period 2026-06-08T00:00:00Z..2026-06-15T00:00:00Z
   ${cmd} try explore --resource public.orders --measure stddev_samp:total_cents --group-by channel
   ${cmd} try explore --resource public.orders --measure derived:average_order_value --time-bucket created_at:quarter

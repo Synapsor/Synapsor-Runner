@@ -108,7 +108,8 @@ revert. See [HTTP MCP](http-mcp.md).
 Fixed named aggregate capabilities expose their contract-defined scalar.
 Authoring-only Scoped Explore separately accepts a typed, reviewed analytical
 plan over activated measures, dimensions, time grains, filters, comparisons,
-ordering, and proven many-to-one paths. It still accepts no SQL, arbitrary
+reviewed relative UTC windows, ordering, and proven many-to-one paths. It still
+accepts no SQL, arbitrary
 identifier, model-supplied scope, formula, or general join. Both paths enforce
 cohort and response bounds. Suppression reduces single-record inference but is
 not differential privacy or a complete privacy guarantee. Atomic rolling

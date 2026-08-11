@@ -239,6 +239,65 @@ describe("protected named reads", () => {
     }
   });
 
+  it("compiles a fixed protected time window on root and reviewed relationship fields", () => {
+    const capability = aggregateConfig().capabilities?.[0];
+    if (!capability?.protected_read?.aggregate) throw new Error("protected aggregate fixture is incomplete");
+    delete capability.protected_read.aggregate.comparison;
+    delete capability.protected_read.aggregate.order_by;
+    capability.args = {};
+    capability.protected_read.time_window = {
+      field: "churned_at",
+      start: "2026-06-01T00:00:00.000Z",
+      end: "2026-07-01T00:00:00.000Z",
+    };
+    const context = {
+      tenant_id: "tenant-acme",
+      principal: "principal-1",
+      provenance: "environment" as const,
+    };
+
+    for (const placeholderStyle of ["$", "?"] as const) {
+      const rootQuery = buildProtectedReadQuery(capability, placeholderStyle, {}, context);
+      const rootField = placeholderStyle === "$" ? 't0."churned_at"' : "t0.`churned_at`";
+      expect(rootQuery.sql).toContain(`${rootField} >=`);
+      expect(rootQuery.sql).toContain(`${rootField} <`);
+      expect(rootQuery.values).toEqual([
+        "tenant-acme",
+        "principal-1",
+        "2026-06-01T00:00:00.000Z",
+        "2026-07-01T00:00:00.000Z",
+        "churned",
+      ]);
+    }
+
+    capability.protected_read.relationships = [{
+      name: "store",
+      links: [{
+        schema: "public",
+        table: "stores",
+        primary_key: "id",
+        tenant_key: "tenant_id",
+        local_key: "store_id",
+        target_key: "id",
+        cardinality: "many_to_one",
+        max_fan_out: 1,
+        unmatched_rows: "exclude",
+      }],
+    }];
+    capability.protected_read.time_window = {
+      field: "opened_at",
+      relationship: "store",
+      start: "2026-06-01T00:00:00.000Z",
+      end: "2026-07-01T00:00:00.000Z",
+    };
+    for (const placeholderStyle of ["$", "?"] as const) {
+      const relatedQuery = buildProtectedReadQuery(capability, placeholderStyle, {}, context);
+      const relatedField = placeholderStyle === "$" ? 'r1_1."opened_at"' : "r1_1.`opened_at`";
+      expect(relatedQuery.sql).toContain(`${relatedField} >=`);
+      expect(relatedQuery.sql).toContain(`${relatedField} <`);
+    }
+  });
+
   it("compiles a fixed reviewed derived measure portably with contributor evidence", () => {
     const capability = aggregateConfig().capabilities?.[0];
     if (!capability?.protected_read?.aggregate) throw new Error("protected aggregate fixture is incomplete");
