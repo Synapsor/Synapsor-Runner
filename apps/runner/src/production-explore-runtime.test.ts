@@ -8,6 +8,7 @@ import {
 import {
   assertProductionExploreStartup,
   formatProductionExploreStartupReport,
+  formatStreamableHttpServerRunning,
   inspectProductionExploreStartup,
   productionExploreSessionFactory,
 } from "./mcp-runtime.js";
@@ -156,6 +157,29 @@ describe("production Explore startup posture", () => {
     expect(rendered).toContain("app.describe_data and app.explore_data");
     expect(rendered).not.toContain(hmacSecret);
     expect(rendered).not.toContain(controlDatabaseUrl);
+  });
+
+  it("colors interactive startup statuses and renders an explicit running server line", () => {
+    const rendered = formatProductionExploreStartupReport({
+      ok: false,
+      active_boundaries: [],
+      tools: ["app.describe_data", "app.explore_data"],
+      checks: [
+        { name: "ready", ok: true, level: "pass", message: "Ready." },
+        { name: "advisory", ok: true, level: "warn", message: "Review sizing." },
+        { name: "blocked", ok: false, level: "fail", message: "Blocked." },
+      ],
+    }, { color: true });
+
+    expect(rendered).toContain("\u001b[1;32mOK\u001b[0m");
+    expect(rendered).toContain("\u001b[1;33mWARN\u001b[0m");
+    expect(rendered).toContain("\u001b[1;31mFAIL\u001b[0m");
+    expect(rendered).toContain("\u001b[1;31mPRODUCTION EXPLORE NOT READY\u001b[0m");
+
+    const plain = formatStreamableHttpServerRunning("http://127.0.0.1:8766/mcp", true);
+    expect(plain).toBe("\uD83D\uDC90 Synapsor Runner Production Explore server is running and ready at http://127.0.0.1:8766/mcp");
+    expect(formatStreamableHttpServerRunning("http://127.0.0.1:8766/mcp", true, true))
+      .toContain("\u001b[1;32m\uD83D\uDC90 Synapsor Runner Production Explore server is running and ready");
   });
 
   it("attests principal-only JWT binding for an exact reviewed single organization", async () => {

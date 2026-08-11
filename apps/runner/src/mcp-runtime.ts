@@ -167,6 +167,7 @@ export async function mcpServeStreamableHttp(args: string[]): Promise<number> {
       prepareScopedExplore,
       {
         doctorCommand: `${cliCommandName()} doctor --config ${shellQuote(configPath)} --transport streamable-http`,
+        color: terminalStatusColorEnabled(process.stderr, process.env),
       },
     );
   }
@@ -206,9 +207,11 @@ export async function mcpServeStreamableHttp(args: string[]): Promise<number> {
     await releaseLease();
     throw error;
   }
+  const terminalColor = terminalStatusColorEnabled(process.stderr, process.env);
   if (productionPosture) {
-    process.stderr.write(formatProductionExploreStartupReport(productionPosture));
+    process.stderr.write(formatProductionExploreStartupReport(productionPosture, { color: terminalColor }));
   }
+  process.stderr.write(`${formatStreamableHttpServerRunning(server.url, productionExplore, terminalColor)}\n`);
   process.stderr.write("Press Ctrl+C to stop.\n");
   await new Promise<void>((resolve) => {
     const stop = async () => {
@@ -581,12 +584,12 @@ export async function assertProductionExploreStartup(
   env: NodeJS.ProcessEnv,
   loadBoundaries: (projectRoot: string) => Promise<ActivatedExplorationBoundary[]> = loadActivatedExplorationBoundaries,
   prepareBoundary: Parameters<typeof inspectProductionExploreStartup>[3] = prepareScopedExplore,
-  options: { doctorCommand?: string } = {},
+  options: { doctorCommand?: string; color?: boolean } = {},
 ): Promise<ProductionExploreStartupReport> {
   const report = await inspectProductionExploreStartup(config, env, loadBoundaries, prepareBoundary);
   if (!report.ok) {
     throw new Error([
-      formatProductionExploreStartupReport(report).trimEnd(),
+      formatProductionExploreStartupReport(report, { color: options.color }).trimEnd(),
       "",
       `Production Explore did not start. Run ${options.doctorCommand ?? `${cliCommandName()} doctor --config <path-to-synapsor.runner.json> --transport streamable-http`} to inspect every prerequisite together.`,
     ].join("\n"));
@@ -594,14 +597,55 @@ export async function assertProductionExploreStartup(
   return report;
 }
 
-export function formatProductionExploreStartupReport(report: ProductionExploreStartupReport): string {
+export function formatProductionExploreStartupReport(
+  report: ProductionExploreStartupReport,
+  options: { color?: boolean } = {},
+): string {
+  const color = options.color === true;
   const lines = [
     "",
-    report.ok ? "PRODUCTION EXPLORE READY" : "PRODUCTION EXPLORE NOT READY",
-    ...report.checks.map((check) => `  ${check.level === "warn" ? "WARN" : check.ok ? "OK" : "FAIL"}  ${check.message}`),
+    terminalStatusText(
+      report.ok ? "PRODUCTION EXPLORE READY" : "PRODUCTION EXPLORE NOT READY",
+      report.ok ? "pass" : "fail",
+      color,
+    ),
+    ...report.checks.map((check) => {
+      const label = check.level === "warn" ? "WARN" : check.ok ? "OK" : "FAIL";
+      return `  ${terminalStatusText(label, check.level, color)}  ${check.message}`;
+    }),
     "",
   ];
   return `${lines.join("\n")}\n`;
+}
+
+export function formatStreamableHttpServerRunning(
+  url: string,
+  productionExplore: boolean,
+  color = false,
+): string {
+  const surface = productionExplore ? "Production Explore" : "Streamable HTTP MCP";
+  return terminalStatusText(
+    `\uD83D\uDC90 Synapsor Runner ${surface} server is running and ready at ${url}`,
+    "pass",
+    color,
+  );
+}
+
+function terminalStatusColorEnabled(
+  output: { isTTY?: boolean },
+  env: NodeJS.ProcessEnv,
+): boolean {
+  return output.isTTY === true && !("NO_COLOR" in env);
+}
+
+function terminalStatusText(
+  value: string,
+  level: ProductionExploreStartupCheck["level"],
+  color: boolean,
+): string {
+  if (!color) return value;
+  const code = level === "pass" ? "1;32" : level === "warn" ? "1;33" : "1;31";
+  return `\u001b[${code}m${value}\u001b[0m`;
 }
 
 export function productionExploreSessionFactory(
