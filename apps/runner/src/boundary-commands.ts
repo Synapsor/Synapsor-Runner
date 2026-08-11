@@ -659,6 +659,8 @@ async function boundaryResourceReviewCommand(
     "--time-fields",
     "--minimum-cohort",
     "--max-ranked-groups",
+    "--max-queries-per-24-hours",
+    "--requests-per-minute",
     "--relationships",
     "--nullable-relationship",
     "--unmatched-rows",
@@ -706,6 +708,8 @@ async function boundaryResourceReviewCommand(
     "--time-fields",
     "--minimum-cohort",
     "--max-ranked-groups",
+    "--max-queries-per-24-hours",
+    "--requests-per-minute",
     "--relationships",
     "--nullable-relationship",
   ].includes(arg));
@@ -823,6 +827,22 @@ async function boundaryResourceReviewCommand(
       || Number(maxRankedGroups) > 10_000)) {
     throw new Error("--max-ranked-groups must be an integer from 1 through 10000.");
   }
+  const maxQueriesText = optionalArg(args, "--max-queries-per-24-hours");
+  const maxQueries = maxQueriesText === undefined ? undefined : Number(maxQueriesText);
+  if (maxQueriesText !== undefined
+    && (!Number.isSafeInteger(maxQueries) || Number(maxQueries) < 1 || Number(maxQueries) > 1_000)) {
+    throw new Error("--max-queries-per-24-hours must be an integer from 1 through 1000.");
+  }
+  const requestsPerMinuteText = optionalArg(args, "--requests-per-minute");
+  const requestsPerMinute = requestsPerMinuteText === undefined
+    ? undefined
+    : Number(requestsPerMinuteText);
+  if (requestsPerMinuteText !== undefined
+    && (!Number.isSafeInteger(requestsPerMinute)
+      || Number(requestsPerMinute) < 1
+      || Number(requestsPerMinute) > 120)) {
+    throw new Error("--requests-per-minute must be an integer from 1 through 120.");
+  }
   if ((nullableRelationship && unmatchedRows !== "exclude" && unmatchedRows !== "keep_null")
     || (!nullableRelationship && unmatchedRows)) {
     throw new Error("--nullable-relationship <id> requires --unmatched-rows exclude|keep_null.");
@@ -867,6 +887,8 @@ async function boundaryResourceReviewCommand(
     ...(listArg(args, "--time-fields") ? { time_bucket_fields: listArg(args, "--time-fields") } : {}),
     ...(minimumCohort === undefined ? {} : { minimum_cohort_size: minimumCohort }),
     ...(maxRankedGroups === undefined ? {} : { max_ranked_groups: maxRankedGroups }),
+    ...(maxQueries === undefined ? {} : { max_queries_per_session: maxQueries }),
+    ...(requestsPerMinute === undefined ? {} : { rate_limit_per_minute: requestsPerMinute }),
     ...(listArg(args, "--relationships") ? { relationship_ids: listArg(args, "--relationships") } : {}),
     ...(nullableRelationship ? {
       nullable_relationship: {
@@ -1026,7 +1048,7 @@ async function interactiveBoundaryReviewLoop(input: {
       continue;
     }
     if (selected.action === "limits") {
-      const result = await interactiveRankedGroupReview({
+      const result = await interactiveBoundaryLimitsReview({
         projectRoot: input.projectRoot,
         schemaInspector: input.schemaInspector,
         session: input.session,
@@ -1371,6 +1393,98 @@ async function interactiveBoundaryReviewLoop(input: {
     }
     if (result !== "back" && result !== 0) return result;
   }
+}
+
+async function interactiveBoundaryLimitsReview(input: {
+  projectRoot: string;
+  schemaInspector: typeof inspectDatabase;
+  session: BoundaryReviewInteractiveSession;
+}): Promise<number> {
+  const context = await loadBoundaryReviewContext(input.projectRoot);
+  const budgets = context.candidate.budgets;
+  process.stdout.write([
+    "",
+    "BOUNDARY LIMITS",
+    "1  Query volume       " + `${budgets.max_queries_per_session} per rolling 24 hours`,
+    "2  Request rate       " + `${budgets.rate_limit_per_minute} per minute`,
+    "3  Ranked aggregates  " + `${budgets.max_ranked_groups ?? budgets.max_groups} candidate groups`,
+    "",
+    "Query volume and request rate control throughput. They do not change small-group suppression, extracted-cell, or differencing privacy controls.",
+    "",
+  ].join("\n"));
+  const selected = await input.session.promptText("Limit to review [1-3; Esc returns]");
+  if (selected === undefined || !selected.trim()) {
+    process.stdout.write("Returned to boundary review. No limit changed.\n");
+    return 0;
+  }
+  if (selected.trim() === "3") return interactiveRankedGroupReview(input);
+  if (selected.trim() !== "1" && selected.trim() !== "2") {
+    process.stdout.write("Choose 1, 2, or 3. No limit changed.\n");
+    return 0;
+  }
+  const queryVolume = selected.trim() === "1";
+  const current = queryVolume
+    ? budgets.max_queries_per_session
+    : budgets.rate_limit_per_minute;
+  const generatedMaximum = queryVolume
+    ? context.draft.budgets.max_queries_per_session
+    : context.draft.budgets.rate_limit_per_minute;
+  const label = queryVolume
+    ? "Queries per rolling 24 hours"
+    : "Requests per minute";
+  const entered = await input.session.promptText(`${label} [${current}] (1-${generatedMaximum})`);
+  if (entered === undefined) {
+    process.stdout.write("Returned to boundary review. No limit changed.\n");
+    return 0;
+  }
+  const value = entered.trim() ? Number(entered.trim()) : current;
+  if (!Number.isSafeInteger(value) || value < 1 || value > generatedMaximum) {
+    process.stdout.write([
+      `Use an integer from 1 through ${generatedMaximum}.`,
+      "This is a reviewed throughput limit; disclosure-control limits remain unchanged.",
+      "No boundary setting changed.",
+      "",
+    ].join("\n"));
+    return 0;
+  }
+  if (value === current) {
+    process.stdout.write("The selected throughput limit is unchanged.\n");
+    return 0;
+  }
+  const accepted = await input.session.confirm(
+    queryVolume
+      ? `Allow at most ${value} queries for each trusted scope in a rolling 24-hour window?`
+      : `Allow at most ${value} requests per minute for each trusted scope?`,
+    { defaultValue: true },
+  );
+  if (!accepted) {
+    process.stdout.write("The selected throughput limit was not changed.\n");
+    return 0;
+  }
+  const resourceId = context.candidate.pack.resources[0]?.id;
+  if (!resourceId) throw new Error("A boundary needs one reviewed table before its limits can be changed.");
+  const preview = await prepareBoundaryResourceReviewMutation(
+    input.projectRoot,
+    {
+      resource_id: resourceId,
+      ...(queryVolume
+        ? { max_queries_per_session: value }
+        : { rate_limit_per_minute: value }),
+      actor: localInteractiveActor(),
+      reason: queryVolume
+        ? "Reviewed the rolling query-volume allowance for this boundary."
+        : "Reviewed the per-minute request-rate allowance for this boundary.",
+    },
+    input.schemaInspector,
+  );
+  const committed = await commitBoundaryResourceReviewMutation(input.projectRoot, preview);
+  process.stdout.write([
+    `Saved ${queryVolume ? "query-volume" : "request-rate"} limit ${value} in disabled boundary revision ${committed.review_revision}.`,
+    "Small-group suppression, extracted-cell, and differencing privacy controls are unchanged.",
+    "Review and activate the boundary to apply this limit. Agent authority changed: no.",
+    "",
+  ].join("\n"));
+  return 0;
 }
 
 async function interactiveRankedGroupReview(input: {
@@ -2637,6 +2751,16 @@ export function formatFocusedBoundaryActivationReview(
         `Validate at most ${bundle.candidate.budgets.max_ranked_groups
           ?? bundle.candidate.budgets.max_groups} candidate groups, suppress small cohorts, ` +
         `then return at most top ${bundle.candidate.budgets.max_top_n}`,
+      ],
+      [
+        "Query volume",
+        `${bundle.candidate.budgets.max_queries_per_session} queries per trusted scope in a rolling 24-hour window; ` +
+        `${bundle.candidate.budgets.rate_limit_per_minute} requests per minute`,
+      ],
+      [
+        "Disclosure controls",
+        `${bundle.candidate.budgets.max_extracted_cells_per_session} extracted cells and ` +
+        `${bundle.candidate.budgets.max_differencing_queries} differencing variants per rolling 24-hour window`,
       ],
       [
         "Writes",
@@ -4219,6 +4343,18 @@ function formatBoundaryMutationPreview(
         `${diff.max_ranked_groups_after ?? "not included"}`,
       ]
       : []),
+    ...(diff.max_queries_per_session_before !== diff.max_queries_per_session_after
+      ? [
+        `  Rolling 24-hour query allowance: ${diff.max_queries_per_session_before} -> ` +
+        `${diff.max_queries_per_session_after}`,
+      ]
+      : []),
+    ...(diff.rate_limit_per_minute_before !== diff.rate_limit_per_minute_after
+      ? [
+        `  Requests per minute: ${diff.rate_limit_per_minute_before} -> ` +
+        `${diff.rate_limit_per_minute_after}`,
+      ]
+      : []),
   ];
   return [
     "Preview of one pending review decision. Nothing is saved or active yet.",
@@ -4314,6 +4450,12 @@ function formatRequestedBoundaryChanges(
       `Maximum underlying groups for bounded top/bottom and period-mover queries: ` +
       `${request.max_ranked_groups}.`,
     );
+  }
+  if (request.max_queries_per_session !== undefined) {
+    lines.push(`Rolling 24-hour query allowance: ${request.max_queries_per_session}.`);
+  }
+  if (request.rate_limit_per_minute !== undefined) {
+    lines.push(`Requests per minute: ${request.rate_limit_per_minute}.`);
   }
   if (request.relationship_ids) {
     lines.push(`Reviewed relationships: ${request.relationship_ids.join(", ") || "none"}.`);

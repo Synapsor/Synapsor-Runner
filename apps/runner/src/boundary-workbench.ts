@@ -1333,11 +1333,12 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 			      const rankedMaximum=original.budgets.max_ranked_groups??original.budgets.max_groups;
 			      const rankedEditable=Number.isSafeInteger(original.budgets.max_ranked_groups);
 			      const rankedSettings='<details class="boundary-options"><summary>Ranked result settings</summary><div class="boundary-name-editor"><label>Groups considered before ranking<input id="boundary-ranked-groups" type="number" min="'+esc(rankedMinimum)+'" max="'+esc(rankedMaximum)+'" value="'+esc(rankedCurrent)+'" '+(rankedEditable?'':'disabled')+' aria-describedby="boundary-ranked-help"></label><button id="save-ranked-groups" class="secondary" type="button" '+(rankedEditable?'':'disabled')+'>Save reviewed limit</button><span id="boundary-ranked-status" class="status-message" aria-live="polite"></span><small id="boundary-ranked-help">Top, bottom, and period-mover questions may consider this many groups. Small-group suppression runs before ranking, and only the reviewed top '+esc(candidate.budgets.max_top_n)+' may be returned. The AI cannot change this setting.</small></div></details>';
+			      const volumeSettings='<details class="boundary-options"><summary>Query volume · '+esc(candidate.budgets.max_queries_per_session)+' per rolling 24 hours · '+esc(candidate.budgets.rate_limit_per_minute)+' per minute</summary><div class="boundary-name-editor"><p><strong>Throughput controls</strong> limit how often this boundary can run for one trusted scope. They do not replace the separate disclosure controls for extracted cells, differencing, or small groups.</p><label>Queries per rolling 24 hours<input id="boundary-query-volume" type="number" min="1" max="1000" value="'+esc(candidate.budgets.max_queries_per_session)+'" aria-describedby="boundary-volume-help"></label><label>Requests per rolling minute<input id="boundary-request-rate" type="number" min="1" max="120" value="'+esc(candidate.budgets.rate_limit_per_minute)+'" aria-describedby="boundary-volume-help"></label><button id="save-boundary-volume" class="secondary" type="button">Save reviewed limits</button><span id="boundary-volume-status" class="status-message" aria-live="polite"></span><small id="boundary-volume-help">These limits are reviewed and digest-bound. Saving creates a disabled boundary revision; Review and activate remains separate. Disclosure defaults and semantics are unchanged.</small></div></details>';
 			      const cohortValues=[...new Set(candidate.pack.resources.map(resource=>resource.minimum_cohort_size))];
 			      const cohortCurrent=cohortValues.length===1?cohortValues[0]:5;
 			      const cohortSettings='<details class="boundary-options"><summary>Privacy for all tables'+(cohortValues.length===1?' · minimum group size '+esc(cohortCurrent):' · mixed group sizes')+'</summary><div class="boundary-name-editor"><label>Minimum group size for every included table<select id="boundary-cohort-all"><option value="5" '+(cohortCurrent===5?'selected':'')+'>5 — default; hide groups with 1–4 rows</option><option value="4" '+(cohortCurrent===4?'selected':'')+'>4 — hide groups with 1–3 rows</option><option value="3" '+(cohortCurrent===3?'selected':'')+'>3 — hide groups with 1–2 rows</option><option value="2" '+(cohortCurrent===2?'selected':'')+'>2 — hide groups with 1 row</option><option value="1" '+(cohortCurrent===1?'selected':'')+'>1 — show every non-empty group; suppression off</option></select></label><label>Human reviewer<input id="boundary-cohort-actor" type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><label>Reason for this privacy setting<textarea id="boundary-cohort-reason" maxlength="500" rows="2" placeholder="Explain why this minimum group size is appropriate for every table in this boundary."></textarea></label><button id="save-boundary-cohort" class="secondary" type="button" '+(candidate.pack.resources.length?'':'disabled')+'>Save for all '+esc(candidate.pack.resources.length)+' table'+(candidate.pack.resources.length===1?'':'s')+'</button><span id="boundary-cohort-status" class="status-message" aria-live="polite"></span><small>Runner hides aggregate groups with fewer rows than this number. Choosing 1 turns small-group suppression off and may reveal a group containing one person or record. Saving creates one disabled boundary change; Review and activate remains separate.</small></div></details>';
 			      panel.innerHTML=
-		        '<div class="boundary-overview-head"><div><p class="instant-kicker">Scoped Explore</p><h2 id="boundary-overview-title">Your boundaries</h2><p>Each boundary is an independently reviewed set of tables, columns, relationships, and limits. An active boundary adds choices to the same two Explore tools; one query still uses exactly one boundary.</p><div class="boundary-version-table-wrap"><table class="boundary-version-table"><thead><tr><th>Name</th><th>Status</th><th>Tables</th><th>Authority</th><th>Actions</th></tr></thead><tbody>'+rows+'</tbody></table></div><p class="muted">Active boundaries never merge relationship graphs. If a table appears in several boundaries, Runner requires the caller to name one.</p>'+pendingBoundaryBanner+'<div id="new-boundary-form" class="band" hidden><h3>Create another boundary</h3><p>Choose its first table. Nothing is copied from another boundary, and no authority is activated.</p><label class="field">Boundary name<input id="new-boundary-name" type="text" maxlength="64" spellcheck="false" placeholder="support_analytics"></label><label class="field">Starting table<select id="new-boundary-table"><option value="">Choose a table</option>'+startingTableOptions+'</select></label><small>Showing all '+esc(inspectedStartingTables.length)+' inspected tables. '+esc(eligibleStartingTables.length)+' can start a boundary; '+esc(ancestorStartingTables.length)+' can be added after their scoped ancestor; unavailable tables remain visible with their reason.</small><small>Runner opens the selected table&apos;s column access next. Related tables can be added afterward through reviewed foreign-key paths.</small><div class="actions"><button id="create-boundary" type="button">Choose table and edit</button><button id="cancel-new-boundary" class="secondary" type="button">Cancel</button></div></div><p id="boundary-library-status" class="status-message" aria-live="polite"></p><details class="boundary-options"><summary>Rename selected boundary</summary><div class="boundary-name-editor"><label>Boundary name<input id="boundary-pack-name" type="text" maxlength="64" spellcheck="false" value="'+esc(candidate.pack.name)+'" aria-describedby="boundary-name-help"></label><button id="save-boundary-name" class="secondary" type="button">Save disabled name</button><span id="boundary-name-status" class="status-message" aria-live="polite"></span><small id="boundary-name-help">Saving changes only the selected disabled draft. The name is included in its final review fingerprint.</small></div></details>'+cohortSettings+rankedSettings+'</div>'+lifecycleControls+'</div>'
+		        '<div class="boundary-overview-head"><div><p class="instant-kicker">Scoped Explore</p><h2 id="boundary-overview-title">Your boundaries</h2><p>Each boundary is an independently reviewed set of tables, columns, relationships, and limits. An active boundary adds choices to the same two Explore tools; one query still uses exactly one boundary.</p><div class="boundary-version-table-wrap"><table class="boundary-version-table"><thead><tr><th>Name</th><th>Status</th><th>Tables</th><th>Authority</th><th>Actions</th></tr></thead><tbody>'+rows+'</tbody></table></div><p class="muted">Active boundaries never merge relationship graphs. If a table appears in several boundaries, Runner requires the caller to name one.</p>'+pendingBoundaryBanner+'<div id="new-boundary-form" class="band" hidden><h3>Create another boundary</h3><p>Choose its first table. Nothing is copied from another boundary, and no authority is activated.</p><label class="field">Boundary name<input id="new-boundary-name" type="text" maxlength="64" spellcheck="false" placeholder="support_analytics"></label><label class="field">Starting table<select id="new-boundary-table"><option value="">Choose a table</option>'+startingTableOptions+'</select></label><small>Showing all '+esc(inspectedStartingTables.length)+' inspected tables. '+esc(eligibleStartingTables.length)+' can start a boundary; '+esc(ancestorStartingTables.length)+' can be added after their scoped ancestor; unavailable tables remain visible with their reason.</small><small>Runner opens the selected table&apos;s column access next. Related tables can be added afterward through reviewed foreign-key paths.</small><div class="actions"><button id="create-boundary" type="button">Choose table and edit</button><button id="cancel-new-boundary" class="secondary" type="button">Cancel</button></div></div><p id="boundary-library-status" class="status-message" aria-live="polite"></p><details class="boundary-options"><summary>Rename selected boundary</summary><div class="boundary-name-editor"><label>Boundary name<input id="boundary-pack-name" type="text" maxlength="64" spellcheck="false" value="'+esc(candidate.pack.name)+'" aria-describedby="boundary-name-help"></label><button id="save-boundary-name" class="secondary" type="button">Save disabled name</button><span id="boundary-name-status" class="status-message" aria-live="polite"></span><small id="boundary-name-help">Saving changes only the selected disabled draft. The name is included in its final review fingerprint.</small></div></details>'+cohortSettings+volumeSettings+rankedSettings+'</div>'+lifecycleControls+'</div>'
 		        +(selectedEntry?.active?'<div id="boundary-disable-confirmation" class="band notice" hidden><strong>Deactivate '+esc(selectedEntry.name)+'?</strong><p>This removes only this boundary from local Explore. Other active boundaries, protected capabilities, evidence, ledger, and source data stay unchanged.</p><div class="actions"><button id="confirm-disable-boundary" class="danger" type="button">Deactivate selected boundary</button><button id="cancel-disable-boundary" class="secondary" type="button">Cancel</button></div><p id="boundary-disable-status" class="status-message" aria-live="polite"></p></div>':"")
 		        +renderBoundaryRelationshipMap(boundaryCatalog,boundaryDiagrams);
 		      wireBoundaryRelationshipMaps(panel);
@@ -1479,6 +1480,38 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		        const saved=byId("boundary-ranked-status");
 			        saved.className="status-message";
 			        saved.textContent="Saved in the disabled boundary. Suppression still runs before ranking; active authority did not change.";
+			      };
+			      byId("save-boundary-volume").onclick=async()=>{
+			        const status=byId("boundary-volume-status");
+			        const queries=Number(byId("boundary-query-volume").value);
+			        const rate=Number(byId("boundary-request-rate").value);
+			        const previousQueries=candidate.budgets.max_queries_per_session;
+			        const previousRate=candidate.budgets.rate_limit_per_minute;
+			        status.className="status-message";
+			        if(!Number.isSafeInteger(queries)||queries<1||queries>1000||!Number.isSafeInteger(rate)||rate<1||rate>120){
+			          status.className="status-message error";
+			          status.textContent="Choose 1–1000 queries per rolling 24 hours and 1–120 requests per minute.";
+			          return;
+			        }
+			        if(queries===previousQueries&&rate===previousRate){
+			          status.textContent="Query volume and request rate are already set to those values.";
+			          return;
+			        }
+			        candidate.budgets.max_queries_per_session=queries;
+			        candidate.budgets.rate_limit_per_minute=rate;
+			        invalidateDigest();
+			        status.textContent="Saving these reviewed throughput limits...";
+			        await queueReviewProgressSave();
+			        if(!reviewProgressHealthy){
+			          candidate.budgets.max_queries_per_session=previousQueries;
+			          candidate.budgets.rate_limit_per_minute=previousRate;
+			          renderBoundaryOverview();
+			          return;
+			        }
+			        await load();
+			        const saved=byId("boundary-volume-status");
+			        saved.className="status-message";
+			        saved.textContent="Saved in the disabled boundary. Disclosure controls are unchanged; active authority did not change.";
 			      };
 			      const cohortAllSave=byId("save-boundary-cohort");
 			      if(cohortAllSave&&!cohortAllSave.disabled)cohortAllSave.onclick=async()=>{
@@ -1803,7 +1836,11 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         (active.budgets.max_ranked_groups??active.budgets.max_groups)
         !==(candidate.budgets.max_ranked_groups??candidate.budgets.max_groups)
       ))?1:0;
-      return {added,removed,egressChanged,privacyChanged,tableChanges,rankedChanged};
+      const volumeChanged=Boolean(active&&(
+        active.budgets.max_queries_per_session!==candidate.budgets.max_queries_per_session
+        ||active.budgets.rate_limit_per_minute!==candidate.budgets.rate_limit_per_minute
+      ))?1:0;
+      return {added,removed,egressChanged,privacyChanged,tableChanges,rankedChanged,volumeChanged};
     }
 
     function renderStagedAccessBar(){
@@ -1812,7 +1849,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const counts=stagedAccessCounts();
       const selectedEntry=(boundaryLibrary?.entries||[]).find(entry=>entry.selected);
       const pendingRevision=Boolean(selectedEntry&&(!selectedEntry.active||!selectedEntry.matches_active_digest));
-      const counted=counts.added+counts.removed+counts.egressChanged+counts.privacyChanged+counts.tableChanges+counts.rankedChanged;
+      const counted=counts.added+counts.removed+counts.egressChanged+counts.privacyChanged+counts.tableChanges+counts.rankedChanged+counts.volumeChanged;
       const pendingChanges=pendingRevision?Math.max(1,counted):counted;
       bar.classList.toggle("hidden",!focusedAccessReview&&!pendingRevision);
       byId("access-staged-summary").textContent=pendingRevision
@@ -4294,18 +4331,43 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	          ?suppressionReviewGuidance(plan,boundaryName,minimumCohort)
 	          :null;
 	        const reviewedValueNotice=reviewedValueControlHtml(result);
+	        const budgetStatus=renderOperatorBudgetStatus(result);
 	        const verifiedData=rows.length
           ?'<details class="verified-data-details"><summary>View verified data ('+esc(returned)+' '+resultKind+(returned===1?"":"s")+')</summary><div class="verified-data-body">'+resultDataHtml(plan,rows,semantics,boundaryName)+'</div></details>'
           :'<p class="ask-verified-count">No rows or groups passed the reviewed scope and privacy thresholds.</p>';
         return '<section class="ask-tool-trace"><p>'+esc(planSentence(plan,boundaryName))+'</p>'
           +(rows.length?'<p class="ask-verified-count">'+esc(returned)+' verified '+resultKind+(returned===1?"":"s")+' returned.</p>':"")
-          +verifiedData
+	          +verifiedData
 		          +reviewedValueNotice
+		          +budgetStatus
 		          +(privacyGuidance?'<p><strong>'+esc(suppressed)+' additional group'+(suppressed===1?" was":"s were")+' withheld because '+(suppressed===1?"it was":"they were")+' below the reviewed minimum group size'+(minimumCohort?' of '+esc(minimumCohort):'')+'.</strong></p>'+(privacyGuidance.shape?'<p>'+esc(privacyGuidance.shape)+'</p>':'')+'<p>'+esc(privacyGuidance.path)+'</p><button class="quiet" data-review-privacy-resource="'+esc(plan.resource)+'" type="button">Review privacy for '+esc(plan.resource)+'</button>':'')
           +(protectToken?'<button class="secondary" data-ask-protect="'+esc(protectToken)+'" type="button">Protect as reusable capability</button>':'')
 	          +exploreEvidenceDisclosure(call,result,true)+'</section>';
       }
 	      return '<section class="ask-tool-trace"><strong>Reviewed Runner tool completed</strong><details><summary>Advanced bounded result</summary><pre>'+esc(JSON.stringify({arguments:call.arguments,result},null,2))+'</pre></details></section>';
+	    }
+
+	    function renderOperatorBudgetStatus(result){
+	      const budget=result?.operator_budget;
+	      if(!budget||typeof budget!=="object")return "";
+	      const scopes=[budget.trusted_scope,budget.tenant].filter(scope=>scope&&typeof scope==="object");
+	      const warnings=scopes.flatMap(scope=>Array.isArray(scope.warnings)?scope.warnings:[]);
+	      const rows=[];
+	      const add=(scope,label,classification,gauge)=>{
+	        if(!gauge||typeof gauge!=="object")return;
+	        rows.push('<tr><td>'+esc(scope)+ '</td><td>'+esc(classification)+'</td><td>'+esc(label)+'</td><td>'+esc(gauge.used)+' / '+esc(gauge.limit)+'</td><td>'+esc(gauge.remaining)+'</td></tr>');
+	      };
+	      scopes.forEach(scope=>{
+	        const label=scope.scope==="tenant"?"Tenant ceiling":"Trusted scope";
+	        add(label,"Queries · rolling 24 hours","Volume",scope.volume?.queries_rolling_24_hours);
+	        add(label,"Requests · rolling minute","Volume",scope.volume?.requests_rolling_minute);
+	        add(label,"Extracted cells · rolling 24 hours","Disclosure",scope.disclosure?.extracted_cells_rolling_24_hours);
+	        add(label,"Differencing variants · rolling 24 hours","Disclosure",scope.disclosure?.differencing_variants_rolling_24_hours);
+	      });
+	      const warning=warnings.length
+	        ?'<div class="band notice"><strong>Reviewed budget is nearing its limit</strong>'+warnings.map(message=>'<p>'+esc(message)+'</p>').join("")+'<p>Review throughput in this boundary&apos;s Query volume settings. Disclosure controls remain separate.</p></div>'
+	        :"";
+	      return warning+'<details class="ask-execution-evidence"><summary>Operator-only budget status</summary><p>These counters are not sent to the model. Volume controls throughput; disclosure controls reconstruction risk.</p><div class="result-table"><table><thead><tr><th>Scope</th><th>Class</th><th>Budget</th><th>Used / limit</th><th>Remaining</th></tr></thead><tbody>'+rows.join("")+'</tbody></table></div><p><strong>Rolling 24-hour upper expiry:</strong> '+esc(budget.rolling_24_hour_usage_expires_no_later_than||"not available")+'<br><strong>Rolling-minute upper expiry:</strong> '+esc(budget.rolling_minute_usage_expires_no_later_than||"not available")+'</p></details>';
 	    }
 
 	    function reviewedValueControlHtml(result){
@@ -5149,7 +5211,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		        const privacyGuidance=result.privacy.suppressed_groups>0
 		          ?suppressionReviewGuidance(plan,selectedBoundary,result.privacy.minimum_cohort_size)
 		          :null;
-		        resultPanel.innerHTML='<section class="band success"><h3>Your reviewed question worked.</h3><p>'+esc(planSentence(plan,selectedBoundary))+'</p>'+resultDataHtml(plan,result.data,result.outcome?.result,selectedBoundary)+reviewedValueControlHtml(result)+(privacyGuidance?'<p><strong>'+esc(result.privacy.suppressed_groups)+' additional group'+(result.privacy.suppressed_groups===1?" was":"s were")+' withheld because '+(result.privacy.suppressed_groups===1?"it was":"they were")+' below the reviewed minimum group size of '+esc(result.privacy.minimum_cohort_size)+'.</strong></p>'+(privacyGuidance.shape?'<p>'+esc(privacyGuidance.shape)+'</p>':'')+'<p>'+esc(privacyGuidance.path)+'</p><button id="review-result-privacy" class="quiet" type="button">Review privacy for '+esc(plan.resource)+'</button>':'')+'<p>Keep asking legal combinations inside this reviewed boundary without another approval. Protect is optional and creates a disabled reusable capability.</p><div class="split-actions"><button id="ask-another-result" type="button">Ask another question</button><button id="protect-result" class="secondary" type="button">Protect this '+esc(plan.kind==="aggregate"?"analysis":"read")+'</button></div><details><summary>What Runner enforced</summary><p><strong>Tool:</strong> <code>app.explore_data</code><br><strong>Reviewed fields used:</strong> '+esc(visible.join(", ")||"record count")+'<br><strong>Minimum group size:</strong> '+esc(result.privacy.minimum_cohort_size??"not applicable")+'<br><strong>Kept out:</strong> '+esc(unavailable)+'<br><strong>Trusted scope:</strong> supplied outside the question<br><strong>Source database changed:</strong> no</p><div class="result-meta"><span class="badge">'+esc(result.audit.returned_rows_or_groups)+' row(s) / group(s)</span><span class="badge">'+esc(result.audit.returned_cells)+' cells</span></div><p>'+esc(result.untrusted_data_notice)+'</p></details></section>';
+		        resultPanel.innerHTML='<section class="band success"><h3>Your reviewed question worked.</h3><p>'+esc(planSentence(plan,selectedBoundary))+'</p>'+resultDataHtml(plan,result.data,result.outcome?.result,selectedBoundary)+reviewedValueControlHtml(result)+renderOperatorBudgetStatus(result)+(privacyGuidance?'<p><strong>'+esc(result.privacy.suppressed_groups)+' additional group'+(result.privacy.suppressed_groups===1?" was":"s were")+' withheld because '+(result.privacy.suppressed_groups===1?"it was":"they were")+' below the reviewed minimum group size of '+esc(result.privacy.minimum_cohort_size)+'.</strong></p>'+(privacyGuidance.shape?'<p>'+esc(privacyGuidance.shape)+'</p>':'')+'<p>'+esc(privacyGuidance.path)+'</p><button id="review-result-privacy" class="quiet" type="button">Review privacy for '+esc(plan.resource)+'</button>':'')+'<p>Keep asking legal combinations inside this reviewed boundary without another approval. Protect is optional and creates a disabled reusable capability.</p><div class="split-actions"><button id="ask-another-result" type="button">Ask another question</button><button id="protect-result" class="secondary" type="button">Protect this '+esc(plan.kind==="aggregate"?"analysis":"read")+'</button></div><details><summary>What Runner enforced</summary><p><strong>Tool:</strong> <code>app.explore_data</code><br><strong>Reviewed fields used:</strong> '+esc(visible.join(", ")||"record count")+'<br><strong>Minimum group size:</strong> '+esc(result.privacy.minimum_cohort_size??"not applicable")+'<br><strong>Kept out:</strong> '+esc(unavailable)+'<br><strong>Trusted scope:</strong> supplied outside the question<br><strong>Source database changed:</strong> no</p><div class="result-meta"><span class="badge">'+esc(result.audit.returned_rows_or_groups)+' row(s) / group(s)</span><span class="badge">'+esc(result.audit.returned_cells)+' cells</span></div><p>'+esc(result.untrusted_data_notice)+'</p></details></section>';
 			        byId("ask-another-result").onclick=()=>{if(plan.kind==="rows")switchExploreMode("aggregate");byId("explore-composer").open=true;byId("explore-composer").scrollIntoView({behavior:"auto",block:"start"})};
 		        if(byId("review-result-privacy"))byId("review-result-privacy").onclick=()=>openAccessEditor(plan.resource,undefined,true);
 		        byId("protect-result").onclick=async()=>{preferredProtectQueryRef=resultProtectQueryRef;await loadProtect(resultProtectQueryRef);setView("protect")};

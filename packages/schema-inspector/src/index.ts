@@ -537,6 +537,11 @@ export type SchemaInspection = {
   schemas: string[];
   tables: TableInfo[];
   warnings: string[];
+  /**
+   * A scoped live inspection can retain the whole-database single-organization
+   * refusal guard without fetching every unrelated column into the result.
+   */
+  global_tenant_isolation_evidence?: string[];
 };
 
 export type InspectOptions = {
@@ -545,6 +550,10 @@ export type InspectOptions = {
   schema?: string;
   statementTimeoutMs?: number;
   env?: NodeJS.ProcessEnv;
+  /** Fetch complete metadata only for these relations. Omit for discovery. */
+  resources?: Array<{ schema: string; table: string }>;
+  /** Retain the whole-database tenant-evidence guard during a scoped inspection. */
+  verifySingleOrganization?: boolean;
 };
 
 export type SchemaInspectionConnection =
@@ -905,6 +914,52 @@ export function summarizeInspection(inspection: SchemaInspection): string {
   return `${lines.join("\n")}\n`;
 }
 
+function normalizedInspectionResources(
+  resources: InspectOptions["resources"],
+): Array<{ schema: string; table: string }> | undefined {
+  if (resources === undefined) return undefined;
+  if (!Array.isArray(resources) || resources.length < 1 || resources.length > 500) {
+    throw new Error("scoped schema inspection requires 1-500 relation descriptors.");
+  }
+  const normalized = new Map<string, { schema: string; table: string }>();
+  for (const resource of resources) {
+    const schema = resource?.schema?.trim();
+    const table = resource?.table?.trim();
+    if (!schema || !table || schema.length > 128 || table.length > 128) {
+      throw new Error("scoped schema inspection relation names must be 1-128 characters.");
+    }
+    normalized.set(JSON.stringify([schema, table]), { schema, table });
+  }
+  return [...normalized.values()].sort((left, right) =>
+    left.schema.localeCompare(right.schema) || left.table.localeCompare(right.table));
+}
+
+function postgresResourcePredicate(
+  schemaExpression: string,
+  tableExpression: string,
+): string {
+  return `AND ($2::text[] IS NULL OR EXISTS (
+           SELECT 1
+           FROM unnest($2::text[], $3::text[]) AS selected(selected_schema_name, selected_table_name)
+           WHERE selected.selected_schema_name = ${schemaExpression}
+             AND selected.selected_table_name = ${tableExpression}
+         ))`;
+}
+
+function mysqlResourcePredicate(
+  resources: Array<{ schema: string; table: string }> | undefined,
+  schemaExpression: string,
+  tableExpression: string,
+): { sql: string; params: string[] } {
+  if (!resources) return { sql: "", params: [] };
+  return {
+    sql: `AND (${resources.map(() =>
+      `(${schemaExpression} = ? AND ${tableExpression} = ?)`
+    ).join(" OR ")})`,
+    params: resources.flatMap((resource) => [resource.schema, resource.table]),
+  };
+}
+
 async function inspectPostgres(
   options: InspectOptions & { engine: "postgres"; url: string },
   borrowedClient?: PoolClient,
@@ -920,6 +975,12 @@ async function inspectPostgres(
     client ??= await pool!.connect();
     await client.query("BEGIN READ ONLY");
     await client.query(`SET LOCAL statement_timeout = ${Number(options.statementTimeoutMs ?? 3000)}`);
+    const selectedResources = normalizedInspectionResources(options.resources);
+    const resourceParams = [
+      options.schema ?? null,
+      selectedResources?.map((resource) => resource.schema) ?? null,
+      selectedResources?.map((resource) => resource.table) ?? null,
+    ];
     const version = await client.query<{
       version: string;
       current_user: string;
@@ -943,8 +1004,9 @@ async function inspectPostgres(
        WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
          AND ($1::text IS NULL OR table_schema = $1)
          AND table_type IN ('BASE TABLE', 'VIEW')
+         ${postgresResourcePredicate("table_schema", "table_name")}
        ORDER BY table_schema, table_name`,
-      [options.schema ?? null],
+      resourceParams,
     );
     const columns = await client.query<RawColumn>(
       `SELECT table_schema AS schema, table_name AS table_name, column_name AS name,
@@ -965,8 +1027,9 @@ async function inspectPostgres(
        FROM information_schema.columns
        WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
          AND ($1::text IS NULL OR table_schema = $1)
+         ${postgresResourcePredicate("table_schema", "table_name")}
        ORDER BY table_schema, table_name, ordinal_position`,
-      [options.schema ?? null],
+      resourceParams,
     );
     const keyColumns = await client.query<RawKeyColumn>(
       `SELECT n.nspname AS schema, c.relname AS table_name, con.conname AS constraint_name,
@@ -980,8 +1043,9 @@ async function inspectPostgres(
        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
          AND ($1::text IS NULL OR n.nspname = $1)
          AND con.contype IN ('p', 'u')
+         ${postgresResourcePredicate("n.nspname", "c.relname")}
        ORDER BY n.nspname, c.relname, con.conname, key_column.ordinal_position`,
-      [options.schema ?? null],
+      resourceParams,
     );
     const foreignKeys = await client.query<RawForeignKey>(
       `SELECT source_ns.nspname AS schema, source.relname AS table_name,
@@ -1004,8 +1068,9 @@ async function inspectPostgres(
        WHERE con.contype = 'f'
          AND source_ns.nspname NOT IN ('pg_catalog', 'information_schema')
          AND ($1::text IS NULL OR source_ns.nspname = $1 OR target_ns.nspname = $1)
+         ${postgresResourcePredicate("source_ns.nspname", "source.relname")}
        ORDER BY source_ns.nspname, source.relname, con.conname, key_column.ordinal_position`,
-      [options.schema ?? null],
+      resourceParams,
     );
     const triggers = await client.query<RawTrigger>(
       `SELECT n.nspname AS schema, c.relname AS table_name, t.tgname AS name,
@@ -1022,8 +1087,9 @@ async function inspectPostgres(
        WHERE NOT t.tgisinternal
          AND n.nspname NOT IN ('pg_catalog', 'information_schema')
          AND ($1::text IS NULL OR n.nspname = $1)
+         ${postgresResourcePredicate("n.nspname", "c.relname")}
        ORDER BY n.nspname, c.relname, t.tgname, event.event`,
-      [options.schema ?? null],
+      resourceParams,
     );
     const rowSecurity = await client.query<RawRowSecurity>(
       `SELECT n.nspname AS schema, c.relname AS table_name,
@@ -1033,8 +1099,9 @@ async function inspectPostgres(
        WHERE c.relkind IN ('r', 'p')
          AND n.nspname NOT IN ('pg_catalog', 'information_schema')
          AND ($1::text IS NULL OR n.nspname = $1)
+         ${postgresResourcePredicate("n.nspname", "c.relname")}
        ORDER BY n.nspname, c.relname`,
-      [options.schema ?? null],
+      resourceParams,
     );
     const checks = await client.query<RawCheckConstraint>(
       `SELECT n.nspname AS schema, c.relname AS table_name, con.conname AS name,
@@ -1045,8 +1112,9 @@ async function inspectPostgres(
        WHERE con.contype = 'c'
          AND n.nspname NOT IN ('pg_catalog', 'information_schema')
          AND ($1::text IS NULL OR n.nspname = $1)
+         ${postgresResourcePredicate("n.nspname", "c.relname")}
        ORDER BY n.nspname, c.relname, con.conname`,
-      [options.schema ?? null],
+      resourceParams,
     );
     const rlsPolicies = await client.query<RawRlsPolicy>(
       `SELECT schemaname AS schema, tablename AS table_name, policyname AS name,
@@ -1055,8 +1123,9 @@ async function inspectPostgres(
        FROM pg_catalog.pg_policies
        WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
          AND ($1::text IS NULL OR schemaname = $1)
+         ${postgresResourcePredicate("schemaname", "tablename")}
        ORDER BY schemaname, tablename, policyname`,
-      [options.schema ?? null],
+      resourceParams,
     );
     const relationRolePosture = await client.query<RawRelationRolePosture>(
       `SELECT n.nspname AS schema, c.relname AS table_name,
@@ -1076,8 +1145,9 @@ async function inspectPostgres(
        WHERE c.relkind IN ('r', 'p', 'v', 'm')
          AND n.nspname NOT IN ('pg_catalog', 'information_schema')
          AND ($1::text IS NULL OR n.nspname = $1)
+         ${postgresResourcePredicate("n.nspname", "c.relname")}
        ORDER BY n.nspname, c.relname`,
-      [options.schema ?? null],
+      resourceParams,
     );
     const indexes = await client.query<RawIndex>(
       `SELECT table_ns.nspname AS schema, source_table.relname AS table_name,
@@ -1104,9 +1174,101 @@ async function inspectPostgres(
         AND leading_attribute.attnum = index_definition.indkey[0]
        WHERE table_ns.nspname NOT IN ('pg_catalog', 'information_schema')
          AND ($1::text IS NULL OR table_ns.nspname = $1)
+         ${postgresResourcePredicate("table_ns.nspname", "source_table.relname")}
        ORDER BY table_ns.nspname, source_table.relname, index_relation.relname`,
-      [options.schema ?? null],
+      resourceParams,
     );
+    let globalRolePosture: {
+      writable_relations: string[];
+      owned_relations: string[];
+    } | undefined;
+    if (selectedResources) {
+      const unsafePosture = await client.query<{
+        owns_relation: boolean;
+        can_write_relation: boolean;
+      }>(
+        `SELECT
+           EXISTS (
+             SELECT 1
+             FROM pg_catalog.pg_class c
+             JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+             WHERE c.relkind IN ('r', 'p', 'v')
+               AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+               AND ($1::text IS NULL OR n.nspname = $1)
+               AND (c.relowner = (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = current_user)
+                 OR pg_catalog.pg_has_role(current_user, c.relowner, 'MEMBER'))
+           ) AS owns_relation,
+           EXISTS (
+             SELECT 1
+             FROM pg_catalog.pg_class c
+             JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+             WHERE c.relkind IN ('r', 'p', 'v')
+               AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+               AND ($1::text IS NULL OR n.nspname = $1)
+               AND (pg_catalog.has_table_privilege(current_user, c.oid, 'INSERT')
+                 OR pg_catalog.has_table_privilege(current_user, c.oid, 'UPDATE')
+                 OR pg_catalog.has_table_privilege(current_user, c.oid, 'DELETE')
+                 OR pg_catalog.has_table_privilege(current_user, c.oid, 'TRUNCATE')
+                 OR pg_catalog.has_table_privilege(current_user, c.oid, 'TRIGGER'))
+           ) AS can_write_relation`,
+        [options.schema ?? null],
+      );
+      const posture = unsafePosture.rows[0];
+      globalRolePosture = {
+        // Activated boundaries always lock an empty list here. A sentinel is
+        // enough to fail closed if global posture later becomes unsafe, without
+        // materializing every unrelated relation name on every query.
+        writable_relations: posture?.can_write_relation
+          ? ["<global write authority detected>"]
+          : [],
+        owned_relations: posture?.owns_relation
+          ? ["<global relation ownership detected>"]
+          : [],
+      };
+    }
+    let globalTenantIsolationEvidence: string[] | undefined;
+    if (selectedResources && options.verifySingleOrganization) {
+      const tenantColumns = await client.query<{
+        schema: string;
+        table_name: string;
+        column_name: string;
+      }>(
+        `SELECT n.nspname AS schema, c.relname AS table_name, a.attname AS column_name
+         FROM pg_catalog.pg_attribute a
+         JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+         WHERE c.relkind IN ('r', 'p', 'v')
+           AND a.attnum > 0
+           AND NOT a.attisdropped
+           AND lower(a.attname) = ANY($2::text[])
+           AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+           AND ($1::text IS NULL OR n.nspname = $1)
+         ORDER BY n.nspname, c.relname, a.attname`,
+        [options.schema ?? null, [...TENANT_COLUMNS].sort()],
+      );
+      const rlsRelations = await client.query<{
+        schema: string;
+        table_name: string;
+      }>(
+        `SELECT n.nspname AS schema, c.relname AS table_name
+         FROM pg_catalog.pg_class c
+         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+         WHERE c.relkind IN ('r', 'p')
+           AND (c.relrowsecurity OR EXISTS (
+             SELECT 1 FROM pg_catalog.pg_policy policy WHERE policy.polrelid = c.oid
+           ))
+           AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+           AND ($1::text IS NULL OR n.nspname = $1)
+         ORDER BY n.nspname, c.relname`,
+        [options.schema ?? null],
+      );
+      globalTenantIsolationEvidence = unique([
+        ...tenantColumns.rows.map((row) =>
+          `${row.schema}.${row.table_name}.${row.column_name} is a tenant-scope candidate`),
+        ...rlsRelations.rows.map((row) =>
+          `${row.schema}.${row.table_name} has row-level security metadata`),
+      ]).sort();
+    }
     await client.query("COMMIT");
     return normalizeInspection({
       engine: "postgres",
@@ -1128,6 +1290,10 @@ async function inspectPostgres(
       checks: checks.rows,
       rlsPolicies: rlsPolicies.rows,
       relationRolePosture: relationRolePosture.rows,
+      ...(globalRolePosture ? { globalRolePosture } : {}),
+      ...(globalTenantIsolationEvidence
+        ? { globalTenantIsolationEvidence }
+        : {}),
     });
   } catch (error) {
     await client?.query("ROLLBACK").catch(() => undefined);
@@ -1155,6 +1321,19 @@ async function inspectMysql(
     await connection.query("SET SESSION max_execution_time = ?", [Number(options.statementTimeoutMs ?? 3000)]).catch(() => undefined);
     const [versionRows] = await connection.query<mysql.RowDataPacket[]>("SELECT VERSION() AS version, CURRENT_USER() AS `current_user`");
     const schemaParam = options.schema ?? null;
+    const selectedResources = normalizedInspectionResources(options.resources);
+    const tableFilter = mysqlResourcePredicate(selectedResources, "table_schema", "table_name");
+    const keyFilter = mysqlResourcePredicate(selectedResources, "tc.table_schema", "tc.table_name");
+    const triggerFilter = mysqlResourcePredicate(
+      selectedResources,
+      "trigger_schema",
+      "event_object_table",
+    );
+    const foreignKeyFilter = mysqlResourcePredicate(
+      selectedResources,
+      "tc.table_schema",
+      "tc.table_name",
+    );
     const [schemaRows] = await connection.query<mysql.RowDataPacket[]>(
       `SELECT schema_name AS schema_name FROM information_schema.schemata
        WHERE schema_name NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
@@ -1167,8 +1346,9 @@ async function inspectMysql(
        WHERE table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
          AND (? IS NULL OR table_schema = ?)
          AND table_type IN ('BASE TABLE', 'VIEW')
+         ${tableFilter.sql}
        ORDER BY table_schema, table_name`,
-      [schemaParam, schemaParam],
+      [schemaParam, schemaParam, ...tableFilter.params],
     );
     const [columnRows] = await connection.query<mysql.RowDataPacket[]>(
       `SELECT table_schema AS \`schema\`, table_name AS table_name, column_name AS name,
@@ -1178,8 +1358,9 @@ async function inspectMysql(
        FROM information_schema.columns
        WHERE table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
          AND (? IS NULL OR table_schema = ?)
+         ${tableFilter.sql}
        ORDER BY table_schema, table_name, ordinal_position`,
-      [schemaParam, schemaParam],
+      [schemaParam, schemaParam, ...tableFilter.params],
     );
     const [keyRows] = await connection.query<mysql.RowDataPacket[]>(
       `SELECT tc.table_schema AS \`schema\`, tc.table_name AS table_name, tc.constraint_name AS constraint_name, tc.constraint_type AS constraint_type,
@@ -1193,8 +1374,9 @@ async function inspectMysql(
        WHERE tc.table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
          AND (? IS NULL OR tc.table_schema = ?)
          AND tc.constraint_type IN ('PRIMARY KEY', 'UNIQUE')
+         ${keyFilter.sql}
        ORDER BY tc.table_schema, tc.table_name, tc.constraint_name, kcu.ordinal_position`,
-      [schemaParam, schemaParam],
+      [schemaParam, schemaParam, ...keyFilter.params],
     );
     const [fkRows] = await connection.query<mysql.RowDataPacket[]>(
       `SELECT tc.table_schema AS \`schema\`, tc.table_name AS table_name, tc.constraint_name AS constraint_name,
@@ -1214,8 +1396,9 @@ async function inspectMysql(
        WHERE tc.constraint_type = 'FOREIGN KEY'
          AND tc.table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
          AND (? IS NULL OR tc.table_schema = ? OR kcu.referenced_table_schema = ?)
+         ${foreignKeyFilter.sql}
        ORDER BY tc.table_schema, tc.table_name, tc.constraint_name, kcu.ordinal_position`,
-      [schemaParam, schemaParam, schemaParam],
+      [schemaParam, schemaParam, schemaParam, ...foreignKeyFilter.params],
     );
     const [triggerRows] = await connection.query<mysql.RowDataPacket[]>(
       `SELECT trigger_schema AS \`schema\`, event_object_table AS table_name,
@@ -1224,8 +1407,9 @@ async function inspectMysql(
        FROM information_schema.triggers
        WHERE trigger_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
          AND (? IS NULL OR trigger_schema = ?)
+         ${triggerFilter.sql}
        ORDER BY trigger_schema, event_object_table, trigger_name, event_manipulation`,
-      [schemaParam, schemaParam],
+      [schemaParam, schemaParam, ...triggerFilter.params],
     );
     const [indexRows] = await connection.query<mysql.RowDataPacket[]>(
       `SELECT table_schema AS \`schema\`, table_name AS table_name, index_name AS name,
@@ -1235,9 +1419,10 @@ async function inspectMysql(
        FROM information_schema.statistics
        WHERE table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
          AND (? IS NULL OR table_schema = ?)
+         ${tableFilter.sql}
        GROUP BY table_schema, table_name, index_name
        ORDER BY table_schema, table_name, index_name`,
-      [schemaParam, schemaParam],
+      [schemaParam, schemaParam, ...tableFilter.params],
     );
     let checkRows: mysql.RowDataPacket[] = [];
     try {
@@ -1251,8 +1436,9 @@ async function inspectMysql(
          WHERE tc.constraint_type = 'CHECK'
            AND tc.table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
            AND (? IS NULL OR tc.table_schema = ?)
+           ${keyFilter.sql}
          ORDER BY tc.table_schema, tc.table_name, tc.constraint_name`,
-        [schemaParam, schemaParam],
+        [schemaParam, schemaParam, ...keyFilter.params],
       );
       checkRows = rows;
     } catch {
@@ -1260,8 +1446,9 @@ async function inspectMysql(
       // Native ENUM/SET metadata remains available through COLUMN_TYPE.
     }
     const [grantRows] = await connection.query<mysql.RowDataPacket[]>("SHOW GRANTS FOR CURRENT_USER");
+    const normalizedMysqlGrants = grantRows.map((row) => String(Object.values(row)[0] ?? ""));
     const mysqlGrants = mysqlGrantPosture(
-      grantRows.map((row) => String(Object.values(row)[0] ?? "")),
+      normalizedMysqlGrants,
       (tableRows as Array<Record<string, unknown>>).map((row) => ({
         schema: String(row.schema),
         table: String(row.name),
@@ -1282,6 +1469,30 @@ async function inspectMysql(
       can_trigger: mysqlGrants.relations[`${String(row.schema)}.${String(row.name)}`]?.trigger ?? false,
       row_security_forced: false,
     }));
+    const globalRolePosture = selectedResources
+      ? {
+        writable_relations: mysqlGrantsIncludeWriteAuthority(normalizedMysqlGrants)
+          ? ["<global write authority detected>"]
+          : [],
+        owned_relations: [],
+      }
+      : undefined;
+    let globalTenantIsolationEvidence: string[] | undefined;
+    if (selectedResources && options.verifySingleOrganization) {
+      const tenantNames = [...TENANT_COLUMNS].sort();
+      const [rows] = await connection.query<mysql.RowDataPacket[]>(
+        `SELECT table_schema AS \`schema\`, table_name AS table_name,
+                column_name AS column_name
+         FROM information_schema.columns
+         WHERE table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
+           AND (? IS NULL OR table_schema = ?)
+           AND lower(column_name) IN (${tenantNames.map(() => "?").join(", ")})
+         ORDER BY table_schema, table_name, column_name`,
+        [schemaParam, schemaParam, ...tenantNames],
+      );
+      globalTenantIsolationEvidence = (rows as Array<Record<string, unknown>>).map((row) =>
+        `${String(row.schema)}.${String(row.table_name)}.${String(row.column_name)} is a tenant-scope candidate`);
+    }
     await connection.query("COMMIT").catch(() => undefined);
     return normalizeInspection({
       engine: "mysql",
@@ -1314,6 +1525,10 @@ async function inspectMysql(
       rowSecurity: [],
       checks: checkRows as RawCheckConstraint[],
       relationRolePosture,
+      ...(globalRolePosture ? { globalRolePosture } : {}),
+      ...(globalTenantIsolationEvidence
+        ? { globalTenantIsolationEvidence }
+        : {}),
     });
   } catch (error) {
     inspectionFailed = true;
@@ -1416,6 +1631,11 @@ function normalizeInspection(input: {
   checks?: RawCheckConstraint[];
   rlsPolicies?: RawRlsPolicy[];
   relationRolePosture?: RawRelationRolePosture[];
+  globalRolePosture?: {
+    writable_relations: string[];
+    owned_relations: string[];
+  };
+  globalTenantIsolationEvidence?: string[];
 }): SchemaInspection {
   const columnsByTable = groupBy(input.columns, (row) => tableKey(row.schema, row.table_name));
   const keysByTable = groupBy(input.keyColumns, (row) => tableKey(row.schema, row.table_name));
@@ -1494,12 +1714,16 @@ function normalizeInspection(input: {
       },
     };
   });
-  const writableRelations = tables
-    .filter((table) => relationIsWriteCapable(table))
-    .map((table) => `${table.schema}.${table.name}`);
-  const ownedRelations = tables
-    .filter((table) => table.role_posture?.current_role_is_owner || table.role_posture?.current_role_can_assume_owner)
-    .map((table) => `${table.schema}.${table.name}`);
+  const writableRelations = input.globalRolePosture
+    ? [...input.globalRolePosture.writable_relations].sort()
+    : tables
+      .filter((table) => relationIsWriteCapable(table))
+      .map((table) => `${table.schema}.${table.name}`);
+  const ownedRelations = input.globalRolePosture
+    ? [...input.globalRolePosture.owned_relations].sort()
+    : tables
+      .filter((table) => table.role_posture?.current_role_is_owner || table.role_posture?.current_role_can_assume_owner)
+      .map((table) => `${table.schema}.${table.name}`);
   const roleVerified = input.role?.verified === true && tables.every((table) => table.role_posture !== undefined);
   const roleReasons = [
     ...(superuser === true ? ["current role is a database superuser"] : []),
@@ -1525,6 +1749,9 @@ function normalizeInspection(input: {
     schemas: input.schemas,
     tables,
     warnings: ["Inspection reads metadata only. Column classifications are suggestions, not a complete data-classification system."],
+    ...(input.globalTenantIsolationEvidence
+      ? { global_tenant_isolation_evidence: [...input.globalTenantIsolationEvidence].sort() }
+      : {}),
   };
 }
 
@@ -1672,6 +1899,22 @@ export function mysqlGrantPosture(
     relationMap[`${relation.schema}.${relation.table}`] = posture;
   }
   return { verified, elevated, relations: relationMap };
+}
+
+function mysqlGrantsIncludeWriteAuthority(grants: string[]): boolean {
+  for (const raw of grants) {
+    const match = raw.trim().match(/^GRANT\s+(.+?)\s+ON\s+(.+?)\s+TO\s+/i);
+    if (!match || !parseMysqlGrantTarget(match[2]!)) continue;
+    const privileges = parseMysqlGrantPrivileges(match[1]!);
+    if (privileges.relation.insert
+      || privileges.relation.update
+      || privileges.relation.delete
+      || privileges.relation.truncate
+      || privileges.relation.trigger) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function parseMysqlGrantTarget(

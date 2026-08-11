@@ -322,6 +322,15 @@ executing a source query. PostgreSQL transaction advisory locks serialize the
 read-check-reserve operation for both the authenticated principal and tenant.
 Two concurrent requests cannot both consume the final unit.
 
+The boundary's per-principal query/rate limits are throughput controls. New
+1.7.0 boundaries default to 1,000 queries per rolling 24 hours and 120 requests
+per rolling minute. Production `tenant_limits` add a separately configured
+tenant-wide ceiling. Extracted cells, differencing variants, minimum cohorts,
+suppression, and response bounds are disclosure controls; increasing throughput
+does not increase any of them. An exhaustion response identifies the exact
+class, used/limit values, and rolling-window expiry upper bound. Remaining
+counters are operator metadata and are never included in the model projection.
+
 Per-principal accounting prevents one user from starving another. Tenant-wide
 ceilings and tenant-level complementary-release accounting prevent many
 principals from bypassing limits or reconstructing a suppressed cohort by
@@ -331,6 +340,16 @@ limits, timeouts, and the suppression-aware total defense are unchanged.
 Failed or refused attempts consume query and rate allowance. Only released
 cells consume extracted-cell allowance. Stranded reservations remain a
 conservative charge until they age out of the rolling window.
+
+Each HTTP query also performs a fresh generation-lock check. Current locks ask
+the schema inspector for only the reviewed authority dependencies needed by the
+boundary, including relationship and derived-scope proof resources. Runner
+still runs dedicated global credential/read-only/grant/ownership checks and
+re-proves RLS on every reviewed dependency. For an explicit
+single-organization boundary it additionally runs the global tenant/RLS-evidence
+refusal check. This is not an authority cache: a reviewed column, FK, RLS, or
+grant change is observed on the next request and fails closed. Whole-schema
+inspection remains the draft/rescan discovery path.
 
 ## Operational Boundaries
 

@@ -188,7 +188,7 @@ describe("boundary operator-plane CLI", () => {
         outstanding_decision_ids: [],
         explore_budget_state: {
           queries_used: 0,
-          queries_limit: 40,
+          queries_limit: 1000,
           extracted_cells_used: 0,
           extracted_cells_limit: 4000,
           state_persists_across_tabs_processes_and_provider_sessions: true,
@@ -320,6 +320,8 @@ describe("boundary operator-plane CLI", () => {
         "--field-label", "status=Visit state",
         "--field-description", "status=Reviewed appointment lifecycle state.",
         "--max-ranked-groups", "200",
+        "--max-queries-per-24-hours", "800",
+        "--requests-per-minute", "90",
         "--actor", "alice",
         "--reason", "Service visits are isolated by the reviewed tenant column.",
         "--json",
@@ -335,6 +337,10 @@ describe("boundary operator-plane CLI", () => {
           selected_tenant_key: "tenant_id",
           max_ranked_groups_before: 500,
           max_ranked_groups_after: 200,
+          max_queries_per_session_before: 1000,
+          max_queries_per_session_after: 800,
+          rate_limit_per_minute_before: 120,
+          rate_limit_per_minute_after: 90,
         },
         authority_activated: false,
         source_database_changed: false,
@@ -385,6 +391,12 @@ describe("boundary operator-plane CLI", () => {
       expect(progress).toMatchObject({
         revision: 1,
         candidate: {
+          budgets: {
+            max_queries_per_session: 800,
+            rate_limit_per_minute: 90,
+            max_extracted_cells_per_session: 4000,
+            max_differencing_queries: 16,
+          },
           pack: {
             resources: [{
               id: "public.service_visits",

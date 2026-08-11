@@ -527,7 +527,11 @@ async function toolResult(
   action: () => Record<string, unknown> | Promise<Record<string, unknown>>,
   projectForModel?: (
     result: Record<string, unknown>,
-  ) => { value: Record<string, unknown>; withheld: boolean },
+  ) => {
+    value: Record<string, unknown>;
+    withheld: boolean;
+    operator_metadata_withheld?: boolean;
+  },
 ) {
   try {
     const result = await action();
@@ -536,10 +540,13 @@ async function toolResult(
     return {
       content: [{ type: "text" as const, text: JSON.stringify(modelResult) }],
       structuredContent: modelResult,
-      ...(projection?.withheld
+      ...(projection?.withheld || projection?.operator_metadata_withheld
         ? {
           _meta: {
-            "synapsor.model_withheld_values": true,
+            ...(projection.withheld ? { "synapsor.model_withheld_values": true } : {}),
+            ...(projection.operator_metadata_withheld
+              ? { "synapsor.operator_metadata_withheld": true }
+              : {}),
             "synapsor.local_full_result": result,
           },
         }

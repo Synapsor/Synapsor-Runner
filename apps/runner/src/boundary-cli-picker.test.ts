@@ -256,7 +256,7 @@ describe("boundary review terminal picker", () => {
     expect(firstViewPlain).toContain("SELECTED TABLE");
     expect(firstViewPlain).toContain("BOUNDARY");
     expect(firstViewPlain).toContain("C Review + activate");
-    expect(firstViewPlain).toContain("L Ranked limits");
+    expect(firstViewPlain).toContain("L Limits");
     expect(firstViewPlain).not.toContain("BOUNDARIES");
     expect(firstViewPlain).not.toContain("One S sign-off records");
     expect(firstViewPlain).not.toContain("[table sign-off needed]");
@@ -383,7 +383,7 @@ describe("boundary review terminal picker", () => {
     expect(rendered).toContain("P Privacy (minimum group 5)");
     expect(rendered).toContain("BOUNDARY");
     expect(rendered).toContain("B/Esc Boundary overview");
-    expect(rendered).toContain("L Ranked limits");
+    expect(rendered).toContain("L Limits");
     expect(rendered).toContain("C Review + activate");
 
     await send(input, "q");
@@ -471,7 +471,7 @@ describe("boundary review terminal picker", () => {
     const session = createBoundaryReviewInteractiveSession(input, output);
     const selected = session.chooseResource([summary("public.orders", 0)]);
     const firstView = output.read()?.toString() ?? "";
-    expect(stripAnsi(firstView)).toContain("L Ranked limit");
+    expect(stripAnsi(firstView)).toContain("L Limits");
     await send(input, "l");
     await expect(selected).resolves.toEqual({ action: "limits" });
   });

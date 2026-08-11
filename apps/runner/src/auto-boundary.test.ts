@@ -57,6 +57,9 @@ describe("Auto Boundary compiler", () => {
     expect(first.contract_digest).toBe(canonicalJsonDigest(first.contract));
     expect(first.contract_digest).toBe(second.contract_digest);
     expect(first.lock.schema_fingerprint).toBe(second.lock.schema_fingerprint);
+    expect(first.exploration_boundary.budgets.max_queries_per_session).toBe(1000);
+    expect(first.exploration_boundary.budgets.rate_limit_per_minute).toBe(120);
+    expect(first.exploration_boundary.budgets.max_extracted_cells_per_session).toBe(4000);
     expect(first.exploration_boundary.budgets.max_differencing_queries).toBe(16);
     expect(second.exploration_boundary.budgets.max_differencing_queries).toBe(16);
     expect(first.exploration_boundary.pack.resources[0]?.groupable_fields).not.toContain("id");

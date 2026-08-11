@@ -14,6 +14,7 @@ describe("Auto Boundary Workbench renderer", () => {
       ["direct and relationship-carried principal scope", ["principal_scope_path", "user/owner limit"]],
       ["shared-reference scope", ["Shared reference - same rows for every tenant", "I confirm this table has no per-tenant rows"]],
       ["per-table and whole-boundary privacy", ["Privacy for all tables", "Save privacy change", "Save for all"]],
+      ["query-volume controls and operator status", ["Queries per rolling 24 hours", "Requests per rolling minute", "Operator-only budget status", "Disclosure controls remain separate"]],
       ["reviewed relationships and visual map", ["Reviewed data map", "renderBoundaryGraphSvg", "Each reviewed join uses its own labeled connection lane"]],
       ["numeric bands", ["Add a fixed numeric band", "kind:\"numeric_band\""]],
       ["automatic numeric bands", ["Allow automatic numeric bands", "kind:\"auto_band\"", "raw edges"]],
@@ -396,6 +397,10 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("select Review privacy for");
     expect(html).toContain("Until activation, Ask uses the previous group size");
     expect(html).toContain("Ranked result settings");
+    expect(html).toContain('id="boundary-query-volume"');
+    expect(html).toContain('id="boundary-request-rate"');
+    expect(html).toContain("Throughput controls");
+    expect(html).toContain("renderOperatorBudgetStatus(result)");
     expect(html).toContain('id="boundary-ranked-groups"');
     expect(html).toContain("Groups considered before ranking");
     expect(html).toContain("Small-group suppression runs before ranking");

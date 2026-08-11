@@ -27,6 +27,16 @@ for the Synapsor Cloud CLI.
   extraction, differencing, complementary-release, and rate limits across
   replicas. One principal cannot starve another; concurrent requests cannot
   both spend the final allowance.
+- New boundaries use product-scale throughput defaults of 1,000 queries per
+  rolling 24 hours and 120 requests per minute while retaining the 4,000-cell,
+  16-variant, cohort, and suppression disclosure defaults. CLI and Workbench
+  show operator-only remaining usage, warn at 80 percent, and provide reviewed
+  query/rate controls; models do not receive the counters.
+- Per-query drift checks now fetch complete catalog metadata only for exact
+  generation-lock dependencies while retaining fresh global credential,
+  read-only, grant, and ownership checks, dependency-scoped RLS proof, and the
+  whole-database single-organization tenant/RLS guard. Draft/rescan discovery
+  remains whole-schema, and no per-query inspection is cached.
 - Production Explore is off by default and fails closed without read-only mode,
   exact production authority, verified issuer/audience/claims and OAuth scope,
   direct TLS or a trusted TLS proxy, shared HMAC material, and initialized

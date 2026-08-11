@@ -57,6 +57,60 @@ describe("Scoped Explore", () => {
     expect(aggregatePlan).toMatchObject({ kind: "aggregate", top_n: 25 });
   });
 
+  it("freshly inspects only generation-lock resource dependencies on startup and every query", async () => {
+    const fixture = await activatedFixture();
+    const inspectionCalls: Array<Record<string, unknown>> = [];
+    const inspectDatabaseFn = vi.fn(async (options) => {
+      inspectionCalls.push(options as unknown as Record<string, unknown>);
+      return fixture.inspection;
+    });
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn,
+      executor: fixedExecutor([{
+        dimension_0: "west",
+        measure_0: 10,
+        __cohort_size: 10,
+      }]),
+    });
+    try {
+      await runtime.explore(aggregatePlan("one"));
+      expect(inspectDatabaseFn).toHaveBeenCalledTimes(2);
+      const expectedResources = fixture.boundary.pack.resources
+        .map((resource) => {
+          const [schema = "", ...tableParts] = resource.id.split(".");
+          return { schema, table: tableParts.join(".") };
+        })
+        .sort((left, right) => left.schema.localeCompare(right.schema)
+          || left.table.localeCompare(right.table));
+      for (const options of inspectionCalls) {
+        expect(options.resources).toEqual(expectedResources);
+      }
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("includes every derived-scope proof resource in dependency-scoped inspection", async () => {
+    const fixture = await activatedDerivedScopeFixture();
+    let inspectionOptions: Record<string, unknown> | undefined;
+    await prepareScopedExplore({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async (options) => {
+        inspectionOptions = options as unknown as Record<string, unknown>;
+        return fixture.inspection;
+      },
+    });
+    expect(inspectionOptions?.resources).toEqual([
+      { schema: "public", table: "order_items" },
+      { schema: "public", table: "orders" },
+    ]);
+  });
+
   it("uses database-role tenant scope without a tenant environment value and rechecks it before execution", async () => {
     const fixture = await activatedFixture();
     const env = { ...fixture.env, SYNAPSOR_TENANT_ID: undefined };
@@ -1439,8 +1493,22 @@ describe("Scoped Explore", () => {
         data: [{ count_distinct_billing_token: 30 }],
         source_database_changed: false,
       });
+      expect(result.structuredContent).not.toHaveProperty("operator_budget");
       expect(JSON.stringify(result)).not.toContain("billing-token-secret");
-      expect(result._meta).toBeUndefined();
+      expect(result._meta).toMatchObject({
+        "synapsor.operator_metadata_withheld": true,
+        "synapsor.local_full_result": {
+          operator_budget: {
+            operator_only: true,
+            trusted_scope: {
+              volume: {
+                queries_rolling_24_hours: { used: 1, limit: 1000, remaining: 999 },
+              },
+            },
+          },
+        },
+      });
+      expect(result._meta).not.toHaveProperty("synapsor.model_withheld_values");
 
       const refused = await client.callTool({
         name: "app.explore_data",
@@ -3525,7 +3593,12 @@ describe("Scoped Explore", () => {
       ]);
       expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
       expect(outcomes.find((outcome) => outcome.status === "rejected")).toMatchObject({
-        reason: { code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED" },
+        reason: {
+          code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
+          message: expect.stringMatching(
+            /disclosure-control differencing allowance exhausted[\s\S]*Used 1 of 1 distinct protected variants[\s\S]*prevents reconstruction/i,
+          ),
+        },
       });
       expect(sourceExecutions).toBe(1);
     } finally {
@@ -3569,12 +3642,73 @@ describe("Scoped Explore", () => {
         second.explore(rowPlan),
       ]);
       expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
-      expect(outcomes.find((outcome) => outcome.status === "rejected")).toMatchObject({
-        reason: { code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED" },
-      });
+      const rejected = outcomes.find((outcome): outcome is PromiseRejectedResult =>
+        outcome.status === "rejected");
+      expect(rejected?.reason).toMatchObject({ code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED" });
+      expect(String(rejected?.reason?.message)).toMatch(
+        /query-volume allowance exhausted[\s\S]*Used 1 of 1 queries[\s\S]*L Limits[\s\S]*controls are separate/i,
+      );
       expect(sourceExecutions).toBe(1);
     } finally {
       await Promise.all([first.close(), second.close()]);
+    }
+  });
+
+  it("returns operator-only remaining budgets and warns once when volume crosses 80 percent", async () => {
+    const fixture = await activatedFixture((candidate) => {
+      candidate.budgets.max_queries_per_session = 5;
+      candidate.budgets.rate_limit_per_minute = 10;
+      candidate.budgets.max_extracted_cells_per_session = 100;
+      candidate.budgets.max_differencing_queries = 16;
+    });
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([{ region: "north" }]),
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => Date.parse("2026-07-24T12:00:00.000Z"),
+    });
+    const plan = {
+      kind: "rows" as const,
+      resource: "public.subscriptions",
+      select: ["region"],
+      limit: 1,
+    };
+    try {
+      for (let index = 1; index <= 3; index += 1) {
+        const result = await runtime.explore(plan) as Record<string, any>;
+        expect(result.operator_budget.trusted_scope.volume.queries_rolling_24_hours).toMatchObject({
+          used: index,
+          limit: 5,
+          remaining: 5 - index,
+        });
+        expect(result.operator_budget.trusted_scope.warnings).toEqual([]);
+      }
+      const threshold = await runtime.explore(plan) as Record<string, any>;
+      expect(threshold.operator_budget).toMatchObject({
+        operator_only: true,
+        trusted_scope: {
+          volume: {
+            queries_rolling_24_hours: { used: 4, limit: 5, remaining: 1, percent_used: 80 },
+          },
+        },
+      });
+      expect(threshold.operator_budget.trusted_scope.warnings).toEqual([
+        expect.stringMatching(/volume warning: rolling queries reached 4\/5; 1 remain/i),
+      ]);
+      const afterThreshold = await runtime.explore(plan) as Record<string, any>;
+      expect(afterThreshold.operator_budget.trusted_scope.warnings).toEqual([]);
+      const projected = projectScopedExploreResultForModel({
+        tool: "app.explore_data",
+        arguments: { plan },
+        result: threshold,
+        boundary: fixture.boundary,
+      });
+      expect(projected.value).not.toHaveProperty("operator_budget");
+      expect(projected.operator_metadata_withheld).toBe(true);
+    } finally {
+      await runtime.close();
     }
   });
 
@@ -3966,7 +4100,12 @@ describe("Scoped Explore", () => {
       resource: "public.subscriptions",
       select: ["region"],
       limit: 1,
-    })).rejects.toMatchObject({ code: "EXPLORE_RATE_LIMITED" });
+    })).rejects.toMatchObject({
+      code: "EXPLORE_RATE_LIMITED",
+      message: expect.stringMatching(
+        /request-rate allowance exhausted[\s\S]*Used 2 of 2 requests[\s\S]*rolling one-minute window/i,
+      ),
+    });
     await bounded.close();
 
     const extractionFixture = await activatedFixture((candidate) => {
@@ -3996,7 +4135,12 @@ describe("Scoped Explore", () => {
       resource: "public.subscriptions",
       select: ["region"],
       limit: 1,
-    })).rejects.toMatchObject({ code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED" });
+    })).rejects.toMatchObject({
+      code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
+      message: expect.stringMatching(
+        /disclosure-control extracted-cell allowance exhausted[\s\S]*Used 4 of 4 cells[\s\S]*separate from query volume/i,
+      ),
+    });
     await extraction.close();
 
     const failed = await createScopedExploreRuntime({

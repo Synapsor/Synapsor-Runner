@@ -46,7 +46,11 @@ export type ScopedExploreBoundarySetRuntime = {
     tool: string;
     arguments: Record<string, unknown>;
     result: Record<string, unknown>;
-  }): { value: Record<string, unknown>; withheld: boolean };
+  }): {
+    value: Record<string, unknown>;
+    withheld: boolean;
+    operator_metadata_withheld?: boolean;
+  };
   close(): Promise<void>;
 };
 

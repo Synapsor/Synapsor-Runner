@@ -430,6 +430,10 @@ export function renderAnalysis(
   }
   const reviewedValueNotices = reviewedValueControlNotices(analysis.result);
   if (reviewedValueNotices.length) lines.push("", ...reviewedValueNotices);
+  const budgetWarnings = operatorBudgetWarnings(analysis.result);
+  if (budgetWarnings.length) {
+    lines.push("", ...budgetWarnings.map((warning) => styledNotice(warning, ansi)));
+  }
   const suppressed = suppressedGroupCount(analysis.result);
   if (suppressed > 0) {
     const shapeHint = minimumCohortQuestionShapeHint(analysis, minimumCohort);
@@ -443,6 +447,17 @@ export function renderAnalysis(
     );
   }
   return lines;
+}
+
+function operatorBudgetWarnings(result: Record<string, unknown>): string[] {
+  const operatorBudget = record(result.operator_budget);
+  return ["trusted_scope", "tenant"].flatMap((scope) => {
+    const warnings = record(operatorBudget[scope]).warnings;
+    return Array.isArray(warnings)
+      ? warnings.filter((warning): warning is string => typeof warning === "string")
+        .map(safeTerminalText)
+      : [];
+  });
 }
 
 function reviewedValueControlNotices(result: Record<string, unknown>): string[] {

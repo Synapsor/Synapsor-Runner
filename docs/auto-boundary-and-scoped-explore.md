@@ -924,6 +924,33 @@ New generated boundaries review at most 16 distinct cohort-protected variants
 per root resource in that window. Existing boundaries keep their exact prior
 value, and an operator may narrow the generated allowance during review.
 
+Query volume and disclosure protection are separate reviewed controls. New
+1.7.0 boundaries default to 1,000 queries per trusted scope in a rolling
+24-hour window and 120 requests in a rolling minute. These are throughput
+ceilings. The generated disclosure defaults remain 4,000 released cells and 16
+distinct differencing variants per rolling 24 hours, together with the reviewed
+cohort, suppression, response, and group limits. Raising query volume never
+raises a disclosure limit.
+
+Use `/access`, select the boundary, then choose `L Limits` to review query
+volume, request rate, or ranked-result limits. Workbench exposes the same
+settings under **Query volume** and **Ranked result settings**. A saved change
+creates a disabled boundary revision and takes effect only after normal review
+and activation. `/details` and Workbench show operator-only used/remaining
+counters and warn when a budget first crosses 80 percent; those counters are
+removed from the model-facing tool result.
+
+Every Explore request still re-proves current database authority before SQL is
+compiled. For current generation locks, that live inspection fetches complete
+metadata only for lock-bound resources and their reviewed relationship or
+derived-scope proof resources. Dedicated lightweight checks retain global
+credential/read-only/grant/ownership posture; RLS is re-proved for every
+reviewed dependency. The whole-database single-organization refusal guard also
+checks for tenant-shaped columns or RLS evidence anywhere in its inspected
+schema. Nothing is cached between queries. Draft and rescan continue to inspect
+the whole schema because they must discover new tables, columns, and paths;
+legacy locks also retain the whole-schema compatibility path.
+
 ### Reviewed Automatic Numeric Bands
 
 A reviewer may opt one model-visible numeric measure into automatic grouping.

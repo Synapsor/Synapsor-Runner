@@ -16,6 +16,7 @@ import {
   activateExplorationBoundary,
   buildAutoBoundary,
   explorationBoundaryCandidateDigest,
+  loadGenerationLockSnapshot,
   writeAutoBoundaryArtifacts,
 } from "../apps/runner/dist/auto-boundary.js";
 import {
@@ -56,6 +57,92 @@ const controlSchema = `synapsor_production_explore_${process.pid}`;
 function assert(condition, message, detail) {
   if (!condition) {
     throw new Error(`${message}${detail === undefined ? "" : `\n${JSON.stringify(detail, null, 2)}`}`);
+  }
+}
+
+function median(values) {
+  const sorted = [...values].sort((left, right) => left - right);
+  return sorted[Math.floor(sorted.length / 2)] ?? 0;
+}
+
+async function verifySchemaWidthScaling({ admin, client, env, plan, resources }) {
+  assert(resources.length > 0, "The PostgreSQL generation lock has no authority dependencies to inspect.");
+  const expectedResourceIds = resources
+    .map((resource) => `${resource.schema}.${resource.table}`)
+    .sort();
+  const inspect = async () => {
+    const started = performance.now();
+    const inspection = await inspectDatabase({
+      engine: "postgres",
+      databaseUrlEnv: "DATABASE_URL",
+      schema: "public",
+      resources,
+      env,
+    });
+    const actualResourceIds = inspection.tables
+      .map((table) => `${table.schema}.${table.name}`)
+      .sort();
+    assert(JSON.stringify(actualResourceIds) === JSON.stringify(expectedResourceIds),
+      "Scoped PostgreSQL inspection did not fetch exactly the generation-lock dependencies.",
+      { expected: expectedResourceIds, actual: actualResourceIds });
+    return performance.now() - started;
+  };
+  const before = [];
+  for (let index = 0; index < 3; index += 1) before.push(await inspect());
+  const decoys = Array.from({ length: 80 }, (_, index) =>
+    `public.synapsor_unreviewed_scale_${String(index).padStart(3, "0")}`);
+  try {
+    await admin.query(decoys.map((name) =>
+      `CREATE TABLE ${name} (id bigint PRIMARY KEY, payload text, observed_at timestamptz)`
+    ).join(";\n"));
+    await admin.query(`GRANT SELECT ON ${decoys.join(", ")} TO synapsor_churn_reader`);
+    const after = [];
+    for (let index = 0; index < 3; index += 1) after.push(await inspect());
+    const full = await inspectDatabase({
+      engine: "postgres",
+      databaseUrlEnv: "DATABASE_URL",
+      schema: "public",
+      env,
+    });
+    assert(full.tables.length >= resources.length + decoys.length,
+      "Whole-schema PostgreSQL discovery did not retain unrelated-table discovery.",
+      { table_count: full.tables.length });
+    await admin.query(`GRANT UPDATE ON ${decoys[0]} TO synapsor_churn_reader`);
+    try {
+      const unsafeGrant = await client.callTool({
+        name: "app.explore_data",
+        arguments: { plan },
+      });
+      assert(unsafeGrant.isError === true
+        && /EXPLORE_LOCK_STALE|EXPLORE_ROLE_UNSAFE|credential posture changed/i.test(
+          JSON.stringify(unsafeGrant),
+        ),
+      "A write grant on an unrelated PostgreSQL table bypassed the global read-only guard.",
+      unsafeGrant);
+    } finally {
+      await admin.query(`REVOKE UPDATE ON ${decoys[0]} FROM synapsor_churn_reader`);
+    }
+    const query = resultPayload(await client.callTool({
+      name: "app.explore_data",
+      arguments: { plan },
+    }));
+    assert(query.ok === true,
+      "Adding unrelated PostgreSQL tables changed a live boundary query or triggered false drift.", query);
+    const baselineMs = median(before);
+    const widenedMs = median(after);
+    assert(widenedMs <= Math.max(baselineMs * 4, baselineMs + 500),
+      "Dependency-scoped PostgreSQL inspection regressed materially as unrelated schema width grew.",
+      { baseline_ms: baselineMs, widened_ms: widenedMs, unrelated_tables: decoys.length });
+    return {
+      unrelated_tables: decoys.length,
+      dependency_tables_fetched: resources.length,
+      unrelated_write_grant_refused: true,
+      baseline_median_ms: Math.round(baselineMs * 100) / 100,
+      widened_median_ms: Math.round(widenedMs * 100) / 100,
+      whole_schema_tables_discovered: full.tables.length,
+    };
+  } finally {
+    await admin.query(`DROP TABLE IF EXISTS ${decoys.join(", ")}`).catch(() => undefined);
   }
 }
 
@@ -1312,7 +1399,8 @@ async function verifySingleOrganizationProductionExplore(input) {
       && aliceResult.data.reduce((sum, row) => sum + row.count, 0) === 12,
     "Principal-only JWT production Explore did not resolve an unambiguous table alias.", aliceResult);
     const exhausted = await alice.client.callTool({ name: "app.explore_data", arguments: { plan } });
-    assert(exhausted.isError === true && JSON.stringify(exhausted).includes("authenticated principal"),
+    assert(exhausted.isError === true
+      && JSON.stringify(exhausted).includes("Authenticated-principal budget: query-volume allowance exhausted"),
       "The single-organization principal did not exhaust only its own reviewed budget.", exhausted);
 
     const bob = clientFor(server.url, await token(privateKey, { tenant: undefined, principal: "analyst-b" }));
@@ -2228,7 +2316,12 @@ async function main() {
     });
 
     const exhausted = await alice.client.callTool({ name: "app.explore_data", arguments: { plan } });
-    assert(exhausted.isError === true && JSON.stringify(exhausted).includes("authenticated principal"),
+    const exhaustedText = JSON.stringify(exhausted);
+    assert(exhausted.isError === true
+      && exhaustedText.includes("Authenticated-principal budget: query-volume allowance exhausted")
+      && exhaustedText.includes("Used 1 of 1 queries")
+      && exhaustedText.includes("expire no later than")
+      && exhaustedText.includes("L Limits"),
       "One principal did not exhaust only its own reviewed query budget.", exhausted);
 
     const bobToken = await token(privateKey, { tenant: "acme", principal: "pm-other" });
@@ -2445,6 +2538,26 @@ async function main() {
       tenantBudgetServer = undefined;
     }
 
+    const activeLock = await loadGenerationLockSnapshot(
+      projectRoot,
+      candidate.generation_lock_fingerprint,
+    );
+    const dependencyResources = Object.values(activeLock.authority_dependencies?.resources ?? {})
+      .map((dependency) => ({ schema: dependency.schema, table: dependency.table }));
+    const schemaWidthClient = clientFor(server.url, await token(privateKey, {
+      tenant: "acme",
+      principal: "schema-width",
+    }));
+    clients.push(schemaWidthClient.client);
+    await schemaWidthClient.client.connect(schemaWidthClient.transport);
+    const schemaWidthScaling = await verifySchemaWidthScaling({
+      admin,
+      client: schemaWidthClient.client,
+      env,
+      plan,
+      resources: dependencyResources,
+    });
+
     const auditStorage = await control.query(`
       SELECT
         (SELECT COUNT(*)::int FROM "${controlSchema}".production_explore_audit_events) AS dedicated_events,
@@ -2504,6 +2617,7 @@ async function main() {
       metadata_only_catalog: true,
       ollama_agent_http: ollamaAgent ?? "not_requested",
       analytics_http_stdio_parity: true,
+      schema_width_scaling: schemaWidthScaling,
       drift_refused_over_http: true,
       config_and_artifact_hygiene: true,
       public_cli_entrypoint: true,

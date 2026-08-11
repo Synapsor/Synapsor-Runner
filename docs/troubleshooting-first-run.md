@@ -202,6 +202,15 @@ Workbench shows the reviewed minimum group size, maximum groups, response limits
 and durable extraction/differencing budgets. You cannot widen them in a model
 argument.
 
+Runner distinguishes throughput from disclosure when a budget is exhausted.
+Query volume and requests-per-minute limit work; extracted cells,
+differencing, cohort, and suppression limit reconstruction. The refusal names
+the class, used/limit count, and an upper bound for when the currently counted
+rolling-window entries expire. In the CLI, use `/access`, select the boundary,
+then `L Limits` to change a reviewed query/rate ceiling and `C` to review and
+activate it. Workbench exposes the same Query volume panel. Do not raise a
+disclosure control merely to obtain more request throughput.
+
 Every cohort-protected aggregate, including an unfiltered total or time trend,
 uses the durable rolling 24-hour privacy pool for that reviewed source, trusted
 scope, and root resource. Only an exact normalized-plan replay reuses a

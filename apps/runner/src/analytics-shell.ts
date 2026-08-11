@@ -1757,6 +1757,10 @@ async function showDetails(
   const suppressedGroups = numberRecordValue(suppression.suppressed_groups)
     ?? selected.suppressed_groups
     ?? 0;
+  const operatorBudgetDetails = renderOperatorBudgetDetails(
+    asRecord(liveResult?.operator_budget),
+    color,
+  );
   const outcomeTone = /^(?:ok|success)$/i.test(outcome)
     ? "success" as const
     : /(?:fail|error|refus)/i.test(outcome)
@@ -1805,6 +1809,7 @@ async function showDetails(
     renderTerminalFact("Query audit", selected.query_audit_handle ?? "unavailable", { color, tone: selected.query_audit_handle ? "identifier" : "muted" }),
     renderTerminalFact("Protectable until", selected.expires_at, { color, tone: "value" }),
     renderTerminalFact("Source database changed", "no", { color, tone: "success" }),
+    ...operatorBudgetDetails,
     ...(inspectionFailure ? ["", renderTerminalFact("Advanced inspection unavailable", inspectionFailure, { color, tone: "warning" })] : []),
     ...(includeSql
       ? operatorInspection
@@ -1827,6 +1832,63 @@ async function showDetails(
       : ["", "Use /details --sql for the local operator-only parameterized statement."]),
     "",
   ].join("\n"));
+}
+
+function renderOperatorBudgetDetails(
+  operatorBudget: Record<string, unknown>,
+  color: boolean,
+): string[] {
+  if (operatorBudget.operator_only !== true) return [];
+  const theme = terminalTheme(color);
+  const lines = [
+    "",
+    theme.title("BUDGET STATUS - OPERATOR ONLY"),
+    theme.dim("Volume limits control throughput. Disclosure limits constrain reconstruction and remain separate."),
+  ];
+  for (const [scopeKey, scopeLabel] of [
+    ["trusted_scope", "Trusted scope"],
+    ["tenant", "Tenant-wide production ceiling"],
+  ] as const) {
+    const scope = asRecord(operatorBudget[scopeKey]);
+    if (!Object.keys(scope).length) continue;
+    const volume = asRecord(scope.volume);
+    const disclosure = asRecord(scope.disclosure);
+    lines.push(theme.bold(scopeLabel));
+    for (const [label, gauge] of [
+      ["Queries / rolling 24h", asRecord(volume.queries_rolling_24_hours)],
+      ["Requests / rolling minute", asRecord(volume.requests_rolling_minute)],
+      ["Extracted cells / rolling 24h", asRecord(disclosure.extracted_cells_rolling_24_hours)],
+      ["Differencing variants / rolling 24h", asRecord(disclosure.differencing_variants_rolling_24_hours)],
+    ] as const) {
+      const used = numberRecordValue(gauge.used);
+      const limit = numberRecordValue(gauge.limit);
+      const remaining = numberRecordValue(gauge.remaining);
+      if (used === undefined || limit === undefined || remaining === undefined) continue;
+      lines.push(renderTerminalFact(
+        label,
+        `${used}/${limit} used; ${remaining} remaining`,
+        {
+          color,
+          tone: remaining === 0 ? "danger" : used >= Math.ceil(limit * 0.8) ? "warning" : "value",
+        },
+      ));
+    }
+    const warnings = Array.isArray(scope.warnings)
+      ? scope.warnings.filter((warning): warning is string => typeof warning === "string")
+      : [];
+    lines.push(...warnings.map((warning) => theme.warning(safeTerminalText(warning))));
+  }
+  const rollingExpiry = stringRecordValue(
+    operatorBudget.rolling_24_hour_usage_expires_no_later_than,
+  );
+  if (rollingExpiry) {
+    lines.push(renderTerminalFact(
+      "Current 24h usage expires by",
+      rollingExpiry,
+      { color, tone: "value" },
+    ));
+  }
+  return lines;
 }
 
 async function protectAnalysis(

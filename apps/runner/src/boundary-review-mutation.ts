@@ -131,6 +131,8 @@ export type BoundaryResourceReviewRequest = {
   auto_band?: ExplorationAutoBandPolicy & { remove?: boolean };
   minimum_cohort_size?: number;
   max_ranked_groups?: number;
+  max_queries_per_session?: number;
+  rate_limit_per_minute?: number;
   relationship_ids?: string[];
   nullable_relationship?: {
     relationship_id: string;
@@ -244,6 +246,10 @@ export type BoundaryReviewSemanticDiff = {
   minimum_cohort_overridden: boolean;
   max_ranked_groups_before: number | null;
   max_ranked_groups_after: number | null;
+  max_queries_per_session_before: number;
+  max_queries_per_session_after: number;
+  rate_limit_per_minute_before: number;
+  rate_limit_per_minute_after: number;
   structural_review_changed: boolean;
   authority_changed: boolean;
   source_database_changed: false;
@@ -1069,6 +1075,12 @@ function buildReviewedCandidate(input: {
   if (input.request.max_ranked_groups !== undefined) {
     candidate.budgets.max_ranked_groups = input.request.max_ranked_groups;
   }
+  if (input.request.max_queries_per_session !== undefined) {
+    candidate.budgets.max_queries_per_session = input.request.max_queries_per_session;
+  }
+  if (input.request.rate_limit_per_minute !== undefined) {
+    candidate.budgets.rate_limit_per_minute = input.request.rate_limit_per_minute;
+  }
   const previousIncluded = new Set(input.previous.pack.resources.map((resource) => resource.id));
   candidate.pack.resources = candidate.pack.resources.filter((resource) =>
     previousIncluded.has(resource.id)
@@ -1444,6 +1456,8 @@ function hasAuthorityNarrowing(request: BoundaryResourceReviewRequest): boolean 
   ].some((value) => value !== undefined)
     || request.minimum_cohort_size !== undefined
     || request.max_ranked_groups !== undefined
+    || request.max_queries_per_session !== undefined
+    || request.rate_limit_per_minute !== undefined
     || request.nullable_relationship !== undefined;
 }
 
@@ -1477,6 +1491,8 @@ function canStageIncompleteScopeResolution(
   ].some((value) => value !== undefined)
     || request.minimum_cohort_size !== undefined
     || request.max_ranked_groups !== undefined
+    || request.max_queries_per_session !== undefined
+    || request.rate_limit_per_minute !== undefined
     || request.nullable_relationship !== undefined
     || request.exclude === true;
   return hasScopeChoice && !hasNonScopeChoice;
@@ -1548,6 +1564,10 @@ function semanticDiff(
     minimum_cohort_overridden: afterResource?.minimum_cohort_overridden === true,
     max_ranked_groups_before: before.budgets.max_ranked_groups ?? null,
     max_ranked_groups_after: after.budgets.max_ranked_groups ?? null,
+    max_queries_per_session_before: before.budgets.max_queries_per_session,
+    max_queries_per_session_after: after.budgets.max_queries_per_session,
+    rate_limit_per_minute_before: before.budgets.rate_limit_per_minute,
+    rate_limit_per_minute_after: after.budgets.rate_limit_per_minute,
     structural_review_changed: structuralReviewChanged,
     authority_changed: explorationBoundaryCandidateDigest(before)
       !== explorationBoundaryCandidateDigest(after),
@@ -1694,6 +1714,22 @@ function validateBoundaryResourceRequest(request: BoundaryResourceReviewRequest)
       || request.max_ranked_groups > 10_000)) {
     throw new Error(
       "The reviewed ranked-group ceiling must be an integer from 1 through 10000.",
+    );
+  }
+  if (request.max_queries_per_session !== undefined
+    && (!Number.isSafeInteger(request.max_queries_per_session)
+      || request.max_queries_per_session < 1
+      || request.max_queries_per_session > 1_000)) {
+    throw new Error(
+      "The reviewed rolling 24-hour query allowance must be an integer from 1 through 1000.",
+    );
+  }
+  if (request.rate_limit_per_minute !== undefined
+    && (!Number.isSafeInteger(request.rate_limit_per_minute)
+      || request.rate_limit_per_minute < 1
+      || request.rate_limit_per_minute > 120)) {
+    throw new Error(
+      "The reviewed requests-per-minute allowance must be an integer from 1 through 120.",
     );
   }
   if (request.field_enum
@@ -2007,6 +2043,8 @@ function canonicalReviewRequest(request: BoundaryResourceReviewRequest): JsonRec
     auto_band: request.auto_band ? structuredClone(request.auto_band) : null,
     minimum_cohort_size: request.minimum_cohort_size ?? null,
     max_ranked_groups: request.max_ranked_groups ?? null,
+    max_queries_per_session: request.max_queries_per_session ?? null,
+    rate_limit_per_minute: request.rate_limit_per_minute ?? null,
     relationship_ids: sortedOrNull(request.relationship_ids),
     nullable_relationship: request.nullable_relationship ?? null,
     actor: request.actor,

@@ -160,12 +160,15 @@ const DEFAULT_BUDGETS: ExplorationBudgets = {
   max_response_bytes: 64 * 1024,
   statement_timeout_ms: 3000,
   max_complexity: 24,
-  max_queries_per_session: 40,
+  // Volume controls are intentionally separate from disclosure controls. A
+  // product-scale default supports multi-step agents while the extraction and
+  // differencing pools below retain their tighter privacy defaults.
+  max_queries_per_session: 1000,
   max_extracted_cells_per_session: 4000,
   // One finite all-shape pool supports the reviewed ten-plan adoption path
   // without restoring the old per-family differencing reset.
   max_differencing_queries: 16,
-  rate_limit_per_minute: 20,
+  rate_limit_per_minute: 120,
 };
 
 export type InferenceConfidence = "high" | "medium" | "low";
@@ -3422,7 +3425,7 @@ export function assertSingleOrganizationInspectionSafe(
   inspection: SchemaInspection,
   graph?: AutoBoundaryEvidenceGraph,
 ): void {
-  const evidence = new Set<string>();
+  const evidence = new Set<string>(inspection.global_tenant_isolation_evidence ?? []);
   for (const table of inspection.tables) {
     const resource = `${table.schema}.${table.name}`;
     for (const column of table.suggestions.tenant_columns) {

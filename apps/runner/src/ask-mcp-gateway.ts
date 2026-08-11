@@ -36,7 +36,11 @@ type ConnectedMcpSurface = {
     tool: string,
     args: Record<string, unknown>,
     result: Record<string, unknown>,
-  ) => { value: Record<string, unknown>; withheld: boolean };
+  ) => {
+    value: Record<string, unknown>;
+    withheld: boolean;
+    operator_metadata_withheld?: boolean;
+  };
   describeOperatorMetadata?: (
     args: Record<string, unknown>,
   ) => Promise<Record<string, unknown>>;
@@ -120,7 +124,10 @@ export async function createWorkbenchAskMcpGateway(input: {
           return {
             ok: result.isError !== true && value.ok !== false,
             value,
-            ...(providerProjection ? { provider_value: providerProjection.value } : {}),
+            ...(providerProjection
+              && (providerProjection.withheld || providerProjection.operator_metadata_withheld)
+              ? { provider_value: providerProjection.value }
+              : {}),
             ...(providerProjection?.withheld ? { model_withheld_values: true } : {}),
             ...(errorCode ? { error_code: errorCode } : {}),
           };

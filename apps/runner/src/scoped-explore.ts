@@ -320,14 +320,28 @@ export async function prepareScopedExplore(input: {
   if (boundary.activation.generation_lock_fingerprint !== boundary.generation_lock_fingerprint) {
     throw new ScopedExploreError("EXPLORE_BOUNDARY_MISMATCH", "The active exploration boundary is not bound to the current generation lock.");
   }
+  if (lock.authority_dependencies) {
+    assertAuthorityDependenciesShape(lock.authority_dependencies);
+  }
   const inspection = await (input.inspectDatabaseFn ?? inspectDatabase)({
     engine: lock.engine,
     databaseUrlEnv: lock.source_env,
     ...(lock.inspected_schema ? { schema: lock.inspected_schema } : {}),
+    ...(lock.authority_dependencies
+      ? {
+        resources: Object.values(lock.authority_dependencies.resources)
+          .map((dependency) => ({
+            schema: dependency.schema,
+            table: dependency.table,
+          }))
+          .sort((left, right) => left.schema.localeCompare(right.schema)
+            || left.table.localeCompare(right.table)),
+        ...(boundary.organization_scope ? { verifySingleOrganization: true } : {}),
+      }
+      : {}),
     env: input.env ?? process.env,
   });
   if (lock.authority_dependencies) {
-    assertAuthorityDependenciesShape(lock.authority_dependencies);
     if (lock.compiler_version !== boundary.compiler_version || lock.spec_version !== boundary.spec_version) {
       throw new ScopedExploreError("EXPLORE_BOUNDARY_MISMATCH", "The active boundary and generation lock disagree on compiler or Spec version.");
     }
@@ -593,6 +607,10 @@ export async function createScopedExploreRuntime(input: {
       const estimatedResponseCells = estimatedExploreResponseCells(plan);
       let compiledQueries: CompiledExploreQuery[];
       let budgetUsage: ExploreBudgetUsage;
+      let tenantBudgetUsage: ExploreBudgetUsage | undefined;
+      let principalVariantAlreadyCounted = true;
+      let tenantVariantAlreadyCounted = true;
+      let requiresDifferencing = false;
       try {
         assertExploreComplexity(plan, prepared.boundary);
         compiledQueries = compileExplorePlan(
@@ -601,7 +619,7 @@ export async function createScopedExploreRuntime(input: {
           { tenant: trustedTenant, principal },
           prepared.lock.engine,
         );
-        const requiresDifferencing = requiresDifferencingProtection(plan, prepared.boundary);
+        requiresDifferencing = requiresDifferencingProtection(plan, prepared.boundary);
         const reservation = mode === "production_http"
           ? await claimProductionExploreBudget(store, {
             reservation_id: reservationId,
@@ -650,15 +668,30 @@ export async function createScopedExploreRuntime(input: {
               ? "EXPLORE_RATE_LIMITED"
               : "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
             exploreBudgetRefusalMessage(
-              reservation.code,
-              reservation.message,
-              exhaustedScope,
+              {
+                code: reservation.code,
+                fallback: reservation.message,
+                usage: reservation.usage,
+                limits: exhaustedScope === "tenant"
+                  ? input.productionTenantLimits!
+                  : prepared.boundary.budgets,
+                estimatedResponseCells,
+                now: executionStartedAt,
+                exhaustedScope,
+              },
             ),
           );
         }
         budgetUsage = "principal_usage_after_reservation" in reservation
           ? reservation.principal_usage_after_reservation
           : reservation.usage_after_reservation;
+        if ("tenant_usage_after_reservation" in reservation) {
+          tenantBudgetUsage = reservation.tenant_usage_after_reservation;
+          principalVariantAlreadyCounted = reservation.principal_variant_already_counted;
+          tenantVariantAlreadyCounted = reservation.tenant_variant_already_counted;
+        } else {
+          principalVariantAlreadyCounted = reservation.variant_already_counted;
+        }
       } catch (error) {
         const refusal = error instanceof ScopedExploreError
           ? error
@@ -840,6 +873,15 @@ export async function createScopedExploreRuntime(input: {
           budgetUsage.extracted_cells - estimatedResponseCells + response.cells,
         ),
       };
+      if (tenantBudgetUsage) {
+        tenantBudgetUsage = {
+          ...tenantBudgetUsage,
+          extracted_cells: Math.max(
+            0,
+            tenantBudgetUsage.extracted_cells - estimatedResponseCells + response.cells,
+          ),
+        };
+      }
       const evidence = await recordExploreEvidence(store, {
         mode,
         boundary: prepared.boundary,
@@ -950,6 +992,21 @@ export async function createScopedExploreRuntime(input: {
           returned_cells: response.cells,
           persisted_result_values: false,
         },
+        operator_budget: describeOperatorExploreBudget({
+          principalUsage: budgetUsage,
+          principalLimits: prepared.boundary.budgets,
+          principalVariantAlreadyCounted,
+          ...(tenantBudgetUsage && input.productionTenantLimits
+            ? {
+              tenantUsage: tenantBudgetUsage,
+              tenantLimits: input.productionTenantLimits,
+              tenantVariantAlreadyCounted,
+            }
+            : {}),
+          requiresDifferencing,
+          returnedCells: response.cells,
+          completedAt,
+        }),
         evidence_bundle_id: evidence.evidence_bundle_id,
         evidence_resource: `synapsor://evidence/${evidence.evidence_bundle_id}`,
         ...(protectToken ? {
@@ -1141,17 +1198,24 @@ export function projectScopedExploreResultForModel(input: {
 }): {
   value: Record<string, unknown>;
   withheld: boolean;
+  operator_metadata_withheld?: boolean;
 } {
   if (input.tool !== SCOPED_EXPLORE_QUERY_TOOL || input.result.ok === false) {
     return { value: structuredClone(input.result), withheld: false };
   }
   const rawPlan = input.arguments.plan;
   const plan = validateExplorePlan(rawPlan, input.boundary);
+  const projected = structuredClone(input.result);
+  const operatorMetadataWithheld = Object.hasOwn(projected, "operator_budget");
+  delete projected.operator_budget;
   const columns = new Set(modelWithheldExploreOutputColumns(plan, input.boundary));
   if (columns.size === 0) {
-    return { value: structuredClone(input.result), withheld: false };
+    return {
+      value: projected,
+      withheld: false,
+      ...(operatorMetadataWithheld ? { operator_metadata_withheld: true } : {}),
+    };
   }
-  const projected = structuredClone(input.result);
   if (Array.isArray(projected.data)) {
     const nonce = crypto.randomBytes(6).toString("hex");
     const tokens = new Map<string, string>();
@@ -1179,7 +1243,11 @@ export function projectScopedExploreResultForModel(input: {
     tokenized_columns: [...columns].sort(),
     token_scope: "this_tool_response_only",
   };
-  return { value: projected, withheld: true };
+  return {
+    value: projected,
+    withheld: true,
+    ...(operatorMetadataWithheld ? { operator_metadata_withheld: true } : {}),
+  };
 }
 
 export function modelWithheldExploreOutputColumns(
@@ -3610,26 +3678,204 @@ function estimatedExploreResponseCells(plan: ExplorePlan): number {
   return plan.top_n * fieldsPerGroup;
 }
 
-function exploreBudgetRefusalMessage(
-  code: string,
-  fallback: string,
-  exhaustedScope?: "principal" | "tenant",
-): string {
-  const scope = exhaustedScope === "tenant"
-    ? "The tenant-wide production safety ceiling"
-    : exhaustedScope === "principal"
-      ? "This authenticated principal's production budget"
-      : "The reviewed budget";
-  if (code === "QUERY_BUDGET_EXHAUSTED") {
-    return `${scope} has exhausted its rolling 24-hour query allowance.`;
+function exploreBudgetRefusalMessage(input: {
+  code: string;
+  fallback: string;
+  usage: ExploreBudgetUsage;
+  limits: ExploreBudgetLimits;
+  estimatedResponseCells: number;
+  now: number;
+  exhaustedScope?: "principal" | "tenant";
+}): string {
+  const scope = input.exhaustedScope === "tenant"
+    ? "Tenant-wide production ceiling"
+    : input.exhaustedScope === "principal"
+      ? "Authenticated-principal budget"
+      : "Reviewed trusted-scope budget";
+  const rollingExpiry = new Date(input.now + 24 * 60 * 60 * 1000).toISOString();
+  const rateExpiry = new Date(input.now + 60 * 1000).toISOString();
+  const reviewRoute = input.exhaustedScope === "tenant"
+    ? "Change the matching production_explore.tenant_limits setting in synapsor.runner.json, run doctor, and restart the production MCP server."
+    : "Change it in /access -> select the boundary -> L Limits, then C Review + activate.";
+  if (input.code === "QUERY_BUDGET_EXHAUSTED") {
+    return [
+      `${scope}: query-volume allowance exhausted.`,
+      `Used ${input.usage.query_count} of ${input.limits.max_queries_per_session} queries in the rolling 24-hour window.`,
+      `Capacity returns as earlier queries age out; all currently counted queries expire no later than ${rollingExpiry}.`,
+      reviewRoute,
+      "Extracted-cell, differencing, cohort, and suppression controls are separate and unchanged.",
+    ].join("\n");
   }
-  if (code === "EXTRACTION_BUDGET_EXHAUSTED") {
-    return `${scope} would exceed its response or rolling 24-hour extracted-cell allowance.`;
+  if (input.code === "RATE_LIMIT_EXHAUSTED") {
+    return [
+      `${scope}: request-rate allowance exhausted.`,
+      `Used ${input.usage.queries_last_minute} of ${input.limits.rate_limit_per_minute} requests in the rolling one-minute window.`,
+      `Capacity returns as earlier requests age out; all currently counted requests expire no later than ${rateExpiry}.`,
+      reviewRoute,
+    ].join("\n");
   }
-  if (code === "DIFFERENCING_BUDGET_EXHAUSTED") {
-    return `${scope} has released too many distinct cohort-protected plans for this table in the rolling 24-hour privacy window.`;
+  if (input.code === "EXTRACTION_BUDGET_EXHAUSTED") {
+    return [
+      `${scope}: disclosure-control extracted-cell allowance exhausted.`,
+      `Used ${input.usage.extracted_cells} of ${input.limits.max_extracted_cells_per_session} cells; this request could return up to ${input.estimatedResponseCells} more.`,
+      `Capacity returns as earlier releases age out; all currently counted cells expire no later than ${rollingExpiry}.`,
+      "This privacy control is separate from query volume. Review the boundary's disclosure policy rather than raising throughput limits.",
+    ].join("\n");
   }
-  return fallback;
+  if (input.code === "DIFFERENCING_BUDGET_EXHAUSTED") {
+    return [
+      `${scope}: disclosure-control differencing allowance exhausted.`,
+      `Used ${input.usage.differencing_attempts} of ${input.limits.max_differencing_queries} distinct protected variants in the rolling 24-hour window.`,
+      `Capacity returns as earlier variants age out; all currently counted variants expire no later than ${rollingExpiry}.`,
+      "This privacy control is separate from query volume and prevents reconstruction through repeated variants.",
+    ].join("\n");
+  }
+  return input.fallback;
+}
+
+function describeOperatorExploreBudget(input: {
+  principalUsage: ExploreBudgetUsage;
+  principalLimits: ExploreBudgetLimits;
+  principalVariantAlreadyCounted: boolean;
+  tenantUsage?: ExploreBudgetUsage;
+  tenantLimits?: ExploreBudgetLimits;
+  tenantVariantAlreadyCounted?: boolean;
+  requiresDifferencing: boolean;
+  returnedCells: number;
+  completedAt: number;
+}): Record<string, unknown> {
+  const scopeStatus = (
+    scope: "trusted_scope" | "tenant",
+    usage: ExploreBudgetUsage,
+    limits: ExploreBudgetLimits,
+    variantAlreadyCounted: boolean,
+  ) => ({
+    scope,
+    volume: {
+      queries_rolling_24_hours: budgetGauge(
+        usage.query_count,
+        limits.max_queries_per_session,
+      ),
+      requests_rolling_minute: budgetGauge(
+        usage.queries_last_minute,
+        limits.rate_limit_per_minute,
+      ),
+    },
+    disclosure: {
+      extracted_cells_rolling_24_hours: budgetGauge(
+        usage.extracted_cells,
+        limits.max_extracted_cells_per_session,
+      ),
+      differencing_variants_rolling_24_hours: budgetGauge(
+        usage.differencing_attempts,
+        limits.max_differencing_queries,
+      ),
+    },
+    warnings: budgetThresholdWarnings({
+      scope,
+      usage,
+      limits,
+      queryIncrement: 1,
+      extractedCellIncrement: input.returnedCells,
+      differencingIncrement: input.requiresDifferencing && !variantAlreadyCounted ? 1 : 0,
+    }),
+  });
+  return {
+    operator_only: true,
+    accounting: "per trusted scope; production also enforces a tenant-wide ceiling",
+    rolling_24_hour_usage_expires_no_later_than: new Date(
+      input.completedAt + 24 * 60 * 60 * 1000,
+    ).toISOString(),
+    rolling_minute_usage_expires_no_later_than: new Date(
+      input.completedAt + 60 * 1000,
+    ).toISOString(),
+    trusted_scope: scopeStatus(
+      "trusted_scope",
+      input.principalUsage,
+      input.principalLimits,
+      input.principalVariantAlreadyCounted,
+    ),
+    ...(input.tenantUsage && input.tenantLimits
+      ? {
+        tenant: scopeStatus(
+          "tenant",
+          input.tenantUsage,
+          input.tenantLimits,
+          input.tenantVariantAlreadyCounted ?? true,
+        ),
+      }
+      : {}),
+  };
+}
+
+function budgetGauge(used: number, limit: number): {
+  used: number;
+  limit: number;
+  remaining: number;
+  percent_used: number;
+} {
+  return {
+    used,
+    limit,
+    remaining: Math.max(0, limit - used),
+    percent_used: limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 100,
+  };
+}
+
+function budgetThresholdWarnings(input: {
+  scope: "trusted_scope" | "tenant";
+  usage: ExploreBudgetUsage;
+  limits: ExploreBudgetLimits;
+  queryIncrement: number;
+  extractedCellIncrement: number;
+  differencingIncrement: number;
+}): string[] {
+  const warnings: string[] = [];
+  const addIfCrossed = (
+    label: string,
+    used: number,
+    limit: number,
+    increment: number,
+    classification: "volume" | "disclosure",
+  ): void => {
+    const threshold = Math.ceil(limit * 0.8);
+    const before = Math.max(0, used - increment);
+    if (before < threshold && used >= threshold) {
+      warnings.push(
+        `${input.scope === "tenant" ? "Tenant" : "Trusted scope"} ${classification} warning: ` +
+        `${label} reached ${used}/${limit}; ${Math.max(0, limit - used)} remain.`,
+      );
+    }
+  };
+  addIfCrossed(
+    "rolling queries",
+    input.usage.query_count,
+    input.limits.max_queries_per_session,
+    input.queryIncrement,
+    "volume",
+  );
+  addIfCrossed(
+    "requests per minute",
+    input.usage.queries_last_minute,
+    input.limits.rate_limit_per_minute,
+    input.queryIncrement,
+    "volume",
+  );
+  addIfCrossed(
+    "extracted cells",
+    input.usage.extracted_cells,
+    input.limits.max_extracted_cells_per_session,
+    input.extractedCellIncrement,
+    "disclosure",
+  );
+  addIfCrossed(
+    "differencing variants",
+    input.usage.differencing_attempts,
+    input.limits.max_differencing_queries,
+    input.differencingIncrement,
+    "disclosure",
+  );
+  return warnings;
 }
 
 async function claimLocalExploreBudget(
