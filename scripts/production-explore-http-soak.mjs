@@ -117,6 +117,21 @@ function safeError(error) {
     .slice(0, 2_000);
 }
 
+export async function closeStreamableHttpClientHandle(handle) {
+  let terminationError;
+  try {
+    await handle.transport?.terminateSession?.();
+  } catch (error) {
+    terminationError = error;
+  }
+  try {
+    await handle.client.close();
+  } catch (error) {
+    if (!terminationError) terminationError = error;
+  }
+  if (terminationError) throw terminationError;
+}
+
 export function assertExactNumericBandResult(payload, input) {
   const allExpected = new Map();
   for (const value of input.values) {
@@ -331,7 +346,7 @@ export async function runProductionExploreHttpSoak(input) {
     const handle = clientState.handle;
     clientState.handle = undefined;
     clientState.connected_at = 0;
-    if (handle) await handle.client.close().catch(() => undefined);
+    if (handle) await closeStreamableHttpClientHandle(handle);
   };
 
   const rotateClientIdentity = async (clientState) => {
@@ -352,7 +367,7 @@ export async function runProductionExploreHttpSoak(input) {
     const listed = await withTimeout(handle.client.listTools(), configuration.request_timeout_ms, "MCP listTools");
     const names = listed.tools.map((tool) => tool.name);
     if (JSON.stringify(names) !== JSON.stringify(EXACT_TOOLS)) {
-      await handle.client.close().catch(() => undefined);
+      await closeStreamableHttpClientHandle(handle).catch(() => undefined);
       state.security_failures += 1;
       throw new Error(`Tool-surface lock failed: ${JSON.stringify(names)}.`);
     }
@@ -582,7 +597,7 @@ export async function runProductionExploreRecovery(input) {
         source_connections: input.source_connection_count ? await input.source_connection_count() : undefined,
       });
     } finally {
-      await handle.client.close().catch(() => undefined);
+      await closeStreamableHttpClientHandle(handle);
     }
     if (Date.now() - startedAt < configuration.recovery_ms) {
       await sleep(Math.min(30_000, configuration.recovery_ms - (Date.now() - startedAt)));

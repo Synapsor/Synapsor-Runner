@@ -34,6 +34,7 @@ import {
   applyProductionExploreSoakBudgets,
   assertExactNumericBandResult,
   assertSoakServerAlive,
+  closeStreamableHttpClientHandle,
   processGroupSnapshot,
   productionExploreSoakIdentities,
   productionExploreSoakRequested,
@@ -810,7 +811,7 @@ async function verifyOllamaAgentOverProductionHttp(input) {
       close: async () => {
         if (closed) return;
         closed = true;
-        await handle.client.close();
+        await closeStreamableHttpClientHandle(handle);
       },
     };
     const session = new WorkbenchAskSession();
@@ -848,7 +849,7 @@ async function verifyOllamaAgentOverProductionHttp(input) {
       model_supplied_scope: false,
     };
   } finally {
-    if (!closed) await handle.client.close().catch(() => undefined);
+    if (!closed) await closeStreamableHttpClientHandle(handle).catch(() => undefined);
   }
 }
 
@@ -983,12 +984,12 @@ async function createOllamaProductionGateway(input) {
         close: async () => {
           if (closed) return;
           closed = true;
-          await handle.client.close();
+          await closeStreamableHttpClientHandle(handle);
         },
       },
     };
   } catch (error) {
-    if (!closed) await handle.client.close().catch(() => undefined);
+    if (!closed) await closeStreamableHttpClientHandle(handle).catch(() => undefined);
     throw error;
   }
 }

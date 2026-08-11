@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { assertSoakServerAlive } from "./production-explore-http-soak.mjs";
+import { describe, expect, it, vi } from "vitest";
+import {
+  assertSoakServerAlive,
+  closeStreamableHttpClientHandle,
+} from "./production-explore-http-soak.mjs";
 
 const sample = (processes) => ({
   at: "2026-08-10T00:00:00.000Z",
@@ -29,5 +32,34 @@ describe("production Explore soak server monitor", () => {
       .toThrow("process group disappeared during soak");
     expect(() => assertSoakServerAlive({ process_sample: sample(1), expected_processes: 2 }))
       .toThrow("process group changed from 2 to 1 processes");
+  });
+});
+
+describe("production Explore soak client lifecycle", () => {
+  it("terminates the remote Streamable HTTP session before closing the local client", async () => {
+    const calls = [];
+    const handle = {
+      transport: {
+        terminateSession: vi.fn(async () => { calls.push("terminate"); }),
+      },
+      client: {
+        close: vi.fn(async () => { calls.push("close"); }),
+      },
+    };
+
+    await expect(closeStreamableHttpClientHandle(handle)).resolves.toBeUndefined();
+    expect(calls).toEqual(["terminate", "close"]);
+  });
+
+  it("still closes the local client when remote session termination fails", async () => {
+    const close = vi.fn(async () => undefined);
+    const failure = new Error("session termination failed");
+    const handle = {
+      transport: { terminateSession: vi.fn(async () => { throw failure; }) },
+      client: { close },
+    };
+
+    await expect(closeStreamableHttpClientHandle(handle)).rejects.toThrow("session termination failed");
+    expect(close).toHaveBeenCalledOnce();
   });
 });

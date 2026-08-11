@@ -4229,8 +4229,12 @@ describe("local Synapsor MCP runtime", () => {
     const otherTransport = new StreamableHTTPClientTransport(new URL(server.url), {
       requestInit: { headers: { authorization: `Bearer ${tokenFor("principal-b")}` } },
     });
+    const replacementTransport = new StreamableHTTPClientTransport(new URL(server.url), {
+      requestInit: { headers: { authorization: `Bearer ${tokenFor("principal-a")}` } },
+    });
     const first = new Client({ name: "principal-a-first", version: "1.0.0" });
     const other = new Client({ name: "principal-b-first", version: "1.0.0" });
+    const replacement = new Client({ name: "principal-a-replacement", version: "1.0.0" });
     try {
       await first.connect(firstTransport);
       const refused = await fetch(server.url, {
@@ -4259,9 +4263,18 @@ describe("local Synapsor MCP runtime", () => {
 
       await expect(other.connect(otherTransport)).resolves.toBeUndefined();
       await expect(other.listTools()).resolves.toMatchObject({ tools: expect.any(Array) });
+
+      await expect(firstTransport.terminateSession()).resolves.toBeUndefined();
+      await first.close();
+      await expect(replacement.connect(replacementTransport)).resolves.toBeUndefined();
+      await expect(replacement.listTools()).resolves.toMatchObject({ tools: expect.any(Array) });
     } finally {
+      await firstTransport.terminateSession().catch(() => undefined);
+      await otherTransport.terminateSession().catch(() => undefined);
+      await replacementTransport.terminateSession().catch(() => undefined);
       await first.close().catch(() => undefined);
       await other.close().catch(() => undefined);
+      await replacement.close().catch(() => undefined);
       await server.close();
     }
   }, 15_000);
