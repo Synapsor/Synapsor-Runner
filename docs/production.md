@@ -653,6 +653,19 @@ the writer has the locking privilege needed at apply.
 
 ## Logging And Redaction
 
+When `mcp serve` is attached to an interactive terminal, Runner prints a bounded
+HTTP access line after each request. The line contains only a process-local
+sequence number, HTTP method, query-free path, response status, and elapsed time.
+It never includes the query string, Authorization header, JWT, tenant or
+principal claims, MCP session id, tool arguments, filters, SQL, or result values.
+Redirected and daemon output stays quiet unless a host explicitly opts into the
+same redacted access logger. Tool-level acceptance and refusal remain recorded in
+the durable query-audit/evidence ledger; an HTTP `200` only means that the MCP
+transport completed.
+
+Interactive status labels use green for `OK`, yellow for `WARN`, and red for
+`FAIL`. Set `NO_COLOR` or redirect output to receive ANSI-free text.
+
 Expected public outputs must avoid secrets in:
 
 - demo output;
