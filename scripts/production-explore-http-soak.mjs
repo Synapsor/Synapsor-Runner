@@ -87,6 +87,23 @@ export function processGroupSnapshot(processGroupId) {
   };
 }
 
+export function assertSoakServerAlive(input) {
+  if (input.exit_state) {
+    const outcome = input.exit_state.signal ?? input.exit_state.code ?? "unknown";
+    throw new Error(`Production Explore server process exited during soak (${outcome}) at ${input.exit_state.at ?? "unknown time"}.`);
+  }
+  if (!input.process_sample) {
+    throw new Error("Production Explore server process group disappeared during soak.");
+  }
+  if (input.expected_processes !== undefined
+    && input.process_sample.processes !== input.expected_processes) {
+    throw new Error(
+      `Production Explore server process group changed from ${input.expected_processes} to ${input.process_sample.processes} processes during soak.`,
+    );
+  }
+  return input.process_sample.processes;
+}
+
 function resultPayload(result) {
   if (result.structuredContent && typeof result.structuredContent === "object") return result.structuredContent;
   const text = result.content?.find((item) => item.type === "text")?.text;
@@ -271,6 +288,7 @@ export async function runProductionExploreHttpSoak(input) {
   }));
   let stopping = false;
   let fatal;
+  let expectedServerProcesses;
 
   const snapshot = () => {
     const processRss = processSamples.map((sample) => sample.rss_kib);
@@ -429,7 +447,25 @@ export async function runProductionExploreHttpSoak(input) {
   const monitor = async () => {
     while (!stopping && Date.now() < loadEndsAt) {
       const processSample = processGroupSnapshot(input.server_pid);
-      if (processSample) processSamples.push(processSample);
+      try {
+        expectedServerProcesses = assertSoakServerAlive({
+          exit_state: input.server_exit_state?.(),
+          process_sample: processSample,
+          expected_processes: expectedServerProcesses,
+        });
+      } catch (error) {
+        fatal = error;
+        stopping = true;
+        state.errors.push({
+          at: new Date().toISOString(),
+          operation: "server_process",
+          burst: false,
+          message: safeError(error),
+        });
+        persist();
+        break;
+      }
+      processSamples.push(processSample);
       if (input.source_connection_count) {
         const count = await input.source_connection_count();
         sourceConnectionSamples.push({ at: new Date().toISOString(), count });

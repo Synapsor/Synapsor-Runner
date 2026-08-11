@@ -1336,6 +1336,7 @@ async function main() {
       const result = await runProductionExploreHttpSoak({
         engine: "mysql",
         server_pid: server.child.pid,
+        server_exit_state: server.exitState,
         source_connection_ceiling: runtimeConfig.production_explore.source_max_connections,
         source_connection_count: async () => {
           const [rows] = await mysqlAdmin.query(`

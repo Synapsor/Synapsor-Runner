@@ -33,6 +33,7 @@ import { verifyJwtRejectionMatrix } from "./production-explore-http-e2e-helpers.
 import {
   applyProductionExploreSoakBudgets,
   assertExactNumericBandResult,
+  assertSoakServerAlive,
   processGroupSnapshot,
   productionExploreSoakIdentities,
   productionExploreSoakRequested,
@@ -202,6 +203,7 @@ async function startProductionExploreCli(configPath, env) {
   child.stderr.setEncoding("utf8");
   let stdout = "";
   let stderr = "";
+  let exitState;
 
   return await new Promise((resolve, reject) => {
     let settled = false;
@@ -223,7 +225,13 @@ async function startProductionExploreCli(configPath, env) {
       if (!match || !stderr.includes("PRODUCTION EXPLORE READY")) return;
       settled = true;
       clearTimeout(timeout);
-      resolve({ child, url: match[1], stdout: () => stdout, stderr: () => stderr });
+      resolve({
+        child,
+        url: match[1],
+        stdout: () => stdout,
+        stderr: () => stderr,
+        exitState: () => exitState,
+      });
     };
     child.stdout.on("data", (chunk) => {
       stdout = `${stdout}${chunk}`.slice(-40_000);
@@ -235,6 +243,7 @@ async function startProductionExploreCli(configPath, env) {
     });
     child.once("error", fail);
     child.once("exit", (code, signal) => {
+      exitState = { code, signal, at: new Date().toISOString() };
       fail(new Error(`Production Explore CLI exited before readiness (${code ?? signal}).\n${stdout}\n${stderr}`));
     });
   });
@@ -994,6 +1003,7 @@ async function runOllamaAgentSoak(input) {
   };
   let session;
   let identity;
+  let expectedServerProcesses;
 
   const persist = () => writeOllamaSoakResult(input.result_path, {
     ...state,
@@ -1086,7 +1096,12 @@ async function runOllamaAgentSoak(input) {
         );
       }
       const processSample = processGroupSnapshot(input.server_pid);
-      if (processSample) state.process_samples.push(processSample);
+      expectedServerProcesses = assertSoakServerAlive({
+        exit_state: input.server_exit_state?.(),
+        process_sample: processSample,
+        expected_processes: expectedServerProcesses,
+      });
+      state.process_samples.push(processSample);
       persist();
       if (state.attempted % 10 === 0) {
         process.stderr.write(`[soak:ollama] attempted=${state.attempted} accepted=${state.accepted_explore_queries} semantic=${state.semantic_matches} errors=${state.provider_errors}\n`);
@@ -1864,6 +1879,7 @@ async function main() {
       const result = await runProductionExploreHttpSoak({
         engine: "postgres",
         server_pid: server.child.pid,
+        server_exit_state: server.exitState,
         source_connection_ceiling: runtimeConfig.production_explore.source_max_connections,
         source_connection_count: async () => {
           const count = await admin.query(`
@@ -1887,6 +1903,7 @@ async function main() {
         model: process.env.SYNAPSOR_TEST_OLLAMA_MODEL?.trim() || "qwen2.5:7b",
         identities: ollamaIdentities,
         server_pid: server.child.pid,
+        server_exit_state: server.exitState,
         source_connection_ceiling: runtimeConfig.production_explore.source_max_connections,
         source_connection_count: async () => {
           const count = await admin.query(`

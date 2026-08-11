@@ -65,6 +65,7 @@ export async function startProductionExploreCli({ root, configPath, env }) {
   child.stderr.setEncoding("utf8");
   let stdout = "";
   let stderr = "";
+  let exitState;
 
   return await new Promise((resolve, reject) => {
     let settled = false;
@@ -86,7 +87,13 @@ export async function startProductionExploreCli({ root, configPath, env }) {
       if (!match || !stderr.includes("PRODUCTION EXPLORE READY")) return;
       settled = true;
       clearTimeout(timeout);
-      resolve({ child, url: match[1], stdout: () => stdout, stderr: () => stderr });
+      resolve({
+        child,
+        url: match[1],
+        stdout: () => stdout,
+        stderr: () => stderr,
+        exitState: () => exitState,
+      });
     };
     child.stdout.on("data", (chunk) => {
       stdout = `${stdout}${chunk}`.slice(-40_000);
@@ -98,6 +105,7 @@ export async function startProductionExploreCli({ root, configPath, env }) {
     });
     child.once("error", fail);
     child.once("exit", (code, signal) => {
+      exitState = { code, signal, at: new Date().toISOString() };
       fail(new Error(`Production Explore CLI exited before readiness (${code ?? signal}).\n${stdout}\n${stderr}`));
     });
   });
