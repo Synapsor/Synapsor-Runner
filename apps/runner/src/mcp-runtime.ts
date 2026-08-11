@@ -199,6 +199,7 @@ export async function mcpServeStreamableHttp(args: string[]): Promise<number> {
       unsafeAllowCleartextHttp: args.includes("--unsafe-allow-cleartext-http"),
       resultFormat,
       tls,
+      accessLog: process.stderr.isTTY === true,
       ...(productionExplore
         ? { streamableSessionFactory: productionExploreSessionFactory(config, process.env) }
         : {}),

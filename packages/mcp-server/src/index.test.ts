@@ -3277,6 +3277,43 @@ describe("local Synapsor MCP runtime", () => {
     }
   });
 
+  it("renders a TTY-only redacted Streamable HTTP access log without query strings", async () => {
+    const chunks: string[] = [];
+    const accessLogEnv = { ...process.env };
+    delete accessLogEnv.NO_COLOR;
+    const server = await startStreamableHttpMcpServer({
+      config,
+      storePath: ":memory:",
+      port: 0,
+      devNoAuth: true,
+      env: accessLogEnv,
+      accessLog: true,
+      log: {
+        isTTY: true,
+        write: (chunk) => chunks.push(chunk),
+      },
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    });
+    const secretQuery = "must-not-appear-in-access-log";
+    const url = new URL(server.url);
+    url.searchParams.set("token", secretQuery);
+    const transport = new StreamableHTTPClientTransport(url);
+    const client = new Client({ name: "access-log-client", version: "1.0.0" });
+    try {
+      await client.connect(transport);
+      await client.listTools();
+    } finally {
+      await client.close().catch(() => undefined);
+      await server.close();
+    }
+
+    const rendered = chunks.join("");
+    expect(rendered).toContain("Access log: enabled for HTTP request metadata only");
+    expect(rendered).toMatch(/\u001b\[1;32mOK\u001b\[0m  HTTP #\d{6} POST \/mcp -> 200 in \d+ ms/);
+    expect(rendered).not.toContain(secretQuery);
+    expect(rendered).not.toContain("authorization");
+  });
+
   it("validates present Origin and Host exactly while preserving native clients without Origin", async () => {
     const originConfig = structuredClone(config);
     originConfig.http_security = {

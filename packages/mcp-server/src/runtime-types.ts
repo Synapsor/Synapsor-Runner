@@ -596,7 +596,8 @@ export type HttpMcpServerOptions = {
   trustedTlsProxy?: boolean;
   unsafeAllowCleartextHttp?: boolean;
   env?: NodeJS.ProcessEnv;
-  log?: false | { write(chunk: string): unknown };
+  log?: false | { write(chunk: string): unknown; isTTY?: boolean };
+  accessLog?: boolean;
   resultFormat?: ResultFormat;
   readRow?: DbRowReader;
   credentialResolver?: TenantCredentialResolver;

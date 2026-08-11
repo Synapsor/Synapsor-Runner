@@ -242,7 +242,34 @@ export async function startStreamableHttpMcpServer(options: HttpMcpServerOptions
   const openSessions = new Set<StreamableHttpSession>();
   const pendingSessionCloses = new Set<Promise<void>>();
   const initializingSessions = { count: 0, byPrincipal: new Map<string, number>() };
+  const log = options.log === false ? undefined : options.log ?? process.stderr;
+  const accessLog = options.accessLog === true ? log : undefined;
+  const accessLogColor = accessLog?.isTTY === true && !("NO_COLOR" in env);
+  let requestSequence = 0;
   const requestHandler = (request: IncomingMessage, response: ServerResponse) => {
+    if (accessLog) {
+      const sequence = requestSequence += 1;
+      const startedAt = process.hrtime.bigint();
+      let logged = false;
+      const writeAccessLog = (closedEarly: boolean) => {
+        if (logged) return;
+        logged = true;
+        const elapsedMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+        accessLog.write(`${formatStreamableHttpAccessLog({
+          sequence,
+          method: request.method,
+          url: request.url,
+          statusCode: response.statusCode,
+          elapsedMs,
+          closedEarly,
+          color: accessLogColor,
+        })}\n`);
+      };
+      response.once("finish", () => writeAccessLog(false));
+      response.once("close", () => {
+        if (!response.writableFinished) writeAccessLog(true);
+      });
+    }
     void handleStreamableHttpMcpRequest({
       request,
       response,
@@ -314,8 +341,7 @@ export async function startStreamableHttpMcpServer(options: HttpMcpServerOptions
   const scheme = options.tls ? "https" : "http";
   const url = `${scheme}://${actualHost}:${actualPort}/mcp`;
 
-  if (options.log !== false) {
-    const log = options.log ?? process.stderr;
+  if (log) {
     log.write(`Synapsor Runner Streamable HTTP MCP listening on ${url}\n`);
     log.write(`Channel: ${security.channel}; deployment: ${security.deployment}\n`);
     if (options.tls) log.write(options.tls.requestClientCert ? "TLS: enabled, client certificates required in addition to Bearer auth\n" : "TLS: enabled\n");
@@ -333,6 +359,9 @@ export async function startStreamableHttpMcpServer(options: HttpMcpServerOptions
     }
     log.write(`Config: ${options.configPath ?? "synapsor.runner.json"}\n`);
     log.write(`Store: ${options.storePath ?? config.storage?.sqlite_path ?? "./.synapsor/local.db"}\n`);
+    if (accessLog) {
+      log.write("Access log: enabled for HTTP request metadata only; tokens, claims, arguments, SQL, and result values are never logged here.\n");
+    }
   }
 
   return {
@@ -352,6 +381,40 @@ export async function startStreamableHttpMcpServer(options: HttpMcpServerOptions
       );
     },
   };
+}
+
+export function formatStreamableHttpAccessLog(input: {
+  sequence: number;
+  method?: string;
+  url?: string;
+  statusCode: number;
+  elapsedMs: number;
+  closedEarly?: boolean;
+  color?: boolean;
+}): string {
+  const method = safeAccessLogToken(input.method ?? "UNKNOWN", 16);
+  const pathname = safeAccessLogPath(input.url);
+  const elapsed = Math.max(0, Math.round(input.elapsedMs));
+  const sequence = String(Math.max(0, Math.trunc(input.sequence))).padStart(6, "0");
+  const level = input.closedEarly ? "fail" : input.statusCode >= 500 ? "fail" : input.statusCode >= 400 ? "warn" : "pass";
+  const label = level === "pass" ? "OK" : level === "warn" ? "WARN" : "FAIL";
+  const renderedLabel = input.color
+    ? `\u001b[${level === "pass" ? "1;32" : level === "warn" ? "1;33" : "1;31"}m${label}\u001b[0m`
+    : label;
+  const outcome = input.closedEarly ? "connection closed" : String(input.statusCode);
+  return `  ${renderedLabel}  HTTP #${sequence} ${method} ${pathname} -> ${outcome} in ${elapsed} ms`;
+}
+
+function safeAccessLogPath(value: string | undefined): string {
+  try {
+    return safeAccessLogToken(new URL(value ?? "/", "http://localhost").pathname, 160);
+  } catch {
+    return "/";
+  }
+}
+
+function safeAccessLogToken(value: string, maximumLength: number): string {
+  return value.replace(/[\u0000-\u001f\u007f]/g, "?").slice(0, maximumLength) || "/";
 }
 
 export async function handleStreamableHttpMcpRequest(input: {
