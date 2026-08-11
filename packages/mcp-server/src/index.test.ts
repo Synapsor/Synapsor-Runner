@@ -40,7 +40,11 @@ import {
   type RuntimeConfig,
   type StreamableHttpSessionFactory,
 } from "./index.js";
-import { closeStreamableHttpServer, disposeStreamableSession } from "./http-transport.js";
+import {
+  closeStreamableHttpServer,
+  disposeStreamableSession,
+  formatStreamableHttpAccessLog,
+} from "./http-transport.js";
 import type { StreamableHttpSession } from "./runtime-types.js";
 
 const {
@@ -3312,6 +3316,34 @@ describe("local Synapsor MCP runtime", () => {
     expect(rendered).toMatch(/\u001b\[1;32mOK\u001b\[0m  HTTP #\d{6} POST \/mcp -> 200 in \d+ ms/);
     expect(rendered).not.toContain(secretQuery);
     expect(rendered).not.toContain("authorization");
+  });
+
+  it("uses distinct access-log status colors and keeps plain output ANSI-free", () => {
+    expect(formatStreamableHttpAccessLog({
+      sequence: 7,
+      method: "POST",
+      url: "/mcp",
+      statusCode: 401,
+      elapsedMs: 2.4,
+      color: true,
+    })).toBe("  \u001b[1;33mWARN\u001b[0m  HTTP #000007 POST /mcp -> 401 in 2 ms");
+    expect(formatStreamableHttpAccessLog({
+      sequence: 8,
+      method: "POST",
+      url: "/mcp",
+      statusCode: 503,
+      elapsedMs: 3.6,
+      color: true,
+    })).toBe("  \u001b[1;31mFAIL\u001b[0m  HTTP #000008 POST /mcp -> 503 in 4 ms");
+    expect(formatStreamableHttpAccessLog({
+      sequence: 9,
+      method: "GET",
+      url: "/readyz?token=never-log-this",
+      statusCode: 200,
+      elapsedMs: 1,
+      closedEarly: true,
+      color: false,
+    })).toBe("  FAIL  HTTP #000009 GET /readyz -> connection closed in 1 ms");
   });
 
   it("validates present Origin and Host exactly while preserving native clients without Origin", async () => {
