@@ -639,6 +639,7 @@ async function runOpenAiCompatibleTurn(input: {
   const providerHistory: ProviderHistoryEntry[] = [];
   let usage: AskTurnResult["usage"];
   let catalogCorrectionSent = false;
+  let localDirectCatalogTrace: AskToolTrace | undefined;
 
   for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration += 1) {
     assertAskNotCancelled(input.signal);
@@ -894,16 +895,47 @@ async function runOpenAiCompatibleTurn(input: {
       }
       const canonicalName = input.prepared.canonicalByProvider.get(call.name);
       const directArguments = safeToolArguments(call.arguments);
+      if (input.configuration.provider === "openai_compatible"
+        && canonicalName === "app.explore_data"
+        && !localDirectCatalogTrace
+        && !traces.some((trace) =>
+          trace.tool === "app.describe_data"
+          && trace.status === "ok"
+          && !hasFocusedCatalogResource(trace.arguments))
+        && traces.length + toolCalls.length < MAX_TOOL_CALLS_PER_TURN) {
+        const describeProviderName = providerToolName(input.prepared, "app.describe_data");
+        if (describeProviderName) {
+          const catalogArguments = { limit: 10 };
+          const catalog = await executeProviderTool(
+            input.gateway,
+            input.prepared,
+            `runner_local_direct_catalog_${iteration + 1}_${traces.length + 1}`,
+            describeProviderName,
+            catalogArguments,
+            input.onProgress,
+          );
+          if (catalog.trace.status === "ok") localDirectCatalogTrace = catalog.trace;
+        }
+      }
       let requirements = input.configuration.provider === "openai_compatible"
         && canonicalName === "app.explore_data"
-        ? localPlanRequirementsForDirectCall(input.question, traces, directArguments)
+        ? localPlanRequirementsFromQuestionCatalog(
+          input.question,
+          localDirectCatalogTrace ? [...traces, localDirectCatalogTrace] : traces,
+        ) ?? localPlanRequirementsForDirectCall(
+          input.question,
+          localDirectCatalogTrace ? [...traces, localDirectCatalogTrace] : traces,
+          directArguments,
+        )
         : undefined;
       if (input.configuration.provider === "openai_compatible" && canonicalName === "app.explore_data") {
         const directPlan = isRecord(directArguments.plan) ? directArguments.plan : undefined;
-        const resource = typeof directPlan?.resource === "string" ? directPlan.resource : undefined;
-        const boundary = typeof directArguments.boundary === "string" && directArguments.boundary.length > 0
-          ? directArguments.boundary
-          : undefined;
+        const resource = requirements?.resource
+          ?? (typeof directPlan?.resource === "string" ? directPlan.resource : undefined);
+        const boundary = requirements?.boundary
+          ?? (typeof directArguments.boundary === "string" && directArguments.boundary.length > 0
+            ? directArguments.boundary
+            : undefined);
         const alreadyFocused = resource && traces.some((trace) =>
           trace.tool === "app.describe_data"
           && trace.status === "ok"
@@ -957,6 +989,12 @@ async function runOpenAiCompatibleTurn(input: {
           tool_call_id: call.id,
           content: boundedToolResult(providerResult),
         });
+        if (requirements.unanswerable) {
+          return rememberProviderHistory(
+            completeLocalPlanMismatchAnswer(input.configuration, traces, usage),
+            providerHistory,
+          );
+        }
         const repaired = await requestOpenAiCompatiblePlanJson({
           ...input,
           messages,
@@ -1122,27 +1160,29 @@ function unambiguousQuestionResource(
       const table = resource.id.split(".").at(-1)?.toLowerCase();
       if (!table) return [];
       const readableTable = table.replace(/[_-]+/g, " ");
-      const variants = new Set([
-        table,
-        singularResourceName(table),
-        readableTable,
-        singularResourceName(readableTable),
-      ]);
-      const positions = [...variants]
+      const variants = resourceNameVariants(table, readableTable, resource.label);
+      const matched = [...variants]
         .filter(Boolean)
-        .map((variant) => wordPosition(normalizedQuestion, variant))
-        .filter((position) => position >= 0);
-      if (!positions.length) return [];
+        .map((variant) => ({ variant, position: wordPosition(normalizedQuestion, variant) }))
+        .filter(({ position }) => position >= 0);
+      if (!matched.length) return [];
+      const position = Math.min(...matched.map((candidate) => candidate.position));
       return [{
         resource: resource.id,
         boundary: typeof resource.boundary_name === "string" ? resource.boundary_name : undefined,
-        position: Math.min(...positions),
+        position,
+        specificity: Math.max(...matched
+          .filter((candidate) => candidate.position === position)
+          .map(({ variant }) => variant.length)),
       }];
     })
-    .sort((left, right) => left.position - right.position || left.resource.localeCompare(right.resource));
+    .sort((left, right) => left.position - right.position
+      || right.specificity - left.specificity
+      || left.resource.localeCompare(right.resource));
   const first = matches[0];
   if (first) {
-    const tied = matches.filter((match) => match.position === first.position);
+    const tied = matches.filter((match) =>
+      match.position === first.position && match.specificity === first.specificity);
     if (new Set(tied.map((match) => `${match.boundary ?? ""}\u0000${match.resource}`)).size !== 1) {
       return undefined;
     }
@@ -1179,6 +1219,26 @@ function unambiguousQuestionResource(
   };
 }
 
+function resourceNameVariants(...values: unknown[]): Set<string> {
+  const variants = new Set<string>();
+  const add = (value: string) => {
+    if (!value) return;
+    variants.add(value);
+    variants.add(singularResourceName(value));
+    variants.add(pluralResourceName(value));
+  };
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    const raw = value.toLowerCase().trim();
+    const readable = raw.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+    add(raw);
+    add(readable);
+    const withoutGenericSuffix = readable.replace(/\s+(?:catalog|table|records|data)$/u, "").trim();
+    if (withoutGenericSuffix !== readable) add(withoutGenericSuffix);
+  }
+  return variants;
+}
+
 function modelResourceSemanticTerms(resource: Record<string, unknown>): Set<string> {
   const terms = new Set<string>();
   const add = (value: unknown) => {
@@ -1206,6 +1266,14 @@ function singularResourceName(value: string): string {
   if (value.endsWith("ses") && value.length > 3) return value.slice(0, -2);
   if (value.endsWith("s") && !value.endsWith("ss") && value.length > 1) return value.slice(0, -1);
   return value;
+}
+
+function pluralResourceName(value: string): string {
+  if (!value || value.endsWith("s")) return value;
+  if (value.endsWith("y") && value.length > 1 && !/[aeiou]y$/u.test(value)) {
+    return `${value.slice(0, -1)}ies`;
+  }
+  return `${value}s`;
 }
 
 function wordPosition(text: string, word: string): number {
@@ -2004,9 +2072,15 @@ type LocalPlanRequirements = {
   resource: string;
   boundary?: string;
   kind: "rows" | "aggregate";
-  measure?: { function: string; field?: string };
+  measure?: { function: string; field?: string } | { derived_measure: string };
   filter?: { field: string; value: string | number | boolean };
-  dimension?: { field: string; relationship?: string };
+  dimension?: { field: string; relationship?: string } | {
+    numeric_band: string | {
+      field: string;
+      method: "quantile" | "equal_width";
+      buckets: number;
+    };
+  };
   timeBucket?: { field: string; bucket: string; relationship?: string };
   orderByTime?: { kind: "time_bucket"; direction: "asc" | "desc" };
   timeWindow?: { field: string; relationship?: string; window: RelativeTimeWindow };
@@ -2031,8 +2105,28 @@ function localPlanRequirements(
   const normalized = question.toLowerCase();
   const rowIntent = /\b(?:show|list|give)\b.*\b(?:every|all|rows?|records?|details?)\b/.test(normalized);
   const countIntent = /\b(?:how many|number of|counts?)\b/.test(normalized);
-  const totalIntent = /\b(?:total|sum)\b/.test(normalized);
+  const runningTotalIntent = /\brunning(?:\s+[a-z0-9_]+){0,3}\s+total\b/.test(normalized)
+    || /\btotal(?:\s+[a-z0-9_]+){0,3}\s+running\b/.test(normalized);
+  const totalIntent = !runningTotalIntent && /\b(?:total|sum)\b/.test(normalized);
   const averageIntent = /\b(?:average|mean)\b/.test(normalized);
+  const standardDeviationIntent = /\b(?:standard deviation|stddev|std dev)\b/.test(normalized);
+  const varianceIntent = /\bvariance\b/.test(normalized);
+  const dispersionIntent = standardDeviationIntent || varianceIntent;
+  const populationIntent = /\bpopulation\b/.test(normalized);
+  const sampleIntent = /\bsample\b/.test(normalized);
+  const dispersionFunction = standardDeviationIntent
+    ? populationIntent && !sampleIntent
+      ? "stddev_pop"
+      : sampleIntent && !populationIntent
+        ? "stddev_samp"
+        : undefined
+    : varianceIntent
+      ? populationIntent && !sampleIntent
+        ? "var_pop"
+        : sampleIntent && !populationIntent
+          ? "var_samp"
+          : undefined
+      : undefined;
   const comparisonAllowed = /\b(?:compare|comparison|change|growth|decline|versus|vs\.?|previous|prior)\b/.test(normalized);
   const requestedRelativeWindow = relativeTimeWindowFromQuestion(normalized);
   const selectable = safeStringList(resource.selectable_fields)
@@ -2043,14 +2137,38 @@ function localPlanRequirements(
     : {};
   const mentionedNumeric = Object.keys(aggregateFunctions)
     .filter((field) => !isIdentifierLikeField(field) && questionMentionsField(normalized, field));
+  const derivedMeasures = Array.isArray(resource.derived_measures)
+    ? resource.derived_measures.filter(isRecord)
+    : [];
+  const matchingDerivedMeasures = derivedMeasures.filter((candidate) =>
+    questionMentionsMetadataName(normalized, candidate.name)
+    || questionMentionsMetadataName(normalized, candidate.label));
+  const derivedCandidates = matchingDerivedMeasures.length > 0
+    ? matchingDerivedMeasures
+    : runningTotalIntent
+      ? derivedMeasures.filter((candidate) => candidate.shape === "running_total")
+      : [];
+  const derivedMeasure = derivedCandidates.length === 1 && typeof derivedCandidates[0]!.name === "string"
+    ? { derived_measure: derivedCandidates[0]!.name }
+    : undefined;
   const requestedTimeBucket = timeBucketFromQuestion(normalized, mentionedNumeric);
-  const numericMeasureRequested = totalIntent || averageIntent;
-  const measureIntentCount = Number(countIntent) + Number(totalIntent) + Number(averageIntent);
-  const measure = countIntent
-    ? { function: "count" }
-    : numericMeasureRequested && mentionedNumeric.length === 1
-      ? { function: totalIntent ? "sum" : "avg", field: mentionedNumeric[0] }
-      : undefined;
+  const numericMeasureRequested = totalIntent || averageIntent || dispersionIntent;
+  const measureIntentCount = Number(countIntent)
+    + Number(totalIntent)
+    + Number(averageIntent)
+    + Number(dispersionIntent)
+    + Number(Boolean(derivedMeasure));
+  const numericFunction = totalIntent
+    ? "sum"
+    : averageIntent
+      ? "avg"
+      : dispersionFunction;
+  const measure = derivedMeasure
+    ?? (countIntent
+      ? { function: "count" }
+      : numericMeasureRequested && mentionedNumeric.length === 1 && numericFunction
+        ? { function: numericFunction, field: mentionedNumeric[0] }
+        : undefined);
 
   const filterCandidates: NonNullable<LocalPlanRequirements["filter"]>[] = [];
   if (isRecord(resource.field_enums)) {
@@ -2068,24 +2186,100 @@ function localPlanRequirements(
   const uniqueFilterCandidates = uniqueByJson(filterCandidates);
   const filter = uniqueFilterCandidates.length === 1 ? uniqueFilterCandidates[0] : undefined;
 
-  const groupingRequested = /\bby\b/.test(normalized);
+  const autoBandMethod = /\bquantiles?\b/.test(normalized)
+    ? "quantile" as const
+    : /\bequal[ -]width\b/.test(normalized)
+      ? "equal_width" as const
+      : undefined;
+  const autoBandIntent = Boolean(autoBandMethod)
+    || /\b(?:automatic|adaptive|auto)[ -]bands?\b/.test(normalized);
+  const requestedBucketCount = bucketCountFromQuestion(normalized);
+  const bandIntent = autoBandIntent || /\b(?:bands?|buckets?|histogram)\b/.test(normalized);
+  const groupingRequested = /\bby\b/.test(normalized) || bandIntent;
   const dimensionCandidates: NonNullable<LocalPlanRequirements["dimension"]>[] = [];
   if (groupingRequested) {
-    for (const field of safeStringList(resource.groupable_fields)
-      .filter((candidate) => questionMentionsField(normalized, candidate))) {
-      dimensionCandidates.push({ field });
-    }
+    const directGroupFields = safeStringList(resource.groupable_fields)
+      .filter((candidate) => questionMentionsField(normalized, candidate));
+    const relationshipGroupFields: Array<{
+      field: string;
+      relationship: string;
+      targetMentioned: boolean;
+    }> = [];
     if (Array.isArray(resource.relationships)) {
       for (const relationship of resource.relationships.filter(isRecord)) {
         if (typeof relationship.id !== "string" || typeof relationship.target_resource !== "string") continue;
         const targetTable = relationship.target_resource.split(".").at(-1)?.toLowerCase() ?? "";
-        const targetMentioned = wordPosition(normalized, targetTable) >= 0
-          || wordPosition(normalized, singularResourceName(targetTable)) >= 0;
-        if (!targetMentioned) continue;
+        const targetMentioned = [...resourceNameVariants(targetTable, relationship.target_label)]
+          .some((variant) => wordPosition(normalized, variant) >= 0);
         for (const field of safeStringList(relationship.groupable_fields)
           .filter((candidate) => questionMentionsField(normalized, candidate))) {
-          dimensionCandidates.push({ field, relationship: relationship.id });
+          relationshipGroupFields.push({ field, relationship: relationship.id, targetMentioned });
         }
+      }
+    }
+    for (const field of new Set([
+      ...directGroupFields,
+      ...relationshipGroupFields.map((candidate) => candidate.field),
+    ])) {
+      const related = relationshipGroupFields.filter((candidate) => candidate.field === field);
+      const namedRelated = related.filter((candidate) => candidate.targetMentioned);
+      if (namedRelated.length > 0) {
+        dimensionCandidates.push(...namedRelated.map(({ relationship }) => ({ field, relationship })));
+      } else if (directGroupFields.includes(field)) {
+        dimensionCandidates.push({ field });
+      } else {
+        dimensionCandidates.push(...related.map(({ relationship }) => ({ field, relationship })));
+      }
+    }
+    if (autoBandIntent) {
+      const autoBands = Array.isArray(resource.auto_bands)
+        ? resource.auto_bands.filter(isRecord)
+        : [];
+      const mentionedPolicies = autoBands.filter((policy) =>
+        typeof policy.field === "string" && questionMentionsField(normalized, policy.field));
+      const policies = mentionedPolicies.length > 0
+        ? mentionedPolicies
+        : autoBands.length === 1
+          ? autoBands
+          : [];
+      if (policies.length === 1
+        && typeof policies[0]!.field === "string"
+        && autoBandMethod
+        && requestedBucketCount !== undefined
+        && safeStringList(policies[0]!.methods).includes(autoBandMethod)
+        && typeof policies[0]!.min_buckets === "number"
+        && typeof policies[0]!.max_buckets === "number"
+        && requestedBucketCount >= policies[0]!.min_buckets
+        && requestedBucketCount <= policies[0]!.max_buckets) {
+        dimensionCandidates.push({
+          numeric_band: {
+            field: policies[0]!.field,
+            method: autoBandMethod,
+            buckets: requestedBucketCount,
+          },
+        });
+      }
+    } else if (bandIntent) {
+      const numericBands = Array.isArray(resource.numeric_bands)
+        ? resource.numeric_bands.filter(isRecord)
+        : [];
+      const autoBands = Array.isArray(resource.auto_bands)
+        ? resource.auto_bands.filter(isRecord)
+        : [];
+      const explicitlyNamedBands = numericBands.filter((band) =>
+        questionMentionsMetadataName(normalized, band.name)
+        || questionMentionsMetadataName(normalized, band.label));
+      const fieldMatchedBands = numericBands.filter((band) =>
+        typeof band.field === "string" && questionMentionsField(normalized, band.field));
+      const bandCandidates = explicitlyNamedBands.length > 0
+        ? explicitlyNamedBands
+        : autoBands.length === 0 && fieldMatchedBands.length > 0
+          ? fieldMatchedBands
+          : autoBands.length === 0 && numericBands.length === 1
+            ? numericBands
+            : [];
+      for (const band of bandCandidates) {
+        if (typeof band.name === "string") dimensionCandidates.push({ numeric_band: band.name });
       }
     }
   }
@@ -2111,6 +2305,11 @@ function localPlanRequirements(
     || (rowIntent && (countIntent || numericMeasureRequested))
     || measureIntentCount > 1
     || (numericMeasureRequested && mentionedNumeric.length !== 1)
+    || Boolean(dispersionIntent && (!dispersionFunction
+      || mentionedNumeric.length !== 1
+      || !safeStringList(aggregateFunctions[mentionedNumeric[0] ?? ""]).includes(dispersionFunction)))
+    || Boolean(runningTotalIntent && derivedCandidates.length !== 1)
+    || Boolean(bandIntent && uniqueDimensionCandidates.length !== 1)
     || uniqueFilterCandidates.length > 1
     || (groupingRequested && uniqueDimensionCandidates.length !== 1)
     || Boolean(requestedRelativeWindow && !timeWindow)
@@ -2138,13 +2337,17 @@ function localPlanRequirements(
     requirements.boundary ? `If boundary is sent, it must be the string ${requirements.boundary}.` : undefined,
     `Use kind exactly ${requirements.kind}.`,
     measure
-      ? `Use exactly one measure: ${measure.function}${measure.field ? ` on field ${measure.field}` : " with no field"}.`
+      ? "derived_measure" in measure
+        ? `Use exactly one named reviewed measure: derived_measure ${measure.derived_measure}.`
+        : `Use exactly one measure: ${measure.function}${measure.field ? ` on field ${measure.field}` : " with no field"}.`
       : undefined,
     filter
       ? `Use exactly one where filter: field ${filter.field}, op eq, value ${JSON.stringify(filter.value)}.`
       : "Do not add a where filter because no exact reviewed filter value was named.",
     dimension
-      ? `Use exactly one dimension: field ${dimension.field}${dimension.relationship ? ` with relationship ${dimension.relationship}` : " with no relationship"}.`
+      ? "numeric_band" in dimension
+        ? `Use exactly one dimension: numeric_band ${JSON.stringify(dimension.numeric_band)}.`
+        : `Use exactly one dimension: field ${dimension.field}${dimension.relationship ? ` with relationship ${dimension.relationship}` : " with no relationship"}.`
       : "Do not add dimensions because the question did not request a reviewed grouping.",
     timeBucket
       ? `Use exactly one time_bucket: field ${timeBucket.field}, bucket ${timeBucket.bucket}${timeBucket.relationship ? `, relationship ${timeBucket.relationship}` : ", with no relationship"}.`
@@ -2158,7 +2361,7 @@ function localPlanRequirements(
     select?.length ? `Select exactly these fields: ${select.join(", ")}.` : undefined,
     !comparisonAllowed ? "Do not add a comparison." : undefined,
   ].filter((clause): clause is string => Boolean(clause));
-  const exactPlan = requirements.kind === "aggregate" && measure
+  const exactPlan = !unanswerable && requirements.kind === "aggregate" && measure
     ? {
       boundary: requirements.boundary,
       plan: {
@@ -2211,9 +2414,7 @@ function localPlanMatchesRequirements(
   if (!requirements.dimensionsAllowed && dimensions.length > 0) return false;
   if (requirements.dimension) {
     if (dimensions.length !== 1) return false;
-    const actual = dimensions[0]!;
-    if (actual.field !== requirements.dimension.field) return false;
-    if ((actual.relationship ?? undefined) !== requirements.dimension.relationship) return false;
+    if (!localPlanDimensionMatches(dimensions[0]!, requirements.dimension)) return false;
   }
   const filters = Array.isArray(plan.where) ? plan.where.filter(isRecord) : [];
   if (!requirements.filtersAllowed && filters.length > 0) return false;
@@ -2233,9 +2434,7 @@ function localPlanMatchesRequirements(
   const measures = Array.isArray(plan.measures) ? plan.measures.filter(isRecord) : [];
   if (requirements.measure) {
     if (measures.length !== 1) return false;
-    const actual = measures[0]!;
-    return actual.function === requirements.measure.function
-      && (actual.field ?? undefined) === requirements.measure.field;
+    return localPlanMeasureMatches(measures[0]!, requirements.measure);
   }
   return measures.length > 0;
 }
@@ -2255,6 +2454,29 @@ function localPlanRequirementsForDirectCall(
     if (resource) return localPlanRequirements(question, { resources: [resource] });
   }
   return undefined;
+}
+
+function localPlanRequirementsFromQuestionCatalog(
+  question: string,
+  traces: AskToolTrace[],
+): LocalPlanRequirements | undefined {
+  for (const trace of [...traces].reverse()) {
+    if (trace.tool !== "app.describe_data"
+      || trace.status !== "ok"
+      || hasFocusedCatalogResource(trace.arguments)
+      || !Array.isArray(trace.result.resources)) continue;
+    const selection = unambiguousQuestionResource(question, trace.result.resources);
+    if (!selection) return undefined;
+    const resource = trace.result.resources.filter(isRecord).find((candidate) =>
+      candidate.id === selection.resource
+      && (selection.boundary === undefined || candidate.boundary_name === selection.boundary));
+    return resource ? localPlanRequirements(question, { resources: [resource] }) : undefined;
+  }
+  return undefined;
+}
+
+function hasFocusedCatalogResource(args: Record<string, unknown>): boolean {
+  return typeof args.resource === "string" && args.resource.length > 0;
 }
 
 function directLocalPlanMatchesRequirements(
@@ -2293,19 +2515,53 @@ function directLocalPlanMatchesRequirements(
   const measures = Array.isArray(plan.measures) ? plan.measures.filter(isRecord) : [];
   if (requirements.measure) {
     if (measures.length !== 1) return false;
-    const actual = measures[0]!;
-    if (actual.function !== requirements.measure.function
-      || (actual.field ?? undefined) !== requirements.measure.field) return false;
+    if (!localPlanMeasureMatches(measures[0]!, requirements.measure)) return false;
   }
   if (requirements.dimension) {
     if (dimensions.length !== 1) return false;
-    const actual = dimensions[0]!;
-    if (actual.field !== requirements.dimension.field
-      || (actual.relationship ?? undefined) !== requirements.dimension.relationship) return false;
+    if (!localPlanDimensionMatches(dimensions[0]!, requirements.dimension)) return false;
   } else if (dimensions.length > 0) {
     return false;
   }
   return measures.length > 0;
+}
+
+function localPlanMeasureMatches(
+  actual: Record<string, unknown>,
+  expected: NonNullable<LocalPlanRequirements["measure"]>,
+): boolean {
+  if ("derived_measure" in expected) {
+    return actual.derived_measure === expected.derived_measure
+      && actual.function === undefined
+      && actual.field === undefined;
+  }
+  return actual.derived_measure === undefined
+    && actual.function === expected.function
+    && (actual.field ?? undefined) === expected.field;
+}
+
+function localPlanDimensionMatches(
+  actual: Record<string, unknown>,
+  expected: NonNullable<LocalPlanRequirements["dimension"]>,
+): boolean {
+  if ("numeric_band" in expected) {
+    if (typeof expected.numeric_band === "string") {
+      return actual.numeric_band === expected.numeric_band
+        && actual.field === undefined
+        && actual.relationship === undefined;
+    }
+    const actualBand = isRecord(actual.numeric_band) ? actual.numeric_band : undefined;
+    return Boolean(actualBand
+      && actualBand.field === expected.numeric_band.field
+      && actualBand.method === expected.numeric_band.method
+      && actualBand.buckets === expected.numeric_band.buckets
+      && Object.keys(actualBand).length === 3
+      && actual.field === undefined
+      && actual.relationship === undefined);
+  }
+  return actual.numeric_band === undefined
+    && actual.field === expected.field
+    && (actual.relationship ?? undefined) === expected.relationship;
 }
 
 function uniqueByJson<T>(values: T[]): T[] {
@@ -2453,6 +2709,36 @@ function questionMentionsField(question: string, field: string): boolean {
   if (semanticWords.length > 0) candidates.add(semanticWords.join(" "));
   if (semanticWords[0] && semanticWords[0].length >= 4) candidates.add(semanticWords[0]);
   return [...candidates].some((candidate) => candidate.length >= 3 && wordPosition(question, candidate) >= 0);
+}
+
+function questionMentionsMetadataName(question: string, value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  const normalized = value.toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  return normalized.length >= 3 && wordPosition(question, normalized) >= 0;
+}
+
+function bucketCountFromQuestion(question: string): number | undefined {
+  const numeric = question.match(/\b(\d{1,2})\s+(?:(?:quantile|equal[ -]width|automatic|adaptive|auto)\s+)?buckets?\b/);
+  if (numeric) return Number(numeric[1]);
+  const words: Record<string, number> = {
+    two: 2,
+    three: 3,
+    four: 4,
+    five: 5,
+    six: 6,
+    seven: 7,
+    eight: 8,
+    nine: 9,
+    ten: 10,
+    eleven: 11,
+    twelve: 12,
+    thirteen: 13,
+    fourteen: 14,
+    fifteen: 15,
+    sixteen: 16,
+  };
+  const named = question.match(/\b(two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen)\s+(?:(?:quantile|equal[ -]width|automatic|adaptive|auto)\s+)?buckets?\b/);
+  return named ? words[named[1]!] : undefined;
 }
 
 function isIdentifierLikeField(field: string): boolean {

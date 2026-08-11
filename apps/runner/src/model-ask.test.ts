@@ -429,14 +429,14 @@ describe("Workbench BYOM Ask", () => {
       },
       model_withheld_values: true,
     };
-    let gatewayCalls = 0;
+    let exploreCalls = 0;
     const gateway: AskToolGateway = {
       mode: "authoring",
       listTools: () => authoringTools,
-      callTool: async () => {
-        gatewayCalls += 1;
-        if (gatewayCalls === 1) return catalogResult;
-        if (gatewayCalls === 2) return successfulResult;
+      callTool: async (name) => {
+        if (name === "app.describe_data") return catalogResult;
+        exploreCalls += 1;
+        if (exploreCalls === 1) return successfulResult;
         return {
           ok: false,
           error_code: "EXPLORE_PLAN_INVALID",
@@ -478,9 +478,12 @@ describe("Workbench BYOM Ask", () => {
                       arguments: JSON.stringify(requests.length === 1
                         ? { limit: 10 }
                         : {
-                          plan: requests.length === 2
-                            ? { kind: "aggregate" }
-                            : { kind: "aggregate", dimensions: [{ field: "outside_boundary" }] },
+                          plan: {
+                            kind: "aggregate",
+                            resource: "public.subscriptions",
+                            measures: [{ function: "count" }],
+                            dimensions: [{ field: "region" }],
+                          },
                         }),
                     },
                   }],
@@ -1121,7 +1124,7 @@ describe("Workbench BYOM Ask", () => {
       close: async () => undefined,
     };
     const responses = [
-      openAiToolCall("catalog", "app__describe_data", {}),
+      openAiToolCall("catalog", "app__describe_data", { resource: null }),
       openAiToolCall("wrong", "app__explore_data", {
         plan: {
           kind: "aggregate",
@@ -1159,6 +1162,438 @@ describe("Workbench BYOM Ask", () => {
         },
       },
     }]);
+  });
+
+  it("repairs a local-model count into the exact reviewed population-dispersion plan", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const resource = {
+      id: "public.churn_events",
+      groupable_fields: ["reason_category"],
+      aggregate_measure_functions: {
+        monthly_revenue_cents: ["sum", "avg", "stddev_samp", "stddev_pop", "var_samp", "var_pop"],
+      },
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        if (name === "app.describe_data") {
+          return { ok: true, value: { ok: true, resources: [resource], source_database_changed: false } };
+        }
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const responses = [
+      openAiToolCall("catalog", "app__describe_data", {}),
+      openAiToolCall("wrong_count", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "reason_category" }],
+        },
+      }),
+      openAiText("{}"),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run(
+      "What is the population standard deviation of monthly revenue cents by churn reason?",
+      gateway,
+      { requestJson: async () => responses.shift()! },
+    );
+
+    expect(result.tool_calls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ error_code: "LOCAL_PLAN_INTENT_MISMATCH", status: "refused" }),
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]));
+    expect(calls.filter((call) => call.name === "app.explore_data")).toEqual([{
+      name: "app.explore_data",
+      args: {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "stddev_pop", field: "monthly_revenue_cents" }],
+          dimensions: [{ field: "reason_category" }],
+        },
+      },
+    }]);
+  });
+
+  it("repairs a local-model scalar count into the exact reviewed fixed numeric band", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const resource = {
+      id: "public.churn_events",
+      groupable_fields: ["reason_category"],
+      aggregate_measure_functions: { monthly_revenue_cents: ["sum", "avg"] },
+      numeric_bands: [{
+        name: "monthly_revenue_band",
+        label: "Monthly revenue band",
+        field: "monthly_revenue_cents",
+      }],
+      auto_bands: [{
+        field: "monthly_revenue_cents",
+        methods: ["quantile", "equal_width"],
+        min_buckets: 2,
+        max_buckets: 8,
+      }],
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        if (name === "app.describe_data") {
+          return { ok: true, value: { ok: true, resources: [resource], source_database_changed: false } };
+        }
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const responses = [
+      openAiToolCall("catalog", "app__describe_data", {}),
+      openAiToolCall("missing_band", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "count" }],
+        },
+      }),
+      openAiText("{}"),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run(
+      "How many churn events fall in each reviewed monthly revenue band?",
+      gateway,
+      { requestJson: async () => responses.shift()! },
+    );
+
+    expect(result.tool_calls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ error_code: "LOCAL_PLAN_INTENT_MISMATCH", status: "refused" }),
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]));
+    expect(calls.filter((call) => call.name === "app.explore_data")).toEqual([{
+      name: "app.explore_data",
+      args: {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "count" }],
+          dimensions: [{ numeric_band: "monthly_revenue_band" }],
+        },
+      },
+    }]);
+  });
+
+  it("repairs a local-model fixed band into the exact reviewed automatic-band policy", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const resource = {
+      id: "public.churn_events",
+      groupable_fields: [],
+      aggregate_measure_functions: { monthly_revenue_cents: ["sum", "avg"] },
+      numeric_bands: [{
+        name: "monthly_revenue_band",
+        label: "Monthly revenue band",
+        field: "monthly_revenue_cents",
+      }],
+      auto_bands: [{
+        field: "monthly_revenue_cents",
+        methods: ["quantile", "equal_width"],
+        min_buckets: 2,
+        max_buckets: 8,
+      }],
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        if (name === "app.describe_data") {
+          return { ok: true, value: { ok: true, resources: [resource], source_database_changed: false } };
+        }
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const responses = [
+      openAiToolCall("catalog", "app__describe_data", {}),
+      openAiToolCall("wrong_fixed_band", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "count" }],
+          dimensions: [{ numeric_band: "monthly_revenue_band" }],
+        },
+      }),
+      openAiText("{}"),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run(
+      "How many churn events fall into five quantile buckets of monthly revenue?",
+      gateway,
+      { requestJson: async () => responses.shift()! },
+    );
+
+    expect(result.tool_calls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ error_code: "LOCAL_PLAN_INTENT_MISMATCH", status: "refused" }),
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]));
+    expect(calls.filter((call) => call.name === "app.explore_data")).toEqual([{
+      name: "app.explore_data",
+      args: {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "count" }],
+          dimensions: [{
+            numeric_band: {
+              field: "monthly_revenue_cents",
+              method: "quantile",
+              buckets: 5,
+            },
+          }],
+        },
+      },
+    }]);
+  });
+
+  it("refuses generic numeric buckets when fixed and automatic policies are both plausible", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const resource = {
+      id: "public.churn_events",
+      groupable_fields: [],
+      aggregate_measure_functions: { monthly_revenue_cents: ["sum", "avg"] },
+      numeric_bands: [{
+        name: "monthly_revenue_band",
+        label: "Monthly revenue band",
+        field: "monthly_revenue_cents",
+      }],
+      auto_bands: [{
+        field: "monthly_revenue_cents",
+        methods: ["quantile"],
+        min_buckets: 2,
+        max_buckets: 8,
+      }],
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        return { ok: true, value: { ok: true, resources: [resource], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const responses = [
+      openAiToolCall("catalog", "app__describe_data", {}),
+      openAiToolCall("guessed_fixed_band", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "count" }],
+          dimensions: [{ numeric_band: "monthly_revenue_band" }],
+        },
+      }),
+      openAiText("{}"),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run(
+      "How many churn events are in monthly revenue buckets?",
+      gateway,
+      { requestJson: async () => responses.shift()! },
+    );
+
+    expect(result.answer_source).toBe("runner");
+    expect(result.answer).toContain("did not match the question");
+    expect(calls.some((call) => call.name === "app.explore_data")).toBe(false);
+  });
+
+  it("repairs a local-model base aggregate into the exact reviewed running-total plan", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const resource = {
+      id: "public.churn_events",
+      groupable_fields: ["reason_category"],
+      aggregate_measure_functions: { monthly_revenue_cents: ["sum", "avg"] },
+      time_bucket_fields: { churned_at: ["week", "month"] },
+      derived_measures: [{
+        name: "revenue_running_total",
+        label: "Revenue running total",
+        shape: "running_total",
+      }],
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        if (name === "app.describe_data") {
+          return { ok: true, value: { ok: true, resources: [resource], source_database_changed: false } };
+        }
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const responses = [
+      openAiToolCall("catalog", "app__describe_data", {}),
+      openAiToolCall("wrong_measure", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "sum", field: "monthly_revenue_cents" }],
+          dimensions: [{ field: "reason_category" }],
+        },
+      }),
+      openAiText("{}"),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run(
+      "Show the reviewed running revenue total by week and churn reason.",
+      gateway,
+      { requestJson: async () => responses.shift()! },
+    );
+
+    expect(result.tool_calls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ error_code: "LOCAL_PLAN_INTENT_MISMATCH", status: "refused" }),
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]));
+    expect(calls.filter((call) => call.name === "app.explore_data")).toEqual([{
+      name: "app.explore_data",
+      args: {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ derived_measure: "revenue_running_total" }],
+          dimensions: [{ field: "reason_category" }],
+          time_bucket: { field: "churned_at", bucket: "week" },
+        },
+      },
+    }]);
+  });
+
+  it.each([
+    {
+      question: "How many scoped order items are there by their order category?",
+      resource: {
+        id: "public.scoped_order_items",
+        groupable_fields: [],
+        aggregate_measure_functions: {},
+        relationships: [{
+          id: "scoped_order_items_order_id_fkey",
+          target_resource: "public.scoped_orders",
+          target_label: "Orders",
+          groupable_fields: ["category"],
+        }],
+      },
+      expectedDimension: { field: "category", relationship: "scoped_order_items_order_id_fkey" },
+    },
+    {
+      question: "How many shared products are there by product category?",
+      resource: {
+        id: "public.shared_product_catalog",
+        label: "Shared product catalog",
+        groupable_fields: ["category"],
+        aggregate_measure_functions: {},
+        relationships: [],
+      },
+      expectedDimension: { field: "category" },
+    },
+  ])("corrects a conflicting local-model resource for: $question", async ({ question, resource, expectedDimension }) => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const wrongResource = {
+      id: "public.churn_events",
+      groupable_fields: ["reason_category"],
+      aggregate_measure_functions: {},
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        if (name === "app.describe_data") {
+          const focused = typeof args.resource === "string"
+            ? [args.resource === resource.id ? resource : wrongResource]
+            : [wrongResource, resource];
+          return { ok: true, value: { ok: true, resources: focused, source_database_changed: false } };
+        }
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const responses = [
+      openAiToolCall("catalog", "app__describe_data", {}),
+      openAiToolCall("wrong_resource", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "reason_category" }],
+        },
+      }),
+      openAiText("{}"),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run(question, gateway, {
+      requestJson: async () => responses.shift()!,
+    });
+
+    expect(result.tool_calls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ error_code: "LOCAL_PLAN_INTENT_MISMATCH", status: "refused" }),
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]));
+    expect(calls.filter((call) => call.name === "app.explore_data")).toEqual([{
+      name: "app.explore_data",
+      args: {
+        plan: {
+          kind: "aggregate",
+          resource: resource.id,
+          measures: [{ function: "count" }],
+          dimensions: [expectedDimension],
+        },
+      },
+    }]);
+  });
+
+  it("refuses an ambiguous unqualified dispersion request without source execution", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const resource = {
+      id: "public.churn_events",
+      groupable_fields: ["reason_category"],
+      aggregate_measure_functions: {
+        monthly_revenue_cents: ["stddev_samp", "stddev_pop"],
+      },
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        return { ok: true, value: { ok: true, resources: [resource], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const responses = [
+      openAiToolCall("catalog", "app__describe_data", {}),
+      openAiToolCall("ambiguous", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "stddev_pop", field: "monthly_revenue_cents" }],
+          dimensions: [{ field: "reason_category" }],
+        },
+      }),
+      openAiText("{}"),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run(
+      "What is the standard deviation of monthly revenue cents by churn reason?",
+      gateway,
+      { requestJson: async () => responses.shift()! },
+    );
+
+    expect(result.answer_source).toBe("runner");
+    expect(result.answer).toContain("did not match the question");
+    expect(calls.some((call) => call.name === "app.explore_data")).toBe(false);
   });
 
   it("refuses an unsolicited grouping on a scalar local-model total before source execution", async () => {
@@ -1452,6 +1887,67 @@ describe("Workbench BYOM Ask", () => {
     }]);
     expect(JSON.stringify(requests[0])).toContain("Runner owns UTC calendar arithmetic");
     expect(JSON.stringify(requests[0])).toContain("do not calculate them");
+  });
+
+  it("recovers a malformed direct relative-window call through an internal reviewed catalog lookup", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const resource = {
+      id: "public.churn_events",
+      groupable_fields: ["reason_category"],
+      aggregate_measure_functions: {},
+      relative_time_window_fields: ["churned_at"],
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        if (name === "app.describe_data") {
+          return { ok: true, value: { ok: true, resources: [resource], source_database_changed: false } };
+        }
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const responses = [
+      openAiToolCall("malformed_direct", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "churn_event",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "reason_category" }],
+          time_window: "last_30_days",
+        },
+      }),
+      openAiText("{}"),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run(
+      "How many churn events were there in the last 30 days by reason category?",
+      gateway,
+      { requestJson: async () => responses.shift()! },
+    );
+
+    expect(result.tool_calls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ error_code: "LOCAL_PLAN_INTENT_MISMATCH", status: "refused" }),
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]));
+    expect(calls).toEqual([
+      { name: "app.describe_data", args: { limit: 10 } },
+      { name: "app.describe_data", args: { resource: "public.churn_events" } },
+      {
+        name: "app.explore_data",
+        args: {
+          plan: {
+            kind: "aggregate",
+            resource: "public.churn_events",
+            measures: [{ function: "count" }],
+            dimensions: [{ field: "reason_category" }],
+            time_window: { field: "churned_at", window: "last_30_days" },
+          },
+        },
+      },
+    ]);
   });
 
   it("recovers one exact row plan with its reviewed relative window", async () => {
@@ -1885,6 +2381,7 @@ describe("Workbench BYOM Ask", () => {
     expect(result.answer).toContain("EXPLORE_RESOURCE_FORBIDDEN");
     expect(result.answer).not.toContain("tenant");
     expect(calls).toEqual([
+      { name: "app.describe_data", args: { limit: 10 } },
       { name: "app.describe_data", args: { resource: "public.members" } },
       {
         name: "app.explore_data",
