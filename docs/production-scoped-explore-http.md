@@ -449,6 +449,14 @@ envelope. Presentation flags such as `--alias-mode`, `--tool-name-style`,
 `--openai-tool-aliases`, and `--result-format` are rejected rather than silently
 ignored.
 
+`production_explore.enabled: true` is the reviewed runtime opt-in and selects
+this locked surface automatically whenever the config is served over
+Streamable HTTP. Keep `--production-explore` in deployment commands because it
+makes the intended surface visible to operators and generated launch commands
+include it. Omitting the flag no longer starts a misleading zero-tool server.
+Serving an enabled production config over stdio or the legacy HTTP bridge fails
+with the exact Streamable HTTP command instead.
+
 Startup and `doctor` fail closed unless all of these hold:
 
 - explicit `production_explore.enabled` opt-in;
@@ -471,7 +479,7 @@ prerequisite in one run, plus environment-variable names and reviewed
 boundaries. Preflight may be run before activation: a missing boundary is one
 failed checklist item, while identity, transport, source, key, and control-store
 checks still run. It never
-prints secret values or database URLs. `mcp serve --production-explore` prints
+prints secret values or database URLs. Production Explore startup prints
 the same complete report when startup is refused, so an operator does not need
 one restart per missing prerequisite.
 

@@ -1128,7 +1128,9 @@ Production Explore is a separate explicit register. It requires a separately
 reviewed production boundary, secured shared Streamable HTTP, asymmetrically
 verified JWT tenant/principal claims, atomic shared-Postgres per-principal and
 tenant accounting, rate limits, current schema/role/generation-lock posture,
-and a startup `--production-explore` opt-in. It exposes the same exact two
+and an enabled `production_explore` runtime config. The recommended
+`--production-explore` launch marker makes that selected surface explicit but
+is not a separate authority gate. It exposes the same exact two
 read-only tools and no authoring or activation surface. See
 [Production Scoped Explore Over HTTP](production-scoped-explore-http.md).
 

@@ -501,10 +501,12 @@ passwords or issue refresh tokens. See [HTTP MCP](http-mcp.md) before exposing a
 listener outside loopback.
 
 Flexible production analytics is a separate explicit mode, not a consequence
-of enabling shared HTTP. See [Production Scoped Explore Over
+of enabling shared HTTP. Its authority switch is the reviewed
+`production_explore.enabled` config value; `--production-explore` remains the
+recommended visible launch marker but is not a second independent gate. See [Production Scoped Explore Over
 HTTP](production-scoped-explore-http.md) for the required production boundary,
 JWT principal scope, hierarchical privacy budgets, shared control ledger, and
-`--production-explore` startup attestation. Fixed named capabilities remain the
+production startup attestation. Fixed named capabilities remain the
 narrower default for known production question shapes.
 
 Run the transport-specific doctor check before serving:

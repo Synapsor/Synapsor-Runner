@@ -805,7 +805,12 @@ This command never prints database URLs or write credentials.
 Start the stdio MCP server for local MCP clients such as Claude Desktop, Cursor, or local agent tools. Startup logs stay off stdout so the MCP protocol remains clean.
 Stdio is the recommended local-desktop path: it opens no HTTP listener and therefore needs no HTTP token, TLS, OAuth flow, or MCP HTTP session.
 The explicit --authoring route exposes only app.describe_data and app.explore_data after a local human activates the current development/staging boundary. It refuses HTTP, production/unknown profiles, stale generation locks, and credentials that are not demonstrably SELECT-only and non-owner.
-The explicit --production-explore route exposes the same two read-only tools
+An enabled production_explore config selects the same two read-only tools over
+Streamable HTTP automatically. --production-explore remains the recommended
+explicit launch marker and is included in generated Runner launch commands.
+Using an enabled production config over stdio or the legacy HTTP bridge refuses
+startup instead of silently serving a different or empty tool surface.
+The production Explore route
 from separately reviewed production boundaries. It requires asymmetric JWT
 tenant/principal claims, the configured OAuth scope, direct TLS or a trusted
 TLS proxy, and atomic shared-Postgres per-principal plus tenant privacy
@@ -827,7 +832,8 @@ Use --result-format v2 to return one stable ok/summary/data/proposal/error envel
   ${cmd} mcp serve-streamable-http --production-explore --config ./synapsor.runner.json --host 0.0.0.0 --trusted-tls-proxy
 
 Start the spec-compatible MCP Streamable HTTP endpoint for clients and SDKs that support HTTP MCP.
-With --production-explore, tool names and the reviewed result envelope are
+With production_explore.enabled (and equivalently the explicit
+--production-explore marker), tool names and the reviewed result envelope are
 fixed. Presentation alias and result-format flags are rejected explicitly.
 HTTP Bearer is the credential presentation scheme. It carries either an opaque
 single-service endpoint token or a signed per-session JWT; Bearer does not make

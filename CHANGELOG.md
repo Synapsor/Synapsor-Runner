@@ -65,6 +65,11 @@
 - Clarifies when a table is absent because the reviewed read role cannot see it,
   and gives an exact reviewed-limit remedy when a valid three-hop scope path is
   attempted under the default two-hop authority.
+- Makes `production_explore.enabled` select the locked Streamable HTTP two-tool
+  surface directly, while retaining `--production-explore` as an explicit
+  generated launch marker. Enabled production configs now refuse incompatible
+  transports instead of silently serving no tools, and `tools list` recognizes
+  active local/production Explore-only projects without a false failure.
 
 Prepared package versions: `@synapsor/runner@1.7.0` and the optional
 `synapsor-runner@1.7.0` command alias, plus `@synapsor/spec@1.9.0` and

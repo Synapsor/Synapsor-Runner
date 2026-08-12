@@ -46,7 +46,6 @@ export async function startProductionExploreCli({ root, configPath, env }) {
     "serve",
     "--transport",
     "streamable-http",
-    "--production-explore",
     "--config",
     configPath,
     "--host",

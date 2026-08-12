@@ -10,6 +10,7 @@ import {
   formatProductionExploreStartupReport,
   formatStreamableHttpServerRunning,
   inspectProductionExploreStartup,
+  productionExploreServeMode,
   productionExploreSessionFactory,
 } from "./mcp-runtime.js";
 
@@ -132,6 +133,14 @@ const prepareCurrentBoundary: PrepareBoundary = async () => ({
 } as Awaited<ReturnType<PrepareBoundary>>);
 
 describe("production Explore startup posture", () => {
+  it("derives the locked HTTP surface from reviewed config while retaining the explicit flag", () => {
+    const enabled = productionConfig();
+    expect(productionExploreServeMode([], enabled)).toBe(true);
+    enabled.production_explore!.enabled = false;
+    expect(productionExploreServeMode([], enabled)).toBe(false);
+    expect(productionExploreServeMode(["--production-explore"], enabled)).toBe(true);
+  });
+
   it("attests the complete secured posture without disclosing secrets", async () => {
     const report = await assertProductionExploreStartup(
       productionConfig(),

@@ -3170,6 +3170,38 @@ END
     expect(config.trusted_context.values).toBeUndefined();
     expect(JSON.stringify(config)).not.toMatch(/mysql:\/\/|postgres(?:ql)?:\/\//i);
 
+    await expect(main([
+      "mcp", "serve",
+      "--config", configPath,
+    ])).rejects.toThrow(/Production Explore is enabled.*requires MCP Streamable HTTP.*--production-explore/s);
+    await expect(main([
+      "mcp", "serve-http",
+      "--config", configPath,
+    ])).rejects.toThrow(/Production Explore is enabled.*requires MCP Streamable HTTP.*--production-explore/s);
+    await expect(main([
+      "mcp", "client-config",
+      "--client", "cursor",
+      "--config", configPath,
+    ])).rejects.toThrow(/Production Explore client config requires --transport streamable-http/);
+
+    output.length = 0;
+    await expect(main([
+      "mcp", "client-config",
+      "--client", "generic-stdio",
+      "--transport", "streamable-http",
+      "--config", configPath,
+      "--include-instructions",
+    ])).resolves.toBe(0);
+    const productionClient = JSON.parse(output.join(""));
+    expect(productionClient.args).toEqual(expect.arrayContaining([
+      "serve-streamable-http",
+      "--production-explore",
+    ]));
+    expect(productionClient.args).not.toContain("--alias-mode");
+    expect(productionClient.agent_instructions.recommended_system_prompt)
+      .toContain("Use app.describe_data only to discover exact reviewed");
+    expect(productionClient.agent_instructions.recommended_system_prompt).not.toContain("propose-first");
+
     const preflightConfigPath = path.join(tempDir, "preflight.runner.json");
     const preflightConfig = structuredClone(config);
     preflightConfig.sources.retail_analytics.read_url_env = "SYNAPSOR_TEST_PREFLIGHT_SOURCE_URL";
@@ -5823,7 +5855,7 @@ END
     expect(smoke.ok).toBe(true);
     expect(smoke.tools).toEqual(["clinic.inspect_appointment"]);
     expect(smoke.checks.map((check: { name: string; ok: boolean }) => [check.name, check.ok])).toEqual(expect.arrayContaining([
-      ["semantic tools present", true],
+      ["model-facing tools present", true],
       ["execute_sql absent", true],
       ["approval tools absent", true],
       ["commit tools absent", true],

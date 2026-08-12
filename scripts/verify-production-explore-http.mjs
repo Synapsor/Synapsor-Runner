@@ -192,7 +192,6 @@ async function startProductionExploreCli(configPath, env) {
     "serve",
     "--transport",
     "streamable-http",
-    "--production-explore",
     "--config",
     configPath,
     "--host",

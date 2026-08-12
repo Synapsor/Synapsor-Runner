@@ -4325,6 +4325,68 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 20_000);
 
+  it("lists the exact two tools for an active local Explore-only project", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-explore-tools-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const guided = await initializeGuidedProject({
+        projectRoot: root,
+        build,
+        runnerVersion: "1.7.0",
+      });
+      const digest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+      await activateExplorationBoundary({
+        projectRoot: root,
+        candidate: build.exploration_boundary,
+        expectedDigest: digest,
+        actor: "reviewer",
+        confirmation: `ACTIVATE ${digest}`,
+        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        currentInspection: inspection,
+      });
+
+      let output = "";
+      vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+        output += String(chunk);
+        return true;
+      });
+      await expect(main([
+        "tools", "list",
+        "--config", guided.config_path,
+        "--store", ":memory:",
+        "--json",
+      ])).resolves.toBe(0);
+      const preview = JSON.parse(output);
+      expect(preview).toMatchObject({
+        ok: true,
+        surface: "local_explore",
+        alias_mode: "canonical",
+        exposed_to_mcp: ["app.describe_data", "app.explore_data"],
+      });
+      expect(preview.checks).toContainEqual({
+        name: "model-facing tools present",
+        ok: true,
+        detail: "app.describe_data, app.explore_data",
+      });
+      expect(JSON.stringify(preview)).not.toContain("semantic tools present");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
   it("creates and activates an additional boundary in the active development profile", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-profile-"));
     const inspection = boundaryInspection();

@@ -219,7 +219,10 @@ refresh-token service.
 
 A shared JWT deployment may explicitly serve flexible read-only Explore after
 an operator separately generates, reviews, and activates a production boundary.
-This is not enabled by ordinary Streamable HTTP configuration alone.
+The explicit opt-in is `production_explore.enabled: true` in the reviewed
+runtime config. That setting selects the locked surface over Streamable HTTP;
+the recommended `--production-explore` flag repeats the intent visibly in the
+launch command. Either way, all production startup gates below still run.
 
 ```bash
 synapsor-runner mcp serve \
@@ -238,6 +241,8 @@ requires atomic shared-Postgres per-principal and tenant privacy accounting.
 Tool aliases and result-envelope overrides are intentionally unavailable on
 this fixed surface; production serve rejects their flags instead of ignoring
 them.
+An enabled production config refuses stdio and the legacy JSON-RPC HTTP bridge,
+so a missing CLI flag cannot silently produce an empty or unrelated surface.
 All production Explore sessions in one Runner process borrow one bounded source
 pool, and each verified tenant/principal pair has an independent concurrent
 session ceiling. The production defaults are 8 source connections, 4 sessions
