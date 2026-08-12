@@ -7,6 +7,7 @@ import { ProposalStore } from "@synapsor-runner/proposal-store";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
 import {
   AUTO_BOUNDARY_OVERRIDES_VERSION,
+  CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION,
   activateExplorationBoundary,
   buildAutoBoundary,
   explorationBoundaryCandidateDigest,
@@ -49,6 +50,7 @@ import { loadCompletedBoundaryReviewOverrides } from "./boundary-review-policy.j
 import { boundaryCommand } from "./guided-start.js";
 import { initializeGuidedProject, readGuidedOnboardingState } from "./guided-project.js";
 import { prepareScopedExplore } from "./scoped-explore.js";
+import { selectActiveExploreBoundary } from "./scoped-explore-boundary-set.js";
 
 describe("boundary operator-plane CLI", () => {
   afterEach(() => {
@@ -4513,6 +4515,134 @@ describe("boundary operator-plane CLI", () => {
         "development",
         "development",
       ]);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("creates and activates a second MySQL boundary from explicit trusted bindings", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-mysql-second-boundary-"));
+    const inspection = boundaryInspection();
+    inspection.engine = "mysql";
+    inspection.server_version = "MySQL 8.4";
+    inspection.schemas = ["clinicdb"];
+    inspection.tables[0]!.schema = "clinicdb";
+    inspection.tables[0]!.row_level_security = false;
+    inspection.tables[0]!.row_level_security_policies = [];
+    inspection.tables[0]!.role_posture = {
+      ...inspection.tables[0]!.role_posture!,
+      row_security_forced: false,
+      row_security_effective_for_current_role: false,
+    };
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "clinicdb",
+      configuredTrustedContext: {
+        schema_version: CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION,
+        provider: "environment",
+        tenant_binding: "tenant_id",
+        tenant_env: "SYNAPSOR_TENANT_ID",
+        principal_env: "SYNAPSOR_PRINCIPAL",
+      },
+      overrides: {
+        schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+        resources: {
+          "clinicdb.service_visits": {
+            fields: {
+              scheduled_at: {
+                exposure: "withhold_from_model",
+                actor: "first-reviewer",
+                reason: "Keep exact timestamps out of the first boundary only.",
+                decided_at: "2026-08-12T20:00:00.000Z",
+              },
+            },
+          },
+        },
+      },
+    });
+    try {
+      expect(build.policy_baseline.boundary.pack.resources).toEqual([
+        expect.objectContaining({
+          id: "clinicdb.service_visits",
+          tenant_key: "tenant_id",
+        }),
+      ]);
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const firstDigest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+      await activateExplorationBoundary({
+        projectRoot: root,
+        candidate: build.exploration_boundary,
+        expectedDigest: firstDigest,
+        actor: "first-reviewer",
+        confirmation: `ACTIVATE ${firstDigest}`,
+        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        currentInspection: inspection,
+      });
+      const second = await createSavedBoundary({
+        projectRoot: root,
+        draft: build.exploration_boundary,
+        currentCandidate: build.exploration_boundary,
+        name: "visits_secondary",
+        resourceId: "clinicdb.service_visits",
+        actor: "second-reviewer",
+      });
+      expect(second.candidate.pack.resources[0]).toMatchObject({
+        id: "clinicdb.service_visits",
+        tenant_key: "tenant_id",
+      });
+      expect(second.candidate.pack.resources[0]!.model_withheld_fields ?? [])
+        .not.toContain("scheduled_at");
+      expect(second.review_overrides.resources).toEqual({});
+
+      const completed = createBoundaryReviewProgress({
+        draft: build.exploration_boundary,
+        candidate: second.candidate,
+        confirmedDecisions: second.candidate.unresolved_decisions,
+        previous: second,
+        actor: "second-reviewer",
+        revision: second.revision + 1,
+      });
+      await saveBoundaryReviewProgress(root, completed);
+      const session: BoundaryReviewInteractiveSession = {
+        chooseResource: async () => undefined,
+        editFieldTiers: async () => undefined,
+        promptText: async () => "second-reviewer",
+        confirm: async () => true,
+      };
+      await expect(boundaryActivateCommandInternal(
+        ["--project-root", root, "--actor", "second-reviewer"],
+        async () => inspection,
+        session,
+      )).resolves.toBe(0);
+
+      const active = await loadActivatedExplorationBoundaries(root);
+      expect(active.map((boundary) => boundary.pack.name).sort()).toEqual([
+        "reviewed_staging",
+        "visits_secondary",
+      ]);
+      expect(() => selectActiveExploreBoundary(
+        active,
+        undefined,
+        "clinicdb.service_visits",
+      )).toThrowError(expect.objectContaining({ code: "EXPLORE_BOUNDARY_REQUIRED" }));
+      expect(selectActiveExploreBoundary(
+        active,
+        "reviewed_staging",
+        "clinicdb.service_visits",
+      ).pack.name).toBe("reviewed_staging");
+      expect(selectActiveExploreBoundary(
+        active,
+        "visits_secondary",
+        "clinicdb.service_visits",
+      ).pack.name).toBe("visits_secondary");
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

@@ -1076,6 +1076,97 @@ describe("Auto Boundary compiler", () => {
     ]);
   });
 
+  it("keeps explicit MySQL trusted bindings in the policy-neutral boundary baseline", () => {
+    const inspection = churnInspection();
+    inspection.engine = "mysql";
+    inspection.server_version = "MySQL 8.4";
+    inspection.schemas = ["clinicdb"];
+    const table = inspection.tables[0]!;
+    table.schema = "clinicdb";
+    table.row_level_security = false;
+    table.row_level_security_policies = [];
+    table.role_posture = {
+      ...table.role_posture!,
+      row_security_forced: false,
+      row_security_effective_for_current_role: false,
+    };
+    table.columns.push(column("attending", "text"));
+    table.suggestions.default_visible_columns.push("attending");
+
+    const withoutExplicitConfig = buildAutoBoundary({
+      inspection,
+      project: projectSummary("/workspace/mysql-implicit-scope"),
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "clinicdb",
+    });
+    expect(withoutExplicitConfig.exploration_boundary.pack.resources).toEqual([]);
+
+    const configured = buildAutoBoundary({
+      inspection,
+      project: projectSummary("/workspace/mysql-configured-scope"),
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "clinicdb",
+      configuredTrustedContext: {
+        schema_version: CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION,
+        provider: "environment",
+        tenant_binding: "tenant_id",
+        principal_binding: "attending",
+        tenant_env: "SYNAPSOR_TENANT_ID",
+        principal_env: "SYNAPSOR_PRINCIPAL",
+      },
+      overrides: {
+        schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+        resources: {
+          "clinicdb.subscriptions": {
+            fields: {
+              monthly_revenue_cents: {
+                exposure: "withhold_from_model",
+                actor: "finance-owner@example.test",
+                reason: "Keep exact revenue in the first boundary only.",
+                decided_at: "2026-08-12T20:00:00.000Z",
+              },
+            },
+          },
+        },
+      },
+    });
+    const baseline = configured.policy_baseline.boundary.pack.resources[0]!;
+    expect(baseline).toMatchObject({
+      id: "clinicdb.subscriptions",
+      tenant_key: "tenant_id",
+      principal_key: "attending",
+    });
+    expect(baseline.model_withheld_fields ?? []).not.toContain("monthly_revenue_cents");
+    expect(configured.policy_baseline.boundary.unresolved_decisions).toEqual(
+      expect.arrayContaining([
+        "clinicdb.subscriptions: confirm tenant key tenant_id",
+        "clinicdb.subscriptions: confirm principal scope attending",
+      ]),
+    );
+    expect(configured.policy_baseline.lock.reviewed_overrides_digest).toBe(
+      canonicalJsonDigest({
+        schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+        resources: {},
+      }),
+    );
+
+    table.columns.find((field) => field.name === "tenant_id")!.nullable = true;
+    const unsafe = buildAutoBoundary({
+      inspection,
+      project: projectSummary("/workspace/mysql-nullable-configured-scope"),
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "clinicdb",
+      configuredTrustedContext: {
+        schema_version: CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION,
+        provider: "environment",
+        tenant_binding: "tenant_id",
+        tenant_env: "SYNAPSOR_TENANT_ID",
+        principal_env: "SYNAPSOR_PRINCIPAL",
+      },
+    });
+    expect(unsafe.exploration_boundary.pack.resources).toEqual([]);
+  });
+
   it("does not seed unsafe or absent principal columns and never overwrites an explicit boundary decision", () => {
     const inspection = derivedTenantScopeInspection();
     const orders = inspection.tables.find((table) => table.name === "orders")!;

@@ -13,13 +13,16 @@ import { inspectDatabase } from "../packages/schema-inspector/dist/index.js";
 import { startStreamableHttpMcpServer } from "../packages/mcp-server/dist/index.js";
 import {
   AUTO_BOUNDARY_OVERRIDES_VERSION,
+  CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION,
   SHARED_REFERENCE_ACKNOWLEDGEMENT,
   activateExplorationBoundary,
   buildAutoBoundary,
   explorationBoundaryCandidateDigest,
+  loadActivatedExplorationBoundaries,
   loadGenerationLockSnapshot,
   writeAutoBoundaryArtifacts,
 } from "../apps/runner/dist/auto-boundary.js";
+import { createSavedBoundary } from "../apps/runner/dist/boundary-library.js";
 import {
   assertProductionExploreStartup,
   productionExploreSessionFactory,
@@ -972,6 +975,7 @@ async function main() {
   const mysqlAdmin = await mysql.createConnection({ uri: mysqlAdminUrl, multipleStatements: true });
   const control = new Pool({ connectionString: controlUrl, max: 1 });
   const soakRequested = productionExploreSoakRequested();
+  const multiBoundaryOnly = process.env.SYNAPSOR_VERIFY_MYSQL_MULTI_BOUNDARY_ONLY === "1";
   const soakIdentities = soakRequested ? productionExploreSoakIdentities() : [];
   let server;
   let tenantBudgetServer;
@@ -1002,6 +1006,14 @@ async function main() {
       inspectedSchema: sourceSchema,
       deploymentProfile: "production",
       httpClaims: { tenantClaim: "tenant_id", principalClaim: "sub" },
+      configuredTrustedContext: {
+        schema_version: CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION,
+        provider: "http_claims",
+        tenant_binding: "tenant_id",
+        principal_binding: "owner_id",
+        tenant_claim: "tenant_id",
+        principal_claim: "sub",
+      },
       overrides: {
         schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
         resources: {
@@ -1213,7 +1225,7 @@ async function main() {
       currentInspection: inspection,
     });
 
-    if (!soakRequested) {
+    if (!soakRequested && !multiBoundaryOnly) {
       candidate.budgets.max_queries_per_session = 1;
       candidate.budgets.rate_limit_per_minute = 10;
       candidate.budgets.max_extracted_cells_per_session = 100;
@@ -1229,6 +1241,43 @@ async function main() {
       confirmedDecisions: candidate.unresolved_decisions,
       currentInspection: inspection,
     });
+
+    if (multiBoundaryOnly) {
+      const second = await createSavedBoundary({
+        projectRoot,
+        draft: build.exploration_boundary,
+        currentCandidate: candidate,
+        name: "mysql_events_secondary",
+        resourceId: sourceId,
+        actor: "secondary-production-owner@example.test",
+      });
+      assert(second.candidate.pack.resources.length === 1
+        && second.candidate.pack.resources[0]?.id === sourceId
+        && second.candidate.pack.resources[0]?.tenant_key === "tenant_id"
+        && second.candidate.pack.resources[0]?.principal_key === "owner_id",
+      "MySQL second-boundary creation did not retain the explicitly configured reviewed scope.", second.candidate);
+      const secondDigest = explorationBoundaryCandidateDigest(second.candidate);
+      const secondLock = await loadGenerationLockSnapshot(
+        projectRoot,
+        second.candidate.generation_lock_fingerprint,
+      );
+      await activateExplorationBoundary({
+        projectRoot,
+        candidate: second.candidate,
+        reviewDraft: second.candidate,
+        generationLock: secondLock,
+        expectedDigest: secondDigest,
+        actor: "secondary-production-owner@example.test",
+        confirmation: `ACTIVATE ${secondDigest}`,
+        confirmedDecisions: second.candidate.unresolved_decisions,
+        currentInspection: inspection,
+        activeSetMode: "add",
+      });
+      const active = await loadActivatedExplorationBoundaries(projectRoot);
+      assert(active.map((boundary) => boundary.pack.name).sort().join(",")
+        === "mysql_events_production,mysql_events_secondary",
+      "MySQL production active set did not retain both exact reviewed boundaries.", active);
+    }
 
     const { publicKey, privateKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
     const runtimeConfig = {
@@ -1253,6 +1302,8 @@ async function main() {
       },
       trusted_context: {
         provider: "http_claims",
+        tenant_binding: "tenant_id",
+        principal_binding: "owner_id",
       },
       session_auth: {
         provider: "jwt_asymmetric",
@@ -1332,6 +1383,67 @@ async function main() {
       `MySQL production Explore accepted presentation override ${presentationArgs[0]}.`, rejected);
     }
     server = await startProductionExploreCli({ root, configPath, env });
+    if (multiBoundaryOnly) {
+      const scoped = mcpClient(server.url, signedToken(privateKey, {
+        tenant: "acme",
+        principal: "alice",
+      }));
+      clients.push(scoped.client);
+      await scoped.client.connect(scoped.transport);
+      const tools = await scoped.client.listTools();
+      assert(tools.tools.map((tool) => tool.name).join(",")
+        === "app.describe_data,app.explore_data",
+      "MySQL multi-boundary HTTP verification exposed an unexpected tool surface.", tools);
+      const described = resultPayload(await scoped.client.callTool({
+        name: "app.describe_data",
+        arguments: {},
+      }));
+      assert(described.boundaries?.map((boundary) => boundary.name).sort().join(",")
+        === "mysql_events_production,mysql_events_secondary",
+      "MySQL HTTP catalog did not span both exact reviewed boundaries.", described);
+      const plan = {
+        kind: "aggregate",
+        resource: sourceId,
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "category" }],
+        top_n: 10,
+      };
+      const ambiguous = await scoped.client.callTool({
+        name: "app.explore_data",
+        arguments: { plan },
+      });
+      assert(ambiguous.isError === true
+        && /EXPLORE_BOUNDARY_REQUIRED/.test(JSON.stringify(ambiguous)),
+      "MySQL overlapping resource did not fail closed without an exact boundary selector.", ambiguous);
+      const primary = resultPayload(await scoped.client.callTool({
+        name: "app.explore_data",
+        arguments: { boundary: "mysql_events_production", plan },
+      }));
+      const secondary = resultPayload(await scoped.client.callTool({
+        name: "app.explore_data",
+        arguments: { boundary: "mysql_events_secondary", plan },
+      }));
+      assert(primary.ok === true && primary.boundary_name === "mysql_events_production",
+        "MySQL query did not route through the primary boundary.", primary);
+      assert(secondary.ok === true && secondary.boundary_name === "mysql_events_secondary",
+        "MySQL query did not route through the secondary boundary.", secondary);
+      assert(JSON.stringify(primary.rows) === JSON.stringify(secondary.rows),
+        "Equivalent MySQL reviewed boundaries returned different scoped aggregates.", { primary, secondary });
+      const after = await sourceSnapshot(mysqlAdmin);
+      assert(JSON.stringify(after) === JSON.stringify(before),
+        "MySQL multi-boundary verification mutated the source database.", { before, after });
+      process.stdout.write(`${JSON.stringify({
+        ok: true,
+        engine: "mysql",
+        active_boundaries: described.boundaries.map((boundary) => boundary.name).sort(),
+        tools: tools.tools.map((tool) => tool.name),
+        ambiguity_refused: true,
+        primary_boundary_query: primary.ok,
+        secondary_boundary_query: secondary.ok,
+        source_database_changed: false,
+      }, null, 2)}\n`);
+      return;
+    }
     const generatedHttpClients = await verifyGeneratedProductionHttpClientConfigs({
       root,
       configPath,

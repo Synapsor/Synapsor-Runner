@@ -1159,7 +1159,13 @@ function buildAutoBoundaryOnce(input: BuildAutoBoundaryInput): AutoBoundaryBuild
     : undefined;
   const configuredTrustedContext = configuredTrustedContextForBuild(input, organizationScope);
   const staticObjects = parsedEvidence.flatMap((evidence) => evidence.objects.map((object) => ({ format: evidence.format, object })));
-  const graph = buildEvidenceGraph(input.inspection, input.project, staticObjects, existingContracts);
+  const graph = buildEvidenceGraph(
+    input.inspection,
+    input.project,
+    staticObjects,
+    existingContracts,
+    input.configuredTrustedContext ? configuredTrustedContext : undefined,
+  );
   if (organizationScope) assertSingleOrganizationInspectionSafe(input.inspection, graph);
   applyReviewOverrides(graph, overrides);
   if (organizationScope) assertSingleOrganizationInspectionSafe(input.inspection, graph);
@@ -3600,6 +3606,7 @@ function buildEvidenceGraph(
   project: ProjectDetectionSummary,
   staticObjects: Array<{ format: SchemaCandidateFormat; object: CandidateObject }>,
   existingContracts: SynapsorContract[],
+  configuredTrustedContext?: ConfiguredTrustedContextAuthority,
 ): AutoBoundaryEvidenceGraph {
   const staticByTable = new Map<string, Array<{ format: SchemaCandidateFormat; object: CandidateObject }>>();
   for (const item of staticObjects) {
@@ -3614,6 +3621,7 @@ function buildEvidenceGraph(
       inspection,
       staticByTable.get(`${table.schema}.${table.name}`.toLowerCase()) ?? [],
       existingScopeEvidence(table, existingContracts),
+      configuredTrustedContext,
     ))
     .sort((left, right) => left.id.localeCompare(right.id));
   const structuredActions = [
@@ -4462,6 +4470,7 @@ function rankedScopeInference(input: {
   inspection: SchemaInspection;
   staticObjects: Array<{ format: SchemaCandidateFormat; object: CandidateObject }>;
   existing: ExistingScopeEvidence;
+  configuredBinding?: string;
 }): BoundaryInference<string> {
   const { kind, table, inspection, staticObjects, existing } = input;
   const columns = new Set(table.columns.map((column) => column.name));
@@ -4488,6 +4497,21 @@ function rankedScopeInference(input: {
     candidates.set(value, current);
   };
   const namePattern = kind === "tenant" ? REVIEWABLE_TENANT_SCOPE_NAME : PRINCIPAL_SCOPE_NAME;
+  const configuredBinding = input.configuredBinding?.trim();
+  const configuredColumn = configuredBinding
+    ? table.columns.find((column) => column.name === configuredBinding)
+    : undefined;
+  if (configuredColumn
+    && configuredColumn.nullable === false
+    && configuredColumn.suggestions.large_or_binary !== true
+    && !isUnsafeRawType(configuredColumn.data_type)) {
+    add(
+      configuredColumn.name,
+      120,
+      `Runner config ${kind}_binding explicitly names inspected non-null column ${configuredColumn.name}; exact boundary review is still required`,
+      { strong: true, confidence: "high" },
+    );
+  }
   for (const column of table.columns) {
     if (namePattern.test(column.name)) {
       add(column.name, 5, `column name ${column.name} matches a low-confidence ${kind} convention`);
@@ -4595,7 +4619,10 @@ function evidenceSource(detail: string): BoundaryInference<string>["evidence"][n
   if (detail.startsWith("prisma ")) return "prisma";
   if (detail.startsWith("drizzle ")) return "drizzle";
   if (detail.startsWith("openapi ")) return "openapi";
-  if (detail.startsWith("existing Synapsor") || detail.includes("contract") || detail.includes("capability")) return "synapsor";
+  if (detail.startsWith("Runner config")
+    || detail.startsWith("existing Synapsor")
+    || detail.includes("contract")
+    || detail.includes("capability")) return "synapsor";
   return "database";
 }
 
@@ -4633,6 +4660,7 @@ function buildResource(
   inspection: SchemaInspection,
   staticObjects: Array<{ format: SchemaCandidateFormat; object: CandidateObject }>,
   existing: ExistingScopeEvidence,
+  configuredTrustedContext?: ConfiguredTrustedContextAuthority,
 ): AutoBoundaryResource {
   const tablesById = new Map(inspection.tables.map((candidate) => [
     `${candidate.schema}.${candidate.name}`,
@@ -4656,6 +4684,9 @@ function buildResource(
     inspection,
     staticObjects,
     existing,
+    ...(configuredTrustedContext?.tenant_binding
+      ? { configuredBinding: configuredTrustedContext.tenant_binding }
+      : {}),
   });
   const principalInference = rankedScopeInference({
     kind: "principal",
@@ -4663,6 +4694,9 @@ function buildResource(
     inspection,
     staticObjects,
     existing,
+    ...(configuredTrustedContext?.principal_binding
+      ? { configuredBinding: configuredTrustedContext.principal_binding }
+      : {}),
   });
   const tenantSelected = tenantInference.selected;
   const principalSelected = principalInference.selected;

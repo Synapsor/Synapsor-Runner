@@ -80,6 +80,12 @@
   review state and generation-lock snapshot instead of whichever boundary owns
   the project-global draft. CLI and Workbench can now add a second boundary
   without weakening shared schema, role, source, or trusted-context checks.
+- Preserves exact configured tenant/principal binding candidates in the
+  policy-neutral authoring baseline used to create additional MySQL boundaries.
+  Only inspected non-null scalar columns named by explicit configuration become
+  review candidates; implicit names, nullable or unsafe columns, and policy from
+  another boundary remain excluded. A real production HTTP regression activates
+  two overlapping MySQL boundaries, requires an exact selector, and routes both.
 
 Prepared package versions: `@synapsor/runner@1.7.0` and the optional
 `synapsor-runner@1.7.0` command alias, plus `@synapsor/spec@1.9.0` and
