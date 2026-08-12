@@ -2575,6 +2575,54 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 25_000);
 
+  it("keeps identical shared-reference review previews digest-stable across reviewer timestamps", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-shared-reference-digest-"));
+    const inspection = sharedReferenceInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const request = {
+      resource_id: "public.service_visits",
+      include: true,
+      shared_reference_scope: "table_has_no_per_tenant_rows" as const,
+      actor: "owner@example.test",
+      reason: "This reference data is centrally maintained and identical for every tenant.",
+    };
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-08-12T12:00:00.000Z"));
+      const first = await prepareBoundaryResourceReviewMutation(
+        root,
+        request,
+        async () => inspection,
+      );
+      vi.setSystemTime(new Date("2026-08-12T12:05:00.000Z"));
+      const second = await prepareBoundaryResourceReviewMutation(
+        root,
+        request,
+        async () => inspection,
+      );
+      expect(second.build.graph.resources[0]?.shared_reference_scope?.review_override?.decided_at)
+        .not.toBe(first.build.graph.resources[0]?.shared_reference_scope?.review_override?.decided_at);
+      expect(second.candidate_digest).toBe(first.candidate_digest);
+      expect(second.decision_digest).toBe(first.decision_digest);
+      expect(second.build.lock.evidence_fingerprint).toBe(first.build.lock.evidence_fingerprint);
+    } finally {
+      vi.useRealTimers();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 25_000);
+
   it("requires a reason and explicit confirmation before adding a shared reference", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-shared-reference-"));
     const inspection = sharedReferenceInspection();
@@ -3219,6 +3267,89 @@ describe("boundary operator-plane CLI", () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   }, 20_000);
+
+  it("adds a genuine depth-three derived resource through the reviewed CLI mutation path", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-derived-depth-three-cli-"));
+    const inspection = depthThreeDerivedCliInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const apply = async (request: Parameters<typeof prepareBoundaryResourceReviewMutation>[1]) => {
+      const preview = await prepareBoundaryResourceReviewMutation(
+        root,
+        request,
+        async () => inspection,
+      );
+      await commitBoundaryResourceReviewMutation(root, preview);
+      return preview;
+    };
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await apply({
+        resource_id: "public.order_items",
+        include: true,
+        tenant_scope_path: "order_items_order_id_fkey",
+        principal_key: null,
+        actor: "owner@example.test",
+        reason: "Order items inherit tenant isolation through their required order.",
+      });
+      await apply({
+        resource_id: "public.order_events",
+        include: true,
+        tenant_scope_path: "order_events_order_item_id_fkey__order_items_order_id_fkey",
+        principal_key: null,
+        actor: "owner@example.test",
+        reason: "Order events inherit tenant isolation through the reviewed item path.",
+      });
+      const leafRequest = {
+        resource_id: "public.event_notes",
+        include: true,
+        tenant_scope_path:
+          "event_notes_order_event_id_fkey__order_events_order_item_id_fkey__order_items_order_id_fkey",
+        principal_key: null,
+        actor: "owner@example.test",
+        reason: "Event notes use the exact reviewed three-hop path to their tenant-owned order.",
+      } as const;
+      await expect(prepareBoundaryResourceReviewMutation(
+        root,
+        leafRequest,
+        async () => inspection,
+      )).rejects.toThrow(/uses 3 hops.*max_derived_scope_hops is 2.*Raise.*to 3/i);
+
+      const leaf = await apply({
+        ...leafRequest,
+        max_derived_scope_hops: 3,
+        max_analysis_relationship_hops: 3,
+      });
+      expect(leaf.candidate.budgets).toMatchObject({
+        max_derived_scope_hops: 3,
+        max_analysis_relationship_hops: 3,
+      });
+      expect(leaf.candidate.pack.resources.find((resource) =>
+        resource.id === "public.event_notes")?.tenant_scope?.proof.links).toHaveLength(3);
+      const reviews = await listBoundaryResourceReviews(root);
+      expect(reviews.find((resource) => resource.resource_id === "public.event_notes"))
+        .toMatchObject({ included: true });
+
+      await expect(prepareBoundaryResourceReviewMutation(root, {
+        ...leafRequest,
+        resource_id: "public.not_visible_to_reader",
+      }, async () => inspection)).rejects.toThrow(
+        /schema visible to the reviewed read role.*USAGE.*SELECT grants.*rescan/i,
+      );
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 30_000);
 
   it("also blocks a selected derived principal path from starting a boundary alone", async () => {
     for (const singleOrganization of [false, true]) {
@@ -4352,7 +4483,7 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 20_000);
 
-  it("applies a versioned multi-resource decision file atomically without activating authority", async () => {
+  it("applies a versioned multi-resource decision file and headlessly activates its exact result", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-cli-batch-"));
     const inspection = batchBoundaryInspection();
     const project = {
@@ -4512,6 +4643,43 @@ describe("boundary operator-plane CLI", () => {
       await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
         .rejects.toMatchObject({ code: "ENOENT" });
 
+      const reviewedContext = await loadBoundaryReviewContext(root);
+      const completedProgress = createBoundaryReviewProgress({
+        draft: reviewedContext.draft,
+        candidate: reviewedContext.candidate,
+        confirmedDecisions: reviewedContext.candidate.unresolved_decisions,
+        previous: reviewedContext.progress,
+        actor: "alice",
+        reason: "Confirmed the exact post-review authority for both resources.",
+        revision: (reviewedContext.progress?.revision ?? 0) + 1,
+        now: "2026-08-12T12:00:00.000Z",
+      });
+      await saveBoundaryReviewProgress(root, completedProgress);
+      const activationBundlePath = path.join(root, "post-review-boundary.json");
+      await boundaryReviewCommand([
+        "--project-root", root,
+        "--output", activationBundlePath,
+      ], async () => inspection);
+      const activationBundle = JSON.parse(await fs.readFile(activationBundlePath, "utf8"));
+      expect(activationBundle.outstanding_decision_ids).toEqual([]);
+      await expect(boundaryActivateCommandInternal([
+        "--project-root", root,
+        "--config", guided.config_path,
+        "--review-bundle", activationBundlePath,
+        "--headless",
+        "--confirm", `ACTIVATE ${activationBundle.candidate_digest}`,
+        "--identity", "alice",
+        "--identity-key", privatePath,
+        "--required-role", "boundary_reviewer",
+        "--reason", "Activate the exact reviewed multi-resource authority.",
+        "--environment", "staging",
+        "--nonce", "batch-activation-nonce-0001",
+        "--json",
+      ], async () => inspection)).resolves.toBe(0);
+      const active = await loadActivatedExplorationBoundaries(root);
+      expect(active.map((boundary) => boundary.pack.resources.map((resource) => resource.id)))
+        .toEqual([["public.service_routes", "public.service_visits"]]);
+
       await expect(boundaryReviewCommand([
         "--project-root", root,
         "--apply-decisions", decisionPath,
@@ -4643,6 +4811,56 @@ function derivedFirstTableInspection(): SchemaInspection {
     delete_rule: "RESTRICT",
   }];
   inspection.tables = [orderItems, orders];
+  return inspection;
+}
+
+function depthThreeDerivedCliInspection(): SchemaInspection {
+  const inspection = derivedFirstTableInspection();
+  const orderItems = inspection.tables.find((table) => table.name === "order_items")!;
+  const orders = inspection.tables.find((table) => table.name === "orders")!;
+  const derivedChild = (
+    source: typeof orderItems,
+    name: string,
+    foreignKeyField: string,
+    target: string,
+    constraint: string,
+  ) => {
+    const table = structuredClone(source);
+    table.name = name;
+    table.columns = table.columns.filter((field) => field.name === "id");
+    const foreignKey = structuredClone(source.columns.find((field) => field.name !== "id")!);
+    foreignKey.name = foreignKeyField;
+    foreignKey.ordinal_position = 2;
+    table.columns.push(foreignKey);
+    table.primary_key = ["id"];
+    table.unique_constraints = [{ name: `${name}_pkey`, columns: ["id"] }];
+    table.indexes = [{ name: `${name}_pkey`, columns: ["id"], unique: true }];
+    table.foreign_keys = [{
+      name: constraint,
+      columns: [foreignKeyField],
+      referenced_schema: "public",
+      referenced_table: target,
+      referenced_columns: ["id"],
+      delete_rule: "RESTRICT",
+    }];
+    table.suggestions.default_visible_columns = ["id", foreignKeyField];
+    return table;
+  };
+  const orderEvents = derivedChild(
+    orderItems,
+    "order_events",
+    "order_item_id",
+    "order_items",
+    "order_events_order_item_id_fkey",
+  );
+  const eventNotes = derivedChild(
+    orderEvents,
+    "event_notes",
+    "order_event_id",
+    "order_events",
+    "event_notes_order_event_id_fkey",
+  );
+  inspection.tables = [eventNotes, orderEvents, orderItems, orders];
   return inspection;
 }
 

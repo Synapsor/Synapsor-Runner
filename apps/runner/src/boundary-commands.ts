@@ -4729,7 +4729,7 @@ export async function boundaryActivateCommand(
     const progress = createBoundaryReviewProgress({
       draft: context.draft,
       candidate: context.candidate,
-      confirmedDecisions: context.draft.unresolved_decisions,
+      confirmedDecisions: context.candidate.unresolved_decisions,
       previous: context.progress,
       actor: identity.subject,
       revision: (context.progress?.revision ?? 0) + 1,
@@ -4816,7 +4816,7 @@ export async function boundaryActivateCommand(
       expectedDigest: context.bundle.candidate_digest,
       actor: actor!,
       confirmation: expectedConfirmation,
-      confirmedDecisions: context.draft.unresolved_decisions,
+      confirmedDecisions: context.candidate.unresolved_decisions,
       currentInspection: inspection,
       activeSetMode: "add",
     });

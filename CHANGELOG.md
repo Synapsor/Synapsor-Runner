@@ -59,6 +59,12 @@
   boundary digests unchanged. Spec/DSL `1.9.0` add only the reviewed fixed
   aggregate operations and post-suppression transforms; they do not admit
   model-authored SQL or expressions.
+- Keeps repeated shared-reference review previews digest-stable by separating
+  reviewer provenance from database evidence, and makes signed headless
+  activation confirm the exact post-review candidate decision set.
+- Clarifies when a table is absent because the reviewed read role cannot see it,
+  and gives an exact reviewed-limit remedy when a valid three-hop scope path is
+  attempted under the default two-hop authority.
 
 Prepared package versions: `@synapsor/runner@1.7.0` and the optional
 `synapsor-runner@1.7.0` command alias, plus `@synapsor/spec@1.9.0` and

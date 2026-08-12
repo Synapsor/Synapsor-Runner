@@ -384,7 +384,12 @@ export async function inspectBoundaryResourceReview(
 ): Promise<BoundaryResourceReviewView> {
   const state = await loadBoundaryReviewFiles(projectRoot);
   const reviewed = state.review.resources.find((resource) => resource.id === resourceId);
-  if (!reviewed) throw new Error(`Boundary review resource ${resourceId} was not found in the inspected schema.`);
+  if (!reviewed) {
+    throw new Error(
+      `Boundary review resource ${resourceId} was not found in the schema visible to the reviewed read role. `
+      + "Verify the schema-qualified id and the role's schema USAGE and table SELECT grants, then rescan.",
+    );
+  }
   const candidate = state.candidate.pack.resources.find((resource) => resource.id === resourceId) ?? null;
   const generatedCandidate = state.draft.pack.resources.find((resource) => resource.id === resourceId) ?? null;
   return {
@@ -554,7 +559,10 @@ export async function prepareBoundaryResourceReviewMutation(
   const state = await loadBoundaryReviewFiles(projectRoot);
   const reviewed = state.review.resources.find((resource) => resource.id === request.resource_id);
   if (!reviewed) {
-    throw new Error(`Boundary review resource ${request.resource_id} was not found in the inspected schema.`);
+    throw new Error(
+      `Boundary review resource ${request.resource_id} was not found in the schema visible to the reviewed read role. `
+      + "Verify the schema-qualified id and the role's schema USAGE and table SELECT grants, then rescan.",
+    );
   }
   validateBoundaryRequestAgainstResource(request, reviewed);
   const previousBindings = reviewBindings(state);

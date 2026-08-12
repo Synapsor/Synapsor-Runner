@@ -667,7 +667,7 @@ describe("Auto Boundary compiler", () => {
     expect(() => reviewExplorationBoundaryCandidate(
       selected.exploration_boundary,
       structuredClone(selected.exploration_boundary),
-    )).toThrow(/malformed derived tenant scope proof/i);
+    )).toThrow(/uses 3 hops.*max_derived_scope_hops is 2/i);
 
     const optedIn = structuredClone(selected.exploration_boundary);
     optedIn.budgets.max_derived_scope_hops = 3;

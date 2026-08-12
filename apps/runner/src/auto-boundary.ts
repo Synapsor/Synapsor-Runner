@@ -1330,8 +1330,17 @@ function reviewOverrideAuthority(overrides: AutoBoundaryReviewOverrides): Record
 }
 
 function generationEvidenceAuthority(resources: AutoBoundaryResource[]): unknown[] {
-  return resources.map(({ approximate_row_count: _approximateRowCount, ...resource }) => ({
+  return resources.map(({
+    approximate_row_count: _approximateRowCount,
+    shared_reference_scope: sharedReferenceScope,
+    ...resource
+  }) => ({
     ...resource,
+    ...(sharedReferenceScope
+      ? {
+        shared_reference_scope: sharedReferenceEvidenceAuthority(sharedReferenceScope),
+      }
+      : {}),
     ...(resource.metadata_review_override
       ? {
         metadata_review_override: {
@@ -1373,6 +1382,13 @@ function generationEvidenceAuthority(resources: AutoBoundaryResource[]): unknown
         : {}),
     })),
   }));
+}
+
+function sharedReferenceEvidenceAuthority(
+  scope: SharedReferenceScopeInference,
+): Omit<SharedReferenceScopeInference, "review_override"> {
+  const { review_override: _reviewOverride, ...authority } = scope;
+  return authority;
 }
 
 export async function writeAutoBoundaryArtifacts(input: {
@@ -4173,10 +4189,16 @@ function assertDerivedScopePath(
   maximumHops: 1 | 2 | 3,
 ): void {
   const links = scope.proof?.links ?? [];
+  if (links.length > maximumHops) {
+    throw new Error(
+      `${resource.id} derived ${kind} scope uses ${links.length} hops, but the reviewed `
+      + `max_derived_scope_hops is ${maximumHops}. Raise that reviewed limit to ${links.length} `
+      + "and activate the exact revision before adding this resource.",
+    );
+  }
   if (scope.mode !== "derived"
     || scope.proof.source !== "database_catalog"
     || links.length < 1
-    || links.length > maximumHops
     || canonicalJsonDigest(links) !== scope.proof.digest
     || scope.path_id !== links.map((link) => link.constraint_name).join("__")) {
     throw new Error(`${resource.id} has malformed derived ${kind} scope proof.`);
