@@ -84,6 +84,46 @@ describe("guided start surfaces", () => {
     }
   });
 
+  it("opens Workbench with a config-aligned startable MySQL authoring baseline", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-start-mysql-workbench-"));
+    const openWorkbench = vi.fn(async () => 0);
+    process.chdir(projectRoot);
+
+    try {
+      await expect(start(
+        ["--from-env", "DATABASE_URL"],
+        {
+          interactive: true,
+          schemaInspector: async () => mysqlInspection(),
+          openWorkbench,
+        },
+      )).resolves.toBe(0);
+
+      expect(openWorkbench).toHaveBeenCalledOnce();
+      const config = JSON.parse(await fs.readFile(
+        path.join(projectRoot, "synapsor.runner.json"),
+        "utf8",
+      ));
+      const baseline = JSON.parse(await fs.readFile(
+        path.join(projectRoot, ".synapsor/auto-boundary-policy-baseline.json"),
+        "utf8",
+      ));
+      expect(config.trusted_context).toMatchObject({
+        provider: "environment",
+        tenant_binding: "tenant_id",
+      });
+      expect(baseline.boundary.pack.resources).toEqual([
+        expect.objectContaining({
+          id: "clinicdb.service_visits",
+          tenant_key: "tenant_id",
+        }),
+      ]);
+    } finally {
+      process.chdir(suiteCwd);
+      await fs.rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
   it("resumes an active CLI project at provider selection without rescanning", async () => {
     const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-start-cli-resume-"));
     const schemaInspector = vi.fn(async () => inspection());
@@ -840,6 +880,20 @@ function singleOrganizationInspection(): SchemaInspection {
   table.suggestions.tenant_columns = [];
   table.suggestions.default_visible_columns = table.suggestions.default_visible_columns
     .filter((column) => column !== "tenant_id");
+  table.row_level_security = false;
+  table.row_level_security_policies = [];
+  table.role_posture!.row_security_forced = false;
+  table.role_posture!.row_security_effective_for_current_role = false;
+  return result;
+}
+
+function mysqlInspection(): SchemaInspection {
+  const result = inspection();
+  result.engine = "mysql";
+  result.server_version = "MySQL 8.4";
+  result.schemas = ["clinicdb"];
+  const table = result.tables[0]!;
+  table.schema = "clinicdb";
   table.row_level_security = false;
   table.row_level_security_policies = [];
   table.role_posture!.row_security_forced = false;

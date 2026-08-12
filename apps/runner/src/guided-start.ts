@@ -496,6 +496,7 @@ async function startAutoBoundary(
     parsedEvidence: evidence.parsed,
     existingContracts: evidence.existingContracts,
     sourceEnv,
+    configuredTrustedContext: defaultLocalTrustedContextAuthority(singleOrganization),
     inspectedSchema: optionalArg(args, "--schema"),
     ...(singleOrganization ? { singleOrganization: { organizationId: organizationId! } } : {}),
   });
@@ -908,7 +909,12 @@ export async function boundaryCommand(
           deploymentProfile,
           singleOrganization,
         })
-      : undefined;
+      : deploymentProfile !== "production"
+        ? {
+            authority: defaultLocalTrustedContextAuthority(singleOrganization),
+            decidedAt: new Date().toISOString(),
+          }
+        : undefined;
     const inspection = await schemaInspector({
       engine: (optionalArg(rest, "--engine") ?? "auto") as InspectEngine,
       databaseUrlEnv: sourceEnv,
@@ -1212,6 +1218,18 @@ async function configuredExploreTrustedContext(input: {
   }
   const stat = await fs.stat(input.configPath);
   return { authority, decidedAt: stat.mtime.toISOString() };
+}
+
+function defaultLocalTrustedContextAuthority(
+  singleOrganization: boolean,
+): ConfiguredTrustedContextAuthority {
+  return {
+    schema_version: CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION,
+    provider: "environment",
+    ...(singleOrganization ? {} : { tenant_binding: "tenant_id" }),
+    tenant_env: "SYNAPSOR_TENANT_ID",
+    principal_env: "SYNAPSOR_PRINCIPAL",
+  };
 }
 
 async function boundaryOperationalStatus(

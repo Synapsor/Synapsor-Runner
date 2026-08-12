@@ -8,6 +8,7 @@ import {
   buildAutoBoundary,
   emptyReviewOverrides,
   explorationBoundaryCandidateDigest,
+  loadAutoBoundaryPolicyBaseline,
   loadActivatedExplorationBoundaries,
   writeAutoBoundaryArtifacts,
 } from "./auto-boundary.js";
@@ -35,6 +36,110 @@ import {
 } from "./boundary-rescan.js";
 
 describe("boundary rescan reconciliation", () => {
+  it("repairs a stale policy-neutral authoring baseline without changing reviewed authority", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-baseline-repair-"));
+    const inspection = normalizedCommerceInspection();
+    const project = {
+      root,
+      package_manager: "npm" as const,
+      frameworks: ["node"],
+      schema_inputs: [],
+      database_env_names: ["DATABASE_URL"],
+    };
+    const build = buildAutoBoundary({
+      inspection,
+      project,
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const unscopedInspection = structuredClone(inspection);
+    for (const table of unscopedInspection.tables) {
+      table.row_level_security = false;
+      table.row_level_security_policies = [];
+      if (table.role_posture) {
+        table.role_posture.row_security_forced = false;
+        table.role_posture.row_security_effective_for_current_role = false;
+      }
+      for (const field of table.columns.filter((item) => item.name === "tenant_id")) {
+        field.nullable = true;
+      }
+    }
+    const staleBaseline = buildAutoBoundary({
+      inspection: unscopedInspection,
+      project,
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    }).policy_baseline;
+    expect(staleBaseline.boundary.pack.resources).toEqual([]);
+    build.policy_baseline = staleBaseline;
+
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await writeRunnerConfig(root, {
+        provider: "environment",
+        tenantBinding: "tenant_id",
+      });
+      const progress = createBoundaryReviewProgress({
+        draft: build.exploration_boundary,
+        candidate: build.exploration_boundary,
+        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        actor: "owner@example.test",
+        revision: 1,
+      });
+      await saveBoundaryReviewProgress(root, progress);
+      await synchronizeBoundaryLibrary({
+        projectRoot: root,
+        draft: build.exploration_boundary,
+        currentCandidate: progress.candidate,
+        currentProgress: progress,
+      });
+      const activeDigest = explorationBoundaryCandidateDigest(progress.candidate);
+      await activateExplorationBoundary({
+        projectRoot: root,
+        candidate: progress.candidate,
+        expectedDigest: activeDigest,
+        actor: "owner@example.test",
+        confirmation: `ACTIVATE ${activeDigest}`,
+        confirmedDecisions: progress.candidate.unresolved_decisions,
+        currentInspection: inspection,
+      });
+      const draftPath = path.join(root, "synapsor/generated/exploration-boundary.draft.json");
+      const overridesPath = path.join(root, ".synapsor/review-overrides.json");
+      const draftBefore = await fs.readFile(draftPath, "utf8");
+      const overridesBefore = await fs.readFile(overridesPath, "utf8");
+
+      const preview = await prepareBoundaryRescan({ projectRoot: root, inspection });
+      expect(preview.report).toMatchObject({
+        changed: false,
+        authoring_baseline_refreshed: true,
+      });
+      expect(formatBoundaryRescanReport(preview.report)).toMatch(
+        /repaired the private boundary-authoring baseline.*no active boundary or reviewed revision changed/i,
+      );
+      const repeatedPreview = await prepareBoundaryRescan({ projectRoot: root, inspection });
+      const { generated_at: _firstGeneratedAt, ...firstStableReport } = preview.report;
+      const { generated_at: _repeatedGeneratedAt, ...repeatedStableReport } = repeatedPreview.report;
+      expect(repeatedStableReport).toEqual(firstStableReport);
+      expect(repeatedPreview.previewDigest).toBe(preview.previewDigest);
+      await commitBoundaryRescan(preview);
+
+      expect(await fs.readFile(draftPath, "utf8")).toBe(draftBefore);
+      expect(await fs.readFile(overridesPath, "utf8")).toBe(overridesBefore);
+      expect((await loadActivatedExplorationBoundaries(root))[0]!.activation.digest)
+        .toBe(activeDigest);
+      expect((await loadAutoBoundaryPolicyBaseline(root)).boundary.pack.resources)
+        .toEqual(expect.arrayContaining([
+          expect.objectContaining({ id: "public.orders", tenant_key: "tenant_id" }),
+        ]));
+      await expect(readBoundaryRescanReport(root)).resolves.toMatchObject({
+        changed: false,
+        authoring_baseline_refreshed: true,
+      });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
   it("preserves derived/shared policy and active authority while offering unrelated schema additions", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-rescan-"));
     const inspection = normalizedCommerceInspection();

@@ -21,7 +21,7 @@ describe("Auto Boundary Workbench renderer", () => {
       ["reviewed relative UTC windows", ["Reviewed UTC window", "Reviewed relative UTC window", "Exact UTC date ranges", "Operator-only resolved UTC window", "time_window", "compare_to"]],
       ["named and post-suppression measures", ["Add a named derived metric", "Add a post-suppression calculation", "kind:\"derived_measure\""]],
       ["safe child-count measures", ["Add a safe child-count metric", "Count child records without a raw one-to-many join"]],
-      ["reconciling rescan", ["Rescan and review changes", "boundary_rescan_report", "Active authority did not change"]],
+      ["reconciling rescan", ["Rescan and review changes", "boundary_rescan_report", "Active authority did not change", "Repair authoring baseline", "No boundary review is required"]],
       ["query history and evidence", ["Query history", "Durable query ledger", "/api/explore/history?audit_id="]],
       ["local-model provider controls", ["OpenAI-compatible or local", "Model request timeout (seconds)"]],
       ["external MCP client setup", ["Use an existing AI or MCP client", "Generic stdio MCP", "Managed project installers"]],
@@ -64,6 +64,85 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(new Set(labels).size).toBe(2);
     expect(graph).toContain("customer_id → id");
     expect(graph).toContain("rep_id → id");
+  });
+
+  it("renders current reconciliation, baseline-repair, and clean rescan reports", () => {
+    const html = renderBoundaryWorkbench("test-csrf");
+    const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? "";
+    const start = script.indexOf("function rescanList");
+    const end = script.indexOf("async function previewProjectRescan", start);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    const renderer = script.slice(start, end);
+    const render = (input: Record<string, unknown>): string => {
+      const context: Record<string, unknown> = {
+        input,
+        result: "",
+        esc: (value: unknown) => String(value),
+      };
+      vm.runInNewContext(`${renderer}; result=renderProjectRescanPreview(input);`, context);
+      return String(context.result);
+    };
+    const totals = {
+      boundaries: 1,
+      kept_confirmations: 7,
+      safely_carried_confirmations: 0,
+      invalidated_decisions: 1,
+      newly_available_resources: 0,
+      newly_available_fields: 1,
+      newly_available_relationships: 0,
+      removed_resources: 0,
+      removed_fields: 0,
+      removed_relationships: 0,
+    };
+    const changed = render({
+      changed: true,
+      schema_changed: true,
+      role_posture_changed: false,
+      trusted_context_changed: false,
+      totals,
+      boundaries: [{
+        boundary_name: "reviewed_staging",
+        kept_confirmations: 7,
+        invalidated_decisions: [{ id: "resource.public.orders.field_visibility", reason: "reviewed_input_changed" }],
+        changed_field_types: [],
+        removed_fields: [],
+        removed_relationships: [],
+        removed_resources: [],
+        newly_available_resources: [],
+        newly_available_fields: [{ resource_id: "public.orders", field: "channel" }],
+        newly_available_relationships: [],
+        pruned_review_inputs: [],
+      }],
+    });
+    expect(changed).toContain("Apply disabled reconciliation");
+    expect(changed).toContain("public.orders.channel: new column kept out until reviewed");
+    expect(changed).toContain("resource.public.orders.field_visibility: reviewed input changed");
+
+    const repaired = render({
+      changed: false,
+      authoring_baseline_refreshed: true,
+      schema_changed: false,
+      role_posture_changed: false,
+      trusted_context_changed: false,
+      totals: { ...totals, invalidated_decisions: 0, newly_available_fields: 0 },
+      boundaries: [],
+    });
+    expect(repaired).toContain("Repair authoring baseline");
+    expect(repaired).toContain("No boundary review is required");
+    expect(repaired).not.toContain("Apply disabled reconciliation");
+
+    const clean = render({
+      changed: false,
+      authoring_baseline_refreshed: false,
+      schema_changed: false,
+      role_posture_changed: false,
+      trusted_context_changed: false,
+      totals: { ...totals, invalidated_decisions: 0, newly_available_fields: 0 },
+      boundaries: [],
+    });
+    expect(clean).toContain("Nothing needs to be applied");
+    expect(clean).not.toContain('id="apply-rescan"');
   });
 
   it("emits executable browser JavaScript and the host-neutral guided journey", () => {
@@ -161,6 +240,9 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain('id="save-boundary-name"');
     expect(html).toContain("The name is included in its final review fingerprint.");
     expect(html).toContain("boundary_rescan_report");
+    expect(html).toContain("authoring_baseline_refreshed");
+    expect(html).toContain("renderProjectRescanPreview");
+    expect(html).not.toContain("diff.added_resources");
     expect(html).toContain("new column is kept out until reviewed");
     expect(html).toContain("new relationship is available to review");
     expect(html).toContain("Active authority did not change.");

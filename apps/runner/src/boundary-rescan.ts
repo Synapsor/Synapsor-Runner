@@ -18,6 +18,7 @@ import {
   generationLockSharedFactsDigest,
   loadAutoBoundaryPolicyBaseline,
   loadStructuredProjectEvidence,
+  persistAutoBoundaryPolicyBaseline,
   persistGenerationLockSnapshot,
   pruneAutoBoundaryReviewOverrides,
   seedConfiguredPrincipalBindingReview,
@@ -103,6 +104,7 @@ export type BoundaryRescanReport = {
   role_posture_changed: boolean;
   trusted_context_changed?: boolean;
   trusted_context_changes?: string[];
+  authoring_baseline_refreshed?: boolean;
   changed: boolean;
   boundaries: BoundaryRescanEntry[];
   totals: {
@@ -178,7 +180,8 @@ export async function prepareBoundaryRescan(input: {
     ...(currentProgress ? { currentProgress } : {}),
   });
   const now = input.now ?? new Date().toISOString();
-  const oldPolicyBaseline = await optionalOldPolicyBaseline(projectRoot, oldDraft);
+  const savedPolicyBaseline = await optionalOldPolicyBaseline(projectRoot);
+  const oldPolicyBaseline = savedPolicyBaseline?.boundary ?? oldDraft;
   const selectedPrevious = previousLibrary.boundaries[previousLibrary.selected_name];
   if (!selectedPrevious) throw new Error("Schema rescan could not load the selected boundary.");
   const selectedPreviousOverrides = boundaryReviewOverridesForCandidate({
@@ -245,6 +248,7 @@ export async function prepareBoundaryRescan(input: {
         project,
         parsedEvidence: evidence.parsed,
         existingContracts: evidence.existingContracts,
+        configuredTrustedContext,
       },
     );
     const sharedFactsUnchanged = generationLockSharedFactsDigest(comparableOldLock)
@@ -345,6 +349,9 @@ export async function prepareBoundaryRescan(input: {
     previousTrustedContext,
     configuredTrustedContext,
   });
+  report.authoring_baseline_refreshed = savedPolicyBaseline === undefined
+    || canonicalJsonDigest(savedPolicyBaseline)
+      !== canonicalJsonDigest(selectedBuild.policy_baseline);
   const { generated_at: _generatedAt, ...stableReport } = report;
   if (await boundaryRescanBaseStateDigest(projectRoot, boundaryRoot) !== baseStateDigest) {
     throw new Error(
@@ -384,12 +391,20 @@ export async function prepareBoundaryRescan(input: {
 }
 
 export async function commitBoundaryRescan(prepared: PreparedBoundaryRescan): Promise<void> {
-  if (!prepared.report.changed) return;
+  if (!prepared.report.changed && !prepared.report.authoring_baseline_refreshed) return;
   if (await boundaryRescanBaseStateDigest(prepared.projectRoot, prepared.boundaryRoot)
     !== prepared.baseStateDigest) {
     throw new Error(
       "Boundary review changed after this rescan preview was prepared. Nothing was written; retry --rescan.",
     );
+  }
+  if (!prepared.report.changed) {
+    await persistAutoBoundaryPolicyBaseline(
+      prepared.projectRoot,
+      prepared.selectedBuild.policy_baseline,
+    );
+    await writeBoundaryRescanReport(prepared.projectRoot, prepared.report);
+    return;
   }
   if (Object.values(prepared.library.boundaries).some(
     (progress) => progress.policy_migration.status === "review_required",
@@ -437,6 +452,9 @@ export async function readBoundaryRescanReport(
 
 export function formatBoundaryRescanReport(report: BoundaryRescanReport): string {
   if (!report.changed) {
+    if (report.authoring_baseline_refreshed) {
+      return "Rescan complete: the reviewed schema, database-role posture, and trusted-context authority are unchanged. Runner repaired the private boundary-authoring baseline so new CLI and Workbench boundaries can use the configured trusted bindings. No active boundary or reviewed revision changed.";
+    }
     return "Rescan complete: the reviewed schema, database-role posture, and trusted-context authority are unchanged. No boundary revision was created.";
   }
   const lines = [
@@ -524,7 +542,7 @@ function optionalConfigString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
-async function resolveConfiguredTrustedContextAuthority(input: {
+export async function resolveConfiguredTrustedContextAuthority(input: {
   projectRoot: string;
   sourceEnv: string;
   candidate: ExplorationBoundaryDraft;
@@ -1105,13 +1123,34 @@ function pruneInvalidAdvancedAggregateOverrides(
 
 async function optionalOldPolicyBaseline(
   projectRoot: string,
-  fallback: ExplorationBoundaryDraft,
-): Promise<ExplorationBoundaryDraft> {
+): Promise<AutoBoundaryBuild["policy_baseline"] | undefined> {
   try {
-    return (await loadAutoBoundaryPolicyBaseline(projectRoot)).boundary;
+    return await loadAutoBoundaryPolicyBaseline(projectRoot);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return fallback;
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;
+  }
+}
+
+async function writeBoundaryRescanReport(
+  projectRoot: string,
+  report: BoundaryRescanReport,
+): Promise<void> {
+  const stateRoot = path.join(projectRoot, ".synapsor");
+  await fs.mkdir(stateRoot, { recursive: true, mode: 0o700 });
+  const temporaryRoot = await fs.mkdtemp(path.join(stateRoot, ".boundary-rescan-report-"));
+  const temporary = path.join(temporaryRoot, BOUNDARY_RESCAN_REPORT_FILE);
+  const destination = path.join(stateRoot, BOUNDARY_RESCAN_REPORT_FILE);
+  try {
+    await fs.writeFile(temporary, `${JSON.stringify(report, null, 2)}\n`, {
+      encoding: "utf8",
+      mode: 0o600,
+      flag: "wx",
+    });
+    await fs.rename(temporary, destination);
+    await fs.chmod(destination, 0o600);
+  } finally {
+    await fs.rm(temporaryRoot, { recursive: true, force: true });
   }
 }
 

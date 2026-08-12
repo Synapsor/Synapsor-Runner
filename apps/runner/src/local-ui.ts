@@ -93,6 +93,7 @@ import {
   commitBoundaryRescan,
   prepareBoundaryRescan,
   readBoundaryRescanReport,
+  resolveConfiguredTrustedContextAuthority,
 } from "./boundary-rescan.js";
 import { blockedTenantScopeGuidance } from "./boundary-scope-guidance.js";
 import { buildInstantFirstValue } from "./instant-first-value.js";
@@ -1646,7 +1647,9 @@ async function handleRequest(input: {
       source_database_changed: false,
       message: prepared.report.changed
         ? "The reconciled boundary revision is disabled and ready for review. Existing exact authority, protected capabilities, and ledger history were preserved."
-        : "The schema and role posture are unchanged. No boundary revision was created.",
+        : prepared.report.authoring_baseline_refreshed
+          ? "The private boundary-authoring baseline was repaired for CLI and Workbench. No active boundary or reviewed revision changed, and no boundary review is required."
+          : "The schema, role posture, and trusted context are unchanged. No boundary revision was created.",
     });
     return;
   }
@@ -8032,6 +8035,12 @@ async function prepareAutoBoundaryRescan(input: {
   const project = await detectProjectContext(input.projectRoot);
   const evidence = await loadStructuredProjectEvidence(project);
   const previousProgress = await readSharedBoundaryReviewProgress(input.projectRoot, oldDraft);
+  const configuredTrustedContext = await resolveConfiguredTrustedContextAuthority({
+    projectRoot: input.projectRoot,
+    sourceEnv: lock.source_env,
+    candidate: previousProgress?.candidate ?? oldDraft,
+    fallbackAuthority: lock.trusted_context_authority,
+  });
   const buildInput = {
     inspection,
     project,
@@ -8040,6 +8049,7 @@ async function prepareAutoBoundaryRescan(input: {
     sourceEnv: lock.source_env,
     inspectedSchema: lock.inspected_schema,
     deploymentProfile: oldDraft.deployment_profile,
+    configuredTrustedContext,
     ...(oldDraft.trusted_context.provider === "http_claims" ? {
       httpClaims: {
         tenantClaim: oldDraft.trusted_context.tenant_claim,
@@ -8064,6 +8074,7 @@ async function prepareAutoBoundaryRescan(input: {
         project,
         parsedEvidence: evidence.parsed,
         existingContracts: evidence.existingContracts,
+        configuredTrustedContext,
       },
     );
   const build = buildAutoBoundary({

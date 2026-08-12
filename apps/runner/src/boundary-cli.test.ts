@@ -4648,6 +4648,68 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 20_000);
 
+  it("writes a startable MySQL baseline through the standalone boundary draft command", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-mysql-boundary-draft-command-"));
+    const inspection = boundaryInspection();
+    inspection.engine = "mysql";
+    inspection.server_version = "MySQL 8.4";
+    inspection.schemas = ["clinicdb"];
+    inspection.tables[0]!.schema = "clinicdb";
+    inspection.tables[0]!.row_level_security = false;
+    inspection.tables[0]!.row_level_security_policies = [];
+    inspection.tables[0]!.role_posture = {
+      ...inspection.tables[0]!.role_posture!,
+      row_security_forced: false,
+      row_security_effective_for_current_role: false,
+    };
+    try {
+      await expect(boundaryCommand([
+        "draft",
+        "--from-env", "DATABASE_URL",
+        "--engine", "mysql",
+        "--schema", "clinicdb",
+        "--project-root", root,
+      ], async () => inspection)).resolves.toBe(0);
+
+      const generatedConfig = JSON.parse(await fs.readFile(
+        path.join(root, "synapsor.runner.json"),
+        "utf8",
+      ));
+      expect(generatedConfig.trusted_context).toMatchObject({
+        provider: "environment",
+        tenant_binding: "tenant_id",
+      });
+      const draft = JSON.parse(await fs.readFile(
+        path.join(root, "synapsor/generated/exploration-boundary.draft.json"),
+        "utf8",
+      ));
+      const baseline = JSON.parse(await fs.readFile(
+        path.join(root, ".synapsor/auto-boundary-policy-baseline.json"),
+        "utf8",
+      ));
+      expect(draft.pack.resources).toEqual([
+        expect.objectContaining({ id: "clinicdb.service_visits", tenant_key: "tenant_id" }),
+      ]);
+      expect(baseline.boundary.pack.resources).toEqual([
+        expect.objectContaining({ id: "clinicdb.service_visits", tenant_key: "tenant_id" }),
+      ]);
+
+      const second = await createSavedBoundary({
+        projectRoot: root,
+        draft,
+        currentCandidate: draft,
+        name: "visits_from_cli_draft",
+        resourceId: "clinicdb.service_visits",
+        actor: "second-reviewer",
+      });
+      expect(second.candidate.pack.resources).toEqual([
+        expect.objectContaining({ id: "clinicdb.service_visits", tenant_key: "tenant_id" }),
+      ]);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
   it("invalidates stale profile review when restoring an existing disabled boundary", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-profile-rebase-"));
     const inspection = boundaryInspection();

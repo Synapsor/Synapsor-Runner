@@ -3420,6 +3420,175 @@ export default defineCapability({
     }
   });
 
+  it("keeps MySQL trusted bindings startable after a Workbench review reset", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-mysql-baseline-"));
+    const inspection = boundaryReviewInspection();
+    inspection.engine = "mysql";
+    inspection.server_version = "MySQL 8.4";
+    inspection.schemas = ["clinicdb"];
+    const table = inspection.tables[0]!;
+    table.schema = "clinicdb";
+    table.row_level_security = false;
+    table.row_level_security_policies = [];
+    table.role_posture = {
+      ...table.role_posture!,
+      row_security_forced: false,
+      row_security_effective_for_current_role: false,
+    };
+    table.columns.push({
+      name: "attending",
+      data_type: "varchar",
+      nullable: false,
+      generated: false,
+      ordinal_position: table.columns.length + 1,
+      suggestions: {
+        tenant: false,
+        conflict: false,
+        sensitive: false,
+        immutable: false,
+        large_or_binary: false,
+      },
+    });
+    table.suggestions.default_visible_columns.push("attending");
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root: tempDir,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "clinicdb",
+    });
+    const stalePolicyBaseline = structuredClone(build.policy_baseline);
+    expect(stalePolicyBaseline.boundary.pack.resources).toEqual([]);
+    const written = await writeAutoBoundaryArtifacts({ projectRoot: tempDir, build });
+    const guided = await initializeGuidedProject({
+      projectRoot: tempDir,
+      build,
+      runnerVersion: "1.7.0",
+    });
+    const config = JSON.parse(await fs.readFile(guided.config_path, "utf8"));
+    config.trusted_context.principal_binding = "attending";
+    config.trusted_context.values.principal_env = "SYNAPSOR_PRINCIPAL";
+    await fs.writeFile(guided.config_path, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      boundaryRoot: written.root,
+      configPath: guided.config_path,
+      storePath: guided.store_path,
+      token: "mysql-boundary-token",
+      csrfToken: "mysql-boundary-csrf",
+      schemaInspector: async () => inspection,
+    });
+    const headers = {
+      "x-synapsor-ui-token": "mysql-boundary-token",
+      "x-synapsor-csrf": "mysql-boundary-csrf",
+    };
+    try {
+      await postJson(`http://${server.host}:${server.port}/api/project/start-over`, headers, {
+        confirmation: "START OVER REVIEW",
+      });
+      const baseline = JSON.parse(await fs.readFile(
+        path.join(tempDir, ".synapsor/auto-boundary-policy-baseline.json"),
+        "utf8",
+      ));
+      expect(baseline.boundary.pack.resources).toEqual([
+        expect.objectContaining({
+          id: "clinicdb.members",
+          tenant_key: "tenant_id",
+          principal_key: "attending",
+        }),
+      ]);
+
+      const draftPath = path.join(tempDir, "synapsor/generated/exploration-boundary.draft.json");
+      const draftBeforeRepair = await fs.readFile(draftPath, "utf8");
+      await fs.writeFile(
+        path.join(tempDir, ".synapsor/auto-boundary-policy-baseline.json"),
+        `${JSON.stringify(stalePolicyBaseline, null, 2)}\n`,
+        "utf8",
+      );
+      const repairPreview = await postJson(
+        `http://${server.host}:${server.port}/api/project/rescan`,
+        headers,
+        {},
+      );
+      expect(repairPreview).toMatchObject({
+        ok: true,
+        diff: {
+          changed: false,
+          authoring_baseline_refreshed: true,
+        },
+      });
+      const repeatedRepairPreview = await postJson(
+        `http://${server.host}:${server.port}/api/project/rescan`,
+        headers,
+        {},
+      );
+      const { generated_at: _firstGeneratedAt, ...firstStableDiff } = repairPreview.diff;
+      const { generated_at: _repeatedGeneratedAt, ...repeatedStableDiff } = repeatedRepairPreview.diff;
+      expect(repeatedStableDiff).toEqual(firstStableDiff);
+      expect(repeatedRepairPreview.preview_digest).toBe(repairPreview.preview_digest);
+      const repaired = await postJson(
+        `http://${server.host}:${server.port}/api/project/rescan/apply`,
+        headers,
+        {
+          expected_digest: repairPreview.preview_digest,
+          confirmation: `RESCAN ${repairPreview.preview_digest}`,
+        },
+      );
+      expect(repaired).toMatchObject({
+        ok: true,
+        diff: {
+          changed: false,
+          authoring_baseline_refreshed: true,
+        },
+      });
+      expect(repaired.message).toMatch(/repaired for CLI and Workbench.*no boundary review is required/i);
+      await expect(fs.readFile(draftPath, "utf8")).resolves.toBe(draftBeforeRepair);
+      const repairedBaseline = JSON.parse(await fs.readFile(
+        path.join(tempDir, ".synapsor/auto-boundary-policy-baseline.json"),
+        "utf8",
+      ));
+      expect(repairedBaseline.boundary.pack.resources).toEqual([
+        expect.objectContaining({
+          id: "clinicdb.members",
+          tenant_key: "tenant_id",
+          principal_key: "attending",
+        }),
+      ]);
+
+      const created = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/library/create`,
+        headers,
+        {
+          name: "mysql_members_secondary",
+          resource_id: "clinicdb.members",
+          actor: "workbench-reviewer",
+        },
+      );
+      expect(created).toMatchObject({
+        candidate: {
+          pack: {
+            name: "mysql_members_secondary",
+            resources: [{
+              id: "clinicdb.members",
+              tenant_key: "tenant_id",
+              principal_key: "attending",
+            }],
+          },
+        },
+        authority_changed: false,
+        source_database_changed: false,
+      });
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it.each([
     ["public.members", "assigned_agent", "public.charges", "reviewer_id"],
     ["public.charges", "reviewer_id", "public.members", "assigned_agent"],

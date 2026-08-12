@@ -833,6 +833,7 @@ export function pruneAutoBoundaryReviewOverrides(
     project?: ProjectDetectionSummary;
     parsedEvidence?: ParsedSchema[];
     existingContracts?: SynapsorContract[];
+    configuredTrustedContext?: ConfiguredTrustedContextAuthority;
   } = {},
 ): { overrides: AutoBoundaryReviewOverrides; removed: string[] } {
   const current = normalizeAutoBoundaryReviewOverrides(input);
@@ -1015,6 +1016,7 @@ export function pruneAutoBoundaryReviewOverrides(
       },
       staticObjects,
       context.existingContracts ?? [],
+      context.configuredTrustedContext,
     );
     applyReviewOverrides(graph, preliminary);
     inferDerivedScopeCandidates(graph);
@@ -2466,6 +2468,34 @@ export async function loadAutoBoundaryPolicyBaseline(
     throw new Error("Saved Auto Boundary baseline contains human policy; Rescan before creating another boundary.");
   }
   return baseline;
+}
+
+export async function persistAutoBoundaryPolicyBaseline(
+  projectRootInput: string,
+  baseline: AutoBoundaryBuild["policy_baseline"],
+): Promise<void> {
+  if (baseline.schema_version !== AUTO_BOUNDARY_POLICY_BASELINE_VERSION
+    || baseline.boundary.activation !== "disabled_unreviewed") {
+    throw new Error("Refusing to persist an invalid policy-neutral Auto Boundary baseline.");
+  }
+  assertGenerationLockFingerprint(
+    baseline.lock,
+    baseline.boundary.generation_lock_fingerprint,
+  );
+  if (baseline.lock.reviewed_overrides_digest
+    !== canonicalJsonDigest(reviewOverrideAuthority(emptyReviewOverrides()))) {
+    throw new Error("Refusing to persist human policy in the Auto Boundary baseline.");
+  }
+  const projectRoot = path.resolve(projectRootInput);
+  await persistGenerationLockSnapshot(
+    projectRoot,
+    baseline.boundary.generation_lock_fingerprint,
+    baseline.lock,
+  );
+  await writePrivateJsonAtomic(
+    path.join(projectRoot, ".synapsor", AUTO_BOUNDARY_POLICY_BASELINE_FILE),
+    baseline,
+  );
 }
 
 export function generationLockSharedFactsDigest(

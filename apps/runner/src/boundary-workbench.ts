@@ -3291,6 +3291,74 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      }
     }
 
+    function rescanList(value){
+      return Array.isArray(value)?value:[];
+    }
+
+    function rescanBoundaryDetails(boundary){
+      const details=[];
+      for(const decision of rescanList(boundary.invalidated_decisions)){
+        details.push(decision.id+": "+(decision.reason==="decision_removed"?"reviewed input no longer exists":"reviewed input changed"));
+      }
+      for(const field of rescanList(boundary.changed_field_types))details.push(field.resource_id+"."+field.field+": reviewed column type changed");
+      for(const field of rescanList(boundary.removed_fields))details.push(field.resource_id+"."+field.field+": reviewed column removed");
+      for(const relationship of rescanList(boundary.removed_relationships))details.push(relationship.resource_id+"."+relationship.relationship_id+": reviewed relationship removed");
+      for(const resource of rescanList(boundary.removed_resources))details.push(resource+": reviewed table removed");
+      for(const resource of rescanList(boundary.newly_available_resources))details.push(resource+": new table available to review");
+      for(const detail of rescanList(boundary.pruned_review_inputs))details.push(detail);
+      for(const field of rescanList(boundary.newly_available_fields))details.push(field.resource_id+"."+field.field+": new column kept out until reviewed");
+      for(const relationship of rescanList(boundary.newly_available_relationships))details.push(relationship.resource_id+"."+relationship.relationship_id+": new relationship available to review");
+      return details;
+    }
+
+    function renderProjectRescanPreview(diff){
+      const totals=diff&&diff.totals?diff.totals:{};
+      const changed=Boolean(diff&&diff.changed);
+      const baselineRefreshed=Boolean(diff&&diff.authoring_baseline_refreshed);
+      const title=changed?"Review changes found":baselineRefreshed?"Authoring baseline repair available":"No reviewed changes found";
+      const summary=changed
+        ?"Runner found reviewed inputs that need a disabled reconciled revision. Existing active authority remains unchanged."
+        :baselineRefreshed
+          ?"The reviewed database and authority are unchanged, but the private boundary-authoring baseline is stale. Repairing it restores new-boundary authoring in both CLI and Workbench without changing any reviewed revision."
+          :"The reviewed schema, database-role posture, trusted context, and private authoring baseline already match. Nothing needs to be applied.";
+      const facts=[
+        ["Schema",diff&&diff.schema_changed?"Changed":"Unchanged"],
+        ["Database role",diff&&diff.role_posture_changed?"Changed":"Unchanged"],
+        ["Trusted context",diff&&diff.trusted_context_changed?"Changed":"Unchanged"],
+        ["Boundaries checked",totals.boundaries??0],
+        ["Decisions kept",totals.kept_confirmations??0],
+        ["Prior decisions invalidated",totals.invalidated_decisions??0],
+        ["Newly available",(totals.newly_available_resources??0)+" tables, "+(totals.newly_available_fields??0)+" columns, "+(totals.newly_available_relationships??0)+" relationships"],
+        ["Removed",(totals.removed_resources??0)+" tables, "+(totals.removed_fields??0)+" columns, "+(totals.removed_relationships??0)+" relationships"]
+      ];
+      const factRows=facts.map(item=>'<tr><th>'+esc(item[0])+'</th><td>'+esc(item[1])+'</td></tr>').join("");
+      const trustedChanges=rescanList(diff&&diff.trusted_context_changes);
+      const trustedMarkup=trustedChanges.length
+        ?'<h4>Trusted-context changes</h4><ul>'+trustedChanges.map(change=>'<li>'+esc(change)+'</li>').join("")+'</ul>'
+        :"";
+      const boundaryRows=rescanList(diff&&diff.boundaries).map(boundary=>{
+        const details=rescanBoundaryDetails(boundary);
+        const shown=details.slice(0,8).map(detail=>'<li>'+esc(detail)+'</li>').join("");
+        const more=details.length>8?'<li>+'+esc(details.length-8)+' more changes are available in the boundary review.</li>':"";
+        const detailMarkup=details.length?'<ul>'+shown+more+'</ul>':'No reviewed inputs changed.';
+        return '<tr><td data-label="Boundary"><code>'+esc(boundary.boundary_name)+'</code></td><td data-label="Kept">'+esc(boundary.kept_confirmations??0)+'</td><td data-label="Invalidated">'+esc(rescanList(boundary.invalidated_decisions).length)+'</td><td data-label="Details">'+detailMarkup+'</td></tr>';
+      }).join("");
+      const boundariesMarkup=boundaryRows
+        ?'<h4>Boundary reconciliation</h4><div class="result-table"><table><thead><tr><th>Boundary</th><th>Kept</th><th>Invalidated</th><th>Details</th></tr></thead><tbody>'+boundaryRows+'</tbody></table></div>'
+        :"";
+      const action=changed
+        ?'<button id="apply-rescan" type="button">Apply disabled reconciliation</button>'
+        :baselineRefreshed
+          ?'<button id="apply-rescan" type="button">Repair authoring baseline</button>'
+          :"";
+      const consequence=changed
+        ?"Applying writes only a disabled reconciled revision. Review and activation remain separate."
+        :baselineRefreshed
+          ?"Applying repairs private authoring state only. No boundary review is required."
+          :"No generated file, active boundary, protected capability, ledger record, or source row changed.";
+      return '<h3>'+esc(title)+'</h3><p>'+esc(summary)+'</p><div class="result-table"><table><tbody>'+factRows+'</tbody></table></div>'+trustedMarkup+boundariesMarkup+'<p>'+esc(consequence)+'</p>'+action;
+    }
+
     async function previewProjectRescan(){
       const panel=byId("project-action-message");
       try{
@@ -3298,15 +3366,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         panel.innerHTML="<p>Inspecting current metadata and computing a semantic diff. Nothing is being replaced...</p>";
         const payload=await post("/api/project/rescan",{});
         const diff=payload.diff;
-        const lines=[
-          "Resources: "+diff.resources_before+" → "+diff.resources_after,
-          "Added: "+(diff.added_resources.join(", ")||"none"),
-          "Removed: "+(diff.removed_resources.join(", ")||"none"),
-          "Changed: "+(diff.changed_resources.join(", ")||"none"),
-          "Review inputs no longer valid: "+(diff.pruned_review_inputs.join("; ")||"none")
-        ];
-        panel.innerHTML='<h3>Rescan preview</h3><p>'+lines.map(esc).join("<br>")+'</p><p>No generated file, active boundary, protected capability, ledger record, or source row changed.</p><button id="apply-rescan" type="button">Apply this disabled rescan</button>';
-        byId("apply-rescan").onclick=()=>applyProjectRescan(payload.preview_digest);
+        panel.innerHTML=renderProjectRescanPreview(diff);
+        const apply=byId("apply-rescan");
+        if(apply)apply.onclick=()=>applyProjectRescan(payload.preview_digest);
       }catch(error){
         panel.className="review-form error";
         panel.textContent=error.message;
@@ -3317,7 +3379,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const panel=byId("project-action-message");
       try{
         panel.className="review-form";
-        panel.textContent="Rechecking the preview and replacing only managed boundary artifacts...";
+	        panel.textContent="Rechecking the preview and applying only its reviewed reconciliation...";
 	        const payload=await post("/api/project/rescan/apply",{
           expected_digest:digest,
           confirmation:"RESCAN "+digest
@@ -3326,7 +3388,11 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	        accessBaselineColumns=null;
 	        await load();
         panel.className="review-form success";
-        panel.textContent=payload.message+" Next: Review the changed boundary.";
+        panel.textContent=payload.message+(payload.diff&&payload.diff.changed
+          ?" Next: Review the changed boundary."
+          :payload.diff&&payload.diff.authoring_baseline_refreshed
+            ?" You can create or edit boundaries now; no boundary review is required for this repair."
+            :"");
       }catch(error){
         panel.className="review-form error";
         panel.textContent=error.message;

@@ -18,6 +18,7 @@ import {
 import {
   boundaryReviewDecisions,
   createBoundaryReviewProgress,
+  legacyBoundaryReviewId,
   legacyPolicyMigration,
   normalizeStoredBoundaryReviewProgress,
   saveBoundaryReviewProgress,
@@ -397,6 +398,7 @@ async function readOrCreateLibrary(input: BoundaryLibraryContext): Promise<Bound
       draft: input.draft,
       candidate: input.currentCandidate,
       confirmedDecisions: [],
+      boundaryId: legacyBoundaryReviewId(input.currentCandidate),
       actor: "local-boundary-library",
       reason: "Registered the existing disabled boundary without changing authority.",
       revision: 1,

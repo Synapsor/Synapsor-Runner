@@ -86,6 +86,16 @@
   review candidates; implicit names, nullable or unsafe columns, and policy from
   another boundary remain excluded. A real production HTTP regression activates
   two overlapping MySQL boundaries, requires an exact selector, and routes both.
+- Applies that policy-neutral MySQL baseline consistently through standalone
+  `boundary draft`, guided CLI/Workbench startup, Workbench review reset, and
+  reconciliation. A no-change rescan repairs an older empty private authoring
+  baseline without changing the reviewed draft, overrides, active authority, or
+  source database. Source checkouts also refuse to launch an unpublished
+  `runner.mjs` bundle older than their TypeScript source, preventing stale local
+  builds from masquerading as verification of current code. The Workbench now
+  renders that same reconciliation report shape, distinguishes a private
+  baseline repair from a reviewable authority change, and keeps its exact
+  preview confirmation stable immediately after a review reset.
 
 Prepared package versions: `@synapsor/runner@1.7.0` and the optional
 `synapsor-runner@1.7.0` command alias, plus `@synapsor/spec@1.9.0` and
