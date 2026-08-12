@@ -40,7 +40,6 @@ import {
   explorationBoundaryCandidateDigest,
   loadActivatedExplorationBoundary,
   loadActivatedExplorationBoundaries,
-  loadGenerationLockSnapshot,
   loadStructuredProjectEvidence,
   normalizeExplorationAutoBandPolicy,
   normalizeExplorationDerivedMeasure,
@@ -187,6 +186,7 @@ import {
 import {
   createSavedBoundary,
   deleteSavedBoundary,
+  resolveSavedBoundaryReviewAuthority,
   switchSavedBoundary,
   synchronizeBoundaryLibrary,
 } from "./boundary-library.js";
@@ -1197,9 +1197,16 @@ async function handleRequest(input: {
       return;
     }
     const submittedCandidate = body.candidate as unknown as ExplorationBoundaryDraft;
-    // The inspected draft is the authority ceiling. Saved progress may be narrower,
-    // but the editor must still be able to add another inspected, reviewable resource.
-    const preview = reviewExplorationBoundaryCandidate(draft, submittedCandidate);
+    const reviewAuthority = await resolveSavedBoundaryReviewAuthority({
+      projectRoot,
+      draft,
+      candidate: submittedCandidate,
+      ...(existingProgress ? { progress: existingProgress } : {}),
+    });
+    const preview = reviewExplorationBoundaryCandidate(
+      reviewAuthority.reviewDraft,
+      submittedCandidate,
+    );
     const confirmed = normalizePartialReviewDecisions(
       preview.candidate.unresolved_decisions,
       body.confirmed_decisions as string[],
@@ -1792,21 +1799,23 @@ async function handleRequest(input: {
       return;
     }
     const candidate = body.candidate as unknown as ExplorationBoundaryDraft;
-    const lock = await loadGenerationLockSnapshot(
+    const reviewAuthority = await resolveSavedBoundaryReviewAuthority({
       projectRoot,
-      candidate.generation_lock_fingerprint,
-    );
+      draft,
+      candidate,
+      ...(progress ? { progress } : {}),
+    });
     const inspection = await schemaInspector({
-      engine: lock.engine,
-      databaseUrlEnv: lock.source_env,
-      schema: lock.inspected_schema,
+      engine: reviewAuthority.generationLock.engine,
+      databaseUrlEnv: reviewAuthority.generationLock.source_env,
+      schema: reviewAuthority.generationLock.inspected_schema,
       env: process.env,
     });
     const active = await activateExplorationBoundary({
       projectRoot,
       candidate,
-      reviewDraft: progress?.candidate,
-      generationLock: lock,
+      reviewDraft: reviewAuthority.reviewDraft,
+      generationLock: reviewAuthority.generationLock,
       expectedDigest: body.expected_digest,
       actor: body.actor,
       confirmation: body.confirmation,
@@ -1912,13 +1921,16 @@ async function handleRequest(input: {
       return;
     }
     const submittedCandidate = body.candidate as unknown as ExplorationBoundaryDraft;
-    const reviewDraft = progress
-      && submittedCandidate.generation_lock_fingerprint
-        === progress.candidate.generation_lock_fingerprint
-      && submittedCandidate.pack?.name === progress.candidate.pack.name
-      ? progress.candidate
-      : draft;
-    const reviewed = reviewExplorationBoundaryCandidate(reviewDraft, submittedCandidate);
+    const reviewAuthority = await resolveSavedBoundaryReviewAuthority({
+      projectRoot,
+      draft,
+      candidate: submittedCandidate,
+      ...(progress ? { progress } : {}),
+    });
+    const reviewed = reviewExplorationBoundaryCandidate(
+      reviewAuthority.reviewDraft,
+      submittedCandidate,
+    );
     if (!progress
       || explorationBoundaryCandidateDigest(progress.candidate) !== reviewed.digest) {
       sendJson(response, 409, {
@@ -1940,17 +1952,14 @@ async function handleRequest(input: {
       });
       return;
     }
-    const lock = JSON.parse(
-      await fs.readFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "utf8"),
-    ) as GenerationLock;
     const inspection = await schemaInspector({
-      engine: lock.engine,
-      databaseUrlEnv: lock.source_env,
-      schema: lock.inspected_schema,
+      engine: reviewAuthority.generationLock.engine,
+      databaseUrlEnv: reviewAuthority.generationLock.source_env,
+      schema: reviewAuthority.generationLock.inspected_schema,
       env: process.env,
     });
     assertCurrentExplorationBoundaryAuthority({
-      lock,
+      lock: reviewAuthority.generationLock,
       inspection,
       candidate: reviewed.candidate,
     });

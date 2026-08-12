@@ -3021,6 +3021,138 @@ export default defineCapability({
     }
   }, 20_000);
 
+  it("reviews and activates a second Workbench boundary against its own generation lock", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-second-boundary-"));
+    const inspection = relationshipReviewInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root: tempDir,
+        package_manager: "npm" as const,
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+      overrides: {
+        schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+        resources: {
+          "public.members": {
+            fields: {
+              membership_status: {
+                exposure: "withhold_from_model",
+                actor: "first-reviewer@example.test",
+                reason: "Keep membership state out of the first boundary only.",
+                decided_at: "2026-08-12T12:00:00.000Z",
+              },
+            },
+          },
+        },
+      },
+    });
+    const written = await writeAutoBoundaryArtifacts({ projectRoot: tempDir, build });
+    const guided = await initializeGuidedProject({
+      projectRoot: tempDir,
+      build,
+      runnerVersion: "1.7.0",
+    });
+    const firstDigest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+    await activateExplorationBoundary({
+      projectRoot: tempDir,
+      candidate: build.exploration_boundary,
+      expectedDigest: firstDigest,
+      actor: "first-reviewer@example.test",
+      confirmation: `ACTIVATE ${firstDigest}`,
+      confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+      currentInspection: inspection,
+    });
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      boundaryRoot: written.root,
+      configPath: guided.config_path,
+      storePath: guided.store_path,
+      token: "second-boundary-token",
+      csrfToken: "second-boundary-csrf",
+      schemaInspector: async () => inspection,
+    });
+    const headers = {
+      "x-synapsor-ui-token": "second-boundary-token",
+      "x-synapsor-csrf": "second-boundary-csrf",
+    };
+    try {
+      const created = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/library/create`,
+        headers,
+        {
+          name: "teams_only",
+          resource_id: "public.teams",
+          actor: "second-reviewer@example.test",
+        },
+      );
+      expect(created.candidate.generation_lock_fingerprint)
+        .not.toBe(build.exploration_boundary.generation_lock_fingerprint);
+      const staged = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/progress`,
+        headers,
+        {
+          candidate: created.candidate,
+          confirmed_decisions: created.candidate.unresolved_decisions,
+          expected_revision: created.review_progress.revision,
+          actor: "second-reviewer@example.test",
+        },
+      );
+      const boundary = await getJson(
+        `http://${server.host}:${server.port}/api/boundary`,
+        headers,
+      );
+      const preview = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/preview`,
+        headers,
+        {
+          candidate: boundary.candidate,
+          expected_revision: staged.revision,
+          actor: "second-reviewer@example.test",
+          confirmed_decisions: boundary.candidate.unresolved_decisions,
+        },
+      );
+      const activated = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/activate`,
+        headers,
+        {
+          candidate: preview.candidate,
+          expected_digest: preview.digest,
+          actor: "second-reviewer@example.test",
+          confirmation: `ACTIVATE ${preview.digest}`,
+          confirmed_decisions: preview.candidate.unresolved_decisions,
+        },
+      );
+      expect(activated).toMatchObject({
+        active_boundary_added: "teams_only",
+        active: {
+          pack: {
+            name: "teams_only",
+            resources: [{ id: "public.teams" }],
+          },
+        },
+        source_database_changed: false,
+      });
+      const active = await loadActivatedExplorationBoundaries(tempDir);
+      expect(active.map((boundary) => boundary.pack.name).sort()).toEqual([
+        "reviewed_staging",
+        "teams_only",
+      ]);
+      expect(active.find((boundary) => boundary.pack.name === "reviewed_staging")
+        ?.pack.resources.find((resource) => resource.id === "public.members")
+        ?.model_withheld_fields).toContain("membership_status");
+      expect(active.find((boundary) => boundary.pack.name === "teams_only")
+        ?.generation_lock_fingerprint).toBe(created.candidate.generation_lock_fingerprint);
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  }, 20_000);
+
   it("stages one catalog-proven missing relationship and preserves unrelated review decisions", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-relationship-review-"));
     const inspection = relationshipReviewInspection();

@@ -31,8 +31,9 @@ Set database and trusted-context values in the environment that launches the
 MCP process. Keep real URLs and tokens in your shell or secret manager, not in
 the checked-in client JSON.
 
-For an activated local development/staging Auto Boundary, use the explicit
-authoring mode instead of the named production config:
+For an activated local development/staging Auto Boundary, the managed installer
+detects the reviewed local Explore-only config and writes the explicit
+authoring command automatically:
 
 ```bash
 synapsor-runner mcp install claude-code \
@@ -45,7 +46,9 @@ synapsor-runner mcp install claude-code \
 That entry advertises exactly `app.describe_data` and `app.explore_data`.
 Cursor and VS Code use the same command with `cursor` or `vscode`. Production,
 unknown-profile, remote, and shared HTTP surfaces never advertise those broad
-authoring tools.
+authoring tools. `--authoring` remains available when you want to state the
+mode explicitly. Omitting it no longer creates a zero-tool entry: Runner either
+detects the active local boundary or refuses with activation guidance.
 
 ## Stdio
 
@@ -66,6 +69,12 @@ clients:
 Relative paths are resolved from the MCP client's working directory. Use the
 project template when the client starts in your repository; replace the marked
 bundle path in the global template when it does not.
+
+The generic config/store shape above is for named capabilities. For a read-only
+config with no named capabilities and an active local development/staging
+boundary, current Runner versions also recognize that older shape and select
+local Explore automatically. Newly generated configs use the clearer
+`mcp serve --authoring --project-root ...` command.
 
 ### Claude Desktop
 

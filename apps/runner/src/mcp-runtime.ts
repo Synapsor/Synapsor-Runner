@@ -31,10 +31,38 @@ import { sharedPostgresLedgerMirrorRequested, withoutSharedPostgresLedgerMirror,
 import { capabilityOperation, formatSourceReceiptMode, sourceNeedsSqlWriteback } from "./writeback-domain.js";
 
 const EXPLORE_TOOL_NAMES = ["app.describe_data", "app.explore_data"] as const;
+type ExploreSurfaceMode = "local" | "production";
 
 
 export function productionExploreServeMode(args: readonly string[], config: RuntimeConfig): boolean {
   return args.includes("--production-explore") || config.production_explore?.enabled === true;
+}
+
+
+function isLocalExploreOnlyConfig(config: RuntimeConfig): boolean {
+  return config.production_explore?.enabled !== true
+    && config.mode === "read_only"
+    && (config.capabilities?.length ?? 0) === 0;
+}
+
+
+async function activeLocalExploreProjectRoot(
+  config: RuntimeConfig,
+  configPath: string,
+): Promise<string | undefined> {
+  if (!isLocalExploreOnlyConfig(config)) return undefined;
+  const projectRoot = path.dirname(path.resolve(configPath));
+  try {
+    const boundaries = await loadActivatedExplorationBoundaries(projectRoot);
+    return boundaries.length > 0 && boundaries.every((boundary) =>
+      boundary.activation.state === "active"
+      && (boundary.deployment_profile === "development" || boundary.deployment_profile === "staging"))
+      ? projectRoot
+      : undefined;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
 }
 
 
@@ -67,6 +95,21 @@ function assertProductionExplorePresentation(args: readonly string[]): void {
 }
 
 
+function assertLocalExplorePresentation(args: readonly string[]): void {
+  const presentationFlags = [
+    "--result-format",
+    "--tool-name-style",
+    "--alias-mode",
+    "--openai-tool-aliases",
+    "--aliases",
+  ].filter((flag) => args.includes(flag));
+  if (presentationFlags.length === 0) return;
+  throw new Error(
+    `Local Explore uses fixed app.describe_data/app.explore_data tool names and one reviewed result envelope. Remove ${presentationFlags.join(", ")}; presentation aliases and result-format overrides are not available on this surface.`,
+  );
+}
+
+
 export async function mcpServe(args: string[]): Promise<number> {
   const transport = optionalArg(args, "--transport") ?? "stdio";
   if (args.includes("--authoring")) {
@@ -90,6 +133,29 @@ export async function mcpServe(args: string[]): Promise<number> {
   const baseConfig = await readRuntimeConfig(configPath);
   const config = readOnly ? { ...baseConfig, mode: "read_only" as const } : baseConfig;
   assertProductionExploreTransport(config, configPath, "stdio");
+  const localExploreProjectRoot = await activeLocalExploreProjectRoot(config, configPath);
+  if (localExploreProjectRoot) {
+    assertLocalExplorePresentation(args);
+    const requestedStore = optionalArg(args, "--store");
+    const reviewedStore = path.join(localExploreProjectRoot, ".synapsor/local.db");
+    if (requestedStore && path.resolve(requestedStore) !== reviewedStore) {
+      throw new Error(
+        `Local Explore uses the boundary project's reviewed ledger at ${reviewedStore}. `
+        + `Use ${cliCommandName()} mcp serve --authoring --project-root ${shellQuote(localExploreProjectRoot)}.`,
+      );
+    }
+    process.stderr.write(
+      `Active local Explore authority selected from ${configPath}; exposing exactly ${EXPLORE_TOOL_NAMES.join(" and ")}.\n`,
+    );
+    await serveScopedExploreStdio({ projectRoot: localExploreProjectRoot });
+    return 0;
+  }
+  if (isLocalExploreOnlyConfig(config)) {
+    throw new Error(
+      `No active reviewed development/staging boundary is available beside ${configPath}. `
+      + `Run ${cliCommandName()} start --cli to review and activate local Explore before connecting an MCP client.`,
+    );
+  }
   const toolNameStyle = toolNameStyleOption(args);
   const resultFormat = resultFormatOption(args);
   const storePath = optionalResolvedLocalStorePath(args);
@@ -1078,21 +1144,42 @@ export async function mcpConfigure(args: string[]): Promise<number> {
   }
   const existingConfig = await fileExists(rawConfigPath) ? await readRuntimeConfig(rawConfigPath) : undefined;
   const productionExplore = existingConfig?.production_explore?.enabled === true;
+  const localExploreProjectRoot = existingConfig
+    ? await activeLocalExploreProjectRoot(existingConfig, rawConfigPath)
+    : undefined;
+  const localExplore = Boolean(localExploreProjectRoot);
   if (productionExplore && transport !== "streamable-http") {
     throw new Error(
       "Production Explore client config requires --transport streamable-http. "
       + "The reviewed production surface is not available over stdio.",
     );
   }
+  if (localExplore && transport !== "stdio") {
+    throw new Error(
+      "Local reviewed Explore client config requires --transport stdio. "
+      + "Local development/staging boundaries are never served over HTTP.",
+    );
+  }
+  if (existingConfig && isLocalExploreOnlyConfig(existingConfig) && !localExplore) {
+    throw new Error(
+      "Local Explore client config requires an active reviewed development/staging boundary. "
+      + `Run ${cliCommandName()} start --cli, review and activate access, then generate the client config again.`,
+    );
+  }
+  const exploreMode: ExploreSurfaceMode | undefined = productionExplore
+    ? "production"
+    : localExplore
+      ? "local"
+      : undefined;
   const explicitAliasMode = optionalArg(args, "--alias-mode")
     ?? (args.includes("--openai-tool-aliases") ? "openai" : undefined);
-  if (productionExplore && explicitAliasMode && explicitAliasMode !== "canonical") {
+  if (exploreMode && explicitAliasMode && explicitAliasMode !== "canonical") {
     throw new Error(
-      "Production Explore client config uses fixed app.describe_data/app.explore_data names. "
+      `${exploreMode === "production" ? "Production" : "Local"} Explore client config uses fixed app.describe_data/app.explore_data names. `
       + "Remove the alias option; aliases are not available on this surface.",
     );
   }
-  const aliasMode = productionExplore ? "canonical" : mcpClientConfigAliasMode(args, client);
+  const aliasMode = exploreMode ? "canonical" : mcpClientConfigAliasMode(args, client);
   const claimsAuth = Boolean(existingConfig && trustedContextsForDoctor(existingConfig).some((context) => context.provider === "http_claims"));
   const authTokenEnv = optionalArg(args, "--auth-token-env")
     ?? existingConfig?.http_security?.static_token?.active_env
@@ -1112,11 +1199,14 @@ export async function mcpConfigure(args: string[]): Promise<number> {
     oauthResource: existingConfig?.http_security?.oauth_resource?.resource,
     authorizationServers: existingConfig?.http_security?.oauth_resource?.authorization_servers,
     requiredScopes: existingConfig?.http_security?.oauth_resource?.required_scopes,
-    productionExplore,
+    exploreMode,
+    localExploreProjectRoot: localExplore
+      ? (useAbsolutePaths ? localExploreProjectRoot : path.dirname(configPath))
+      : undefined,
   };
   const snippet = mcpClientSnippet(client, configPath, storePath, snippetOptions);
   if (includeInstructions) {
-    snippet.agent_instructions = mcpAgentInstructions(client, aliasMode, productionExplore);
+    snippet.agent_instructions = mcpAgentInstructions(client, aliasMode, exploreMode);
   }
   if (args.includes("--write")) {
     const destination = optionalArg(args, "--destination");
@@ -1125,8 +1215,8 @@ export async function mcpConfigure(args: string[]): Promise<number> {
     process.stdout.write(`wrote MCP ${client} configuration to ${destination}\n`);
   } else {
     process.stderr.write(`Paste this ${client} MCP config into your local MCP client settings. It contains command paths and credential environment references only, not database URLs, write credentials, or token values.\n`);
-    process.stderr.write(productionExplore
-      ? "Production Explore exposes exactly app.describe_data and app.explore_data; activation, approval, apply, Protect, credentials, and SQL remain outside MCP.\n"
+    process.stderr.write(exploreMode
+      ? `${exploreMode === "production" ? "Production" : "Local reviewed"} Explore exposes exactly app.describe_data and app.explore_data; activation, approval, apply, Protect, credentials, and SQL remain outside MCP.\n`
       : "Proposal tools advertise a display-only MCP App automatically where the host supports it; other clients retain the same text/JSON result. Approval and apply remain outside MCP.\n");
     process.stdout.write(`${JSON.stringify(snippet, null, 2)}\n`);
   }
@@ -1159,7 +1249,8 @@ type McpClientSnippetOptions = {
   oauthResource?: string;
   authorizationServers?: string[];
   requiredScopes?: string[];
-  productionExplore: boolean;
+  exploreMode?: ExploreSurfaceMode;
+  localExploreProjectRoot?: string;
 };
 
 
@@ -1196,7 +1287,7 @@ function writeMcpHttpClientGuidance(client: string, options: McpClientSnippetOpt
   } else {
     process.stderr.write(`Start the local Runner Streamable HTTP server separately and expose the provisioned endpoint token to the client process as ${options.clientAccessTokenEnv}.\n`);
   }
-  if (options.productionExplore) {
+  if (options.exploreMode === "production") {
     process.stderr.write("Server mode: production_explore.enabled selects the locked two-tool surface automatically; generated local launch commands also include --production-explore explicitly.\n");
   }
 }
@@ -1221,6 +1312,15 @@ function mcpClientConfigAliasMode(args: string[], client: string): ToolNameStyle
 
 
 function serveArgsForClient(configPath: string, storePath: string, options: McpClientSnippetOptions): string[] {
+  if (options.exploreMode === "local") {
+    return [
+      "mcp",
+      "serve",
+      "--authoring",
+      "--project-root",
+      options.localExploreProjectRoot ?? ".",
+    ];
+  }
   const args = options.transport === "streamable-http"
     ? [
       "mcp",
@@ -1233,7 +1333,7 @@ function serveArgsForClient(configPath: string, storePath: string, options: McpC
       options.host,
       "--port",
       String(options.port),
-      ...(options.productionExplore ? ["--production-explore"] : []),
+      ...(options.exploreMode === "production" ? ["--production-explore"] : []),
       ...(options.authMode === "opaque-static" ? ["--auth-token-env", options.authTokenEnv] : []),
     ]
     : ["mcp", "serve", "--config", configPath, "--store", storePath];
@@ -1322,7 +1422,7 @@ function mcpClientSnippet(client: string, configPath: string, storePath: string,
         credential_value_embedded: false,
       },
       tool_names: {
-        ...(options.productionExplore
+        ...(options.exploreMode === "production"
           ? {
             canonical: [...EXPLORE_TOOL_NAMES],
             fixed: true,
@@ -1337,7 +1437,7 @@ function mcpClientSnippet(client: string, configPath: string, storePath: string,
         externalProtectedResource
           ? "Connect to the already deployed HTTPS protected resource. Runner deployment, TLS/proxy configuration, and token issuance remain operator responsibilities."
           : "Start the local Streamable HTTP MCP server before creating the OpenAI Agents SDK server.",
-        ...(options.productionExplore
+        ...(options.exploreMode === "production"
           ? [
             "Production Explore exposes exactly app.describe_data and app.explore_data with fixed names and one reviewed result envelope.",
             "The model cannot activate boundaries, alter trusted scope, send SQL, or access approval, apply, Protect, configuration, or credential tools.",
@@ -1360,16 +1460,16 @@ function mcpClientSnippet(client: string, configPath: string, storePath: string,
 function mcpAgentInstructions(
   client: string,
   aliasMode: ToolNameStyle,
-  productionExplore: boolean,
+  exploreMode: ExploreSurfaceMode | undefined,
 ): Record<string, unknown> {
-  if (productionExplore) {
+  if (exploreMode) {
     return {
       target_client: client,
       alias_mode: "canonical",
       recommended_system_prompt: [
         "Use app.describe_data only to discover exact reviewed resource, field, relationship, enum, metric, band, and time-window identifiers.",
         "Use app.explore_data for bounded values and copy exact identifiers from app.describe_data; never invent identifiers, formulas, SQL, tenant scope, or principal scope.",
-        "Each query must stay inside one active reviewed boundary. If Runner returns an actionable refusal, correct only the named plan field or ask for operator review.",
+        `Each query must stay inside one active reviewed ${exploreMode === "production" ? "production" : "development/staging"} boundary. If Runner returns an actionable refusal, correct only the named plan field or ask for operator review.`,
         "You cannot activate or widen boundaries, approve, apply, Protect, configure credentials, or execute raw SQL through this MCP surface.",
       ].join(" "),
       checklist: [
@@ -1618,17 +1718,7 @@ async function hasActiveProductionExploreBoundary(config: RuntimeConfig, configP
 
 
 async function hasActiveLocalExploreBoundary(config: RuntimeConfig, configPath: string): Promise<boolean> {
-  if (config.mode !== "read_only") return false;
-  const projectRoot = path.dirname(path.resolve(configPath));
-  try {
-    const boundaries = await loadActivatedExplorationBoundaries(projectRoot);
-    return boundaries.some((boundary) =>
-      boundary.activation.state === "active"
-      && (boundary.deployment_profile === "development" || boundary.deployment_profile === "staging"));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
-    throw error;
-  }
+  return Boolean(await activeLocalExploreProjectRoot(config, configPath));
 }
 
 

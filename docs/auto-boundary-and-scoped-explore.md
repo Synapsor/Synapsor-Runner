@@ -843,7 +843,9 @@ Ask With Your Model](workbench-ask.md).
 
 ## Add The Authoring Tools To A Project MCP Client
 
-After activation, let Runner manage only its own project entry:
+After activation, let Runner manage only its own project entry. Runner detects
+that this is an active local Explore-only project; `--authoring` below remains
+the explicit, copyable form:
 
 ```bash
 synapsor-runner mcp install claude-code \
@@ -865,6 +867,12 @@ values. Authoring mode uses local stdio and advertises exactly:
 app.describe_data
 app.explore_data
 ```
+
+`mcp client-config` and `mcp install` now emit that authoring command
+automatically for an active read-only development/staging boundary with no
+named capabilities. Older config/store-shaped stdio entries are recognized at
+startup as well. If no local boundary is active, Runner refuses rather than
+starting or generating a server with no tools.
 
 `app.describe_data` is bounded and paginated over only the activated resource
 pack. `app.explore_data` accepts a structured plan. Neither tool exposes SQL,

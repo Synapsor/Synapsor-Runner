@@ -156,7 +156,8 @@ runtime proposal tools.
 
 ## A Project Client Has Production Tools Instead Of Authoring Tools
 
-Install the managed local authoring entry only after boundary activation:
+Install the managed local entry only after boundary activation. Runner detects
+an active local Explore-only project automatically; the explicit form is:
 
 ```bash
 synapsor-runner mcp install claude-code \
@@ -167,6 +168,10 @@ synapsor-runner mcp install claude-code \
 ```
 
 Authoring status reports exactly `app.describe_data` and `app.explore_data`.
+`mcp client-config` also emits this exact form. A pre-fix config/store-shaped
+entry is accepted and routed to the same surface, while an inactive
+Explore-only project now refuses with an activation remedy instead of exposing
+zero tools.
 After Protect and exact-digest activation, replace that entry with the
 production config. The protected named capability remains available while
 Explore disappears:

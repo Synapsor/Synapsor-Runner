@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
 import {
+  AUTO_BOUNDARY_OVERRIDES_VERSION,
   activateExplorationBoundary,
   buildAutoBoundary,
   explorationBoundaryCandidateDigest,
@@ -4347,6 +4348,13 @@ describe("boundary operator-plane CLI", () => {
         build,
         runnerVersion: "1.7.0",
       });
+      await expect(main([
+        "mcp", "client-config",
+        "--client", "claude-code",
+        "--config", guided.config_path,
+      ])).rejects.toThrow(
+        /Local Explore client config requires an active reviewed development\/staging boundary.*start --cli/s,
+      );
       const digest = explorationBoundaryCandidateDigest(build.exploration_boundary);
       await activateExplorationBoundary({
         projectRoot: root,
@@ -4382,6 +4390,37 @@ describe("boundary operator-plane CLI", () => {
         detail: "app.describe_data, app.explore_data",
       });
       expect(JSON.stringify(preview)).not.toContain("semantic tools present");
+
+      output = "";
+      await expect(main([
+        "mcp", "client-config",
+        "--client", "claude-code",
+        "--config", guided.config_path,
+        "--include-instructions",
+      ])).resolves.toBe(0);
+      const clientConfig = JSON.parse(output);
+      expect(clientConfig.mcpServers.synapsor).toEqual({
+        command: "synapsor-runner",
+        args: [
+          "mcp", "serve",
+          "--authoring",
+          "--project-root", root,
+        ],
+      });
+      expect(clientConfig.agent_instructions).toMatchObject({
+        alias_mode: "canonical",
+        recommended_system_prompt: expect.stringContaining(
+          "Use app.describe_data only to discover exact reviewed",
+        ),
+      });
+      expect(clientConfig.agent_instructions.recommended_system_prompt).not.toContain("propose-first");
+
+      await expect(main([
+        "mcp", "client-config",
+        "--client", "claude-code",
+        "--config", guided.config_path,
+        "--alias-mode", "openai",
+      ])).rejects.toThrow(/Local Explore client config uses fixed app\.describe_data\/app\.explore_data names/);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -4401,6 +4440,21 @@ describe("boundary operator-plane CLI", () => {
       },
       sourceEnv: "DATABASE_URL",
       inspectedSchema: "public",
+      overrides: {
+        schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+        resources: {
+          "public.service_visits": {
+            fields: {
+              scheduled_at: {
+                exposure: "withhold_from_model",
+                actor: "first-reviewer",
+                reason: "Keep exact visit timestamps out of the first boundary only.",
+                decided_at: "2026-08-12T12:00:00.000Z",
+              },
+            },
+          },
+        },
+      },
     });
     try {
       await writeAutoBoundaryArtifacts({ projectRoot: root, build });
@@ -4431,18 +4485,28 @@ describe("boundary operator-plane CLI", () => {
         actor: "second-reviewer",
       });
       expect(progress.candidate.deployment_profile).toBe("development");
-
-      const secondDigest = explorationBoundaryCandidateDigest(progress.candidate);
-      await activateExplorationBoundary({
-        projectRoot: root,
+      expect(progress.candidate.generation_lock_fingerprint)
+        .not.toBe(build.exploration_boundary.generation_lock_fingerprint);
+      const completed = createBoundaryReviewProgress({
+        draft: build.exploration_boundary,
         candidate: progress.candidate,
-        expectedDigest: secondDigest,
-        actor: "second-reviewer",
-        confirmation: `ACTIVATE ${secondDigest}`,
         confirmedDecisions: progress.candidate.unresolved_decisions,
-        currentInspection: inspection,
-        activeSetMode: "add",
+        previous: progress,
+        actor: "second-reviewer",
+        revision: progress.revision + 1,
       });
+      await saveBoundaryReviewProgress(root, completed);
+      const session: BoundaryReviewInteractiveSession = {
+        chooseResource: async () => undefined,
+        editFieldTiers: async () => undefined,
+        promptText: async () => "second-reviewer",
+        confirm: async () => true,
+      };
+      await expect(boundaryActivateCommandInternal(
+        ["--project-root", root, "--actor", "second-reviewer"],
+        async () => inspection,
+        session,
+      )).resolves.toBe(0);
       const active = await loadActivatedExplorationBoundaries(root);
       expect(active).toHaveLength(2);
       expect(active.map((boundary) => boundary.deployment_profile)).toEqual([

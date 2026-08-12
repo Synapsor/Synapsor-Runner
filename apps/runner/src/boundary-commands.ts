@@ -55,6 +55,7 @@ import {
   createSavedBoundary,
   deleteSavedBoundary,
   renameSavedBoundary,
+  resolveSavedBoundaryReviewAuthority,
   switchSavedBoundary,
   synchronizeBoundaryLibrary,
 } from "./boundary-library.js";
@@ -4802,17 +4803,23 @@ export async function boundaryActivateCommand(
 
   let activatedBoundary: Awaited<ReturnType<typeof activateExplorationBoundary>> | undefined;
   try {
+    const reviewAuthority = await resolveSavedBoundaryReviewAuthority({
+      projectRoot,
+      draft: context.draft,
+      candidate: context.candidate,
+      ...(context.progress ? { progress: context.progress } : {}),
+    });
     const inspection = await schemaInspector({
-      engine: context.lock.engine,
-      databaseUrlEnv: context.lock.source_env,
-      schema: context.lock.inspected_schema,
+      engine: reviewAuthority.generationLock.engine,
+      databaseUrlEnv: reviewAuthority.generationLock.source_env,
+      schema: reviewAuthority.generationLock.inspected_schema,
       env: process.env,
     });
     const active = await activateExplorationBoundary({
       projectRoot,
       candidate: context.candidate,
-      reviewDraft: context.draft,
-      generationLock: context.lock,
+      reviewDraft: reviewAuthority.reviewDraft,
+      generationLock: reviewAuthority.generationLock,
       expectedDigest: context.bundle.candidate_digest,
       actor: actor!,
       confirmation: expectedConfirmation,

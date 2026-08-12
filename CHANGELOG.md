@@ -70,6 +70,16 @@
   generated launch marker. Enabled production configs now refuse incompatible
   transports instead of silently serving no tools, and `tools list` recognizes
   active local/production Explore-only projects without a false failure.
+- Applies the same deterministic selection to local stdio Explore. Active
+  read-only development/staging projects with no named capabilities now expose
+  exactly `app.describe_data` and `app.explore_data` even through older
+  config/store-shaped launch entries; new client configs and managed installs
+  emit the explicit authoring command, and inactive projects refuse instead of
+  producing a zero-tool server.
+- Activates independently reviewed saved boundaries against their own immutable
+  review state and generation-lock snapshot instead of whichever boundary owns
+  the project-global draft. CLI and Workbench can now add a second boundary
+  without weakening shared schema, role, source, or trusted-context checks.
 
 Prepared package versions: `@synapsor/runner@1.7.0` and the optional
 `synapsor-runner@1.7.0` command alias, plus `@synapsor/spec@1.9.0` and

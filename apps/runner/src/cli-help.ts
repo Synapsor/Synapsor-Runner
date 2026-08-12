@@ -767,9 +767,13 @@ existing file, records explicit ownership, and never writes database URLs,
 credentials, trusted identity, approval, apply, revert, or policy authority.
 --authoring installs the active local development/staging Scoped Explore
 boundary with exactly app.describe_data and app.explore_data. It validates the
-current generation lock and database role before installation and never uses a
-runtime config. Re-run without --authoring after Protect activates a production
-named capability.
+current generation lock and database role before installation. When the
+reviewed config is read-only, has no named capabilities, and has an active local
+boundary, Runner selects this mode automatically even if --authoring is omitted.
+New managed entries still include --authoring so their intent is visible. An
+inactive Explore-only project refuses installation instead of writing a
+zero-tool entry. Re-run after Protect activates a named capability to install
+that narrower runtime surface.
 `,
     "mcp status": `Usage:
   ${cmd} mcp status <cursor|claude-code|vscode> --project [--project-root .] [--check-launch] [--timeout-ms 10000] [--json]
@@ -804,7 +808,7 @@ This command never prints database URLs or write credentials.
 
 Start the stdio MCP server for local MCP clients such as Claude Desktop, Cursor, or local agent tools. Startup logs stay off stdout so the MCP protocol remains clean.
 Stdio is the recommended local-desktop path: it opens no HTTP listener and therefore needs no HTTP token, TLS, OAuth flow, or MCP HTTP session.
-The explicit --authoring route exposes only app.describe_data and app.explore_data after a local human activates the current development/staging boundary. It refuses HTTP, production/unknown profiles, stale generation locks, and credentials that are not demonstrably SELECT-only and non-owner.
+An active read-only development/staging boundary with no named capabilities selects local Explore automatically, including for older generated --config/--store commands. New client configs include --authoring --project-root explicitly so the intended surface remains obvious. Both routes expose only app.describe_data and app.explore_data after local human activation. They refuse HTTP, production/unknown profiles, stale generation locks, and credentials that are not demonstrably SELECT-only and non-owner. A local Explore-only config with no active boundary refuses startup instead of serving zero tools.
 An enabled production_explore config selects the same two read-only tools over
 Streamable HTTP automatically. --production-explore remains the recommended
 explicit launch marker and is included in generated Runner launch commands.
@@ -897,11 +901,17 @@ OpenAI Agents SDK output uses Streamable HTTP and OpenAI-safe aliases by default
   ${cmd} mcp client-config --client openai-agents [--transport streamable-http] [--port 8766] [--alias-mode openai] [--client-access-token-env SYNAPSOR_MCP_ACCESS_TOKEN] [--include-instructions] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
 
 Print MCP client configuration that references the local runner command, auth metadata, and environment-variable names, not database URLs or credential values.
+For an active local Explore-only project, Runner emits the exact local stdio
+--authoring --project-root command and Explore-specific model instructions.
+If no reviewed local boundary is active, generation refuses with the activation
+remedy instead of emitting a zero-tool server command.
 Opaque endpoint tokens are generated and provisioned by the operator. Signed JWT access tokens are issued by the configured identity provider. Runner verifies them but does not issue or refresh them.
 For production HTTP, the endpoint comes from http_security.oauth_resource.resource. Claude Code uses \${TOKEN}; Cursor and VS Code use \${env:TOKEN}. Set the named variable in the client process, then reload the client.
 Claude Desktop remains stdio-only; use --client claude-code for Claude over Streamable HTTP.
 OpenAI Agents SDK output uses Streamable HTTP and OpenAI-safe aliases by default.
-Use --include-instructions to include the recommended propose-first agent prompt.
+Use --include-instructions to include instructions matched to the selected
+surface: reviewed Explore instructions for Explore, or propose-first
+instructions for named capabilities.
 `,
     smoke: `Usage:
   ${cmd} smoke call [capability-name] [--sample] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]

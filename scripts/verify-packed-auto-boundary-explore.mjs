@@ -259,6 +259,88 @@ try {
     await activationUi.close();
   }
 
+  if (process.env.SYNAPSOR_VERIFY_LOCAL_MCP_SELECTION_ONLY === "1") {
+    const configPath = path.join(projectRoot, "synapsor.runner.json");
+    const storePath = path.join(projectRoot, ".synapsor/local.db");
+    let legacyTools;
+    await withPackedMcp({
+      cli,
+      args: ["mcp", "serve", "--config", configPath, "--store", storePath],
+      cwd: projectRoot,
+      env: runtimeEnv,
+      name: "packed-config-selected-local-explore",
+    }, async (client) => {
+      const listed = await client.listTools();
+      legacyTools = listed.tools.map((tool) => tool.name);
+      assert.deepEqual(legacyTools, ["app.describe_data", "app.explore_data"]);
+      const described = resultPayload(await client.callTool({
+        name: "app.describe_data",
+        arguments: { limit: 10 },
+      }));
+      assert.deepEqual(described.boundaries.map((boundary) => boundary.name), ["product_churn"]);
+    });
+
+    const generated = JSON.parse(run(process.execPath, [
+      cli,
+      "mcp",
+      "client-config",
+      "--client",
+      "claude-code",
+      "--config",
+      configPath,
+      "--store",
+      storePath,
+      "--include-instructions",
+    ], { cwd: projectRoot, env: runtimeEnv }).stdout);
+    const generatedEntry = generated.mcpServers.synapsor;
+    assert.deepEqual(generatedEntry.args, [
+      "mcp", "serve", "--authoring", "--project-root", projectRoot,
+    ]);
+    assert.match(generated.agent_instructions.recommended_system_prompt, /Use app\.describe_data only/);
+    assert.doesNotMatch(generated.agent_instructions.recommended_system_prompt, /propose-first/i);
+
+    let generatedTools;
+    await withPackedMcp({
+      cli,
+      args: generatedEntry.args,
+      cwd: projectRoot,
+      env: runtimeEnv,
+      name: "packed-generated-local-explore",
+    }, async (client) => {
+      const listed = await client.listTools();
+      generatedTools = listed.tools.map((tool) => tool.name);
+      assert.deepEqual(generatedTools, ["app.describe_data", "app.explore_data"]);
+    });
+
+    const installed = JSON.parse(run(process.execPath, [
+      cli,
+      "mcp",
+      "install",
+      "cursor",
+      "--project",
+      "--project-root",
+      projectRoot,
+      "--yes",
+      "--json",
+    ], { cwd: projectRoot, env: runtimeEnv }).stdout);
+    assert.equal(installed.mode, "authoring");
+    assert.deepEqual(installed.tools, ["app.describe_data", "app.explore_data"]);
+    const cursorConfig = JSON.parse(await fsp.readFile(path.join(projectRoot, ".cursor/mcp.json"), "utf8"));
+    assert.deepEqual(cursorConfig.mcpServers.synapsor.args.slice(-5), [
+      "mcp", "serve", "--authoring", "--project-root", ".",
+    ]);
+
+    const after = await sourceSnapshot(adminPool);
+    assert.deepEqual(after, before, "local MCP surface selection mutated the source database");
+    process.stdout.write(`${JSON.stringify({
+      ok: true,
+      packed_artifact: path.basename(tarball),
+      legacy_config_command_tools: legacyTools,
+      generated_client_tools: generatedTools,
+      managed_install_mode: installed.mode,
+      source_database_changed: false,
+    }, null, 2)}\n`);
+  } else {
   const relationshipJourneyStartedAt = Date.now();
   const relationshipUi = await startWorkbench({ cli, boundaryRoot, projectRoot, env: runtimeEnv });
   let relationshipChrome;
@@ -997,6 +1079,7 @@ try {
       published_compatibility_gate: "test:packed-backward-compatibility",
     },
   }, null, 2)}\n`);
+  }
 } finally {
   await adminPool?.end().catch(() => undefined);
   if (compose && process.env.SYNAPSOR_KEEP_AUTO_BOUNDARY_FIXTURE !== "1") {

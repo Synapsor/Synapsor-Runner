@@ -13,6 +13,7 @@ import {
   reviewExplorationBoundaryCandidate,
   type ActivatedExplorationBoundary,
   type ExplorationBoundaryDraft,
+  type GenerationLock,
 } from "./auto-boundary.js";
 import {
   boundaryReviewDecisions,
@@ -63,6 +64,55 @@ type BoundaryLibraryContext = {
 };
 
 type BoundaryResource = ExplorationBoundaryDraft["pack"]["resources"][number];
+
+export async function resolveSavedBoundaryReviewAuthority(input: {
+  projectRoot: string;
+  draft: ExplorationBoundaryDraft;
+  candidate: ExplorationBoundaryDraft;
+  progress?: BoundaryReviewProgress;
+}): Promise<{
+  reviewDraft: ExplorationBoundaryDraft;
+  generationLock: GenerationLock;
+}> {
+  const projectRoot = path.resolve(input.projectRoot);
+  const [generationLock, currentLock] = await Promise.all([
+    loadGenerationLockSnapshot(projectRoot, input.candidate.generation_lock_fingerprint),
+    loadGenerationLockSnapshot(projectRoot, input.draft.generation_lock_fingerprint),
+  ]);
+  if (generationLockSharedFactsDigest(generationLock)
+    !== generationLockSharedFactsDigest(currentLock)) {
+    throw new Error(
+      `Saved boundary ${input.candidate.pack.name} is bound to different schema, role, or trusted-context facts. Rescan it before review or activation.`,
+    );
+  }
+
+  if (input.candidate.generation_lock_fingerprint
+    === input.draft.generation_lock_fingerprint) {
+    return { reviewDraft: input.draft, generationLock };
+  }
+
+  const baseline = await loadAutoBoundaryPolicyBaseline(projectRoot).catch((error) => {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  });
+  if (baseline?.boundary.generation_lock_fingerprint
+    === input.candidate.generation_lock_fingerprint) {
+    return { reviewDraft: baseline.boundary, generationLock };
+  }
+
+  const saved = input.progress;
+  if (saved
+    && saved.candidate.pack.name === input.candidate.pack.name
+    && saved.candidate.generation_lock_fingerprint
+      === input.candidate.generation_lock_fingerprint
+    && saved.candidate_digest === explorationBoundaryCandidateDigest(saved.candidate)) {
+    return { reviewDraft: saved.candidate, generationLock };
+  }
+
+  throw new Error(
+    `Saved boundary ${input.candidate.pack.name} has no matching generated review authority. Rescan it before review or activation.`,
+  );
+}
 
 export async function synchronizeBoundaryLibrary(
   input: BoundaryLibraryContext,
