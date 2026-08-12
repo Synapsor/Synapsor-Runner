@@ -467,7 +467,18 @@ try {
     await evaluate(page, `document.querySelector("#ask-question").dispatchEvent(
       new KeyboardEvent("keydown",{key:"Enter",bubbles:true})
     )`);
-    await waitForExpression(page, "document.querySelectorAll('#ask-transcript .ask-turn.answer').length === 1");
+    try {
+      await waitForExpression(page, "document.querySelectorAll('#ask-transcript .ask-turn.answer').length === 1");
+    } catch (error) {
+      const diagnostic = await evaluate(page, `({
+        status:document.querySelector("#ask-run-status")?.textContent||"",
+        configStatus:document.querySelector("#ask-config-status")?.textContent||"",
+        transcript:document.querySelector("#ask-transcript")?.textContent||"",
+        askVisible:document.querySelector("#ask-chat")?.classList.contains("hidden")===false,
+        configurationVisible:document.querySelector("#ask-configuration-form")?.classList.contains("hidden")===false
+      })`);
+      throw new Error(`${error.message}\n${JSON.stringify({ ...diagnostic, visualProviderRequests }, null, 2)}`);
+    }
     assert(
       visualProviderRequests === 2,
       "the first submitted question did not complete the configured provider/tool loop",
@@ -1360,7 +1371,7 @@ try {
       rankedSettings.visible
         && rankedSettings.value === 500
         && rankedSettings.minimum === 50
-        && rankedSettings.maximum === 500
+        && rankedSettings.maximum === 10_000
         && /Small-group suppression runs before ranking/i.test(rankedSettings.help)
         && /only the reviewed top 25 may be returned/i.test(rankedSettings.help)
         && /AI cannot change this setting/i.test(rankedSettings.help)

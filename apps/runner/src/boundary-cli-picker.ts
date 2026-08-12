@@ -194,6 +194,7 @@ async function resolveBlockedResource(
       value: scope.path_id,
       label: `${formatDerivedScopePath(scope)} (mandatory relationship path)`,
       selected: view.derived_tenant_scope?.selected?.path_id === scope.path_id,
+      scope,
     })),
     ...(view.shared_reference_scope?.eligible ? [{
       kind: "shared_reference" as const,
@@ -214,7 +215,14 @@ async function resolveBlockedResource(
     while (true) {
       const rowValue = rowCandidates[rowIndex];
       const tenantOption = tenantOptions[tenantIndex];
-      const resolvable = Boolean(rowValue && tenantOption);
+      const derivedDepth = tenantOption?.kind === "derived"
+        ? tenantOption.scope.proof.links.length
+        : 0;
+      const reviewedDerivedDepth = view.reviewed_budgets?.max_derived_scope_hops
+        ?? view.reviewed_budgets?.max_relationship_hops
+        ?? 2;
+      const depthAllowed = derivedDepth === 0 || derivedDepth <= reviewedDerivedDepth;
+      const resolvable = Boolean(rowValue && tenantOption && depthAllowed);
       const selectedValue = selectedDecision === 0 ? rowValue : tenantOption?.value;
       const evidence = selectedDecision === 0
         ? view.row_identity.alternatives_considered
@@ -258,6 +266,14 @@ async function resolveBlockedResource(
               ? "No single-column primary or unique key was proven by the database."
               : "No tenant-isolation candidate was found in the inspected structure.",
           )]),
+        ...(tenantOption?.kind === "derived" && selectedDecision === 1
+          ? derivedScopeCostAdvisoryLines(
+              view,
+              tenantOption.scope,
+              reviewedDerivedDepth,
+              theme,
+            )
+          : []),
         ...(resolvable
           ? [
               "",
@@ -312,6 +328,39 @@ async function resolveBlockedResource(
       }
     }
   });
+}
+
+function derivedScopeCostAdvisoryLines(
+  view: BoundaryResourceReviewView,
+  scope: DerivedScopePath,
+  reviewedDepth: number,
+  theme: TerminalTheme,
+): string[] {
+  const depth = scope.proof.links.length;
+  const rows = view.approximate_row_count;
+  const rowHops = rows === undefined ? undefined : rows * depth;
+  const pressure = depth >= 3 || (rowHops !== undefined && rowHops >= 500_000);
+  return [
+    "",
+    (pressure ? theme.warning : theme.dim)(
+      `Cost advisory: ${depth}-hop mandatory scope path; reviewed statement timeout ${(view.reviewed_budgets?.statement_timeout_ms ?? 3000).toLocaleString("en-US")} ms.`,
+    ),
+    ...(rows === undefined
+      ? [theme.dim("Catalog row volume is unavailable; doctor can attest indexes but cannot estimate structural volume.")]
+      : [theme.dim(
+          `Catalog estimate: about ${rows.toLocaleString("en-US")} total root rows (${rowHops!.toLocaleString("en-US")} row-hops before selectivity). This is not a tenant count or latency prediction.`,
+        )]),
+    ...(depth > reviewedDepth
+      ? [theme.danger(
+          `This path is not selectable yet. In /access press L and raise Derived-scope depth to ${depth}, then return here.`,
+        )]
+      : []),
+    ...(pressure
+      ? [theme.warning(
+          "Use doctor to verify every path index. For high-volume leaves, a direct tenant column is usually faster; measured query time appears in /details.",
+        )]
+      : []),
+  ];
 }
 
 function uniqueCandidates(selected: string | undefined, candidates: string[]): string[] {

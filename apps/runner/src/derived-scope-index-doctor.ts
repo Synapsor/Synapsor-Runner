@@ -6,6 +6,8 @@ import { formatDerivedScopePath } from "./derived-scope-display.js";
 
 type ScopeKind = "tenant" | "principal";
 
+const DERIVED_SCOPE_ROW_HOP_WARNING = 500_000;
+
 
 export function derivedScopeIndexDoctorChecks(input: {
   boundaries: ActivatedExplorationBoundary[];
@@ -36,6 +38,15 @@ export function derivedScopeIndexDoctorChecks(input: {
 
     for (const { kind, scope } of reviewedScopes) {
       const pathLabel = derivedScopePathLabel(scope, kind);
+      const rootTable = liveTables.get(scope.proof.links[0]?.source_resource ?? "");
+      const costAdvisory = derivedScopeCostAdvisoryCheck({
+        boundary,
+        pathLabel,
+        kind,
+        depth: scope.proof.links.length,
+        rootTable,
+      });
+      if (costAdvisory) checks.push(costAdvisory);
 
       for (const link of scope.proof.links) {
         const source = resources.get(link.source_resource);
@@ -108,6 +119,36 @@ export function derivedScopeIndexDoctorChecks(input: {
     });
   }
   return checks;
+}
+
+function derivedScopeCostAdvisoryCheck(input: {
+  boundary: ActivatedExplorationBoundary;
+  pathLabel: string;
+  kind: ScopeKind;
+  depth: number;
+  rootTable: TableInfo | undefined;
+}): DoctorCheck | undefined {
+  const rowEstimate = input.rootTable?.approximate_row_count;
+  const rowHops = rowEstimate === undefined ? undefined : rowEstimate * input.depth;
+  if (input.depth < 3 && (rowHops === undefined || rowHops < DERIVED_SCOPE_ROW_HOP_WARNING)) {
+    return undefined;
+  }
+  const timeout = input.boundary.budgets.statement_timeout_ms;
+  const volume = rowEstimate === undefined
+    ? "The live catalog did not provide a row estimate"
+    : `The live catalog estimates about ${rowEstimate.toLocaleString("en-US")} total root rows (${rowHops!.toLocaleString("en-US")} row-hops before selectivity)`;
+  return {
+    name: `derived-scope-cost:${input.boundary.pack.name}:${doctorNamePart(input.pathLabel)}`,
+    ok: true,
+    level: "warn",
+    advisory: "warning",
+    message:
+      `Derived-scope cost advisory for boundary ${input.boundary.pack.name}, path ${input.pathLabel}: `
+      + `${input.depth} mandatory many-to-one hops under a reviewed ${timeout.toLocaleString("en-US")} ms statement timeout. `
+      + `${volume}. Catalog volume is not tenant-specific and is not a latency prediction. `
+      + `Verify every path index in this report and monitor measured source time in /details. `
+      + `For a high-volume leaf, a direct ${input.kind} column is usually faster than traversal; changing the schema remains an operator decision.`,
+  };
 }
 
 

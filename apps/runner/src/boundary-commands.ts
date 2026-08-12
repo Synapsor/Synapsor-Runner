@@ -12,6 +12,7 @@ import process from "node:process";
 import readline from "node:readline/promises";
 import {
   EXPLORATION_AUTO_BAND_METHODS,
+  EXPLORATION_BUDGET_REVIEW_CEILINGS,
   MAX_AUTO_BAND_BUCKETS,
   MIN_AUTO_BAND_BUCKETS,
   SHARED_REFERENCE_ACKNOWLEDGEMENT,
@@ -84,6 +85,19 @@ import {
   type BoundaryReviewMutationBindings,
   type BoundaryReviewMutationPreview,
 } from "./boundary-review-mutation.js";
+
+const REVIEWED_SHAPE_LIMIT_FLAGS = [
+  ["--max-rows", "max_rows"],
+  ["--max-groups", "max_groups"],
+  ["--max-top-n", "max_top_n"],
+  ["--max-response-cells", "max_response_cells"],
+  ["--max-response-bytes", "max_response_bytes"],
+  ["--statement-timeout-ms", "statement_timeout_ms"],
+  ["--max-measures", "max_measures"],
+  ["--max-dimensions", "max_dimensions"],
+  ["--max-derived-scope-hops", "max_derived_scope_hops"],
+  ["--max-analysis-relationship-hops", "max_analysis_relationship_hops"],
+] as const;
 
 
 type BoundaryReviewBundle = {
@@ -661,6 +675,7 @@ async function boundaryResourceReviewCommand(
     "--max-ranked-groups",
     "--max-queries-per-24-hours",
     "--requests-per-minute",
+    ...REVIEWED_SHAPE_LIMIT_FLAGS.map(([flag]) => flag),
     "--relationships",
     "--nullable-relationship",
     "--unmatched-rows",
@@ -710,6 +725,7 @@ async function boundaryResourceReviewCommand(
     "--max-ranked-groups",
     "--max-queries-per-24-hours",
     "--requests-per-minute",
+    ...REVIEWED_SHAPE_LIMIT_FLAGS.map(([flag]) => flag),
     "--relationships",
     "--nullable-relationship",
   ].includes(arg));
@@ -843,6 +859,17 @@ async function boundaryResourceReviewCommand(
       || Number(requestsPerMinute) > 120)) {
     throw new Error("--requests-per-minute must be an integer from 1 through 120.");
   }
+  const reviewedShapeLimits: Partial<BoundaryResourceReviewRequest> = {};
+  for (const [flag, key] of REVIEWED_SHAPE_LIMIT_FLAGS) {
+    const text = optionalArg(args, flag);
+    if (text === undefined) continue;
+    const value = Number(text);
+    const ceiling = Number(EXPLORATION_BUDGET_REVIEW_CEILINGS[key]);
+    if (!Number.isSafeInteger(value) || value < 1 || value > ceiling) {
+      throw new Error(`${flag} must be an integer from 1 through ${ceiling}.`);
+    }
+    (reviewedShapeLimits as Record<string, number>)[key] = value;
+  }
   if ((nullableRelationship && unmatchedRows !== "exclude" && unmatchedRows !== "keep_null")
     || (!nullableRelationship && unmatchedRows)) {
     throw new Error("--nullable-relationship <id> requires --unmatched-rows exclude|keep_null.");
@@ -889,6 +916,7 @@ async function boundaryResourceReviewCommand(
     ...(maxRankedGroups === undefined ? {} : { max_ranked_groups: maxRankedGroups }),
     ...(maxQueries === undefined ? {} : { max_queries_per_session: maxQueries }),
     ...(requestsPerMinute === undefined ? {} : { rate_limit_per_minute: requestsPerMinute }),
+    ...reviewedShapeLimits,
     ...(listArg(args, "--relationships") ? { relationship_ids: listArg(args, "--relationships") } : {}),
     ...(nullableRelationship ? {
       nullable_relationship: {
@@ -1402,84 +1430,102 @@ async function interactiveBoundaryLimitsReview(input: {
 }): Promise<number> {
   const context = await loadBoundaryReviewContext(input.projectRoot);
   const budgets = context.candidate.budgets;
+  const options: Array<{
+    key: keyof BoundaryResourceReviewRequest;
+    label: string;
+    current: number;
+    minimum: number;
+    maximum: number;
+    unit: string;
+    consequence: string;
+  }> = [
+    { key: "max_queries_per_session", label: "Query volume", current: budgets.max_queries_per_session, minimum: 1, maximum: 1_000, unit: "per rolling 24 hours", consequence: "throughput for one trusted scope" },
+    { key: "rate_limit_per_minute", label: "Request rate", current: budgets.rate_limit_per_minute, minimum: 1, maximum: 120, unit: "per minute", consequence: "short-window throughput for one trusted scope" },
+    { key: "max_rows", label: "Returned rows", current: budgets.max_rows, minimum: 1, maximum: EXPLORATION_BUDGET_REVIEW_CEILINGS.max_rows, unit: "rows", consequence: "maximum row-list result shape" },
+    { key: "max_groups", label: "Aggregate groups", current: budgets.max_groups, minimum: budgets.max_top_n, maximum: EXPLORATION_BUDGET_REVIEW_CEILINGS.max_groups, unit: "groups", consequence: "maximum non-ranked aggregate result shape" },
+    { key: "max_top_n", label: "Returned top N", current: budgets.max_top_n, minimum: 1, maximum: Math.min(EXPLORATION_BUDGET_REVIEW_CEILINGS.max_top_n, budgets.max_groups), unit: "groups", consequence: "maximum rows returned after suppression and ranking" },
+    { key: "max_measures", label: "Measures", current: budgets.max_measures, minimum: 1, maximum: EXPLORATION_BUDGET_REVIEW_CEILINGS.max_measures, unit: "per aggregate", consequence: "maximum reviewed aggregate values in one plan" },
+    { key: "max_dimensions", label: "Dimensions", current: budgets.max_dimensions, minimum: 1, maximum: EXPLORATION_BUDGET_REVIEW_CEILINGS.max_dimensions, unit: "per aggregate", consequence: "maximum reviewed grouping fields in one plan" },
+    { key: "max_response_cells", label: "Response cells", current: budgets.max_response_cells, minimum: 1, maximum: EXPLORATION_BUDGET_REVIEW_CEILINGS.max_response_cells, unit: "cells", consequence: "per-response egress; rolling extracted-cell accounting remains separate" },
+    { key: "max_response_bytes", label: "Response bytes", current: budgets.max_response_bytes, minimum: 1_024, maximum: EXPLORATION_BUDGET_REVIEW_CEILINGS.max_response_bytes, unit: "bytes", consequence: "serialized response bound" },
+    { key: "statement_timeout_ms", label: "Statement timeout", current: budgets.statement_timeout_ms, minimum: 100, maximum: EXPLORATION_BUDGET_REVIEW_CEILINGS.statement_timeout_ms, unit: "milliseconds", consequence: "source execution deadline" },
+    { key: "max_derived_scope_hops", label: "Derived-scope depth", current: budgets.max_derived_scope_hops ?? budgets.max_relationship_hops, minimum: 1, maximum: 3, unit: "proven hops", consequence: "mandatory tenant/principal scope traversal" },
+    { key: "max_analysis_relationship_hops", label: "Analysis-path depth", current: budgets.max_analysis_relationship_hops ?? budgets.max_relationship_hops, minimum: 1, maximum: 3, unit: "proven hops", consequence: "reviewed many-to-one analysis traversal" },
+  ];
   process.stdout.write([
     "",
     "BOUNDARY LIMITS",
-    "1  Query volume       " + `${budgets.max_queries_per_session} per rolling 24 hours`,
-    "2  Request rate       " + `${budgets.rate_limit_per_minute} per minute`,
-    "3  Ranked aggregates  " + `${budgets.max_ranked_groups ?? budgets.max_groups} candidate groups`,
+    ...options.slice(0, 2).map((option, index) =>
+      `${index + 1}  ${option.label.padEnd(22)} ${option.current} ${option.unit}`),
+    `3  ${"Ranked candidate groups".padEnd(22)} ${budgets.max_ranked_groups ?? budgets.max_groups} groups`,
+    ...options.slice(2).map((option, index) =>
+      `${index + 4}  ${option.label.padEnd(22)} ${option.current} ${option.unit}`),
     "",
-    "Query volume and request rate control throughput. They do not change small-group suppression, extracted-cell, or differencing privacy controls.",
+    "Throughput controls bound request volume. Shape controls bound one validated result. Path depth is hard-capped at three catalog-proven many-to-one hops.",
+    "None of these settings changes small-group suppression, rolling extracted-cell accounting, or differencing protection.",
     "",
   ].join("\n"));
-  const selected = await input.session.promptText("Limit to review [1-3; Esc returns]");
+  const selected = await input.session.promptText(`Limit to review [1-${options.length + 1}; Esc returns]`);
   if (selected === undefined || !selected.trim()) {
     process.stdout.write("Returned to boundary review. No limit changed.\n");
     return 0;
   }
   if (selected.trim() === "3") return interactiveRankedGroupReview(input);
-  if (selected.trim() !== "1" && selected.trim() !== "2") {
-    process.stdout.write("Choose 1, 2, or 3. No limit changed.\n");
+  const selectedNumber = Number(selected.trim());
+  const option = Number.isSafeInteger(selectedNumber)
+    ? selectedNumber < 3
+      ? options[selectedNumber - 1]
+      : options[selectedNumber - 2]
+    : undefined;
+  if (!option) {
+    process.stdout.write(`Choose 1 through ${options.length + 1}. No limit changed.\n`);
     return 0;
   }
-  const queryVolume = selected.trim() === "1";
-  const current = queryVolume
-    ? budgets.max_queries_per_session
-    : budgets.rate_limit_per_minute;
-  const generatedMaximum = queryVolume
-    ? context.draft.budgets.max_queries_per_session
-    : context.draft.budgets.rate_limit_per_minute;
-  const label = queryVolume
-    ? "Queries per rolling 24 hours"
-    : "Requests per minute";
-  const entered = await input.session.promptText(`${label} [${current}] (1-${generatedMaximum})`);
+  const entered = await input.session.promptText(
+    `${option.label} [${option.current}] (${option.minimum}-${option.maximum} ${option.unit})`,
+  );
   if (entered === undefined) {
     process.stdout.write("Returned to boundary review. No limit changed.\n");
     return 0;
   }
-  const value = entered.trim() ? Number(entered.trim()) : current;
-  if (!Number.isSafeInteger(value) || value < 1 || value > generatedMaximum) {
+  const value = entered.trim() ? Number(entered.trim()) : option.current;
+  if (!Number.isSafeInteger(value) || value < option.minimum || value > option.maximum) {
     process.stdout.write([
-      `Use an integer from 1 through ${generatedMaximum}.`,
-      "This is a reviewed throughput limit; disclosure-control limits remain unchanged.",
+      `Use an integer from ${option.minimum} through ${option.maximum}.`,
+      "This reviewed setting cannot change suppression, extracted-cell, or differencing controls.",
       "No boundary setting changed.",
       "",
     ].join("\n"));
     return 0;
   }
-  if (value === current) {
-    process.stdout.write("The selected throughput limit is unchanged.\n");
+  if (value === option.current) {
+    process.stdout.write("The selected reviewed limit is unchanged.\n");
     return 0;
   }
   const accepted = await input.session.confirm(
-    queryVolume
-      ? `Allow at most ${value} queries for each trusted scope in a rolling 24-hour window?`
-      : `Allow at most ${value} requests per minute for each trusted scope?`,
+    `Set ${option.label.toLowerCase()} to ${value} ${option.unit}? This changes ${option.consequence}.`,
     { defaultValue: true },
   );
   if (!accepted) {
-    process.stdout.write("The selected throughput limit was not changed.\n");
+    process.stdout.write("The selected reviewed limit was not changed.\n");
     return 0;
   }
   const resourceId = context.candidate.pack.resources[0]?.id;
   if (!resourceId) throw new Error("A boundary needs one reviewed table before its limits can be changed.");
+  const request = {
+    resource_id: resourceId,
+    [option.key]: value,
+    actor: localInteractiveActor(),
+    reason: `Reviewed ${option.label.toLowerCase()} for this boundary.`,
+  } as BoundaryResourceReviewRequest;
   const preview = await prepareBoundaryResourceReviewMutation(
     input.projectRoot,
-    {
-      resource_id: resourceId,
-      ...(queryVolume
-        ? { max_queries_per_session: value }
-        : { rate_limit_per_minute: value }),
-      actor: localInteractiveActor(),
-      reason: queryVolume
-        ? "Reviewed the rolling query-volume allowance for this boundary."
-        : "Reviewed the per-minute request-rate allowance for this boundary.",
-    },
+    request,
     input.schemaInspector,
   );
   const committed = await commitBoundaryResourceReviewMutation(input.projectRoot, preview);
   process.stdout.write([
-    `Saved ${queryVolume ? "query-volume" : "request-rate"} limit ${value} in disabled boundary revision ${committed.review_revision}.`,
+    `Saved ${option.label.toLowerCase()} limit ${value} in disabled boundary revision ${committed.review_revision}.`,
     "Small-group suppression, extracted-cell, and differencing privacy controls are unchanged.",
     "Review and activate the boundary to apply this limit. Agent authority changed: no.",
     "",
@@ -1495,7 +1541,8 @@ async function interactiveRankedGroupReview(input: {
   const context = await loadBoundaryReviewContext(input.projectRoot);
   const current = context.candidate.budgets.max_ranked_groups
     ?? context.candidate.budgets.max_groups;
-  const generatedMaximum = context.draft.budgets.max_ranked_groups
+  const generatedMaximum = EXPLORATION_BUDGET_REVIEW_CEILINGS.max_ranked_groups
+    ?? context.draft.budgets.max_ranked_groups
     ?? context.draft.budgets.max_groups;
   const entered = await input.session.promptText(
     `Ranked underlying groups [${current}] (${context.candidate.budgets.max_groups}-${generatedMaximum}): `,
@@ -4355,6 +4402,14 @@ function formatBoundaryMutationPreview(
         `${diff.rate_limit_per_minute_after}`,
       ]
       : []),
+    ...diff.reviewed_budget_changes
+      .filter((change) => ![
+        "max_ranked_groups",
+        "max_queries_per_session",
+        "rate_limit_per_minute",
+      ].includes(change.name))
+      .map((change) =>
+        `  ${change.name}: ${change.before} -> ${change.after}`),
   ];
   return [
     "Preview of one pending review decision. Nothing is saved or active yet.",
@@ -4456,6 +4511,10 @@ function formatRequestedBoundaryChanges(
   }
   if (request.rate_limit_per_minute !== undefined) {
     lines.push(`Requests per minute: ${request.rate_limit_per_minute}.`);
+  }
+  for (const [, key] of REVIEWED_SHAPE_LIMIT_FLAGS) {
+    const value = request[key];
+    if (value !== undefined) lines.push(`${key}: ${value}.`);
   }
   if (request.relationship_ids) {
     lines.push(`Reviewed relationships: ${request.relationship_ids.join(", ") || "none"}.`);

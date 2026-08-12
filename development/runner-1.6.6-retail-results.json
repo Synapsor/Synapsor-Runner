@@ -1,19 +1,19 @@
 {
   "domain": "multi-tenant retail operations",
   "package": {
-    "spec_tarball": "synapsor-spec-1.8.0.tgz",
-    "spec_sha256": "sha256:3694a3b5aa0080aa33ce9252812e94bccf432b7ba8b8f65c92beee74cebbcc8c",
-    "runner_tarball": "synapsor-runner-1.6.6.tgz",
-    "runner_sha256": "sha256:34126b7221145543445b76dde2d61e92a29c438a5eaa7565f1372743230706cd"
+    "spec_tarball": "synapsor-spec-1.9.0.tgz",
+    "spec_sha256": "sha256:748b23cbd19b00245645320444f4f3eb6554212935c4b5c39b657bfae40229eb",
+    "runner_tarball": "synapsor-runner-1.7.0.tgz",
+    "runner_sha256": "sha256:2467fdac12553f7cefaa5bf8659e94b2cb3cf41d25e48dcfc426c690d30c9640"
   },
   "timings_ms": {
-    "schema_summary": 55204,
-    "boundary_activation": 61954,
-    "first_safe_read": 63603,
-    "first_pm_aggregate": 65132,
-    "protected_capability": 202471,
-    "first_guided_proposal": 208951,
-    "first_guarded_apply": 280618
+    "schema_summary": 30401,
+    "boundary_activation": 35895,
+    "first_safe_read": 37098,
+    "first_pm_aggregate": 38201,
+    "protected_capability": 158573,
+    "first_guided_proposal": 164206,
+    "first_guarded_apply": 223856
   },
   "interactions": {
     "shell_commands_through_first_value": 1,
@@ -43,7 +43,7 @@
   },
   "aggregate": {
     "question": "How did net revenue change by week across reviewed stores and product categories?",
-    "plan": "Calculate total net revenue cents for sales line facts grouped by Name from Stores, Name from Product categories for each week with at most 10 groups.\n\n{\n  \"kind\": \"aggregate\",\n  \"resource\": \"public.sales_line_facts\",\n  \"measures\": [\n    {\n      \"function\": \"sum\",\n      \"field\": \"net_revenue_cents\"\n    }\n  ],\n  \"dimensions\": [\n    {\n      \"field\": \"name\",\n      \"relationship\": \"sales_line_facts_store_id_fkey\"\n    },\n    {\n      \"field\": \"name\",\n      \"relationship\": \"sales_line_facts_product_category_id_fkey\"\n    }\n  ],\n  \"time_bucket\": {\n    \"field\": \"sold_at\",\n    \"bucket\": \"week\"\n  },\n  \"order_by\": {\n    \"kind\": \"measure\",\n    \"index\": 0,\n    \"direction\": \"desc\"\n  },\n  \"top_n\": 10\n}",
+    "plan": "Calculate total net revenue cents for sales line facts grouped by name from stores, name from product categories for each week with at most 10 groups.\n\n{\n  \"kind\": \"aggregate\",\n  \"resource\": \"public.sales_line_facts\",\n  \"measures\": [\n    {\n      \"function\": \"sum\",\n      \"field\": \"net_revenue_cents\"\n    }\n  ],\n  \"dimensions\": [\n    {\n      \"field\": \"name\",\n      \"relationship\": \"sales_line_facts_store_id_fkey\"\n    },\n    {\n      \"field\": \"name\",\n      \"relationship\": \"sales_line_facts_product_category_id_fkey\"\n    }\n  ],\n  \"time_bucket\": {\n    \"field\": \"sold_at\",\n    \"bucket\": \"week\"\n  },\n  \"order_by\": {\n    \"kind\": \"measure\",\n    \"index\": 0,\n    \"direction\": \"desc\"\n  },\n  \"top_n\": 10\n}",
     "source_database_changed": false,
     "official_mcp_parity": true,
     "mcp_returned_groups": 10
@@ -130,7 +130,7 @@
   },
   "protected": {
     "capability": "retail.weekly_revenue_by_store_and_category",
-    "digest": "sha256:4ff21b785111886ca94292a86684360f92788922213f26ced7994dbc02c7b827",
+    "digest": "sha256:879a26b80845755e54930bdd939d1c87c07bdbf7a97682e7d75254b7241cb5f0",
     "disabled_before_activation": true,
     "activated_by_human": true,
     "mode": "aggregate",
@@ -139,7 +139,7 @@
   "write_lifecycle": {
     "capability": "retail.propose_order_fulfillment",
     "target": "public.orders:order-005",
-    "proposal_hash": "sha256:a22e86f23f85c11a266614374c2920489ecb8b44b3f79e7e052ec865dc84e3a7",
+    "proposal_hash": "sha256:ee5a5bc42b524af44f04964a7d09bc454e4edbaf4fa02dca66041b2bbc9a4eb6",
     "action_digest": "sha256:4f6238852ce6d586270d750711cadcb69e5a165ac69c798acc27e4743a9ed078",
     "before": {
       "status": "processing",
@@ -199,7 +199,7 @@
     "protected_capability_survives": true,
     "runtime_tools": [
       "retail.shell_quantity_by_category",
-      "analytics.sales_line_facts_sum_net_revenue_cents_by_week",
+      "analytics.sales_line_facts_sum_net_revenue_cents",
       "retail.weekly_revenue_by_store_and_category",
       "retail.propose_order_fulfillment"
     ],
@@ -211,7 +211,7 @@
     "cli_and_mcp_analytics_catalog_match": true,
     "protected_output_schema_checked": true
   },
-  "elapsed_ms": 332110,
+  "elapsed_ms": 263609,
   "screenshots": [
     "01-overview.png",
     "02-activated-and-ready-to-ask.png",

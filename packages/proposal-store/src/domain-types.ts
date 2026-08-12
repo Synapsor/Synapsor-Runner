@@ -232,6 +232,7 @@ export type QueryAuditRecordInput = {
   primary_key_value?: string;
   row_count: number;
   payload: Record<string, unknown>;
+  created_at?: string;
 };
 
 export type ProductionExploreAuditEventInput = {
@@ -565,6 +566,7 @@ export type EvidenceSearchFilters = LocalListOptions & {
   source?: string;
   table?: string;
   queryFingerprint?: string;
+  status?: string;
 };
 
 export type QueryAuditSearchFilters = LocalListOptions & {
@@ -579,6 +581,7 @@ export type QueryAuditSearchFilters = LocalListOptions & {
   objectId?: string;
   primaryKey?: string;
   queryFingerprint?: string;
+  status?: string;
 };
 
 export type ReceiptSearchFilters = LocalListOptions & {
@@ -1061,6 +1064,7 @@ export type ProposalRuntimeStore = {
     payload: Record<string, unknown>;
     items?: Record<string, unknown>[];
     query_audit?: QueryAuditRecordInput[];
+    created_at?: string;
   }): MaybePromise<void>;
   recordQueryAudit(input: QueryAuditRecordInput): MaybePromise<void>;
   recordProductionExploreAuditEvent?(input: ProductionExploreAuditEventInput): MaybePromise<void>;

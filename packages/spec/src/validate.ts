@@ -753,8 +753,8 @@ function validateProtectedRelationshipPaths(
     } else {
       relationshipNames.add(candidate.name);
     }
-    if (!Array.isArray(candidate.links) || candidate.links.length < 1 || candidate.links.length > 2) {
-      errors.push({ path: `${candidatePath}.links`, code: "INVALID_PROTECTED_RELATIONSHIP_LINKS", message: "a protected relationship path requires one or two reviewed many-to-one links." });
+    if (!Array.isArray(candidate.links) || candidate.links.length < 1 || candidate.links.length > 3) {
+      errors.push({ path: `${candidatePath}.links`, code: "INVALID_PROTECTED_RELATIONSHIP_LINKS", message: "a protected relationship path requires one through three reviewed many-to-one links." });
       return;
     }
     candidate.links.forEach((link, linkIndex) => {
@@ -1093,7 +1093,7 @@ function validateProtectedReadLimits(value: unknown, path: string, errors: Valid
   checkUnknownKeys(value, PROTECTED_LIMIT_KEYS, path, errors);
   const ceilings: Record<string, number> = {
     max_rows: 100,
-    max_groups: 100,
+    max_groups: 500,
     max_ranked_groups: 10_000,
     max_response_cells: 10_000,
     max_response_bytes: 1_048_576,

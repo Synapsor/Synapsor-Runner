@@ -361,7 +361,7 @@ export type ProtectedReadSpec = ExtensionFields & {
    */
   relationship?: ProtectedReadRelationshipSpec;
   /**
-   * Additive reviewed star/depth-two form. Every path and link is fixed by
+   * Additive reviewed bounded-path form. Every path and link is fixed by
    * human-reviewed authority; runtime plans may reference names only.
    */
   relationships?: ProtectedReadRelationshipPathSpec[];

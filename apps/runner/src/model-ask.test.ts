@@ -1554,6 +1554,534 @@ describe("Workbench BYOM Ask", () => {
     }]);
   });
 
+  it("uses a named relationship target as grouping context instead of the base resource", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const workOrders = {
+      id: "public.work_orders",
+      groupable_fields: ["priority"],
+      aggregate_measure_functions: { downtime_minutes: ["sum", "avg"] },
+      time_bucket_fields: { opened_at: ["week", "month"], completed_at: ["week", "month"] },
+      relationships: [{
+        id: "work_orders_inverter_model_id_fkey",
+        activation: "active",
+        target_resource: "public.inverter_models",
+        groupable_fields: ["manufacturer", "model_name", "panel_position"],
+      }, {
+        id: "work_orders_site_id_fkey",
+        activation: "active",
+        target_resource: "public.solar_sites",
+        groupable_fields: ["name", "site_group", "accounting_period"],
+      }],
+    };
+    const inverterModels = {
+      id: "public.inverter_models",
+      groupable_fields: ["manufacturer", "model_name", "panel_position"],
+      aggregate_measure_functions: {},
+      time_bucket_fields: {},
+      relationships: [],
+    };
+    const unrelated = {
+      id: "public.churn_events",
+      groupable_fields: ["reason_category"],
+      aggregate_measure_functions: {},
+      time_bucket_fields: {},
+      relationships: [],
+    };
+    const solarSites = {
+      id: "public.solar_sites",
+      groupable_fields: ["name", "site_group", "accounting_period"],
+      aggregate_measure_functions: {},
+      time_bucket_fields: {},
+      relationships: [],
+    };
+    const resources = [inverterModels, solarSites, unrelated, workOrders];
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        if (name === "app.describe_data") {
+          const focused = typeof args.resource === "string"
+            ? resources.filter((resource) => resource.id === args.resource)
+            : resources.map((resource) => ({
+              ...resource,
+              relationships: Array.isArray(resource.relationships)
+                ? resource.relationships.map((relationship) => ({
+                  id: relationship.id,
+                  activation: relationship.activation,
+                  target_resource: relationship.target_resource,
+                }))
+                : [],
+            }));
+          return { ok: true, value: { ok: true, resources: focused, source_database_changed: false } };
+        }
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const exactPlan = {
+      kind: "aggregate",
+      resource: "public.work_orders",
+      measures: [{ function: "sum", field: "downtime_minutes" }],
+      dimensions: [{
+        field: "model_name",
+        relationship: "work_orders_inverter_model_id_fkey",
+      }],
+      time_bucket: { field: "opened_at", bucket: "week" },
+    };
+    const responses = [
+      openAiToolCall("catalog", "app__describe_data", {}),
+      openAiToolCall("unrelated", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "reason_category" }],
+        },
+      }),
+      openAiText(JSON.stringify({ plan: exactPlan })),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run(
+      "How did total work order downtime change weekly for each inverter model name using opened at?",
+      gateway,
+      { requestJson: async () => responses.shift()! },
+    );
+
+    expect(result.tool_calls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ error_code: "LOCAL_PLAN_INTENT_MISMATCH", status: "refused" }),
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]));
+    expect(calls.filter((call) => call.name === "app.explore_data")).toEqual([{
+      name: "app.explore_data",
+      args: { plan: exactPlan },
+    }]);
+  });
+
+  it("accepts multiple explicitly named relationship dimensions without weakening ambiguity checks", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const careFacts = {
+      id: "public.care_episode_facts",
+      aggregate_measure_functions: { avoided_readmission_cost_cents: ["sum", "avg"] },
+      time_bucket_fields: { discharged_at: ["week"] },
+      relationships: [{
+        id: "care_episode_facts_unit_id_fkey",
+        activation: "active",
+        target_resource: "public.care_units",
+        target_label: "Care units",
+        groupable_fields: ["name", "service_line"],
+      }, {
+        id: "care_episode_facts_discharge_reason_id_fkey",
+        activation: "active",
+        target_resource: "public.discharge_reasons",
+        target_label: "Discharge reasons",
+        groupable_fields: ["name", "reason_category"],
+      }],
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        if (name === "app.describe_data") {
+          return { ok: true, value: { ok: true, resources: [careFacts], source_database_changed: false } };
+        }
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const exactPlan = {
+      kind: "aggregate",
+      resource: "public.care_episode_facts",
+      measures: [{ function: "sum", field: "avoided_readmission_cost_cents" }],
+      dimensions: [{
+        field: "name",
+        relationship: "care_episode_facts_unit_id_fkey",
+      }, {
+        field: "name",
+        relationship: "care_episode_facts_discharge_reason_id_fkey",
+      }],
+      time_bucket: { field: "discharged_at", bucket: "week" },
+    };
+    const responses = [
+      openAiToolCall("catalog", "app__describe_data", {}),
+      openAiToolCall("aggregate", "app__explore_data", { plan: exactPlan }),
+      openAiText("The reviewed care analysis is complete."),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run(
+      "How did total avoided readmission cost change by week grouped by care unit name and discharge reason name?",
+      gateway,
+      { requestJson: async () => responses.shift()! },
+    );
+
+    expect(result.tool_calls).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ error_code: "LOCAL_PLAN_INTENT_MISMATCH" }),
+    ]));
+    expect(calls.filter((call) => call.name === "app.explore_data")).toEqual([{
+      name: "app.explore_data",
+      args: { plan: exactPlan },
+    }]);
+  });
+
+  it("uses the reviewed name field when grouping by named relationship entities", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const careFacts = {
+      id: "public.care_episode_facts",
+      aggregate_measure_functions: { avoided_readmission_cost_cents: ["sum", "avg"] },
+      time_bucket_fields: { discharged_at: ["week"] },
+      relationships: [{
+        id: "care_episode_facts_unit_id_fkey",
+        activation: "active",
+        target_resource: "public.care_units",
+        target_label: "Care units",
+        groupable_fields: ["name", "service_line"],
+      }, {
+        id: "care_episode_facts_discharge_reason_id_fkey",
+        activation: "active",
+        target_resource: "public.discharge_reasons",
+        target_label: "Discharge reasons",
+        groupable_fields: ["name", "reason_category"],
+      }],
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        if (name === "app.describe_data") {
+          return { ok: true, value: { ok: true, resources: [careFacts], source_database_changed: false } };
+        }
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const exactPlan = {
+      kind: "aggregate",
+      resource: "public.care_episode_facts",
+      measures: [{ function: "sum", field: "avoided_readmission_cost_cents" }],
+      dimensions: [{
+        field: "name",
+        relationship: "care_episode_facts_unit_id_fkey",
+      }, {
+        field: "name",
+        relationship: "care_episode_facts_discharge_reason_id_fkey",
+      }],
+      time_bucket: { field: "discharged_at", bucket: "week" },
+    };
+    const responses = [
+      openAiToolCall("catalog", "app__describe_data", {}),
+      openAiToolCall("aggregate", "app__explore_data", { plan: exactPlan }),
+      openAiText("The reviewed care analysis is complete."),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run(
+      "How did total avoided readmission cost change by week across care units and discharge reasons?",
+      gateway,
+      { requestJson: async () => responses.shift()! },
+    );
+
+    expect(result.tool_calls).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ error_code: "LOCAL_PLAN_INTENT_MISMATCH" }),
+    ]));
+    expect(calls.filter((call) => call.name === "app.explore_data")).toEqual([{
+      name: "app.explore_data",
+      args: { plan: exactPlan },
+    }]);
+  });
+
+  it("matches natural plurals and distinct focused-resource counts", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const salesFacts = {
+      id: "public.sales_line_facts",
+      primary_key: "id",
+      groupable_fields: ["channel"],
+      count_distinct_fields: ["id", "store_id", "region_id"],
+      aggregate_measure_functions: { net_revenue_cents: ["sum", "avg"] },
+      time_bucket_fields: { sold_at: ["week"] },
+      relationships: [{
+        id: "sales_line_facts_order_id_fkey",
+        activation: "active",
+        target_resource: "public.orders",
+        groupable_fields: ["channel", "status"],
+      }, {
+        id: "sales_line_facts_store_id_fkey",
+        activation: "active",
+        target_resource: "public.stores",
+        groupable_fields: ["channel", "name"],
+      }],
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        if (name === "app.describe_data") {
+          return { ok: true, value: { ok: true, resources: [salesFacts], source_database_changed: false } };
+        }
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const exactPlan = {
+      kind: "aggregate",
+      resource: "public.sales_line_facts",
+      measures: [{ function: "count_distinct", field: "id" }],
+      dimensions: [{ field: "channel" }],
+      order_by: { kind: "measure", index: 0, direction: "desc" },
+      top_n: 10,
+    };
+    const responses = [
+      openAiToolCall("catalog", "app__describe_data", {}),
+      openAiToolCall("aggregate", "app__explore_data", { plan: exactPlan }),
+      openAiText("The reviewed distinct-sales analysis is complete."),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run(
+      "Which reviewed channels had the most distinct sales?",
+      gateway,
+      { requestJson: async () => responses.shift()! },
+    );
+
+    expect(result.tool_calls).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ error_code: "LOCAL_PLAN_INTENT_MISMATCH" }),
+    ]));
+    expect(calls.filter((call) => call.name === "app.explore_data")).toEqual([{
+      name: "app.explore_data",
+      args: { plan: exactPlan },
+    }]);
+
+    const explicitIdentifierPlan = {
+      ...exactPlan,
+      measures: [{ function: "count_distinct", field: "store_id" }],
+      dimensions: [{ field: "channel", relationship: "sales_line_facts_store_id_fkey" }],
+    };
+    const explicitResponses = [
+      openAiToolCall("catalog_explicit", "app__describe_data", {}),
+      openAiToolCall("aggregate_explicit", "app__explore_data", { plan: explicitIdentifierPlan }),
+      openAiText("The reviewed distinct-store analysis is complete."),
+    ];
+    const explicitResult = await configuredSession(askToolSurfaceDigest(authoringTools)).run(
+      "Which reviewed channels had the most unique stores?",
+      gateway,
+      { requestJson: async () => explicitResponses.shift()! },
+    );
+    expect(explicitResult.tool_calls).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ error_code: "LOCAL_PLAN_INTENT_MISMATCH" }),
+    ]));
+    expect(calls.filter((call) => call.name === "app.explore_data").at(-1)).toEqual({
+      name: "app.explore_data",
+      args: { plan: explicitIdentifierPlan },
+    });
+
+    const ambiguousResponses = [
+      openAiToolCall("catalog_ambiguous", "app__describe_data", {}),
+      openAiToolCall("aggregate_ambiguous", "app__explore_data", { plan: explicitIdentifierPlan }),
+    ];
+    const ambiguousResult = await configuredSession(askToolSurfaceDigest(authoringTools)).run(
+      "Which reviewed channels had the most unique stores and regions?",
+      gateway,
+      { requestJson: async () => ambiguousResponses.shift()! },
+    );
+    expect(ambiguousResult.answer_source).toBe("runner");
+    expect(ambiguousResult.tool_calls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ error_code: "LOCAL_PLAN_INTENT_MISMATCH" }),
+    ]));
+    expect(calls.filter((call) => call.name === "app.explore_data")).toHaveLength(2);
+  });
+
+  it("validates two explicitly requested analyses against separate clauses", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const salesFacts = {
+      id: "public.sales_line_facts",
+      aggregate_measure_functions: { net_revenue_cents: ["sum", "avg"] },
+      groupable_fields: [],
+      relationships: [{
+        id: "sales_line_facts_store_id_fkey",
+        activation: "active",
+        target_resource: "public.stores",
+        target_label: "Stores",
+        groupable_fields: ["name", "channel"],
+      }],
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        if (name === "app.describe_data") {
+          return { ok: true, value: { ok: true, resources: [salesFacts], source_database_changed: false } };
+        }
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const averageByStore = {
+      kind: "aggregate",
+      resource: "public.sales_line_facts",
+      measures: [{ function: "avg", field: "net_revenue_cents" }],
+      dimensions: [{ field: "name", relationship: "sales_line_facts_store_id_fkey" }],
+      order_by: { kind: "measure", index: 0, direction: "desc" },
+      top_n: 10,
+    };
+    const totalRevenue = {
+      kind: "aggregate",
+      resource: "public.sales_line_facts",
+      measures: [{ function: "sum", field: "net_revenue_cents" }],
+    };
+    const responses = [
+      openAiToolCall("catalog", "app__describe_data", {}),
+      {
+        status: 200,
+        body: {
+          choices: [{
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                {
+                  id: "average_by_store",
+                  type: "function",
+                  function: { name: "app__explore_data", arguments: JSON.stringify({ plan: averageByStore }) },
+                },
+                {
+                  id: "total_revenue",
+                  type: "function",
+                  function: { name: "app__explore_data", arguments: JSON.stringify({ plan: totalRevenue }) },
+                },
+              ],
+            },
+          }],
+        },
+      },
+      openAiText("Both reviewed analyses are complete."),
+    ];
+    const result = await configuredSession(askToolSurfaceDigest(authoringTools)).run(
+      "Run two reviewed analyses: average net revenue by store name and total net revenue.",
+      gateway,
+      { requestJson: async () => responses.shift()! },
+    );
+
+    expect(result.tool_calls).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ error_code: "LOCAL_PLAN_INTENT_MISMATCH" }),
+    ]));
+    expect(calls.filter((call) => call.name === "app.explore_data")).toEqual([
+      { name: "app.explore_data", args: { plan: averageByStore } },
+      { name: "app.explore_data", args: { plan: totalRevenue } },
+    ]);
+
+    const duplicateResponses = [
+      openAiToolCall("catalog_duplicate", "app__describe_data", {}),
+      {
+        status: 200,
+        body: {
+          choices: [{
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                {
+                  id: "average_first",
+                  type: "function",
+                  function: { name: "app__explore_data", arguments: JSON.stringify({ plan: averageByStore }) },
+                },
+                {
+                  id: "average_duplicate",
+                  type: "function",
+                  function: { name: "app__explore_data", arguments: JSON.stringify({ plan: averageByStore }) },
+                },
+              ],
+            },
+          }],
+        },
+      },
+    ];
+    const duplicateResult = await configuredSession(askToolSurfaceDigest(authoringTools)).run(
+      "Run two reviewed analyses: average net revenue by store name and total net revenue.",
+      gateway,
+      { requestJson: async () => duplicateResponses.shift()! },
+    );
+    expect(duplicateResult.answer_source).toBe("runner");
+    expect(duplicateResult.tool_calls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ error_code: "LOCAL_PLAN_INTENT_MISMATCH" }),
+    ]));
+    expect(calls.filter((call) => call.name === "app.explore_data")).toHaveLength(3);
+  });
+
+  it("refuses an ambiguous relationship/time question with actionable reviewed choices", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const workOrders = {
+      id: "public.work_orders",
+      aggregate_measure_functions: { downtime_minutes: ["sum", "avg"] },
+      time_bucket_fields: { opened_at: ["week"], completed_at: ["week"] },
+      relationships: [{
+        id: "work_orders_inverter_model_id_fkey",
+        activation: "active",
+        target_resource: "public.inverter_models",
+        groupable_fields: ["manufacturer", "model_name", "panel_position"],
+      }],
+    };
+    const inverterModels = {
+      id: "public.inverter_models",
+      label: "Inverter models",
+      groupable_fields: ["manufacturer", "model_name", "panel_position"],
+      aggregate_measure_functions: {},
+      time_bucket_fields: {},
+      relationships: [],
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        if (name !== "app.describe_data") {
+          return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+        }
+        const resources = typeof args.resource === "string"
+          ? [workOrders, inverterModels].filter((resource) => resource.id === args.resource)
+          : [
+            { ...inverterModels },
+            {
+              ...workOrders,
+              relationships: [{
+                id: "work_orders_inverter_model_id_fkey",
+                activation: "active",
+                target_resource: "public.inverter_models",
+              }],
+            },
+          ];
+        return { ok: true, value: { ok: true, resources, source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const ambiguousPlan = {
+      kind: "aggregate",
+      resource: "public.work_orders",
+      measures: [{ function: "sum", field: "downtime_minutes" }],
+      dimensions: [{ field: "model_name", relationship: "work_orders_inverter_model_id_fkey" }],
+      time_bucket: { field: "opened_at", bucket: "week" },
+    };
+    const responses = [
+      openAiToolCall("catalog", "app__describe_data", {}),
+      openAiToolCall("ambiguous", "app__explore_data", { plan: ambiguousPlan }),
+      openAiText("{}"),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run(
+      "How did total downtime change by week across reviewed inverter models?",
+      gateway,
+      { requestJson: async () => responses.shift()! },
+    );
+
+    const refusal = result.tool_calls.find((call) => call.error_code === "LOCAL_PLAN_INTENT_MISMATCH");
+    expect(refusal?.status).toBe("refused");
+    expect(refusal?.result.message).toContain("Grouping through public.inverter_models is ambiguous");
+    expect(refusal?.result.message).toContain("manufacturer, model_name, panel_position");
+    expect(refusal?.result.message).toContain("Time bucket week is ambiguous");
+    expect(refusal?.result.message).toContain("opened_at, completed_at");
+    expect(calls.filter((call) => call.name === "app.explore_data")).toHaveLength(0);
+  });
+
   it("refuses an ambiguous unqualified dispersion request without source execution", async () => {
     const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
     const resource = {

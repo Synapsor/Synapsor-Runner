@@ -1,7 +1,9 @@
 import { WORKBENCH_SYNTAX_CSS, workbenchSyntaxScript } from "./workbench-syntax.js";
+import { EXPLORATION_BUDGET_REVIEW_CEILINGS } from "./auto-boundary.js";
 
 export function renderBoundaryWorkbench(csrfToken: string): string {
   const escapedCsrf = escapeScriptString(csrfToken);
+  const reviewedBudgetCeilings = JSON.stringify(EXPLORATION_BUDGET_REVIEW_CEILINGS);
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -572,6 +574,12 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
               <summary>Query history</summary>
               <div class="ask-history-body">
                 <p>Recent references can still be inspected or protected. Durable history contains bounded audit metadata only; Runner does not persist model conversations, result values, trusted scope values, or raw SQL.</p>
+                <div class="grid two ask-history-filters">
+                  <label class="field">Tenant fingerprint<input id="ask-history-tenant" type="text" maxlength="160" placeholder="Optional keyed scope"></label>
+                  <label class="field">Resource<input id="ask-history-table" type="text" maxlength="256" placeholder="Optional schema.table"></label>
+                  <label class="field">Capability<input id="ask-history-capability" type="text" maxlength="160" placeholder="Optional exact capability"></label>
+                  <label class="field">Since<input id="ask-history-since" type="datetime-local"></label>
+                </div>
                 <div class="actions"><button id="load-ask-history" class="secondary" type="button">Load query history</button></div>
                 <div id="ask-history-status" class="status-message" role="status" aria-live="polite"></div>
                 <div id="ask-history-content"></div>
@@ -664,6 +672,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
   <script>
     ${workbenchSyntaxScript()}
     const csrf="${escapedCsrf}";
+    const reviewedBudgetCeilings=${reviewedBudgetCeilings};
     let original;
     let candidate;
     let reviewReport;
@@ -1189,6 +1198,24 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       return "mandatory relationship path "+shown.join(" → ");
     }
 
+    function derivedScopeCostAdvisory(scope){
+      const depth=scope?.proof?.links?.length||0;
+      if(!depth)return "";
+      const review=reviewResource(selectedResource);
+      const rows=Number.isFinite(review?.approximate_row_count)?Number(review.approximate_row_count):null;
+      const timeout=Number(candidate?.budgets?.statement_timeout_ms||3000);
+      const rowHops=rows===null?null:rows*depth;
+      const pressure=depth>=3||(rowHops!==null&&rowHops>=500000);
+      const reviewedDepth=Number(candidate?.budgets?.max_derived_scope_hops??candidate?.budgets?.max_relationship_hops??2);
+      return '<div class="band '+(pressure?'warning':'notice')+'"><strong>Derived-scope cost advisory</strong><p>'+esc(depth)+' mandatory many-to-one hop'+(depth===1?'':'s')+' under the reviewed '+esc(timeout.toLocaleString())+' ms statement timeout.</p>'
+        +(rows===null
+          ?'<p>Catalog row volume is unavailable. Doctor can still attest path indexes.</p>'
+          :'<p>The catalog estimates about '+esc(rows.toLocaleString())+' total root rows ('+esc(rowHops.toLocaleString())+' row-hops before selectivity). This is not a tenant count or latency prediction.</p>')
+        +(depth>reviewedDepth?'<p><strong>Raise Derived-scope depth to '+esc(depth)+' in Settings → Result shape, timeout, and path depth before saving this path.</strong></p>':'')
+        +(pressure?'<p>Run doctor to verify every path index. For high-volume leaves, a direct tenant/principal column is usually faster. Measured source time appears in query details.</p>':'')
+        +'</div>';
+    }
+
     function derivedScopeStartGuidance(scope){
       const links=scope?.proof?.links||[];
       const chain=links.length?[links[0].source_resource,...links.map(link=>link.target_resource)]:[scope.ancestor_resource];
@@ -1331,15 +1358,29 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 			      const lifecycleControls='<div class="actions"><button id="edit-boundary-tables" '+(pendingBoundaryChange?'class="secondary" ':'')+'type="button">Edit selected boundary</button><button id="new-boundary" class="secondary" type="button">New boundary</button>'+(selectedEntry?.active?'<button id="disable-active-boundary" class="quiet" type="button">Deactivate selected boundary</button>':'<button id="disable-active-boundary" class="quiet" type="button" disabled title="The selected boundary is not active.">Selected boundary inactive</button>')+'</div>';
 		      const rankedMinimum=candidate.budgets.max_groups;
 		      const rankedCurrent=candidate.budgets.max_ranked_groups??rankedMinimum;
-			      const rankedMaximum=original.budgets.max_ranked_groups??original.budgets.max_groups;
-			      const rankedEditable=Number.isSafeInteger(original.budgets.max_ranked_groups);
+			      const rankedMaximum=reviewedBudgetCeilings.max_ranked_groups;
+			      const rankedEditable=true;
 			      const rankedSettings='<details class="boundary-options"><summary>Ranked result settings</summary><div class="boundary-name-editor"><label>Groups considered before ranking<input id="boundary-ranked-groups" type="number" min="'+esc(rankedMinimum)+'" max="'+esc(rankedMaximum)+'" value="'+esc(rankedCurrent)+'" '+(rankedEditable?'':'disabled')+' aria-describedby="boundary-ranked-help"></label><button id="save-ranked-groups" class="secondary" type="button" '+(rankedEditable?'':'disabled')+'>Save reviewed limit</button><span id="boundary-ranked-status" class="status-message" aria-live="polite"></span><small id="boundary-ranked-help">Top, bottom, and period-mover questions may consider this many groups. Small-group suppression runs before ranking, and only the reviewed top '+esc(candidate.budgets.max_top_n)+' may be returned. The AI cannot change this setting.</small></div></details>';
 			      const volumeSettings='<details class="boundary-options"><summary>Query volume · '+esc(candidate.budgets.max_queries_per_session)+' per rolling 24 hours · '+esc(candidate.budgets.rate_limit_per_minute)+' per minute</summary><div class="boundary-name-editor"><p><strong>Throughput controls</strong> limit how often this boundary can run for one trusted scope. They do not replace the separate disclosure controls for extracted cells, differencing, or small groups.</p><label>Queries per rolling 24 hours<input id="boundary-query-volume" type="number" min="1" max="1000" value="'+esc(candidate.budgets.max_queries_per_session)+'" aria-describedby="boundary-volume-help"></label><label>Requests per rolling minute<input id="boundary-request-rate" type="number" min="1" max="120" value="'+esc(candidate.budgets.rate_limit_per_minute)+'" aria-describedby="boundary-volume-help"></label><button id="save-boundary-volume" class="secondary" type="button">Save reviewed limits</button><span id="boundary-volume-status" class="status-message" aria-live="polite"></span><small id="boundary-volume-help">These limits are reviewed and digest-bound. Saving creates a disabled boundary revision; Review and activate remains separate. Disclosure defaults and semantics are unchanged.</small></div></details>';
+			      const shapeFields=[
+			        {key:'max_rows',label:'Returned rows',unit:'rows',min:1},
+			        {key:'max_groups',label:'Aggregate groups',unit:'groups',min:candidate.budgets.max_top_n},
+			        {key:'max_top_n',label:'Returned top N',unit:'groups',min:1,max:Math.min(reviewedBudgetCeilings.max_top_n,candidate.budgets.max_groups)},
+			        {key:'max_measures',label:'Measures per aggregate',unit:'measures',min:1},
+			        {key:'max_dimensions',label:'Dimensions per aggregate',unit:'dimensions',min:1},
+			        {key:'max_response_cells',label:'Response cells',unit:'cells',min:1},
+			        {key:'max_response_bytes',label:'Response bytes',unit:'bytes',min:1024},
+			        {key:'statement_timeout_ms',label:'Statement timeout',unit:'milliseconds',min:100},
+			        {key:'max_derived_scope_hops',label:'Derived-scope depth',unit:'proven hops',min:1,max:3,value:candidate.budgets.max_derived_scope_hops??candidate.budgets.max_relationship_hops},
+			        {key:'max_analysis_relationship_hops',label:'Analysis-path depth',unit:'proven hops',min:1,max:3,value:candidate.budgets.max_analysis_relationship_hops??candidate.budgets.max_relationship_hops}
+			      ];
+			      const shapeInputs=shapeFields.map(field=>'<label>'+esc(field.label)+'<input id="boundary-shape-'+esc(field.key)+'" type="number" min="'+esc(field.min)+'" max="'+esc(field.max??reviewedBudgetCeilings[field.key])+'" value="'+esc(field.value??candidate.budgets[field.key])+'" aria-describedby="boundary-shape-help"><small>'+esc(field.unit)+'</small></label>').join('');
+			      const shapeSettings='<details class="boundary-options"><summary>Result shape, timeout, and path depth</summary><div class="boundary-name-editor"><p><strong>Reviewed execution controls</strong> bound one result and the proven relationship paths Runner may compile. Three-hop traversal is opt-in and can be materially slower than direct tenant columns.</p>'+shapeInputs+'<button id="save-boundary-shape" class="secondary" type="button">Save reviewed controls</button><span id="boundary-shape-status" class="status-message" aria-live="polite"></span><small id="boundary-shape-help">Every value is digest-bound and hard-capped. Depth three still requires the exact catalog-proven path to be reviewed. Small-group suppression, rolling extracted-cell accounting, and differencing protection are unchanged.</small></div></details>';
 			      const cohortValues=[...new Set(candidate.pack.resources.map(resource=>resource.minimum_cohort_size))];
 			      const cohortCurrent=cohortValues.length===1?cohortValues[0]:5;
 			      const cohortSettings='<details class="boundary-options"><summary>Privacy for all tables'+(cohortValues.length===1?' · minimum group size '+esc(cohortCurrent):' · mixed group sizes')+'</summary><div class="boundary-name-editor"><label>Minimum group size for every included table<select id="boundary-cohort-all"><option value="5" '+(cohortCurrent===5?'selected':'')+'>5 — default; hide groups with 1–4 rows</option><option value="4" '+(cohortCurrent===4?'selected':'')+'>4 — hide groups with 1–3 rows</option><option value="3" '+(cohortCurrent===3?'selected':'')+'>3 — hide groups with 1–2 rows</option><option value="2" '+(cohortCurrent===2?'selected':'')+'>2 — hide groups with 1 row</option><option value="1" '+(cohortCurrent===1?'selected':'')+'>1 — show every non-empty group; suppression off</option></select></label><label>Human reviewer<input id="boundary-cohort-actor" type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><label>Reason for this privacy setting<textarea id="boundary-cohort-reason" maxlength="500" rows="2" placeholder="Explain why this minimum group size is appropriate for every table in this boundary."></textarea></label><button id="save-boundary-cohort" class="secondary" type="button" '+(candidate.pack.resources.length?'':'disabled')+'>Save for all '+esc(candidate.pack.resources.length)+' table'+(candidate.pack.resources.length===1?'':'s')+'</button><span id="boundary-cohort-status" class="status-message" aria-live="polite"></span><small>Runner hides aggregate groups with fewer rows than this number. Choosing 1 turns small-group suppression off and may reveal a group containing one person or record. Saving creates one disabled boundary change; Review and activate remains separate.</small></div></details>';
 			      panel.innerHTML=
-		        '<div class="boundary-overview-head"><div><p class="instant-kicker">Scoped Explore</p><h2 id="boundary-overview-title">Your boundaries</h2><p>Each boundary is an independently reviewed set of tables, columns, relationships, and limits. An active boundary adds choices to the same two Explore tools; one query still uses exactly one boundary.</p><div class="boundary-version-table-wrap"><table class="boundary-version-table"><thead><tr><th>Name</th><th>Status</th><th>Tables</th><th>Authority</th><th>Actions</th></tr></thead><tbody>'+rows+'</tbody></table></div><p class="muted">Active boundaries never merge relationship graphs. If a table appears in several boundaries, Runner requires the caller to name one.</p>'+pendingBoundaryBanner+'<div id="new-boundary-form" class="band" hidden><h3>Create another boundary</h3><p>Choose its first table. Nothing is copied from another boundary, and no authority is activated.</p><label class="field">Boundary name<input id="new-boundary-name" type="text" maxlength="64" spellcheck="false" placeholder="support_analytics"></label><label class="field">Starting table<select id="new-boundary-table"><option value="">Choose a table</option>'+startingTableOptions+'</select></label><small>Showing all '+esc(inspectedStartingTables.length)+' inspected tables. '+esc(eligibleStartingTables.length)+' can start a boundary; '+esc(ancestorStartingTables.length)+' can be added after their scoped ancestor; unavailable tables remain visible with their reason.</small><small>Runner opens the selected table&apos;s column access next. Related tables can be added afterward through reviewed foreign-key paths.</small><div class="actions"><button id="create-boundary" type="button">Choose table and edit</button><button id="cancel-new-boundary" class="secondary" type="button">Cancel</button></div></div><p id="boundary-library-status" class="status-message" aria-live="polite"></p><details class="boundary-options"><summary>Rename selected boundary</summary><div class="boundary-name-editor"><label>Boundary name<input id="boundary-pack-name" type="text" maxlength="64" spellcheck="false" value="'+esc(candidate.pack.name)+'" aria-describedby="boundary-name-help"></label><button id="save-boundary-name" class="secondary" type="button">Save disabled name</button><span id="boundary-name-status" class="status-message" aria-live="polite"></span><small id="boundary-name-help">Saving changes only the selected disabled draft. The name is included in its final review fingerprint.</small></div></details>'+cohortSettings+volumeSettings+rankedSettings+'</div>'+lifecycleControls+'</div>'
+		        '<div class="boundary-overview-head"><div><p class="instant-kicker">Scoped Explore</p><h2 id="boundary-overview-title">Your boundaries</h2><p>Each boundary is an independently reviewed set of tables, columns, relationships, and limits. An active boundary adds choices to the same two Explore tools; one query still uses exactly one boundary.</p><div class="boundary-version-table-wrap"><table class="boundary-version-table"><thead><tr><th>Name</th><th>Status</th><th>Tables</th><th>Authority</th><th>Actions</th></tr></thead><tbody>'+rows+'</tbody></table></div><p class="muted">Active boundaries never merge relationship graphs. If a table appears in several boundaries, Runner requires the caller to name one.</p>'+pendingBoundaryBanner+'<div id="new-boundary-form" class="band" hidden><h3>Create another boundary</h3><p>Choose its first table. Nothing is copied from another boundary, and no authority is activated.</p><label class="field">Boundary name<input id="new-boundary-name" type="text" maxlength="64" spellcheck="false" placeholder="support_analytics"></label><label class="field">Starting table<select id="new-boundary-table"><option value="">Choose a table</option>'+startingTableOptions+'</select></label><small>Showing all '+esc(inspectedStartingTables.length)+' inspected tables. '+esc(eligibleStartingTables.length)+' can start a boundary; '+esc(ancestorStartingTables.length)+' can be added after their scoped ancestor; unavailable tables remain visible with their reason.</small><small>Runner opens the selected table&apos;s column access next. Related tables can be added afterward through reviewed foreign-key paths.</small><div class="actions"><button id="create-boundary" type="button">Choose table and edit</button><button id="cancel-new-boundary" class="secondary" type="button">Cancel</button></div></div><p id="boundary-library-status" class="status-message" aria-live="polite"></p><details class="boundary-options"><summary>Rename selected boundary</summary><div class="boundary-name-editor"><label>Boundary name<input id="boundary-pack-name" type="text" maxlength="64" spellcheck="false" value="'+esc(candidate.pack.name)+'" aria-describedby="boundary-name-help"></label><button id="save-boundary-name" class="secondary" type="button">Save disabled name</button><span id="boundary-name-status" class="status-message" aria-live="polite"></span><small id="boundary-name-help">Saving changes only the selected disabled draft. The name is included in its final review fingerprint.</small></div></details>'+cohortSettings+volumeSettings+rankedSettings+shapeSettings+'</div>'+lifecycleControls+'</div>'
 		        +(selectedEntry?.active?'<div id="boundary-disable-confirmation" class="band notice" hidden><strong>Deactivate '+esc(selectedEntry.name)+'?</strong><p>This removes only this boundary from local Explore. Other active boundaries, protected capabilities, evidence, ledger, and source data stay unchanged.</p><div class="actions"><button id="confirm-disable-boundary" class="danger" type="button">Deactivate selected boundary</button><button id="cancel-disable-boundary" class="secondary" type="button">Cancel</button></div><p id="boundary-disable-status" class="status-message" aria-live="polite"></p></div>':"")
 		        +renderBoundaryRelationshipMap(boundaryCatalog,boundaryDiagrams);
 		      wireBoundaryRelationshipMaps(panel);
@@ -1514,6 +1555,69 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 			        saved.className="status-message";
 			        saved.textContent="Saved in the disabled boundary. Disclosure controls are unchanged; active authority did not change.";
 			      };
+			      byId("save-boundary-shape").onclick=async()=>{
+			        const status=byId("boundary-shape-status");
+			        status.className="status-message";
+			        const next={};
+			        for(const field of shapeFields){
+			          const value=Number(byId("boundary-shape-"+field.key).value);
+			          const maximum=field.max??reviewedBudgetCeilings[field.key];
+			          if(!Number.isSafeInteger(value)||value<field.min||value>maximum){
+			            status.className="status-message error";
+			            status.textContent=field.label+" must be a whole number from "+field.min+" through "+maximum+".";
+			            return;
+			          }
+			          next[field.key]=value;
+			        }
+			        if(next.max_top_n>next.max_groups){
+			          status.className="status-message error";
+			          status.textContent="Returned top N cannot exceed the aggregate-group limit.";
+			          return;
+			        }
+			        const incompatibleScope=candidate.pack.resources.find(resource=>
+			          (resource.tenant_scope?.proof?.links?.length??0)>next.max_derived_scope_hops
+			          ||(resource.principal_scope?.proof?.links?.length??0)>next.max_derived_scope_hops);
+			        if(incompatibleScope){
+			          status.className="status-message error";
+			          status.textContent="Cannot lower derived-scope depth while "+incompatibleScope.id+" uses a deeper mandatory scope path.";
+			          return;
+			        }
+			        const unchanged=shapeFields.every(field=>(candidate.budgets[field.key]??candidate.budgets.max_relationship_hops)===next[field.key]);
+			        if(unchanged){status.textContent="These reviewed controls are already set to those values.";return;}
+			        const previousBudgets=structuredClone(candidate.budgets);
+			        const previousAnalysisDepth=candidate.budgets.max_analysis_relationship_hops??candidate.budgets.max_relationship_hops;
+			        const previousRelationships=candidate.pack.resources.map(resource=>[resource.id,structuredClone(resource.relationships)]);
+			        Object.assign(candidate.budgets,next);
+			        candidate.pack.resources.forEach(resource=>{
+			          const retained=resource.relationships.filter(relationship=>(relationship.path_depth??1)<=next.max_analysis_relationship_hops);
+			          if(next.max_analysis_relationship_hops>previousAnalysisDepth){
+			            const generated=original.pack.resources.find(item=>item.id===resource.id);
+			            const existing=new Set(retained.map(relationship=>relationship.id));
+			            for(const relationship of generated?.relationships??[]){
+			              const depth=relationship.path_depth??1;
+			              if(depth>previousAnalysisDepth&&depth<=next.max_analysis_relationship_hops&&!existing.has(relationship.id)){
+			                retained.push(structuredClone(relationship));
+			                existing.add(relationship.id);
+			              }
+			            }
+			          }
+			          resource.relationships=retained.sort((left,right)=>(left.path_depth??1)-(right.path_depth??1)||left.id.localeCompare(right.id));
+			        });
+			        invalidateDigest();
+			        status.textContent="Saving these reviewed execution controls...";
+			        await queueReviewProgressSave();
+			        if(!reviewProgressHealthy){
+			          candidate.budgets=previousBudgets;
+			          const byResource=new Map(previousRelationships);
+			          candidate.pack.resources.forEach(resource=>{resource.relationships=byResource.get(resource.id)??resource.relationships;});
+			          renderBoundaryOverview();
+			          return;
+			        }
+			        await load();
+			        const saved=byId("boundary-shape-status");
+			        saved.className="status-message";
+			        saved.textContent="Saved in the disabled boundary. Suppression and disclosure accounting are unchanged; Review and activate remains separate.";
+			      };
 			      const cohortAllSave=byId("save-boundary-cohort");
 			      if(cohortAllSave&&!cohortAllSave.disabled)cohortAllSave.onclick=async()=>{
 			        const status=byId("boundary-cohort-status");
@@ -1607,6 +1711,12 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      renderResourceNavigation();
 	    }
 
+	    function scrollAccessDetailForNarrowLayout(){
+	      if(window.matchMedia("(max-width: 820px)").matches){
+	        byId("resource-detail").scrollIntoView({behavior:"auto",block:"start"});
+	      }
+	    }
+
 	    function renderResourceNavigation(){
 	      const panel=byId("resource-navigation");
 	      if(!panel||!reviewReport)return;
@@ -1663,12 +1773,12 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		        if(button.dataset.accessIncluded!=="true"&&button.dataset.accessBlocked!=="true"){
 		          toggleResource(selectedResource,true);
 		          renderResourceDetail();
-		          byId("resource-detail").scrollIntoView({behavior:"auto",block:"start"});
+		          scrollAccessDetailForNarrowLayout();
 		          return;
 		        }
 		        renderResourceNavigation();
 		        renderResourceDetail();
-	        byId("resource-detail").scrollIntoView({behavior:"auto",block:"start"});
+	        scrollAccessDetailForNarrowLayout();
 	      });
 	      requestAnimationFrame(()=>{
 	        const selected=[...panel.querySelectorAll("[data-access-resource]")]
@@ -2109,6 +2219,11 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         const selected=select.value;
         const selectedOption=select.options[select.selectedIndex];
         const reviewedKind=selectedOption?.dataset.reviewKind||kind;
+        const selectedDepth=Number(selectedOption?.dataset.reviewDepth||0);
+        const reviewedDepth=Number(candidate?.budgets?.max_derived_scope_hops??candidate?.budgets?.max_relationship_hops??2);
+        if(selectedDepth>reviewedDepth){
+          throw new Error("This "+selectedDepth+"-hop path exceeds the reviewed derived-scope depth of "+reviewedDepth+". Raise it in Settings → Result shape, timeout, and path depth, then return here.");
+        }
         const value=(reviewedKind==="principal_key"||reviewedKind==="principal_scope_path")
           &&selected==="__none__"?null:selected;
         const actor=form.querySelector("[data-scope-review-actor]").value.trim();
@@ -2558,8 +2673,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       }));
       const derived=(derivedInference?.candidates||[]).map(scope=>({
         value:scope.path_id,
-        label:derivedScopePathLabel(scope),
-        kind:pathKind
+        label:derivedScopePathLabel(scope)+' · '+(scope.proof?.links?.length||0)+' hop'+((scope.proof?.links?.length||0)===1?'':'s'),
+        kind:pathKind,
+        depth:scope.proof?.links?.length||0,
+        scope
       }));
       const shared=kind==="tenant_key"&&sharedInference?.eligible?[{
         value:"table_has_no_per_tenant_rows",
@@ -2577,6 +2694,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       }
       const selectedKind=currentShared?"shared_reference_scope":currentDerived?pathKind:kind;
       const selectedValue=currentShared?.acknowledgement||currentDerived||currentDirect||(allowNone?"__none__":undefined);
+      const selectedDerived=derived.find(option=>option.value===selectedValue);
       const exactPathIds=derived.length
         ?'<details class="access-secondary"><summary>Advanced exact path IDs</summary><p>Use these canonical IDs only with scripted <code>--'+esc(pathKind.replaceAll("_","-"))+'</code> review. Human review and enforcement still refer to the readable mandatory path above.</p><ul>'+derived.map(option=>'<li><code>'+esc(option.value)+'</code> · '+esc(option.label)+'</li>').join("")+'</ul></details>'
         :"";
@@ -2584,7 +2702,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         +(derivedInference?'<div class="risk unresolved"><strong>Relationship-carried scope available</strong><p>Runner will inject the selected path into every read. The AI cannot remove, weaken, or choose this join.</p><p><strong>Safety consequence:</strong> '+esc(derivedInference.safety_consequence)+'</p></div>':"")
         +(sharedInference?.eligible?'<div class="risk high"><strong>Shared reference is an owner assertion, not an automatic inference.</strong><p>Select it only when this table has no per-tenant rows and every tenant may receive the same reviewed rows. Field visibility, cohort suppression, and budgets still apply.</p></div>':"");
       const sharedConfirmation=sharedInference?.eligible?'<label class="check"><input data-shared-reference-ack type="checkbox"><span>I confirm this table has no per-tenant rows and every tenant may receive the same reviewed rows. Required when Shared reference is selected.</span></label>':"";
-      return explanation+'<div class="review-form" data-scope-review-form><h3>Confirm or change the '+esc(label)+'</h3><div class="form-grid"><label class="field">Reviewed scope<select data-scope-review-value>'+options.map(option=>'<option value="'+esc(option.value)+'" data-review-kind="'+esc(option.kind)+'" '+(selectedKind===option.kind&&selectedValue===option.value?"selected":"")+'>'+esc(option.label)+'</option>').join("")+'</select></label><label class="field">Human reviewer<input data-scope-review-actor type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><label class="field">Why is this correct?<textarea data-scope-review-reason maxlength="500" rows="2" placeholder="Describe why this direct column, mandatory path, or shared-reference assertion is correct."></textarea></label></div>'+sharedConfirmation+'<div class="actions"><button data-submit-scope-review="'+esc(kind)+'" type="button">Save this reviewed choice</button></div><span data-scope-review-status class="status-message"></span></div>'+exactPathIds;
+      return explanation+(selectedDerived?derivedScopeCostAdvisory(selectedDerived.scope):'')+'<div class="review-form" data-scope-review-form><h3>Confirm or change the '+esc(label)+'</h3><div class="form-grid"><label class="field">Reviewed scope<select data-scope-review-value>'+options.map(option=>'<option value="'+esc(option.value)+'" data-review-kind="'+esc(option.kind)+'" '+(option.depth?'data-review-depth="'+esc(option.depth)+'" ':'')+(selectedKind===option.kind&&selectedValue===option.value?"selected":"")+'>'+esc(option.label)+'</option>').join("")+'</select></label><label class="field">Human reviewer<input data-scope-review-actor type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><label class="field">Why is this correct?<textarea data-scope-review-reason maxlength="500" rows="2" placeholder="Describe why this direct column, mandatory path, or shared-reference assertion is correct."></textarea></label></div>'+sharedConfirmation+'<div class="actions"><button data-submit-scope-review="'+esc(kind)+'" type="button">Save this reviewed choice</button></div><span data-scope-review-status class="status-message"></span></div>'+exactPathIds;
     }
 
     function invalidateResourceReview(id){
@@ -3546,7 +3664,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           ?reviewedFields(relationship[key])
           :relationship[key]||[];
         related.forEach(field=>values.push(
-          fieldLabel(relationship,field)+" from "+(relationship.label||humanizeIdentifier(relationship.target_resource))
+          fieldLabel(relationship,field)+" from "+relationshipTargetLabel(relationship)
         ));
       }
       return [...new Set(values)];
@@ -4175,6 +4293,11 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       catch{return (query.kind==="aggregate"?"Aggregate":"Bounded rows")+" on "+query.resource+"."}
     }
 
+    function ledgerSourceSentence(source){
+      if(source?.kind==="shared_postgres")return "Shared PostgreSQL ledger · schema "+source.schema+" · URL from "+source.url_env+" · read-only";
+      return "Local SQLite ledger · "+(source?.path||"configured local store");
+    }
+
     async function loadAskHistory(){
       const button=byId("load-ask-history");
       const status=byId("ask-history-status");
@@ -4182,20 +4305,31 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       button.disabled=true;
       button.textContent="Loading...";
       status.className="status-message";
-      status.textContent="Reading metadata-only local history...";
+      status.textContent="Reading metadata-only query history from the configured ledger...";
       try{
-        const payload=await getJson("/api/explore/history");
+        const params=new URLSearchParams();
+        const tenant=byId("ask-history-tenant").value.trim();
+        const table=byId("ask-history-table").value.trim();
+        const capability=byId("ask-history-capability").value.trim();
+        const since=byId("ask-history-since").value;
+        if(tenant)params.set("tenant",tenant);
+        if(table)params.set("table",table);
+        if(capability)params.set("capability",capability);
+        if(since)params.set("since",new Date(since).toISOString());
+        const payload=await getJson("/api/explore/history"+(params.size?"?"+params.toString():""));
+        const sourceLabel=ledgerSourceSentence(payload.ledger_source);
         const recent=payload.recent||[];
         const durable=payload.durable||[];
         const recentHtml=recent.length
           ?'<h4>Recent references</h4><div class="ask-history-table-wrap"><table class="history-recent-table"><thead><tr><th>Reference</th><th>Request</th><th>Status</th><th>Expires</th></tr></thead><tbody>'+recent.map((query,index)=>'<tr><td data-label="Reference"><code>'+esc(query.query_ref)+'</code></td><td data-label="Request">'+esc(historyPlanSentence(query))+'</td><td data-label="Status" class="'+(index===0?'history-status-latest':'')+'">'+(index===0?'Latest':'Available')+'</td><td data-label="Expires">'+esc(new Date(query.expires_at).toLocaleString())+'</td></tr>').join("")+'</tbody></table></div><p class="muted">Open Make reusable to inspect or protect one of these references.</p>'
           :'<h4>Recent references</h4><p class="muted">No unexpired analysis reference is available in this Workbench session.</p>';
         const durableHtml=durable.length
-          ?'<h4>Durable query ledger</h4><div class="ask-history-table-wrap"><table class="history-durable-table"><thead><tr><th>Audit</th><th>When</th><th>Resource</th><th>Outcome</th><th>Rows / groups</th><th>Evidence</th></tr></thead><tbody>'+durable.map(audit=>'<tr><td data-label="Audit"><button class="quiet" data-history-audit="'+esc(audit.audit_id)+'" type="button">'+esc(audit.audit_id)+'</button></td><td data-label="When">'+esc(new Date(audit.created_at).toLocaleString())+'</td><td data-label="Resource"><code>'+esc(audit.resource)+'</code></td><td data-label="Outcome" class="'+(String(audit.status).startsWith("refused")?'history-status-refused':'')+'">'+esc(String(audit.status).replaceAll("_"," "))+(audit.error_code?' · '+esc(audit.error_code):'')+'</td><td data-label="Rows / groups">'+esc(audit.returned_rows_or_groups)+'</td><td data-label="Evidence">'+esc(audit.evidence_bundle_id||"None")+'</td></tr>').join("")+'</tbody></table></div><div id="ask-history-detail"></div>'
-          :'<h4>Durable query ledger</h4><p class="muted">No Explore audit metadata has been recorded yet.</p>';
-        content.innerHTML=recentHtml+durableHtml;
+          ?'<h4>Durable query ledger</h4><div class="ask-history-table-wrap"><table class="history-durable-table"><thead><tr><th>Audit</th><th>When</th><th>Resource</th><th>Outcome</th><th>Rows / groups</th><th>Evidence</th></tr></thead><tbody>'+durable.map(audit=>'<tr><td data-label="Audit"><button class="quiet" data-history-audit="'+esc(audit.audit_id)+'" type="button">'+esc(audit.audit_id)+'</button></td><td data-label="When">'+esc(new Date(audit.created_at).toLocaleString())+'</td><td data-label="Resource"><code>'+esc(audit.resource)+'</code></td><td data-label="Outcome" class="'+(String(audit.status).startsWith("refused")?'history-status-refused':'')+'">'+esc(String(audit.status).replaceAll("_"," "))+(audit.error_code?' · '+esc(audit.error_code):'')+'</td><td data-label="Rows / groups">'+esc(audit.returned_rows_or_groups)+'</td><td data-label="Evidence">'+(audit.evidence_bundle_id?'<button class="quiet" data-history-evidence="'+esc(audit.evidence_bundle_id)+'" type="button">'+esc(audit.evidence_bundle_id)+'</button>':'None')+'</td></tr>').join("")+'</tbody></table></div><div id="ask-history-detail"></div>'
+          :'<h4>Durable query ledger</h4><p class="muted">No Explore audit metadata was found in '+esc(sourceLabel)+'.</p>';
+        content.innerHTML='<p><strong>Ledger source</strong><br>'+esc(sourceLabel)+'</p>'+recentHtml+durableHtml;
         content.querySelectorAll("[data-history-audit]").forEach(item=>item.onclick=()=>loadAskHistoryDetail(item.dataset.historyAudit));
-        status.textContent=recent.length+" recent "+(recent.length===1?"reference":"references")+" · "+durable.length+" durable audit "+(durable.length===1?"record":"records")+". Result and trusted-scope values are not persisted.";
+        content.querySelectorAll("[data-history-evidence]").forEach(item=>item.onclick=()=>loadAskEvidenceDetail(item.dataset.historyEvidence));
+        status.textContent=recent.length+" recent "+(recent.length===1?"reference":"references")+" · "+durable.length+" durable audit "+(durable.length===1?"record":"records")+" · "+sourceLabel+". Result and trusted-scope values are not persisted.";
       }catch(error){
         content.innerHTML="";
         status.className="status-message error";
@@ -4213,8 +4347,21 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       try{
         const payload=await getJson("/api/explore/history?audit_id="+encodeURIComponent(auditId));
         const audit=payload.audit;
-        target.innerHTML='<details open><summary>Audit '+esc(audit.audit_id)+' details</summary><p>Metadata only. Any filter literals in the normalized plan are keyed fingerprints, not source values.</p><pre id="ask-history-json"></pre></details>';
+        target.innerHTML='<details open><summary>Audit '+esc(audit.audit_id)+' details</summary><p><strong>Ledger source:</strong> '+esc(ledgerSourceSentence(payload.ledger_source))+'</p><p>Metadata only. Any filter literals in the normalized plan are keyed fingerprints, not source values.</p><pre id="ask-history-json"></pre></details>';
         renderSyntaxCode("ask-history-json",JSON.stringify(audit,null,2),"JSON");
+      }catch(error){
+        target.innerHTML='<p class="error">'+esc(error.message)+'</p>';
+      }
+    }
+
+    async function loadAskEvidenceDetail(evidenceId){
+      const target=byId("ask-history-detail");
+      if(!target)return;
+      target.innerHTML='<p class="muted">Loading evidence '+esc(evidenceId)+'...</p>';
+      try{
+        const payload=await getJson("/api/explore/evidence?evidence_id="+encodeURIComponent(evidenceId));
+        target.innerHTML='<details open><summary>Evidence '+esc(evidenceId)+'</summary><p><strong>Ledger source:</strong> '+esc(ledgerSourceSentence(payload.ledger_source))+'</p><p>Metadata only. Result values and raw trusted-scope values are not persisted.</p><pre id="ask-history-evidence-json"></pre></details>';
+        renderSyntaxCode("ask-history-evidence-json",JSON.stringify(payload.evidence,null,2),"JSON");
       }catch(error){
         target.innerHTML='<p class="error">'+esc(error.message)+'</p>';
       }
@@ -4261,7 +4408,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       return '<details class="ask-execution-evidence"><summary>What the model requested and Runner executed</summary>'
         +'<h4>What the model requested</h4><pre>'+esc(JSON.stringify({tool:call.tool,arguments:call.arguments},null,2))+'</pre>'
         +'<h4>What Runner executed</h4><pre>'+esc(JSON.stringify(execution,null,2))+'</pre>'
-        +'<h4>What Runner returned or withheld</h4><pre>'+esc(JSON.stringify(returned,null,2))+'</pre>'
+          +'<h4>What Runner returned or withheld</h4><pre>'+esc(JSON.stringify(returned,null,2))+'</pre>'+renderOperatorExecutionCost(result)
         +(queryRef?'<button class="quiet" data-explore-evidence="'+esc(queryRef)+'" type="button">Show operator SQL diagnostic</button><div data-evidence-target></div>':'')
         +'</details>';
     }
@@ -4335,6 +4482,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	        const reviewedValueNotice=reviewedValueControlHtml(result);
 	        const budgetStatus=renderOperatorBudgetStatus(result);
 	        const resolvedTimeStatus=renderOperatorTimeWindowStatus(result);
+	        const executionCostStatus=renderOperatorExecutionCost(result);
 	        const verifiedData=rows.length
           ?'<details class="verified-data-details"><summary>View verified data ('+esc(returned)+' '+resultKind+(returned===1?"":"s")+')</summary><div class="verified-data-body">'+resultDataHtml(plan,rows,semantics,boundaryName)+'</div></details>'
           :'<p class="ask-verified-count">No rows or groups passed the reviewed scope and privacy thresholds.</p>';
@@ -4343,6 +4491,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	          +verifiedData
 		          +reviewedValueNotice
 		          +resolvedTimeStatus
+		          +executionCostStatus
 		          +budgetStatus
 		          +(privacyGuidance?'<p><strong>'+esc(suppressed)+' additional group'+(suppressed===1?" was":"s were")+' withheld because '+(suppressed===1?"it was":"they were")+' below the reviewed minimum group size'+(minimumCohort?' of '+esc(minimumCohort):'')+'.</strong></p>'+(privacyGuidance.shape?'<p>'+esc(privacyGuidance.shape)+'</p>':'')+'<p>'+esc(privacyGuidance.path)+'</p><button class="quiet" data-review-privacy-resource="'+esc(plan.resource)+'" type="button">Review privacy for '+esc(plan.resource)+'</button>':'')
           +(protectToken?'<button class="secondary" data-ask-protect="'+esc(protectToken)+'" type="button">Protect as reusable capability</button>':'')
@@ -4387,6 +4536,12 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	        ?'<div class="band notice"><strong>Reviewed budget is nearing its limit</strong>'+warnings.map(message=>'<p>'+esc(message)+'</p>').join("")+'<p>Review throughput in this boundary&apos;s Query volume settings. Disclosure controls remain separate.</p></div>'
 	        :"";
 	      return warning+'<details class="ask-execution-evidence"><summary>Operator-only budget status</summary><p>These counters are not sent to the model. Volume controls throughput; disclosure controls reconstruction risk.</p><div class="result-table"><table><thead><tr><th>Scope</th><th>Class</th><th>Budget</th><th>Used / limit</th><th>Remaining</th></tr></thead><tbody>'+rows.join("")+'</tbody></table></div><p><strong>Rolling 24-hour upper expiry:</strong> '+esc(budget.rolling_24_hour_usage_expires_no_later_than||"not available")+'<br><strong>Rolling-minute upper expiry:</strong> '+esc(budget.rolling_minute_usage_expires_no_later_than||"not available")+'</p></details>';
+	    }
+
+	    function renderOperatorExecutionCost(result){
+	      const duration=result?.outcome?.result?.freshness?.execution_duration_ms;
+	      if(!Number.isFinite(duration))return "";
+	      return '<p class="muted"><strong>Source execution:</strong> '+esc(Math.max(0,Math.round(duration)))+' ms in one read-only transaction.</p>';
 	    }
 
 	    function reviewedValueControlHtml(result){
@@ -4713,6 +4868,12 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       return resource?.label||String(resource?.id||"").split(".").pop().replace(/_/g," ");
     }
 
+    function relationshipTargetLabel(relationship){
+      return relationship?.target_label
+        ||relationship?.label
+        ||humanizeIdentifier(String(relationship?.target_resource||"").split(".").pop());
+    }
+
     function fieldLabel(resource,field){
       return resource?.fields?.find(item=>item.id===field)?.label||String(field).replace(/_/g," ");
     }
@@ -4736,7 +4897,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         related.forEach(field=>choices.push({
           field,
           relationship:relationship.id,
-          label:fieldLabel(relationship,field)+" — "+(relationship.label||relationship.target_resource)
+          label:fieldLabel(relationship,field)+" — "+relationshipTargetLabel(relationship)
             +(relationship.operator_review_required?" — human relationship review required":""),
           field_types:relationship.field_types||{},
           filter_operators:relationship.filter_operators||{},
@@ -4834,7 +4995,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       }
       if(!reference.relationship)return fieldLabel(resource,reference.field);
       const relationship=(resource.relationships||[]).find(item=>item.id===reference.relationship);
-      return fieldLabel(relationship,reference.field)+" from "+(relationship?.label||relationship?.target_resource||"reviewed related data");
+      return fieldLabel(relationship,reference.field)+" from "+relationshipTargetLabel(relationship);
     }
 
     function optionList(values,selected,labelForValue=value=>value){
@@ -5297,7 +5458,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		        const privacyGuidance=result.privacy.suppressed_groups>0
 		          ?suppressionReviewGuidance(plan,selectedBoundary,result.privacy.minimum_cohort_size)
 		          :null;
-		        resultPanel.innerHTML='<section class="band success"><h3>Your reviewed question worked.</h3><p>'+esc(planSentence(plan,selectedBoundary))+'</p>'+resultDataHtml(plan,result.data,result.outcome?.result,selectedBoundary)+reviewedValueControlHtml(result)+renderOperatorTimeWindowStatus(result)+renderOperatorBudgetStatus(result)+(privacyGuidance?'<p><strong>'+esc(result.privacy.suppressed_groups)+' additional group'+(result.privacy.suppressed_groups===1?" was":"s were")+' withheld because '+(result.privacy.suppressed_groups===1?"it was":"they were")+' below the reviewed minimum group size of '+esc(result.privacy.minimum_cohort_size)+'.</strong></p>'+(privacyGuidance.shape?'<p>'+esc(privacyGuidance.shape)+'</p>':'')+'<p>'+esc(privacyGuidance.path)+'</p><button id="review-result-privacy" class="quiet" type="button">Review privacy for '+esc(plan.resource)+'</button>':'')+'<p>Keep asking legal combinations inside this reviewed boundary without another approval. Protect is optional and creates a disabled reusable capability.</p><div class="split-actions"><button id="ask-another-result" type="button">Ask another question</button><button id="protect-result" class="secondary" type="button">Protect this '+esc(plan.kind==="aggregate"?"analysis":"read")+'</button></div><details><summary>What Runner enforced</summary><p><strong>Tool:</strong> <code>app.explore_data</code><br><strong>Reviewed fields used:</strong> '+esc(visible.join(", ")||"record count")+'<br><strong>Minimum group size:</strong> '+esc(result.privacy.minimum_cohort_size??"not applicable")+'<br><strong>Kept out:</strong> '+esc(unavailable)+'<br><strong>Trusted scope:</strong> supplied outside the question<br><strong>Source database changed:</strong> no</p><div class="result-meta"><span class="badge">'+esc(result.audit.returned_rows_or_groups)+' row(s) / group(s)</span><span class="badge">'+esc(result.audit.returned_cells)+' cells</span></div><p>'+esc(result.untrusted_data_notice)+'</p></details></section>';
+          resultPanel.innerHTML='<section class="band success"><h3>Your reviewed question worked.</h3><p>'+esc(planSentence(plan,selectedBoundary))+'</p>'+resultDataHtml(plan,result.data,result.outcome?.result,selectedBoundary)+reviewedValueControlHtml(result)+renderOperatorTimeWindowStatus(result)+renderOperatorExecutionCost(result)+renderOperatorBudgetStatus(result)+(privacyGuidance?'<p><strong>'+esc(result.privacy.suppressed_groups)+' additional group'+(result.privacy.suppressed_groups===1?" was":"s were")+' withheld because '+(result.privacy.suppressed_groups===1?"it was":"they were")+' below the reviewed minimum group size of '+esc(result.privacy.minimum_cohort_size)+'.</strong></p>'+(privacyGuidance.shape?'<p>'+esc(privacyGuidance.shape)+'</p>':'')+'<p>'+esc(privacyGuidance.path)+'</p><button id="review-result-privacy" class="quiet" type="button">Review privacy for '+esc(plan.resource)+'</button>':'')+'<p>Keep asking legal combinations inside this reviewed boundary without another approval. Protect is optional and creates a disabled reusable capability.</p><div class="split-actions"><button id="ask-another-result" type="button">Ask another question</button><button id="protect-result" class="secondary" type="button">Protect this '+esc(plan.kind==="aggregate"?"analysis":"read")+'</button></div><details><summary>What Runner enforced</summary><p><strong>Tool:</strong> <code>app.explore_data</code><br><strong>Reviewed fields used:</strong> '+esc(visible.join(", ")||"record count")+'<br><strong>Minimum group size:</strong> '+esc(result.privacy.minimum_cohort_size??"not applicable")+'<br><strong>Kept out:</strong> '+esc(unavailable)+'<br><strong>Trusted scope:</strong> supplied outside the question<br><strong>Source database changed:</strong> no</p><div class="result-meta"><span class="badge">'+esc(result.audit.returned_rows_or_groups)+' row(s) / group(s)</span><span class="badge">'+esc(result.audit.returned_cells)+' cells</span></div><p>'+esc(result.untrusted_data_notice)+'</p></details></section>';
 			        byId("ask-another-result").onclick=()=>{if(plan.kind==="rows")switchExploreMode("aggregate");byId("explore-composer").open=true;byId("explore-composer").scrollIntoView({behavior:"auto",block:"start"})};
 		        if(byId("review-result-privacy"))byId("review-result-privacy").onclick=()=>openAccessEditor(plan.resource,undefined,true);
 		        byId("protect-result").onclick=async()=>{preferredProtectQueryRef=resultProtectQueryRef;await loadProtect(resultProtectQueryRef);setView("protect")};
@@ -5409,7 +5570,12 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		      const command="npx -y @synapsor/runner mcp serve --authoring --project-root .";
 		      const config={mcpServers:{synapsor_authoring:{command:"npx",args:["-y","@synapsor/runner","mcp","serve","--authoring","--project-root","."]}}};
 		      const codex='[mcp_servers.synapsor_authoring]\\ncommand = "npx"\\nargs = '+JSON.stringify(config.mcpServers.synapsor_authoring.args);
+		      const productionProfile=(activeBoundary?.pack?.deployment_profile||candidate?.deployment_profile)==="production";
+		      const productionHttp=productionProfile
+		        ?'<section class="band notice"><h3>Production Streamable HTTP clients</h3><p>Generate the native remote config after the production endpoint is deployed. Each file references one short-lived bearer-token environment variable; Runner writes no token value.</p><pre>'+esc("synapsor-runner mcp client-config --client claude-code --transport streamable-http --config ./synapsor.runner.json\\nsynapsor-runner mcp client-config --client cursor --transport streamable-http --config ./synapsor.runner.json\\nsynapsor-runner mcp client-config --client vscode --transport streamable-http --config ./synapsor.runner.json")+'</pre><p>Set <code>SYNAPSOR_MCP_ACCESS_TOKEN</code> in the client process from your configured identity provider, then reload the client. Do not paste the token into the generated file.</p></section>'
+		        :'';
 		      byId("client-configs").innerHTML='<p>Every client receives the same two local authoring tools and no approval or commit tool. Runner never puts database credentials in client files.</p>'
+		        +productionHttp
 		        +'<h3>Prepare this project</h3><p>Choose a client used by this project. Runner changes only its <code>synapsor</code> entry, preserves other settings, and backs up an existing file. The client starts the local stdio server when it opens this project.</p>'
 		        +'<div class="actions"><button class="secondary" data-install-mcp="cursor" type="button">Prepare Cursor</button><button class="secondary" data-install-mcp="claude-code" type="button">Prepare Claude Code</button><button class="secondary" data-install-mcp="vscode" type="button">Prepare VS Code</button></div><div id="mcp-install-status" class="status-message" role="status" aria-live="polite"></div>'
 		        +'<details><summary>Manual and generic client setup</summary><h3>Managed project installers</h3><pre>'+esc("synapsor-runner mcp install cursor --project --authoring --project-root . --yes\\nsynapsor-runner mcp install claude-code --project --authoring --project-root . --yes\\nsynapsor-runner mcp install vscode --project --authoring --project-root . --yes")+'</pre><h3>Generic stdio MCP</h3><pre>'+esc(JSON.stringify(config,null,2))+'</pre><h3>Direct server command</h3><p>Use this in another local MCP client. No model API key is needed by Runner.</p><pre>'+esc(command)+'</pre><h3>Codex</h3><pre>'+esc(codex)+'</pre></details>';

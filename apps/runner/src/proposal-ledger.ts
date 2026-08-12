@@ -12,14 +12,45 @@ import { activityFromEvidence, activityFromProposal, activityFromQueryAudit, act
 import { cliCommandName } from "./cli-command-meta.js";
 import { safeErrorMessage, showDetails, storeOptionSuffix, stringField } from "./cli-format.js";
 import { operationalLog } from "./cli-logging.js";
-import { assertKnownOptions, envValue, exportFormat, limitFromArgs, optionalArg, optionalPositiveIntegerArg, outputArg, positional } from "./cli-options.js";
+import { assertKnownOptions, envValue, exportFormat, limitFromArgs, optionalArg, optionalPositiveIntegerArg, outputArg, positional, runtimeStoreBridgeFlag } from "./cli-options.js";
 import { confirmDangerousAction, localStorePath, openLocalStore, operatorIdentityForDecision, optionalRuntimeConfig, requireLocalProposal, resolveProposalIdFromStore, runnerConfigPath } from "./cli-project.js";
 import { activitySearchAllowedOptions, eventFiltersFromArgs, eventTailAllowedOptions, eventWebhookAllowedOptions, evidenceFiltersFromActivityArgs, evidenceFiltersFromArgs, evidenceListAllowedOptions, exportAllowedOptions, proposalFiltersFromActivityArgs, proposalFiltersFromArgs, proposalFiltersFromReplayArgs, proposalListAllowedOptions, queryAuditFiltersFromActivityArgs, queryAuditFiltersFromArgs, queryAuditListAllowedOptions, receiptFiltersFromActivityArgs, receiptFiltersFromArgs, receiptListAllowedOptions, replayExportAllowedOptions, replayListAllowedOptions, replayShowAllowedOptions, resolveReplayProposalId, showAllowedOptions } from "./ledger-options.js";
 import { TrustedOperatorInvocation } from "./operator-authority.js";
 import { formatEvidenceDetail, formatEvidenceFirstLook, formatEvidenceMarkdown, formatEvidenceSummary, formatProposalDebug, formatProposalDetail, formatProposalEventDetail, formatProposalFirstLook, formatProposalSummary, formatQueryAuditDetail, formatQueryAuditFirstLook, formatQueryAuditSummary, formatReceiptDetail, formatReceiptFirstLook, formatReceiptSummary, formatReplayDebug, formatReplayDetail, formatReplayFirstLook, formatReplayMarkdown, formatReplaySummary } from "./proposal-formatting.js";
+import { sharedPostgresLedgerMirrorOptions } from "./shared-ledger-domain.js";
 import { argsWithRuntimeStoreBridge, assertLocalGovernanceMutationAllowed, assertNoRuntimeStoreForLocalMutation, maybeSharedPostgresRuntimeStoreRead, runtimeStoreBridgeRequired, sharedPostgresLedgerMirrorRequested, withoutSharedPostgresLedgerMirror, withSharedPostgresLedgerMirror, withSharedPostgresRuntimeStoreBridge } from "./store-shared.js";
 import { findProposalCapability } from "./writeback-execution.js";
 import { terminalSyntaxColorEnabled } from "./terminal-syntax.js";
+
+type LedgerReadSource =
+  | { kind: "local_sqlite"; path: string }
+  | { kind: "shared_postgres"; schema: string; url_env: string };
+
+
+async function ledgerReadSource(args: string[]): Promise<LedgerReadSource> {
+  if (args.includes(runtimeStoreBridgeFlag)) {
+    const config = await optionalRuntimeConfig(runnerConfigPath(args));
+    const shared = sharedPostgresLedgerMirrorOptions(args, config);
+    return { kind: "shared_postgres", schema: shared.schema, url_env: shared.urlEnv };
+  }
+  const storePath = localStorePath(args);
+  return { kind: "local_sqlite", path: storePath === ":memory:" ? storePath : path.resolve(storePath) };
+}
+
+
+function ledgerReadSourceLine(source: LedgerReadSource): string {
+  return source.kind === "shared_postgres"
+    ? `Ledger: shared PostgreSQL schema ${source.schema} (URL from ${source.url_env}; read-only)\n`
+    : `Ledger: local SQLite ${source.path}\n`;
+}
+
+
+function emptyLedgerMessage(label: string, source: LedgerReadSource): string {
+  const selection = source.kind === "shared_postgres"
+    ? "Use a development config without storage.shared_postgres.mode=runtime_store plus --store <path> to inspect local SQLite."
+    : "Use --config <production-config> to inspect its configured shared PostgreSQL runtime store.";
+  return `No ${label} found in the consulted ledger.\n${selection}\n`;
+}
 
 
 export async function proposalsList(args: string[]): Promise<number> {
@@ -494,14 +525,17 @@ export async function evidenceList(args: string[]): Promise<number> {
   const bridged = await maybeSharedPostgresRuntimeStoreRead(args, "evidence list", (bridgeStorePath) => evidenceList(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
   if (bridged !== undefined) return bridged;
   assertKnownOptions(args, evidenceListAllowedOptions, "evidence list");
+  const ledgerSource = await ledgerReadSource(args);
   const store = await openLocalStore(args);
   try {
     const rows = store.listEvidenceBundles(evidenceFiltersFromArgs(args));
     if (args.includes("--json")) {
-      process.stdout.write(`${JSON.stringify({ evidence: rows }, null, 2)}\n`);
+      process.stdout.write(`${JSON.stringify({ ledger_source: ledgerSource, evidence: rows }, null, 2)}\n`);
     } else if (rows.length === 0) {
-      process.stdout.write("No evidence bundles found.\n");
+      process.stdout.write(ledgerReadSourceLine(ledgerSource));
+      process.stdout.write(emptyLedgerMessage("evidence bundles", ledgerSource));
     } else {
+      process.stdout.write(ledgerReadSourceLine(ledgerSource));
       for (const bundle of rows) process.stdout.write(formatEvidenceSummary(bundle));
     }
     return 0;
@@ -517,13 +551,17 @@ export async function evidenceShow(args: string[]): Promise<number> {
   assertKnownOptions(args, showAllowedOptions, "evidence show");
   const evidenceId = positional(args, 0);
   if (!evidenceId) throw new Error("evidence show requires <evidence_bundle_id>");
+  const ledgerSource = await ledgerReadSource(args);
   const store = await openLocalStore(args);
   try {
     const evidence = store.getEvidenceBundle(evidenceId);
     if (!evidence) throw new Error(`evidence bundle not found: ${evidenceId}`);
-    if (args.includes("--json")) process.stdout.write(`${JSON.stringify(evidence, null, 2)}\n`);
-    else if (showDetails(args)) process.stdout.write(formatEvidenceDetail(evidence));
-    else process.stdout.write(formatEvidenceFirstLook(evidence, storeOptionSuffix(args)));
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ ...evidence, ledger_source: ledgerSource }, null, 2)}\n`);
+    else {
+      process.stdout.write(ledgerReadSourceLine(ledgerSource));
+      if (showDetails(args)) process.stdout.write(formatEvidenceDetail(evidence));
+      else process.stdout.write(formatEvidenceFirstLook(evidence, storeOptionSuffix(args)));
+    }
     return 0;
   } finally {
     store.close();
@@ -540,6 +578,7 @@ export async function evidenceExport(args: string[]): Promise<number> {
   const output = outputArg(args);
   if (!output) throw new Error("evidence export requires --output <path>");
   const format = exportFormat(args);
+  const ledgerSource = await ledgerReadSource(args);
   const store = await openLocalStore(args);
   try {
     const evidence = store.getEvidenceBundle(evidenceId);
@@ -547,6 +586,7 @@ export async function evidenceExport(args: string[]): Promise<number> {
     const text = format === "json" ? `${JSON.stringify(evidence, null, 2)}\n` : formatEvidenceMarkdown(evidence);
     await fs.mkdir(path.dirname(path.resolve(output)), { recursive: true });
     await fs.writeFile(output, text, "utf8");
+    process.stdout.write(ledgerReadSourceLine(ledgerSource));
     process.stdout.write(`exported ${evidence.evidence_bundle_id} to ${output}\n`);
     return 0;
   } finally {
@@ -559,12 +599,16 @@ export async function queryAuditList(args: string[]): Promise<number> {
   const bridged = await maybeSharedPostgresRuntimeStoreRead(args, "query-audit list", (bridgeStorePath) => queryAuditList(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
   if (bridged !== undefined) return bridged;
   assertKnownOptions(args, queryAuditListAllowedOptions, "query-audit list");
+  const ledgerSource = await ledgerReadSource(args);
   const store = await openLocalStore(args);
   try {
     const rows = store.listQueryAudit(queryAuditFiltersFromArgs(args));
-    if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ query_audit: rows }, null, 2)}\n`);
-    else if (rows.length === 0) process.stdout.write("No query audit records found.\n");
-    else for (const row of rows) process.stdout.write(formatQueryAuditSummary(row, showDetails(args), storeOptionSuffix(args)));
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ ledger_source: ledgerSource, query_audit: rows }, null, 2)}\n`);
+    else {
+      process.stdout.write(ledgerReadSourceLine(ledgerSource));
+      if (rows.length === 0) process.stdout.write(emptyLedgerMessage("query audit records", ledgerSource));
+      else for (const row of rows) process.stdout.write(formatQueryAuditSummary(row, showDetails(args), storeOptionSuffix(args)));
+    }
     return 0;
   } finally {
     store.close();
@@ -578,14 +622,18 @@ export async function queryAuditShow(args: string[]): Promise<number> {
   assertKnownOptions(args, showAllowedOptions, "query-audit show");
   const auditId = Number(positional(args, 0));
   if (!Number.isInteger(auditId) || auditId <= 0) throw new Error("query-audit show requires <audit_id>");
+  const ledgerSource = await ledgerReadSource(args);
   const store = await openLocalStore(args);
   try {
     const row = store.getQueryAudit(auditId);
     if (!row) throw new Error(`query audit record not found: ${auditId}`);
-    if (args.includes("--json")) process.stdout.write(`${JSON.stringify(row, null, 2)}\n`);
-    else process.stdout.write(showDetails(args)
-      ? formatQueryAuditDetail(row, terminalSyntaxColorEnabled())
-      : formatQueryAuditFirstLook(row, storeOptionSuffix(args)));
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ ...row, ledger_source: ledgerSource }, null, 2)}\n`);
+    else {
+      process.stdout.write(ledgerReadSourceLine(ledgerSource));
+      process.stdout.write(showDetails(args)
+        ? formatQueryAuditDetail(row, terminalSyntaxColorEnabled())
+        : formatQueryAuditFirstLook(row, storeOptionSuffix(args)));
+    }
     return 0;
   } finally {
     store.close();
@@ -602,12 +650,14 @@ export async function queryAuditExport(args: string[]): Promise<number> {
   const output = outputArg(args);
   if (!output) throw new Error("query-audit export requires --output <path>");
   const format = exportFormat(args, ["json"]);
+  const ledgerSource = await ledgerReadSource(args);
   const store = await openLocalStore(args);
   try {
     const row = store.getQueryAudit(auditId);
     if (!row) throw new Error(`query audit record not found: ${auditId}`);
     await fs.mkdir(path.dirname(path.resolve(output)), { recursive: true });
     await fs.writeFile(output, `${JSON.stringify(row, null, 2)}\n`, "utf8");
+    process.stdout.write(ledgerReadSourceLine(ledgerSource));
     process.stdout.write(`exported query audit ${auditId} to ${output}\n`);
     return 0;
   } finally {
@@ -620,12 +670,16 @@ export async function receiptsList(args: string[]): Promise<number> {
   const bridged = await maybeSharedPostgresRuntimeStoreRead(args, "receipts list", (bridgeStorePath) => receiptsList(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
   if (bridged !== undefined) return bridged;
   assertKnownOptions(args, receiptListAllowedOptions, "receipts list");
+  const ledgerSource = await ledgerReadSource(args);
   const store = await openLocalStore(args);
   try {
     const rows = store.listReceipts(receiptFiltersFromArgs(args));
-    if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ receipts: rows }, null, 2)}\n`);
-    else if (rows.length === 0) process.stdout.write("No writeback receipts found.\n");
-    else for (const receipt of rows) process.stdout.write(formatReceiptSummary(receipt));
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ ledger_source: ledgerSource, receipts: rows }, null, 2)}\n`);
+    else {
+      process.stdout.write(ledgerReadSourceLine(ledgerSource));
+      if (rows.length === 0) process.stdout.write(emptyLedgerMessage("writeback receipts", ledgerSource));
+      else for (const receipt of rows) process.stdout.write(formatReceiptSummary(receipt));
+    }
     return 0;
   } finally {
     store.close();
@@ -639,12 +693,16 @@ export async function receiptsShow(args: string[]): Promise<number> {
   assertKnownOptions(args, showAllowedOptions, "receipts show");
   const receiptId = Number(positional(args, 0));
   if (!Number.isInteger(receiptId) || receiptId <= 0) throw new Error("receipts show requires <receipt_id>");
+  const ledgerSource = await ledgerReadSource(args);
   const store = await openLocalStore(args);
   try {
     const receipt = store.getReceipt(receiptId);
     if (!receipt) throw new Error(`writeback receipt not found: ${receiptId}`);
-    if (args.includes("--json")) process.stdout.write(`${JSON.stringify(receipt, null, 2)}\n`);
-    else process.stdout.write(showDetails(args) ? formatReceiptDetail(receipt) : formatReceiptFirstLook(receipt, storeOptionSuffix(args)));
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ ...receipt, ledger_source: ledgerSource }, null, 2)}\n`);
+    else {
+      process.stdout.write(ledgerReadSourceLine(ledgerSource));
+      process.stdout.write(showDetails(args) ? formatReceiptDetail(receipt) : formatReceiptFirstLook(receipt, storeOptionSuffix(args)));
+    }
     return 0;
   } finally {
     store.close();
@@ -656,6 +714,7 @@ export async function replayList(args: string[]): Promise<number> {
   const bridged = await maybeSharedPostgresRuntimeStoreRead(args, "replay list", (bridgeStorePath) => replayList(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
   if (bridged !== undefined) return bridged;
   assertKnownOptions(args, replayListAllowedOptions, "replay list");
+  const ledgerSource = await ledgerReadSource(args);
   const store = await openLocalStore(args);
   try {
     const filters = proposalFiltersFromReplayArgs(args, store);
@@ -671,9 +730,12 @@ export async function replayList(args: string[]): Promise<number> {
       business_object: proposal.business_object,
       object_id: proposal.object_id,
     }));
-    if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ replays: rows }, null, 2)}\n`);
-    else if (rows.length === 0) process.stdout.write("No replay records found.\n");
-    else for (const row of rows) process.stdout.write(formatReplaySummary(row));
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ ledger_source: ledgerSource, replays: rows }, null, 2)}\n`);
+    else {
+      process.stdout.write(ledgerReadSourceLine(ledgerSource));
+      if (rows.length === 0) process.stdout.write(emptyLedgerMessage("replay records", ledgerSource));
+      else for (const row of rows) process.stdout.write(formatReplaySummary(row));
+    }
     return 0;
   } finally {
     store.close();
@@ -685,16 +747,19 @@ export async function replayShow(args: string[]): Promise<number> {
   const bridged = await maybeSharedPostgresRuntimeStoreRead(args, "replay show", (bridgeStorePath) => replayShow(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
   if (bridged !== undefined) return bridged;
   assertKnownOptions(args, replayShowAllowedOptions, "replay show");
+  const ledgerSource = await ledgerReadSource(args);
   const store = await openLocalStore(args);
   try {
     const resolvedProposalId = resolveReplayProposalId(args, store);
     const replayRecord = store.replay(resolvedProposalId);
     if (args.includes("--json")) {
-      process.stdout.write(`${JSON.stringify(replayRecord, null, 2)}\n`);
+      process.stdout.write(`${JSON.stringify({ ...replayRecord, ledger_source: ledgerSource }, null, 2)}\n`);
     } else if (showDetails(args)) {
+      process.stdout.write(ledgerReadSourceLine(ledgerSource));
       process.stdout.write(formatReplayDetail(replayRecord));
       if (args.includes("--debug")) process.stdout.write(formatReplayDebug(replayRecord, optionalArg(args, "--store")));
     } else {
+      process.stdout.write(ledgerReadSourceLine(ledgerSource));
       process.stdout.write(formatReplayFirstLook(replayRecord, storeOptionSuffix(args)));
     }
     return 0;
@@ -711,6 +776,7 @@ export async function replayExport(args: string[]): Promise<number> {
   const output = outputArg(args);
   if (!output) throw new Error("replay export requires --output <path>");
   const format = exportFormat(args);
+  const ledgerSource = await ledgerReadSource(args);
   const store = await openLocalStore(args);
   try {
     const resolvedProposalId = resolveReplayProposalId(args, store);
@@ -718,6 +784,7 @@ export async function replayExport(args: string[]): Promise<number> {
     const text = format === "json" ? `${JSON.stringify(replayRecord, null, 2)}\n` : formatReplayMarkdown(replayRecord);
     await fs.mkdir(path.dirname(path.resolve(output)), { recursive: true });
     await fs.writeFile(output, text, "utf8");
+    process.stdout.write(ledgerReadSourceLine(ledgerSource));
     process.stdout.write(`exported ${replayRecord.replay_id} to ${output}\n`);
     return 0;
   } finally {
@@ -730,6 +797,7 @@ export async function activitySearch(args: string[]): Promise<number> {
   const bridged = await maybeSharedPostgresRuntimeStoreRead(args, "activity search", (bridgeStorePath) => activitySearch(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
   if (bridged !== undefined) return bridged;
   assertKnownOptions(args, activitySearchAllowedOptions, "activity search");
+  const ledgerSource = await ledgerReadSource(args);
   const store = await openLocalStore(args);
   try {
     const proposalFilters = proposalFiltersFromActivityArgs(args, store);
@@ -762,11 +830,13 @@ export async function activitySearch(args: string[]): Promise<number> {
       .sort((left, right) => String(right.created_at ?? "").localeCompare(String(left.created_at ?? "")))
       .slice(0, limitFromArgs(args));
     if (args.includes("--json")) {
-      process.stdout.write(`${JSON.stringify({ interactions: sorted }, null, 2)}\n`);
+      process.stdout.write(`${JSON.stringify({ ledger_source: ledgerSource, interactions: sorted }, null, 2)}\n`);
     } else if (sorted.length === 0) {
-      process.stdout.write("No local interactions found.\n");
+      process.stdout.write(ledgerReadSourceLine(ledgerSource));
+      process.stdout.write(emptyLedgerMessage("interactions", ledgerSource));
     } else {
-      process.stdout.write(`Found ${sorted.length} local interaction${sorted.length === 1 ? "" : "s"}\n\n`);
+      process.stdout.write(ledgerReadSourceLine(ledgerSource));
+      process.stdout.write(`Found ${sorted.length} interaction${sorted.length === 1 ? "" : "s"}\n\n`);
       sorted.forEach((item, index) => process.stdout.write(formatActivityItem(item, index + 1, showDetails(args))));
       process.stdout.write(formatActivityNext(sorted, storeOptionSuffix(args)));
     }

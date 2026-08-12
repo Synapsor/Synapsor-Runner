@@ -1203,8 +1203,11 @@ async function configuredExploreTrustedContext(input: {
       principal_claim: config.session_auth?.principal_claim ?? "sub",
     };
   } else {
+    const setup = input.deploymentProfile === "production"
+      ? ` Generate the secured runtime config first with ${cliCommandName()} config init --production-explore, then retry the production boundary draft.`
+      : "";
     throw new Error(
-      `Runner config trusted_context.provider=${context.provider} does not match the requested ${input.deploymentProfile} Explore profile.`,
+      `Runner config trusted_context.provider=${context.provider} does not match the requested ${input.deploymentProfile} Explore profile.${setup}`,
     );
   }
   const stat = await fs.stat(input.configPath);

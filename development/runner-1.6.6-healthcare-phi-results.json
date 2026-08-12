@@ -1,16 +1,16 @@
 {
   "domain": "synthetic multi-tenant healthcare care coordination",
   "package": {
-    "spec_tarball": "synapsor-spec-1.8.0.tgz",
-    "spec_sha256": "sha256:3694a3b5aa0080aa33ce9252812e94bccf432b7ba8b8f65c92beee74cebbcc8c",
-    "runner_tarball": "synapsor-runner-1.6.6.tgz",
-    "runner_sha256": "sha256:57cc48b626052de982f92e03fcc17a4d2dc48e04f79ea7d9ce34b6631c031850"
+    "spec_tarball": "synapsor-spec-1.9.0.tgz",
+    "spec_sha256": "sha256:748b23cbd19b00245645320444f4f3eb6554212935c4b5c39b657bfae40229eb",
+    "runner_tarball": "synapsor-runner-1.7.0.tgz",
+    "runner_sha256": "sha256:96d416240e2f61280b929f7700f13f8aef0a6abf752f838e42f09f5c082c3ee2"
   },
   "timings_ms": {
-    "schema_summary": 52947,
-    "boundary_activation": 62439,
-    "first_safe_read": 63181,
-    "first_aggregate": 64506
+    "schema_summary": 44797,
+    "boundary_activation": 52989,
+    "first_safe_read": 53906,
+    "first_aggregate": 55528
   },
   "all_blocked_review": {
     "initial_blocked_resources": 10,
@@ -19,7 +19,7 @@
       "public.care_units",
       "public.discharge_reasons"
     ],
-    "cli_decision_digest": "sha256:b10aa11b1cabba74d018cdd9ca3cd76c0f353bc54b5b73236c8610ef8d6c213d",
+    "cli_decision_digest": "sha256:565cbc3801d0d4e261636479dd6246064c4d1190fec39354c7f14fef15fe1dee",
     "cli_identity_provider": "signed_key",
     "authority_activated_by_cli": false,
     "source_database_changed": false
@@ -67,7 +67,7 @@
   },
   "protected": {
     "capability": "healthcare.weekly_avoided_cost_by_unit_and_reason",
-    "digest": "sha256:fa1d26d47f66f443937f8e60d95af55f04c47c836ae0585f808b14ab7102a19c",
+    "digest": "sha256:e238565c613b56d6ea761c503197bc3ed22d951a70674fd1e7d72494768ea393",
     "selected_plan_only": true,
     "activated_by_human": true,
     "scoped_explore_disabled": true
@@ -76,7 +76,7 @@
     "scoped_explore_absent": true,
     "protected_capability": "healthcare.weekly_avoided_cost_by_unit_and_reason",
     "stdio_and_streamable_http_same_result": true,
-    "safe_catalog_digest": "sha256:4fac4e5f9f2033df950315112512bb564a9e3e9669715cf79842856b266ca80e",
+    "safe_catalog_digest": "sha256:0c32aacfbd19ea3dc660444dbcda4ce236a3fa334bf0af442a8bd5c34619545a",
     "source_database_changed": false
   },
   "screenshots": [
@@ -97,5 +97,5 @@
     "authority_preserved": true,
     "budgets_preserved": true
   },
-  "elapsed_ms": 238621
+  "elapsed_ms": 97064
 }

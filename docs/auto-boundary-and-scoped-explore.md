@@ -919,8 +919,9 @@ analytics database tool. It supports:
   change;
 - one resource by default;
 - up to three activated relationship paths in one plan;
-- one or two inspected, reviewed many-to-one foreign-key links per path, each
-  with maximum fan-out one.
+- one or two inspected, reviewed many-to-one foreign-key links per path by
+  default, or exactly three after the reviewer raises the separate derived-
+  scope or analysis-path depth control; every link has maximum fan-out one.
 
 It does not accept arbitrary `DISTINCT`, `HAVING`, formulas, model-authored
 window functions, unions, nested queries, many-to-many joins, system catalogs,
@@ -962,12 +963,30 @@ cohort, suppression, response, and group limits. Raising query volume never
 raises a disclosure limit.
 
 Use `/access`, select the boundary, then choose `L Limits` to review query
-volume, request rate, or ranked-result limits. Workbench exposes the same
-settings under **Query volume** and **Ranked result settings**. A saved change
-creates a disabled boundary revision and takes effect only after normal review
-and activation. `/details` and Workbench show operator-only used/remaining
-counters and warn when a budget first crosses 80 percent; those counters are
-removed from the model-facing tool result.
+volume, request rate, ranked-result limits, returned rows/groups/top-N,
+measure/dimension counts, response cells/bytes, statement timeout, and the
+separate derived-scope and analysis-relationship depth caps. Workbench exposes
+the same settings under **Query volume**, **Ranked result settings**, and
+**Result shape, timeout, and path depth**. The non-interactive equivalents are
+`boundary review resource --max-top-n`, `--max-groups`,
+`--max-response-cells`, `--max-response-bytes`, `--statement-timeout-ms`,
+`--max-measures`, `--max-dimensions`, `--max-derived-scope-hops`, and
+`--max-analysis-relationship-hops`.
+
+Every value has an implementation ceiling. Depth defaults to two and has a
+hard ceiling of three. Raising a depth cap does not activate a path: the exact
+continuous, non-null, many-to-one path still needs separate review. Deep
+derived paths can be materially slower than a direct tenant column, so the
+terminal and Workbench show a cost advisory and `doctor` warns when estimated
+path pressure approaches the reviewed statement timeout. The advisory never
+blocks an otherwise valid path and performs no hot-path source scan.
+
+A saved limit change creates a disabled boundary revision and takes effect only
+after normal review and activation. These controls cannot change small-group
+suppression or raise extracted-cell and differencing disclosure allowances.
+`/details` and Workbench show operator-only used/remaining counters and warn
+when a budget first crosses 80 percent; those counters are removed from the
+model-facing tool result.
 
 Every Explore request still re-proves current database authority before SQL is
 compiled. For current generation locks, that live inspection fetches complete

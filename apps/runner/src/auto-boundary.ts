@@ -146,8 +146,13 @@ export type ExplorationAutoBandPolicy = {
 
 const MAX_STATIC_INPUT_BYTES = 2 * 1024 * 1024;
 const MAX_DIRECT_RELATIONSHIP_CANDIDATES_PER_RESOURCE = 4;
-const MAX_DEPTH_TWO_RELATIONSHIP_CANDIDATES_PER_RESOURCE = 3;
-const DEFAULT_BUDGETS: ExplorationBudgets = {
+const MAX_COMPOSED_RELATIONSHIP_CANDIDATES_PER_DEPTH = 3;
+/**
+ * Limits applied to a newly-created reviewed candidate. Generated drafts carry
+ * the larger reviewer ceilings below so an owner can widen shape/throughput
+ * deliberately without weakening disclosure controls.
+ */
+export const DEFAULT_REVIEWED_EXPLORATION_BUDGETS: ExplorationBudgets = {
   max_rows: 50,
   max_groups: 50,
   max_ranked_groups: 500,
@@ -156,6 +161,8 @@ const DEFAULT_BUDGETS: ExplorationBudgets = {
   max_dimensions: 3,
   max_time_ranges: 2,
   max_relationship_hops: 2,
+  max_derived_scope_hops: 2,
+  max_analysis_relationship_hops: 2,
   max_response_cells: 500,
   max_response_bytes: 64 * 1024,
   statement_timeout_ms: 3000,
@@ -169,6 +176,22 @@ const DEFAULT_BUDGETS: ExplorationBudgets = {
   // without restoring the old per-family differencing reset.
   max_differencing_queries: 16,
   rate_limit_per_minute: 120,
+};
+
+/** Hard, generated ceilings for explicit owner review. */
+export const EXPLORATION_BUDGET_REVIEW_CEILINGS: ExplorationBudgets = {
+  ...DEFAULT_REVIEWED_EXPLORATION_BUDGETS,
+  max_rows: 100,
+  max_groups: 500,
+  max_ranked_groups: 10_000,
+  max_top_n: 100,
+  max_measures: 5,
+  max_dimensions: 4,
+  max_derived_scope_hops: 3,
+  max_analysis_relationship_hops: 3,
+  max_response_cells: 4_000,
+  max_response_bytes: 1_048_576,
+  statement_timeout_ms: 30_000,
 };
 
 export type InferenceConfidence = "high" | "medium" | "low";
@@ -197,7 +220,7 @@ export type ExplorationRelationship = {
   counted_entity: string;
   cardinality: "many_to_one";
   max_fan_out: 1;
-  path_depth?: 1 | 2;
+  path_depth?: 1 | 2 | 3;
   proof?: {
     source: "database_catalog";
     links: RelationshipLinkProof[];
@@ -286,6 +309,8 @@ export type AutoBoundaryResource = {
   schema: string;
   table: string;
   type: "table" | "view";
+  /** Approximate catalog statistic for operator advice only; never authority. */
+  approximate_row_count?: number;
   primary_key: BoundaryInference<string>;
   tenant_key: BoundaryInference<string>;
   principal_key: BoundaryInference<string>;
@@ -365,7 +390,12 @@ export type ExplorationBudgets = {
   max_measures: number;
   max_dimensions: number;
   max_time_ranges: 2;
+  /** Legacy shared depth authority retained for pre-1.7 boundary digests. */
   max_relationship_hops: 1 | 2;
+  /** Optional so activated pre-1.7 artifacts retain their exact canonical bytes. */
+  max_derived_scope_hops?: 1 | 2 | 3;
+  /** Optional so activated pre-1.7 artifacts retain their exact canonical bytes. */
+  max_analysis_relationship_hops?: 1 | 2 | 3;
   max_response_cells: number;
   max_response_bytes: number;
   statement_timeout_ms: number;
@@ -375,6 +405,40 @@ export type ExplorationBudgets = {
   max_differencing_queries: number;
   rate_limit_per_minute: number;
 };
+
+export function reviewedDerivedScopeHopLimit(budgets: ExplorationBudgets): 1 | 2 | 3 {
+  return budgets.max_derived_scope_hops ?? budgets.max_relationship_hops;
+}
+
+export function reviewedAnalysisRelationshipHopLimit(
+  budgets: ExplorationBudgets,
+): 1 | 2 | 3 {
+  return budgets.max_analysis_relationship_hops ?? budgets.max_relationship_hops;
+}
+
+const OWNER_REVIEWABLE_EXPLORATION_BUDGETS = new Set<keyof ExplorationBudgets>([
+  "max_rows",
+  "max_groups",
+  "max_ranked_groups",
+  "max_top_n",
+  "max_measures",
+  "max_dimensions",
+  "max_derived_scope_hops",
+  "max_analysis_relationship_hops",
+  "max_response_cells",
+  "max_response_bytes",
+  "statement_timeout_ms",
+  "max_queries_per_session",
+  "rate_limit_per_minute",
+]);
+
+export function ownerReviewableExplorationBudgetCeiling(
+  key: keyof ExplorationBudgets,
+): number | undefined {
+  return OWNER_REVIEWABLE_EXPLORATION_BUDGETS.has(key)
+    ? Number(EXPLORATION_BUDGET_REVIEW_CEILINGS[key])
+    : undefined;
+}
 
 export type SingleOrganizationScope = {
   mode: "single_organization";
@@ -1266,7 +1330,7 @@ function reviewOverrideAuthority(overrides: AutoBoundaryReviewOverrides): Record
 }
 
 function generationEvidenceAuthority(resources: AutoBoundaryResource[]): unknown[] {
-  return resources.map((resource) => ({
+  return resources.map(({ approximate_row_count: _approximateRowCount, ...resource }) => ({
     ...resource,
     ...(resource.metadata_review_override
       ? {
@@ -1889,6 +1953,12 @@ function normalizeDependentAggregateAuthority(
   candidate: ExplorationBoundaryDraft,
 ): ExplorationBoundaryDraft {
   const normalized = structuredClone(candidate);
+  const relationshipDepth = reviewedAnalysisRelationshipHopLimit(normalized.budgets);
+  for (const resource of normalized.pack.resources) {
+    resource.relationships = resource.relationships.filter(
+      (relationship) => (relationship.path_depth ?? 1) <= relationshipDepth,
+    );
+  }
   for (const resource of normalized.pack.resources) {
     if (resource.aggregate_measure_functions) {
       const aggregateFields = new Set(resource.aggregate_measures);
@@ -2085,7 +2155,12 @@ function validateActivatedExplorationBoundary(
   }
   const resources = new Map(active.pack.resources.map((resource) => [resource.id, resource]));
   for (const resource of active.pack.resources) {
-    assertReviewedResourceScope(resource, resources, Boolean(active.organization_scope));
+    assertReviewedResourceScope(
+      resource,
+      resources,
+      Boolean(active.organization_scope),
+      reviewedDerivedScopeHopLimit(active.budgets),
+    );
   }
   const authority = {
     schema_version: active.schema_version,
@@ -3208,7 +3283,7 @@ function derivedScopeCandidates(
     links: RelationshipLinkProof[],
     visited: Set<string>,
   ): void => {
-    if (links.length >= DEFAULT_BUDGETS.max_relationship_hops) return;
+    if (links.length >= (EXPLORATION_BUDGET_REVIEW_CEILINGS.max_derived_scope_hops ?? 2)) return;
     for (const relationship of current.relationships) {
       if (!relationship.cardinality_proven
         || relationship.nullable
@@ -3637,7 +3712,12 @@ function assertBoundaryCandidateNarrowsDraft(
       || JSON.stringify(resource.principal_scope ?? null) !== JSON.stringify(original.principal_scope ?? null)) {
       throw new Error(`${resource.id} trusted scope cannot change during boundary review.`);
     }
-    assertReviewedResourceScope(resource, candidateResources, Boolean(candidate.organization_scope));
+    assertReviewedResourceScope(
+      resource,
+      candidateResources,
+      Boolean(candidate.organization_scope),
+      reviewedDerivedScopeHopLimit(candidate.budgets),
+    );
     if (JSON.stringify(resource.field_types) !== JSON.stringify(original.field_types)
       || JSON.stringify(resource.rls_session ?? null) !== JSON.stringify(original.rls_session ?? null)) {
       throw new Error(`${resource.id} field types and RLS session bindings cannot change during review.`);
@@ -3735,7 +3815,7 @@ function assertBoundaryCandidateNarrowsDraft(
       if (!expected || !relationshipMatchesReviewedDraft(expected, relationship)) {
         throw new Error(`${resource.id} cannot add or alter relationship ${relationship.id}.`);
       }
-      if ((relationship.path_depth ?? 1) > candidate.budgets.max_relationship_hops) {
+      if ((relationship.path_depth ?? 1) > reviewedAnalysisRelationshipHopLimit(candidate.budgets)) {
         throw new Error(`${resource.id} relationship ${relationship.id} exceeds the reviewed path-depth bound.`);
       }
       const links = relationship.proof?.links ?? [{
@@ -3753,7 +3833,9 @@ function assertBoundaryCandidateNarrowsDraft(
         cardinality: "many_to_one" as const,
         max_fan_out: 1 as const,
       }];
-      if (links.length !== (relationship.path_depth ?? 1) || links.length < 1 || links.length > 2) {
+      if (links.length !== (relationship.path_depth ?? 1)
+        || links.length < 1
+        || links.length > reviewedAnalysisRelationshipHopLimit(candidate.budgets)) {
         throw new Error(`${resource.id} relationship ${relationship.id} has invalid structural path proof.`);
       }
       for (const link of links) {
@@ -4050,6 +4132,7 @@ function assertReviewedResourceScope(
   resource: ExplorationBoundaryDraft["pack"]["resources"][number],
   resources: Map<string, ExplorationBoundaryDraft["pack"]["resources"][number]>,
   singleOrganization: boolean,
+  maximumHops: 1 | 2 | 3,
 ): void {
   if (singleOrganization
     && (resource.tenant_key || resource.tenant_scope || resource.shared_reference_scope)) {
@@ -4075,10 +4158,10 @@ function assertReviewedResourceScope(
     throw new Error(`${resource.id} cannot have both direct and derived principal scope.`);
   }
   if (resource.tenant_scope) {
-    assertDerivedScopePath(resource, resource.tenant_scope, resources, "tenant");
+    assertDerivedScopePath(resource, resource.tenant_scope, resources, "tenant", maximumHops);
   }
   if (resource.principal_scope) {
-    assertDerivedScopePath(resource, resource.principal_scope, resources, "principal");
+    assertDerivedScopePath(resource, resource.principal_scope, resources, "principal", maximumHops);
   }
 }
 
@@ -4087,12 +4170,13 @@ function assertDerivedScopePath(
   scope: DerivedScopePath,
   resources: Map<string, ExplorationBoundaryDraft["pack"]["resources"][number]>,
   kind: "tenant" | "principal",
+  maximumHops: 1 | 2 | 3,
 ): void {
   const links = scope.proof?.links ?? [];
   if (scope.mode !== "derived"
     || scope.proof.source !== "database_catalog"
     || links.length < 1
-    || links.length > 2
+    || links.length > maximumHops
     || canonicalJsonDigest(links) !== scope.proof.digest
     || scope.path_id !== links.map((link) => link.constraint_name).join("__")) {
     throw new Error(`${resource.id} has malformed derived ${kind} scope proof.`);
@@ -4185,20 +4269,39 @@ function assertExactDecisionReview(
 function assertBudgetsNarrow(draft: ExplorationBudgets, candidate: ExplorationBudgets): void {
   for (const key of Object.keys(candidate) as Array<keyof ExplorationBudgets>) {
     if (!Object.hasOwn(draft, key)) {
-      throw new Error(`Exploration budget ${key} cannot be added during review.`);
+      const ceiling = ownerReviewableExplorationBudgetCeiling(key);
+      if (ceiling === undefined) {
+        throw new Error(`Exploration budget ${key} cannot be added during review.`);
+      }
+      if (!Number.isSafeInteger(candidate[key])
+        || Number(candidate[key]) < 1
+        || Number(candidate[key]) > ceiling) {
+        throw new Error(`Exploration budget ${key} exceeds its hard reviewed ceiling ${ceiling}.`);
+      }
     }
   }
   for (const key of Object.keys(draft) as Array<keyof ExplorationBudgets>) {
     const value = candidate[key];
     const generated = draft[key];
+    const reviewedCeiling = ownerReviewableExplorationBudgetCeiling(key);
     if (!Number.isSafeInteger(value) || !Number.isSafeInteger(generated)
-      || Number(value) < 1 || Number(value) > Number(generated)) {
-      throw new Error(`Exploration budget ${key} may only stay the same or decrease.`);
+      || Number(value) < 1
+      || Number(value) > (reviewedCeiling ?? Number(generated))) {
+      throw new Error(reviewedCeiling === undefined
+        ? `Exploration budget ${key} may only stay the same or decrease.`
+        : `Exploration budget ${key} exceeds its hard reviewed ceiling ${reviewedCeiling}.`);
     }
   }
   if (candidate.max_ranked_groups !== undefined
     && candidate.max_ranked_groups < candidate.max_groups) {
     throw new Error("Exploration budget max_ranked_groups cannot be lower than max_groups.");
+  }
+  if (candidate.max_top_n > candidate.max_groups) {
+    throw new Error("Exploration budget max_top_n cannot exceed max_groups.");
+  }
+  if (reviewedDerivedScopeHopLimit(candidate) > 3
+    || reviewedAnalysisRelationshipHopLimit(candidate) > 3) {
+    throw new Error("Exploration relationship paths are hard-capped at three proven hops.");
   }
 }
 
@@ -4276,6 +4379,7 @@ type RankedScopeCandidate = {
 };
 
 const TENANT_SCOPE_NAME = /^(?:tenant|tenant_id|tenantid|organization_id|org_id|workspace_id|account_id|merchant_id|store_id|company_id|team_id|facility_id|property_id|clinic_id|project_id)$/i;
+const REVIEWABLE_TENANT_SCOPE_NAME = /^(?:tenant|tenant_id|tenantid|organization_id|org_id|workspace_id|account_id|merchant_id|store_id|company_id|team_id|facility_id|hospital_id|property_id|clinic_id|project_id)$/i;
 const PRINCIPAL_SCOPE_NAME = /^(?:principal|principal_id|user_id|owner_id|assignee_id|assigned_[a-z0-9_]+_id|agent_id|staff_id|technician_id|manager_id|trainer_id|customer_id|patient_id)$/i;
 const TENANT_RELATION_TARGET = /^(?:tenants?|organizations?|orgs?|workspaces?|merchants?|stores?|companies?|teams?|facilities?|properties?|clinics?|projects?)$/i;
 const PRINCIPAL_RELATION_TARGET = /^(?:users?|principals?|owners?|assignees?|agents?|staff|staff_members?|technicians?|managers?|trainers?)$/i;
@@ -4361,7 +4465,7 @@ function rankedScopeInference(input: {
     }
     candidates.set(value, current);
   };
-  const namePattern = kind === "tenant" ? TENANT_SCOPE_NAME : PRINCIPAL_SCOPE_NAME;
+  const namePattern = kind === "tenant" ? REVIEWABLE_TENANT_SCOPE_NAME : PRINCIPAL_SCOPE_NAME;
   for (const column of table.columns) {
     if (namePattern.test(column.name)) {
       add(column.name, 5, `column name ${column.name} matches a low-confidence ${kind} convention`);
@@ -4559,6 +4663,9 @@ function buildResource(
     schema: table.schema,
     table: table.name,
     type: table.type,
+    ...(table.approximate_row_count === undefined
+      ? {}
+      : { approximate_row_count: table.approximate_row_count }),
     primary_key: inference(primarySelected, primaryCandidates, [
       { source: "database", detail: `inspected primary key: ${table.primary_key.join(", ") || "none"}` },
       { source: "database", detail: `inspected single-column unique identifiers: ${sourceProvenUniqueIdentifiers.join(", ") || "none"}` },
@@ -4942,7 +5049,7 @@ function buildExplorationBoundaryDraft(
       suppression_aware_totals: true as const,
     };
   });
-  addDepthTwoExplorationPaths(resources);
+  addComposedExplorationPaths(resources);
   const databaseRoleTenantSetting = graph.engine === "postgres" && !options.organizationScope
     ? commonDatabaseRoleTenantSetting(resources)
     : undefined;
@@ -4981,7 +5088,7 @@ function buildExplorationBoundaryDraft(
       name: options.deploymentProfile === "production" ? "reviewed_production" : "reviewed_staging",
       resources,
     },
-    budgets: { ...DEFAULT_BUDGETS },
+    budgets: { ...DEFAULT_REVIEWED_EXPLORATION_BUDGETS },
     unresolved_decisions: [] as string[],
   };
   draft.unresolved_decisions = unresolvedDecisions(graph, draft);
@@ -5013,10 +5120,11 @@ function commonDatabaseRoleTenantSetting(
     : undefined;
 }
 
-function addDepthTwoExplorationPaths(
+function addComposedExplorationPaths(
   resources: ExplorationBoundaryDraft["pack"]["resources"],
 ): void {
   const byId = new Map(resources.map((resource) => [resource.id, resource]));
+  const hardDepth = EXPLORATION_BUDGET_REVIEW_CEILINGS.max_analysis_relationship_hops ?? 2;
   for (const root of resources) {
     const factShaped = root.relationships.length >= 2
       || root.aggregate_measures.some((field) => !isReferenceIdentifierName(field))
@@ -5028,37 +5136,44 @@ function addDepthTwoExplorationPaths(
         .map((relationship) => relationship.target_resource),
     );
     const candidates: ExplorationRelationship[] = [];
-    for (const first of root.relationships.filter((relationship) => relationship.path_depth === 1)) {
-      const intermediate = byId.get(first.target_resource);
-      if (!intermediate) continue;
-      for (const second of intermediate.relationships.filter((relationship) => relationship.path_depth === 1)) {
-        if (second.target_resource === root.id || second.target_resource === intermediate.id) continue;
-        if (directTargets.has(second.target_resource)) continue;
-        const links = [
-          ...(first.proof?.links ?? []),
-          ...(second.proof?.links ?? []),
-        ];
-        if (links.length !== 2) continue;
-        const nullable = links.some((link) => link.nullable);
-        candidates.push({
-          id: `${first.id}__${second.id}`,
-          target_resource: second.target_resource,
-          local_columns: [...first.local_columns],
-          target_columns: [...second.target_columns],
-          counted_entity: root.primary_key,
-          cardinality: "many_to_one",
-          max_fan_out: 1,
-          path_depth: 2,
-          proof: {
-            source: "database_catalog",
-            links: structuredClone(links),
-            digest: canonicalJsonDigest(links),
-          },
-          nullable,
-          unmatched_rows: nullable ? "review_required" : "exclude",
-        });
+    const visit = (
+      current: ExplorationBoundaryDraft["pack"]["resources"][number],
+      path: ExplorationRelationship[],
+      visited: Set<string>,
+    ): void => {
+      if (path.length >= hardDepth) return;
+      for (const next of current.relationships.filter((item) => item.path_depth === 1)) {
+        if (visited.has(next.target_resource)) continue;
+        const nextResource = byId.get(next.target_resource);
+        if (!nextResource) continue;
+        const nextPath = [...path, next];
+        const links = nextPath.flatMap((item) => item.proof?.links ?? []);
+        if (links.length !== nextPath.length) continue;
+        if (nextPath.length >= 2 && !directTargets.has(next.target_resource)) {
+          const first = nextPath[0]!;
+          const nullable = links.some((link) => link.nullable);
+          candidates.push({
+            id: nextPath.map((item) => item.id).join("__"),
+            target_resource: next.target_resource,
+            local_columns: [...first.local_columns],
+            target_columns: [...next.target_columns],
+            counted_entity: root.primary_key,
+            cardinality: "many_to_one",
+            max_fan_out: 1,
+            path_depth: nextPath.length as 2 | 3,
+            proof: {
+              source: "database_catalog",
+              links: structuredClone(links),
+              digest: canonicalJsonDigest(links),
+            },
+            nullable,
+            unmatched_rows: nullable ? "review_required" : "exclude",
+          });
+        }
+        visit(nextResource, nextPath, new Set([...visited, next.target_resource]));
       }
-    }
+    };
+    visit(root, [], new Set([root.id]));
     const pathsByTarget = new Map<string, ExplorationRelationship[]>();
     for (const candidate of candidates) {
       const group = pathsByTarget.get(candidate.target_resource) ?? [];
@@ -5066,8 +5181,11 @@ function addDepthTwoExplorationPaths(
       pathsByTarget.set(candidate.target_resource, group);
     }
     const unambiguous = [...pathsByTarget.values()]
-      .filter((paths) => paths.length === 1)
-      .map((paths) => paths[0]!)
+      .flatMap((paths) => {
+        const shortest = Math.min(...paths.map((path) => path.path_depth ?? 1));
+        const shortestPaths = paths.filter((path) => (path.path_depth ?? 1) === shortest);
+        return shortestPaths.length === 1 ? shortestPaths : [];
+      })
       .sort((left, right) => {
         const leftTarget = byId.get(left.target_resource);
         const rightTarget = byId.get(right.target_resource);
@@ -5076,9 +5194,12 @@ function addDepthTwoExplorationPaths(
           + Object.keys(target?.time_bucket_fields ?? {}).length * 3
           + (target?.selectable_fields.length ?? 0);
         return score(rightTarget) - score(leftTarget) || left.id.localeCompare(right.id);
-      })
-      .slice(0, MAX_DEPTH_TWO_RELATIONSHIP_CANDIDATES_PER_RESOURCE);
-    root.relationships.push(...unambiguous);
+      });
+    for (const depth of [2, 3] as const) {
+      root.relationships.push(...unambiguous
+        .filter((relationship) => relationship.path_depth === depth)
+        .slice(0, MAX_COMPOSED_RELATIONSHIP_CANDIDATES_PER_DEPTH));
+    }
     root.relationships.sort((left, right) =>
       (left.path_depth ?? 1) - (right.path_depth ?? 1) || left.id.localeCompare(right.id));
   }

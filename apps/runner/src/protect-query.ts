@@ -853,8 +853,8 @@ function relationshipsForPlan(
       cardinality: "many_to_one" as const,
       max_fan_out: 1 as const,
     }];
-    if (proofLinks.length < 1 || proofLinks.length > 2) {
-      throw new Error(`Protect conversion requires ${name} to contain one or two reviewed relationship links.`);
+    if (proofLinks.length < 1 || proofLinks.length > 3) {
+      throw new Error(`Protect conversion requires ${name} to contain one through three reviewed relationship links.`);
     }
     if (relationship.proof && (
       relationship.proof.source !== "database_catalog"

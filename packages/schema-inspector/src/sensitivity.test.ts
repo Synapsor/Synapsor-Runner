@@ -19,6 +19,8 @@ describe("shared deterministic sensitivity classifier", () => {
     ["mrn", "prisma", "medical_or_health_information"],
     ["patientName", "openapi", "medical_or_health_information"],
     ["patient_full_name", "drizzle", "medical_or_health_information"],
+    ["patient_id", "database", "medical_or_health_information"],
+    ["patientIdentifier", "openapi", "medical_or_health_information"],
     ["insurance_member_id", "database", "medical_or_health_information"],
     ["insurancePolicyNumber", "prisma", "medical_or_health_information"],
     ["health_plan_member_id", "openapi", "medical_or_health_information"],

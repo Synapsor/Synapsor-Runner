@@ -410,6 +410,8 @@ export type TableInfo = {
   type: "table" | "view";
   writable: boolean;
   comment?: string;
+  /** Approximate catalog statistic only; never used for authority or result semantics. */
+  approximate_row_count?: number;
   columns: ColumnInfo[];
   primary_key: string[];
   unique_constraints: UniqueConstraintInfo[];
@@ -999,7 +1001,12 @@ async function inspectPostgres(
     );
     const tables = await client.query<RawTable>(
       `SELECT table_schema AS schema, table_name AS name, table_type AS type,
-              pg_catalog.obj_description((quote_ident(table_schema) || '.' || quote_ident(table_name))::regclass, 'pg_class') AS comment
+              pg_catalog.obj_description((quote_ident(table_schema) || '.' || quote_ident(table_name))::regclass, 'pg_class') AS comment,
+              (SELECT CASE WHEN c.reltuples >= 0 THEN ROUND(c.reltuples)::bigint END
+               FROM pg_catalog.pg_class c
+               JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+               WHERE n.nspname = table_schema AND c.relname = table_name
+               LIMIT 1) AS approximate_row_count
        FROM information_schema.tables
        WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
          AND ($1::text IS NULL OR table_schema = $1)
@@ -1341,7 +1348,7 @@ async function inspectMysql(
     );
     const [tableRows] = await connection.query<mysql.RowDataPacket[]>(
       `SELECT table_schema AS \`schema\`, table_name AS name, table_type AS type,
-              table_comment AS comment
+              table_comment AS comment, table_rows AS approximate_row_count
        FROM information_schema.tables
        WHERE table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
          AND (? IS NULL OR table_schema = ?)
@@ -1543,7 +1550,13 @@ async function inspectMysql(
   }
 }
 
-type RawTable = { schema: string; name: string; type: string; comment?: string | null };
+type RawTable = {
+  schema: string;
+  name: string;
+  type: string;
+  comment?: string | null;
+  approximate_row_count?: string | number | bigint | null;
+};
 type RawColumn = {
   schema: string;
   table_name: string;
@@ -1686,6 +1699,9 @@ function normalizeInspection(input: {
       type: raw.type.toUpperCase().includes("VIEW") ? "view" : "table",
       writable: raw.type.toUpperCase().includes("TABLE"),
       ...(raw.comment ? { comment: raw.comment } : {}),
+      ...(catalogRowEstimate(raw.approximate_row_count) === undefined
+        ? {}
+        : { approximate_row_count: catalogRowEstimate(raw.approximate_row_count) }),
       columns,
       primary_key,
       unique_constraints,
@@ -1753,6 +1769,14 @@ function normalizeInspection(input: {
       ? { global_tenant_isolation_evidence: [...input.globalTenantIsolationEvidence].sort() }
       : {}),
   };
+}
+
+function catalogRowEstimate(
+  value: string | number | bigint | null | undefined,
+): number | undefined {
+  if (value === null || value === undefined) return undefined;
+  const numeric = typeof value === "bigint" ? Number(value) : Number(value);
+  return Number.isSafeInteger(numeric) && numeric >= 0 ? numeric : undefined;
 }
 
 function normalizePolicyRoles(value: unknown): string[] {

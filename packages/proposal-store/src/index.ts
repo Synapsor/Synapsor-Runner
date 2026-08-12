@@ -32,6 +32,7 @@ export type {
   ProposalSearchFilters,
   EvidenceSearchFilters,
   QueryAuditSearchFilters,
+  QueryAuditRecordInput,
   ProductionExploreAuditEventInput,
   ExplorePrivacyReleaseKind,
   ExplorePrivacyReleaseInput,

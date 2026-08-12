@@ -245,6 +245,10 @@ per principal, and a 120-second idle-session timeout; review them against the
 source database and replica count before serving traffic.
 See [Production Scoped Explore Over HTTP](production-scoped-explore-http.md)
 for the complete boundary, config, budget, and startup-attestation procedure.
+That guide also shows `mcp client-config` commands for Claude Code, Cursor, and
+VS Code. They emit each client's native Streamable HTTP shape with a bearer
+environment reference, so production tokens do not need to be pasted into MCP
+configuration files.
 
 ## Opaque Token Rotation
 

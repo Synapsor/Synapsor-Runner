@@ -490,6 +490,10 @@ describe("local UI", () => {
       const history = await historyResponse.json();
       expect(history).toMatchObject({
         ok: true,
+        ledger_source: {
+          kind: "local_sqlite",
+          path: path.resolve(guided.store_path),
+        },
         recent: [expect.objectContaining({ query_ref: queryRef, resource: "public.members" })],
         durable: [expect.objectContaining({
           resource: "public.members",
@@ -527,6 +531,24 @@ describe("local UI", () => {
         },
       });
       expect(JSON.stringify(audit)).not.toContain("tenant-secret-value");
+
+      const evidenceId = history.durable[0].evidence_bundle_id;
+      const durableEvidenceResponse = await fetch(
+        `http://${server.host}:${server.port}/api/explore/evidence?evidence_id=${encodeURIComponent(evidenceId)}`,
+        { headers: { "x-synapsor-ui-token": "explore-evidence-token" } },
+      );
+      expect(durableEvidenceResponse.status).toBe(200);
+      const durableEvidence = await durableEvidenceResponse.json();
+      expect(durableEvidence).toMatchObject({
+        ok: true,
+        ledger_source: { kind: "local_sqlite", path: path.resolve(guided.store_path) },
+        evidence: {
+          evidence_bundle_id: evidenceId,
+          source_table: "public.members",
+          result_values_persisted: false,
+        },
+      });
+      expect(JSON.stringify(durableEvidence)).not.toContain("tenant-secret-value");
     } finally {
       await server.close();
       await fs.rm(tempDir, { recursive: true, force: true });
@@ -3321,6 +3343,27 @@ export default defineCapability({
         boundary = await getJson(`http://${server.host}:${server.port}/api/boundary`, headers);
         expect(boundary.candidate.pack.name).toBe("service_analytics");
         expect(boundary.candidate.budgets.max_ranked_groups).toBe(200);
+        const reviewedResources = structuredClone(boundary.candidate.pack.resources);
+        expect(reviewedResources).toHaveLength(2);
+        const narrowedCandidate = structuredClone(boundary.candidate);
+        narrowedCandidate.pack.resources = [reviewedResources[0]];
+        const narrowed = await postJson(`http://${server.host}:${server.port}/api/boundary/progress`, headers, {
+          candidate: narrowedCandidate,
+          confirmed_decisions: [],
+          expected_revision: boundary.review_progress.revision,
+          actor: "reviewer@example.test",
+        });
+        const expandedCandidate = structuredClone(narrowedCandidate);
+        expandedCandidate.pack.resources = reviewedResources;
+        await postJson(`http://${server.host}:${server.port}/api/boundary/progress`, headers, {
+          candidate: expandedCandidate,
+          confirmed_decisions: originalDecisions,
+          expected_revision: narrowed.revision,
+          actor: "reviewer@example.test",
+        });
+        boundary = await getJson(`http://${server.host}:${server.port}/api/boundary`, headers);
+        expect(boundary.candidate.pack.resources.map((resource: { id: string }) => resource.id).sort())
+          .toEqual(reviewedResources.map((resource: { id: string }) => resource.id).sort());
         const staleSave = await fetch(`http://${server.host}:${server.port}/api/boundary/progress`, {
           method: "POST",
           headers: { ...headers, "content-type": "application/json" },
@@ -3334,7 +3377,7 @@ export default defineCapability({
         expect(staleSave.status).toBe(409);
         await expect(staleSave.json()).resolves.toMatchObject({
           ok: false,
-          current_revision: 1,
+          current_revision: boundary.review_progress.revision,
           error: expect.stringMatching(/another Workbench session/i),
         });
 

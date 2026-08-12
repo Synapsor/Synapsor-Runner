@@ -301,7 +301,9 @@ async function fixtureProject(): Promise<string> {
         }),
       ],
     },
-    budgets: {},
+    budgets: {
+      max_relationship_hops: 2,
+    },
     unresolved_decisions: [],
   }), "utf8");
   return root;

@@ -31,6 +31,7 @@ export const proposalListAllowedOptions = new Set([
   "--source",
   "--table",
   "--from",
+  "--since",
   "--to",
   "--limit",
 ]);
@@ -62,21 +63,30 @@ export const evidenceListAllowedOptions = new Set([
   "--table",
   "--query-fingerprint",
   "--from",
+  "--since",
   "--to",
+  "--status",
   "--limit",
 ]);
 
 export const queryAuditListAllowedOptions = new Set([
   ...commonReadOptions,
   "--tenant",
+  "--principal",
+  "--capability",
   "--proposal",
   "--evidence",
   "--source",
   "--table",
+  "--object",
+  "--object-type",
+  "--object-id",
   "--primary-key",
   "--query-fingerprint",
   "--from",
+  "--since",
   "--to",
+  "--status",
   "--limit",
 ]);
 
@@ -87,6 +97,7 @@ export const receiptListAllowedOptions = new Set([
   "--idempotency-key",
   "--status",
   "--from",
+  "--since",
   "--to",
   "--limit",
 ]);
@@ -182,7 +193,7 @@ export function proposalFiltersFromArgs(args: string[]): ProposalSearchFilters {
     state: optionalArg(args, "--state") as LocalProposalState | undefined,
     source: optionalArg(args, "--source"),
     table: optionalArg(args, "--table"),
-    from: optionalArg(args, "--from"),
+    from: optionalArg(args, "--from") ?? optionalArg(args, "--since"),
     to: optionalArg(args, "--to"),
     limit: limitFromArgs(args),
   };
@@ -252,8 +263,9 @@ export function evidenceFiltersFromArgs(args: string[]): EvidenceSearchFilters {
     source: optionalArg(args, "--source"),
     table: optionalArg(args, "--table"),
     queryFingerprint: optionalArg(args, "--query-fingerprint"),
-    from: optionalArg(args, "--from"),
+    from: optionalArg(args, "--from") ?? optionalArg(args, "--since"),
     to: optionalArg(args, "--to"),
+    status: optionalArg(args, "--status"),
     limit: limitFromArgs(args),
   };
 }
@@ -273,8 +285,9 @@ export function queryAuditFiltersFromArgs(args: string[]): QueryAuditSearchFilte
     objectId: optionalArg(args, "--object-id") ?? object.id,
     primaryKey: optionalArg(args, "--primary-key"),
     queryFingerprint: optionalArg(args, "--query-fingerprint"),
-    from: optionalArg(args, "--from"),
+    from: optionalArg(args, "--from") ?? optionalArg(args, "--since"),
     to: optionalArg(args, "--to"),
+    status: optionalArg(args, "--status"),
     limit: limitFromArgs(args),
   };
 }
@@ -287,7 +300,7 @@ export function receiptFiltersFromArgs(args: string[]): ReceiptSearchFilters {
     writebackJob: optionalArg(args, "--writeback-job"),
     idempotencyKey: optionalArg(args, "--idempotency-key"),
     status: optionalArg(args, "--status"),
-    from: optionalArg(args, "--from"),
+    from: optionalArg(args, "--from") ?? optionalArg(args, "--since"),
     to: optionalArg(args, "--to"),
     limit: limitFromArgs(args),
   };

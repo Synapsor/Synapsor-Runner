@@ -320,6 +320,16 @@ describe("boundary operator-plane CLI", () => {
         "--field-label", "status=Visit state",
         "--field-description", "status=Reviewed appointment lifecycle state.",
         "--max-ranked-groups", "200",
+        "--max-rows", "75",
+        "--max-groups", "200",
+        "--max-top-n", "50",
+        "--max-response-cells", "1000",
+        "--max-response-bytes", "131072",
+        "--statement-timeout-ms", "5000",
+        "--max-measures", "4",
+        "--max-dimensions", "4",
+        "--max-derived-scope-hops", "3",
+        "--max-analysis-relationship-hops", "3",
         "--max-queries-per-24-hours", "800",
         "--requests-per-minute", "90",
         "--actor", "alice",
@@ -341,6 +351,14 @@ describe("boundary operator-plane CLI", () => {
           max_queries_per_session_after: 800,
           rate_limit_per_minute_before: 120,
           rate_limit_per_minute_after: 90,
+          reviewed_budget_changes: expect.arrayContaining([
+            { name: "max_rows", before: 50, after: 75 },
+            { name: "max_groups", before: 50, after: 200 },
+            { name: "max_top_n", before: 25, after: 50 },
+            { name: "statement_timeout_ms", before: 3000, after: 5000 },
+            { name: "max_derived_scope_hops", before: 2, after: 3 },
+            { name: "max_analysis_relationship_hops", before: 2, after: 3 },
+          ]),
         },
         authority_activated: false,
         source_database_changed: false,
@@ -930,6 +948,50 @@ describe("boundary operator-plane CLI", () => {
       await expect(fs.readFile(configPath, "utf8")).resolves.toBe(config);
       expect(output).toContain("Generated disabled Auto Boundary draft");
       expect(output).not.toContain("Prepared the local Runner config");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("points a production draft with a local trusted-context config to the production scaffold", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-production-config-mismatch-"));
+    const configPath = path.join(root, "synapsor.runner.json");
+    await fs.writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "read_only",
+      storage: { sqlite_path: "./.synapsor/local.db" },
+      sources: {
+        local_postgres: {
+          engine: "postgres",
+          read_url_env: "DATABASE_URL",
+          read_only: true,
+          statement_timeout_ms: 3000,
+        },
+      },
+      trusted_context: {
+        provider: "environment",
+        values: {
+          tenant_id_env: "SYNAPSOR_TENANT_ID",
+          principal_env: "SYNAPSOR_PRINCIPAL",
+        },
+        tenant_binding: "tenant_id",
+        principal_binding: "principal",
+      },
+      capabilities: [],
+      strict: true,
+      result_format: 2,
+    }), "utf8");
+    try {
+      await expect(boundaryCommand([
+        "draft",
+        "--from-env", "DATABASE_URL",
+        "--project-root", root,
+        "--profile", "production",
+        "--tenant-claim", "tenant_id",
+        "--principal-claim", "sub",
+      ], async () => boundaryInspection())).rejects.toThrow(
+        /config init --production-explore.*retry the production boundary draft/i,
+      );
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

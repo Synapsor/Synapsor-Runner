@@ -51,10 +51,11 @@ Production-candidate OSS scope:
 
 - Postgres/MySQL reads through fixed semantic MCP tools;
 - trusted context from environment/session values, not model arguments;
-- local SQLite ledger for evidence, query audit, proposals, receipts, replay,
-  and lifecycle events;
+- local SQLite ledger for development evidence, query audit, proposals,
+  receipts, replay, and lifecycle events;
 - bounded shared Postgres runtime ledger for several claim-bound HTTP Runner
-  instances and verified reviewers;
+  instances and verified reviewers, including production Explore metadata-only
+  evidence even when the reviewed application source is MySQL;
 - asymmetric RS256/ES256 session authentication, readiness probes, separately
   protected metrics, source pools, and fleet-wide rate limits;
 - distinct-reviewer approval quorum from the canonical contract;
@@ -384,6 +385,14 @@ engine. `proposals`, `evidence`, `query-audit`, `receipts`, `replay`,
 `activity`, `metrics`, worker status, and the local UI can read the same shared
 queue with `--config`. Back up, verify, restore, and archive-before-retention
 with the commands in [Running A Small Runner Fleet](running-a-runner-fleet.md).
+
+The config-aware `evidence`, `query-audit`, `receipts`, `replay`, and
+`activity` reads print whether they consulted local SQLite or shared
+PostgreSQL. Production Explore's dedicated audit-event table is projected into
+the same read-only operator views. These reads use a bounded snapshot, never
+print the control URL or raw trusted scope, and do not take the mutation lock
+held by a serving writer. A MySQL application source still requires PostgreSQL
+for `storage.shared_postgres`; shared MySQL control storage is not supported.
 
 For unattended policy-approved queues, declare reviewed aggregate `LIMIT`
 clauses first, then use the explicit batch command:

@@ -127,6 +127,60 @@ describe("Protect This Query", () => {
     });
   });
 
+  it("freezes an explicitly reviewed depth-three relationship into public DSL", async () => {
+    const fixture = await activatedFixture(
+      depthThreeProtectInspection(),
+      undefined,
+      undefined,
+      (candidate) => {
+        candidate.budgets.max_analysis_relationship_hops = 3;
+      },
+    );
+    const relationship = "subscriptions_product_id_fkey__products_category_id_fkey__categories_department_id_fkey";
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([{
+        dimension_0: "Hardware",
+        measure_0: 8,
+        __cohort_size: 8,
+      }]),
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => Date.parse("2026-08-11T12:00:00.000Z"),
+    });
+    const result = await runtime.explore({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "name", relationship }],
+      top_n: 10,
+    });
+    await runtime.close();
+
+    const created = await createProtectedQueryDraft({
+      projectRoot: fixture.root,
+      token: (result.protect as { token: string }).token,
+      capabilityName: "retail.subscriptions_by_department",
+      description: "Count reviewed subscriptions by the exact three-hop department path.",
+      returnsHint: "Returns privacy-suppressed department groups.",
+      now: Date.parse("2026-08-11T12:00:01.000Z"),
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+
+    expect(created.dsl).toContain(`PROTECTED RELATIONSHIP ${relationship} LINK 1 ON product_id REFERENCES public.products.id`);
+    expect(created.dsl).toContain(`PROTECTED RELATIONSHIP ${relationship} LINK 2 ON category_id REFERENCES public.categories.id`);
+    expect(created.dsl).toContain(`PROTECTED RELATIONSHIP ${relationship} LINK 3 ON department_id REFERENCES public.departments.id`);
+    expect(created.contract.capabilities[0]?.protected_read?.relationships).toEqual([{
+      name: relationship,
+      links: [
+        expect.objectContaining({ table: "products", cardinality: "many_to_one", max_fan_out: 1 }),
+        expect.objectContaining({ table: "categories", cardinality: "many_to_one", max_fan_out: 1 }),
+        expect.objectContaining({ table: "departments", cardinality: "many_to_one", max_fan_out: 1 }),
+      ],
+    }]);
+  });
+
   it("freezes a resolved relative window as fixed protected authority", async () => {
     const fixture = await activatedFixture(churnInspection());
     const runtime = await createScopedExploreRuntime({
@@ -1562,6 +1616,83 @@ function starProtectInspection(): SchemaInspection {
     return table;
   };
   inspection.tables.push(relatedTable("stores"), relatedTable("product_categories"));
+  return inspection;
+}
+
+function depthThreeProtectInspection(): SchemaInspection {
+  const inspection = churnInspection();
+  const root = inspection.tables[0]!;
+  root.columns.push(column("product_id", "uuid", { immutable: true }));
+  root.foreign_keys = [{
+    name: "subscriptions_product_id_fkey",
+    columns: ["product_id"],
+    referenced_schema: "public",
+    referenced_table: "products",
+    referenced_columns: ["id"],
+    delete_rule: "RESTRICT",
+  }];
+  root.suggestions.default_visible_columns.push("product_id");
+
+  const relatedTable = (
+    name: string,
+    foreignKey?: {
+      name: string;
+      column: string;
+      target: string;
+    },
+  ) => {
+    const table = structuredClone(root);
+    table.name = name;
+    table.columns = [
+      column("id", "uuid", { immutable: true }),
+      column("tenant_id", "uuid", { tenant: true, immutable: true }),
+      column("name", "text"),
+      ...(foreignKey ? [column(foreignKey.column, "uuid", { immutable: true })] : []),
+    ];
+    table.primary_key = ["id"];
+    table.unique_constraints = [{ name: `${name}_pkey`, columns: ["id"] }];
+    table.foreign_keys = foreignKey ? [{
+      name: foreignKey.name,
+      columns: [foreignKey.column],
+      referenced_schema: "public",
+      referenced_table: foreignKey.target,
+      referenced_columns: ["id"],
+      delete_rule: "RESTRICT",
+    }] : [];
+    table.indexes = [{ name: `${name}_pkey`, columns: ["id"], unique: true }];
+    table.row_level_security_policies = [{
+      name: `${name}_tenant_read`,
+      command: "SELECT" as const,
+      permissive: true,
+      roles: ["app_reader"],
+      using_expression: "(tenant_id = current_setting('app.tenant_id')::uuid)",
+    }];
+    table.suggestions = {
+      tenant_columns: ["tenant_id"],
+      conflict_columns: [],
+      sensitive_columns: [],
+      default_visible_columns: [
+        "id",
+        "tenant_id",
+        "name",
+        ...(foreignKey ? [foreignKey.column] : []),
+      ],
+    };
+    return table;
+  };
+  inspection.tables.push(
+    relatedTable("products", {
+      name: "products_category_id_fkey",
+      column: "category_id",
+      target: "categories",
+    }),
+    relatedTable("categories", {
+      name: "categories_department_id_fkey",
+      column: "department_id",
+      target: "departments",
+    }),
+    relatedTable("departments"),
+  );
   return inspection;
 }
 

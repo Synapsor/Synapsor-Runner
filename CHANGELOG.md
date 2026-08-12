@@ -18,6 +18,11 @@
   tenant reservations, rolling query/extraction/differencing limits, rate
   limits, and tenant-level complementary-release protection. Concurrent calls
   cannot both consume the final allowance.
+- Reconciles rescans against each immutable boundary's own reviewed policy
+  instead of destructively rebuilding or sharing resource overrides. Unchanged
+  field, enum, path, shared-reference, metadata, metric, and limit decisions
+  survive; changed schema, role, or trusted-context inputs fail closed for
+  focused re-review without mutating overlapping boundaries.
 - Fails startup closed without explicit opt-in, read-only mode, secured shared
   HTTP, required OAuth scope, exact JWT issuer/audience/claims, shared HMAC
   material, shared accounting, and current exact-digest production authority.
@@ -33,6 +38,18 @@
   undated records from sequential metrics, restores MySQL session timezone
   before pooled reuse, and gives each Workbench relationship a separate
   labeled graph lane.
+- Adds bounded reviewer-authored labels and descriptions as metadata-only model
+  guidance, plus reviewed automatic quantile/equal-width numeric bands whose
+  scoped edges are Runner-computed and never model-authored or exposed raw.
+- Makes shape caps and statement timeout reviewed CLI/Workbench controls with
+  product hard ceilings. Relationship and derived-scope depth remain two by
+  default and can be raised independently only through an explicit reviewed
+  opt-in to the absolute hard cap of three, with cost advisories intact.
+- Reads production evidence and query audits from the shared PostgreSQL control
+  store in CLI and Workbench, including for MySQL application sources, without
+  persisting result values or revealing raw trusted scope. Generates secret-free
+  Streamable HTTP setup for Claude Code, Cursor, and VS Code using environment
+  token references and the exact two-tool surface.
 - Keeps whole-organization databases simple through explicit boundary-wide
   single-organization review, while mixed databases can add only individually
   acknowledged shared-reference tables. Neither posture is inferred, and field

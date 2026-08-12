@@ -9,6 +9,7 @@ import {
   loadAutoBoundaryPolicyBaseline,
   loadGenerationLockSnapshot,
   loadActivatedExplorationBoundaries,
+  ownerReviewableExplorationBudgetCeiling,
   reviewExplorationBoundaryCandidate,
   type ActivatedExplorationBoundary,
   type ExplorationBoundaryDraft,
@@ -712,46 +713,69 @@ function narrowStoredBudgets(
   stored: ExplorationBoundaryDraft,
 ): ExplorationBoundaryDraft["budgets"] {
   const old = stored.budgets;
-  const bounded = <T extends number>(current: T, previous: unknown): T =>
+  const bounded = <T extends number>(
+    key: keyof ExplorationBoundaryDraft["budgets"],
+    current: T,
+    previous: unknown,
+  ): T =>
     (Number.isSafeInteger(previous) && Number(previous) >= 1
-      ? Math.min(current, Number(previous))
+      ? Math.min(ownerReviewableExplorationBudgetCeiling(key) ?? current, Number(previous))
       : current) as T;
-  const maxGroups = bounded(draft.budgets.max_groups, old?.max_groups);
+  const maxGroups = bounded("max_groups", draft.budgets.max_groups, old?.max_groups);
   const maxRankedGroups = draft.budgets.max_ranked_groups === undefined
     ? undefined
     : Math.max(
       maxGroups,
-      bounded(draft.budgets.max_ranked_groups, old?.max_ranked_groups),
+      bounded("max_ranked_groups", draft.budgets.max_ranked_groups, old?.max_ranked_groups),
     );
   return {
-    max_rows: bounded(draft.budgets.max_rows, old?.max_rows),
+    max_rows: bounded("max_rows", draft.budgets.max_rows, old?.max_rows),
     max_groups: maxGroups,
     ...(maxRankedGroups === undefined ? {} : { max_ranked_groups: maxRankedGroups }),
-    max_top_n: bounded(draft.budgets.max_top_n, old?.max_top_n),
-    max_measures: bounded(draft.budgets.max_measures, old?.max_measures),
-    max_dimensions: bounded(draft.budgets.max_dimensions, old?.max_dimensions),
-    max_time_ranges: bounded(draft.budgets.max_time_ranges, old?.max_time_ranges),
+    max_top_n: bounded("max_top_n", draft.budgets.max_top_n, old?.max_top_n),
+    max_measures: bounded("max_measures", draft.budgets.max_measures, old?.max_measures),
+    max_dimensions: bounded("max_dimensions", draft.budgets.max_dimensions, old?.max_dimensions),
+    max_time_ranges: bounded("max_time_ranges", draft.budgets.max_time_ranges, old?.max_time_ranges),
     max_relationship_hops: bounded(
+      "max_relationship_hops",
       draft.budgets.max_relationship_hops,
       old?.max_relationship_hops,
     ),
-    max_response_cells: bounded(draft.budgets.max_response_cells, old?.max_response_cells),
-    max_response_bytes: bounded(draft.budgets.max_response_bytes, old?.max_response_bytes),
-    statement_timeout_ms: bounded(draft.budgets.statement_timeout_ms, old?.statement_timeout_ms),
-    max_complexity: bounded(draft.budgets.max_complexity, old?.max_complexity),
+    ...(draft.budgets.max_derived_scope_hops === undefined ? {} : {
+      max_derived_scope_hops: bounded(
+        "max_derived_scope_hops",
+        draft.budgets.max_derived_scope_hops,
+        old?.max_derived_scope_hops ?? old?.max_relationship_hops,
+      ),
+    }),
+    ...(draft.budgets.max_analysis_relationship_hops === undefined ? {} : {
+      max_analysis_relationship_hops: bounded(
+        "max_analysis_relationship_hops",
+        draft.budgets.max_analysis_relationship_hops,
+        old?.max_analysis_relationship_hops ?? old?.max_relationship_hops,
+      ),
+    }),
+    max_response_cells: bounded("max_response_cells", draft.budgets.max_response_cells, old?.max_response_cells),
+    max_response_bytes: bounded("max_response_bytes", draft.budgets.max_response_bytes, old?.max_response_bytes),
+    statement_timeout_ms: bounded("statement_timeout_ms", draft.budgets.statement_timeout_ms, old?.statement_timeout_ms),
+    max_complexity: bounded("max_complexity", draft.budgets.max_complexity, old?.max_complexity),
     max_queries_per_session: bounded(
+      "max_queries_per_session",
       draft.budgets.max_queries_per_session,
       old?.max_queries_per_session,
     ),
     max_extracted_cells_per_session: bounded(
+      "max_extracted_cells_per_session",
       draft.budgets.max_extracted_cells_per_session,
       old?.max_extracted_cells_per_session,
     ),
     max_differencing_queries: bounded(
+      "max_differencing_queries",
       draft.budgets.max_differencing_queries,
       old?.max_differencing_queries,
     ),
     rate_limit_per_minute: bounded(
+      "rate_limit_per_minute",
       draft.budgets.rate_limit_per_minute,
       old?.rate_limit_per_minute,
     ),

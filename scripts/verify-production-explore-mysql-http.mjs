@@ -30,6 +30,7 @@ import {
   productionExploreRunnerInvocation,
   startProductionExploreCli,
   stopProductionExploreCli,
+  verifyGeneratedProductionHttpClientConfigs,
   verifyJwtRejectionMatrix,
 } from "./production-explore-http-e2e-helpers.mjs";
 import {
@@ -42,7 +43,9 @@ import {
   waitForSourceConnectionQuiescence,
   verifyLocalExploreAuditRecords,
   verifyProductionExploreAuditSink,
+  verifyProductionExploreOperatorLedger,
 } from "./production-explore-http-soak.mjs";
+import { verifyProductionExploreWorkbenchLedger } from "./verify-production-explore-workbench-ledger.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const compose = path.join(root, "examples/runner-fleet/docker-compose.yml");
@@ -1329,6 +1332,15 @@ async function main() {
       `MySQL production Explore accepted presentation override ${presentationArgs[0]}.`, rejected);
     }
     server = await startProductionExploreCli({ root, configPath, env });
+    const generatedHttpClients = await verifyGeneratedProductionHttpClientConfigs({
+      root,
+      configPath,
+      env,
+      serverUrl: server.url,
+      protectedResource: "https://runner.example/mcp",
+      authorizationServer: "https://identity.example",
+      tokenForPrincipal: (principal) => signedToken(privateKey, { tenant: "acme", principal }),
+    });
 
     const authCountsBefore = await productionControlCounts(control, controlSchema);
     const wrongKeyPair = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -1998,6 +2010,41 @@ async function main() {
       tenantBudgetServer = undefined;
     }
 
+    const operatorLedgerCountsBefore = await control.query(`
+      SELECT
+        (SELECT COUNT(*)::int FROM "${controlSchema}".production_explore_audit_events) AS dedicated_events,
+        (SELECT COUNT(*)::int FROM "${controlSchema}".ledger_entries) AS ledger_entries
+    `);
+    const operatorLedger = verifyProductionExploreOperatorLedger({
+      schema: controlSchema,
+      config_path: configPath,
+      source_id: candidate.source,
+      forbidden_values: [mysqlReadUrl, mysqlAdminUrl, controlUrl, env.SYNAPSOR_EXPLORE_BUDGET_HMAC_KEY],
+      invoke: (args) => {
+        const invocation = productionExploreRunnerInvocation(root, args);
+        return run(invocation.command, invocation.args, { env, allowFailure: true });
+      },
+    });
+    const operatorWorkbench = await verifyProductionExploreWorkbenchLedger({
+      engine: "mysql",
+      project_root: projectRoot,
+      config_path: configPath,
+      runtime_config: runtimeConfig,
+      schema: controlSchema,
+      url_env: "SYNAPSOR_CONTROL_DATABASE_URL",
+      control_url: controlUrl,
+    });
+    const operatorLedgerCountsAfter = await control.query(`
+      SELECT
+        (SELECT COUNT(*)::int FROM "${controlSchema}".production_explore_audit_events) AS dedicated_events,
+        (SELECT COUNT(*)::int FROM "${controlSchema}".ledger_entries) AS ledger_entries
+    `);
+    assert(JSON.stringify(operatorLedgerCountsAfter.rows[0]) === JSON.stringify(operatorLedgerCountsBefore.rows[0]),
+      "MySQL-source production ledger operator reads wrote to the PostgreSQL control store.", {
+        before: operatorLedgerCountsBefore.rows[0],
+        after: operatorLedgerCountsAfter.rows[0],
+      });
+
     const activeLock = await loadGenerationLockSnapshot(
       projectRoot,
       candidate.generation_lock_fingerprint,
@@ -2063,8 +2110,11 @@ async function main() {
       principal_session_ceiling: 2,
       derived_scope_indexes_attested: true,
       complete_jwt_rejection_matrix: authRefusals.map((item) => item.label),
+      generated_http_client_configs: generatedHttpClients,
       metadata_only_catalog: true,
       analytics_http_stdio_parity: true,
+      production_operator_ledger: operatorLedger,
+      production_operator_workbench: operatorWorkbench,
       schema_width_scaling: schemaWidthScaling,
       drift_refused_over_http: true,
       config_and_artifact_hygiene: true,

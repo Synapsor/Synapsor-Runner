@@ -1031,7 +1031,7 @@ function formatProposeResult(capabilityName: string, result: Record<string, unkn
 
 export async function mcpConfigure(args: string[]): Promise<number> {
   const client = normalizeMcpClientName(optionalArg(args, "--client"));
-  if (!client) throw new Error("mcp configure requires --client generic-stdio|claude|claude-desktop|cursor|vscode|openai-agents");
+  if (!client) throw new Error("mcp configure requires --client generic-stdio|claude|claude-desktop|claude-code|cursor|vscode|openai-agents");
   const useAbsolutePaths = args.includes("--absolute-paths");
   const rawConfigPath = runnerConfigPath(args, "./synapsor.runner.json");
   const rawStorePath = optionalArg(args, "--store") ?? "./.synapsor/local.db";
@@ -1058,7 +1058,9 @@ export async function mcpConfigure(args: string[]): Promise<number> {
     ?? "SYNAPSOR_RUNNER_HTTP_TOKEN";
   const clientAccessTokenEnv = optionalArg(args, "--client-access-token-env")
     ?? (claimsAuth ? "SYNAPSOR_MCP_ACCESS_TOKEN" : authTokenEnv);
-  const snippet = mcpClientSnippet(client, configPath, storePath, {
+  assertMcpCredentialEnvironmentName(authTokenEnv, "--auth-token-env");
+  assertMcpCredentialEnvironmentName(clientAccessTokenEnv, "--client-access-token-env");
+  const snippetOptions: McpClientSnippetOptions = {
     transport,
     aliasMode,
     host,
@@ -1068,7 +1070,9 @@ export async function mcpConfigure(args: string[]): Promise<number> {
     authMode: claimsAuth ? "signed-jwt" : "opaque-static",
     oauthResource: existingConfig?.http_security?.oauth_resource?.resource,
     authorizationServers: existingConfig?.http_security?.oauth_resource?.authorization_servers,
-  });
+    requiredScopes: existingConfig?.http_security?.oauth_resource?.required_scopes,
+  };
+  const snippet = mcpClientSnippet(client, configPath, storePath, snippetOptions);
   if (includeInstructions) {
     snippet.agent_instructions = mcpAgentInstructions(client, aliasMode);
   }
@@ -1082,6 +1086,7 @@ export async function mcpConfigure(args: string[]): Promise<number> {
     process.stderr.write("Proposal tools advertise a display-only MCP App automatically where the host supports it; other clients retain the same text/JSON result. Approval and apply remain outside MCP.\n");
     process.stdout.write(`${JSON.stringify(snippet, null, 2)}\n`);
   }
+  if (transport === "streamable-http") writeMcpHttpClientGuidance(client, snippetOptions);
   return 0;
 }
 
@@ -1109,7 +1114,44 @@ type McpClientSnippetOptions = {
   authMode: "opaque-static" | "signed-jwt";
   oauthResource?: string;
   authorizationServers?: string[];
+  requiredScopes?: string[];
 };
+
+
+function assertMcpCredentialEnvironmentName(value: string, option: string): void {
+  if (!/^[A-Z_][A-Z0-9_]*$/.test(value)) {
+    throw new Error(`${option} must name an uppercase environment variable using A-Z, 0-9, and underscore.`);
+  }
+}
+
+
+function mcpStreamableHttpUrl(options: McpClientSnippetOptions): string {
+  return options.authMode === "signed-jwt" && options.oauthResource
+    ? options.oauthResource
+    : `http://${options.host}:${options.port}/mcp`;
+}
+
+
+function mcpBearerEnvironmentReference(client: "claude-code" | "cursor" | "vscode", environmentName: string): string {
+  return client === "claude-code"
+    ? `Bearer \${${environmentName}}`
+    : `Bearer \${env:${environmentName}}`;
+}
+
+
+function writeMcpHttpClientGuidance(client: string, options: McpClientSnippetOptions): void {
+  const url = mcpStreamableHttpUrl(options);
+  process.stderr.write(`Streamable HTTP endpoint: ${url}\n`);
+  process.stderr.write(`Authentication: ${client} reads the bearer token from environment ${options.clientAccessTokenEnv}; no token value was written.\n`);
+  if (options.authMode === "signed-jwt") {
+    process.stderr.write(`Protected resource: ${options.oauthResource ?? url}\n`);
+    process.stderr.write(`Authorization servers: ${(options.authorizationServers ?? []).join(", ") || "use the protected-resource metadata endpoint"}\n`);
+    process.stderr.write(`Required scopes: ${(options.requiredScopes ?? []).join(", ") || "use the protected-resource metadata endpoint"}\n`);
+    process.stderr.write(`Obtain a short-lived access token from the configured identity provider, expose it to the client process as ${options.clientAccessTokenEnv}, then start or reload the client. Runner verifies tokens but never issues or refreshes them.\n`);
+  } else {
+    process.stderr.write(`Start the local Runner Streamable HTTP server separately and expose the provisioned endpoint token to the client process as ${options.clientAccessTokenEnv}.\n`);
+  }
+}
 
 
 function mcpClientConfigTransport(args: string[], client: string): "stdio" | "streamable-http" {
@@ -1155,18 +1197,43 @@ function mcpClientSnippet(client: string, configPath: string, storePath: string,
   const command = cliCommandName();
   const args = serveArgsForClient(configPath, storePath, options);
   if (client === "generic" || client === "generic-stdio") return { command, args };
-  if (client === "claude-desktop" || client === "cursor") {
-    if (options.transport !== "stdio") throw new Error(`${client} config output currently supports stdio. Use --transport stdio.`);
+  if (client === "claude-desktop") {
+    if (options.transport !== "stdio") throw new Error("Claude Desktop config output supports stdio. For Streamable HTTP use --client claude-code --transport streamable-http.");
     return { mcpServers: { synapsor: { command, args } } };
   }
+  if (client === "claude-code" || client === "cursor") {
+    if (options.transport === "stdio") return { mcpServers: { synapsor: { command, args } } };
+    const url = mcpStreamableHttpUrl(options);
+    return {
+      mcpServers: {
+        synapsor: {
+          ...(client === "claude-code" ? { type: "http" } : {}),
+          url,
+          headers: {
+            Authorization: mcpBearerEnvironmentReference(client, options.clientAccessTokenEnv),
+          },
+        },
+      },
+    };
+  }
   if (client === "vscode") {
-    if (options.transport !== "stdio") throw new Error("vscode config output currently supports stdio. Use --transport stdio.");
-    return { servers: { synapsor: { type: "stdio", command, args } } };
+    if (options.transport === "stdio") return { servers: { synapsor: { type: "stdio", command, args } } };
+    return {
+      servers: {
+        synapsor: {
+          type: "http",
+          url: mcpStreamableHttpUrl(options),
+          headers: {
+            Authorization: mcpBearerEnvironmentReference("vscode", options.clientAccessTokenEnv),
+          },
+        },
+      },
+    };
   }
   if (client === "openai-agents") {
     if (options.transport !== "streamable-http") throw new Error("openai-agents config output uses Streamable HTTP. Use --transport streamable-http.");
     const externalProtectedResource = options.authMode === "signed-jwt" && Boolean(options.oauthResource);
-    const url = externalProtectedResource ? options.oauthResource as string : `http://${options.host}:${options.port}/mcp`;
+    const url = mcpStreamableHttpUrl(options);
     return {
       transport: "streamable-http",
       ...(!externalProtectedResource ? { start_server: {
@@ -1772,7 +1839,7 @@ async function writeMcpClientSnippet(destination: string, client: string, snippe
 
 function mergeMcpClientSnippet(client: string, existing: Record<string, unknown>, snippet: Record<string, unknown>): Record<string, unknown> {
   if (client === "generic" || client === "generic-stdio") return snippet;
-  if (client === "claude-desktop" || client === "cursor") {
+  if (client === "claude-desktop" || client === "claude-code" || client === "cursor") {
     const existingServers = isRecord(existing.mcpServers) ? existing.mcpServers : {};
     const snippetServers = isRecord(snippet.mcpServers) ? snippet.mcpServers : {};
     return { ...existing, mcpServers: { ...existingServers, ...snippetServers } };

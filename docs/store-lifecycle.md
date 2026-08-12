@@ -1,8 +1,10 @@
 # Store Lifecycle
 
-Synapsor Runner keeps local evidence, query audit, proposals, receipts, replay,
-worker state, human-attention events, notification delivery state, and
-lifecycle events in a SQLite store.
+Synapsor Runner keeps development-mode evidence, query audit, proposals,
+receipts, replay, worker state, human-attention events, notification delivery
+state, and lifecycle events in a SQLite store. A configured shared PostgreSQL
+runtime store is authoritative for multi-process deployments and for production
+HTTP Explore accounting/evidence.
 
 Default path:
 
@@ -118,6 +120,33 @@ ledger. It does not create or synchronize a persistent local mirror during
 inspection. Connection failures fail safely; the command never falls back to an
 unrelated local store.
 
+Production HTTP Explore appends metadata-only evidence and query-audit events to
+the dedicated `production_explore_audit_events` table in that PostgreSQL
+control store. The application source may be PostgreSQL or MySQL; the shared
+control store is PostgreSQL in both cases. There is no shared-MySQL control
+store. The application database and control database are separate authorities.
+
+The focused `evidence`, `query-audit`, `receipts`, `replay`, and `activity`
+read commands use the same config-aware bridge. Their text and JSON output name
+whether they read local SQLite or shared PostgreSQL, including the configured
+schema but never the connection URL. An empty result says which ledger was
+consulted. Shared reads use a bounded read-only snapshot and do not block the
+live production writer with its advisory mutation lock.
+
+```bash
+synapsor-runner evidence list --config ./synapsor.runner.json
+synapsor-runner evidence show <evidence-id> --details \
+  --config ./synapsor.runner.json
+synapsor-runner query-audit list --table public.orders --since 2026-08-01 \
+  --config ./synapsor.runner.json
+synapsor-runner query-audit show <audit-id> --details \
+  --config ./synapsor.runner.json
+```
+
+Production Explore records plans, outcome/count metadata, keyed scope
+fingerprints, and result fingerprints. It does not persist result values, raw
+tenant/principal claims, SQL, parameters, credentials, or source rows.
+
 ## Focused inspection commands
 
 The existing commands remain useful when you need one record type:
@@ -126,8 +155,8 @@ The existing commands remain useful when you need one record type:
 | --- | --- |
 | What did the model propose? | `synapsor-runner proposals show latest --details` |
 | Is the latest proposal still fresh enough to review? | `synapsor-runner proposals check-freshness latest --config ./synapsor.runner.json` |
-| What data supported it? | `synapsor-runner evidence list --proposal <proposal-id>` then `evidence show <evidence-id> --details` |
-| What query was run? | `synapsor-runner query-audit list --proposal <proposal-id>` |
+| What data supported it? | `synapsor-runner evidence list --proposal <proposal-id> --config ./synapsor.runner.json` then `evidence show <evidence-id> --details --config ./synapsor.runner.json` |
+| What query was run? | `synapsor-runner query-audit list --proposal <proposal-id> --config ./synapsor.runner.json` |
 | Did guarded writeback apply? | `synapsor-runner receipts list --proposal <proposal-id>` |
 | What replay snapshot exists? | `synapsor-runner replay show latest --details` |
 | What happened to one object? | `synapsor-runner activity search --object invoice:INV-3001` |

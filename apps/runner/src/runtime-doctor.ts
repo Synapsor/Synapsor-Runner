@@ -36,6 +36,7 @@ import { capabilityOperation, formatSourceReceiptMode, receiptTableGuidance, run
 
 export async function localDoctor(args: string[]): Promise<number> {
   const configPath = runnerConfigPath(args);
+  const productionPreflight = args.includes("--preflight");
   const allowSharedCredential = args.includes("--allow-shared-credential");
   const checkHandlers = args.includes("--check-handlers");
   const checkWriteback = args.includes("--check-writeback") || args.includes("--check-db");
@@ -56,6 +57,16 @@ export async function localDoctor(args: string[]): Promise<number> {
   let productionExploreReport: Awaited<ReturnType<typeof inspectProductionExploreStartup>> | undefined;
   if (validation.ok) {
     parsed = await readRuntimeConfig(configPath);
+  }
+  if (productionPreflight) {
+    checks.push({
+      name: "production-preflight-mode",
+      ok: validation.ok && parsed.production_explore !== undefined,
+      level: validation.ok && parsed.production_explore !== undefined ? "pass" : "fail",
+      message: validation.ok && parsed.production_explore !== undefined
+        ? "Production preflight is checking identity, transport, source, shared control store, and reviewed-boundary readiness together; it does not create or activate authority."
+        : "--preflight requires a valid production_explore config. Generate one with synapsor-runner config init --production-explore.",
+    });
   }
   if (validation.ok && parsed.production_explore !== undefined) {
     productionExploreReport = await inspectProductionExploreStartup(parsed, process.env);

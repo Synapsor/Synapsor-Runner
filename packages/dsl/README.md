@@ -145,7 +145,7 @@ try {
   human-reviewed local Explore plan
 - `BOUNDARY DIGEST` and `GENERATION LOCK` for exact reviewed authority
 - legacy one-hop `PROTECTED RELATIONSHIP name ON ... REFERENCES ...`
-- additive `PROTECTED RELATIONSHIP name LINK 1|2 ON ... REFERENCES ...
+- additive `PROTECTED RELATIONSHIP name LINK 1|2|3 ON ... REFERENCES ...
   UNMATCHED EXCLUDE|KEEP NULL` for up to three reviewed paths containing at
   most two catalog-proven many-to-one links each
 - fixed `PROTECTED FILTER`, reviewed `MEASURE`, `GROUP DIMENSION`,

@@ -96,6 +96,8 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain('kind:"derived_measure"');
     expect(html).toContain('<option value="child_count_total">Total child rows</option>');
     expect(html).toContain("definition:{name,label,shape,child_resource:selected.child_resource");
+    expect(html).toContain("depth>previousAnalysisDepth&&depth<=next.max_analysis_relationship_hops");
+    expect(html).toContain("retained.push(structuredClone(relationship))");
     expect(html).toContain("relationship:selected.relationship");
     expect(html).toContain("The AI receives only the saved name and labels; it cannot supply edges.");
     expect(html).toContain("Review security exceptions");
@@ -213,6 +215,7 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("renderBoundaryGraphSvg");
     expect(html).toContain("boundary-catalog-graph");
     expect(html).toContain("Each reviewed join uses its own labeled connection lane.");
+    expect(html).toContain('return fieldLabel(relationship,reference.field)+" from "+relationshipTargetLabel(relationship);');
     expect(html).toContain("This is one exact active boundary; it is never merged with another.");
     expect(html).toContain("Download this large boundary map");
     expect(html).toContain("diagram.markdown");
@@ -296,8 +299,9 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain('id="ask-history" class="ask-history"');
     expect(html).toContain("Query history");
     expect(html).toContain("Load query history");
-    expect(html).toContain('getJson("/api/explore/history")');
+    expect(html).toContain('getJson("/api/explore/history"+(params.size?"?"+params.toString():""))');
     expect(html).toContain('getJson("/api/explore/history?audit_id="');
+    expect(html).toContain('getJson("/api/explore/evidence?evidence_id="');
     expect(html).toContain("Recent references");
     expect(html).toContain("Durable query ledger");
     expect(html).toContain("Runner does not persist model conversations, result values, trusted scope values, or raw SQL.");
@@ -465,6 +469,12 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("mcp install cursor");
     expect(html).toContain("mcp install claude-code");
     expect(html).toContain("mcp install vscode");
+    expect(html).toContain("Production Streamable HTTP clients");
+    expect(html).toContain("mcp client-config --client claude-code --transport streamable-http");
+    expect(html).toContain("mcp client-config --client cursor --transport streamable-http");
+    expect(html).toContain("mcp client-config --client vscode --transport streamable-http");
+    expect(html).toContain("SYNAPSOR_MCP_ACCESS_TOKEN");
+    expect(html).toContain("Do not paste the token into the generated file");
     expect(html).toContain("Codex");
     expect(html).not.toMatch(/execute_sql|raw SQL tool|approve tool|apply tool/i);
   });

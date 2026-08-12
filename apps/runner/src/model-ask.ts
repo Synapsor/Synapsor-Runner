@@ -889,6 +889,10 @@ async function runOpenAiCompatibleTurn(input: {
     if (toolCalls.length > MAX_TOOL_CALLS_PER_RESPONSE || traces.length + toolCalls.length > MAX_TOOL_CALLS_PER_TURN) {
       throw new AskError("ASK_TOOL_BUDGET_EXCEEDED", "The provider requested more tools than the bounded Ask session permits.", 422);
     }
+    const compoundQuestions = input.configuration.provider === "openai_compatible"
+      ? localCompoundAnalysisQuestions(input.question, toolCalls.length)
+      : [];
+    const matchedCompoundQuestions = new Set<number>();
     for (const call of toolCalls) {
       if (input.authorityGuard) {
         await assertAskAuthorityCurrent(input.authorityDigest, input.authorityGuard);
@@ -928,10 +932,16 @@ async function runOpenAiCompatibleTurn(input: {
           directArguments,
         )
         : undefined;
+      let focusedResourceForRequirements = localCatalogResourceForDirectCall(
+        localDirectCatalogTrace ? [...traces, localDirectCatalogTrace] : traces,
+        directArguments,
+      );
       if (input.configuration.provider === "openai_compatible" && canonicalName === "app.explore_data") {
         const directPlan = isRecord(directArguments.plan) ? directArguments.plan : undefined;
-        const resource = requirements?.resource
-          ?? (typeof directPlan?.resource === "string" ? directPlan.resource : undefined);
+        const resource = compoundQuestions.length > 0 && typeof directPlan?.resource === "string"
+          ? directPlan.resource
+          : requirements?.resource
+            ?? (typeof directPlan?.resource === "string" ? directPlan.resource : undefined);
         const boundary = requirements?.boundary
           ?? (typeof directArguments.boundary === "string" && directArguments.boundary.length > 0
             ? directArguments.boundary
@@ -959,8 +969,35 @@ async function runOpenAiCompatibleTurn(input: {
               ? focused.providerResult.resources.filter(isRecord).find((candidate) => candidate.id === resource)
               : undefined;
             if (focusedResource) {
+              focusedResourceForRequirements = focusedResource;
               requirements = localPlanRequirements(input.question, { resources: [focusedResource] });
             }
+          }
+        }
+      }
+      if (compoundQuestions.length > 0
+        && canonicalName === "app.explore_data"
+        && focusedResourceForRequirements) {
+        const candidates = compoundQuestions.flatMap((question, index) => {
+          if (matchedCompoundQuestions.has(index)) return [];
+          const candidate = localPlanRequirements(question, { resources: [focusedResourceForRequirements] });
+          return candidate ? [{ index, candidate }] : [];
+        });
+        const matches = candidates.filter(({ candidate }) =>
+          !candidate.unanswerable && directLocalPlanMatchesRequirements(directArguments, candidate));
+        if (matches.length === 1) {
+          requirements = matches[0]!.candidate;
+          matchedCompoundQuestions.add(matches[0]!.index);
+        } else {
+          const fallback = candidates[0]?.candidate ?? requirements;
+          if (fallback) {
+            requirements = {
+              ...fallback,
+              unanswerable: true,
+              instruction: matches.length > 1
+                ? "The compound request is ambiguous because this plan matches more than one requested analysis. Submit one exact reviewed plan per clause."
+                : "This plan does not match exactly one remaining clause in the compound request. Submit one exact reviewed plan per clause.",
+            };
           }
         }
       }
@@ -1186,11 +1223,33 @@ function unambiguousQuestionResource(
     if (new Set(tied.map((match) => `${match.boundary ?? ""}\u0000${match.resource}`)).size !== 1) {
       return undefined;
     }
+    const exactResource = resources.find((resource) =>
+      resource.id === first.resource
+      && (first.boundary === undefined || resource.boundary_name === first.boundary));
+    const exactRequirements = exactResource
+      ? localPlanRequirements(question, { resources: [exactResource] })
+      : undefined;
+    if (exactRequirements?.exactArguments && !exactRequirements.unanswerable) {
+      return {
+        resource: first.resource,
+        ...(first.boundary ? { boundary: first.boundary } : {}),
+      };
+    }
+    if (exactResource && questionUsesResourceAsRelationshipGrouping(
+      normalizedQuestion,
+      exactResource,
+      resources,
+    )) return undefined;
+    const answerable = answerableQuestionResources(question, resources);
+    if (answerable.length === 1) return answerable[0];
     return {
       resource: first.resource,
       ...(first.boundary ? { boundary: first.boundary } : {}),
     };
   }
+
+  const answerable = answerableQuestionResources(question, resources);
+  if (answerable.length === 1) return answerable[0];
 
   const semanticMatches = resources.flatMap((resource) => {
     if (typeof resource.id !== "string") return [];
@@ -1217,6 +1276,54 @@ function unambiguousQuestionResource(
     resource: semanticFirst.resource,
     ...(semanticFirst.boundary ? { boundary: semanticFirst.boundary } : {}),
   };
+}
+
+function questionUsesResourceAsRelationshipGrouping(
+  question: string,
+  target: Record<string, unknown>,
+  resources: Record<string, unknown>[],
+): boolean {
+  if (typeof target.id !== "string") return false;
+  const table = target.id.split(".").at(-1)?.toLowerCase() ?? "";
+  const groupingMentioned = [...resourceNameVariants(table, target.label)]
+    .some((variant) => relationshipGroupingMentionsTarget(question, variant));
+  if (!groupingMentioned) return false;
+  return resources.some((resource) => resource.id !== target.id
+    && Array.isArray(resource.relationships)
+    && resource.relationships.filter(isRecord).some((relationship) =>
+      relationship.target_resource === target.id));
+}
+
+function answerableQuestionResources(
+  question: string,
+  resources: Record<string, unknown>[],
+): Array<{ resource: string; boundary?: string }> {
+  const candidates = resources.flatMap((resource) => {
+    if (typeof resource.id !== "string") return [];
+    const requirements = localPlanRequirements(question, { resources: [resource] });
+    if (!requirements?.exactArguments
+      || requirements.unanswerable
+      || !localRequirementsHaveQuestionSpecificEvidence(requirements)) return [];
+    return [{
+      resource: resource.id,
+      ...(typeof resource.boundary_name === "string" ? { boundary: resource.boundary_name } : {}),
+    }];
+  });
+  return uniqueByJson(candidates);
+}
+
+function localRequirementsHaveQuestionSpecificEvidence(requirements: LocalPlanRequirements): boolean {
+  return Boolean(
+    requirements.dimensions?.length
+    || requirements.filter
+    || requirements.timeBucket
+    || requirements.timeWindow
+    || requirements.select?.length
+    || (requirements.measure
+      && ("derived_measure" in requirements.measure
+        || requirements.measure.function !== "count"
+        || requirements.measure.field)),
+  );
 }
 
 function resourceNameVariants(...values: unknown[]): Set<string> {
@@ -2068,19 +2175,21 @@ function completeLocalPlanMismatchAnswer(
   );
 }
 
+type LocalPlanDimension = { field: string; relationship?: string } | {
+  numeric_band: string | {
+    field: string;
+    method: "quantile" | "equal_width";
+    buckets: number;
+  };
+};
+
 type LocalPlanRequirements = {
   resource: string;
   boundary?: string;
   kind: "rows" | "aggregate";
   measure?: { function: string; field?: string } | { derived_measure: string };
   filter?: { field: string; value: string | number | boolean };
-  dimension?: { field: string; relationship?: string } | {
-    numeric_band: string | {
-      field: string;
-      method: "quantile" | "equal_width";
-      buckets: number;
-    };
-  };
+  dimensions?: LocalPlanDimension[];
   timeBucket?: { field: string; bucket: string; relationship?: string };
   orderByTime?: { kind: "time_bucket"; direction: "asc" | "desc" };
   timeWindow?: { field: string; relationship?: string; window: RelativeTimeWindow };
@@ -2105,6 +2214,7 @@ function localPlanRequirements(
   const normalized = question.toLowerCase();
   const rowIntent = /\b(?:show|list|give)\b.*\b(?:every|all|rows?|records?|details?)\b/.test(normalized);
   const countIntent = /\b(?:how many|number of|counts?)\b/.test(normalized);
+  const distinctIntent = /\b(?:distinct|unique)\b/.test(normalized);
   const runningTotalIntent = /\brunning(?:\s+[a-z0-9_]+){0,3}\s+total\b/.test(normalized)
     || /\btotal(?:\s+[a-z0-9_]+){0,3}\s+running\b/.test(normalized);
   const totalIntent = !runningTotalIntent && /\b(?:total|sum)\b/.test(normalized);
@@ -2135,6 +2245,20 @@ function localPlanRequirements(
   const aggregateFunctions = isRecord(resource.aggregate_measure_functions)
     ? resource.aggregate_measure_functions
     : {};
+  const countDistinctFields = safeStringList(resource.count_distinct_fields);
+  const primaryKey = typeof resource.primary_key === "string"
+    && countDistinctFields.includes(resource.primary_key)
+    ? resource.primary_key
+    : countDistinctFields.includes("id")
+      ? "id"
+      : undefined;
+  const mentionedDistinctFields = countDistinctFields.filter((field) =>
+    field !== primaryKey && questionMentionsDistinctField(normalized, field));
+  const distinctField = mentionedDistinctFields.length === 1
+    ? mentionedDistinctFields[0]
+    : mentionedDistinctFields.length === 0
+      ? primaryKey
+      : undefined;
   const mentionedNumeric = Object.keys(aggregateFunctions)
     .filter((field) => !isIdentifierLikeField(field) && questionMentionsField(normalized, field));
   const derivedMeasures = Array.isArray(resource.derived_measures)
@@ -2153,7 +2277,7 @@ function localPlanRequirements(
     : undefined;
   const requestedTimeBucket = timeBucketFromQuestion(normalized, mentionedNumeric);
   const numericMeasureRequested = totalIntent || averageIntent || dispersionIntent;
-  const measureIntentCount = Number(countIntent)
+  const measureIntentCount = Number(countIntent || distinctIntent)
     + Number(totalIntent)
     + Number(averageIntent)
     + Number(dispersionIntent)
@@ -2164,7 +2288,9 @@ function localPlanRequirements(
       ? "avg"
       : dispersionFunction;
   const measure = derivedMeasure
-    ?? (countIntent
+    ?? (distinctIntent && distinctField
+      ? { function: "count_distinct", field: distinctField }
+      : countIntent
       ? { function: "count" }
       : numericMeasureRequested && mentionedNumeric.length === 1 && numericFunction
         ? { function: numericFunction, field: mentionedNumeric[0] }
@@ -2195,8 +2321,20 @@ function localPlanRequirements(
     || /\b(?:automatic|adaptive|auto)[ -]bands?\b/.test(normalized);
   const requestedBucketCount = bucketCountFromQuestion(normalized);
   const bandIntent = autoBandIntent || /\b(?:bands?|buckets?|histogram)\b/.test(normalized);
-  const groupingRequested = /\bby\b/.test(normalized) || bandIntent;
-  const dimensionCandidates: NonNullable<LocalPlanRequirements["dimension"]>[] = [];
+  const mentionedReviewedGroupingField = safeStringList(resource.groupable_fields)
+    .some((field) => questionMentionsField(normalized, field))
+    || (Array.isArray(resource.relationships) && resource.relationships.filter(isRecord)
+      .some((relationship) => safeStringList(relationship.groupable_fields)
+        .some((field) => questionExplicitlyMentionsField(normalized, field))));
+  const groupingRequested = /\bacross\b/.test(normalized)
+    || /\bby\s+(?!(?:hour|day|week|month|quarter|year)\b)/.test(normalized)
+    || (/\bby\b/.test(normalized) && mentionedReviewedGroupingField)
+    || (/\b(?:which|what)\b.*\b(?:most|least|highest|lowest|top|bottom)\b/.test(normalized)
+      && mentionedReviewedGroupingField)
+    || /\b(?:for|within) each\b/.test(normalized)
+    || bandIntent;
+  const dimensionCandidates: LocalPlanDimension[] = [];
+  const groupingAmbiguities: string[] = [];
   if (groupingRequested) {
     const directGroupFields = safeStringList(resource.groupable_fields)
       .filter((candidate) => questionMentionsField(normalized, candidate));
@@ -2209,26 +2347,53 @@ function localPlanRequirements(
       for (const relationship of resource.relationships.filter(isRecord)) {
         if (typeof relationship.id !== "string" || typeof relationship.target_resource !== "string") continue;
         const targetTable = relationship.target_resource.split(".").at(-1)?.toLowerCase() ?? "";
-        const targetMentioned = [...resourceNameVariants(targetTable, relationship.target_label)]
+        const targetVariants = [...resourceNameVariants(targetTable, relationship.target_label)];
+        const targetMentioned = targetVariants
           .some((variant) => wordPosition(normalized, variant) >= 0);
-        for (const field of safeStringList(relationship.groupable_fields)
-          .filter((candidate) => questionMentionsField(normalized, candidate))) {
+        const groupableFields = safeStringList(relationship.groupable_fields);
+        const mentionedFields = groupableFields
+          .filter((candidate) => questionExplicitlyMentionsField(normalized, candidate));
+        const targetGroupingMentioned = targetVariants
+          .some((variant) => relationshipGroupingMentionsTarget(normalized, variant));
+        const implicitTargetFields = mentionedFields.length === 0
+          && targetGroupingMentioned
+          ? groupableFields.length === 1
+            ? groupableFields
+            : groupableFields.includes("name")
+              ? ["name"]
+              : []
+          : [];
+        if (targetGroupingMentioned && mentionedFields.length === 0 && implicitTargetFields.length === 0) {
+          groupingAmbiguities.push(
+            `Grouping through ${relationship.target_resource} is ambiguous; name one reviewed field: ${groupableFields.join(", ")}.`,
+          );
+        }
+        for (const field of mentionedFields.length > 0 ? mentionedFields : implicitTargetFields) {
           relationshipGroupFields.push({ field, relationship: relationship.id, targetMentioned });
         }
       }
     }
+    const explicitlyTargetedRelationshipFields = relationshipGroupFields
+      .filter((candidate) => candidate.targetMentioned);
+    const eligibleRelationshipFields = explicitlyTargetedRelationshipFields.length > 0
+      ? explicitlyTargetedRelationshipFields
+      : relationshipGroupFields;
     for (const field of new Set([
       ...directGroupFields,
-      ...relationshipGroupFields.map((candidate) => candidate.field),
+      ...eligibleRelationshipFields.map((candidate) => candidate.field),
     ])) {
-      const related = relationshipGroupFields.filter((candidate) => candidate.field === field);
+      const related = eligibleRelationshipFields.filter((candidate) => candidate.field === field);
       const namedRelated = related.filter((candidate) => candidate.targetMentioned);
       if (namedRelated.length > 0) {
         dimensionCandidates.push(...namedRelated.map(({ relationship }) => ({ field, relationship })));
       } else if (directGroupFields.includes(field)) {
         dimensionCandidates.push({ field });
+      } else if (related.length === 1) {
+        dimensionCandidates.push({ field, relationship: related[0]!.relationship });
       } else {
-        dimensionCandidates.push(...related.map(({ relationship }) => ({ field, relationship })));
+        groupingAmbiguities.push(
+          `Grouping field ${field} exists on multiple reviewed relationships; name the intended related resource.`,
+        );
       }
     }
     if (autoBandIntent) {
@@ -2284,15 +2449,24 @@ function localPlanRequirements(
     }
   }
   const uniqueDimensionCandidates = uniqueByJson(dimensionCandidates);
-  const dimension = uniqueDimensionCandidates.length === 1
-    ? uniqueDimensionCandidates[0]
+  const dimensions = groupingAmbiguities.length === 0 && uniqueDimensionCandidates.length > 0
+    ? uniqueDimensionCandidates
     : undefined;
+  const numericBandDimensionCount = uniqueDimensionCandidates
+    .filter((candidate) => "numeric_band" in candidate)
+    .length;
 
   const timeWindow = requestedRelativeWindow
     ? reviewedRelativeTimeField(resource, normalized, requestedRelativeWindow)
     : undefined;
+  const timeBucketCandidates = requestedTimeBucket
+    ? reviewedTimeBucketCandidates(resource, requestedTimeBucket)
+    : [];
   const timeBucket = requestedTimeBucket
     ? reviewedTimeBucketField(resource, normalized, requestedTimeBucket)
+    : undefined;
+  const timeBucketAmbiguity = requestedTimeBucket && !timeBucket && timeBucketCandidates.length > 1
+    ? `Time bucket ${requestedTimeBucket} is ambiguous; name one reviewed time field: ${[...new Set(timeBucketCandidates.map((candidate) => candidate.field))].join(", ")}.`
     : undefined;
   const orderByTime = timeBucket && /\b(?:oldest|earliest|chronological)\b/.test(normalized)
     ? { kind: "time_bucket" as const, direction: "asc" as const }
@@ -2304,14 +2478,15 @@ function localPlanRequirements(
   const unanswerable = (rowIntent && (!select || select.length === 0 || Boolean(timeWindow?.relationship)))
     || (rowIntent && (countIntent || numericMeasureRequested))
     || measureIntentCount > 1
+    || Boolean(distinctIntent && (!distinctField || mentionedDistinctFields.length > 1))
     || (numericMeasureRequested && mentionedNumeric.length !== 1)
     || Boolean(dispersionIntent && (!dispersionFunction
       || mentionedNumeric.length !== 1
       || !safeStringList(aggregateFunctions[mentionedNumeric[0] ?? ""]).includes(dispersionFunction)))
     || Boolean(runningTotalIntent && derivedCandidates.length !== 1)
-    || Boolean(bandIntent && uniqueDimensionCandidates.length !== 1)
+    || Boolean(bandIntent && numericBandDimensionCount !== 1)
     || uniqueFilterCandidates.length > 1
-    || (groupingRequested && uniqueDimensionCandidates.length !== 1)
+    || Boolean(groupingRequested && !dimensions?.length)
     || Boolean(requestedRelativeWindow && !timeWindow)
     || Boolean(requestedTimeBucket && !timeBucket);
   const requirements: LocalPlanRequirements = {
@@ -2320,12 +2495,12 @@ function localPlanRequirements(
     kind: rowIntent ? "rows" : "aggregate",
     ...(measure ? { measure } : {}),
     ...(filter ? { filter } : {}),
-    ...(dimension ? { dimension } : {}),
+    ...(dimensions ? { dimensions } : {}),
     ...(timeBucket ? { timeBucket } : {}),
     ...(orderByTime ? { orderByTime } : {}),
     ...(timeWindow ? { timeWindow } : {}),
     ...(select?.length ? { select } : {}),
-    dimensionsAllowed: Boolean(dimension),
+    dimensionsAllowed: Boolean(dimensions?.length),
     filtersAllowed: Boolean(filter),
     timeBucketAllowed: Boolean(timeBucket),
     comparisonAllowed,
@@ -2333,6 +2508,7 @@ function localPlanRequirements(
     unanswerable,
   };
   const clauses = [
+    ...uniqueByJson([...groupingAmbiguities, ...(timeBucketAmbiguity ? [timeBucketAmbiguity] : [])]),
     `Use resource exactly ${requirements.resource}.`,
     requirements.boundary ? `If boundary is sent, it must be the string ${requirements.boundary}.` : undefined,
     `Use kind exactly ${requirements.kind}.`,
@@ -2344,14 +2520,20 @@ function localPlanRequirements(
     filter
       ? `Use exactly one where filter: field ${filter.field}, op eq, value ${JSON.stringify(filter.value)}.`
       : "Do not add a where filter because no exact reviewed filter value was named.",
-    dimension
-      ? "numeric_band" in dimension
-        ? `Use exactly one dimension: numeric_band ${JSON.stringify(dimension.numeric_band)}.`
-        : `Use exactly one dimension: field ${dimension.field}${dimension.relationship ? ` with relationship ${dimension.relationship}` : " with no relationship"}.`
-      : "Do not add dimensions because the question did not request a reviewed grouping.",
+    dimensions?.length
+      ? `Use exactly ${dimensions.length} dimension${dimensions.length === 1 ? "" : "s"}: ${dimensions
+        .map((dimension) => "numeric_band" in dimension
+          ? `numeric_band ${JSON.stringify(dimension.numeric_band)}`
+          : `field ${dimension.field}${dimension.relationship ? ` with relationship ${dimension.relationship}` : " with no relationship"}`)
+        .join("; ")}.`
+      : groupingRequested
+        ? "Do not guess a dimension; the requested grouping is not unambiguous in this reviewed resource."
+        : "Do not add dimensions because the question did not request a reviewed grouping.",
     timeBucket
       ? `Use exactly one time_bucket: field ${timeBucket.field}, bucket ${timeBucket.bucket}${timeBucket.relationship ? `, relationship ${timeBucket.relationship}` : ", with no relationship"}.`
-      : "Do not add a time_bucket because the question did not request an unambiguous reviewed time grain.",
+      : requestedTimeBucket
+        ? "Do not guess a time_bucket; name one reviewed time field for the requested grain."
+        : "Do not add a time_bucket because the question did not request a reviewed time grain.",
     orderByTime
       ? `Use order_by kind time_bucket with direction ${orderByTime.direction}.`
       : undefined,
@@ -2363,13 +2545,13 @@ function localPlanRequirements(
   ].filter((clause): clause is string => Boolean(clause));
   const exactPlan = !unanswerable && requirements.kind === "aggregate" && measure
     ? {
-      boundary: requirements.boundary,
+      ...(requirements.boundary ? { boundary: requirements.boundary } : {}),
       plan: {
         kind: "aggregate",
         resource: requirements.resource,
         measures: [measure],
         ...(filter ? { where: [{ field: filter.field, op: "eq", value: filter.value }] } : {}),
-        ...(dimension ? { dimensions: [dimension] } : {}),
+        ...(dimensions ? { dimensions } : {}),
         ...(timeBucket ? { time_bucket: timeBucket } : {}),
         ...(orderByTime ? { order_by: orderByTime } : {}),
         ...(timeWindow ? { time_window: timeWindow } : {}),
@@ -2377,7 +2559,7 @@ function localPlanRequirements(
     }
     : requirements.kind === "rows" && select?.length
       ? {
-        boundary: requirements.boundary,
+        ...(requirements.boundary ? { boundary: requirements.boundary } : {}),
         plan: {
           kind: "rows",
           resource: requirements.resource,
@@ -2397,6 +2579,20 @@ function localPlanRequirements(
   return requirements;
 }
 
+function relationshipGroupingMentionsTarget(question: string, target: string): boolean {
+  if (!target) return false;
+  const escaped = target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const direct = new RegExp(
+    `(?:^|[^a-z0-9_])(?:by|across|per|for\\s+each|within\\s+each)\\s+(?:(?:the|reviewed)\\s+){0,2}${escaped}(?:$|[^a-z0-9_])`,
+    "i",
+  );
+  if (direct.test(question)) return true;
+  return new RegExp(
+    `(?:^|[^a-z0-9_])(?:by|across|per|for\\s+each|within\\s+each)\\s+[^?.;]{1,160}?(?:,|\\band\\b)\\s+(?:(?:the|reviewed)\\s+){0,2}${escaped}(?:$|[^a-z0-9_])`,
+    "i",
+  ).test(question);
+}
+
 function localPlanMatchesRequirements(
   args: Record<string, unknown>,
   requirements: LocalPlanRequirements,
@@ -2412,9 +2608,8 @@ function localPlanMatchesRequirements(
   if (!localPlanTimeWindowMatches(plan, requirements.timeWindow)) return false;
   const dimensions = Array.isArray(plan.dimensions) ? plan.dimensions.filter(isRecord) : [];
   if (!requirements.dimensionsAllowed && dimensions.length > 0) return false;
-  if (requirements.dimension) {
-    if (dimensions.length !== 1) return false;
-    if (!localPlanDimensionMatches(dimensions[0]!, requirements.dimension)) return false;
+  if (requirements.dimensions) {
+    if (!localPlanDimensionsMatch(dimensions, requirements.dimensions)) return false;
   }
   const filters = Array.isArray(plan.where) ? plan.where.filter(isRecord) : [];
   if (!requirements.filtersAllowed && filters.length > 0) return false;
@@ -2444,6 +2639,14 @@ function localPlanRequirementsForDirectCall(
   traces: AskToolTrace[],
   args: Record<string, unknown>,
 ): LocalPlanRequirements | undefined {
+  const resource = localCatalogResourceForDirectCall(traces, args);
+  return resource ? localPlanRequirements(question, { resources: [resource] }) : undefined;
+}
+
+function localCatalogResourceForDirectCall(
+  traces: AskToolTrace[],
+  args: Record<string, unknown>,
+): Record<string, unknown> | undefined {
   const plan = isRecord(args.plan) ? args.plan : undefined;
   if (!plan || typeof plan.resource !== "string") return undefined;
   for (const trace of [...traces].reverse()) {
@@ -2451,9 +2654,23 @@ function localPlanRequirementsForDirectCall(
     const resource = trace.result.resources.filter(isRecord).find((candidate) =>
       candidate.id === plan.resource
       && (typeof args.boundary !== "string" || !args.boundary || candidate.boundary_name === args.boundary));
-    if (resource) return localPlanRequirements(question, { resources: [resource] });
+    if (resource) return resource;
   }
   return undefined;
+}
+
+function localCompoundAnalysisQuestions(question: string, toolCallCount: number): string[] {
+  if (toolCallCount !== 2) return [];
+  const match = question.trim().match(
+    /^(?:run|perform|execute)\s+(?:two|2)\s+(?:reviewed\s+)?analyses?\s*:\s*(.+)$/iu,
+  );
+  if (!match?.[1]) return [];
+  const clauses = match[1]
+    .replace(/[.?!]+$/u, "")
+    .split(/\s+and\s+/iu)
+    .map((clause) => clause.trim())
+    .filter(Boolean);
+  return clauses.length === 2 ? clauses : [];
 }
 
 function localPlanRequirementsFromQuestionCatalog(
@@ -2517,9 +2734,8 @@ function directLocalPlanMatchesRequirements(
     if (measures.length !== 1) return false;
     if (!localPlanMeasureMatches(measures[0]!, requirements.measure)) return false;
   }
-  if (requirements.dimension) {
-    if (dimensions.length !== 1) return false;
-    if (!localPlanDimensionMatches(dimensions[0]!, requirements.dimension)) return false;
+  if (requirements.dimensions) {
+    if (!localPlanDimensionsMatch(dimensions, requirements.dimensions)) return false;
   } else if (dimensions.length > 0) {
     return false;
   }
@@ -2542,7 +2758,7 @@ function localPlanMeasureMatches(
 
 function localPlanDimensionMatches(
   actual: Record<string, unknown>,
-  expected: NonNullable<LocalPlanRequirements["dimension"]>,
+  expected: LocalPlanDimension,
 ): boolean {
   if ("numeric_band" in expected) {
     if (typeof expected.numeric_band === "string") {
@@ -2562,6 +2778,20 @@ function localPlanDimensionMatches(
   return actual.numeric_band === undefined
     && actual.field === expected.field
     && (actual.relationship ?? undefined) === expected.relationship;
+}
+
+function localPlanDimensionsMatch(
+  actual: Record<string, unknown>[],
+  expected: LocalPlanDimension[],
+): boolean {
+  if (actual.length !== expected.length) return false;
+  const unmatched = [...actual];
+  return expected.every((dimension) => {
+    const index = unmatched.findIndex((candidate) => localPlanDimensionMatches(candidate, dimension));
+    if (index < 0) return false;
+    unmatched.splice(index, 1);
+    return true;
+  });
 }
 
 function uniqueByJson<T>(values: T[]): T[] {
@@ -2614,6 +2844,18 @@ function reviewedTimeBucketField(
   question: string,
   bucket: string,
 ): LocalPlanRequirements["timeBucket"] | undefined {
+  const candidates = reviewedTimeBucketCandidates(resource, bucket);
+  const direct = candidates.filter((candidate) => candidate.relationship === undefined);
+  const mentioned = candidates.filter((candidate) => questionMentionsField(question, candidate.field));
+  if (mentioned.length === 1) return mentioned[0];
+  if (direct.length === 1) return direct[0];
+  return candidates.length === 1 ? candidates[0] : undefined;
+}
+
+function reviewedTimeBucketCandidates(
+  resource: Record<string, unknown>,
+  bucket: string,
+): Array<{ field: string; bucket: string; relationship?: string }> {
   const direct = isRecord(resource.time_bucket_fields)
     ? Object.entries(resource.time_bucket_fields).flatMap(([field, buckets]) =>
       Array.isArray(buckets) && buckets.includes(bucket) ? [{ field, bucket }] : [])
@@ -2631,11 +2873,7 @@ function reviewedTimeBucketField(
       }
     }
   }
-  const candidates = [...direct, ...related];
-  const mentioned = candidates.filter((candidate) => questionMentionsField(question, candidate.field));
-  if (mentioned.length === 1) return mentioned[0];
-  if (direct.length === 1) return direct[0];
-  return candidates.length === 1 ? candidates[0] : undefined;
+  return [...direct, ...related];
 }
 
 function timeBucketFromQuestion(question: string, mentionedNumericFields: string[]): string | undefined {
@@ -2701,14 +2939,44 @@ function relativeTimeWindowFromQuestion(question: string): RelativeTimeWindow | 
 }
 
 function questionMentionsField(question: string, field: string): boolean {
-  if (isIdentifierLikeField(field)) return false;
-  const words = field.toLowerCase().split("_").filter(Boolean);
-  const candidates = new Set([words.join(" ")]);
-  const semanticWords = words.filter((word) =>
-    !["cents", "cent", "milliseconds", "millisecond", "ms", "seconds", "second", "at"].includes(word));
-  if (semanticWords.length > 0) candidates.add(semanticWords.join(" "));
+  const candidates = fieldMentionCandidates(field);
+  const semanticWords = field.toLowerCase().split("_").filter((word) =>
+    word && !["cents", "cent", "milliseconds", "millisecond", "ms", "seconds", "second", "at"].includes(word));
   if (semanticWords[0] && semanticWords[0].length >= 4) candidates.add(semanticWords[0]);
   return [...candidates].some((candidate) => candidate.length >= 3 && wordPosition(question, candidate) >= 0);
+}
+
+function questionExplicitlyMentionsField(question: string, field: string): boolean {
+  return [...fieldMentionCandidates(field)]
+    .some((candidate) => candidate.length >= 3 && wordPosition(question, candidate) >= 0);
+}
+
+function questionMentionsDistinctField(question: string, field: string): boolean {
+  if (field.toLowerCase() === "id") return false;
+  const readable = field.toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  const withoutIdSuffix = readable.replace(/\s+id$/u, "").trim();
+  const candidates = new Set([
+    ...resourceNameVariants(readable),
+    ...resourceNameVariants(withoutIdSuffix),
+  ]);
+  return [...candidates]
+    .some((candidate) => candidate.length >= 3 && wordPosition(question, candidate) >= 0);
+}
+
+function fieldMentionCandidates(field: string): Set<string> {
+  if (isIdentifierLikeField(field)) return new Set();
+  const words = field.toLowerCase().split("_").filter(Boolean);
+  const candidates = new Set<string>();
+  const addCandidate = (candidate: string) => {
+    if (!candidate) return;
+    candidates.add(candidate);
+    candidates.add(pluralResourceName(candidate));
+  };
+  addCandidate(words.join(" "));
+  const semanticWords = words.filter((word) =>
+    !["cents", "cent", "milliseconds", "millisecond", "ms", "seconds", "second", "at"].includes(word));
+  if (semanticWords.length > 0) addCandidate(semanticWords.join(" "));
+  return candidates;
 }
 
 function questionMentionsMetadataName(question: string, value: unknown): boolean {

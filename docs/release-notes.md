@@ -37,6 +37,12 @@ for the Synapsor Cloud CLI.
   read-only, grant, and ownership checks, dependency-scoped RLS proof, and the
   whole-database single-organization tenant/RLS guard. Draft/rescan discovery
   remains whole-schema, and no per-query inspection is cached.
+- Rescan now reconciles curated boundaries instead of regenerating them from
+  scratch. Unchanged field policy, enum choices, derived paths, shared-reference
+  acknowledgements, reviewed metadata, metrics, and limits survive; only
+  decisions whose schema, role posture, or trusted-context inputs changed are
+  invalidated. Human policy is stored per immutable boundary ID, so reviewing a
+  shared table in one boundary cannot mutate another boundary.
 - Production Explore is off by default and fails closed without read-only mode,
   exact production authority, verified issuer/audience/claims and OAuth scope,
   direct TLS or a trusted TLS proxy, shared HMAC material, and initialized
@@ -58,6 +64,11 @@ for the Synapsor Cloud CLI.
   bands, named ratios, and post-suppression running/rank/lag/moving-average/share
   operations. The model selects only reviewed names and never supplies formulas,
   SQL, window frames, or bucket edges.
+- Reviewers can add bounded labels and descriptions to resources and fields
+  without changing authority. Reviewed numeric fields can also opt into safe
+  automatic quantile or equal-width banding; the model selects only a reviewed
+  method and bucket count, while Runner computes scoped edges and never returns
+  raw quantile edges.
 - Rows and aggregates can use a fixed reviewed relative-time vocabulary such as
   `previous_month`, `last_30_days`, and `month_to_date`. Runner captures one
   instant, resolves one half-open range under the boundary's reviewed UTC
@@ -79,6 +90,18 @@ for the Synapsor Cloud CLI.
 - `doctor` now checks live PostgreSQL and MySQL index metadata for every active
   derived-scope path. Missing supporting indexes are advisory warnings or notes
   with reviewable `CREATE INDEX` suggestions; they never weaken or gate scope.
+- Shape and execution controls such as ranked rows, groups, response cells,
+  response bytes, measures, dimensions, and statement timeout are editable only
+  through reviewed CLI or Workbench policy with product hard ceilings. Derived
+  and analysis paths still default to two hops; a separately reviewed opt-in can
+  raise either authority to the absolute hard cap of three, with path-cost and
+  denormalization guidance kept visible to operators.
+- Production evidence and query audits are readable through the same CLI and
+  Workbench views from the shared PostgreSQL control store, including when the
+  reviewed source is MySQL. Reads identify ledger provenance, preserve keyed
+  scope redaction, and never persist result values. Claude Code, Cursor, and VS
+  Code receive secret-free Streamable HTTP configurations that reference bearer
+  tokens through environment variables and retain the exact two-tool surface.
 - Real PostgreSQL and MySQL HTTP journeys verify official MCP interoperability,
   row scope, suppression, budget isolation, concurrency, source immutability,
   public `doctor` attestation, and packed-package behavior.

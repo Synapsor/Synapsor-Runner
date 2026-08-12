@@ -13,6 +13,7 @@ import {
   type AttentionSeverity,
   type LocalProposalState,
   type ProposalSearchFilters,
+  type QueryAuditSearchFilters,
   type RecordAttentionEventInput,
   type StoredProposal,
   type WorkerControlAction,
@@ -220,6 +221,7 @@ export type LocalUiOptions = {
   boundaryRoot?: string;
   projectRoot?: string;
   storeAccess?: LocalUiStoreAccess;
+  ledgerSource?: WorkbenchLedgerSource;
   safeActionPreview?: SafeActionPreview;
   guidedActionPreview?: GuidedActionPreview;
   freshnessEvaluator?: ProposalFreshnessEvaluator;
@@ -242,6 +244,10 @@ export type LocalUiOptions = {
   sessionAbsoluteTimeoutMs?: number;
   now?: () => number;
 };
+
+export type WorkbenchLedgerSource =
+  | { kind: "local_sqlite"; path: string }
+  | { kind: "shared_postgres"; schema: string; url_env: string; read_only: true };
 
 const DEFAULT_WORKBENCH_IDLE_TIMEOUT_MS = 2 * 60 * 60 * 1_000;
 const DEFAULT_WORKBENCH_ABSOLUTE_TIMEOUT_MS = 8 * 60 * 60 * 1_000;
@@ -453,6 +459,10 @@ export async function startLocalUiServer(options: LocalUiOptions = {}): Promise<
         projectRoot,
         boundaryRoot,
         storeAccess,
+        ledgerSource: options.ledgerSource ?? {
+          kind: "local_sqlite",
+          path: storePath === ":memory:" ? storePath : path.resolve(storePath),
+        },
         safeActionPreview,
         guidedActionPreview,
         freshnessEvaluator,
@@ -540,6 +550,7 @@ async function handleRequest(input: {
   projectRoot: string;
   boundaryRoot?: string;
   storeAccess: LocalUiStoreAccess;
+  ledgerSource: WorkbenchLedgerSource;
   safeActionPreview: SafeActionPreview;
   guidedActionPreview: GuidedActionPreview;
   freshnessEvaluator: ProposalFreshnessEvaluator;
@@ -573,6 +584,7 @@ async function handleRequest(input: {
     projectRoot,
     boundaryRoot,
     storeAccess,
+    ledgerSource,
     safeActionPreview,
     guidedActionPreview,
     freshnessEvaluator,
@@ -1185,13 +1197,9 @@ async function handleRequest(input: {
       return;
     }
     const submittedCandidate = body.candidate as unknown as ExplorationBoundaryDraft;
-    const reviewDraft = existingProgress
-      && submittedCandidate.generation_lock_fingerprint
-        === existingProgress.candidate.generation_lock_fingerprint
-      && submittedCandidate.pack?.name === existingProgress.candidate.pack.name
-      ? existingProgress.candidate
-      : draft;
-    const preview = reviewExplorationBoundaryCandidate(reviewDraft, submittedCandidate);
+    // The inspected draft is the authority ceiling. Saved progress may be narrower,
+    // but the editor must still be able to add another inspected, reviewable resource.
+    const preview = reviewExplorationBoundaryCandidate(draft, submittedCandidate);
     const confirmed = normalizePartialReviewDecisions(
       preview.candidate.unresolved_decisions,
       body.confirmed_decisions as string[],
@@ -2012,6 +2020,7 @@ async function handleRequest(input: {
       }
       sendJson(response, 200, {
         ok: true,
+        ledger_source: ledgerSource,
         audit: {
           audit_id: auditId,
           created_at: String(record.created_at ?? payload.recorded_at ?? ""),
@@ -2042,10 +2051,25 @@ async function handleRequest(input: {
     } catch (error) {
       if (!isInactiveExplorationBoundary(error)) throw error;
     }
+    const auditFilters: QueryAuditSearchFilters = { limit: 50 };
+    const tenantFilter = url.searchParams.get("tenant")?.trim();
+    const tableFilter = url.searchParams.get("table")?.trim();
+    const capabilityFilter = url.searchParams.get("capability")?.trim();
+    const sinceFilter = url.searchParams.get("since")?.trim();
+    if (tenantFilter) auditFilters.tenant = tenantFilter;
+    if (tableFilter) auditFilters.table = tableFilter;
+    if (capabilityFilter) auditFilters.capability = capabilityFilter;
+    if (sinceFilter) {
+      if (!Number.isFinite(Date.parse(sinceFilter))) {
+        sendJson(response, 400, { ok: false, error: "Explore history since must be an ISO timestamp." });
+        return;
+      }
+      auditFilters.from = new Date(sinceFilter).toISOString();
+    }
     const durableRecords = await storeAccess(
       "read",
       "workbench-explore-history-list",
-      (store) => store.listQueryAudit({ limit: 50 }),
+      (store) => store.listQueryAudit(auditFilters),
     );
     const durable = durableRecords
       .filter((record) => typeof asRecord(record.payload).scoped_explore_version === "string")
@@ -2067,9 +2091,11 @@ async function handleRequest(input: {
       });
     sendJson(response, 200, {
       ok: true,
+      ledger_source: ledgerSource,
       recent: recent.map(({ token, ...query }) => ({ ...query, query_ref: token })),
       durable,
       durable_limit: 50,
+      filters: auditFilters,
       persisted: {
         model_conversation: false,
         result_values: false,
@@ -2085,9 +2111,38 @@ async function handleRequest(input: {
       sendJson(response, 404, { ok: false, error: "Explore evidence is available only in a local Auto Boundary Workbench." });
       return;
     }
+    const evidenceId = url.searchParams.get("evidence_id");
+    if (evidenceId) {
+      const evidence = await storeAccess(
+        "read",
+        "workbench-explore-evidence-detail",
+        (store) => store.getEvidenceBundle(evidenceId),
+      );
+      if (!evidence || evidence.payload.schema_version !== "synapsor.analytics-evidence.v1") {
+        sendJson(response, 404, { ok: false, error: "That Explore evidence bundle was not found in the configured ledger." });
+        return;
+      }
+      sendJson(response, 200, {
+        ok: true,
+        ledger_source: ledgerSource,
+        evidence: {
+          evidence_bundle_id: evidence.evidence_bundle_id,
+          created_at: evidence.created_at,
+          tenant_scope_fingerprint: evidence.tenant_id,
+          capability: evidence.capability ?? null,
+          source_id: evidence.source_id ?? null,
+          source_table: evidence.source_table ?? null,
+          query_fingerprint: evidence.query_fingerprint ?? null,
+          payload: evidence.payload,
+          query_audit: evidence.query_audit,
+          result_values_persisted: evidence.payload.result_values_persisted === true,
+        },
+      });
+      return;
+    }
     const queryRef = url.searchParams.get("query_ref");
     if (!queryRef) {
-      sendJson(response, 400, { ok: false, error: "Explore evidence requires an analysis reference." });
+      sendJson(response, 400, { ok: false, error: "Explore evidence requires an evidence_id or an active analysis query_ref." });
       return;
     }
     const query = (await listProtectableQueries({ projectRoot }))
@@ -2104,6 +2159,7 @@ async function handleRequest(input: {
     const includeSql = url.searchParams.get("include_sql") === "1";
     sendJson(response, 200, {
       ok: true,
+      ledger_source: ledgerSource,
       analysis_reference: query.token,
       original_question: null,
       original_question_status: "The server does not persist host conversations. The current Workbench transcript may still show the question locally.",

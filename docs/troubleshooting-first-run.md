@@ -208,8 +208,12 @@ differencing, cohort, and suppression limit reconstruction. The refusal names
 the class, used/limit count, and an upper bound for when the currently counted
 rolling-window entries expire. In the CLI, use `/access`, select the boundary,
 then `L Limits` to change a reviewed query/rate ceiling and `C` to review and
-activate it. Workbench exposes the same Query volume panel. Do not raise a
-disclosure control merely to obtain more request throughput.
+activate it. The same editor also exposes hard-capped result shape, statement
+timeout, ranked candidates, and derived/analysis path depth. Workbench mirrors
+them in **Query volume**, **Ranked result settings**, and **Result shape,
+timeout, and path depth**. Do not raise a disclosure control merely to obtain
+more request throughput; differencing, extracted-cell, cohort, and suppression
+controls are not widened by these settings.
 
 Every cohort-protected aggregate, including an unfiltered total or time trend,
 uses the durable rolling 24-hour privacy pool for that reviewed source, trusted

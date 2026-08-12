@@ -92,7 +92,8 @@ reviewed boundary additionally fixes aggregate-safe measures,
 reviewer-named derived measures, fixed numeric bands, reviewer-approved
 automatic numeric-band methods, hour through year and day-of-week buckets,
 typed filters, up to three activated relationship paths
-(one or two proven many-to-one links per path), maximum groups,
+(one or two proven many-to-one links per path by default, or three after an
+explicit reviewed depth change), maximum groups,
 response/query/rate limits, and durable extraction/differencing budgets. A
 field may be approved for
 `count_distinct` while its raw values remain hidden. Relationship paths remain

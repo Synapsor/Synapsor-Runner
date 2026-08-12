@@ -1,8 +1,11 @@
 import { type RuntimeConfig } from "@synapsor-runner/mcp-server";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
 import { canonicalJsonDigest, parseFreshnessProof, protocolVersions } from "@synapsor-runner/protocol";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { reusableRecordedFreshness } from "./proposal-ledger.js";
+import { evidenceList, queryAuditList, reusableRecordedFreshness } from "./proposal-ledger.js";
 
 
 const proposalHash = canonicalJsonDigest({ proposal: "freshness-reuse" });
@@ -206,6 +209,57 @@ describe("proposal approval freshness reuse", () => {
       })).toThrow(/FRESHNESS_POLICY_CHANGED_CREATE_NEW_PROPOSAL/);
     } finally {
       store.close();
+    }
+  });
+
+  it("identifies the consulted local ledger in text, JSON, and empty results", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-ledger-source-"));
+    const storePath = path.join(tempDir, "local.db");
+    const store = new ProposalStore(storePath);
+    store.recordEvidenceBundle({
+      evidence_bundle_id: "ev_cli_source",
+      tenant_id: "keyed:fixture",
+      payload: {
+        schema_version: "synapsor.analytics-evidence.v1",
+        capability: "app.explore_data",
+        source_id: "analytics",
+        source_table: "public.orders",
+        query_fingerprint: "sha256:fixture",
+        outcome: "ok",
+        result_values_persisted: false,
+      },
+      query_audit: [{
+        source_id: "analytics",
+        query_fingerprint: "sha256:fixture",
+        table_name: "public.orders",
+        row_count: 2,
+        payload: { scoped_explore_version: "1.7.0", status: "ok", result_values_persisted: false },
+      }],
+    });
+    store.close();
+    const write = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      await evidenceList(["--store", storePath, "--table", "public.orders"]);
+      expect(write.mock.calls.flat().join("")).toContain(`Ledger: local SQLite ${storePath}`);
+      write.mockClear();
+      await queryAuditList([
+        "--store", storePath,
+        "--json",
+        "--capability", "app.explore_data",
+        "--status", "ok",
+        "--since", "2020-01-01T00:00:00.000Z",
+      ]);
+      const json = JSON.parse(write.mock.calls.flat().join(""));
+      expect(json).toMatchObject({
+        ledger_source: { kind: "local_sqlite", path: storePath },
+        query_audit: [expect.objectContaining({ table_name: "public.orders" })],
+      });
+      write.mockClear();
+      await evidenceList(["--store", storePath, "--table", "public.missing"]);
+      expect(write.mock.calls.flat().join("")).toContain("No evidence bundles found in the consulted ledger");
+    } finally {
+      write.mockRestore();
+      await fs.rm(tempDir, { recursive: true, force: true });
     }
   });
 });

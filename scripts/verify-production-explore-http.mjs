@@ -29,7 +29,12 @@ import {
   askToolSurfaceDigest,
   secureAskJsonRequest,
 } from "../apps/runner/dist/model-ask.js";
-import { verifyJwtRejectionMatrix } from "./production-explore-http-e2e-helpers.mjs";
+import { createWorkbenchAskMcpGateway } from "../apps/runner/dist/ask-mcp-gateway.js";
+import {
+  verifyGeneratedProductionHttpClientConfigs,
+  verifyJwtRejectionMatrix,
+} from "./production-explore-http-e2e-helpers.mjs";
+import { verifyProductionExploreWorkbenchLedger } from "./verify-production-explore-workbench-ledger.mjs";
 import {
   applyProductionExploreSoakBudgets,
   assertExactNumericBandResult,
@@ -40,9 +45,11 @@ import {
   productionExploreSoakRequested,
   runProductionExploreHttpSoak,
   runProductionExploreRecovery,
+  summarizeExploreToolCalls,
   waitForSourceConnectionQuiescence,
   verifyLocalExploreAuditRecords,
   verifyProductionExploreAuditSink,
+  verifyProductionExploreOperatorLedger,
 } from "./production-explore-http-soak.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -853,6 +860,57 @@ async function verifyOllamaAgentOverProductionHttp(input) {
   }
 }
 
+async function verifyOllamaAgentOverLocalExplore(input) {
+  const gateway = await createWorkbenchAskMcpGateway({
+    configPath: path.join(input.projectRoot, "synapsor.runner.json"),
+    storePath: path.join(input.projectRoot, ".synapsor/local.db"),
+    projectRoot: input.projectRoot,
+    env: input.env,
+    mode: "authoring",
+  });
+  try {
+    const tools = gateway.listTools();
+    assert(tools.map((tool) => tool.name).join(",") === "app.describe_data,app.explore_data",
+      "Ollama received a local Explore tool surface other than the exact reviewed two tools.", tools);
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai_compatible",
+      model: input.model,
+      base_url: process.env.SYNAPSOR_TEST_OLLAMA_BASE_URL?.trim() || "http://127.0.0.1:11434/v1",
+      request_timeout_seconds: 180,
+      authority_digest: askToolSurfaceDigest(tools),
+      egress_acknowledged: true,
+    });
+    const result = await session.run(
+      "How many churn events are there by reason category?",
+      gateway,
+      { requestJson: secureAskJsonRequest },
+    );
+    const explored = result.tool_calls.find((call) => call.tool === "app.explore_data" && call.status === "ok");
+    assert(explored,
+      "Ollama did not execute an accepted Explore plan over local authoring MCP.", result.tool_calls);
+    const measure = explored.arguments?.plan?.measures?.[0];
+    const countEquivalent = measure?.function === "count"
+      || (measure?.function === "non_null_count" && measure?.field === "reason_category");
+    assert(explored.arguments?.plan?.resource === "public.churn_events"
+      && explored.arguments?.plan?.measures?.length === 1
+      && countEquivalent
+      && explored.arguments?.plan?.dimensions?.[0]?.field === "reason_category",
+    "Ollama's local Explore plan did not match the reviewed question.", explored.arguments);
+    assert(!/tenant|principal/i.test(JSON.stringify(explored.arguments)),
+      "Ollama attempted to supply local trusted tenant or principal authority.", explored.arguments);
+    return {
+      model: input.model,
+      answer_source: result.answer_source,
+      tools: tools.map((tool) => tool.name),
+      reviewed_plan_executed: true,
+      model_supplied_scope: false,
+    };
+  } finally {
+    await gateway.close().catch(() => undefined);
+  }
+}
+
 function ollamaSoakIntegerEnv(name, fallback, minimum = 1, maximum = Number.MAX_SAFE_INTEGER) {
   const raw = process.env[name]?.trim();
   if (!raw) return fallback;
@@ -1015,7 +1073,9 @@ async function runOllamaAgentSoak(input) {
     duration_ms: durationMs,
     target_questions: targetQuestions,
     attempted: 0,
+    accepted_questions: 0,
     accepted_explore_queries: 0,
+    refused_explore_queries: 0,
     expected_refusals: 0,
     semantic_matches: 0,
     no_tool_answers: 0,
@@ -1093,10 +1153,11 @@ async function runOllamaAgentSoak(input) {
         state.security_failures += 1;
         throw new Error("Ollama supplied or received trusted scope, or the source changed.");
       }
-      const accepted = [...result.tool_calls].reverse().find((call) =>
-        call.tool === "app.explore_data" && call.status === "ok");
-      const refused = result.tool_calls.some((call) =>
-        call.tool === "app.explore_data" && call.status === "refused");
+      const exploreCalls = summarizeExploreToolCalls(result.tool_calls);
+      const accepted = exploreCalls.last_successful;
+      const refused = exploreCalls.refused.length > 0;
+      state.accepted_explore_queries += exploreCalls.successful.length;
+      state.refused_explore_queries += exploreCalls.refused.length;
       const toolAttempts = result.tool_calls.map((call) => ({
         tool: call.tool,
         status: call.status,
@@ -1104,7 +1165,7 @@ async function runOllamaAgentSoak(input) {
         arguments: call.arguments,
       }));
       if (accepted) {
-        state.accepted_explore_queries += 1;
+        state.accepted_questions += 1;
         const semanticMatch = testCase.validate(accepted.arguments?.plan);
         if (semanticMatch) state.semantic_matches += 1;
         state.outcomes.push({
@@ -1116,8 +1177,7 @@ async function runOllamaAgentSoak(input) {
         });
       } else if (refused) {
         state.expected_refusals += 1;
-        const refusal = [...result.tool_calls].reverse().find((call) =>
-          call.tool === "app.explore_data" && call.status === "refused");
+        const refusal = exploreCalls.last_refused;
         state.outcomes.push({
           question: testCase.question,
           status: "refused",
@@ -1175,7 +1235,7 @@ async function runOllamaAgentSoak(input) {
       state.process_samples.push(processSample);
       persist();
       if (state.attempted % 10 === 0) {
-        process.stderr.write(`[soak:ollama] attempted=${state.attempted} accepted=${state.accepted_explore_queries} semantic=${state.semantic_matches} errors=${state.provider_errors}\n`);
+        process.stderr.write(`[soak:ollama] attempted=${state.attempted} accepted_questions=${state.accepted_questions} explore_calls=${state.accepted_explore_queries} semantic=${state.semantic_matches} errors=${state.provider_errors}\n`);
       }
     }
   }
@@ -1184,10 +1244,10 @@ async function runOllamaAgentSoak(input) {
   gateway = undefined;
 
   state.completed_at = new Date().toISOString();
-  const acceptanceRate = state.attempted === 0 ? 0 : state.accepted_explore_queries / state.attempted;
-  const semanticRate = state.accepted_explore_queries === 0
+  const acceptanceRate = state.attempted === 0 ? 0 : state.accepted_questions / state.attempted;
+  const semanticRate = state.accepted_questions === 0
     ? 0
-    : state.semantic_matches / state.accepted_explore_queries;
+    : state.semantic_matches / state.accepted_questions;
   state.acceptance_rate = acceptanceRate;
   state.semantic_match_rate = semanticRate;
   state.pass = state.security_failures === 0
@@ -1198,7 +1258,8 @@ async function runOllamaAgentSoak(input) {
   if (!state.pass) {
     throw new Error(`Ollama production Explore soak missed its usability gate: ${JSON.stringify({
       attempted: state.attempted,
-      accepted: state.accepted_explore_queries,
+      acceptedQuestions: state.accepted_questions,
+      successfulExploreQueries: state.accepted_explore_queries,
       acceptanceRate,
       semanticRate,
       providerErrors: state.provider_errors,
@@ -1915,6 +1976,15 @@ async function main() {
       && !doctorSerialized.includes(env.SYNAPSOR_EXPLORE_BUDGET_HMAC_KEY),
     "Production Explore doctor disclosed a database URL or HMAC key.");
     server = await startProductionExploreCli(configPath, env);
+    const generatedHttpClients = await verifyGeneratedProductionHttpClientConfigs({
+      root,
+      configPath,
+      env,
+      serverUrl: server.url,
+      protectedResource: "https://runner.example/mcp",
+      authorizationServer: "https://identity.example",
+      tokenForPrincipal: (principal) => token(privateKey, { tenant: "acme", principal }),
+    });
 
     const authCountsBefore = await productionControlCounts(control, controlSchema);
     const wrongKeyPair = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -2143,6 +2213,17 @@ async function main() {
       "Production describe_data returned source-row data instead of metadata only.", described);
 
     const ollamaModel = process.env.SYNAPSOR_TEST_OLLAMA_MODEL?.trim();
+    const ollamaLocalAgent = ollamaModel
+      ? await verifyOllamaAgentOverLocalExplore({
+        projectRoot: localParityProjectRoot,
+        env: {
+          ...env,
+          SYNAPSOR_TENANT_ID: "acme",
+          SYNAPSOR_PRINCIPAL: "pm-1",
+        },
+        model: ollamaModel,
+      })
+      : undefined;
     const ollamaAgent = ollamaModel
       ? await verifyOllamaAgentOverProductionHttp({
         url: server.url,
@@ -2714,6 +2795,7 @@ async function main() {
     const auditStorage = await control.query(`
       SELECT
         (SELECT COUNT(*)::int FROM "${controlSchema}".production_explore_audit_events) AS dedicated_events,
+        (SELECT COUNT(*)::int FROM "${controlSchema}".ledger_entries) AS ledger_entries,
         (SELECT COUNT(*)::int FROM "${controlSchema}".ledger_entries
           WHERE kind IN ('evidence_bundle', 'evidence_item', 'query_audit')) AS proposal_ledger_events
     `);
@@ -2721,6 +2803,35 @@ async function main() {
       "Production Explore did not append metadata evidence to its dedicated sink.", auditStorage.rows[0]);
     assert(Number(auditStorage.rows[0]?.proposal_ledger_events) === 0,
       "Production Explore query volume still entered the proposal/writeback ledger.", auditStorage.rows[0]);
+
+    const operatorLedger = verifyProductionExploreOperatorLedger({
+      schema: controlSchema,
+      config_path: configPath,
+      source_id: "local_postgres",
+      forbidden_values: [readUrl, adminUrl, controlUrl, env.SYNAPSOR_EXPLORE_BUDGET_HMAC_KEY],
+      invoke: (args) => {
+        const invocation = productionExploreRunnerInvocation(args);
+        return run(invocation.command, invocation.args, { env, allowFailure: true });
+      },
+    });
+    const operatorWorkbench = await verifyProductionExploreWorkbenchLedger({
+      engine: "postgres",
+      project_root: projectRoot,
+      config_path: configPath,
+      runtime_config: runtimeConfig,
+      schema: controlSchema,
+      url_env: "SYNAPSOR_CONTROL_DATABASE_URL",
+      control_url: controlUrl,
+    });
+    const auditStorageAfterOperatorRead = await control.query(`
+      SELECT
+        (SELECT COUNT(*)::int FROM "${controlSchema}".production_explore_audit_events) AS dedicated_events,
+        (SELECT COUNT(*)::int FROM "${controlSchema}".ledger_entries) AS ledger_entries
+    `);
+    assert(Number(auditStorageAfterOperatorRead.rows[0]?.dedicated_events) === Number(auditStorage.rows[0]?.dedicated_events),
+      "Operator evidence/query-audit reads wrote to the production audit sink.", auditStorageAfterOperatorRead.rows[0]);
+    assert(Number(auditStorageAfterOperatorRead.rows[0]?.ledger_entries) === Number(auditStorage.rows[0]?.ledger_entries),
+      "Operator evidence/query-audit reads wrote to the shared proposal ledger.", auditStorageAfterOperatorRead.rows[0]);
 
     await admin.query("ALTER TABLE public.churn_events ALTER COLUMN monthly_revenue_cents TYPE bigint");
     try {
@@ -2766,8 +2877,12 @@ async function main() {
       source_connection_ceiling: 2,
       principal_session_ceiling: 2,
       dedicated_audit_sink: true,
+      production_operator_ledger: operatorLedger,
+      production_operator_workbench: operatorWorkbench,
       complete_jwt_rejection_matrix: authRefusals.map((item) => item.label),
+      generated_http_client_configs: generatedHttpClients,
       metadata_only_catalog: true,
+      ollama_agent_local: ollamaLocalAgent ?? "not_requested",
       ollama_agent_http: ollamaAgent ?? "not_requested",
       analytics_http_stdio_parity: true,
       schema_width_scaling: schemaWidthScaling,

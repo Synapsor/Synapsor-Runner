@@ -560,6 +560,7 @@ describe("schema inspector helpers", () => {
       definition: 'CREATE INDEX credits_tenant_idx ON public.credits USING btree (tenant_id)',
     }];
     const before = schemaFingerprintForInspection(inspection);
+    inspection.tables[0]!.approximate_row_count = 4_000_000;
     inspection.tables[0]!.indexes[0] = {
       ...inspection.tables[0]!.indexes[0]!,
       catalog_key_columns: ["tenant_id"],

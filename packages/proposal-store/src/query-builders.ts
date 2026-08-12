@@ -61,6 +61,7 @@ export function buildEvidenceQuery(filters: EvidenceSearchFilters): SqlQuery {
   addEqual(clauses, params, "source_id", filters.source);
   addTableFilter(clauses, params, "source_table", filters.table);
   addEqual(clauses, params, "query_fingerprint", filters.queryFingerprint);
+  addEvidenceStatusFilter(clauses, params, filters.status);
   addObjectFilter(clauses, params, "business_object", "source_table", "object_id", filters.objectType, filters.objectId);
   addTimeRange(clauses, params, "created_at", filters.from, filters.to);
   return finishQuery("SELECT * FROM evidence_bundles", clauses, params, filters.limit);
@@ -79,6 +80,7 @@ export function buildQueryAuditQuery(filters: QueryAuditSearchFilters): SqlQuery
   addObjectFilter(clauses, params, "business_object", "table_name", "object_id", filters.objectType, filters.objectId);
   addEqual(clauses, params, "primary_key_value", filters.primaryKey);
   addEqual(clauses, params, "query_fingerprint", filters.queryFingerprint);
+  addJsonStatusFilter(clauses, params, filters.status);
   addTimeRange(clauses, params, "created_at", filters.from, filters.to);
   return finishQuery("SELECT * FROM query_audit", clauses, params, filters.limit);
 }
@@ -120,6 +122,20 @@ export function addEqual(clauses: string[], params: SqlParam[], column: string, 
   if (!value) return;
   clauses.push(`${column} = ?`);
   params.push(value);
+}
+
+
+function addJsonStatusFilter(clauses: string[], params: SqlParam[], value?: string): void {
+  if (!value) return;
+  clauses.push("json_extract(payload_json, '$.status') = ?");
+  params.push(value);
+}
+
+
+function addEvidenceStatusFilter(clauses: string[], params: SqlParam[], value?: string): void {
+  if (!value) return;
+  clauses.push("(json_extract(payload_json, '$.outcome') = ? OR json_extract(payload_json, '$.status') = ?)");
+  params.push(value, value);
 }
 
 export function addTableFilter(clauses: string[], params: SqlParam[], column: string, value?: string): void {

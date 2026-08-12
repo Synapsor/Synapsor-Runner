@@ -41,6 +41,8 @@ import {
   relationshipAuthorityDependencyFingerprint,
   relationshipDependencyKey,
   resolveReviewedChildCountLink,
+  reviewedAnalysisRelationshipHopLimit,
+  reviewedDerivedScopeHopLimit,
   reviewedRankedGroupLimit,
   resourceAuthorityDependencyFingerprint,
   rolePostureFingerprint,
@@ -1158,7 +1160,7 @@ function enrichReviewableRelationshipError(
     || candidate.proof.source !== "database_catalog"
     || canonicalJsonDigest(candidate.proof.links) !== candidate.proof.digest
     || candidate.proof.links.length < 1
-    || candidate.proof.links.length > 2) {
+    || candidate.proof.links.length > 3) {
     return error;
   }
   const activeResources = new Set(active.pack.resources.map((resource) => resource.id));
@@ -1716,7 +1718,7 @@ function validateAggregatePlan(
   }
   for (const id of relationships) {
     const reviewed = reviewedRelationship(resource, id, boundary);
-    if ((reviewed.path_depth ?? 1) > boundary.budgets.max_relationship_hops) {
+    if ((reviewed.path_depth ?? 1) > reviewedAnalysisRelationshipHopLimit(boundary.budgets)) {
       throw relationshipError(`Relationship ${id} exceeds the activated path-depth bound.`);
     }
   }
@@ -2511,16 +2513,30 @@ function compileReviewedRelationshipJoins(
 } {
   const targets = new Map<string, { resource: BoundaryResource; alias: string }>();
   const resources = new Map<string, BoundaryResource>([[root.id, root]]);
+  const joinedPrefixes = new Map<string, { resource: BoundaryResource; alias: string }>();
   const joins: string[] = [];
   let aliasIndex = 1;
   for (const id of relationshipIds) {
     const relationship = reviewedRelationship(root, id, boundary);
     const links = relationshipLinks(root, relationship);
+    const joinedLinks: typeof links = [];
     let source = root;
     let sourceAlias = "t0";
     for (const link of links) {
       if (link.source_resource !== source.id) {
         throw relationshipError(`Relationship ${id} contains a discontinuous structural path.`);
+      }
+      joinedLinks.push(link);
+      const joinKind = relationship.unmatched_rows === "keep_null" ? " LEFT JOIN " : " JOIN ";
+      const prefixKey = canonicalJsonDigest({
+        join_kind: joinKind,
+        links: joinedLinks,
+      });
+      const existingPrefix = joinedPrefixes.get(prefixKey);
+      if (existingPrefix) {
+        source = existingPrefix.resource;
+        sourceAlias = existingPrefix.alias;
+        continue;
       }
       const target = resourceFor(boundary, link.target_resource);
       const targetAlias = `t${aliasIndex++}`;
@@ -2535,10 +2551,10 @@ function compileReviewedRelationshipJoins(
         engine,
       );
       on.push(...targetScope.predicates);
-      const joinKind = relationship.unmatched_rows === "keep_null" ? " LEFT JOIN " : " JOIN ";
       joins.push(`${joinKind}${qualified(target, engine)} ${targetAlias} ON ${on.join(" AND ")}`);
       resources.set(target.id, target);
       targetScope.resources.forEach((scopedResource) => resources.set(scopedResource.id, scopedResource));
+      joinedPrefixes.set(prefixKey, { resource: target, alias: targetAlias });
       source = target;
       sourceAlias = targetAlias;
     }
@@ -3311,6 +3327,7 @@ function describeExploreResult(input: {
     freshness: {
       execution_started_at: new Date(input.executionStartedAt).toISOString(),
       observed_at: new Date(input.completedAt).toISOString(),
+      execution_duration_ms: Math.max(0, input.completedAt - input.executionStartedAt),
       snapshot_consistency: "single_read_only_transaction",
       upstream_source_freshness: "not_asserted",
     },
@@ -3729,7 +3746,7 @@ function inactiveReviewableRelationships(
       && relationship.proof?.source === "database_catalog"
       && canonicalJsonDigest(relationship.proof.links) === relationship.proof.digest
       && relationship.proof.links.length >= 1
-      && relationship.proof.links.length <= 2
+      && relationship.proof.links.length <= 3
       && relationship.proof.links.every((link) =>
         activeResources.has(link.source_resource)
         && activeResources.has(link.target_resource)
@@ -4541,6 +4558,7 @@ async function recordExploreEvidence(
     trusted_scope_values_persisted: false,
     raw_sql_included: false,
     source_database_changed: false,
+    execution_duration_ms: Math.max(0, input.completedAt - input.executionStartedAt),
     recorded_at: recordedAt,
   };
   await recordExploreEvidenceBundle(store, input.mode, {
@@ -4576,6 +4594,7 @@ async function recordExploreEvidence(
       result_fingerprint: `hmac-sha256:${input.resultFingerprint}`,
       execution_started_at: new Date(input.executionStartedAt).toISOString(),
       completed_at: recordedAt,
+      execution_duration_ms: Math.max(0, input.completedAt - input.executionStartedAt),
       result_values_persisted: false,
       source_database_changed: false,
     },
@@ -4763,7 +4782,7 @@ function derivedScopePredicate(input: {
   if (input.scope.mode !== "derived"
     || input.scope.proof.source !== "database_catalog"
     || links.length < 1
-    || links.length > input.boundary.budgets.max_relationship_hops
+    || links.length > reviewedDerivedScopeHopLimit(input.boundary.budgets)
     || input.scope.path_id !== links.map((link) => link.constraint_name).join("__")
     || canonicalJsonDigest(links) !== input.scope.proof.digest) {
     throw new ScopedExploreError(
@@ -5276,8 +5295,9 @@ function reviewedRelationship(root: BoundaryResource, id: string, boundary: Acti
     throw relationshipError(`Relationship ${id} has unresolved nullable-link semantics.`);
   }
   const links = relationshipLinks(root, relationship);
-  if (links.length > 2 || links.length !== (relationship.path_depth ?? 1)) {
-    throw relationshipError(`Relationship ${id} exceeds the proven depth-two path boundary.`);
+  if (links.length > reviewedAnalysisRelationshipHopLimit(boundary.budgets)
+    || links.length !== (relationship.path_depth ?? 1)) {
+    throw relationshipError(`Relationship ${id} exceeds the activated proven path-depth boundary.`);
   }
   let expectedSource = root.id;
   for (const link of links) {

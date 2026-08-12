@@ -112,6 +112,7 @@ export async function connectCdp(webSocketUrl) {
       const promise = pending.get(message.id);
       if (!promise) return;
       pending.delete(message.id);
+      clearTimeout(promise.timer);
       if (message.error) promise.reject(new Error(`${message.error.message}: ${JSON.stringify(message.error.data ?? {})}`));
       else promise.resolve(message.result ?? {});
       return;
@@ -121,10 +122,22 @@ export async function connectCdp(webSocketUrl) {
     for (const resolve of waiters) resolve(message.params ?? {});
   });
 
-  function send(method, params = {}) {
+  socket.addEventListener("close", () => {
+    for (const [id, promise] of pending) {
+      clearTimeout(promise.timer);
+      promise.reject(new Error(`CDP connection closed while waiting for ${promise.method} (request ${id})`));
+    }
+    pending.clear();
+  });
+
+  function send(method, params = {}, timeoutMs = 30_000) {
     const id = nextId++;
     return new Promise((resolve, reject) => {
-      pending.set(id, { resolve, reject });
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        reject(new Error(`Timed out waiting for CDP command ${method}`));
+      }, timeoutMs);
+      pending.set(id, { resolve, reject, timer, method });
       socket.send(JSON.stringify({ id, method, params }));
     });
   }
@@ -197,7 +210,12 @@ export async function clickSelector(page, selector) {
       if(rect.width<1||rect.height<1)throw new Error("Element is not visible: "+${JSON.stringify(selector)});
       const point={x:rect.left+rect.width/2,y:rect.top+rect.height/2};
       const hit=document.elementFromPoint(point.x,point.y);
-      if(hit!==element&&!element.contains(hit))throw new Error("Element is covered before click: "+${JSON.stringify(selector)});
+      if(hit!==element&&!element.contains(hit)){
+        const coveredBy=hit
+          ? hit.tagName.toLowerCase()+(hit.id?"#"+hit.id:"")+(typeof hit.className==="string"&&hit.className.trim()?"."+hit.className.trim().split(/\\s+/).join("."):"")
+          : "nothing";
+        throw new Error("Element is covered before click: "+${JSON.stringify(selector)}+"; covered by "+coveredBy+" at "+JSON.stringify({point,rect:{top:rect.top,right:rect.right,bottom:rect.bottom,left:rect.left},viewport:{width:innerWidth,height:innerHeight}}));
+      }
       return point;
     })()`,
     returnByValue: true,

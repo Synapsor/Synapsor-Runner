@@ -8,6 +8,7 @@ import {
 } from "@synapsor-runner/schema-inspector";
 import {
   buildAutoBoundary,
+  EXPLORATION_BUDGET_REVIEW_CEILINGS,
   SHARED_REFERENCE_ACKNOWLEDGEMENT,
   explorationBoundaryCandidateDigest,
   loadActivatedExplorationBoundary,
@@ -15,6 +16,9 @@ import {
   normalizeExplorationDerivedMeasure,
   normalizeExplorationAutoBandPolicy,
   normalizeExplorationNumericBand,
+  ownerReviewableExplorationBudgetCeiling,
+  reviewedAnalysisRelationshipHopLimit,
+  reviewedDerivedScopeHopLimit,
   reviewExplorationBoundaryCandidate,
   writeAutoBoundaryArtifacts,
   type AutoBoundaryField,
@@ -133,6 +137,16 @@ export type BoundaryResourceReviewRequest = {
   max_ranked_groups?: number;
   max_queries_per_session?: number;
   rate_limit_per_minute?: number;
+  max_rows?: number;
+  max_groups?: number;
+  max_top_n?: number;
+  max_response_cells?: number;
+  max_response_bytes?: number;
+  statement_timeout_ms?: number;
+  max_measures?: number;
+  max_dimensions?: number;
+  max_derived_scope_hops?: 1 | 2 | 3;
+  max_analysis_relationship_hops?: 1 | 2 | 3;
   relationship_ids?: string[];
   nullable_relationship?: {
     relationship_id: string;
@@ -142,6 +156,21 @@ export type BoundaryResourceReviewRequest = {
   reason: string;
   decided_at?: string;
 };
+
+const REVIEWABLE_BUDGET_REQUEST_KEYS = [
+  "max_rows",
+  "max_groups",
+  "max_top_n",
+  "max_response_cells",
+  "max_response_bytes",
+  "statement_timeout_ms",
+  "max_measures",
+  "max_dimensions",
+  "max_derived_scope_hops",
+  "max_analysis_relationship_hops",
+] as const;
+
+type ReviewableBudgetRequestKey = typeof REVIEWABLE_BUDGET_REQUEST_KEYS[number];
 
 export type BoundaryReviewMutationBindings = {
   draft_digest: `sha256:${string}`;
@@ -250,6 +279,11 @@ export type BoundaryReviewSemanticDiff = {
   max_queries_per_session_after: number;
   rate_limit_per_minute_before: number;
   rate_limit_per_minute_after: number;
+  reviewed_budget_changes: Array<{
+    name: string;
+    before: number;
+    after: number;
+  }>;
   structural_review_changed: boolean;
   authority_changed: boolean;
   source_database_changed: false;
@@ -258,6 +292,7 @@ export type BoundaryReviewSemanticDiff = {
 export type BoundaryResourceReviewView = {
   ok: true;
   resource_id: string;
+  approximate_row_count?: number;
   status: string;
   included: boolean;
   blockers: string[];
@@ -282,6 +317,7 @@ export type BoundaryResourceReviewView = {
   candidate: ExplorationBoundaryDraft["pack"]["resources"][number] | null;
   generated_candidate: ExplorationBoundaryDraft["pack"]["resources"][number] | null;
   bindings: BoundaryReviewMutationBindings;
+  reviewed_budgets?: ExplorationBoundaryDraft["budgets"];
   source_database_changed: false;
 };
 
@@ -325,6 +361,7 @@ type BoundaryReviewFiles = {
     resources: Array<{
       id: string;
       type?: "table" | "view";
+      approximate_row_count?: number;
       status: string;
       blockers: string[];
       primary_key: BoundaryInference<string>;
@@ -353,6 +390,9 @@ export async function inspectBoundaryResourceReview(
   return {
     ok: true,
     resource_id: resourceId,
+    ...(reviewed.approximate_row_count === undefined
+      ? {}
+      : { approximate_row_count: reviewed.approximate_row_count }),
     status: reviewed.status,
     included: Boolean(candidate),
     blockers: reviewed.blockers,
@@ -373,6 +413,7 @@ export async function inspectBoundaryResourceReview(
     candidate,
     generated_candidate: generatedCandidate,
     bindings: reviewBindings(state),
+    reviewed_budgets: structuredClone(state.candidate.budgets),
     source_database_changed: false,
   };
 }
@@ -1081,6 +1122,20 @@ function buildReviewedCandidate(input: {
   if (input.request.rate_limit_per_minute !== undefined) {
     candidate.budgets.rate_limit_per_minute = input.request.rate_limit_per_minute;
   }
+  for (const key of REVIEWABLE_BUDGET_REQUEST_KEYS) {
+    const value = input.request[key];
+    if (value !== undefined) {
+      (candidate.budgets as unknown as Record<string, number>)[key] = value;
+    }
+  }
+  if (input.request.max_analysis_relationship_hops !== undefined) {
+    const maximum = reviewedAnalysisRelationshipHopLimit(candidate.budgets);
+    for (const resource of candidate.pack.resources) {
+      resource.relationships = resource.relationships.filter(
+        (relationship) => (relationship.path_depth ?? 1) <= maximum,
+      );
+    }
+  }
   const previousIncluded = new Set(input.previous.pack.resources.map((resource) => resource.id));
   candidate.pack.resources = candidate.pack.resources.filter((resource) =>
     previousIncluded.has(resource.id)
@@ -1299,6 +1354,7 @@ function preserveBoundaryResourcePolicy(
       previousRelationships.has(relationship.id)
       || requestedRelationships.has(relationship.id)
       || (request.include === true
+        && (relationship.path_depth ?? 1) <= 2
         && relationshipTouchesResource(relationship, request.resource_id)))
     .map((relationship) => {
       const prior = previousRelationships.get(relationship.id);
@@ -1352,11 +1408,26 @@ function preserveReviewedBudgets(
   for (const key of Object.keys(budgets) as Array<keyof typeof budgets>) {
     const prior = previous.budgets[key];
     if (Number.isSafeInteger(prior) && Number(prior) >= 1) {
+      const ceiling = ownerReviewableExplorationBudgetCeiling(key);
       (budgets as Record<string, number>)[key] = Math.min(
-        Number(budgets[key]),
+        ceiling ?? Number(budgets[key]),
         Number(prior),
       );
     }
+  }
+  if (budgets.max_derived_scope_hops !== undefined) {
+    budgets.max_derived_scope_hops = Math.min(
+      budgets.max_derived_scope_hops,
+      previous.budgets.max_derived_scope_hops
+        ?? previous.budgets.max_relationship_hops,
+    ) as 1 | 2 | 3;
+  }
+  if (budgets.max_analysis_relationship_hops !== undefined) {
+    budgets.max_analysis_relationship_hops = Math.min(
+      budgets.max_analysis_relationship_hops,
+      previous.budgets.max_analysis_relationship_hops
+        ?? previous.budgets.max_relationship_hops,
+    ) as 1 | 2 | 3;
   }
   if (budgets.max_ranked_groups !== undefined) {
     budgets.max_ranked_groups = Math.max(budgets.max_groups, budgets.max_ranked_groups);
@@ -1458,6 +1529,7 @@ function hasAuthorityNarrowing(request: BoundaryResourceReviewRequest): boolean 
     || request.max_ranked_groups !== undefined
     || request.max_queries_per_session !== undefined
     || request.rate_limit_per_minute !== undefined
+    || REVIEWABLE_BUDGET_REQUEST_KEYS.some((key) => request[key] !== undefined)
     || request.nullable_relationship !== undefined;
 }
 
@@ -1493,6 +1565,7 @@ function canStageIncompleteScopeResolution(
     || request.max_ranked_groups !== undefined
     || request.max_queries_per_session !== undefined
     || request.rate_limit_per_minute !== undefined
+    || REVIEWABLE_BUDGET_REQUEST_KEYS.some((key) => request[key] !== undefined)
     || request.nullable_relationship !== undefined
     || request.exclude === true;
   return hasScopeChoice && !hasNonScopeChoice;
@@ -1536,6 +1609,20 @@ function semanticDiff(
         ? []
         : [{ field, before: [...beforeValues], after: [...afterValues] }];
     });
+  const reviewedBudgetChanges = [
+    "max_ranked_groups",
+    "max_queries_per_session",
+    "rate_limit_per_minute",
+    ...REVIEWABLE_BUDGET_REQUEST_KEYS,
+  ].flatMap((name) => {
+    const beforeValue = Number(before.budgets[name as keyof typeof before.budgets]);
+    const afterValue = Number(after.budgets[name as keyof typeof after.budgets]);
+    return Number.isSafeInteger(beforeValue)
+      && Number.isSafeInteger(afterValue)
+      && beforeValue !== afterValue
+      ? [{ name, before: beforeValue, after: afterValue }]
+      : [];
+  });
   return {
     resource_id: resourceId,
     before_included: Boolean(beforeResource),
@@ -1568,6 +1655,7 @@ function semanticDiff(
     max_queries_per_session_after: after.budgets.max_queries_per_session,
     rate_limit_per_minute_before: before.budgets.rate_limit_per_minute,
     rate_limit_per_minute_after: after.budgets.rate_limit_per_minute,
+    reviewed_budget_changes: reviewedBudgetChanges,
     structural_review_changed: structuralReviewChanged,
     authority_changed: explorationBoundaryCandidateDigest(before)
       !== explorationBoundaryCandidateDigest(after),
@@ -1731,6 +1819,21 @@ function validateBoundaryResourceRequest(request: BoundaryResourceReviewRequest)
     throw new Error(
       "The reviewed requests-per-minute allowance must be an integer from 1 through 120.",
     );
+  }
+  for (const key of REVIEWABLE_BUDGET_REQUEST_KEYS) {
+    const value = request[key];
+    if (value === undefined) continue;
+    const ceiling = Number(EXPLORATION_BUDGET_REVIEW_CEILINGS[key]);
+    if (!Number.isSafeInteger(value) || value < 1 || value > ceiling) {
+      throw new Error(
+        `The reviewed ${key} limit must be an integer from 1 through ${ceiling}.`,
+      );
+    }
+  }
+  if (request.max_top_n !== undefined
+    && request.max_groups !== undefined
+    && request.max_top_n > request.max_groups) {
+    throw new Error("The reviewed max_top_n limit cannot exceed max_groups.");
   }
   if (request.field_enum
     && (!Array.isArray(request.field_enum.values)
@@ -2045,6 +2148,10 @@ function canonicalReviewRequest(request: BoundaryResourceReviewRequest): JsonRec
     max_ranked_groups: request.max_ranked_groups ?? null,
     max_queries_per_session: request.max_queries_per_session ?? null,
     rate_limit_per_minute: request.rate_limit_per_minute ?? null,
+    ...Object.fromEntries(REVIEWABLE_BUDGET_REQUEST_KEYS.map((key) => [
+      key,
+      request[key] ?? null,
+    ])),
     relationship_ids: sortedOrNull(request.relationship_ids),
     nullable_relationship: request.nullable_relationship ?? null,
     actor: request.actor,

@@ -107,7 +107,7 @@ describe("protected named reads", () => {
     expect(full.data.groups[0]?.region).toContain("ignore-all-instructions");
   });
 
-  it("compiles a reviewed star and depth-two path with scope on every relation", () => {
+  it("compiles a reviewed star and depth-three path with scope on every relation", () => {
     const capability = aggregateConfig().capabilities?.[0];
     if (!capability?.protected_read?.aggregate) throw new Error("protected aggregate fixture is incomplete");
     delete capability.protected_read.relationship;
@@ -155,6 +155,17 @@ describe("protected named reads", () => {
             max_fan_out: 1,
             unmatched_rows: "keep_null",
           },
+          {
+            schema: "public",
+            table: "departments",
+            primary_key: "id",
+            tenant_key: "tenant_id",
+            local_key: "department_id",
+            target_key: "id",
+            cardinality: "many_to_one",
+            max_fan_out: 1,
+            unmatched_rows: "keep_null",
+          },
         ],
       },
       {
@@ -191,6 +202,7 @@ describe("protected named reads", () => {
       expect(query.sql).toContain("LEFT JOIN");
       expect(query.sql).toContain(`${placeholderStyle === "$" ? "\"public\".\"products\"" : "`public`.`products`"} r2_1`);
       expect(query.sql).toContain(`${placeholderStyle === "$" ? "\"public\".\"categories\"" : "`public`.`categories`"} r2_2`);
+      expect(query.sql).toContain(`${placeholderStyle === "$" ? "\"public\".\"departments\"" : "`public`.`departments`"} r2_3`);
       expect(query.sql).toContain(`${placeholderStyle === "$" ? "\"public\".\"regions\"" : "`public`.`regions`"} r3_1`);
       expect(query.sql).toContain("GROUP BY");
       expect(query.sql).not.toMatch(/CROSS JOIN|SELECT\s+\*/i);
@@ -198,6 +210,7 @@ describe("protected named reads", () => {
         "tenant-acme",
         "tenant-acme",
         "manager-1",
+        "tenant-acme",
         "tenant-acme",
         "tenant-acme",
         "tenant-acme",
@@ -209,6 +222,7 @@ describe("protected named reads", () => {
       { schema: "public", table: "stores", principalScoped: false },
       { schema: "public", table: "products", principalScoped: true },
       { schema: "public", table: "categories", principalScoped: false },
+      { schema: "public", table: "departments", principalScoped: false },
       { schema: "public", table: "regions", principalScoped: false },
     ]);
   });

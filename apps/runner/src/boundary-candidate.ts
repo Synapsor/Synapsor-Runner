@@ -1,5 +1,7 @@
 import {
+  DEFAULT_REVIEWED_EXPLORATION_BUDGETS,
   reviewExplorationBoundaryCandidate,
+  reviewedAnalysisRelationshipHopLimit,
   type ExplorationBoundaryDraft,
 } from "./auto-boundary.js";
 
@@ -16,9 +18,12 @@ export function recommendedBoundaryReviewCandidate(
   // A metadata-only draft may contain only blocked resources. Keep it
   // inspectable so the operator can resolve those blockers; activation still
   // rejects an empty reviewed boundary.
-  if (draft.pack.resources.length === 0) return structuredClone(draft);
+  if (draft.pack.resources.length === 0) return candidateWithReviewedDefaults(draft);
   if (draft.pack.resources.length <= maximumResources) {
-    return reviewExplorationBoundaryCandidate(draft, structuredClone(draft)).candidate;
+    return reviewExplorationBoundaryCandidate(
+      draft,
+      candidateWithReviewedDefaults(draft),
+    ).candidate;
   }
   const ranked = draft.pack.resources
     .map((resource) => ({
@@ -46,7 +51,7 @@ export function recommendedBoundaryReviewCandidate(
     if (selectedIds.size >= maximumResources) break;
     selectedIds.add(item.resource.id);
   }
-  const candidate = structuredClone(draft);
+  const candidate = candidateWithReviewedDefaults(draft);
   candidate.pack.resources = candidate.pack.resources
     .filter((resource) => selectedIds.has(resource.id))
     .map((resource) => ({
@@ -95,7 +100,7 @@ export function instantLocalBoundaryCandidate(
     selectedIds.add(next.id);
   }
 
-  const candidate = structuredClone(draft);
+  const candidate = candidateWithReviewedDefaults(draft);
   candidate.deployment_profile = draft.deployment_profile === "production"
     ? "production"
     : "development";
@@ -105,6 +110,30 @@ export function instantLocalBoundaryCandidate(
       .filter((relationship) => relationshipStaysInsidePack(relationship, selectedIds)),
   }));
   return reviewExplorationBoundaryCandidate(draft, candidate).candidate;
+}
+
+function candidateWithReviewedDefaults(
+  draft: ExplorationBoundaryDraft,
+): ExplorationBoundaryDraft {
+  const candidate = structuredClone(draft);
+  const defaults = DEFAULT_REVIEWED_EXPLORATION_BUDGETS;
+  for (const key of Object.keys(defaults) as Array<keyof typeof defaults>) {
+    const ceiling = draft.budgets[key];
+    const reviewedDefault = defaults[key];
+    if (Number.isSafeInteger(ceiling) && Number.isSafeInteger(reviewedDefault)) {
+      (candidate.budgets as unknown as Record<string, number>)[key] = Math.min(
+        Number(ceiling),
+        Number(reviewedDefault),
+      );
+    }
+  }
+  const relationshipDepth = reviewedAnalysisRelationshipHopLimit(candidate.budgets);
+  for (const resource of candidate.pack.resources) {
+    resource.relationships = resource.relationships.filter(
+      (relationship) => (relationship.path_depth ?? 1) <= relationshipDepth,
+    );
+  }
+  return candidate;
 }
 
 function resourceReviewScore(

@@ -230,7 +230,7 @@ export function generatedAuthorityDependenciesValid(
       || typeof dependency.relationship_id !== "string"
       || !Array.isArray(dependency.links)
       || dependency.links.length < 1
-      || dependency.links.length > 2
+      || dependency.links.length > 3
       || !digest.test(dependency.proof_digest)
       || canonicalJsonDigest(dependency.links) !== dependency.proof_digest) {
       return false;

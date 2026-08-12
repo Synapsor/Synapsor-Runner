@@ -74,6 +74,37 @@ describe("Auto Boundary compiler", () => {
     expect(JSON.stringify(first)).not.toContain("customer@example.com");
   });
 
+  it("offers a hospital tenant column for review without silently inferring custom authority", () => {
+    const inspection = churnInspection();
+    const table = inspection.tables[0]!;
+    const tenantColumn = table.columns.find((candidate) => candidate.name === "tenant_id")!;
+    tenantColumn.name = "hospital_id";
+    table.columns.push(column("care_manager_id", "uuid", { immutable: true }));
+    table.suggestions.tenant_columns = [];
+    table.suggestions.default_visible_columns = table.suggestions.default_visible_columns
+      .map((field) => field === "tenant_id" ? "hospital_id" : field)
+      .concat("care_manager_id");
+    table.row_level_security_policies = [{
+      name: "hospital_care_manager_read",
+      command: "SELECT",
+      permissive: true,
+      roles: ["app_reader"],
+      using_expression: "((hospital_id = current_setting('app.hospital_scope', true)::uuid) AND (care_manager_id = current_setting('app.care_manager_scope', true)::uuid))",
+    }];
+
+    const generated = buildAutoBoundary({
+      inspection,
+      project: projectSummary("/workspace/healthcare-rls"),
+      sourceEnv: "DATABASE_URL",
+    });
+    const review = generated.review.resources.find((resource) =>
+      resource.id === "public.subscriptions")!;
+    expect(review.tenant_key.selected).toBeUndefined();
+    expect(review.tenant_key.candidates).toContain("hospital_id");
+    expect(review.principal_key.selected).toBe("care_manager_id");
+    expect(generated.exploration_boundary.pack.resources).toEqual([]);
+  });
+
   it("exposes only bounded low-risk schema vocabularies and binds reviewed narrowing into the digest", () => {
     const inspection = churnInspection();
     const table = inspection.tables[0]!;
@@ -493,7 +524,7 @@ describe("Auto Boundary compiler", () => {
     );
   });
 
-  it("proposes only catalog-proven many-to-one paths, caps chains at two links, and requires nullable semantics", () => {
+  it("keeps three-hop many-to-one paths reviewable but inactive until the exact bounded opt-in", () => {
     const result = buildAutoBoundary({
       inspection: relationshipChainInspection({ nullableProduct: true }),
       project: projectSummary("/workspace/retail"),
@@ -505,6 +536,8 @@ describe("Auto Boundary compiler", () => {
       relationship.id === "sales_facts_product_id_fkey")!;
     const depthTwo = facts.relationships.find((relationship) =>
       relationship.id === "sales_facts_product_id_fkey__products_category_id_fkey")!;
+    const depthThree = facts.relationships.find((relationship) =>
+      relationship.id === "sales_facts_product_id_fkey__products_category_id_fkey__categories_department_id_fkey")!;
 
     expect(direct).toMatchObject({
       target_resource: "public.products",
@@ -545,8 +578,16 @@ describe("Auto Boundary compiler", () => {
       },
     });
     expect(depthTwo.proof?.digest).toBe(canonicalJsonDigest(depthTwo.proof?.links));
-    expect(facts.relationships.some((relationship) =>
-      relationship.target_resource === "public.departments")).toBe(false);
+    expect(depthThree).toMatchObject({
+      target_resource: "public.departments",
+      path_depth: 3,
+      nullable: true,
+      unmatched_rows: "review_required",
+      cardinality: "many_to_one",
+      max_fan_out: 1,
+    });
+    expect(depthThree.proof?.links).toHaveLength(3);
+    expect(depthThree.proof?.digest).toBe(canonicalJsonDigest(depthThree.proof?.links));
 
     const keepNull = structuredClone(result.exploration_boundary);
     const reviewedFacts = keepNull.pack.resources.find((resource) =>
@@ -556,10 +597,87 @@ describe("Auto Boundary compiler", () => {
     }
     const reviewed = reviewExplorationBoundaryCandidate(result.exploration_boundary, keepNull);
     expect(reviewed.candidate.pack.resources.find((resource) =>
+      resource.id === "public.sales_facts")!.relationships.some((relationship) =>
+      relationship.path_depth === 3)).toBe(false);
+    expect(reviewed.candidate.pack.resources.find((resource) =>
       resource.id === "public.sales_facts")!.relationships
       .filter((relationship) => relationship.nullable)
       .every((relationship) => relationship.unmatched_rows === "keep_null")).toBe(true);
     expect(reviewed.digest).not.toBe(explorationBoundaryCandidateDigest(result.exploration_boundary));
+
+    const optedIn = structuredClone(keepNull);
+    optedIn.budgets.max_analysis_relationship_hops = 3;
+    const reviewedOptIn = reviewExplorationBoundaryCandidate(result.exploration_boundary, optedIn);
+    expect(reviewedOptIn.candidate.pack.resources.find((resource) =>
+      resource.id === "public.sales_facts")!.relationships.some((relationship) =>
+      relationship.path_depth === 3)).toBe(true);
+  });
+
+  it("discovers a mandatory depth-three tenant path but keeps depth two as active default", () => {
+    const inspection = depthThreeDerivedTenantScopeInspection();
+    const baseline = buildAutoBoundary({
+      inspection,
+      project: projectSummary("/workspace/orders"),
+      sourceEnv: "DATABASE_URL",
+    });
+    const reviewedRoot = baseline.review.resources.find((resource) =>
+      resource.id === "public.event_notes")!;
+    const pathId = "event_notes_order_event_id_fkey__order_events_order_item_id_fkey__order_items_order_id_fkey";
+    expect(reviewedRoot.derived_tenant_scope?.candidates).toContainEqual(expect.objectContaining({
+      path_id: pathId,
+      ancestor_resource: "public.orders",
+      ancestor_column: "tenant_id",
+      proof: expect.objectContaining({
+        links: expect.arrayContaining([expect.any(Object)]),
+      }),
+    }));
+    expect(reviewedRoot.derived_tenant_scope?.candidates.find((candidate) =>
+      candidate.path_id === pathId)?.proof.links).toHaveLength(3);
+
+    const reviewValue = (value: string) => ({
+      value,
+      actor: "owner@example.test",
+      reason: "Every row follows this required catalog-proven path to its tenant-owned order.",
+      decided_at: "2026-08-11T12:00:00.000Z",
+    });
+    const selected = buildAutoBoundary({
+      inspection,
+      project: projectSummary("/workspace/orders"),
+      sourceEnv: "DATABASE_URL",
+      overrides: {
+        schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+        resources: {
+          "public.order_items": {
+            tenant_scope_path: reviewValue("order_items_order_id_fkey"),
+          },
+          "public.order_events": {
+            tenant_scope_path: reviewValue(
+              "order_events_order_item_id_fkey__order_items_order_id_fkey",
+            ),
+          },
+          "public.event_notes": {
+            tenant_scope_path: reviewValue(pathId),
+          },
+        },
+      },
+    });
+    const root = selected.exploration_boundary.pack.resources.find((resource) =>
+      resource.id === "public.event_notes")!;
+    expect(root.tenant_scope?.proof.links).toHaveLength(3);
+    expect(() => reviewExplorationBoundaryCandidate(
+      selected.exploration_boundary,
+      structuredClone(selected.exploration_boundary),
+    )).toThrow(/malformed derived tenant scope proof/i);
+
+    const optedIn = structuredClone(selected.exploration_boundary);
+    optedIn.budgets.max_derived_scope_hops = 3;
+    const reviewed = reviewExplorationBoundaryCandidate(
+      selected.exploration_boundary,
+      optedIn,
+    );
+    expect(reviewed.candidate.budgets.max_derived_scope_hops).toBe(3);
+    expect(reviewed.candidate.pack.resources.find((resource) =>
+      resource.id === "public.event_notes")?.tenant_scope?.proof.links).toHaveLength(3);
   });
 
   it("refuses nullable relationship activation until a human chooses keep-null or exclude semantics", async () => {
@@ -1208,6 +1326,7 @@ describe("Auto Boundary compiler", () => {
       column("card_on_file", "text"),
       column("bank_account_number", "text"),
       column("medical_waiver_notes", "text"),
+      column("patient_id", "uuid", { immutable: true }),
       column("full_name", "text"),
       column("display_name", "text"),
       column("trainer_comments", "text"),
@@ -1217,6 +1336,7 @@ describe("Auto Boundary compiler", () => {
       "card_on_file",
       "bank_account_number",
       "medical_waiver_notes",
+      "patient_id",
       "full_name",
       "display_name",
       "trainer_comments",
@@ -1233,6 +1353,7 @@ describe("Auto Boundary compiler", () => {
       "card_on_file",
       "bank_account_number",
       "medical_waiver_notes",
+      "patient_id",
       "full_name",
       "display_name",
       "trainer_comments",
@@ -1252,6 +1373,8 @@ describe("Auto Boundary compiler", () => {
       .toBe("high_confidence_sensitive");
     expect(result.review.resources[0]!.fields.find((field) => field.name === "medical_waiver_notes")?.sensitivity.state)
       .toBe("high_confidence_sensitive");
+    expect(result.review.resources[0]!.fields.find((field) => field.name === "patient_id")?.sensitivity)
+      .toMatchObject({ state: "high_confidence_sensitive", reason_codes: ["medical_or_health_information"] });
     expect(result.review.resources[0]!.fields.find((field) => field.name === "full_name")?.sensitivity)
       .toMatchObject({ state: "high_confidence_sensitive", reason_codes: ["person_name"] });
     expect(result.review.resources[0]!.fields.find((field) => field.name === "display_name")?.sensitivity)
@@ -2690,6 +2813,54 @@ function derivedTenantScopeInspection(options: {
   }
   const inspection = churnInspection();
   inspection.tables = tables;
+  return inspection;
+}
+
+function depthThreeDerivedTenantScopeInspection(): SchemaInspection {
+  const unscopedChild = (
+    name: string,
+    foreignKey: SchemaInspection["tables"][number]["foreign_keys"][number],
+  ) => {
+    const table = relationTable(name, [foreignKey]);
+    table.columns = table.columns.filter((field) => field.name !== "tenant_id");
+    table.suggestions.tenant_columns = [];
+    table.suggestions.default_visible_columns = table.suggestions.default_visible_columns
+      .filter((field) => field !== "tenant_id");
+    table.row_level_security = false;
+    table.row_level_security_policies = [];
+    if (!table.role_posture) throw new Error("derived depth-three fixture requires role posture");
+    table.role_posture.row_security_forced = false;
+    table.role_posture.row_security_effective_for_current_role = false;
+    return table;
+  };
+  const inspection = churnInspection();
+  inspection.tables = [
+    unscopedChild("event_notes", {
+      name: "event_notes_order_event_id_fkey",
+      columns: ["order_event_id"],
+      referenced_schema: "public",
+      referenced_table: "order_events",
+      referenced_columns: ["id"],
+      delete_rule: "RESTRICT",
+    }),
+    unscopedChild("order_events", {
+      name: "order_events_order_item_id_fkey",
+      columns: ["order_item_id"],
+      referenced_schema: "public",
+      referenced_table: "order_items",
+      referenced_columns: ["id"],
+      delete_rule: "RESTRICT",
+    }),
+    unscopedChild("order_items", {
+      name: "order_items_order_id_fkey",
+      columns: ["order_id"],
+      referenced_schema: "public",
+      referenced_table: "orders",
+      referenced_columns: ["id"],
+      delete_rule: "RESTRICT",
+    }),
+    relationTable("orders"),
+  ];
   return inspection;
 }
 

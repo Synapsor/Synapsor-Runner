@@ -364,7 +364,9 @@ The first release supports bounded:
   calculated only from groups released after suppression;
 - typed filters, bounded top/bottom-N, and an exact two-period comparison;
 - up to three activated relationship paths, each containing one or two
-  catalog-proven many-to-one links with fan-out one.
+  catalog-proven many-to-one links with fan-out one by default, or exactly
+  three links after the reviewer raises the hard-capped depth control and
+  activates that exact path.
 
 If a question needs an inactive but proven path, Runner refuses it and
 Workbench offers only that exact path for operator review. The model cannot

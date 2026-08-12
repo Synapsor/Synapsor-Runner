@@ -1,19 +1,19 @@
 {
   "domain": "multi-tenant community-solar operations",
   "package": {
-    "spec_tarball": "synapsor-spec-1.8.0.tgz",
-    "spec_sha256": "sha256:3694a3b5aa0080aa33ce9252812e94bccf432b7ba8b8f65c92beee74cebbcc8c",
-    "runner_tarball": "synapsor-runner-1.6.6.tgz",
-    "runner_sha256": "sha256:57cc48b626052de982f92e03fcc17a4d2dc48e04f79ea7d9ce34b6631c031850"
+    "spec_tarball": "synapsor-spec-1.9.0.tgz",
+    "spec_sha256": "sha256:748b23cbd19b00245645320444f4f3eb6554212935c4b5c39b657bfae40229eb",
+    "runner_tarball": "synapsor-runner-1.7.0.tgz",
+    "runner_sha256": "sha256:9111851a59c03f1c9e5347514c978321883c5ccd4be629ae5f11fb64a40de2c8"
   },
   "timings_ms": {
-    "schema_summary": 26965,
-    "boundary_activation": 29366,
-    "first_safe_read": 30207,
-    "first_pm_aggregate": 31029,
-    "protected_capability": 43110,
-    "first_guided_proposal": 46185,
-    "first_guarded_apply": 62676
+    "schema_summary": 29547,
+    "boundary_activation": 32083,
+    "first_safe_read": 32693,
+    "first_pm_aggregate": 33695,
+    "protected_capability": 44586,
+    "first_guided_proposal": 47914,
+    "first_guarded_apply": 64537
   },
   "interactions": {
     "shell_commands_through_first_value": 1,
@@ -50,15 +50,15 @@
     "principal_scope": "tech-alex"
   },
   "aggregate": {
-    "question": "How did total downtime change by week across reviewed inverter models?",
-    "plan": "Calculate total downtime minutes for work orders grouped by Model name from Inverter models for each week with at most 10 groups.\n\n{\n  \"kind\": \"aggregate\",\n  \"resource\": \"public.work_orders\",\n  \"measures\": [\n    {\n      \"function\": \"sum\",\n      \"field\": \"downtime_minutes\"\n    }\n  ],\n  \"dimensions\": [\n    {\n      \"field\": \"model_name\",\n      \"relationship\": \"work_orders_inverter_model_id_fkey\"\n    }\n  ],\n  \"time_bucket\": {\n    \"field\": \"opened_at\",\n    \"bucket\": \"week\"\n  },\n  \"order_by\": {\n    \"kind\": \"measure\",\n    \"index\": 0,\n    \"direction\": \"desc\"\n  },\n  \"top_n\": 10\n}",
+    "question": "How did total work order downtime change weekly for each inverter model name using opened at?",
+    "plan": "Calculate total downtime minutes for work orders grouped by model name from public.inverter_models for each week with at most 10 groups.\n\n{\n  \"kind\": \"aggregate\",\n  \"resource\": \"public.work_orders\",\n  \"measures\": [\n    {\n      \"function\": \"sum\",\n      \"field\": \"downtime_minutes\"\n    }\n  ],\n  \"dimensions\": [\n    {\n      \"field\": \"model_name\",\n      \"relationship\": \"work_orders_inverter_model_id_fkey\"\n    }\n  ],\n  \"time_bucket\": {\n    \"field\": \"opened_at\",\n    \"bucket\": \"week\"\n  },\n  \"order_by\": {\n    \"kind\": \"measure\",\n    \"index\": 0,\n    \"direction\": \"desc\"\n  },\n  \"top_n\": 10\n}",
     "source_database_changed": false,
     "official_mcp_parity": true,
     "mcp_returned_groups": 2
   },
   "protected": {
     "capability": "solar.weekly_downtime_by_inverter_model",
-    "digest": "sha256:4af6d76ffbc7be6208e8675c5d36f2c83b60673d43ca7c97dcda14d6764ace3f",
+    "digest": "sha256:d37a4c437dbdf4469f9e943b805c638ed74445d0707edd6f5eed50c97f4b5ada",
     "disabled_before_activation": true,
     "activated_by_human": true,
     "mode": "aggregate",
@@ -67,7 +67,7 @@
   "write_lifecycle": {
     "capability": "solar.propose_work_order_start",
     "target": "public.work_orders:wo-005",
-    "proposal_hash": "sha256:129aee367cd423e4f1f80f390c9fc12111d8369895554f41d0360069d1dce9c2",
+    "proposal_hash": "sha256:39fb70fce6f4ba5f0a8349fac69101e7275e141e5a94ec7c399fa6314b269af5",
     "action_digest": "sha256:b9d1ae4da76fab2417ab965a13aa5768fa46fdcf8c16f1097fc3e091e71d3f12",
     "before": {
       "status": "open",
@@ -92,7 +92,7 @@
     "provider_key_required": false,
     "synapsor_relay": false,
     "proposal_only": true,
-    "proposal_id": "wrp_fa9f27a626a7c81cd875",
+    "proposal_id": "wrp_05721fd464e8024d92be",
     "proposal_target": "wo-015",
     "model_can_activate": false,
     "model_can_approve": false,
@@ -126,7 +126,7 @@
     "cli_latest_lifecycle_without_id": true,
     "redacted_query_audit_without_id": true
   },
-  "elapsed_ms": 86800,
+  "elapsed_ms": 87688,
   "screenshots": [
     "01-overview.png",
     "02-activated-and-ready-to-ask.png",

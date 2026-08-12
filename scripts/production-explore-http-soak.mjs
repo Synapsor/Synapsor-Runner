@@ -111,6 +111,19 @@ function resultPayload(result) {
   return JSON.parse(text);
 }
 
+export function summarizeExploreToolCalls(toolCalls) {
+  const successful = toolCalls.filter((call) =>
+    call.tool === "app.explore_data" && call.status === "ok");
+  const refused = toolCalls.filter((call) =>
+    call.tool === "app.explore_data" && call.status === "refused");
+  return {
+    successful,
+    refused,
+    last_successful: successful.at(-1),
+    last_refused: refused.at(-1),
+  };
+}
+
 function safeError(error) {
   return String(error instanceof Error ? `${error.name}: ${error.message}` : error)
     .replace(/Bearer\s+[A-Za-z0-9._~-]+/gi, "Bearer [redacted]")
@@ -746,6 +759,95 @@ export async function verifyProductionExploreAuditSink(input) {
   };
   writeJsonAtomic(input.result_path, result);
   return result;
+}
+
+
+export function verifyProductionExploreOperatorLedger(input) {
+  const invoke = (args) => {
+    const result = input.invoke(args);
+    if (result.status !== 0) {
+      throw new Error(`Production ledger command failed: ${args.join(" ")}\n${result.stdout ?? ""}\n${result.stderr ?? ""}`);
+    }
+    return result;
+  };
+  const readJson = (args) => {
+    const result = invoke(args);
+    try {
+      return { result, payload: JSON.parse(result.stdout) };
+    } catch {
+      throw new Error(`Production ledger command returned invalid JSON: ${args.join(" ")}\n${result.stdout ?? ""}`);
+    }
+  };
+  const configArgs = ["--config", input.config_path];
+  const evidenceList = readJson(["evidence", "list", ...configArgs, "--json"]);
+  const evidence = evidenceList.payload.evidence ?? [];
+  if (evidenceList.payload.ledger_source?.kind !== "shared_postgres"
+    || evidenceList.payload.ledger_source?.schema !== input.schema
+    || evidence.length === 0) {
+    throw new Error(`Production evidence CLI did not read shared PostgreSQL schema ${input.schema}: ${evidenceList.result.stdout}`);
+  }
+  const selectedEvidence = evidence.find((item) => item.source_id === input.source_id) ?? evidence[0];
+  if (!selectedEvidence?.evidence_bundle_id || !selectedEvidence?.source_table || !selectedEvidence?.tenant_id) {
+    throw new Error(`Production evidence CLI returned an incomplete evidence record: ${JSON.stringify(selectedEvidence)}`);
+  }
+  const since = new Date(Date.parse(selectedEvidence.created_at) - 1_000).toISOString();
+  const evidenceFilteredResult = readJson([
+    "evidence", "list", ...configArgs, "--json",
+    "--tenant", selectedEvidence.tenant_id,
+    "--table", selectedEvidence.source_table,
+    "--capability", "app.explore_data",
+    "--status", selectedEvidence.payload?.outcome ?? "ok",
+    "--since", since,
+  ]);
+  const evidenceFiltered = evidenceFilteredResult.payload.evidence ?? [];
+  if (!evidenceFiltered.some((item) => item.evidence_bundle_id === selectedEvidence.evidence_bundle_id)) {
+    throw new Error(`Production evidence CLI filters did not retain the matching shared-store record.\nSelected: ${JSON.stringify(selectedEvidence)}\nFiltered: ${evidenceFilteredResult.result.stdout}`);
+  }
+  const evidenceShow = invoke([
+    "evidence", "show", selectedEvidence.evidence_bundle_id, ...configArgs, "--details",
+  ]);
+  if (!evidenceShow.stdout.includes(`Ledger: shared PostgreSQL schema ${input.schema}`)
+    || !evidenceShow.stdout.includes(selectedEvidence.evidence_bundle_id)) {
+    throw new Error(`Production evidence show did not identify the shared ledger: ${evidenceShow.stdout}`);
+  }
+
+  const auditList = readJson([
+    "query-audit", "list", ...configArgs, "--json",
+    "--table", selectedEvidence.source_table,
+    "--capability", "app.explore_data",
+    "--status", selectedEvidence.payload?.outcome ?? "ok",
+    "--since", since,
+  ]);
+  const audits = auditList.payload.query_audit ?? [];
+  if (auditList.payload.ledger_source?.kind !== "shared_postgres" || audits.length === 0) {
+    throw new Error(`Production query-audit CLI did not read the dedicated shared-store records: ${auditList.result.stdout}`);
+  }
+  const selectedAudit = audits.find((item) => item.evidence_bundle_id === selectedEvidence.evidence_bundle_id) ?? audits[0];
+  const auditShow = invoke(["query-audit", "show", String(selectedAudit.audit_id), ...configArgs, "--details"]);
+  if (!auditShow.stdout.includes(`Ledger: shared PostgreSQL schema ${input.schema}`)
+    || !auditShow.stdout.includes("Payload:")
+    || !auditShow.stdout.includes("normalized_plan")) {
+    throw new Error(`Production query-audit show was incomplete: ${auditShow.stdout}`);
+  }
+
+  const serialized = [
+    evidenceList.result.stdout,
+    evidenceShow.stdout,
+    auditList.result.stdout,
+    auditShow.stdout,
+  ].join("\n");
+  for (const forbidden of input.forbidden_values ?? []) {
+    if (forbidden && serialized.includes(forbidden)) {
+      throw new Error("Production ledger operator output exposed a forbidden value.");
+    }
+  }
+  return {
+    ledger_source: evidenceList.payload.ledger_source,
+    evidence_records: evidence.length,
+    query_audit_records: audits.length,
+    filters_verified: ["tenant", "table", "capability", "status", "since"],
+    read_only: true,
+  };
 }
 
 export function verifyLocalExploreAuditRecords(input) {

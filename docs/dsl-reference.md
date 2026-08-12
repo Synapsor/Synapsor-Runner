@@ -227,7 +227,7 @@ The protected clauses mean:
 | `BOUNDARY DIGEST sha256:...` | Binds the capability to the exact human-activated exploration authority. |
 | `GENERATION LOCK sha256:...` | Binds it to the reviewed schema, role/grant/RLS posture, compiler, and Spec fingerprint. |
 | `PROTECTED RELATIONSHIP name ON local_key REFERENCES schema.table.target_key PRIMARY KEY pk TENANT KEY tenant [PRINCIPAL SCOPE KEY principal]` | Legacy one-hop form. It freezes one inspected, reviewed many-to-one path with fan-out one and cannot be mixed with `LINK` declarations. |
-| `PROTECTED RELATIONSHIP name LINK 1|2 ON local_key REFERENCES schema.table.target_key PRIMARY KEY pk TENANT KEY tenant [PRINCIPAL SCOPE KEY principal] UNMATCHED EXCLUDE|KEEP NULL` | Additive path form. Up to three user-named paths may contain one or two contiguous, ordered many-to-one links. Missing-row semantics are explicit and digest-bound. |
+| `PROTECTED RELATIONSHIP name LINK 1|2|3 ON local_key REFERENCES schema.table.target_key PRIMARY KEY pk TENANT KEY tenant [PRINCIPAL SCOPE KEY principal] UNMATCHED EXCLUDE|KEEP NULL` | Additive path form. Up to three user-named paths may contain one to three contiguous, ordered many-to-one links within the source boundary's reviewed depth. Missing-row semantics are explicit and digest-bound. |
 | `PROTECTED FILTER field OP FIXED value` | Freezes a reviewed literal. `OP` is `EQ`, `NEQ`, `LT`, `LTE`, `GT`, `GTE`, or bounded fixed-list `IN`. |
 | `PROTECTED FILTER field OP ARG name` | Allows only one declared typed/bounded argument at that reviewed literal position. |
 | `ALLOW READ ...` / `ROW ORDER BY ...` | Freezes row projection and up to three fixed sort fields for row mode. |

@@ -2977,6 +2977,162 @@ describe("Scoped Explore", () => {
     }
   });
 
+  it("requires an explicit depth-three opt-in before compiling tenant and principal scope", async () => {
+    const fixture = await activatedFixture();
+    const boundary = depthThreeScopeBoundary(fixture.boundary);
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.event_notes",
+      measures: [{ function: "count" }],
+      top_n: 1,
+    }, boundary);
+
+    const defaultDepth = structuredClone(boundary);
+    defaultDepth.budgets.max_derived_scope_hops = 2;
+    expect(() => compileExplorePlan(plan, defaultDepth, {
+      tenant: "tenant-acme",
+      principal: "order-owner-7",
+    }, "postgres")).toThrow(/malformed derived tenant scope/i);
+
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [query] = compileExplorePlan(plan, boundary, {
+        tenant: "tenant-acme",
+        principal: "order-owner-7",
+      }, engine);
+      expect(query!.resources.map((resource) => resource.id).sort()).toEqual([
+        "public.event_notes",
+        "public.order_events",
+        "public.order_items",
+        "public.orders",
+      ]);
+      expect(query!.sql.match(/EXISTS \(SELECT 1 FROM/g)).toHaveLength(2);
+      expect(query!.sql).toContain(engine === "postgres"
+        ? 'FROM "public"."order_events" st0_tenant_0 JOIN "public"."order_items" st0_tenant_1'
+        : "FROM `public`.`order_events` st0_tenant_0 JOIN `public`.`order_items` st0_tenant_1");
+      expect(query!.sql).toContain(engine === "postgres"
+        ? 'JOIN "public"."orders" st0_tenant_2'
+        : "JOIN `public`.`orders` st0_tenant_2");
+      expect(query!.sql).toContain(engine === "postgres"
+        ? 'st0_tenant_2."tenant_id" = $1'
+        : "st0_tenant_2.`tenant_id` = ?");
+      expect(query!.sql).toContain(engine === "postgres"
+        ? 'st0_principal_2."id" = $2'
+        : "st0_principal_2.`id` = ?");
+      expect(query!.sql).not.toMatch(/CROSS JOIN|SELECT\s+\*/i);
+      expect(query!.params).toContain("tenant-acme");
+      expect(query!.params).toContain("order-owner-7");
+    }
+
+    const tampered = structuredClone(boundary);
+    const tamperedScope = tampered.pack.resources.find((resource) =>
+      resource.id === "public.event_notes")!.tenant_scope!;
+    tamperedScope.proof.links[1]!.max_fan_out = 2 as 1;
+    tamperedScope.proof.digest = canonicalJsonDigest(tamperedScope.proof.links);
+    expect(() => compileExplorePlan(plan, tampered, {
+      tenant: "tenant-acme",
+      principal: "order-owner-7",
+    }, "postgres")).toThrow(/continuous non-null many-to-one path/i);
+  });
+
+  it("compiles an exact reviewed three-hop analysis path on both SQL engines", async () => {
+    const fixture = await activatedFixture();
+    const boundary = depthThreeScopeBoundary(fixture.boundary);
+    const relationship = "event_notes_order_event_id_fkey__order_events_order_item_id_fkey__order_items_order_id_fkey";
+    const input = {
+      kind: "aggregate" as const,
+      resource: "public.event_notes",
+      measures: [{ function: "count" as const }],
+      dimensions: [{ field: "region", relationship }],
+      top_n: 10,
+    };
+
+    const defaultDepth = structuredClone(boundary);
+    defaultDepth.budgets.max_analysis_relationship_hops = 2;
+    expect(() => validateExplorePlan(input, defaultDepth)).toThrow(/activated proven path-depth boundary/i);
+
+    const plan = validateExplorePlan(input, boundary);
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [query] = compileExplorePlan(plan, boundary, {
+        tenant: "tenant-acme",
+        principal: "order-owner-7",
+      }, engine);
+      expect(query!.sql).toContain(engine === "postgres"
+        ? 'JOIN "public"."order_events" t1 ON t0."order_event_id" = t1."id"'
+        : "JOIN `public`.`order_events` t1 ON t0.`order_event_id` = t1.`id`");
+      expect(query!.sql).toContain(engine === "postgres"
+        ? 'JOIN "public"."order_items" t2 ON t1."order_item_id" = t2."id"'
+        : "JOIN `public`.`order_items` t2 ON t1.`order_item_id` = t2.`id`");
+      expect(query!.sql).toContain(engine === "postgres"
+        ? 'JOIN "public"."orders" t3 ON t2."order_id" = t3."id"'
+        : "JOIN `public`.`orders` t3 ON t2.`order_id` = t3.`id`");
+      expect(query!.sql).toContain(engine === "postgres" ? 't3."region"' : "t3.`region`");
+      expect(query!.sql).not.toMatch(/CROSS JOIN|SELECT\s+\*/i);
+    }
+  });
+
+  it("reuses only exact reviewed relationship prefixes with matching null semantics", async () => {
+    const fixture = await activatedFixture();
+    const boundary = depthThreeScopeBoundary(fixture.boundary);
+    const oneHop = "event_notes_order_event_id_fkey";
+    const threeHop = "event_notes_order_event_id_fkey__order_events_order_item_id_fkey__order_items_order_id_fkey";
+    const root = boundary.pack.resources.find((resource) => resource.id === "public.event_notes")!;
+    const longRelationship = root.relationships.find((relationship) => relationship.id === threeHop)!;
+    const oneHopLinks = structuredClone(longRelationship.proof!.links.slice(0, 1));
+    root.relationships.push({
+      ...structuredClone(longRelationship),
+      id: oneHop,
+      target_resource: "public.order_events",
+      path_depth: 1,
+      proof: {
+        source: "database_catalog",
+        links: oneHopLinks,
+        digest: canonicalJsonDigest(oneHopLinks),
+      },
+    });
+    root.relationships.find((relationship) => relationship.id === oneHop)!.unmatched_rows = "exclude";
+    root.relationships.find((relationship) => relationship.id === threeHop)!.unmatched_rows = "exclude";
+    const fusedPlan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.event_notes",
+      measures: [{ function: "count" }],
+      dimensions: [
+        { field: "event_type", relationship: oneHop },
+        { field: "region", relationship: threeHop },
+      ],
+      top_n: 10,
+    }, boundary);
+
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [query] = compileExplorePlan(fusedPlan, boundary, {
+        tenant: "tenant-acme",
+        principal: "order-owner-7",
+      }, engine);
+      const orderEventsTable = engine === "postgres"
+        ? 'JOIN "public"."order_events"'
+        : "JOIN `public`.`order_events`";
+      expect(query!.sql.split(orderEventsTable)).toHaveLength(2);
+      expect(query!.sql).toContain(engine === "postgres" ? 't1."event_type"' : "t1.`event_type`");
+      expect(query!.sql).toContain(engine === "postgres" ? 't3."region"' : "t3.`region`");
+    }
+
+    root.relationships.find((relationship) => relationship.id === oneHop)!.unmatched_rows = "keep_null";
+    const separatePlan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.event_notes",
+      measures: [{ function: "count" }],
+      dimensions: [
+        { field: "event_type", relationship: oneHop },
+        { field: "region", relationship: threeHop },
+      ],
+      top_n: 10,
+    }, boundary);
+    const [separateQuery] = compileExplorePlan(separatePlan, boundary, {
+      tenant: "tenant-acme",
+      principal: "order-owner-7",
+    }, "postgres");
+    expect(separateQuery!.sql.match(/(?:LEFT )?JOIN "public"\."order_events"/g)).toHaveLength(2);
+  });
+
   it("fails closed when a derived-scope prepared plan is missing authority dependencies", async () => {
     const fixture = await activatedDerivedScopeFixture();
     const prepared = await prepareScopedExplore({
@@ -5442,6 +5598,178 @@ function derivedScopeBoundary(
     relationships: [],
   };
   boundary.pack.resources = [orders, orderItems];
+  return boundary;
+}
+
+function depthThreeScopeBoundary(
+  input: ActivatedExplorationBoundary,
+): ActivatedExplorationBoundary {
+  type Resource = ActivatedExplorationBoundary["pack"]["resources"][number];
+  type Scope = NonNullable<Resource["tenant_scope"]>;
+  type Link = Scope["proof"]["links"][number];
+
+  const boundary = structuredClone(input);
+  boundary.budgets.max_derived_scope_hops = 3;
+  boundary.budgets.max_analysis_relationship_hops = 3;
+  const template = structuredClone(boundary.pack.resources[0]!);
+  const link = (
+    constraintName: string,
+    sourceResource: string,
+    targetResource: string,
+    sourceColumn: string,
+  ): Link => ({
+    constraint_name: constraintName,
+    source_resource: sourceResource,
+    target_resource: targetResource,
+    source_columns: [sourceColumn],
+    target_columns: ["id"],
+    target_uniqueness: {
+      kind: "primary_key",
+      name: `${targetResource.split(".").at(-1)}_pkey`,
+      columns: ["id"],
+    },
+    nullable: false,
+    cardinality: "many_to_one",
+    max_fan_out: 1,
+  });
+  const links = [
+    link(
+      "event_notes_order_event_id_fkey",
+      "public.event_notes",
+      "public.order_events",
+      "order_event_id",
+    ),
+    link(
+      "order_events_order_item_id_fkey",
+      "public.order_events",
+      "public.order_items",
+      "order_item_id",
+    ),
+    link(
+      "order_items_order_id_fkey",
+      "public.order_items",
+      "public.orders",
+      "order_id",
+    ),
+  ];
+  const derivedScope = (path: Link[], kind: "tenant" | "principal"): Scope => ({
+    mode: "derived",
+    path_id: path.map((candidate) => candidate.constraint_name).join("__"),
+    ancestor_resource: "public.orders",
+    ancestor_column: kind === "tenant" ? "tenant_id" : "id",
+    proof: {
+      source: "database_catalog",
+      links: structuredClone(path),
+      digest: canonicalJsonDigest(path),
+    },
+  });
+  const derivedResource = (inputResource: {
+    id: string;
+    table: string;
+    foreignKey: string;
+    path: Link[];
+    labelField: string;
+  }): Resource => {
+    const resource = structuredClone(template);
+    resource.id = inputResource.id;
+    resource.table = inputResource.table;
+    resource.primary_key = "id";
+    delete resource.tenant_key;
+    delete resource.principal_key;
+    delete resource.shared_reference_scope;
+    resource.tenant_scope = derivedScope(inputResource.path, "tenant");
+    resource.principal_scope = derivedScope(inputResource.path, "principal");
+    resource.field_types = {
+      id: "uuid",
+      [inputResource.foreignKey]: "uuid",
+      [inputResource.labelField]: "text",
+    };
+    resource.field_enums = {};
+    resource.selectable_fields = ["id", inputResource.foreignKey, inputResource.labelField];
+    resource.model_withheld_fields = [];
+    resource.filterable_fields = {
+      [inputResource.labelField]: ["eq", "neq", "in"],
+    };
+    resource.sortable_fields = ["id", inputResource.labelField];
+    resource.groupable_fields = [inputResource.labelField];
+    resource.aggregate_measures = [];
+    resource.aggregate_measure_functions = {};
+    resource.count_distinct_fields = ["id"];
+    resource.time_bucket_fields = {};
+    resource.kept_out_fields = [];
+    resource.relationships = [];
+    delete resource.numeric_bands;
+    delete resource.auto_bands;
+    delete resource.derived_measures;
+    return resource;
+  };
+
+  const orders = structuredClone(template);
+  orders.id = "public.orders";
+  orders.table = "orders";
+  orders.primary_key = "id";
+  orders.tenant_key = "tenant_id";
+  orders.principal_key = "id";
+  delete orders.tenant_scope;
+  delete orders.principal_scope;
+  delete orders.shared_reference_scope;
+  orders.field_types = { id: "uuid", tenant_id: "uuid", region: "text" };
+  orders.field_enums = {};
+  orders.selectable_fields = ["id", "tenant_id", "region"];
+  orders.model_withheld_fields = [];
+  orders.filterable_fields = { region: ["eq", "neq", "in"] };
+  orders.sortable_fields = ["id", "region"];
+  orders.groupable_fields = ["region"];
+  orders.aggregate_measures = [];
+  orders.aggregate_measure_functions = {};
+  orders.count_distinct_fields = ["id"];
+  orders.time_bucket_fields = {};
+  orders.kept_out_fields = [];
+  orders.relationships = [];
+  delete orders.numeric_bands;
+  delete orders.auto_bands;
+  delete orders.derived_measures;
+
+  const orderItems = derivedResource({
+    id: "public.order_items",
+    table: "order_items",
+    foreignKey: "order_id",
+    path: links.slice(2),
+    labelField: "product",
+  });
+  const orderEvents = derivedResource({
+    id: "public.order_events",
+    table: "order_events",
+    foreignKey: "order_item_id",
+    path: links.slice(1),
+    labelField: "event_type",
+  });
+  const eventNotes = derivedResource({
+    id: "public.event_notes",
+    table: "event_notes",
+    foreignKey: "order_event_id",
+    path: links,
+    labelField: "note_type",
+  });
+  const pathId = links.map((candidate) => candidate.constraint_name).join("__");
+  eventNotes.relationships = [{
+    id: pathId,
+    target_resource: "public.orders",
+    local_columns: ["order_event_id"],
+    target_columns: ["id"],
+    counted_entity: "id",
+    cardinality: "many_to_one",
+    max_fan_out: 1,
+    path_depth: 3,
+    proof: {
+      source: "database_catalog",
+      links: structuredClone(links),
+      digest: canonicalJsonDigest(links),
+    },
+    nullable: false,
+    unmatched_rows: "exclude",
+  }];
+  boundary.pack.resources = [eventNotes, orderEvents, orderItems, orders];
   return boundary;
 }
 

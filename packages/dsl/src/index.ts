@@ -598,7 +598,7 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
       reviewed.generationLockFingerprint = generationLock[1].toLowerCase() as `sha256:${string}`;
       continue;
     }
-    const protectedRelationshipLink = item.text.match(/^PROTECTED\s+RELATIONSHIP\s+([A-Za-z_][A-Za-z0-9_]*)\s+LINK\s+([12])\s+ON\s+([A-Za-z_][A-Za-z0-9_]*)\s+REFERENCES\s+([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\s+PRIMARY\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*)\s+TENANT\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+PRINCIPAL\s+SCOPE\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*))?\s+UNMATCHED\s+(EXCLUDE|KEEP\s+NULL)$/i);
+    const protectedRelationshipLink = item.text.match(/^PROTECTED\s+RELATIONSHIP\s+([A-Za-z_][A-Za-z0-9_]*)\s+LINK\s+([123])\s+ON\s+([A-Za-z_][A-Za-z0-9_]*)\s+REFERENCES\s+([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\s+PRIMARY\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*)\s+TENANT\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+PRINCIPAL\s+SCOPE\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*))?\s+UNMATCHED\s+(EXCLUDE|KEEP\s+NULL)$/i);
     if (protectedRelationshipLink?.[1] && protectedRelationshipLink[2] && protectedRelationshipLink[3]
       && protectedRelationshipLink[4] && protectedRelationshipLink[5] && protectedRelationshipLink[6]
       && protectedRelationshipLink[7] && protectedRelationshipLink[8] && protectedRelationshipLink[10]) {

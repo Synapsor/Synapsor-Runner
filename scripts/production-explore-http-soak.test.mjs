@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   assertSoakServerAlive,
   closeStreamableHttpClientHandle,
+  summarizeExploreToolCalls,
 } from "./production-explore-http-soak.mjs";
 
 const sample = (processes) => ({
@@ -61,5 +62,24 @@ describe("production Explore soak client lifecycle", () => {
 
     await expect(closeStreamableHttpClientHandle(handle)).rejects.toThrow("session termination failed");
     expect(close).toHaveBeenCalledOnce();
+  });
+});
+
+describe("production Explore local-model accounting", () => {
+  it("counts every successful Explore execution inside one accepted question", () => {
+    const first = { tool: "app.explore_data", status: "ok", arguments: { plan: { kind: "aggregate" } } };
+    const refused = { tool: "app.explore_data", status: "refused", error_code: "LOCAL_PLAN_INTENT_MISMATCH" };
+    const second = { tool: "app.explore_data", status: "ok", arguments: { plan: { kind: "aggregate" } } };
+    const summary = summarizeExploreToolCalls([
+      { tool: "app.describe_data", status: "ok" },
+      first,
+      refused,
+      second,
+    ]);
+
+    expect(summary.successful).toEqual([first, second]);
+    expect(summary.refused).toEqual([refused]);
+    expect(summary.last_successful).toBe(second);
+    expect(summary.last_refused).toBe(refused);
   });
 });

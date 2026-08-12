@@ -1022,7 +1022,9 @@ END
         "PROTECTED FILTER status EQ FIXED 'churned'",
         [
           "PROTECTED RELATIONSHIP store LINK 1 ON store_id REFERENCES public.stores.id PRIMARY KEY id TENANT KEY tenant_id UNMATCHED EXCLUDE",
-          "  PROTECTED RELATIONSHIP category LINK 1 ON category_id REFERENCES public.product_categories.id PRIMARY KEY id TENANT KEY tenant_id UNMATCHED EXCLUDE",
+          "  PROTECTED RELATIONSHIP category LINK 1 ON product_id REFERENCES public.products.id PRIMARY KEY id TENANT KEY tenant_id UNMATCHED EXCLUDE",
+          "  PROTECTED RELATIONSHIP category LINK 2 ON category_id REFERENCES public.categories.id PRIMARY KEY id TENANT KEY tenant_id UNMATCHED EXCLUDE",
+          "  PROTECTED RELATIONSHIP category LINK 3 ON department_id REFERENCES public.departments.id PRIMARY KEY id TENANT KEY tenant_id UNMATCHED EXCLUDE",
           "  PROTECTED FILTER status EQ FIXED 'churned'",
         ].join("\n  "),
       )
@@ -1035,7 +1037,14 @@ END
     expect(contract.capabilities[0]?.protected_read).toMatchObject({
       relationships: [
         { name: "store", links: [{ table: "stores", unmatched_rows: "exclude" }] },
-        { name: "category", links: [{ table: "product_categories", unmatched_rows: "exclude" }] },
+        {
+          name: "category",
+          links: [
+            { table: "products", unmatched_rows: "exclude" },
+            { table: "categories", unmatched_rows: "exclude" },
+            { table: "departments", unmatched_rows: "exclude" },
+          ],
+        },
       ],
       aggregate: {
         dimensions: [

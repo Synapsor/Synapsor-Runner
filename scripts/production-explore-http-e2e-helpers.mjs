@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:net";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -182,6 +182,76 @@ function createProductionExploreMcpClient(url, bearer, options = {}) {
     client: new Client({ name: "production-explore-verifier", version: "1.0.0" }),
     transport,
   };
+}
+
+export async function verifyGeneratedProductionHttpClientConfigs(input) {
+  const cases = [
+    {
+      client: "claude-code",
+      entry: (config) => config.mcpServers?.synapsor,
+      tokenReference: "${SYNAPSOR_MCP_ACCESS_TOKEN}",
+    },
+    {
+      client: "cursor",
+      entry: (config) => config.mcpServers?.synapsor,
+      tokenReference: "${env:SYNAPSOR_MCP_ACCESS_TOKEN}",
+    },
+    {
+      client: "vscode",
+      entry: (config) => config.servers?.synapsor,
+      tokenReference: "${env:SYNAPSOR_MCP_ACCESS_TOKEN}",
+    },
+  ];
+  const verified = [];
+  for (const item of cases) {
+    const invocation = productionExploreRunnerInvocation(input.root, [
+      "mcp", "client-config",
+      "--client", item.client,
+      "--transport", "streamable-http",
+      "--config", input.configPath,
+      "--client-access-token-env", "SYNAPSOR_MCP_ACCESS_TOKEN",
+    ]);
+    const generated = spawnSync(invocation.command, invocation.args, {
+      cwd: input.root,
+      env: input.env,
+      encoding: "utf8",
+      stdio: "pipe",
+    });
+    assertE2e(generated.status === 0,
+      `${item.client} client config generation failed.`, `${generated.stdout}\n${generated.stderr}`);
+    const config = JSON.parse(generated.stdout);
+    const entry = item.entry(config);
+    assertE2e(entry?.url === input.protectedResource,
+      `${item.client} client config did not use the reviewed protected-resource URL.`, entry);
+    assertE2e(entry?.headers?.Authorization === `Bearer ${item.tokenReference}`,
+      `${item.client} client config did not use its native environment-variable syntax.`, entry);
+    assertE2e(/no token value was written/i.test(generated.stderr)
+      && generated.stderr.includes("SYNAPSOR_MCP_ACCESS_TOKEN")
+      && generated.stderr.includes(input.authorizationServer),
+    `${item.client} client guidance did not explain safe token provisioning.`, generated.stderr);
+    assertE2e(!/eyJ[A-Za-z0-9_-]+\.|BEGIN (?:RSA )?PRIVATE KEY|postgres(?:ql)?:\/\/|mysql:\/\//i.test(
+      `${generated.stdout}\n${generated.stderr}`,
+    ), `${item.client} client config disclosed secret or database material.`);
+
+    const accessToken = await input.tokenForPrincipal(`client-config-${item.client}`);
+    const authorization = entry.headers.Authorization.replace(item.tokenReference, accessToken);
+    assertE2e(authorization === `Bearer ${accessToken}`,
+      `${item.client} environment placeholder could not be resolved without editing the config.`);
+    const handle = createProductionExploreMcpClient(
+      input.serverUrl,
+      authorization.slice("Bearer ".length),
+    );
+    await handle.client.connect(handle.transport);
+    try {
+      const names = (await handle.client.listTools()).tools.map((tool) => tool.name);
+      assertE2e(names.join(",") === "app.describe_data,app.explore_data",
+        `${item.client} generated HTTP config did not reach the exact production Explore surface.`, names);
+    } finally {
+      await handle.client.close();
+    }
+    verified.push(item.client);
+  }
+  return verified;
 }
 
 async function expectMcpAuthenticationRejected(input) {

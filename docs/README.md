@@ -228,9 +228,11 @@ no-database demo, wire your database, then read deeper concepts.
 - [Store Lifecycle](store-lifecycle.md): active-store leases, prune safety,
   deleted-store behavior, and concurrent server guardrails.
 - `synapsor-runner activity search`, `evidence`, `query-audit`, `receipts`,
-  `events tail`, `attention show`, and `notifications status`: local evidence,
-  audit, receipt, replay, complete lifecycle history, and human-attention
-  inspection. The legacy development lifecycle webhook remains documented in
+  `events tail`, `attention show`, and `notifications status`: config-selected
+  local SQLite or shared PostgreSQL evidence, audit, receipt, replay, complete
+  lifecycle history, and human-attention inspection. Production HTTP Explore
+  uses the shared PostgreSQL control ledger even when its application source is
+  MySQL. The legacy development lifecycle webhook remains documented in
   [Local Mode](local-mode.md); production attention delivery uses the signed,
   quiet notification pipeline.
 - `examples/mysql-refund-agent/`: MySQL order/refund review example using the

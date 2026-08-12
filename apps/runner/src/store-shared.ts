@@ -3,6 +3,8 @@ import { createPostgresPool } from "@synapsor-runner/postgres";
 import {
   ProposalStore,
   sharedPostgresRuntimeStoreMigration,
+  type ProductionExploreAuditEventInput,
+  type QueryAuditRecordInput,
   type SharedLedgerEntry
 } from "@synapsor-runner/proposal-store";
 import crypto from "node:crypto";
@@ -416,6 +418,10 @@ type SharedPostgresLedgerClient = {
   query(sql: string, values?: unknown[]): Promise<{ rows: Record<string, unknown>[] }>;
 };
 
+type SharedPostgresLedgerConnectedClient = SharedPostgresLedgerClient & {
+  release(): void;
+};
+
 
 export function assertNoRuntimeStoreForLocalMutation(config: RuntimeConfig | undefined, command: string, args: string[] = []): void {
   if (config?.storage?.shared_postgres?.mode !== "runtime_store") return;
@@ -526,24 +532,41 @@ export async function withSharedPostgresRuntimeStoreReadBridge<T>(
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-runtime-store-read-"));
   const storePath = path.join(tempDir, "local.db");
   try {
-    return await withSharedPostgresLedgerMirrorLock(mirror, command, async () => {
-      const restored = await restoreSharedPostgresToLocalStore({
-        storePath,
-        schema: mirror.schema,
-        urlEnv: mirror.urlEnv,
-        maxEntries: mirror.maxEntries,
-      });
-      operationalLog("info", "shared_runtime_store_read", {
+    let snapshot: Awaited<ReturnType<typeof fetchSharedPostgresRuntimeReadSnapshot>>;
+    try {
+      snapshot = await fetchSharedPostgresRuntimeReadSnapshot(mirror);
+    } catch (error) {
+      const errorCode = safeOperationalErrorCode(error);
+      operationalLog("error", "shared_runtime_store_read_failed", {
         command,
         schema: mirror.schema,
         url_env: mirror.urlEnv,
-        entries: restored.entries,
-        imported: restored.imported,
-        skipped: restored.skipped,
+        error_code: errorCode,
         source_database_changed: false,
       });
-      return callback(storePath);
+      throw new Error(
+        `Could not read shared PostgreSQL ledger schema ${mirror.schema} using ${mirror.urlEnv}. Verify that the environment variable is set, the control database is reachable, and the configured role has read access. Error code: ${errorCode}.`,
+      );
+    }
+    const restored = await restoreSharedPostgresToLocalStore({
+      storePath,
+      schema: mirror.schema,
+      urlEnv: mirror.urlEnv,
+      entries: snapshot.entries,
+      productionExploreAuditEvents: snapshot.productionExploreAuditEvents,
+      maxEntries: mirror.maxEntries,
     });
+    operationalLog("info", "shared_runtime_store_read", {
+      command,
+      schema: mirror.schema,
+      url_env: mirror.urlEnv,
+      entries: restored.entries,
+      imported: restored.imported,
+      skipped: restored.skipped,
+      production_explore_audit_events: restored.productionExploreAuditEvents,
+      source_database_changed: false,
+    });
+    return await callback(storePath);
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
   }
@@ -752,24 +775,207 @@ async function syncLocalStoreToSharedPostgres(input: { storePath: string; schema
 }
 
 
-async function restoreSharedPostgresToLocalStore(input: { storePath: string; schema: string; urlEnv: string; entries?: SharedLedgerEntry[]; maxEntries?: number }): Promise<{ entries: number; imported: number; skipped: number }> {
+async function fetchSharedPostgresRuntimeReadSnapshot(
+  mirror: SharedPostgresLedgerMirror,
+): Promise<{ entries: SharedLedgerEntry[]; productionExploreAuditEvents: ProductionExploreAuditEventInput[] }> {
+  const databaseUrl = envValue(mirror.urlEnv);
+  if (!databaseUrl) throw new Error(`${mirror.urlEnv} is not set.`);
+  const pool = createPostgresPool(databaseUrl);
+  let client: SharedPostgresLedgerConnectedClient | undefined;
+  let transactionOpen = false;
+  try {
+    client = await pool.connect();
+    await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    transactionOpen = true;
+    await client.query("SELECT set_config('lock_timeout', $1, true)", [`${mirror.lockTimeoutMs}ms`]);
+    const entries = await fetchSharedPostgresLedgerEntries(client, mirror.schema, mirror.maxEntries);
+    const productionExploreAuditEvents = await fetchProductionExploreAuditEvents(
+      client,
+      mirror.schema,
+      mirror.maxEntries,
+    );
+    if (entries.length + productionExploreAuditEvents.length > mirror.maxEntries) {
+      throw new Error(`shared Postgres ledger exceeds configured ${mirror.maxEntries}-entry safety bound`);
+    }
+    await client.query("COMMIT");
+    transactionOpen = false;
+    return { entries, productionExploreAuditEvents };
+  } catch (error) {
+    if (transactionOpen) await client?.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client?.release();
+    await pool.end();
+  }
+}
+
+
+async function fetchProductionExploreAuditEvents(
+  client: SharedPostgresLedgerClient,
+  schema: string,
+  maxEntries: number,
+): Promise<ProductionExploreAuditEventInput[]> {
+  const qualified = `${quoteSqlIdentifier(schema, "postgres")}.production_explore_audit_events`;
+  let result: { rows: Record<string, unknown>[] };
+  try {
+    result = await client.query(`
+      SELECT event_id, event_kind, payload_json, created_at::text AS created_at
+      FROM ${qualified}
+      ORDER BY created_at ASC, event_id ASC
+      LIMIT $1
+    `, [maxEntries + 1]);
+  } catch (error) {
+    if (isRecord(error) && error.code === "42P01") return [];
+    throw error;
+  }
+  if (result.rows.length > maxEntries) {
+    throw new Error(`shared Postgres production Explore audit exceeds configured ${maxEntries}-entry safety bound`);
+  }
+  return result.rows.map((row) => {
+    const eventId = String(row.event_id ?? "");
+    const eventKind = row.event_kind;
+    const rawCreatedAt = String(row.created_at ?? "");
+    const createdAt = Number.isFinite(Date.parse(rawCreatedAt))
+      ? new Date(rawCreatedAt).toISOString()
+      : rawCreatedAt;
+    const rawPayload = row.payload_json;
+    const parsedPayload = isRecord(rawPayload)
+      ? rawPayload
+      : JSON.parse(String(rawPayload ?? "{}")) as unknown;
+    if (!eventId || (eventKind !== "query_audit" && eventKind !== "evidence_bundle")
+      || !isRecord(parsedPayload) || !Number.isFinite(Date.parse(createdAt))) {
+      throw new Error(`shared Postgres production Explore audit event ${eventId || "<unknown>"} is malformed`);
+    }
+    return {
+      event_id: eventId,
+      event_kind: eventKind,
+      payload: parsedPayload,
+      created_at: createdAt,
+    };
+  });
+}
+
+
+export function importProductionExploreAuditEvents(
+  store: ProposalStore,
+  events: ProductionExploreAuditEventInput[],
+): { imported: number; skipped: number } {
+  let imported = 0;
+  for (const event of events) {
+    if (event.event_kind === "evidence_bundle") {
+      const rawEvidence = event.payload.evidence_bundle;
+      if (!isRecord(rawEvidence)) throw malformedProductionAuditEvent(event);
+      const evidenceBundleId = requiredProductionAuditString(rawEvidence, "evidence_bundle_id", event);
+      if (evidenceBundleId !== event.event_id) throw malformedProductionAuditEvent(event);
+      const evidencePayload = rawEvidence.payload;
+      if (!isRecord(evidencePayload)) throw malformedProductionAuditEvent(event);
+      const rawItems = rawEvidence.items;
+      const rawAudits = rawEvidence.query_audit;
+      if (rawItems !== undefined && !Array.isArray(rawItems)) throw malformedProductionAuditEvent(event);
+      if (rawAudits !== undefined && !Array.isArray(rawAudits)) throw malformedProductionAuditEvent(event);
+      store.recordEvidenceBundle({
+        evidence_bundle_id: evidenceBundleId,
+        proposal_id: optionalProductionAuditString(rawEvidence.proposal_id),
+        tenant_id: requiredProductionAuditString(rawEvidence, "tenant_id", event),
+        payload: evidencePayload,
+        items: (rawItems ?? []).map((item) => {
+          if (!isRecord(item)) throw malformedProductionAuditEvent(event);
+          return item;
+        }),
+        query_audit: (rawAudits ?? []).map((audit) => productionQueryAuditInput(audit, event)),
+        created_at: event.created_at,
+      });
+      imported += 1;
+      continue;
+    }
+    store.recordQueryAudit(productionQueryAuditInput(event.payload.query_audit, event));
+    imported += 1;
+  }
+  return { imported, skipped: 0 };
+}
+
+
+function productionQueryAuditInput(
+  rawAudit: unknown,
+  event: ProductionExploreAuditEventInput,
+): QueryAuditRecordInput {
+  if (!isRecord(rawAudit) || !isRecord(rawAudit.payload)) throw malformedProductionAuditEvent(event);
+  const rowCount = Number(rawAudit.row_count);
+  if (!Number.isSafeInteger(rowCount) || rowCount < 0) throw malformedProductionAuditEvent(event);
+  return {
+    proposal_id: optionalProductionAuditString(rawAudit.proposal_id),
+    evidence_bundle_id: optionalProductionAuditString(rawAudit.evidence_bundle_id),
+    tenant_id: optionalProductionAuditString(rawAudit.tenant_id),
+    principal: optionalProductionAuditString(rawAudit.principal),
+    capability: optionalProductionAuditString(rawAudit.capability),
+    source_id: requiredProductionAuditString(rawAudit, "source_id", event),
+    query_fingerprint: requiredProductionAuditString(rawAudit, "query_fingerprint", event),
+    table_name: requiredProductionAuditString(rawAudit, "table_name", event),
+    business_object: optionalProductionAuditString(rawAudit.business_object),
+    object_id: optionalProductionAuditString(rawAudit.object_id),
+    primary_key_value: optionalProductionAuditString(rawAudit.primary_key_value),
+    row_count: rowCount,
+    payload: rawAudit.payload,
+    created_at: event.created_at,
+  };
+}
+
+
+function requiredProductionAuditString(
+  value: Record<string, unknown>,
+  key: string,
+  event: ProductionExploreAuditEventInput,
+): string {
+  const result = optionalProductionAuditString(value[key]);
+  if (!result) throw malformedProductionAuditEvent(event);
+  return result;
+}
+
+
+function optionalProductionAuditString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+
+function malformedProductionAuditEvent(event: ProductionExploreAuditEventInput): Error {
+  return new Error(`shared Postgres production Explore audit event ${event.event_id} is malformed`);
+}
+
+
+async function restoreSharedPostgresToLocalStore(input: {
+  storePath: string;
+  schema: string;
+  urlEnv: string;
+  entries?: SharedLedgerEntry[];
+  productionExploreAuditEvents?: ProductionExploreAuditEventInput[];
+  maxEntries?: number;
+}): Promise<{ entries: number; imported: number; skipped: number; productionExploreAuditEvents: number }> {
   if (input.storePath !== ":memory:") {
     await fs.mkdir(path.dirname(path.resolve(input.storePath)), { recursive: true });
   }
   const maxEntries = input.maxEntries ?? 10_000;
   const entries = input.entries ?? await fetchSharedPostgresEntriesFromEnv(input.urlEnv, input.schema, maxEntries);
-  if (entries.length > maxEntries) throw new Error(`shared Postgres ledger restore exceeds configured ${maxEntries}-entry safety bound`);
+  const productionEvents = input.productionExploreAuditEvents ?? [];
+  if (entries.length + productionEvents.length > maxEntries) {
+    throw new Error(`shared Postgres ledger restore exceeds configured ${maxEntries}-entry safety bound`);
+  }
   const store = new ProposalStore(input.storePath);
   try {
     const result = store.importSharedLedgerEntries(entries);
-    return { entries: entries.length, imported: result.imported, skipped: result.skipped };
+    const productionResult = importProductionExploreAuditEvents(store, productionEvents);
+    return {
+      entries: entries.length + productionEvents.length,
+      imported: result.imported + productionResult.imported,
+      skipped: result.skipped + productionResult.skipped,
+      productionExploreAuditEvents: productionEvents.length,
+    };
   } finally {
     store.close();
   }
 }
 
 
-async function fetchSharedPostgresLedgerEntries(pool: ReturnType<typeof createPostgresPool>, schema: string, maxEntries = 10_000): Promise<SharedLedgerEntry[]> {
+async function fetchSharedPostgresLedgerEntries(pool: SharedPostgresLedgerClient, schema: string, maxEntries = 10_000): Promise<SharedLedgerEntry[]> {
   const qualified = `${quoteSqlIdentifier(schema, "postgres")}.ledger_entries`;
   const result = await pool.query(`
     SELECT entry_key, kind, proposal_id, tenant_id, capability, payload_json, created_at::text AS created_at
@@ -793,7 +999,7 @@ async function fetchSharedPostgresLedgerEntries(pool: ReturnType<typeof createPo
       tenant_id: row.tenant_id == null ? undefined : String(row.tenant_id),
       capability: row.capability == null ? undefined : String(row.capability),
       payload,
-      created_at: String(row.created_at),
+      created_at: new Date(String(row.created_at)).toISOString(),
     };
   });
 }

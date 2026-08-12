@@ -67,7 +67,7 @@ export type BoundaryCatalogRelationship = {
   cardinality: "many_to_one";
   proven: boolean;
   nullable: boolean;
-  path_depth: 1 | 2;
+  path_depth: 1 | 2 | 3;
   links: BoundaryCatalogPathLink[];
   suggested_questions: string[];
 };
@@ -130,7 +130,7 @@ export function buildBoundaryCatalogModel(
             continue;
           }
           const hiddenJoinKey = links.some((link) => link.hidden_join_key);
-          const pathDepth = links.length === 2 ? 2 : 1;
+          const pathDepth = (links.length === 3 ? 3 : links.length === 2 ? 2 : 1) as 1 | 2 | 3;
           relationships.push({
             id: relationship.id,
             source_table: resource.id,

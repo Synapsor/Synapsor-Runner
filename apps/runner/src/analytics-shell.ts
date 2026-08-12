@@ -1756,6 +1756,7 @@ async function showDetails(
     ?? selected.returned_cells
     ?? "unknown";
   const returnedBytes = numberRecordValue(returned.bytes) ?? "unknown";
+  const executionDurationMs = numberRecordValue(freshness.execution_duration_ms);
   const suppressedGroups = numberRecordValue(suppression.suppressed_groups)
     ?? selected.suppressed_groups
     ?? 0;
@@ -1811,6 +1812,9 @@ async function showDetails(
     renderTerminalFact("Bounded rows/groups", returnedRowsOrGroups, { color, tone: "value" }),
     renderTerminalFact("Returned cells", returnedCells, { color, tone: "value" }),
     renderTerminalFact("Returned bytes", returnedBytes, { color, tone: "value" }),
+    ...(executionDurationMs === undefined
+      ? []
+      : [renderTerminalFact("Execution time", `${executionDurationMs} ms`, { color, tone: "value" })]),
     renderTerminalFact("Suppressed groups", suppressedGroups, { color, tone: Number(suppressedGroups) > 0 ? "warning" : "success" }),
     renderTerminalFact("Evidence", selected.evidence_bundle_id ?? "unavailable", { color, tone: selected.evidence_bundle_id ? "identifier" : "muted" }),
     renderTerminalFact("Query audit", selected.query_audit_handle ?? "unavailable", { color, tone: selected.query_audit_handle ? "identifier" : "muted" }),

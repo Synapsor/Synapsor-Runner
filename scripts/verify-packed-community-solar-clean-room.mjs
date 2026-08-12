@@ -260,7 +260,17 @@ try {
     await waitForExpression(page, "[...document.querySelectorAll('[data-global-decision]')].every(input=>input.checked)");
     await waitForExpression(page, "document.querySelector('#review-staged-access')?.offsetParent !== null");
     await click(page, "#review-staged-access");
-    await waitForExpression(page, "document.querySelector('#view-activate')?.classList.contains('active') === true");
+    try {
+      await waitForExpression(page, "document.querySelector('#view-activate')?.classList.contains('active') === true");
+    } catch (error) {
+      const diagnostic = await evaluate(page, `({
+        message:document.querySelector("#message")?.textContent||"",
+        activeView:document.querySelector(".view.active")?.id||"",
+        reviewButtonDisabled:document.querySelector("#review-staged-access")?.disabled===true,
+        stagedSummary:document.querySelector("#access-staged-summary")?.textContent||""
+      })`);
+      throw new Error(`${error.message}\n${JSON.stringify(diagnostic, null, 2)}`);
+    }
     await waitForExpression(page, "!document.querySelector('#signoff-summary')?.textContent.includes('remain')");
     await type(page, "#actor", "solar-reviewer@example.test");
     await waitForExpression(page, "document.querySelector('#preview')?.disabled === false");
@@ -334,7 +344,7 @@ try {
     assert.doesNotMatch(aggregatePlan, /\bSELECT\b|\bJOIN\b|\bSQL\b/i);
     assert.match(aggregatePlan, /work_orders_inverter_model_id_fkey/);
     evidence.aggregate = {
-      question: "How did total downtime change by week across reviewed inverter models?",
+      question: "How did total work order downtime change weekly for each inverter model name using opened at?",
       plan: aggregatePlan,
       source_database_changed: false,
     };
@@ -480,9 +490,18 @@ try {
       /reviewed question|weekly|downtime/i,
     );
     await configureLocalAsk(page, askProviderUrl, "solar-local-fixture");
-    await type(page, "#ask-question", "How did total downtime change by week across reviewed inverter models?");
+    await type(page, "#ask-question", "How did total work order downtime change weekly for each inverter model name using opened at?");
     await click(page, "#run-ask");
-    await waitForExpression(page, "document.querySelector('#ask-transcript')?.textContent.includes('reviewed weekly downtime')");
+    try {
+      await waitForExpression(page, "document.querySelector('#ask-transcript')?.textContent.includes('reviewed weekly downtime')");
+    } catch (error) {
+      const diagnostic = await evaluate(page, `({
+        status:document.querySelector("#ask-run-status")?.textContent||"",
+        transcript:document.querySelector("#ask-transcript")?.textContent||"",
+        providerState:document.querySelector("#ask-provider-state")?.textContent||""
+      })`);
+      throw new Error(`${error.message}\n${JSON.stringify({ ...diagnostic, providerResult: askAggregateResult ?? null }, null, 2)}`);
+    }
     assert.doesNotMatch(
       await evaluate(page, "document.querySelector('#ask-transcript')?.innerText"),
       /app\.explore_data|boundary digest|generation lock/i,
@@ -1193,7 +1212,7 @@ async function selectVisibleOption(page, selector, pattern) {
   const options = await evaluate(page, `[...document.querySelector(${JSON.stringify(selector)}).options]
     .map(option=>({value:option.value,text:option.textContent.trim()}))`);
   const option = options.find((candidate) => pattern.test(candidate.text));
-  assert.ok(option, `${selector} did not expose a visible option matching ${pattern}`);
+  assert.ok(option, `${selector} did not expose a visible option matching ${pattern}; options=${JSON.stringify(options)}`);
   await select(page, selector, option.value);
 }
 

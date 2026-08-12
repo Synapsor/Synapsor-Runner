@@ -142,6 +142,8 @@ const HIGH_CONFIDENCE_RULES: Rule[] = [
       "allergy",
       "clinical",
       "patientnote",
+      "patientid",
+      "patientidentifier",
       "waivernote",
       "medicalrecord",
       "medicalrecordnumber",

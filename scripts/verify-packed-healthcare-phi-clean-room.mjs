@@ -205,6 +205,7 @@ const evidence = {
   production: {},
   screenshots,
 };
+const progress = (message) => process.stderr.write(`[healthcare-clean-room] ${message}\n`);
 
 try {
   await fsp.mkdir(packRoot, { recursive: true });
@@ -247,6 +248,7 @@ try {
   const sourceBefore = sourceState();
 
   ui = await startPublicGuidedCommand({ cli, projectRoot, env: sharedEnv });
+  progress("Workbench onboarding ready");
   evidence.timings_ms.schema_summary = ui.readyAt - startedAt;
   const guidedOutput = stripVTControlCharacters(ui.output());
   assert.match(guidedOutput, /✓ Connected/);
@@ -288,6 +290,10 @@ try {
     episodeReview.fields.find((field) => field.name === "clinical_notes")?.sensitivity.state,
     "high_confidence_sensitive",
   );
+  assert.equal(
+    episodeReview.fields.find((field) => field.name === "patient_id")?.sensitivity.state,
+    "high_confidence_sensitive",
+  );
 
   chrome = await launchChrome({
     userDataDir: path.join(tempRoot, "chrome-profile"),
@@ -320,24 +326,26 @@ try {
 
     await click(page, '[data-open-resource="public.care_episode_facts"]');
     await waitForExpression(page, "document.querySelector('#view-exceptions')?.classList.contains('active') === true");
-    await click(page, "#resource-detail [data-access-secondary] > summary");
+    if (!await evaluate(page, "document.querySelector('#resource-detail [data-access-secondary]')?.open === true")) {
+      await click(page, "#resource-detail [data-access-secondary] > summary");
+    }
     await waitForExpression(page, "document.querySelector('#resource-detail [data-access-secondary]')?.open === true");
     await waitForExpression(
       page,
-      "document.querySelector('[data-submit-scope-review=\"tenant_key\"]')?.offsetParent !== null",
+      "Boolean(document.querySelector('#resource-detail [data-scope-review-value]')?.offsetParent) && Boolean(document.querySelector('#resource-detail [data-submit-scope-review=\"tenant_key\"]')?.offsetParent)",
     );
     assert.match(
       await evaluate(page, "document.querySelector('#resource-detail')?.textContent"),
       /trusted tenant scope is unresolved|customer-isolation/i,
     );
-    await select(page, '[data-scope-review-value]', "hospital_id");
-    await type(page, '[data-scope-review-actor]', "harbor-reviewer@example.test");
+    await select(page, '#resource-detail [data-scope-review-value]', "hospital_id");
+    await type(page, '#resource-detail [data-scope-review-actor]', "harbor-reviewer@example.test");
     await type(
       page,
-      '[data-scope-review-reason]',
+      '#resource-detail [data-scope-review-reason]',
       "Hospital is the reviewed customer-isolation boundary enforced by PostgreSQL RLS.",
     );
-    await click(page, '[data-submit-scope-review="tenant_key"]');
+    await click(page, '#resource-detail [data-submit-scope-review="tenant_key"]');
     await waitForExpression(
       page,
       "document.querySelectorAll('#resource-detail [data-field-tier]:not([disabled])').length > 0",
@@ -377,7 +385,7 @@ try {
       source_database_changed: false,
     };
 
-    await evaluate(page, "location.reload()");
+    await reloadAndWait(page);
     await waitForExpression(page, "document.querySelector('#header-state')?.textContent !== 'Loading'");
     await waitForExpression(page, "document.querySelector('#view-exceptions')?.classList.contains('active') === true");
     assert.match(
@@ -476,6 +484,7 @@ try {
       "Workbench asked the analytics user to type trusted tenant or principal values",
     );
     await waitForExpression(page, "document.querySelector('#explorer')?.classList.contains('hidden') === false");
+    progress("reviewed boundary active");
     await waitForExpression(page, "document.querySelector('#ask-open-no-model')?.offsetParent !== null");
     await click(page, "#ask-open-no-model");
     await waitForExpression(page, "document.querySelector('#no-model-content')?.classList.contains('hidden') === false");
@@ -495,10 +504,12 @@ try {
     );
     evidence.timings_ms.first_safe_read = Date.now() - startedAt;
     await shot(page, "04-first-phi-safe-read.png");
+    progress("PHI-safe row read complete");
 
     await runWorkbenchBaseAggregate(page);
     evidence.timings_ms.first_aggregate = Date.now() - startedAt;
     await shot(page, "05-bounded-care-analytics.png");
+    progress("bounded Workbench aggregate complete");
 
     await selectVisibleOption(page, "#aggregate-measure", /number of care episode facts/i);
     await selectVisibleOption(page, "#aggregate-dimension", /public status label/i);
@@ -514,12 +525,14 @@ try {
       false,
     );
     await shot(page, "06-stored-injection-inert.png");
+    progress("stored prompt-injection rendering verified inert");
 
     await configurePage(page, 390, 844);
     await assertNoPageOverflow(page, "narrow mobile analytical result");
     await shot(page, "07-mobile-safe-result.png");
     await configurePage(page, 1440, 1100);
-    await evaluate(page, "location.reload()");
+    await reloadAndWait(page);
+    progress("Workbench refresh complete");
     await waitForExpression(page, "/active reviewed boundar/i.test(document.querySelector('#header-state')?.textContent||'')");
     if (await evaluate(page, "document.querySelector('#leave-ask-focus')?.offsetParent !== null")) {
       await click(page, "#leave-ask-focus");
@@ -558,6 +571,7 @@ try {
       authority_preserved: true,
       budgets_preserved: true,
     };
+    progress("Workbench back/forward recovery complete");
 
     const secondPage = await createPage(chrome.port);
     try {
@@ -579,15 +593,20 @@ try {
     } finally {
       secondPage.close();
     }
+    progress("second Workbench tab verified");
+    await page.send("Page.bringToFront");
 
     // Leave the exact base analysis selected in this Workbench tab. Later MCP
     // stress calls may advance project history, but this button stays bound to
     // the reviewed query reference rendered here.
+    progress("starting post-recovery Workbench aggregate");
     await runWorkbenchBaseAggregate(page);
+    progress("browser recovery and base aggregate complete");
 
     let referenceResult;
     const repeatedResults = [];
     const protectedRoot = path.join(projectRoot, "synapsor", "protected");
+    progress("starting authoring MCP matrix");
     await withPackedMcp({
       cli,
       args: ["mcp", "serve", "--authoring", "--project-root", projectRoot],
@@ -676,15 +695,30 @@ try {
       await type(
         page,
         "#ask-question",
-        "How did reviewed avoided readmission cost change by week across care units and discharge reasons?",
+        "How did reviewed avoided readmission cost change by week grouped by care unit name and discharge reason name?",
       );
       await click(page, "#run-ask");
-      await waitForExpression(page, "document.querySelector('#ask-transcript')?.textContent.includes('reviewed care analysis')");
+      try {
+        await waitForExpression(
+          page,
+          "document.querySelector('#ask-transcript')?.textContent.includes('reviewed care analysis')",
+        );
+      } catch (error) {
+        const diagnostic = await evaluate(page, `({
+          transcript:document.querySelector('#ask-transcript')?.textContent?.slice(0,1200),
+          message:document.querySelector('#ask-message')?.textContent?.slice(0,500),
+          runDisabled:document.querySelector('#run-ask')?.disabled
+        })`);
+        throw new Error(`${error instanceof Error ? error.message : String(error)}\nAsk diagnostic: ${JSON.stringify(diagnostic)}`);
+      }
       assert.deepEqual(askToolResult?.data, referenceResult.data);
       assert.equal(askToolResult?.source_database_changed, false);
       await shot(page, "08-workbench-ask.png");
 
-      const cliAsk = await runCliAsk({ cli, question: "How did reviewed avoided readmission cost change by week?" });
+      const cliAsk = await runCliAsk({
+        cli,
+        question: "How did reviewed avoided readmission cost change by week grouped by care unit name and discharge reason name?",
+      });
       assert.equal(cliAsk.ok, true);
       assert.deepEqual(cliAsk.runner_verified_analysis.tools_called, ["app.explore_data"]);
       assert.equal(cliAsk.source_database_changed, false);
@@ -770,6 +804,7 @@ try {
       }
 
     });
+    progress("authoring MCP matrix complete");
     assert.equal(repeatedResults.length, 10);
     assert.equal(fs.existsSync(protectedRoot), false);
 
@@ -807,6 +842,7 @@ try {
       activated_by_human: true,
       scoped_explore_disabled: true,
     };
+    progress("protected capability active and Explore disabled");
   } finally {
     page.close();
   }
@@ -829,7 +865,10 @@ try {
   assert.match(protectedDsl, /PROTECTED READ AGGREGATE/);
   assert.match(protectedDsl, /PROTECTED RELATIONSHIP care_episode_facts_unit_id_fkey/);
   assert.match(protectedDsl, /PROTECTED RELATIONSHIP care_episode_facts_discharge_reason_id_fkey/);
-  assert.match(protectedDsl, /KEEP OUT diagnosis_code, clinical_notes, hospital_id, care_manager_id/);
+  assert.match(
+    protectedDsl,
+    /KEEP OUT patient_id, diagnosis_code, clinical_notes, hospital_id, care_manager_id/,
+  );
   assert.doesNotMatch(
     protectedDsl,
     /(?:MEASURE|GROUP DIMENSION|TIME DIMENSION|PROTECTED FILTER)\s+[^\n]*(?:diagnosis_code|clinical_notes|patient_name|medical_record_number)/,
@@ -1144,6 +1183,7 @@ async function startAskProvider() {
         const toolResult = [...messages].reverse().find((message) => message?.role === "tool");
         response.setHeader("content-type", "application/json");
         if (toolResult) {
+          progress("deterministic Ask provider received Runner tool result");
           askToolResult = JSON.parse(toolResult.content);
           response.end(JSON.stringify({
             choices: [{
@@ -1155,6 +1195,7 @@ async function startAskProvider() {
           }));
           return;
         }
+        progress("deterministic Ask provider requested reviewed Explore tool");
         response.end(JSON.stringify({
           choices: [{
             message: {
@@ -1193,7 +1234,11 @@ async function expectMcpRefusal(client, plan, label) {
     name: "app.explore_data",
     arguments: { plan },
   });
-  assert.equal(result.isError, true, `${label} did not fail closed`);
+  assert.equal(
+    result.isError,
+    true,
+    `${label} did not fail closed: ${JSON.stringify(result).slice(0, 1600)}`,
+  );
   assert.doesNotMatch(
     JSON.stringify(result),
     /SELECT\s+\*\s+FROM|SYNTH-DX|synthetic diagnosis|MRN-|INS-HARBOR|harbor_reader_password/i,
@@ -1266,6 +1311,13 @@ async function evaluate(page, expression) {
   return result.result?.value;
 }
 
+async function reloadAndWait(page) {
+  const loaded = page.waitFor("Page.loadEventFired", 30_000);
+  await page.send("Page.reload", { ignoreCache: true });
+  await loaded;
+  await waitForExpression(page, "document.readyState === 'complete'");
+}
+
 async function withPackedMcp(input, action) {
   const transport = new StdioClientTransport({
     command: process.execPath,
@@ -1281,13 +1333,41 @@ async function withPackedMcp(input, action) {
     stderr += chunk;
   });
   try {
-    await client.connect(transport);
-    return await action(client);
+    progress(`${input.name}: connecting`);
+    let connectTimer;
+    try {
+      await Promise.race([
+        client.connect(transport),
+        new Promise((_, reject) => {
+          connectTimer = setTimeout(() => reject(new Error(
+            `${input.name} did not initialize its packed MCP transport within 15 seconds.`,
+          )), 15_000);
+        }),
+      ]);
+    } finally {
+      if (connectTimer) clearTimeout(connectTimer);
+    }
+    progress(`${input.name}: connected`);
+    const result = await action(client);
+    progress(`${input.name}: action complete`);
+    return result;
   } catch (error) {
     const detail = error instanceof Error ? error.stack ?? error.message : String(error);
     throw new Error(`${detail}\nMCP stderr:\n${stderr}`);
   } finally {
-    await client.close().catch(() => undefined);
+    progress(`${input.name}: closing`);
+    let closeTimer;
+    try {
+      await Promise.race([
+        client.close().catch(() => undefined),
+        new Promise((resolve) => {
+          closeTimer = setTimeout(resolve, 5_000);
+        }),
+      ]);
+    } finally {
+      if (closeTimer) clearTimeout(closeTimer);
+    }
+    progress(`${input.name}: closed`);
   }
 }
 

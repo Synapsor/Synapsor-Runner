@@ -10,6 +10,7 @@ import path from "node:path";
 import process from "node:process";
 import { cliCommandName } from "./cli-command-meta.js";
 import { writeFileGuarded } from "./cli-files.js";
+import { shellQuote } from "./cli-format.js";
 import { usage } from "./cli-help.js";
 import { assertKnownOptions, optionalArg, outputArg } from "./cli-options.js";
 import { databaseInputFromArgs } from "./cli-project.js";
@@ -207,9 +208,24 @@ async function configInit(args: string[]): Promise<number> {
     await fs.rm(output, { force: true });
     throw new Error(`Written config did not validate: ${writtenValidation.errors.map((issue) => issue.code).join(", ")}`);
   }
+  const absoluteOutput = path.resolve(output);
+  const controlStoreMigrationCommand = productionExplore
+    ? `${cliCommandName()} store shared-postgres apply-migration --url-env ${optionalArg(args, "--control-url-env") ?? "SYNAPSOR_CONTROL_DATABASE_URL"} --schema synapsor_runner --yes`
+    : undefined;
+  const productionPreflightCommand = productionExplore
+    ? [
+      `${cliCommandName()} doctor`,
+      `--config ${shellQuote(absoluteOutput)}`,
+      "--transport streamable-http",
+      "--preflight",
+      ...(optionalArg(args, "--http-channel") === "direct_tls"
+        ? ["--tls-cert-env SYNAPSOR_TLS_CERT_PEM", "--tls-key-env SYNAPSOR_TLS_KEY_PEM"]
+        : ["--trusted-tls-proxy"]),
+    ].join(" ")
+    : undefined;
   const result = {
     ok: true,
-    config_path: path.resolve(output),
+    config_path: absoluteOutput,
     mode: "read_only",
     active_capabilities: 0,
     ...(productionExplore ? { profile: "production_explore" } : {}),
@@ -217,8 +233,14 @@ async function configInit(args: string[]): Promise<number> {
     engine,
     read_url_env: readUrlEnv,
     source_database_changed: false,
+    ...(controlStoreMigrationCommand
+      ? { control_store_migration_command: controlStoreMigrationCommand }
+      : {}),
+    ...(productionPreflightCommand
+      ? { preflight_command: productionPreflightCommand }
+      : {}),
     next_action: productionExplore
-      ? `Set the referenced secrets, initialize the shared control store, then run ${cliCommandName()} doctor --config ${path.resolve(output)} --transport streamable-http.`
+      ? "Set the referenced secret environment values, initialize the shared control store, then run the production preflight."
       : `Run ${cliCommandName()} start --from-env ${readUrlEnv} to draft a reviewed boundary, or author capabilities manually.`,
   };
   if (args.includes("--json")) {
@@ -232,6 +254,8 @@ async function configInit(args: string[]): Promise<number> {
         ? [
           "Generated: shared control store, asymmetric JWT claims, secured HTTP, OAuth scope, tenant ceilings, and bounded source/session pools.",
           "Secret values were not read or written. Generate the shared HMAC key from at least 32 random bytes; do not use a 32-character hex key.",
+          `Initialize the shared control store: ${controlStoreMigrationCommand}`,
+          `Check every production prerequisite together: ${productionPreflightCommand}`,
         ]
         : []),
       "Agent authority active: no",

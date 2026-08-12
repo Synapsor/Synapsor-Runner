@@ -3078,6 +3078,7 @@ END
       capabilities: [],
     });
     expect(JSON.stringify(config)).not.toMatch(/mysql:\/\/|postgres(?:ql)?:\/\//i);
+
     await expect(main(["config", "init", "--output", configPath])).rejects.toThrow(/already exists/i);
   });
 
@@ -3132,7 +3133,12 @@ END
       read_url_env: "RETAIL_DATABASE_URL",
       active_capabilities: 0,
       source_database_changed: false,
+      control_store_migration_command: expect.stringContaining(
+        "store shared-postgres apply-migration --url-env SYNAPSOR_CONTROL_DATABASE_URL --schema synapsor_runner --yes",
+      ),
+      preflight_command: expect.stringContaining("doctor --config"),
     });
+    expect(result.preflight_command).toContain("--transport streamable-http --preflight --trusted-tls-proxy");
     expect(validateRunnerCapabilityConfig(config)).toMatchObject({ ok: true, errors: [] });
     expect(config).toMatchObject({
       mode: "read_only",
@@ -3163,6 +3169,35 @@ END
     });
     expect(config.trusted_context.values).toBeUndefined();
     expect(JSON.stringify(config)).not.toMatch(/mysql:\/\/|postgres(?:ql)?:\/\//i);
+
+    const preflightConfigPath = path.join(tempDir, "preflight.runner.json");
+    const preflightConfig = structuredClone(config);
+    preflightConfig.sources.retail_analytics.read_url_env = "SYNAPSOR_TEST_PREFLIGHT_SOURCE_URL";
+    preflightConfig.storage.shared_postgres.url_env = "SYNAPSOR_TEST_PREFLIGHT_CONTROL_URL";
+    preflightConfig.session_auth.jwks_url_env = "SYNAPSOR_TEST_PREFLIGHT_JWKS_URL";
+    preflightConfig.production_explore.budget_hmac_key_env = "SYNAPSOR_TEST_PREFLIGHT_HMAC_KEY";
+    await fs.writeFile(preflightConfigPath, JSON.stringify(preflightConfig), "utf8");
+    output.length = 0;
+    await expect(main([
+      "doctor",
+      "--config", preflightConfigPath,
+      "--transport", "streamable-http",
+      "--preflight",
+      "--trusted-tls-proxy",
+      "--json",
+    ])).resolves.toBe(1);
+    const preflight = JSON.parse(output.join(""));
+    expect(preflight.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "production-preflight-mode", level: "pass" }),
+      expect.objectContaining({
+        name: "production-explore:active-production-boundaries",
+        level: "fail",
+      }),
+      expect.objectContaining({
+        name: "production-explore:shared-accounting-store",
+        level: "fail",
+      }),
+    ]));
 
     await expect(main([
       "config",
@@ -5550,8 +5585,13 @@ END
       }],
     }), "utf8");
     const output: string[] = [];
+    const stderr: string[] = [];
     vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
       output.push(String(chunk));
+      return true;
+    });
+    vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
+      stderr.push(String(chunk));
       return true;
     });
 
@@ -5575,6 +5615,90 @@ END
     }));
     expect(snippet.openai_agents_sdk.headers_from_env.Authorization).toBe("Bearer $MY_IDP_ACCESS_TOKEN");
     expect(text).not.toMatch(/eyJ[A-Za-z0-9_-]+\.|BEGIN PRIVATE KEY|Bearer\s+(?!\$)[A-Za-z0-9._~+/=-]{16,}/);
+    expect(stderr.join("")).toContain("Protected resource: https://runner.example/mcp");
+    expect(stderr.join("")).toContain("Authorization servers: https://identity.example");
+    expect(stderr.join("")).toContain("Required scopes: synapsor:mcp");
+
+    const expectedClients = [
+      {
+        client: "claude-code",
+        entry: (value: any) => value.mcpServers.synapsor,
+        expected: {
+          type: "http",
+          url: "https://runner.example/mcp",
+          headers: { Authorization: "Bearer ${MY_IDP_ACCESS_TOKEN}" },
+        },
+      },
+      {
+        client: "cursor",
+        entry: (value: any) => value.mcpServers.synapsor,
+        expected: {
+          url: "https://runner.example/mcp",
+          headers: { Authorization: "Bearer ${env:MY_IDP_ACCESS_TOKEN}" },
+        },
+      },
+      {
+        client: "vscode",
+        entry: (value: any) => value.servers.synapsor,
+        expected: {
+          type: "http",
+          url: "https://runner.example/mcp",
+          headers: { Authorization: "Bearer ${env:MY_IDP_ACCESS_TOKEN}" },
+        },
+      },
+    ];
+    for (const expectedClient of expectedClients) {
+      output.length = 0;
+      stderr.length = 0;
+      await expect(main([
+        "mcp", "client-config", "--client", expectedClient.client,
+        "--transport", "streamable-http",
+        "--config", configPath,
+        "--store", ":memory:",
+        "--client-access-token-env", "MY_IDP_ACCESS_TOKEN",
+      ])).resolves.toBe(0);
+      const generatedText = output.join("");
+      expect(expectedClient.entry(JSON.parse(generatedText))).toEqual(expectedClient.expected);
+      expect(generatedText).not.toMatch(/eyJ[A-Za-z0-9_-]+\.|BEGIN PRIVATE KEY|Bearer\s+(?!\$\{)[A-Za-z0-9._~+/=-]{16,}/);
+      expect(generatedText).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\//i);
+      expect(stderr.join("")).toContain(`reads the bearer token from environment MY_IDP_ACCESS_TOKEN`);
+      expect(stderr.join("")).toContain("no token value was written");
+      expect(stderr.join("")).toContain("Runner verifies tokens but never issues or refreshes them");
+
+      const destination = path.join(tempDir, `${expectedClient.client}.http.json`);
+      const serverMap = expectedClient.client === "vscode" ? "servers" : "mcpServers";
+      await fs.writeFile(destination, JSON.stringify({
+        keep_this_setting: true,
+        [serverMap]: { existing: { command: "node", args: ["existing.mjs"] } },
+      }), "utf8");
+      output.length = 0;
+      stderr.length = 0;
+      await expect(main([
+        "mcp", "client-config", "--client", expectedClient.client,
+        "--transport", "streamable-http",
+        "--config", configPath,
+        "--client-access-token-env", "MY_IDP_ACCESS_TOKEN",
+        "--write", "--destination", destination, "--yes",
+      ])).resolves.toBe(0);
+      const written = JSON.parse(await fs.readFile(destination, "utf8"));
+      expect(written.keep_this_setting).toBe(true);
+      expect(written[serverMap].existing.command).toBe("node");
+      expect(expectedClient.entry(written)).toEqual(expectedClient.expected);
+      expect(JSON.stringify(written)).not.toMatch(/eyJ[A-Za-z0-9_-]+\.|BEGIN PRIVATE KEY|postgres(?:ql)?:\/\/|mysql:\/\//i);
+      expect((await fs.readdir(tempDir)).some((name) => name.startsWith(`${expectedClient.client}.http.json.bak.`))).toBe(true);
+    }
+  });
+
+  it("fails safely for unsupported HTTP clients and invalid credential environment names", async () => {
+    await expect(main([
+      "mcp", "client-config", "--client", "claude-desktop",
+      "--transport", "streamable-http",
+    ])).rejects.toThrow(/--client claude-code --transport streamable-http/);
+    await expect(main([
+      "mcp", "client-config", "--client", "cursor",
+      "--transport", "streamable-http",
+      "--client-access-token-env", "bad-name;echo",
+    ])).rejects.toThrow(/must name an uppercase environment variable/);
   });
 
   it("uses CLI, config, then default token env precedence in generated HTTP client config", async () => {
@@ -7039,7 +7163,8 @@ END
 
     output.length = 0;
     await expect(main(["activity", "search", "--tenant", "acme", "--object", "invoice:INV-CLI", "--store", storePath])).resolves.toBe(0);
-    expect(output.join("")).toContain("Found 1 local interaction");
+    expect(output.join("")).toContain(`Ledger: local SQLite ${storePath}`);
+    expect(output.join("")).toContain("Found 1 interaction");
     expect(output.join("")).toContain("proposal: wrp_cli");
     expect(output.join("")).toContain("Next:");
     expect(output.join("")).toContain(`synapsor-runner lifecycle show proposal:wrp_cli --store ${storePath}`);
@@ -7128,19 +7253,20 @@ END
 
     output.length = 0;
     await expect(main(["activity", "search", "--tenant", "acme", "--capability", "billing.inspect_invoice", "--source", "src_pg_acme", "--table", "invoices", "--store", storePath])).resolves.toBe(0);
-    expect(output.join("")).toContain("Found 2 local interactions");
+    expect(output.join("")).toContain(`Ledger: local SQLite ${storePath}`);
+    expect(output.join("")).toContain("Found 2 interactions");
     expect(output.join("")).toContain("kind: evidence");
     expect(output.join("")).toContain("evidence: ev_read_only");
     expect(output.join("")).toContain("kind: query-audit");
     expect(output.join("")).toContain("query audit: 2");
     output.length = 0;
     await expect(main(["activity", "search", "--evidence", "ev_read_only", "--store", storePath])).resolves.toBe(0);
-    expect(output.join("")).toContain("Found 1 local interaction");
+    expect(output.join("")).toContain("Found 1 interaction");
     expect(output.join("")).toContain("kind: evidence");
     expect(output.join("")).toContain("evidence: ev_read_only");
     output.length = 0;
     await expect(main(["activity", "search", "--query-fingerprint", "sha256:audit-only", "--store", storePath])).resolves.toBe(0);
-    expect(output.join("")).toContain("Found 1 local interaction");
+    expect(output.join("")).toContain("Found 1 interaction");
     expect(output.join("")).toContain("kind: query-audit");
     expect(output.join("")).toContain("query audit: 2");
   });

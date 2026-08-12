@@ -151,8 +151,17 @@ async function seedPostgres() {
       CREATE TABLE star_live.categories (
         id text PRIMARY KEY,
         tenant_id text NOT NULL,
+        department_id text NOT NULL,
         name text NOT NULL
       );
+      CREATE TABLE star_live.departments (
+        id text PRIMARY KEY,
+        tenant_id text NOT NULL,
+        name text NOT NULL
+      );
+      ALTER TABLE star_live.categories
+        ADD CONSTRAINT categories_department_id_fkey FOREIGN KEY (department_id)
+        REFERENCES star_live.departments(id);
       CREATE TABLE star_live.products (
         id text PRIMARY KEY,
         tenant_id text NOT NULL,
@@ -183,14 +192,23 @@ async function seedPostgres() {
         CONSTRAINT line_items_sales_fact_id_fkey FOREIGN KEY (sales_fact_id)
           REFERENCES star_live.sales_facts(id)
       );
+      CREATE INDEX sales_facts_store_id_idx ON star_live.sales_facts(store_id);
+      CREATE INDEX sales_facts_product_id_idx ON star_live.sales_facts(product_id);
+      CREATE INDEX products_category_id_idx ON star_live.products(category_id);
+      CREATE INDEX categories_department_id_idx ON star_live.categories(department_id);
+      CREATE INDEX line_items_sales_fact_id_idx ON star_live.line_items(sales_fact_id);
       INSERT INTO star_live.stores VALUES
         ('store-a', 'acme', 'Downtown'),
         ('store-b', 'acme', 'Airport'),
         ('store-other', 'globex', 'Other tenant');
+      INSERT INTO star_live.departments VALUES
+        ('department-energy', 'acme', 'Energy portfolio'),
+        ('department-hardware', 'acme', 'Hardware portfolio'),
+        ('department-other', 'globex', 'Other tenant');
       INSERT INTO star_live.categories VALUES
-        ('category-energy', 'acme', 'Energy'),
-        ('category-hardware', 'acme', 'Hardware'),
-        ('category-other', 'globex', 'Other tenant');
+        ('category-energy', 'acme', 'department-energy', 'Energy'),
+        ('category-hardware', 'acme', 'department-hardware', 'Hardware'),
+        ('category-other', 'globex', 'department-other', 'Other tenant');
       INSERT INTO star_live.products VALUES
         ('product-energy', 'acme', 'category-energy', 'Battery'),
         ('product-hardware', 'acme', 'category-hardware', 'Cable'),
@@ -207,6 +225,8 @@ async function seedPostgres() {
       ALTER TABLE star_live.stores FORCE ROW LEVEL SECURITY;
       ALTER TABLE star_live.categories ENABLE ROW LEVEL SECURITY;
       ALTER TABLE star_live.categories FORCE ROW LEVEL SECURITY;
+      ALTER TABLE star_live.departments ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE star_live.departments FORCE ROW LEVEL SECURITY;
       ALTER TABLE star_live.products ENABLE ROW LEVEL SECURITY;
       ALTER TABLE star_live.products FORCE ROW LEVEL SECURITY;
       ALTER TABLE star_live.sales_facts ENABLE ROW LEVEL SECURITY;
@@ -216,6 +236,8 @@ async function seedPostgres() {
       CREATE POLICY stores_tenant_read ON star_live.stores FOR SELECT TO synapsor_reader
         USING (tenant_id = current_setting('app.tenant_id', true));
       CREATE POLICY categories_tenant_read ON star_live.categories FOR SELECT TO synapsor_reader
+        USING (tenant_id = current_setting('app.tenant_id', true));
+      CREATE POLICY departments_tenant_read ON star_live.departments FOR SELECT TO synapsor_reader
         USING (tenant_id = current_setting('app.tenant_id', true));
       CREATE POLICY products_tenant_read ON star_live.products FOR SELECT TO synapsor_reader
         USING (tenant_id = current_setting('app.tenant_id', true));
@@ -247,8 +269,17 @@ async function seedMysql() {
       CREATE TABLE synapsor_star.categories (
         id varchar(64) PRIMARY KEY,
         tenant_id varchar(64) NOT NULL,
+        department_id varchar(64) NOT NULL,
         name varchar(128) NOT NULL
       );
+      CREATE TABLE synapsor_star.departments (
+        id varchar(64) PRIMARY KEY,
+        tenant_id varchar(64) NOT NULL,
+        name varchar(128) NOT NULL
+      );
+      ALTER TABLE synapsor_star.categories
+        ADD CONSTRAINT categories_department_id_fkey FOREIGN KEY (department_id)
+        REFERENCES synapsor_star.departments(id);
       CREATE TABLE synapsor_star.products (
         id varchar(64) PRIMARY KEY,
         tenant_id varchar(64) NOT NULL,
@@ -283,10 +314,14 @@ async function seedMysql() {
         ('store-a', 'acme', 'Downtown'),
         ('store-b', 'acme', 'Airport'),
         ('store-other', 'globex', 'Other tenant');
+      INSERT INTO synapsor_star.departments VALUES
+        ('department-energy', 'acme', 'Energy portfolio'),
+        ('department-hardware', 'acme', 'Hardware portfolio'),
+        ('department-other', 'globex', 'Other tenant');
       INSERT INTO synapsor_star.categories VALUES
-        ('category-energy', 'acme', 'Energy'),
-        ('category-hardware', 'acme', 'Hardware'),
-        ('category-other', 'globex', 'Other tenant');
+        ('category-energy', 'acme', 'department-energy', 'Energy'),
+        ('category-hardware', 'acme', 'department-hardware', 'Hardware'),
+        ('category-other', 'globex', 'department-other', 'Other tenant');
       INSERT INTO synapsor_star.products VALUES
         ('product-energy', 'acme', 'category-energy', 'Battery'),
         ('product-hardware', 'acme', 'category-hardware', 'Cable'),
@@ -347,6 +382,7 @@ async function sourceSnapshot(engine, admin) {
 async function verifyEngine(engine, readUrl, inspectedSchema, admin) {
   const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), `synapsor-star-${engine}-`));
   temporaryRoots.push(projectRoot);
+  let depthThreeExecutionDurationMs;
   const env = {
     STAR_DATABASE_URL: readUrl,
     SYNAPSOR_TENANT_ID: "acme",
@@ -428,6 +464,14 @@ async function verifyEngine(engine, readUrl, inspectedSchema, admin) {
     && relationship.nullable === true
     && relationship.unmatched_rows === "review_required"),
   `${engine} did not prove the depth-two category dimension`, fact.relationships);
+  const depthThreeRelationship = "sales_facts_product_id_fkey__products_category_id_fkey__categories_department_id_fkey";
+  assert(fact.relationships.some((relationship) =>
+    relationship.id === depthThreeRelationship
+    && relationship.path_depth === 3
+    && relationship.proof?.links.length === 3
+    && relationship.nullable === true
+    && relationship.unmatched_rows === "review_required"),
+  `${engine} did not preserve the exact depth-three department candidate`, fact.relationships);
   assert(!fact.relationships.some((relationship) =>
     relationship.target_resource === `${inspectedSchema}.line_items`),
   `${engine} generated a one-to-many fan-out path`, fact.relationships);
@@ -454,6 +498,9 @@ async function verifyEngine(engine, readUrl, inspectedSchema, admin) {
       }
     }
     const reviewed = reviewExplorationBoundaryCandidate(build.exploration_boundary, candidate);
+    assert(!reviewed.candidate.pack.resources.find((resource) => resource.id === factId)
+      ?.relationships.some((relationship) => relationship.id === depthThreeRelationship),
+    `${engine} activated depth three without the explicit reviewed opt-in`, reviewed.candidate.budgets);
     await activateExplorationBoundary({
       projectRoot,
       candidate: reviewed.candidate,
@@ -492,6 +539,78 @@ async function verifyEngine(engine, readUrl, inspectedSchema, admin) {
     } finally {
       await runtime.close();
     }
+  }
+
+  const defaultDepthRuntime = await createScopedExploreRuntime({
+    projectRoot,
+    transport: "stdio",
+    env,
+  });
+  try {
+    await defaultDepthRuntime.explore({
+      kind: "aggregate",
+      resource: factId,
+      measures: [{ function: "sum", field: "amount_cents" }],
+      dimensions: [{ field: "name", relationship: depthThreeRelationship }],
+      where: [{ field: "scenario", op: "eq", value: "star" }],
+      top_n: 10,
+    }).then(
+      () => assert(false, `${engine} accepted depth three under the depth-two default`),
+      (error) => assert(error?.code === "EXPLORE_RELATIONSHIP_FORBIDDEN",
+        `${engine} refused the inactive depth-three path with an unexpected error`, {
+          code: error?.code,
+          message: error?.message,
+        }),
+    );
+  } finally {
+    await defaultDepthRuntime.close();
+  }
+
+  const depthThreeCandidate = structuredClone(build.exploration_boundary);
+  depthThreeCandidate.budgets.max_analysis_relationship_hops = 3;
+  for (const resource of depthThreeCandidate.pack.resources) {
+    for (const relationship of resource.relationships) {
+      if (relationship.unmatched_rows === "review_required") relationship.unmatched_rows = "exclude";
+    }
+  }
+  const depthThreeReviewed = reviewExplorationBoundaryCandidate(
+    build.exploration_boundary,
+    depthThreeCandidate,
+  );
+  await activateExplorationBoundary({
+    projectRoot,
+    candidate: depthThreeReviewed.candidate,
+    expectedDigest: depthThreeReviewed.digest,
+    actor: "depth-three-verifier",
+    confirmation: `ACTIVATE ${depthThreeReviewed.digest}`,
+    confirmedDecisions: depthThreeReviewed.candidate.unresolved_decisions,
+    currentInspection: inspection,
+  });
+  const depthThreeRuntime = await createScopedExploreRuntime({
+    projectRoot,
+    transport: "stdio",
+    env,
+  });
+  try {
+    const depthThreeStartedAt = performance.now();
+    const result = await depthThreeRuntime.explore({
+      kind: "aggregate",
+      resource: factId,
+      measures: [{ function: "sum", field: "amount_cents" }],
+      dimensions: [{ field: "name", relationship: depthThreeRelationship }],
+      where: [{ field: "scenario", op: "eq", value: "star" }],
+      order_by: { kind: "measure", index: 0, direction: "desc" },
+      top_n: 10,
+    });
+    depthThreeExecutionDurationMs = Math.round((performance.now() - depthThreeStartedAt) * 100) / 100;
+    assert(JSON.stringify(result.data) === JSON.stringify([
+      { departments_name: "Energy portfolio", sum_amount_cents: 6995 },
+      { departments_name: "Hardware portfolio", sum_amount_cents: 3000 },
+    ]), `${engine} returned incorrect depth-three department totals`, result.data);
+    assert(result.source_database_changed === false,
+      `${engine} depth-three aggregate reported a source mutation`, result);
+  } finally {
+    await depthThreeRuntime.close();
   }
 
   assert(fact.groupable_fields.includes("segment"),
@@ -583,7 +702,7 @@ async function verifyEngine(engine, readUrl, inspectedSchema, admin) {
   }
   const after = await sourceSnapshot(engine, admin);
   assert(JSON.stringify(after) === JSON.stringify(before), `${engine} live read verification changed source rows`, { before, after });
-  console.log(`${engine} reviewed relationship/ranking verification passed with exact totals, nullable semantics, high-cardinality top-N, period movers, suppression, scope, and fan-out refusal.`);
+  console.log(`${engine} reviewed relationship/ranking verification passed with exact totals, explicit depth-three opt-in (${depthThreeExecutionDurationMs} ms end-to-end verifier latency), nullable semantics, high-cardinality top-N, period movers, suppression, scope, and fan-out refusal.`);
 }
 
 run("docker", ["compose", "-f", compose, "up", "-d", "--wait", "postgres", "mysql"], { inherit: true });

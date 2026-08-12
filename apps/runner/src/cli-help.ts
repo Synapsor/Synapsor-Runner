@@ -419,6 +419,8 @@ the local reviewed contract and proposal before writeback.
   ${cmd} boundary review resource public.orders --label "Orders" --description "Customer purchases recorded at checkout" --field-label total_cents="Order total" --field-description total_cents="Gross amount in cents" --actor reviewer@example.com --reason "Document legacy database identifiers"
   ${cmd} boundary review resource public.orders --minimum-cohort 3 --actor owner@example.com --reason "Reviewed owner decision for this staging dataset"
   ${cmd} boundary review resource public.orders --max-ranked-groups 200 --actor reviewer@example.com --reason "Reviewed bounded ranking across this known customer population"
+  ${cmd} boundary review resource public.orders --max-groups 200 --max-top-n 50 --statement-timeout-ms 8000 --actor reviewer@example.com --reason "Reviewed larger bounded reports and source deadline"
+  ${cmd} boundary review resource public.events --max-derived-scope-hops 3 --max-analysis-relationship-hops 3 --relationships events_items_fkey__items_orders_fkey__orders_customers_fkey --actor reviewer@example.com --reason "Reviewed exact three-hop normalized path and cost"
   ${cmd} boundary review --apply-decisions boundary-decisions.json [--project-root .] [--json]
   ${cmd} boundary review --apply-decisions boundary-decisions.json --apply --confirm "APPLY REVIEW sha256:..." --config ./synapsor/synapsor.runner.json --identity reviewer --identity-key ./reviewer.pem --required-role boundary_reviewer
   ${cmd} boundary activate [--project-root .]
@@ -619,7 +621,17 @@ Resource decision flags:
   --count-distinct-fields <column,...>
   --time-fields <column,...>
   --minimum-cohort <1-5>
-  --max-ranked-groups <max-groups..generated-maximum>
+  --max-ranked-groups <max-groups..10000>
+  --max-rows <1-100>
+  --max-groups <max-top-n..500>
+  --max-top-n <1..min(max-groups,100)>
+  --max-measures <1-5>
+  --max-dimensions <1-4>
+  --max-response-cells <1-4000>
+  --max-response-bytes <1024-1048576>
+  --statement-timeout-ms <100-30000>
+  --max-derived-scope-hops <1-3>
+  --max-analysis-relationship-hops <1-3>
   --relationships <relationship-id,...>
   --nullable-relationship <relationship-id> --unmatched-rows <exclude|keep_null>
   --actor <human> --reason <review-reason>
@@ -643,10 +655,20 @@ protected-capability activation require separate explicit re-confirmation.
 Ranked top/bottom and two-period mover questions return at most the reviewed
 top-N (25 by default). --max-ranked-groups separately narrows how many
 candidate groups Runner may validate before small-group suppression and ranking.
-New boundaries default to 500; a human may only keep or narrow that generated
-ceiling. Runner refuses an incomplete candidate population, suppresses small
+New boundaries default to 500; a human may review a value through 10000.
+Runner refuses an incomplete candidate population, suppresses small
 groups, and only then ranks the remaining groups. The setting is digest-bound
 and operator-owned, and no MCP tool or model plan can set it.
+
+Result-shape and execution controls are also reviewer-owned and digest-bound.
+New boundaries retain conservative defaults (50 rows/groups, top 25, three
+measures/dimensions, 500 cells, 64 KiB, and a 3-second statement timeout), while
+the flags above and Workbench's Result shape, timeout, and path depth panel may
+widen them only to Runner's hard ceilings. Tenant/principal derived scope and
+analysis paths default to two proven many-to-one hops and may be raised only to
+three. Raising a depth does not approve a path: every exact path and every table
+in it still requires review. None of these controls changes minimum cohorts,
+rolling extracted-cell accounting, or differencing protection.
 
 Headless activation is accepted only with an exact exported review bundle,
 exact digest confirmation, a short-lived nonce-bound decision, and a configured
@@ -718,6 +740,9 @@ Drizzle input is parsed as a bounded TypeScript AST and is never imported or run
   ${cmd} mcp serve-streamable-http --config ./synapsor.runner.json --store ./.synapsor/local.db --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN
   ${cmd} mcp serve-http --config ./synapsor.runner.json --store ./.synapsor/local.db --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN
   ${cmd} mcp config --absolute-paths --config ./synapsor.runner.json --store ./.synapsor/local.db
+  ${cmd} mcp client-config --client claude-code --transport streamable-http --config ./synapsor.runner.json
+  ${cmd} mcp client-config --client cursor --transport streamable-http --config ./synapsor.runner.json
+  ${cmd} mcp client-config --client vscode --transport streamable-http --config ./synapsor.runner.json
   ${cmd} mcp client-config --client openai-agents --config ./synapsor.runner.json --store ./.synapsor/local.db
   ${cmd} mcp install <cursor|claude-code|vscode> --project --authoring [--project-root .] [--dry-run]
   ${cmd} mcp install <cursor|claude-code|vscode> --project [--dry-run] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
@@ -851,19 +876,24 @@ Security:
   - Use --dev-no-auth only for loopback development. Exact optional CORS: --cors-origin http://localhost:3000
 `,
     "mcp config": `Usage:
-  ${cmd} mcp config [claude-desktop|cursor|generic|vscode|openai-agents] [--absolute-paths] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
+  ${cmd} mcp config [claude-desktop|claude-code|cursor|generic|vscode|openai-agents] [--absolute-paths] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
+  ${cmd} mcp client-config --client <claude-code|cursor|vscode> --transport streamable-http [--client-access-token-env SYNAPSOR_MCP_ACCESS_TOKEN] [--config ./synapsor.runner.json]
   ${cmd} mcp client-config --client openai-agents [--transport streamable-http] [--port 8766] [--alias-mode openai] [--client-access-token-env SYNAPSOR_MCP_ACCESS_TOKEN] [--include-instructions] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
 
 Print MCP client configuration that references the local runner command and credential environment names, never database URLs or credential values. Defaults to claude-desktop.
+Claude Code, Cursor, and VS Code output supports native Streamable HTTP configuration. The generated header reads a short-lived bearer token from one environment variable; no token value is written.
 OpenAI Agents SDK output uses Streamable HTTP and OpenAI-safe aliases by default.
 `,
     "mcp client-config": `Usage:
   ${cmd} mcp client-config --client claude-desktop [--absolute-paths] [--include-instructions] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
-  ${cmd} mcp client-config --client cursor [--absolute-paths] [--include-instructions] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
+  ${cmd} mcp client-config --client <claude-code|cursor|vscode> --transport streamable-http [--client-access-token-env SYNAPSOR_MCP_ACCESS_TOKEN] [--config ./synapsor.runner.json]
+  ${cmd} mcp client-config --client cursor [--transport stdio] [--absolute-paths] [--include-instructions] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
   ${cmd} mcp client-config --client openai-agents [--transport streamable-http] [--port 8766] [--alias-mode openai] [--client-access-token-env SYNAPSOR_MCP_ACCESS_TOKEN] [--include-instructions] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
 
 Print MCP client configuration that references the local runner command, auth metadata, and environment-variable names, not database URLs or credential values.
 Opaque endpoint tokens are generated and provisioned by the operator. Signed JWT access tokens are issued by the configured identity provider. Runner verifies them but does not issue or refresh them.
+For production HTTP, the endpoint comes from http_security.oauth_resource.resource. Claude Code uses \${TOKEN}; Cursor and VS Code use \${env:TOKEN}. Set the named variable in the client process, then reload the client.
+Claude Desktop remains stdio-only; use --client claude-code for Claude over Streamable HTTP.
 OpenAI Agents SDK output uses Streamable HTTP and OpenAI-safe aliases by default.
 Use --include-instructions to include the recommended propose-first agent prompt.
 `,
@@ -986,6 +1016,7 @@ security guarantee.
 `,
     doctor: `Usage:
   ${cmd} doctor --config synapsor.runner.json
+  ${cmd} doctor --config synapsor.runner.json --transport streamable-http --preflight --trusted-tls-proxy
   ${cmd} doctor --config synapsor.runner.json --setup
   ${cmd} doctor --config synapsor.runner.json --json
   ${cmd} doctor --config synapsor.runner.json --check-handlers
@@ -999,6 +1030,10 @@ security guarantee.
   ${cmd} doctor --first-run
 
 Validate local config, environment bindings, semantic tool boundary, source metadata when reachable, handler signing/reachability, operation-specific direct SQL writeback readiness, receipt authority, and local store stats. Reports are redacted; do not paste secrets into issues.
+Use --preflight with a production_explore config before a boundary is active to
+report identity, HTTP/TLS, shared-Postgres migration, source, and boundary
+prerequisites together. Missing items remain failed checks, but the command
+finishes the full checklist and never creates or activates authority.
 Use --setup immediately after onboarding. Deferred trusted-context and writer
 bindings are shown as setup incomplete next steps. A missing primary read
 credential, required HTTP session-auth key, or invalid configuration reports

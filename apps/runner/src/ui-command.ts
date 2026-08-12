@@ -21,6 +21,7 @@ import {
   type WorkbenchAttentionDecision,
   type WorkbenchDeploymentProfile,
   type WorkbenchLedgerScope,
+  type WorkbenchLedgerSource,
   type WorkbenchProposalDecision,
   type WorkbenchReconciliationInspect,
   type WorkbenchReconciliationResolve,
@@ -29,6 +30,7 @@ import {
 import { resolveOperatorIdentity, type OperatorIdentityConfig } from "./operator-identity.js";
 import { proposalsApprove } from "./proposal-ledger.js";
 import { withSharedPostgresRuntimeStoreBridge, withSharedPostgresRuntimeStoreReadBridge } from "./store-shared.js";
+import { sharedPostgresLedgerMirrorOptions } from "./shared-ledger-domain.js";
 import { workerControlOperatorDecisionAction } from "./worker-policy.js";
 import { inspectWritebackSourceContext, reconciliationReceipt, reconciliationSupportedOutcome, workbenchReconciliationView } from "./writeback-setup.js";
 
@@ -43,6 +45,15 @@ export async function ui(args: string[]): Promise<number> {
   const deploymentProfile = workbenchDeploymentProfileArg(args);
   const ledgerScope = workbenchLedgerScopeFromConfig(config);
   const configuredStorePath = resolvedLocalStorePath(args, config?.storage?.sqlite_path);
+  const sharedLedger = config?.storage?.shared_postgres?.mode === "runtime_store"
+    ? sharedPostgresLedgerMirrorOptions(args, config)
+    : undefined;
+  const ledgerSource: WorkbenchLedgerSource = sharedLedger
+    ? { kind: "shared_postgres", schema: sharedLedger.schema, url_env: sharedLedger.urlEnv, read_only: true }
+    : {
+      kind: "local_sqlite",
+      path: configuredStorePath === ":memory:" ? configuredStorePath : path.resolve(configuredStorePath),
+    };
   const storeAccess: LocalUiStoreAccess | undefined = config?.storage?.shared_postgres?.mode === "runtime_store"
     ? async (mode, operation, callback) => (mode === "read" ? withSharedPostgresRuntimeStoreReadBridge : withSharedPostgresRuntimeStoreBridge)(args, config, `ui ${operation}`, async (bridgeStorePath) => {
       const store = new ProposalStore(bridgeStorePath);
@@ -321,6 +332,7 @@ export async function ui(args: string[]): Promise<number> {
     configPath,
     storePath: configuredStorePath,
     storeAccess,
+    ledgerSource,
     host: optionalArg(args, "--host") ?? "127.0.0.1",
     port: portArg ? Number(portArg) : 0,
     allowRemoteBind: args.includes("--allow-remote-bind"),

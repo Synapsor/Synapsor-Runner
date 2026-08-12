@@ -126,6 +126,45 @@ describe("derived-scope index doctor", () => {
       ),
     })]);
   });
+
+  it("warns structurally for a high-volume two-hop path without predicting latency", () => {
+    const boundary = boundaryWithTenantScope(twoHopScope(), "public.order_item_events");
+    const root = table("order_item_events", [index("id"), index("order_item_id")]);
+    root.approximate_row_count = 400_000;
+    const checks = evaluate(boundary, inspectionWithTables("postgres", [
+      root,
+      table("order_items", [index("id"), index("order_id")]),
+      table("orders", [index("id"), index("tenant_id")]),
+    ]));
+
+    expect(checks).toContainEqual(expect.objectContaining({
+      name: expect.stringContaining("derived-scope-cost:"),
+      ok: true,
+      level: "warn",
+      advisory: "warning",
+      message: expect.stringMatching(/3,000 ms.+800,000 row-hops.+not a latency prediction/s),
+    }));
+    expect(checks).toContainEqual(expect.objectContaining({
+      name: "derived-scope-indexes:complete",
+      level: "pass",
+    }));
+  });
+
+  it("warns for every depth-three path even when row statistics are unavailable", () => {
+    const scope = threeHopScope();
+    const boundary = boundaryWithTenantScope(scope, "public.event_notes");
+    const checks = evaluate(boundary, inspectionWithTables("mysql", [
+      table("event_notes", [index("id"), index("event_id")]),
+      table("order_item_events", [index("id"), index("order_item_id")]),
+      table("order_items", [index("id"), index("order_id")]),
+      table("orders", [index("id"), index("tenant_id")]),
+    ]));
+
+    expect(checks).toContainEqual(expect.objectContaining({
+      name: expect.stringContaining("derived-scope-cost:"),
+      message: expect.stringContaining("3 mandatory many-to-one hops"),
+    }));
+  });
 });
 
 
@@ -178,6 +217,7 @@ function boundaryWithTenantScope(
   return {
     source,
     pack: { name: "reviewed_orders", resources },
+    budgets: { statement_timeout_ms: 3000 },
     activation: {
       state: "active",
       digest: `sha256:${"1".repeat(64)}`,
@@ -248,6 +288,30 @@ function twoHopScope(): DerivedScopePath {
           max_fan_out: 1,
         },
       ],
+    },
+  };
+}
+
+
+function threeHopScope(): DerivedScopePath {
+  const twoHop = twoHopScope();
+  return {
+    ...twoHop,
+    path_id: `notes_event_fkey__${twoHop.path_id}`,
+    proof: {
+      ...twoHop.proof,
+      digest: `sha256:${"5".repeat(64)}`,
+      links: [{
+        constraint_name: "notes_event_fkey",
+        source_resource: "public.event_notes",
+        target_resource: "public.order_item_events",
+        source_columns: ["event_id"],
+        target_columns: ["id"],
+        target_uniqueness: { kind: "primary_key", name: "events_pkey", columns: ["id"] },
+        nullable: false,
+        cardinality: "many_to_one",
+        max_fan_out: 1,
+      }, ...twoHop.proof.links],
     },
   };
 }
