@@ -2047,12 +2047,13 @@ function explorePlanIntentMismatch(
 }
 
 function explicitQuestionEntity(question: string): string | undefined {
-  const suffix = String.raw`(?=\s+(?:are|were|is|was|do|does|did|have|has|by|per|across|for\s+each|within\s+each)\b|[?.!,;]|$)`;
+  const suffix = String.raw`(?=\s+(?:are|were|is|was|do|does|did|have|has|by|per|across|for\s+each|within\s+each|of\s+each|grouped\s+by|broken\s+down\s+by)\b|[?.!,;]|$)`;
   const patterns = [
     new RegExp(String.raw`\bhow\s+many\s+(?:the\s+)?(.+?)${suffix}`, "iu"),
     new RegExp(String.raw`\b(?:number|count)\s+of\s+(?:the\s+)?(.+?)${suffix}`, "iu"),
     new RegExp(String.raw`\bcount\s+(?:the\s+)?(.+?)${suffix}`, "iu"),
     new RegExp(String.raw`\bbreak\s+down\s+(?:the\s+)?(.+?)${suffix}`, "iu"),
+    new RegExp(String.raw`\bshow\s+(?:the\s+)?(.+?)${suffix}`, "iu"),
     new RegExp(String.raw`\b(?:show|list|give\s+me)\s+(?:all|every)\s+(?:the\s+)?(.+?)${suffix}`, "iu"),
   ];
   for (const pattern of patterns) {
@@ -2102,7 +2103,7 @@ function questionEntityMatchesPlan(
 
 function explicitGroupingRequested(question: string): boolean {
   return /\b(?:by|across)\b/u.test(question)
-    || /\b(?:for|within)\s+each\b/u.test(question);
+    || /\b(?:for|within|of)\s+each\b/u.test(question);
 }
 
 function questionHasExplicitPlanAnchor(question: string): boolean {
@@ -2134,6 +2135,9 @@ function questionMentionsPlanDimension(
   if (questionExplicitlyMentionsField(question, dimension.field)) return true;
   if (reviewedFieldLabels(fieldOwner, dimension.field)
     .some((label) => questionMentionsMetadataName(question, label))) return true;
+  if (!relationship && questionMentionsResourceQualifiedField(question, dimension.field, resource)) {
+    return true;
+  }
   if (!relationship) return false;
   const target = typeof relationship.target_resource === "string"
     ? relationship.target_resource.split(".").at(-1)?.toLowerCase() ?? ""
@@ -2152,6 +2156,38 @@ function reviewedFieldLabels(owner: Record<string, unknown>, field: string): str
     if (typeof metadata?.label === "string") labels.push(metadata.label);
   }
   return labels;
+}
+
+function questionMentionsResourceQualifiedField(
+  question: string,
+  field: string,
+  resource: Record<string, unknown>,
+): boolean {
+  if (typeof resource.id !== "string") return false;
+  const table = resource.id.split(".").at(-1)?.toLowerCase() ?? "";
+  const resourceVariants = resourceNameVariants(table, resource.label);
+  if (![...resourceVariants].some((variant) =>
+    variant.length >= 3 && wordPosition(question, variant) >= 0)) return false;
+
+  const readableField = field.toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  const suffixes = new Set<string>();
+  for (const variant of resourceVariants) {
+    const readableVariant = variant.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+    if (readableVariant.length < 3 || !readableField.startsWith(`${readableVariant} `)) continue;
+    const suffix = readableField.slice(readableVariant.length + 1).trim();
+    if (suffix.length >= 3) suffixes.add(suffix);
+  }
+  return [...suffixes].some((suffix) => groupingPhraseMentionsExactTerm(question, suffix));
+}
+
+function groupingPhraseMentionsExactTerm(question: string, term: string): boolean {
+  return [...separatorMentionCandidates(term)].some((candidate) => {
+    const escaped = candidate.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(
+      `(?:^|[^a-z0-9_])(?:by|across|per|for\\s+each|within\\s+each|of\\s+each)\\s+(?:(?:the|reviewed)\\s+){0,2}${escaped}(?:$|[^a-z0-9_])`,
+      "i",
+    ).test(question);
+  });
 }
 
 async function executeProviderTool(
@@ -3344,24 +3380,38 @@ function questionMentionsDistinctField(question: string, field: string): boolean
 
 function fieldMentionCandidates(field: string): Set<string> {
   if (isIdentifierLikeField(field)) return new Set();
-  const words = field.toLowerCase().split("_").filter(Boolean);
+  const words = field.toLowerCase().split(/[_-]+/u).filter(Boolean);
   const candidates = new Set<string>();
   const addCandidate = (candidate: string) => {
     if (!candidate) return;
     candidates.add(candidate);
     candidates.add(pluralResourceName(candidate));
   };
-  addCandidate(words.join(" "));
+  for (const candidate of separatorMentionCandidates(field)) addCandidate(candidate);
   const semanticWords = words.filter((word) =>
     !["cents", "cent", "milliseconds", "millisecond", "ms", "seconds", "second", "at"].includes(word));
-  if (semanticWords.length > 0) addCandidate(semanticWords.join(" "));
+  if (semanticWords.length > 0) {
+    for (const candidate of separatorMentionCandidates(semanticWords.join(" "))) addCandidate(candidate);
+  }
   return candidates;
 }
 
 function questionMentionsMetadataName(question: string, value: unknown): boolean {
   if (typeof value !== "string") return false;
-  const normalized = value.toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
-  return normalized.length >= 3 && wordPosition(question, normalized) >= 0;
+  return [...separatorMentionCandidates(value)]
+    .some((candidate) => candidate.length >= 3 && wordPosition(question, candidate) >= 0);
+}
+
+function separatorMentionCandidates(value: string): Set<string> {
+  const raw = value.toLowerCase().replace(/\s+/g, " ").trim();
+  if (!raw) return new Set();
+  const words = raw.split(/[_\s-]+/u).filter(Boolean);
+  return new Set([
+    raw,
+    words.join(" "),
+    words.join("_"),
+    words.join("-"),
+  ].filter(Boolean));
 }
 
 function bucketCountFromQuestion(question: string): number | undefined {

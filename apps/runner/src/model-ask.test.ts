@@ -1240,6 +1240,138 @@ describe("Workbench BYOM Ask", () => {
 
   it.each([
     {
+      question: "Break down encounters by type.",
+      fieldLabel: "Encounter type",
+    },
+    {
+      question: "Break down encounters by encounter type.",
+      fieldLabel: "Encounter type",
+    },
+    {
+      question: "Break down encounters by encounter_type.",
+      fieldLabel: "Encounter type",
+    },
+    {
+      question: "Break down encounters by encounter-type.",
+      fieldLabel: "Encounter type",
+    },
+    {
+      question: "How many encounters of each type?",
+      fieldLabel: "Encounter type",
+    },
+    {
+      question: "Show encounters grouped by visit type.",
+      fieldLabel: "Visit type",
+    },
+  ])("accepts canonical, readable, resource-qualified, and reviewed-label field intent: $question", async ({
+    question,
+    fieldLabel,
+  }) => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: {
+          ok: true,
+          resources: [{
+            id: "public.encounters",
+            label: "Encounters",
+            fields: [{ id: "encounter_type", label: fieldLabel }],
+            groupable_fields: ["encounter_type"],
+          }],
+          source_database_changed: false,
+        },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-4.1",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    let requests = 0;
+    const result = await session.run(question, gateway, {
+      requestJson: async () => {
+        requests += 1;
+        return requests === 1
+          ? openAiToolCall("intentional_encounter_type", "app__explore_data", {
+            plan: {
+              kind: "aggregate",
+              resource: "public.encounters",
+              measures: [{ function: "count" }],
+              dimensions: [{ field: "encounter_type" }],
+            },
+          })
+          : openAiText("The reviewed result is available.");
+      },
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]);
+    expect(exploreCalls).toBe(1);
+  });
+
+  it("does not treat an unrelated modifier as a resource-qualified field shorthand", async () => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: {
+          ok: true,
+          resources: [{
+            id: "public.encounters",
+            label: "Encounters",
+            fields: [{ id: "encounter_type", label: "Encounter type" }],
+            groupable_fields: ["encounter_type"],
+          }],
+          source_database_changed: false,
+        },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-4.1",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    const result = await session.run("Break down encounters by insurance type.", gateway, {
+      requestJson: async () => openAiToolCall("unrelated_type_modifier", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.encounters",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "encounter_type" }],
+        },
+      }),
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ error_code: "ASK_PLAN_INTENT_MISMATCH", status: "refused" }),
+    ]);
+    expect(exploreCalls).toBe(0);
+  });
+
+  it.each([
+    {
       question: "How many patients are there by insurance tier?",
       resource: {
         id: "public.encounters",

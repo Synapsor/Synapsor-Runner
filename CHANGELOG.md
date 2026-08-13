@@ -37,7 +37,11 @@
 - Extends deterministic Ask intent checks to official OpenAI and Anthropic
   adapters. Explicit unavailable-entity or grouping substitutions are refused
   before `app.explore_data`, consume no Explore query/differencing budget, and
-  cannot be narrated as the requested answer. Adds bounded CLI/Workbench Ask
+  cannot be narrated as the requested answer. Canonical field IDs match in
+  underscore, hyphenated, and readable forms; reviewer labels match exactly;
+  and resource-qualified compound fields allow narrow shorthand such as
+  `encounters by type` for `encounter_type` without accepting an unrelated
+  modifier such as `insurance type`. Adds bounded CLI/Workbench Ask
   token settings, including an in-session `/limits` update that preserves
   conversation context; these client-side spend/context controls remain outside
   reviewed database and privacy authority.

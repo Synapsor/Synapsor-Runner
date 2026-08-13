@@ -117,7 +117,11 @@ for the Synapsor Cloud CLI.
   running a different reviewed table or grouping: Runner returns
   `ASK_PLAN_INTENT_MISMATCH`, executes no Explore query, spends no Explore query
   or differencing budget, and never gives the substituted result back to the
-  provider for narration. Ask's cumulative provider-reported token budget and
+  provider for narration. The matcher accepts an exact reviewed identifier in
+  underscore, hyphenated, or readable form, accepts reviewer-authored labels,
+  and understands a resource-qualified compound field such as `encounters by
+  type` for `encounter_type`; it does not treat an unrelated modifier as that
+  shorthand. Ask's cumulative provider-reported token budget and
   per-call output request are bounded operator settings in CLI and Workbench;
   `/limits` can raise them without clearing the current conversation. These
   client controls do not change reviewed database or privacy authority.
