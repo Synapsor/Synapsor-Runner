@@ -939,6 +939,24 @@ already released groups; the model never sends an expression or SQL window.
 Scope is enforced independently on every participating relation. Runner refuses
 a plan when cardinality, fan-out, counted entity, or scope cannot be proven.
 
+### Exact Database Identifiers
+
+Plans copy exact reviewed resource and field IDs from `app.describe_data`.
+Those physical database names do not have to look like programming-language
+identifiers: reserved words, mixed case, Unicode, and printable names containing
+spaces are supported. Runner first resolves the supplied string against the
+exact activated boundary, then quotes each schema/table/column for the selected
+dialect (`"..."` on PostgreSQL and `` `...` `` on MySQL), doubling an embedded
+delimiter. Literal filter values remain separate bound parameters.
+
+This does not create alias resolution. A reviewed label or description is still
+display-only, and an unknown, differently-cased, or unreviewed name is refused
+before compilation. Empty, over-bounded, control-character, or otherwise
+malformed identifiers in a tampered activated artifact also fail closed. The
+release compatibility matrix executes space-bearing and Unicode reviewed fields
+on every supported PostgreSQL and MySQL line and through representative local
+and production HTTP MCP paths.
+
 Auto Boundary does not activate every discovered path. When a useful question
 needs one inactive but catalog-proven path, Runner refuses the plan and stages
 that exact path for operator review. Workbench shows the foreign-key proof and,

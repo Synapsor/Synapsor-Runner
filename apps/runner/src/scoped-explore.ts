@@ -5551,7 +5551,9 @@ function qualified(resource: BoundaryResource, engine: "postgres" | "mysql"): st
 }
 
 function quote(identifier: string, engine: "postgres" | "mysql"): string {
-  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(identifier)) throw planError("activated database identifier is invalid");
+  if (!identifier.trim() || identifier.length > 256 || /[\u0000-\u001f\u007f]/.test(identifier)) {
+    throw planError("activated database identifier is not a bounded printable name");
+  }
   return engine === "postgres" ? `"${identifier.replace(/"/g, "\"\"")}"` : `\`${identifier.replace(/`/g, "``")}\``;
 }
 

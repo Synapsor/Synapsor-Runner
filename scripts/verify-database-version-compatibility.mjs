@@ -432,12 +432,12 @@ async function seedMysql57Soak(adminUrl, identities) {
       "compatdb.events",
       [
         "id", "tenant_id", "principal_id", "status", "plain_label", "case_label",
-        "accent_label", "trailing_label", "duration_ms", "amount_decimal",
+        "accent_label", "trailing_label", "duration_ms", "`total amount`", "`caf\u00e9_count`", "amount_decimal",
         "optional_score", "occurred_at",
       ],
       fixture.rows.map((row) => [
         row.id, row.tenant, row.principal, row.status, row.plainLabel, row.caseLabel,
-        row.accentLabel, row.trailingLabel, row.duration, row.amountDecimal,
+        row.accentLabel, row.trailingLabel, row.duration, row.duration, row.id, row.amountDecimal,
         row.optionalScore, row.occurredAt,
       ]),
     );
@@ -475,6 +475,8 @@ async function seedPostgres(adminUrl) {
         accent_label text NOT NULL CHECK (accent_label IN ('cafe', 'café')),
         trailing_label text NOT NULL CHECK (trailing_label IN ('trail', 'trail ')),
         duration_ms integer NOT NULL,
+        "total amount" integer NOT NULL,
+        "caf\u00e9_count" integer NOT NULL,
         amount_decimal numeric(12, 2) NOT NULL,
         optional_score numeric(12, 2),
         occurred_at timestamptz NOT NULL
@@ -495,12 +497,13 @@ async function seedPostgres(adminUrl) {
       await pool.query(
         `INSERT INTO compat.events
           (id, tenant_id, principal_id, status, plain_label, case_label, accent_label,
-           trailing_label, duration_ms, amount_decimal, optional_score, occurred_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+           trailing_label, duration_ms, "total amount", "caf\u00e9_count", amount_decimal,
+           optional_score, occurred_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
         [
           row.id, row.tenant, row.principal, row.status, row.plainLabel,
           row.caseLabel, row.accentLabel, row.trailingLabel, row.duration,
-          row.amountDecimal, row.optionalScore, `${row.occurredAt}+00`,
+          row.duration, row.id, row.amountDecimal, row.optionalScore, `${row.occurredAt}+00`,
         ],
       );
     }
@@ -547,6 +550,8 @@ async function seedMysql(adminUrl) {
         accent_label varchar(64) NOT NULL CHECK (accent_label IN ('cafe', 'café')),
         trailing_label varchar(64) NOT NULL CHECK (trailing_label IN ('trail', 'trail ')),
         duration_ms integer NOT NULL,
+        \`total amount\` integer NOT NULL,
+        \`caf\u00e9_count\` integer NOT NULL,
         amount_decimal decimal(12, 2) NOT NULL,
         optional_score decimal(12, 2),
         occurred_at datetime(6) NOT NULL
@@ -567,12 +572,13 @@ async function seedMysql(adminUrl) {
       await connection.query(
         `INSERT INTO compatdb.events
           (id, tenant_id, principal_id, status, plain_label, case_label, accent_label,
-           trailing_label, duration_ms, amount_decimal, optional_score, occurred_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           trailing_label, duration_ms, \`total amount\`, \`caf\u00e9_count\`, amount_decimal,
+           optional_score, occurred_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           row.id, row.tenant, row.principal, row.status, row.plainLabel,
           row.caseLabel, row.accentLabel, row.trailingLabel, row.duration,
-          row.amountDecimal, row.optionalScore, row.occurredAt,
+          row.duration, row.id, row.amountDecimal, row.optionalScore, row.occurredAt,
         ],
       );
     }
@@ -736,6 +742,9 @@ async function verifyWorkbenchCompatibility(input) {
     const resource = state.candidate?.pack?.resources?.find((item) => item.id === resourceId);
     assert(Boolean(resource?.auto_bands?.length) === automaticBands,
       `Workbench exposed the wrong ${inspection.engine} ${expectedLine} automatic-band policy.`, resource);
+    assert(resource?.selectable_fields?.includes("total amount")
+      && resource?.selectable_fields?.includes("caf\u00e9_count"),
+    `Workbench omitted exact reviewed quoted identifiers on ${inspection.engine} ${expectedLine}.`, resource);
 
     if (!automaticBands) {
       const mutation = await fetch(
@@ -1097,6 +1106,9 @@ async function verifyReviewedRuntime(input) {
     const describedResource = described.resources?.[0];
     assert(Boolean(describedResource?.auto_bands?.length) === automaticBands,
       `${engine} ${expectedLine} describe_data exposed the wrong automatic-band metadata.`, describedResource);
+    assert(describedResource?.selectable_fields?.includes("total amount")
+      && describedResource?.selectable_fields?.includes("caf\u00e9_count"),
+    `${engine} ${expectedLine} describe_data omitted exact reviewed quoted identifiers.`, describedResource);
     const describedMeasures = new Set((describedResource?.derived_measures ?? []).map((measure) => measure.name));
     assert([
       "average_duration_per_event",
@@ -1116,7 +1128,7 @@ async function verifyReviewedRuntime(input) {
         plan: {
           kind: "rows",
           resource: resourceId,
-          select: ["id", "status", "amount_decimal"],
+          select: ["id", "status", "amount_decimal", "total amount", "caf\u00e9_count"],
           where: [
             { field: "status", op: "eq", value: "active" },
             { field: "amount_decimal", op: "gte", value: 10 },
@@ -1131,11 +1143,15 @@ async function verifyReviewedRuntime(input) {
       && rowRead.data[0]?.id === 1
       && rowRead.data[0]?.status === "active"
       && Number(rowRead.data[0]?.amount_decimal) === 10
+      && rowRead.data[0]?.["total amount"] === 100
+      && rowRead.data[0]?.["caf\u00e9_count"] === 1
       && rowRead.data[1]?.id === 2
       && rowRead.data[1]?.status === "active"
       && Number(rowRead.data[1]?.amount_decimal) === 10.25
+      && rowRead.data[1]?.["total amount"] === 200
+      && rowRead.data[1]?.["caf\u00e9_count"] === 2
       && rowRead.data.every((row) => !Object.hasOwn(row, "tenant_id") && !Object.hasOwn(row, "principal_id")),
-    `${engine} ${expectedLine} changed scoped, ordered row-plan semantics.`, rowRead);
+    `${engine} ${expectedLine} changed scoped, ordered, or quoted-identifier row semantics.`, rowRead);
 
     const grouped = resultPayload(await client.callTool({
       name: "app.explore_data",
@@ -1179,6 +1195,17 @@ async function verifyReviewedRuntime(input) {
       `${engine} ${expectedLine} decimal sum`);
     assertClose(decimal.data[0]?.avg_amount_decimal, 15.625,
       `${engine} ${expectedLine} decimal average`);
+
+    const quotedIdentifierAggregate = await runtime.explore({
+      kind: "aggregate",
+      resource: resourceId,
+      measures: [{ function: "sum", field: "total amount" }],
+      top_n: 1,
+    });
+    assert(quotedIdentifierAggregate.data.length === 1
+      && quotedIdentifierAggregate.data[0]?.sum_total_amount === 10_300,
+    `${engine} ${expectedLine} failed an aggregate over an exact reviewed space-bearing identifier.`,
+    quotedIdentifierAggregate);
 
     const missingData = await runtime.explore({
       kind: "aggregate",
@@ -1566,6 +1593,7 @@ async function verifyReviewedRuntime(input) {
       all_post_suppression_metrics: true,
       suppression: true,
       row_plans: true,
+      quoted_database_identifiers: true,
       equal_width_automatic_bands: automaticBands,
       unenforced_check_constraints_excluded: true,
       cli_inspect: true,
@@ -1837,6 +1865,26 @@ async function verifyProductionHttp(input) {
     assert(grouped.ok === true && grouped.data?.length === 4
       && grouped.data.every((row) => row.count === 6 && ["2026-Q2", "2026-Q3"].includes(row.time_bucket)),
     `${engine} ${expectedLine} production HTTP did not apply claim-bound scope and portable SQL.`, grouped);
+
+    const quotedIdentifiers = resultPayload(await acme.client.callTool({
+      name: "app.explore_data",
+      arguments: {
+        plan: {
+          kind: "rows",
+          resource: resourceId,
+          select: ["id", "total amount", "caf\u00e9_count"],
+          order_by: [{ field: "id", direction: "asc" }],
+          limit: 1,
+        },
+      },
+    }));
+    assert(quotedIdentifiers.ok === true
+      && quotedIdentifiers.data?.length === 1
+      && quotedIdentifiers.data[0]?.id === 1
+      && quotedIdentifiers.data[0]?.["total amount"] === 100
+      && quotedIdentifiers.data[0]?.["caf\u00e9_count"] === 1,
+    `${engine} ${expectedLine} production HTTP failed exact reviewed quoted identifiers.`,
+    quotedIdentifiers);
 
     const wrongPrincipal = httpClient(server.url, signedToken(privateKey, "acme", "rep-2"));
     clients.push(wrongPrincipal.client);

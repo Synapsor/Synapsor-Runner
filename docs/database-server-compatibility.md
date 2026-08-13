@@ -158,7 +158,10 @@ The exact images exercised were:
 The matrix covers native enums, contributor-safe dispersion, calendar buckets,
 relative windows, fixed bands, post-suppression running metrics, automatic bands
 where supported, tenant/principal isolation, strict plan schemas, and the exact
-two-tool MCP surface. Separate release gates cover relationship depths through
+two-tool MCP surface. Every supported line also executes exact reviewed physical
+identifiers containing spaces and Unicode; Runner quotes them per dialect after
+boundary resolution, while labels and unreviewed names remain invalid plan IDs.
+Separate release gates cover relationship depths through
 three, child counts, Workbench, schema-width scaling, complete HTTP auth
 rejection, shared accounting, and packed-package execution on PostgreSQL and
 MySQL.

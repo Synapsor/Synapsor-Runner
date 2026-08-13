@@ -40,6 +40,142 @@ afterEach(async () => {
 });
 
 describe("Scoped Explore", () => {
+  it("compiles exact reviewed database identifiers that require dialect quoting", async () => {
+    const fixture = await activatedFixture(undefined, quotedIdentifierInspection());
+    const rowPlan = validateExplorePlan({
+      kind: "rows",
+      resource: "public.select",
+      select: ["total amount", "caf\u00e9_count", "quote\"field", "back`tick"],
+      where: [{ field: "total amount", op: "gte", value: 100 }],
+      order_by: [{ field: "total amount", direction: "desc" }],
+      limit: 5,
+    }, fixture.boundary);
+    const aggregatePlan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.select",
+      measures: [{ function: "sum", field: "total amount" }],
+      dimensions: [{ field: "caf\u00e9_count" }],
+      top_n: 10,
+    }, fixture.boundary);
+
+    const [postgresRows] = compileExplorePlan(rowPlan, fixture.boundary, {
+      tenant: "tenant-acme",
+      principal: "pm-1",
+    }, "postgres");
+    const [mysqlRows] = compileExplorePlan(rowPlan, fixture.boundary, {
+      tenant: "tenant-acme",
+      principal: "pm-1",
+    }, "mysql");
+    const [postgresAggregate] = compileExplorePlan(aggregatePlan, fixture.boundary, {
+      tenant: "tenant-acme",
+      principal: "pm-1",
+    }, "postgres");
+    const [mysqlAggregate] = compileExplorePlan(aggregatePlan, fixture.boundary, {
+      tenant: "tenant-acme",
+      principal: "pm-1",
+    }, "mysql");
+
+    expect(postgresRows?.sql).toContain('FROM "public"."select" t0');
+    expect(postgresRows?.sql).toContain('t0."total amount" AS "total amount"');
+    expect(postgresRows?.sql).toContain('t0."caf\u00e9_count" AS "caf\u00e9_count"');
+    expect(postgresRows?.sql).toContain('t0."quote""field" AS "quote""field"');
+    expect(postgresRows?.sql).toContain('t0."back`tick" AS "back`tick"');
+    expect(mysqlRows?.sql).toContain("FROM `public`.`select` t0");
+    expect(mysqlRows?.sql).toContain("t0.`total amount` AS `total amount`");
+    expect(mysqlRows?.sql).toContain("t0.`caf\u00e9_count` AS `caf\u00e9_count`");
+    expect(mysqlRows?.sql).toContain('t0.`quote"field` AS `quote"field`');
+    expect(mysqlRows?.sql).toContain("t0.`back``tick` AS `back``tick`");
+    expect(postgresAggregate?.sql).toContain('SUM(t0."total amount")');
+    expect(postgresAggregate?.sql).toContain('t0."caf\u00e9_count" AS "dimension_0"');
+    expect(mysqlAggregate?.sql).toContain("SUM(t0.`total amount`)");
+    expect(mysqlAggregate?.sql).toContain("t0.`caf\u00e9_count` AS `dimension_0`");
+    const tampered = structuredClone(fixture.boundary);
+    tampered.pack.resources.find((resource) => resource.id === "public.select")!.schema = "public\nunsafe";
+    expect(() => compileExplorePlan(rowPlan, tampered, {
+      tenant: "tenant-acme",
+      principal: "pm-1",
+    }, "postgres")).toThrowError(expect.objectContaining({
+      code: "EXPLORE_PLAN_INVALID",
+      message: expect.stringMatching(/bounded printable name/i),
+    }));
+
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+      executor: fixedExecutor([{
+        "total amount": 125,
+        "caf\u00e9_count": "north",
+        'quote"field': "quoted",
+        "back`tick": "ticked",
+      }]),
+    });
+    try {
+      for (const mode of ["local_authoring", "production_http"] as const) {
+        const server = createScopedExploreMcpServer(runtime, { mode });
+        const client = new Client({ name: `quoted-identifier-${mode}`, version: "1.0.0" });
+        const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+        try {
+          await server.connect(serverTransport);
+          await client.connect(clientTransport);
+          const described = await client.callTool({
+            name: "app.describe_data",
+            arguments: { resource: "public.select" },
+          });
+          expect(described.isError).not.toBe(true);
+          expect(described.structuredContent).toMatchObject({
+            resources: [{
+              id: "public.select",
+              selectable_fields: expect.arrayContaining([
+                "total amount",
+                "caf\u00e9_count",
+                'quote"field',
+                "back`tick",
+              ]),
+            }],
+          });
+          const explored = await client.callTool({
+            name: "app.explore_data",
+            arguments: { plan: rowPlan },
+          });
+          expect(explored.isError).not.toBe(true);
+          expect(explored.structuredContent).toMatchObject({
+            ok: true,
+            data: [{
+              "total amount": 125,
+              "caf\u00e9_count": "north",
+              'quote"field': "quoted",
+              "back`tick": "ticked",
+            }],
+          });
+        } finally {
+          await client.close();
+          await server.close();
+        }
+      }
+    } finally {
+      await runtime.close();
+    }
+
+    expect(() => validateExplorePlan({
+      kind: "rows",
+      resource: "Sort preferences",
+      select: ["total amount"],
+      limit: 1,
+    }, fixture.boundary)).toThrowError(expect.objectContaining({
+      code: "EXPLORE_RESOURCE_FORBIDDEN",
+    }));
+    expect(() => validateExplorePlan({
+      kind: "rows",
+      resource: "public.select",
+      select: ["Total amount"],
+      limit: 1,
+    }, fixture.boundary)).toThrowError(expect.objectContaining({
+      code: "EXPLORE_FIELD_FORBIDDEN",
+    }));
+  });
+
   it("uses boundary-bounded defaults when a model omits row and aggregate limits", async () => {
     const fixture = await activatedFixture();
     const rowPlan = validateExplorePlan({
@@ -6293,6 +6429,25 @@ function churnInspection(): SchemaInspection {
       },
     }],
   };
+}
+
+function quotedIdentifierInspection(): SchemaInspection {
+  const inspection = churnInspection();
+  const table = inspection.tables[0]!;
+  table.name = "select";
+  const renamedFields = new Map([
+    ["region", "caf\u00e9_count"],
+    ["monthly_revenue_cents", "total amount"],
+  ]);
+  table.columns = table.columns.map((field) => ({
+    ...field,
+    name: renamedFields.get(field.name) ?? field.name,
+  }));
+  table.columns.push(column('quote"field', "text"), column("back`tick", "text"));
+  table.suggestions.default_visible_columns = table.suggestions.default_visible_columns
+    .map((field) => renamedFields.get(field) ?? field)
+    .concat('quote"field', "back`tick");
+  return inspection;
 }
 
 function sharedReferenceInspection(): SchemaInspection {

@@ -281,6 +281,8 @@ describe("active boundary catalog", () => {
     firstTable.model_visible_fields = [
       { name: "status-code", data_type: "character varying(255)" },
       { name: "status code", data_type: "text" },
+      { name: "total amount", data_type: "integer" },
+      { name: "caf\u00e9_count", data_type: "integer" },
       { name: "2fa", data_type: "boolean" },
     ];
     firstBoundary.relationships = [{
@@ -309,6 +311,8 @@ describe("active boundary catalog", () => {
     expect(combined).toContain("billing.order-items");
     expect(combined).toContain("status-code");
     expect(combined).toContain("status code");
+    expect(combined).toContain("total amount");
+    expect(combined).toContain("caf\u00e9_count");
     expect(combined).toContain("-.->");
     expect(combined).toContain("nullable");
     expect(new Set([...combined.matchAll(/^\s{2}([A-Z0-9_]+)\["/gm)].map((match) => match[1])).size)
@@ -317,6 +321,9 @@ describe("active boundary catalog", () => {
       expect(item.mermaid).toContain("flowchart LR");
       expect(item.mermaid).not.toMatch(/[\r\n].*(?:<script|javascript:)/i);
     }
+    const terminal = renderBoundaryCatalogAscii(model);
+    expect(terminal).toContain("total amount");
+    expect(terminal).toContain("caf\u00e9_count");
   });
 
   it("lays out arbitrary schemas with chains, fan-in, disconnected tables, and narrow terminals", () => {

@@ -126,6 +126,12 @@ for the Synapsor Cloud CLI.
   live matrix verifies PostgreSQL 13-18, MySQL
   5.7/8.0.11/8.0.15/8.0.16/current 8.0/8.1/8.2/8.3/8.4, below-floor
   refusal, local MCP, and real production HTTP on the oldest/limited tiers.
+- Exact reviewed physical identifiers now remain executable when a database uses
+  reserved words, mixed case, Unicode, or printable spaces. Runner resolves the
+  exact activated ID before applying PostgreSQL/MySQL delimiter escaping; labels,
+  case variants, and unreviewed names remain invalid. The supported-version
+  matrix runs real row and aggregate plans over these identifiers locally and
+  over representative production HTTP paths.
 - Local/staging Explore and existing protected named capabilities retain their
   existing behavior. Spec and DSL `1.9.0` add the new fixed aggregate operations
   and post-suppression transforms without admitting model-authored expressions.
