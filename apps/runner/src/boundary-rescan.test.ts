@@ -615,6 +615,8 @@ describe("boundary rescan reconciliation", () => {
         .filter((field) => field !== "tenant_id");
       orders.columns.push(column("duration_ms", "integer", false, orders.columns.length + 1));
       orders.suggestions.default_visible_columns.push("duration_ms");
+      const status = orders.columns.find((field) => field.name === "status")!;
+      status.enum_values = ["open", "closed"];
       const definition = {
         field: "duration_ms",
         methods: ["quantile"] as Array<"quantile">,
@@ -622,13 +624,22 @@ describe("boundary rescan reconciliation", () => {
         max_buckets: 8,
         label_style: "ordinal" as const,
       };
-      const overrides = applyManagedBoundaryReviewDecision(emptyReviewOverrides(), {
+      const autoBandOverrides = applyManagedBoundaryReviewDecision(emptyReviewOverrides(), {
         kind: "auto_band",
         resource_id: "appdb.orders",
         field: "duration_ms",
         definition,
         actor: "owner@example.test",
         reason: "Review automatic value bands on the full MySQL grammar line.",
+        decided_at: "2026-08-12T00:00:00.000Z",
+      });
+      const overrides = applyManagedBoundaryReviewDecision(autoBandOverrides, {
+        kind: "field_enum",
+        resource_id: "appdb.orders",
+        field: "status",
+        values: ["open", "closed"],
+        actor: "owner@example.test",
+        reason: "Review the enforced CHECK vocabulary on the full MySQL grammar line.",
         decided_at: "2026-08-12T00:00:00.000Z",
       });
       const build = buildAutoBoundary({
@@ -646,6 +657,7 @@ describe("boundary rescan reconciliation", () => {
         singleOrganization: { organizationId: "clinic-one" },
       });
       expect(build.exploration_boundary.pack.resources[0]!.auto_bands).toEqual([definition]);
+      expect(build.exploration_boundary.pack.resources[0]!.field_enums.status).toEqual(["open", "closed"]);
       await writeAutoBoundaryArtifacts({ projectRoot: root, build });
       const progress = createBoundaryReviewProgress({
         draft: build.exploration_boundary,
@@ -663,12 +675,54 @@ describe("boundary rescan reconciliation", () => {
         currentProgress: progress,
       });
 
+      const sameAuthorityPatch = structuredClone(inspection);
+      sameAuthorityPatch.server_version = "MySQL 8.4.10";
+      const patchPreview = await prepareBoundaryRescan({
+        projectRoot: root,
+        inspection: sameAuthorityPatch,
+      });
+      expect(patchPreview.report).toMatchObject({
+        changed: false,
+        schema_changed: false,
+        role_posture_changed: false,
+        database_server_authority_changed: false,
+        previous_database_server_version: "MySQL 8.4.9",
+        database_server_version: "MySQL 8.4.10",
+        authoring_baseline_refreshed: true,
+      });
+      expect(patchPreview.selectedProgress.candidate_digest).toBe(progress.candidate_digest);
+
+      const preCheck = structuredClone(inspection);
+      preCheck.server_version = "MySQL 8.0.15";
+      delete preCheck.tables[0]!.columns.find((field) => field.name === "status")!.enum_values;
+      const preCheckPreview = await prepareBoundaryRescan({ projectRoot: root, inspection: preCheck });
+      expect(preCheckPreview.report).toMatchObject({
+        changed: true,
+        schema_changed: true,
+        role_posture_changed: false,
+        database_server_authority_changed: true,
+        previous_database_server_version: "MySQL 8.4.9",
+        database_server_version: "MySQL 8.0.15",
+        previous_database_server_tier: "full",
+        database_server_tier: "compatible_limited",
+      });
+      expect(preCheckPreview.report.database_server_authority_changes).toEqual(expect.arrayContaining([
+        "release line changed from mysql 8.x to mysql 8.0-pre-check",
+        "CHECK constraints cannot provide reviewed value vocabularies on this release line",
+      ]));
+      expect(preCheckPreview.report.boundaries[0]!.pruned_review_inputs).toContain(
+        "appdb.orders.status: the schema-declared vocabulary is no longer provable; filtering and grouping remain disabled",
+      );
+      expect(preCheckPreview.selectedProgress.candidate.pack.resources[0]!.field_enums.status).toBeUndefined();
+      expect(preCheckPreview.selectedProgress.candidate.pack.resources[0]!.auto_bands).toEqual([definition]);
+
       const downgraded = structuredClone(inspection);
       downgraded.server_version = "MySQL 5.7.44-log";
+      delete downgraded.tables[0]!.columns.find((field) => field.name === "status")!.enum_values;
       const preview = await prepareBoundaryRescan({ projectRoot: root, inspection: downgraded });
       expect(preview.report).toMatchObject({
         changed: true,
-        schema_changed: false,
+        schema_changed: true,
         role_posture_changed: false,
         database_server_authority_changed: true,
         previous_database_server_version: "MySQL 8.4.9",

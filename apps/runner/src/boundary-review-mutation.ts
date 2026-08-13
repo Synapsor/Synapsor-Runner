@@ -4,13 +4,13 @@ import { Buffer } from "node:buffer";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
   assertDatabaseGrammarFeature,
-  databaseServerCompatibility,
   inspectDatabase,
   type DatabaseServerCompatibility,
   type SchemaInspection,
 } from "@synapsor-runner/schema-inspector";
 import {
   buildAutoBoundary,
+  databaseServerCompatibilityForLock,
   EXPLORATION_BUDGET_REVIEW_CEILINGS,
   SHARED_REFERENCE_ACKNOWLEDGEMENT,
   explorationBoundaryCandidateDigest,
@@ -351,6 +351,7 @@ export type BoundaryResourceReviewSummary = {
   derived_tenant_scope?: DerivedScopeInference;
   shared_reference_scope?: SharedReferenceScopeInference;
   derived_principal_scope?: DerivedScopeInference;
+  database_server_compatibility?: DatabaseServerCompatibility;
   relationships: Array<{
     relationship_id: string;
     target_resource: string;
@@ -427,10 +428,7 @@ export async function inspectBoundaryResourceReview(
     reviewed_budgets: structuredClone(state.candidate.budgets),
     ...(state.lock.database_server_version
       ? {
-          database_server_compatibility: databaseServerCompatibility({
-            engine: state.lock.engine,
-            server_version: state.lock.database_server_version,
-          }),
+          database_server_compatibility: databaseServerCompatibilityForLock(state.lock)!,
         }
       : {}),
     source_database_changed: false,
@@ -506,6 +504,11 @@ export async function listBoundaryResourceReviews(
           : {}),
         ...(resource.derived_principal_scope
           ? { derived_principal_scope: structuredClone(resource.derived_principal_scope) }
+          : {}),
+        ...(state.lock.database_server_version
+          ? {
+              database_server_compatibility: databaseServerCompatibilityForLock(state.lock)!,
+            }
           : {}),
         relationships: boundaryRelationshipSummaries(generated, candidate, active),
       };

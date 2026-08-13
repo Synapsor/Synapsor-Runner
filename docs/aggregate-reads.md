@@ -146,10 +146,11 @@ authority explicitly.
 
 ### Database Compatibility For Reviewed Analytics
 
-Runner supports the complete reviewed grammar on PostgreSQL 13-18 and MySQL 8.x.
-MySQL 5.7 is a supported limited tier: dispersion, fixed bands, calendar/relative
-time, and post-suppression metrics remain available, while automatic bands and
-`CHECK`-derived text vocabularies are omitted during review. Native MySQL
+Runner supports the complete reviewed grammar on PostgreSQL 13-18 and MySQL
+8.0.16+. MySQL 8.0.11-8.0.15 keeps automatic bands but omits unenforced
+`CHECK`-derived text vocabularies. MySQL 5.7 also omits automatic bands, while
+dispersion, fixed bands, calendar/relative time, and post-suppression metrics
+remain available. Native MySQL
 `ENUM` fields remain bounded categorical dimensions. PostgreSQL 12 and older,
 MySQL older than 5.7, future unverified majors, and MariaDB are refused before
 reviewed authority can run.

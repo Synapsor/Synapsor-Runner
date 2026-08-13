@@ -643,6 +643,11 @@ describe("boundary operator-plane CLI", () => {
       const reviews = await listBoundaryResourceReviews(root);
       expect(reviews.length).toBeGreaterThan(0);
       expect(reviews.every((resource) => resource.first_table_startable === true)).toBe(true);
+      expect(reviews.every((resource) =>
+        resource.database_server_compatibility?.detected_version === "PostgreSQL 16"
+        && resource.database_server_compatibility.tier === "full"
+        && resource.database_server_compatibility.authority?.version_line === "16"))
+        .toBe(true);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

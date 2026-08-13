@@ -3278,6 +3278,53 @@ describe("Scoped Explore", () => {
     }
   });
 
+  it("keeps pre-CHECK MySQL patches stable but stales authority at 8.0.16", async () => {
+    const mysql8015 = {
+      ...churnInspection(),
+      engine: "mysql" as const,
+      server_version: "8.0.15",
+    };
+    const fixture = await activatedFixture(undefined, mysql8015);
+    const prepared = await prepareScopedExplore({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => mysql8015,
+    });
+    expect(prepared.lock.database_server_tier).toBe("compatible_limited");
+    expect(prepared.lock.database_server_authority).toMatchObject({
+      version_line: "8.0-pre-check",
+      features: {
+        automatic_numeric_bands: true,
+        schema_check_constraints: false,
+      },
+    });
+    await expect(prepareScopedExplore({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => ({
+        ...mysql8015,
+        server_version: "8.0.14",
+      }),
+    })).resolves.toMatchObject({
+      boundary: { database_server_version: "8.0.15" },
+      inspection: { server_version: "8.0.14" },
+    });
+    await expect(prepareScopedExplore({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => ({
+        ...mysql8015,
+        server_version: "8.0.16",
+      }),
+    })).rejects.toMatchObject({
+      code: "EXPLORE_LOCK_STALE",
+      message: expect.stringMatching(/release line changed from mysql 8\.0-pre-check to mysql 8\.x/i),
+    });
+  });
+
   it("serves the full PostgreSQL 13 grammar but stales it on a major-version change", async () => {
     const postgres13 = {
       ...churnInspection(),

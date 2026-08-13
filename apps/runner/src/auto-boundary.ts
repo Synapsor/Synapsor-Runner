@@ -13,6 +13,7 @@ import {
   classifySensitivity,
   type SchemaInspection,
   type DatabaseServerAuthority,
+  type DatabaseServerCompatibility,
   type SensitivityClassification,
   type TableInfo,
 } from "@synapsor-runner/schema-inspector";
@@ -642,6 +643,40 @@ export type GenerationLock = {
    */
   authority_dependencies?: GenerationAuthorityDependencies;
 };
+
+/**
+ * Render the capability authority captured by a lock. Re-resolving the exact
+ * version with newer Runner rules would misstate what the reviewer activated.
+ */
+export function databaseServerCompatibilityForLock(
+  lock: Pick<GenerationLock,
+    "engine" | "database_server_version" | "database_server_tier" | "database_server_authority">,
+): DatabaseServerCompatibility | undefined {
+  if (!lock.database_server_version) return undefined;
+  const detected = databaseServerCompatibility({
+    engine: lock.engine,
+    server_version: lock.database_server_version,
+  });
+  const authority = lock.database_server_authority ?? detected.authority;
+  const tier = lock.database_server_tier ?? detected.tier;
+  const limitations = authority
+    ? [
+        ...(authority.features.automatic_numeric_bands === false
+          ? ["Automatic numeric bands are unavailable on this reviewed database capability profile."]
+          : []),
+        ...(authority.features.schema_check_constraints === false
+          ? ["CHECK constraints cannot provide reviewed categorical vocabulary on this database capability profile."]
+          : []),
+      ]
+    : detected.limitations;
+  return {
+    ...detected,
+    supported: tier !== "unsupported",
+    tier,
+    ...(authority ? { authority: structuredClone(authority) } : {}),
+    limitations,
+  };
+}
 
 export type GenerationAuthorityDependencies = {
   schema_version: typeof AUTHORITY_DEPENDENCIES_VERSION;

@@ -137,6 +137,39 @@ const tierOrder: BoundaryFieldTier[] = ["visible", "withheld_from_model", "kept_
 
 type TerminalTheme = ReturnType<typeof terminalTheme>;
 
+function databaseCompatibilityLine(
+  compatibility: BoundaryResourceReviewView["database_server_compatibility"],
+  theme: TerminalTheme,
+): string | undefined {
+  if (!compatibility) return undefined;
+  const product = compatibility.engine === "postgres" ? "PostgreSQL" : "MySQL";
+  const detectedVersion = safeTerminalText(compatibility.detected_version);
+  const version = detectedVersion.toLowerCase().startsWith(product.toLowerCase())
+    ? detectedVersion
+    : `${product} ${detectedVersion}`;
+  const releaseLine = compatibility.authority?.version_line
+    ? `; reviewed release line ${safeTerminalText(compatibility.authority.version_line)}`
+    : "";
+  if (compatibility.tier === "full") {
+    return theme.success(`Reviewed database grammar: ${version} uses the full grammar${releaseLine}.`);
+  }
+  if (compatibility.tier === "compatible_limited") {
+    const limitations = [
+      ...(compatibility.authority?.features.schema_check_constraints === false
+        ? ["Text grouping/filtering requires a bounded native ENUM."]
+        : []),
+      ...(compatibility.authority?.features.automatic_numeric_bands === false
+        ? ["Automatic numeric bands are unavailable."]
+        : []),
+    ];
+    return theme.warning(
+      `Reviewed database grammar: ${version} uses the supported limited tier${releaseLine}. `
+      + limitations.join(" "),
+    );
+  }
+  return theme.danger(`Reviewed database grammar: ${version} is outside the supported release lines.`);
+}
+
 export function createBoundaryReviewInteractiveSession(
   input: ReadStream = process.stdin,
   output: WriteStream = process.stderr,
@@ -617,11 +650,16 @@ async function chooseResource(
           && (highlightedBoundary.policy_review_required
             || !highlightedBoundary.active
             || !highlightedBoundary.matches_active_digest);
+        const boundaryListCompatibility = databaseCompatibilityLine(
+          resources[0]?.database_server_compatibility,
+          theme,
+        );
         if (focusedAccess && !activeResources.length && boundaryEntries.length === 1) {
           render([
             theme.title("YOUR DATA BOUNDARY"),
             "A boundary is the reviewed tables, columns, relationships, and limits",
             "that your AI cannot exceed.",
+            ...(boundaryListCompatibility ? [boundaryListCompatibility] : []),
             "",
             theme.bold(firstRunBoundaryRow("NAME", "STATUS", "TABLES", "AI ACCESS")),
             theme.focus(firstRunBoundaryRow(
@@ -697,6 +735,7 @@ async function chooseResource(
           theme.title("BOUNDARIES"),
           "Each boundary is a saved set of reviewed tables, fields, relationships, and limits.",
           theme.dim("One boundary is selected for editing; only an explicitly activated boundary grants Explore access."),
+          ...(boundaryListCompatibility ? [boundaryListCompatibility] : []),
           "",
           theme.bold(savedBoundaryRow("", "NAME", "STATUS", "TABLES", "AUTHORITY")),
           ...rows,
@@ -853,6 +892,10 @@ async function chooseResource(
         : reviewLeft === "Complete"
           ? theme.success("REVIEWED - NOT ACTIVE")
         : theme.warning("DRAFT - NO ACCESS");
+      const selectedCompatibility = databaseCompatibilityLine(
+        highlighted.database_server_compatibility,
+        theme,
+      );
       const displayedReviewLeft = focusedAccess && reviewLeft !== "Complete"
         ? "FINAL REVIEW PENDING"
         : safeTerminalText(reviewLeft);
@@ -901,6 +944,7 @@ async function chooseResource(
         ),
         `${candidateStatus}  ${includedCount} ` +
           `${plural(includedCount, "table", "tables")}  ${displayedReviewLeft}`,
+        ...(selectedCompatibility ? [selectedCompatibility] : []),
         ...(candidateHasPendingChange
           ? [
             theme.warning("1 PENDING BOUNDARY CHANGE IS NOT ACTIVE"),
@@ -1110,6 +1154,7 @@ async function editFieldTiers(
         : undefined;
       const tableWidth = Math.max(36, Math.min(terminalContentWidth(output.columns), 116));
       const accessLayout = fieldAccessLayout(tableWidth);
+      const reviewCompatibility = databaseCompatibilityLine(view.database_server_compatibility, theme);
       render([
         theme.title(`REVIEW COLUMNS - ${safeTerminalText(view.resource_id)}`),
         `${theme.key("Up/Down")} Navigate   ${theme.key("Space")} Change access   ` +
@@ -1126,12 +1171,7 @@ async function editFieldTiers(
               ? formatDerivedScopePath((view.candidate ?? view.generated_candidate)!.principal_scope!)
               : "not configured")
         }`,
-        ...(view.database_server_compatibility?.tier === "compatible_limited"
-          ? [theme.warning(
-              `Database grammar: ${safeTerminalText(view.database_server_compatibility.detected_version)} uses the supported limited tier. `
-              + "Text grouping/filtering requires a bounded native ENUM; automatic numeric bands are unavailable.",
-            )]
-          : []),
+        ...(reviewCompatibility ? [reviewCompatibility] : []),
         ...(enumValues
           ? [`${theme.key("E")} Edit allowed values for selected column: ${reviewedEnumValues!.length} of ${enumValues.length}`]
           : []),

@@ -283,13 +283,18 @@ describe("boundary review terminal picker", () => {
     const session = createBoundaryReviewInteractiveSession(input, output);
     const resource = summary("public.equipment", 0);
     resource.minimum_cohort_size = 5;
-    const selected = session.chooseResource(
+    resource.database_server_compatibility = fullPostgresCompatibility();
+    const selected = withTerminalColors(() => session.chooseResource(
       [resource],
       undefined,
       { initialView: "access", startAtBoundaryList: true },
-    );
+    ));
     const firstView = output.read()?.toString() ?? "";
     expect(firstView).toContain("YOUR DATA BOUNDARY");
+    expect(firstView).toContain("\u001b[1;32mReviewed database grammar:");
+    expect(stripAnsi(firstView)).toContain(
+      "Reviewed database grammar: PostgreSQL 16 uses the full grammar; reviewed release line 16.",
+    );
     expect(firstView).not.toContain("TABLES IN THIS BOUNDARY");
 
     await send(input, "e");
@@ -1079,8 +1084,8 @@ describe("boundary review terminal picker", () => {
       detected_version: "5.7.44",
       normalized_version: "5.7.44",
       minimum_compatible_version: "5.7",
-      full_feature_version: "8.0",
-      supported_range: "MySQL 5.7, or MySQL 8.x for the complete grammar",
+      full_feature_version: "8.0.16",
+      supported_range: "MySQL 5.7, or GA MySQL 8.0.11 and newer 8.x releases; complete grammar starts at 8.0.16",
       supported: true,
       tier: "compatible_limited",
       limitations: [
@@ -1097,13 +1102,68 @@ describe("boundary review terminal picker", () => {
         },
       },
     };
+    const edited = withTerminalColors(() => createBoundaryReviewInteractiveSession(input, output)
+      .editFieldTiers(view, { focusedAccess: true }));
+    const raw = output.read()?.toString() ?? "";
+    const rendered = stripAnsi(raw);
+
+    expect(raw).toContain("\u001b[1;33mReviewed database grammar:");
+    expect(rendered).toMatch(
+      /Reviewed database grammar: MySQL 5\.7\.44 uses the supported limited tier; reviewed release line\s+5\.7\./,
+    );
+    expect(rendered).toContain("bounded native ENUM");
+    expect(rendered).toMatch(/Automatic numeric bands are\s+unavailable/);
+    await send(input, "b");
+    await expect(edited).resolves.toBe("back");
+  });
+
+  it("names only the unavailable capability on pre-CHECK MySQL 8.0", async () => {
+    const { input, output } = fakeTerminal();
+    const view = reviewView();
+    view.database_server_compatibility = {
+      engine: "mysql",
+      detected_version: "8.0.15",
+      normalized_version: "8.0",
+      minimum_compatible_version: "5.7",
+      full_feature_version: "8.0.16",
+      supported_range: "MySQL 5.7, or GA MySQL 8.0.11 and newer 8.x releases; complete grammar starts at 8.0.16",
+      supported: true,
+      tier: "compatible_limited",
+      limitations: ["CHECK constraints are not reliable reviewed vocabulary evidence"],
+      authority: {
+        schema_version: DATABASE_SERVER_AUTHORITY_VERSION,
+        engine: "mysql",
+        version_line: "8.0-pre-check",
+        features: {
+          schema_check_constraints: false,
+          automatic_numeric_bands: true,
+        },
+      },
+    };
     const edited = createBoundaryReviewInteractiveSession(input, output)
       .editFieldTiers(view, { focusedAccess: true });
     const rendered = stripAnsi(output.read()?.toString() ?? "");
 
-    expect(rendered).toContain("Database grammar: 5.7.44 uses the supported limited tier.");
+    expect(rendered).toMatch(/reviewed release line\s+8\.0-pre-check/);
     expect(rendered).toContain("bounded native ENUM");
-    expect(rendered).toContain("automatic numeric bands are unavailable");
+    expect(rendered).not.toContain("Automatic numeric bands are unavailable");
+    await send(input, "b");
+    await expect(edited).resolves.toBe("back");
+  });
+
+  it("shows the exact full database grammar release in the focused CLI editor", async () => {
+    const { input, output } = fakeTerminal();
+    const view = reviewView();
+    view.database_server_compatibility = {
+      ...fullPostgresCompatibility(),
+      detected_version: "16.14 (Debian 16.14-1.pgdg13+1)",
+      normalized_version: "16.14",
+    };
+    const edited = createBoundaryReviewInteractiveSession(input, output)
+      .editFieldTiers(view, { focusedAccess: true });
+    const rendered = stripAnsi(output.read()?.toString() ?? "");
+
+    expect(rendered).toMatch(/Reviewed database grammar: PostgreSQL 16\.14 \(Debian 16\.14-1\.pgdg13\+1\) uses the full grammar;\s+reviewed release line 16\./);
     await send(input, "b");
     await expect(edited).resolves.toBe("back");
   });
@@ -1378,6 +1438,17 @@ function stripAnsi(value: string): string {
   return value.replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, "");
 }
 
+function withTerminalColors<T>(operation: () => T): T {
+  const hadNoColor = Object.hasOwn(process.env, "NO_COLOR");
+  const noColor = process.env.NO_COLOR;
+  delete process.env.NO_COLOR;
+  try {
+    return operation();
+  } finally {
+    if (hadNoColor) process.env.NO_COLOR = noColor;
+  }
+}
+
 async function send(input: ReadStream, value: string): Promise<void> {
   (input as unknown as PassThrough).write(value);
   await new Promise<void>((resolve) => setImmediate(resolve));
@@ -1406,6 +1477,31 @@ function summary(resourceId: string, riskCount: number): BoundaryResourceReviewS
     runner_output_only_fields: 0,
     kept_out_fields: 1,
     relationships: [],
+  };
+}
+
+function fullPostgresCompatibility(): NonNullable<
+  BoundaryResourceReviewSummary["database_server_compatibility"]
+> {
+  return {
+    engine: "postgres",
+    detected_version: "PostgreSQL 16",
+    normalized_version: "16.0",
+    minimum_compatible_version: "13",
+    full_feature_version: "13",
+    supported_range: "PostgreSQL 13 through 18",
+    supported: true,
+    tier: "full",
+    limitations: [],
+    authority: {
+      schema_version: DATABASE_SERVER_AUTHORITY_VERSION,
+      engine: "postgres",
+      version_line: "16",
+      features: {
+        schema_check_constraints: true,
+        automatic_numeric_bands: true,
+      },
+    },
   };
 }
 

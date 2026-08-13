@@ -419,7 +419,7 @@ function domainInspection(fixture: DomainFixture): SchemaInspection {
 function baseInspection(engine: "postgres" | "mysql"): SchemaInspection {
   return {
     engine,
-    server_version: engine === "postgres" ? "PostgreSQL 16" : "MySQL 8",
+    server_version: engine === "postgres" ? "PostgreSQL 16.14" : "MySQL 8.4.9",
     current_user: "app_reader",
     role_posture: {
       verified: true,

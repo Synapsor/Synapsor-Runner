@@ -251,6 +251,7 @@ corepack pnpm test:clean-room:retail
 ```
 
 The live PostgreSQL and MySQL relationship test proves direct star paths,
-depth-two paths, both nullable-link choices, demand-driven activation, drift
-refusal, per-relation tenant/principal scope, suppression, and rejection of a
-deliberately wrong fan-out relationship.
+default depth-two paths, an independently reviewed depth-three opt-in, both
+nullable-link choices, demand-driven activation, drift refusal, per-relation
+tenant/principal scope, suppression, and rejection of a deliberately wrong
+fan-out relationship.

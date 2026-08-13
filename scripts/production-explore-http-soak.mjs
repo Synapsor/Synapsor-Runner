@@ -206,6 +206,107 @@ export function productionExploreSoakRequested() {
   return process.env.SYNAPSOR_PRODUCTION_EXPLORE_SOAK === "1";
 }
 
+export function assertSoakHasNoUnexpectedErrors(input) {
+  if (input.requests === 0) {
+    throw new Error("Hermetic production Explore soak completed without sending a request.");
+  }
+  if (Number(input.security_failures ?? 0) !== 0) {
+    throw new Error(
+      `Hermetic production Explore soak recorded ${input.security_failures} security failure(s).`,
+    );
+  }
+  const unexpectedRate = input.unexpected_errors / input.requests;
+  if (input.unexpected_errors !== 0) {
+    throw new Error(
+      `Hermetic production Explore soak recorded ${input.unexpected_errors} unexpected error(s) `
+      + `across ${input.requests} requests (${(unexpectedRate * 100).toFixed(3)}%).`,
+    );
+  }
+  return unexpectedRate;
+}
+
+export function assertSoakOperationCoverage(operationCounters) {
+  const entries = Object.entries(operationCounters ?? {});
+  if (entries.length === 0) {
+    throw new Error("Hermetic production Explore soak had no configured operation coverage.");
+  }
+  const omitted = entries
+    .filter(([_name, counter]) => Number(counter?.attempted ?? 0) < 1)
+    .map(([name]) => name)
+    .sort();
+  if (omitted.length > 0) {
+    throw new Error(`Hermetic production Explore soak did not execute: ${omitted.join(", ")}.`);
+  }
+  return { pass: true, operations: entries.map(([name]) => name).sort() };
+}
+
+export function expectedStandaloneQueryAuditRange(operationCounters, additionalExpectedRefusals = 0) {
+  const entries = Object.values(operationCounters ?? {});
+  const handlerRefusals = entries
+    .filter((counter) => counter?.audit_expectation === "query_audit")
+    .reduce((sum, counter) => sum + Number(counter.expected_refusals ?? 0), 0);
+  const strictSchemaRefusals = entries
+    .filter((counter) => counter?.audit_expectation === "pre_handler_no_query_audit")
+    .reduce((sum, counter) => sum + Number(counter.expected_refusals ?? 0), 0);
+  const additional = Number(additionalExpectedRefusals ?? 0);
+  return {
+    minimum: handlerRefusals,
+    maximum: handlerRefusals + additional,
+    handler_refusals: handlerRefusals,
+    strict_schema_refusals: strictSchemaRefusals,
+    additional_unclassified_refusals: additional,
+  };
+}
+
+export function assertSoakProcessResourcesBounded(input) {
+  const process = input.process;
+  if (!process?.first || !process?.last || process.samples < 1) {
+    throw new Error("Hermetic production Explore soak did not capture process resource samples.");
+  }
+  const activeClients = Number(input.active_clients ?? 0);
+  const threadCeiling = process.first.threads + 8;
+  const descriptorCeiling = process.first.file_descriptors + (activeClients * 3) + 32;
+  const sustainedRssGrowthCeilingKib = 128 * 1_024;
+  const transientRssGrowthCeilingKib = 256 * 1_024;
+  const baselineRss = process.first_quarter_median_rss_kib ?? process.first.rss_kib;
+  const terminalRss = process.last_quarter_median_rss_kib ?? process.last.rss_kib;
+  const sustainedRssGrowthKib = terminalRss - baselineRss;
+  const transientRssGrowthKib = (process.max_peak_rss_kib ?? process.max_rss_kib)
+    - process.first.rss_kib;
+  if (process.max_threads > threadCeiling) {
+    throw new Error(
+      `Production Explore soak threads reached ${process.max_threads}; the bounded ceiling is ${threadCeiling}.`,
+    );
+  }
+  if (process.max_file_descriptors > descriptorCeiling) {
+    throw new Error(
+      `Production Explore soak file descriptors reached ${process.max_file_descriptors}; `
+      + `the ${activeClients}-client ceiling is ${descriptorCeiling}.`,
+    );
+  }
+  if (sustainedRssGrowthKib > sustainedRssGrowthCeilingKib) {
+    throw new Error(
+      `Production Explore soak sustained RSS grew by ${sustainedRssGrowthKib} KiB; `
+      + `the bounded ceiling is ${sustainedRssGrowthCeilingKib} KiB.`,
+    );
+  }
+  if (transientRssGrowthKib > transientRssGrowthCeilingKib) {
+    throw new Error(
+      `Production Explore soak peak RSS grew by ${transientRssGrowthKib} KiB; `
+      + `the bounded ceiling is ${transientRssGrowthCeilingKib} KiB.`,
+    );
+  }
+  return {
+    pass: true,
+    thread_ceiling: threadCeiling,
+    descriptor_ceiling: descriptorCeiling,
+    sustained_rss_growth_kib: sustainedRssGrowthKib,
+    sustained_rss_growth_ceiling_kib: sustainedRssGrowthCeilingKib,
+    transient_rss_growth_kib: transientRssGrowthKib,
+    transient_rss_growth_ceiling_kib: transientRssGrowthCeilingKib,
+  };
+}
+
 export function productionExploreSoakConfiguration() {
   const minIntervalMs = integerEnv("SYNAPSOR_SOAK_MIN_INTERVAL_MS", DEFAULT_MIN_INTERVAL_MS, 100);
   const maxIntervalMs = integerEnv("SYNAPSOR_SOAK_MAX_INTERVAL_MS", DEFAULT_MAX_INTERVAL_MS, minIntervalMs);
@@ -281,6 +382,9 @@ export async function runProductionExploreHttpSoak(input) {
     expected_refusals: 0,
     session_capacity_refusals: 0,
     unexpected_errors: 0,
+    audit_expectation: operation.expected_refusal
+      ? operation.audit_expectation ?? "query_audit"
+      : operation.name === "catalog" ? "none" : "evidence_bundle",
     latency_ms: [],
   }]));
   const state = {
@@ -320,7 +424,11 @@ export async function runProductionExploreHttpSoak(input) {
 
   const snapshot = () => {
     const processRss = processSamples.map((sample) => sample.rss_kib);
+    const processPeakRss = processSamples.map((sample) => sample.peak_rss_kib);
     const sourceConnections = sourceConnectionSamples.map((sample) => sample.count);
+    const quarterSize = Math.max(1, Math.floor(processRss.length / 4));
+    const firstQuarterRss = processRss.slice(0, quarterSize).sort((left, right) => left - right);
+    const lastQuarterRss = processRss.slice(-quarterSize).sort((left, right) => left - right);
     return {
       schema_version: "synapsor.production-explore-soak.v1",
       ...state,
@@ -330,6 +438,7 @@ export async function runProductionExploreHttpSoak(input) {
         expected_refusals: counter.expected_refusals,
         session_capacity_refusals: counter.session_capacity_refusals,
         unexpected_errors: counter.unexpected_errors,
+        audit_expectation: counter.audit_expectation,
         latency: latencySummary(counter.latency_ms),
       }])),
       latency: latencySummary(latencies),
@@ -337,8 +446,11 @@ export async function runProductionExploreHttpSoak(input) {
         samples: processSamples.length,
         first: processSamples[0],
         last: processSamples.at(-1),
+        first_quarter_median_rss_kib: percentile(firstQuarterRss, 0.5),
+        last_quarter_median_rss_kib: percentile(lastQuarterRss, 0.5),
         min_rss_kib: processRss.length ? Math.min(...processRss) : 0,
         max_rss_kib: processRss.length ? Math.max(...processRss) : 0,
+        max_peak_rss_kib: processPeakRss.length ? Math.max(...processPeakRss) : 0,
         max_processes: processSamples.length
           ? Math.max(...processSamples.map((sample) => sample.processes)) : 0,
         max_threads: processSamples.length ? Math.max(...processSamples.map((sample) => sample.threads)) : 0,
@@ -572,10 +684,12 @@ export async function runProductionExploreHttpSoak(input) {
   state.phase = "completed";
   state.completed_at = new Date().toISOString();
   const completed = snapshot();
-  const unexpectedRate = state.requests === 0 ? 1 : state.unexpected_errors / state.requests;
-  if (unexpectedRate >= 0.001) {
-    throw new Error(`Unexpected error rate ${(unexpectedRate * 100).toFixed(3)}% exceeded the 0.1% gate.`);
-  }
+  const unexpectedRate = assertSoakHasNoUnexpectedErrors(state);
+  completed.operation_coverage = assertSoakOperationCoverage(completed.operation_counters);
+  completed.process_resource_gate = assertSoakProcessResourcesBounded({
+    process: completed.process,
+    active_clients: configuration.active_clients,
+  });
   if (completed.source_connections.maximum > input.source_connection_ceiling) {
     throw new Error("The source connection ceiling was exceeded.");
   }
@@ -696,6 +810,10 @@ export async function verifyProductionExploreAuditSink(input) {
     + Number(input.additional_successful_explore_queries ?? 0);
   const expectedRefusals = Number(input.soak.expected_refusals ?? 0)
     + Number(input.additional_expected_refusals ?? 0);
+  const expectedStandaloneAudits = expectedStandaloneQueryAuditRange(
+    input.soak.operation_counters,
+    input.additional_expected_refusals,
+  );
   if (Number(summary.evidence_bundles) !== expectedExploreSuccesses) {
     throw new Error(
       `Audit sink contains ${summary.evidence_bundles} evidence bundles for ${expectedExploreSuccesses} accepted Explore queries: ${JSON.stringify(summary)}.`,
@@ -708,10 +826,13 @@ export async function verifyProductionExploreAuditSink(input) {
       `One or more production evidence bundles lacked keyed scope, a result fingerprint, or redaction invariants: ${JSON.stringify(summary)}.`,
     );
   }
-  if ((expectedRefusals > 0 && Number(summary.query_audits) === 0)
+  if (Number(summary.query_audits) < expectedStandaloneAudits.minimum
+    || Number(summary.query_audits) > expectedStandaloneAudits.maximum
     || Number(summary.redacted_query_audits) !== Number(summary.query_audits)) {
     throw new Error(
-      `One or more production query-audit rows lacked metadata-only persistence invariants: ${JSON.stringify(summary)}; accepted Explore queries=${expectedExploreSuccesses}.`,
+      `Production standalone query-audit rows did not match the expected handler-refusal range `
+      + `${expectedStandaloneAudits.minimum}-${expectedStandaloneAudits.maximum}, or lacked metadata-only persistence invariants: `
+      + `${JSON.stringify(summary)}; accepted Explore queries=${expectedExploreSuccesses}; expected refusals=${expectedRefusals}.`,
     );
   }
   const budgetResult = await input.control.query(`
@@ -749,6 +870,12 @@ export async function verifyProductionExploreAuditSink(input) {
     accepted_explore_queries: expectedExploreSuccesses,
     evidence_bundles: Number(summary.evidence_bundles),
     query_audits: Number(summary.query_audits),
+    standalone_query_audit_expected_range: {
+      minimum: expectedStandaloneAudits.minimum,
+      maximum: expectedStandaloneAudits.maximum,
+    },
+    handler_refusals_audited: expectedStandaloneAudits.handler_refusals,
+    strict_mcp_schema_refusals_without_query_audit: expectedStandaloneAudits.strict_schema_refusals,
     budget_reservations: Number(budgets.reservations),
     budget_scope_rows: Number(budgets.scope_rows),
     keyed_scope_only: true,

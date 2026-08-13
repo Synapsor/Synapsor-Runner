@@ -20,7 +20,7 @@ all of them together through `doctor --preflight`; it does not provision them.
 
 | Component | What it must provide | Why Runner needs it |
 | --- | --- | --- |
-| Application source | A [supported PostgreSQL/MySQL source](database-server-compatibility.md) and a read-only, non-owner credential | PostgreSQL 13-18 and MySQL 8.x expose the complete reviewed grammar; MySQL 5.7 exposes its documented limited tier. Runner never uses the control-store writer against this source. |
+| Application source | A [supported PostgreSQL/MySQL source](database-server-compatibility.md) and a read-only, non-owner credential | PostgreSQL 13-18 and MySQL 8.0.16+ expose the complete reviewed grammar; MySQL 8.0.11-8.0.15 and 5.7 expose documented limited tiers. Runner never uses the control-store writer against this source. |
 | Control store | A separate PostgreSQL database and a role allowed to run the fixed Synapsor migration and write accounting records | Production budgets and audit evidence must be atomic across processes and replicas. A MySQL source still requires this PostgreSQL control store; there is no shared-MySQL control store. |
 | Identity provider (IdP) | An OAuth authorization server that issues asymmetrically signed JWT access tokens | It authenticates people, issues and refreshes tokens, and publishes signing keys. |
 | HTTPS boundary | Direct TLS at Runner or an explicitly trusted TLS-terminating proxy | Bearer tokens must not cross an unprotected network channel. |
@@ -166,9 +166,10 @@ dependency against the generation lock, and releases only parent cohorts of at
 least five. A model cannot provide the child table, key, predicate, or formula.
 
 Production HTTP reads the same database capability profile stored in the
-boundary lock as local stdio. PostgreSQL 13-18 and MySQL 8.x expose the complete
-reviewed grammar. MySQL 5.7 remains usable with automatic bands and
-`CHECK`-derived categorical vocabularies omitted before tool discovery; native
+boundary lock as local stdio. PostgreSQL 13-18 and MySQL 8.0.16+ expose the
+complete reviewed grammar. MySQL 8.0.11-8.0.15 remains usable with
+`CHECK`-derived categorical vocabularies omitted; MySQL 5.7 also omits automatic
+bands before tool discovery. Native
 `ENUM`, fixed bands, dispersion, relative time, and Runner-side
 post-suppression operations remain available. The 1.7.0 gate exercises real
 RS256-authenticated production HTTP against PostgreSQL 13.23 and MySQL 5.7.44,
@@ -351,10 +352,32 @@ principal claims, source rows, result values, SQL, or SQL parameters. If the
 control store is unavailable, the error names only the configured environment
 variable and schema and never falls back to unrelated local data.
 
+Internally, Runner materializes that bounded snapshot into a private temporary
+SQLite view and runs the same typed ledger readers and redaction rules used by
+local operator commands. On Linux it prefers a private `/dev/shm` directory
+when at least 256 MiB is available, otherwise it uses the operating system's
+temporary directory. The bridge is mode `0700`, is removed after the command,
+and is never authoritative: production PostgreSQL remains the only source of
+truth and no read command syncs data back.
+
 Workbench evidence and audit views use the same store-selection and filtering
 path and display the selected ledger source. This is important for a MySQL
 application source as well: production MySQL Explore still requires a separate
 PostgreSQL control database because there is no shared-MySQL accounting store.
+
+Evidence and query audit begin only after a request passes the MCP tool's strict
+argument schema and enters the reviewed Explore handler. Every successful source
+execution has one evidence bundle with its normalized query-audit record. A plan
+that reaches Runner and is refused before source execution has a standalone,
+metadata-only query-audit record. An unknown top-level argument such as a
+model-supplied tenant or principal is rejected earlier by the locked MCP schema;
+there is no normalized plan to persist, so no query-audit record is created.
+When Runner is attached to an interactive terminal, its metadata-only HTTP
+access log still records the request lifecycle. That access log never records
+tokens, claims, tool arguments, SQL, parameters, or result values. Operators
+running under a non-interactive process supervisor should use that supervisor's
+ordinary request/process observability; Runner does not persist rejected raw MCP
+arguments into the control ledger.
 
 Tenant ceilings remain a deliberate deployment-wide abuse backstop in addition
 to per-principal budgets. If a tenant reaches one of those explicit ceilings,

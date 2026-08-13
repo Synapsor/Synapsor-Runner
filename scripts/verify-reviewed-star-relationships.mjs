@@ -598,6 +598,18 @@ async function verifyEngine(engine, readUrl, inspectedSchema, admin) {
     await defaultDepthRuntime.close();
   }
 
+  const overDepthCandidate = structuredClone(build.exploration_boundary);
+  overDepthCandidate.budgets.max_analysis_relationship_hops = 4;
+  try {
+    reviewExplorationBoundaryCandidate(build.exploration_boundary, overDepthCandidate);
+    assert(false, `${engine} accepted an analysis relationship depth above the reviewed hard cap`);
+  } catch (error) {
+    assert(/hard reviewed ceiling 3|hard-capped at three proven hops/i.test(error?.message ?? ""),
+      `${engine} refused analysis relationship depth four with an unexpected error`, {
+        message: error?.message,
+      });
+  }
+
   const depthThreeCandidate = structuredClone(build.exploration_boundary);
   depthThreeCandidate.budgets.max_analysis_relationship_hops = 3;
   assert(depthThreeCandidate.budgets.max_derived_scope_hops === 2,

@@ -1132,13 +1132,16 @@ try {
           const box=control.getBoundingClientRect();
           return box.left>=0&&box.right<=innerWidth;
         }),
+        selectsReserveArrowSpace:[...form.querySelectorAll("select")].every(select=>
+          Number.parseFloat(getComputedStyle(select).paddingRight)>=30),
       };
     })()`);
     assert(
       automaticBandMobileLayout.visible
         && automaticBandMobileLayout.withinWidth
         && !automaticBandMobileLayout.horizontalOverflow
-        && automaticBandMobileLayout.controls,
+        && automaticBandMobileLayout.controls
+        && automaticBandMobileLayout.selectsReserveArrowSpace,
       "Workbench automatic-band controls overflowed the mobile viewport",
       automaticBandMobileLayout,
     );
@@ -1281,10 +1284,130 @@ try {
         && !wholeBoundary.generatedDetailsOpen
         && /independently reviewed set of tables, columns, relationships, and limits/i.test(wholeBoundary.text)
         && /active boundary adds choices to the same two Explore tools/i.test(wholeBoundary.text)
-        && /active boundaries never merge relationship graphs/i.test(wholeBoundary.text),
+        && /active boundaries never merge relationship graphs/i.test(wholeBoundary.text)
+        && /full reviewed grammar/i.test(wholeBoundary.text)
+        && /reviewed source release:\s*PostgreSQL 16 visual fixture/i.test(wholeBoundary.text)
+        && /reviewed release line 16/i.test(wholeBoundary.text),
       "post-Quick Start Workbench did not preserve the active boundary as the editable reviewed baseline",
       wholeBoundary,
     );
+    await evaluate(page, `(() => {
+      databaseServerCompatibility={
+        engine:"mysql",
+        detected_version:"5.7.44 visual fixture",
+        tier:"compatible_limited",
+        authority:{version_line:"5.7",features:{
+          automatic_numeric_bands:false,
+          schema_check_constraints:false
+        }}
+      };
+      renderBoundaryOverview();
+    })()`);
+    const limitedCompatibilityDesktop = await evaluate(page, `(() => {
+      const panel=document.querySelector("#boundary-overview");
+      const summary=panel?.querySelector(".database-compatibility-summary");
+      const rect=summary?.getBoundingClientRect();
+      return {
+        text:summary?.textContent||"",
+        warning:summary?.querySelector(".badge.warn")?.textContent||"",
+        withinWidth:Boolean(rect&&rect.left>=0&&rect.right<=innerWidth),
+        horizontalOverflow:document.documentElement.scrollWidth>document.documentElement.clientWidth+1,
+      };
+    })()`);
+    assert(
+      /supported limited grammar/i.test(limitedCompatibilityDesktop.warning)
+        && /reviewed source release:\s*MySQL 5\.7\.44 visual fixture/i.test(limitedCompatibilityDesktop.text)
+        && /reviewed release line 5\.7/i.test(limitedCompatibilityDesktop.text)
+        && limitedCompatibilityDesktop.withinWidth
+        && !limitedCompatibilityDesktop.horizontalOverflow,
+      "Workbench did not render the reviewed MySQL 5.7 compatibility tier clearly on desktop",
+      limitedCompatibilityDesktop,
+    );
+    await screenshot(page, "workbench-mysql57-compatibility-desktop.png");
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true,
+      screenWidth: 390,
+      screenHeight: 844,
+    });
+    await evaluate(page, `document.querySelector(".database-compatibility-summary")?.scrollIntoView({block:"center"})`);
+    const limitedCompatibilityMobile = await evaluate(page, `(() => {
+      const summary=document.querySelector(".database-compatibility-summary");
+      const rect=summary?.getBoundingClientRect();
+      return {
+        text:summary?.textContent||"",
+        visible:Boolean(rect&&rect.width>0&&rect.height>0),
+        withinWidth:Boolean(rect&&rect.left>=0&&rect.right<=innerWidth),
+        horizontalOverflow:document.documentElement.scrollWidth>document.documentElement.clientWidth+1,
+      };
+    })()`);
+    assert(
+      limitedCompatibilityMobile.visible
+        && limitedCompatibilityMobile.withinWidth
+        && !limitedCompatibilityMobile.horizontalOverflow
+        && /MySQL 5\.7\.44 visual fixture/i.test(limitedCompatibilityMobile.text),
+      "Workbench MySQL 5.7 compatibility summary overflowed or disappeared on mobile",
+      limitedCompatibilityMobile,
+    );
+    await screenshot(page, "workbench-mysql57-compatibility-mobile.png");
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 1440,
+      height: 1100,
+      deviceScaleFactor: 1,
+      mobile: false,
+      screenWidth: 1440,
+      screenHeight: 1100,
+    });
+    await evaluate(page, `(() => {
+      databaseServerCompatibility={
+        engine:"mysql",
+        detected_version:"8.0.15 visual fixture",
+        tier:"compatible_limited",
+        authority:{version_line:"8.0-pre-check",features:{
+          automatic_numeric_bands:true,
+          schema_check_constraints:false
+        }}
+      };
+      selectedResource=candidate?.pack?.resources?.[0]?.id||null;
+      setView("exceptions","replace");
+    })()`);
+    const preCheckCompatibility = await evaluate(page, `(() => {
+      const detail=document.querySelector("#resource-detail");
+      const text=detail?.textContent||"";
+      const rect=detail?.getBoundingClientRect();
+      return {
+        text,
+        visible:Boolean(detail?.offsetParent),
+        withinWidth:Boolean(rect&&rect.left>=0&&rect.right<=innerWidth),
+        horizontalOverflow:document.documentElement.scrollWidth>document.documentElement.clientWidth+1,
+      };
+    })()`);
+    assert(
+      preCheckCompatibility.visible
+        && /supported limited database grammar/i.test(preCheckCompatibility.text)
+        && /bounded native ENUM/i.test(preCheckCompatibility.text)
+        && !/Automatic numeric bands are unavailable/i.test(preCheckCompatibility.text)
+        && preCheckCompatibility.withinWidth
+        && !preCheckCompatibility.horizontalOverflow,
+      "Workbench described the wrong capability limits for MySQL 8.0.15",
+      preCheckCompatibility,
+    );
+    await screenshot(page, "workbench-mysql8015-compatibility-desktop.png");
+    await evaluate(page, `(() => {
+      databaseServerCompatibility={
+        engine:"postgres",
+        detected_version:"16 visual fixture",
+        tier:"full",
+        authority:{version_line:"16",features:{
+          automatic_numeric_bands:true,
+          schema_check_constraints:true
+        }}
+      };
+      renderBoundaryOverview();
+      setView("overview","replace");
+    })()`);
     await clickSelector(page, "#new-boundary");
     await waitForExpression(page, "document.querySelector('#new-boundary-form')?.hidden === false");
     const newBoundaryForm = await evaluate(page, `(() => {
@@ -2043,7 +2166,7 @@ function visualInspection() {
   });
   return {
     engine: "postgres",
-    server_version: "PostgreSQL 16 visual fixture",
+    server_version: "16 visual fixture",
     current_user: "app_reader",
     role_posture: {
       verified: true,

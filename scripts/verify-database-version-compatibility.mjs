@@ -23,6 +23,7 @@ import {
   writeAutoBoundaryArtifacts,
 } from "../apps/runner/dist/auto-boundary.js";
 import { createScopedExploreMcpServer } from "../apps/runner/dist/authoring-mcp.js";
+import { listBoundaryResourceReviews } from "../apps/runner/dist/boundary-review-mutation.js";
 import { startLocalUiServer } from "../apps/runner/dist/local-ui.js";
 import { createScopedExploreRuntime } from "../apps/runner/dist/scoped-explore.js";
 import {
@@ -48,18 +49,25 @@ const readerPassword = "compat_reader_password";
 const controlUrl = "postgresql://compat_admin:compat_admin_password@127.0.0.1:55620/controldb";
 const projectRoots = [];
 const postgresLines = [
-  { expected: "12", port: 55612, supported: false },
-  { expected: "13", port: 55613, supported: true },
-  { expected: "14", port: 55614, supported: true },
-  { expected: "15", port: 55615, supported: true },
-  { expected: "16", port: 55616, supported: true },
-  { expected: "17", port: 55617, supported: true },
-  { expected: "18", port: 55618, supported: true },
+  { expected: "12", port: 55612, supported: false, detectedVersion: /^PostgreSQL 12\./ },
+  { expected: "13", port: 55613, supported: true, detectedVersion: /^PostgreSQL 13\./ },
+  { expected: "14", port: 55614, supported: true, detectedVersion: /^PostgreSQL 14\./ },
+  { expected: "15", port: 55615, supported: true, detectedVersion: /^PostgreSQL 15\./ },
+  { expected: "16", port: 55616, supported: true, detectedVersion: /^PostgreSQL 16\./ },
+  { expected: "17", port: 55617, supported: true, detectedVersion: /^PostgreSQL 17\./ },
+  { expected: "18", port: 55618, supported: true, detectedVersion: /^PostgreSQL 18\./ },
 ];
 const mysqlLines = [
-  { expected: "5.7", port: 55657, tier: "compatible_limited", automaticBands: false },
-  { expected: "8.x", port: 55680, tier: "full", automaticBands: true },
-  { expected: "8.x", port: 55684, tier: "full", automaticBands: true },
+  { expected: "5.6", port: 55656, supported: false, detectedVersion: /^5\.6\./ },
+  { expected: "5.7", port: 55657, tier: "compatible_limited", automaticBands: false, schemaChecks: false, detectedVersion: /^5\.7\./ },
+  { expected: "8.0-pre-check", port: 55711, tier: "compatible_limited", automaticBands: true, schemaChecks: false, detectedVersion: /^8\.0\.11(?:\D|$)/ },
+  { expected: "8.0-pre-check", port: 55715, tier: "compatible_limited", automaticBands: true, schemaChecks: false, detectedVersion: /^8\.0\.15(?:\D|$)/ },
+  { expected: "8.x", port: 55716, tier: "full", automaticBands: true, schemaChecks: true, detectedVersion: /^8\.0\.16(?:\D|$)/ },
+  { expected: "8.x", port: 55680, tier: "full", automaticBands: true, schemaChecks: true, detectedVersion: /^8\.0\./ },
+  { expected: "8.x", port: 55781, tier: "full", automaticBands: true, schemaChecks: true, detectedVersion: /^8\.1\./ },
+  { expected: "8.x", port: 55782, tier: "full", automaticBands: true, schemaChecks: true, detectedVersion: /^8\.2\./ },
+  { expected: "8.x", port: 55783, tier: "full", automaticBands: true, schemaChecks: true, detectedVersion: /^8\.3\./ },
+  { expected: "8.x", port: 55684, tier: "full", automaticBands: true, schemaChecks: true, detectedVersion: /^8\.4\./ },
 ];
 const mysql57SoakRequested = process.env.SYNAPSOR_MYSQL57_COMPAT_SOAK === "1";
 const mysql57SoakOnly = process.env.SYNAPSOR_MYSQL57_COMPAT_SOAK_ONLY === "1";
@@ -156,6 +164,31 @@ function reviewOverrides(resourceId, automaticBands = false) {
           },
         },
         derived_measures: {
+          average_duration_per_event: {
+            definition: {
+              name: "average_duration_per_event",
+              label: "Average duration per event",
+              shape: "per_unit_average",
+              numerator: { function: "sum", field: "duration_ms" },
+              denominator: { function: "count" },
+              null_policy: "null_on_zero_or_null_denominator",
+            },
+            actor,
+            reason: "Exercise one reviewer-authored aggregate ratio without model-authored formulas.",
+            decided_at: decidedAt,
+          },
+          event_item_count: {
+            definition: {
+              name: "event_item_count",
+              label: "Event item count",
+              shape: "child_count_total",
+              child_resource: childResourceId,
+              relationship: "event_items_event_id_fkey",
+            },
+            actor,
+            reason: "Exercise one reviewed scoped child subaggregate without a fan-out join.",
+            decided_at: decidedAt,
+          },
           duration_running_total: {
             definition: {
               name: "duration_running_total",
@@ -165,6 +198,63 @@ function reviewOverrides(resourceId, automaticBands = false) {
             },
             actor,
             reason: "Exercise one reviewed post-suppression running metric.",
+            decided_at: decidedAt,
+          },
+          duration_rank: {
+            definition: {
+              name: "duration_rank",
+              label: "Duration rank",
+              shape: "rank",
+              base_measure: { function: "sum", field: "duration_ms" },
+              direction: "desc",
+            },
+            actor,
+            reason: "Exercise reviewed ranking after small-group suppression.",
+            decided_at: decidedAt,
+          },
+          duration_lag_change: {
+            definition: {
+              name: "duration_lag_change",
+              label: "Duration change from prior period",
+              shape: "lag_absolute_change",
+              base_measure: { function: "sum", field: "duration_ms" },
+            },
+            actor,
+            reason: "Exercise reviewed absolute period change after suppression.",
+            decided_at: decidedAt,
+          },
+          duration_lag_percentage: {
+            definition: {
+              name: "duration_lag_percentage",
+              label: "Duration percentage change from prior period",
+              shape: "lag_percentage_change",
+              base_measure: { function: "sum", field: "duration_ms" },
+            },
+            actor,
+            reason: "Exercise reviewed percentage period change after suppression.",
+            decided_at: decidedAt,
+          },
+          duration_moving_average: {
+            definition: {
+              name: "duration_moving_average",
+              label: "Two-period duration moving average",
+              shape: "moving_average",
+              base_measure: { function: "sum", field: "duration_ms" },
+              window_size: 2,
+            },
+            actor,
+            reason: "Exercise a fixed reviewed moving window after suppression.",
+            decided_at: decidedAt,
+          },
+          duration_share: {
+            definition: {
+              name: "duration_share",
+              label: "Share of released duration",
+              shape: "share_of_released_total",
+              base_measure: { function: "sum", field: "duration_ms" },
+            },
+            actor,
+            reason: "Exercise reviewed shares over released groups only.",
             decided_at: decidedAt,
           },
         },
@@ -224,7 +314,7 @@ function fixtureRows() {
             trailingLabel: index % 2 === 0 ? "trail" : "trail ",
             duration: 100 + (index * 100) + (status === "paused" ? 25 : 0),
             amountDecimal: ((status === "paused" ? 2_000 : 1_000) + (index * 25)) / 100,
-            optionalScore: index === 5 ? null : 50 + index,
+            optionalScore: index >= 4 ? null : 50 + index,
             occurredAt: month === "06"
               ? [
                 "2026-06-01 00:00:00.000000",
@@ -420,6 +510,11 @@ async function seedPostgres(adminUrl) {
         [item.id, item.eventId, item.units],
       );
     }
+    await pool.query(`
+      ALTER TABLE compat.events
+      ADD CONSTRAINT events_plain_label_unvalidated
+      CHECK (plain_label IN ('alpha')) NOT VALID
+    `);
   } finally {
     await pool.end();
   }
@@ -428,9 +523,18 @@ async function seedPostgres(adminUrl) {
 async function seedMysql(adminUrl) {
   const connection = await mysql.createConnection(adminUrl);
   try {
+    const [versionRows] = await connection.query("SELECT VERSION() AS version");
+    const compatibility = databaseServerCompatibility({
+      engine: "mysql",
+      server_version: String(versionRows[0]?.version ?? "unknown"),
+    });
     await connection.query("DROP DATABASE IF EXISTS compatdb");
     await connection.query("CREATE DATABASE compatdb CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-    await connection.query("DROP USER IF EXISTS 'compat_reader'@'%'");
+    try {
+      await connection.query("DROP USER 'compat_reader'@'%'");
+    } catch (error) {
+      if (error?.code !== "ER_CANNOT_USER") throw error;
+    }
     await connection.query(`CREATE USER 'compat_reader'@'%' IDENTIFIED BY '${readerPassword}'`);
     await connection.query(`
       CREATE TABLE compatdb.events (
@@ -478,6 +582,13 @@ async function seedMysql(adminUrl) {
         [item.id, item.eventId, item.units],
       );
     }
+    if (compatibility.authority?.features.schema_check_constraints === true) {
+      await connection.query(`
+        ALTER TABLE compatdb.events
+        ADD CONSTRAINT events_plain_label_unenforced
+        CHECK (plain_label IN ('alpha')) NOT ENFORCED
+      `);
+    }
   } finally {
     await connection.end();
   }
@@ -494,6 +605,32 @@ function assertClose(actual, expected, context, tolerance = 1e-9) {
   const numeric = Number(actual);
   assert(Number.isFinite(numeric) && Math.abs(numeric - expected) <= tolerance,
     `${context} expected ${expected} but received ${String(actual)}.`, { actual, expected, tolerance });
+}
+
+function verifyInspectCli(input) {
+  const invocation = productionExploreRunnerInvocation(root, [
+    "inspect",
+    "--from-env", "COMPAT_DATABASE_URL",
+    "--engine", input.engine,
+    "--schema", input.schema,
+  ]);
+  const result = run(invocation.command, invocation.args, { env: input.env });
+  const expectedTier = input.tier === "full"
+    ? "FULL"
+    : input.tier === "compatible_limited"
+      ? "COMPATIBLE - LIMITED GRAMMAR"
+      : "UNSUPPORTED";
+  assert(result.stdout.includes(`Server: ${input.serverVersion}`)
+    && result.stdout.includes(`Server support: ${expectedTier}`),
+  `${input.engine} ${input.serverVersion} inspect output omitted its exact support tier.`,
+  result.stdout);
+  const secretValues = [input.env.COMPAT_DATABASE_URL, readerPassword]
+    .filter((value) => typeof value === "string" && value.length > 0);
+  assert(secretValues.every((value) => !result.stdout.includes(value) && !result.stderr.includes(value)),
+    `${input.engine} inspect output exposed a source credential.`, {
+      stdout: result.stdout,
+      stderr: result.stderr,
+    });
 }
 
 function reviewedCandidate(build, resourceId, childResourceId, automaticBands) {
@@ -517,8 +654,19 @@ function reviewedCandidate(build, resourceId, childResourceId, automaticBands) {
   childResource.relationships);
   assert(resource.numeric_bands?.some((band) => band.name === "duration_tier"),
     "Reviewed fixed numeric-band policy did not enter the candidate.", resource.numeric_bands);
-  assert(resource.derived_measures?.some((measure) => measure.name === "duration_running_total"),
-    "Reviewed running metric did not enter the candidate.", resource.derived_measures);
+  const postSuppressionMeasures = new Set((resource.derived_measures ?? []).map((measure) => measure.name));
+  assert([
+    "duration_running_total",
+    "duration_rank",
+    "duration_lag_change",
+    "duration_lag_percentage",
+    "duration_moving_average",
+    "duration_share",
+  ].every((name) => postSuppressionMeasures.has(name)),
+  "Reviewed post-suppression metrics did not enter the candidate.", resource.derived_measures);
+  assert(resource.derived_measures?.some((measure) => measure.name === "average_duration_per_event")
+    && resource.derived_measures?.some((measure) => measure.name === "event_item_count"),
+  "Reviewed named and child-count metrics did not enter the candidate.", resource.derived_measures);
   assert(Boolean(resource.auto_bands?.length) === automaticBands,
     "Automatic-band policy did not match the server capability.", resource.auto_bands);
   return { candidate, resource, childResource };
@@ -543,6 +691,7 @@ async function verifyWorkbenchCompatibility(input) {
     expectedLine,
     expectedTier,
     automaticBands,
+    schemaChecks,
     resourceId,
     draft,
   } = input;
@@ -579,7 +728,9 @@ async function verifyWorkbenchCompatibility(input) {
     const state = JSON.parse(responseBody);
     assert(state.database_server_compatibility?.detected_version === inspection.server_version
       && state.database_server_compatibility?.tier === expectedTier
-      && state.database_server_compatibility?.authority?.version_line === expectedLine,
+      && state.database_server_compatibility?.authority?.version_line === expectedLine
+      && state.database_server_compatibility?.authority?.features?.automatic_numeric_bands === automaticBands
+      && state.database_server_compatibility?.authority?.features?.schema_check_constraints === schemaChecks,
     `Workbench displayed the wrong ${inspection.engine} ${expectedLine} compatibility authority.`,
     state.database_server_compatibility);
     const resource = state.candidate?.pack?.resources?.find((item) => item.id === resourceId);
@@ -609,8 +760,8 @@ async function verifyWorkbenchCompatibility(input) {
         },
       );
       const refusal = await mutation.text();
-      assert(!mutation.ok && /automatic numeric bands.*unavailable.*5\.7/i.test(refusal),
-        "Workbench did not explain the MySQL 5.7 automatic-band refusal.", {
+      assert(!mutation.ok && /automatic numeric bands.*unavailable/i.test(refusal),
+        `Workbench did not explain the ${inspection.engine} ${expectedLine} automatic-band refusal.`, {
           status: mutation.status,
           refusal,
         });
@@ -621,7 +772,7 @@ async function verifyWorkbenchCompatibility(input) {
       const unchanged = await unchangedResponse.json();
       const unchangedResource = unchanged.candidate?.pack?.resources?.find((item) => item.id === resourceId);
       assert(!unchangedResource?.auto_bands?.length,
-        "A refused MySQL 5.7 Workbench edit changed disabled authority.", unchangedResource);
+        `A refused ${inspection.engine} ${expectedLine} Workbench edit changed disabled authority.`, unchangedResource);
     }
   } finally {
     await server.close();
@@ -683,11 +834,23 @@ function mysql57SoakOperations(resourceId, childResourceId) {
       measures: [{ function: "count" }],
       dimensions: [{ numeric_band: "duration_tier" }],
       top_n: 10,
-    }, (payload) => assert(payload.data?.length === 1
-      && payload.data[0]?.duration_tier === "lower duration"
-      && payload.data[0]?.count === 6
-      && payload.privacy?.suppressed_groups === 1,
-    "MySQL 5.7 fixed numeric band changed suppression semantics.", payload)),
+    }, (payload, identity) => {
+      const lowerCount = [100, 125, 200, 225, 300, 325, 400, 425, 500, 525]
+        .filter((duration) => duration + identity.index < 350).length;
+      const expected = [
+        { duration_tier: "lower duration", count: lowerCount },
+        { duration_tier: "higher duration", count: 10 - lowerCount },
+      ].filter((row) => row.count >= 5);
+      const actual = new Map((payload.data ?? []).map((row) => [row.duration_tier, row.count]));
+      assert(actual.size === expected.length
+        && expected.every((row) => actual.get(row.duration_tier) === row.count)
+        && payload.privacy?.suppressed_groups === 2 - expected.length,
+      "MySQL 5.7 fixed numeric band changed suppression semantics.", {
+        identity,
+        expected,
+        payload,
+      });
+    }),
     legal("dispersion", 10, {
       ...groupedPlan,
       measures: [
@@ -757,6 +920,7 @@ function mysql57SoakOperations(resourceId, childResourceId) {
       name: "model_scope_refusal",
       weight: 2,
       expected_refusal: true,
+      audit_expectation: "pre_handler_no_query_audit",
       request: () => ({
         name: "app.explore_data",
         arguments: {
@@ -771,7 +935,15 @@ function mysql57SoakOperations(resourceId, childResourceId) {
 }
 
 async function verifyReviewedRuntime(input) {
-  const { engine, databaseUrl, inspectedSchema, expectedLine, expectedTier, automaticBands } = input;
+  const {
+    engine,
+    databaseUrl,
+    inspectedSchema,
+    expectedLine,
+    expectedTier,
+    automaticBands,
+    schemaChecks = true,
+  } = input;
   const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), `synapsor-db-compat-${engine}-`));
   projectRoots.push(projectRoot);
   const env = {
@@ -786,13 +958,32 @@ async function verifyReviewedRuntime(input) {
     schema: inspectedSchema,
     env,
   });
+  assert(input.detectedVersion.test(inspection.server_version),
+    `${engine} compatibility fixture did not start the intended release.`, inspection.server_version);
   const compatibility = databaseServerCompatibility(inspection);
   assert(compatibility.tier === expectedTier, `${engine} ${expectedLine} received the wrong support tier.`, compatibility);
   assert(compatibility.authority.version_line === expectedLine, `${engine} reported the wrong authority line.`, compatibility);
   assert(compatibility.authority.features.automatic_numeric_bands === automaticBands,
     `${engine} ${expectedLine} reported the wrong automatic-band capability.`, compatibility);
+  assert(compatibility.authority.features.schema_check_constraints === schemaChecks,
+    `${engine} ${expectedLine} reported the wrong CHECK-constraint capability.`, compatibility);
   assert(inspection.role_posture?.verified === true && inspection.role_posture?.read_only === true,
     `${engine} ${expectedLine} reader was not verified read-only.`, inspection.role_posture);
+  const inspectedEvent = inspection.tables.find((table) =>
+    `${table.schema}.${table.name}` === `${inspectedSchema}.events`);
+  assert(inspectedEvent
+    && !inspectedEvent.check_constraints?.some((constraint) =>
+      constraint.name === (engine === "postgres"
+        ? "events_plain_label_unvalidated"
+        : "events_plain_label_unenforced")),
+  `${engine} ${expectedLine} inspection retained an unvalidated or unenforced CHECK.`, inspectedEvent);
+  verifyInspectCli({
+    engine,
+    schema: inspectedSchema,
+    env,
+    serverVersion: inspection.server_version,
+    tier: expectedTier,
+  });
 
   const resourceId = `${inspectedSchema}.events`;
   const childResourceId = `${inspectedSchema}.event_items`;
@@ -815,29 +1006,41 @@ async function verifyReviewedRuntime(input) {
   `${engine} ${expectedLine} draft omitted its reviewed database capability authority.`,
   build.exploration_boundary);
   const { candidate, resource } = reviewedCandidate(build, resourceId, childResourceId, automaticBands);
+  assert(resource.field_enums.plain_label === undefined
+    && resource.selectable_fields.includes("plain_label"),
+  `${engine} ${expectedLine} treated an unvalidated or unenforced CHECK as enum authority.`, resource);
   assert(resource.field_enums.status?.join(",") === "active,paused,rare",
     `${engine} ${expectedLine} did not preserve the bounded status vocabulary.`, resource.field_enums);
-  if (expectedTier === "compatible_limited") {
+  if (!schemaChecks) {
     assert(!resource.groupable_fields.includes("plain_label")
       && resource.filterable_fields.plain_label === undefined,
-    "MySQL 5.7 exposed an unbounded text field for grouping or filtering.", resource);
-    assert(resource.selectable_fields.includes("plain_label"),
-      "MySQL 5.7 removed selectable row authority while narrowing categorical operations.", resource);
+    `${engine} ${expectedLine} exposed unbounded text despite its limited compatibility profile.`, resource);
     assert(resource.groupable_fields.includes("status") && resource.filterable_fields.status,
-      "MySQL 5.7 failed to retain native ENUM grouping and filtering.", resource);
+      `${engine} ${expectedLine} failed to retain native ENUM grouping and filtering.`, resource);
     for (const field of ["case_label", "accent_label", "trailing_label"]) {
       assert(!resource.groupable_fields.includes(field) && resource.filterable_fields[field] === undefined,
-        `MySQL 5.7 trusted unenforced CHECK vocabulary for ${field}.`, resource);
+        `${engine} ${expectedLine} trusted unenforced CHECK vocabulary for ${field}.`, resource);
     }
-    assert(!resource.auto_bands?.length, "MySQL 5.7 boundary unexpectedly contains automatic bands.", resource.auto_bands);
   } else {
+    assert(resource.groupable_fields.includes("plain_label")
+      && resource.filterable_fields.plain_label,
+    `${engine} ${expectedLine} changed the existing reviewed low-risk text policy.`, resource);
     for (const field of ["case_label", "accent_label", "trailing_label"]) {
       assert(resource.groupable_fields.includes(field) && resource.field_enums[field]?.length === 2,
         `${engine} ${expectedLine} did not expose bounded collation semantics for ${field}.`, resource);
     }
   }
+  assert(Boolean(resource.auto_bands?.length) === automaticBands,
+    `${engine} ${expectedLine} boundary retained the wrong automatic-band authority.`, resource.auto_bands);
 
   const written = await writeAutoBoundaryArtifacts({ projectRoot, build });
+  const cliReviews = await listBoundaryResourceReviews(projectRoot);
+  assert(cliReviews.length > 0 && cliReviews.every((review) =>
+    review.database_server_compatibility?.detected_version === inspection.server_version
+      && review.database_server_compatibility?.tier === expectedTier
+      && review.database_server_compatibility?.authority?.version_line === expectedLine),
+  `CLI review summaries displayed the wrong ${engine} ${expectedLine} compatibility authority.`,
+  cliReviews.map((review) => review.database_server_compatibility));
   await verifyWorkbenchCompatibility({
     projectRoot,
     boundaryRoot: written.root,
@@ -845,6 +1048,7 @@ async function verifyReviewedRuntime(input) {
     expectedLine,
     expectedTier,
     automaticBands,
+    schemaChecks,
     resourceId,
     draft: build.exploration_boundary,
   });
@@ -893,6 +1097,45 @@ async function verifyReviewedRuntime(input) {
     const describedResource = described.resources?.[0];
     assert(Boolean(describedResource?.auto_bands?.length) === automaticBands,
       `${engine} ${expectedLine} describe_data exposed the wrong automatic-band metadata.`, describedResource);
+    const describedMeasures = new Set((describedResource?.derived_measures ?? []).map((measure) => measure.name));
+    assert([
+      "average_duration_per_event",
+      "event_item_count",
+      "duration_running_total",
+      "duration_rank",
+      "duration_lag_change",
+      "duration_lag_percentage",
+      "duration_moving_average",
+      "duration_share",
+    ].every((name) => describedMeasures.has(name)),
+    `${engine} ${expectedLine} describe_data omitted reviewed metric grammar.`, describedResource);
+
+    const rowRead = resultPayload(await client.callTool({
+      name: "app.explore_data",
+      arguments: {
+        plan: {
+          kind: "rows",
+          resource: resourceId,
+          select: ["id", "status", "amount_decimal"],
+          where: [
+            { field: "status", op: "eq", value: "active" },
+            { field: "amount_decimal", op: "gte", value: 10 },
+          ],
+          order_by: [{ field: "id", direction: "asc" }],
+          limit: 2,
+        },
+      },
+    }));
+    assert(rowRead.ok === true
+      && rowRead.data?.length === 2
+      && rowRead.data[0]?.id === 1
+      && rowRead.data[0]?.status === "active"
+      && Number(rowRead.data[0]?.amount_decimal) === 10
+      && rowRead.data[1]?.id === 2
+      && rowRead.data[1]?.status === "active"
+      && Number(rowRead.data[1]?.amount_decimal) === 10.25
+      && rowRead.data.every((row) => !Object.hasOwn(row, "tenant_id") && !Object.hasOwn(row, "principal_id")),
+    `${engine} ${expectedLine} changed scoped, ordered row-plan semantics.`, rowRead);
 
     const grouped = resultPayload(await client.callTool({
       name: "app.explore_data",
@@ -923,14 +1166,14 @@ async function verifyReviewedRuntime(input) {
       kind: "aggregate",
       resource: resourceId,
       measures: [
-        { function: "count" },
+        { function: "count_distinct", field: "id" },
         { function: "sum", field: "amount_decimal" },
         { function: "avg", field: "amount_decimal" },
       ],
       where: [{ field: "status", op: "in", value: ["active", "paused"] }],
       top_n: 1,
     });
-    assert(decimal.data.length === 1 && decimal.data[0]?.count === 24,
+    assert(decimal.data.length === 1 && decimal.data[0]?.count_distinct_id === 24,
       `${engine} ${expectedLine} failed exact decimal aggregate cardinality.`, decimal);
     assertClose(decimal.data[0]?.sum_amount_decimal, 375,
       `${engine} ${expectedLine} decimal sum`);
@@ -949,12 +1192,12 @@ async function verifyReviewedRuntime(input) {
       top_n: 1,
     });
     assert(missingData.data.length === 1
-      && missingData.data[0]?.null_count_optional_score === 2
-      && missingData.data[0]?.non_null_count_optional_score === 10,
+      && missingData.data[0]?.null_count_optional_score === 4
+      && missingData.data[0]?.non_null_count_optional_score === 8,
     `${engine} ${expectedLine} changed NULL contributor semantics.`, missingData);
     assertClose(
       missingData.data[0]?.completion_rate_optional_score,
-      engine === "mysql" ? 83.33333 : 1000 / 12,
+      engine === "mysql" ? 66.66667 : 200 / 3,
       `${engine} ${expectedLine} completion rate`,
       1e-9,
     );
@@ -987,6 +1230,173 @@ async function verifyReviewedRuntime(input) {
     `${engine} ${expectedLine} did not resolve previous_month in reviewed UTC authority.`,
     relative.operator_time_windows);
 
+    const calendarRuntime = await createScopedExploreRuntime({
+      projectRoot,
+      transport: "stdio",
+      env: {
+        ...env,
+        SYNAPSOR_TENANT_ID: "globex",
+        SYNAPSOR_PRINCIPAL: "rep-2",
+      },
+      clock: () => fixedNow,
+    });
+    try {
+      const expectedCalendarBuckets = {
+        hour: {
+          rows: [["2026-07-31T23:00:00Z", 5]],
+          suppressed: 9,
+        },
+        day: {
+          rows: [["2026-07-31", 5]],
+          suppressed: 9,
+        },
+        week: {
+          rows: [["2026-06-29", 10], ["2026-07-27", 5]],
+          suppressed: 6,
+        },
+        month: {
+          rows: [["2026-06-01", 12], ["2026-07-01", 14]],
+          suppressed: 0,
+        },
+        quarter: {
+          rows: [["2026-Q2", 12], ["2026-Q3", 14]],
+          suppressed: 0,
+        },
+        year: {
+          rows: [["2026", 26]],
+          suppressed: 0,
+        },
+        day_of_week: {
+          rows: [[1, 6], [3, 7], [5, 7]],
+          suppressed: 2,
+        },
+      };
+      for (const [bucket, expected] of Object.entries(expectedCalendarBuckets)) {
+        const calendar = await calendarRuntime.explore({
+          kind: "aggregate",
+          resource: resourceId,
+          measures: [{ function: "count" }],
+          time_bucket: { field: "occurred_at", bucket },
+          top_n: 25,
+        });
+        const actual = calendar.data
+          .map((row) => [row.time_bucket, Number(row.count)])
+          .sort((left, right) => String(left[0]).localeCompare(String(right[0])));
+        assert(JSON.stringify(actual) === JSON.stringify(expected.rows)
+          && calendar.privacy?.suppressed_groups === expected.suppressed,
+        `${engine} ${expectedLine} failed the reviewed ${bucket} calendar bucket.`, calendar);
+      }
+
+      const sampleDispersion = await calendarRuntime.explore({
+        kind: "aggregate",
+        resource: resourceId,
+        measures: [
+          { function: "stddev_samp", field: "duration_ms" },
+          { function: "var_samp", field: "duration_ms" },
+        ],
+        dimensions: [{ field: "status" }],
+        top_n: 10,
+      });
+      assert(sampleDispersion.data.length === 2
+        && sampleDispersion.privacy?.suppressed_groups === 1
+        && sampleDispersion.data.every((row) =>
+          Number.isFinite(row.stddev_samp_duration_ms)
+            && Number.isFinite(row.var_samp_duration_ms)),
+      `${engine} ${expectedLine} failed contributor-safe sample dispersion.`, sampleDispersion);
+
+      const sparseDispersion = await calendarRuntime.explore({
+        kind: "aggregate",
+        resource: resourceId,
+        measures: [{ function: "stddev_pop", field: "optional_score" }],
+        dimensions: [{ field: "status" }],
+        time_bucket: { field: "occurred_at", bucket: "month" },
+        top_n: 10,
+      });
+      assert(sparseDispersion.data.length === 0
+        && sparseDispersion.privacy?.suppressed_groups > 0,
+      `${engine} ${expectedLine} released dispersion with fewer than five non-null contributors.`,
+      sparseDispersion);
+
+      const comparison = await calendarRuntime.explore({
+        kind: "aggregate",
+        resource: resourceId,
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "status" }],
+        time_bucket: { field: "occurred_at", bucket: "month" },
+        comparison: {
+          field: "occurred_at",
+          ranges: [
+            { start: "2026-06-01T00:00:00.000Z", end: "2026-07-01T00:00:00.000Z" },
+            { start: "2026-07-01T00:00:00.000Z", end: "2026-08-01T00:00:00.000Z" },
+          ],
+        },
+        top_n: 10,
+      });
+      assert(comparison.data.length === 2
+        && comparison.data.every((row) => ["active", "paused"].includes(row.status)
+          && row.count_period_1 === 6 && row.count_period_2 === 6)
+        && comparison.privacy?.suppressed_groups === 1,
+      `${engine} ${expectedLine} changed bounded two-period comparison semantics.`, comparison);
+
+      const ranked = await calendarRuntime.explore({
+        kind: "aggregate",
+        resource: resourceId,
+        measures: [
+          { derived_measure: "duration_rank" },
+          { derived_measure: "duration_share" },
+        ],
+        dimensions: [{ field: "status" }],
+        top_n: 10,
+      });
+      const rankedRows = new Map(ranked.data.map((row) => [row.status, row]));
+      assert(ranked.data.length === 2
+        && ranked.privacy?.suppressed_groups === 1
+        && rankedRows.get("paused")?.duration_rank === 1
+        && rankedRows.get("active")?.duration_rank === 2,
+      `${engine} ${expectedLine} ranked a suppressed group or changed reviewed rank semantics.`, ranked);
+      assertClose(
+        rankedRows.get("active")?.duration_share,
+        100 * 4_200 / 8_700,
+        `${engine} ${expectedLine} released active-group share`,
+        1e-9,
+      );
+      assertClose(
+        rankedRows.get("paused")?.duration_share,
+        100 * 4_500 / 8_700,
+        `${engine} ${expectedLine} released paused-group share`,
+        1e-9,
+      );
+
+      const sequential = await calendarRuntime.explore({
+        kind: "aggregate",
+        resource: resourceId,
+        measures: [
+          { derived_measure: "duration_lag_change" },
+          { derived_measure: "duration_lag_percentage" },
+          { derived_measure: "duration_moving_average" },
+        ],
+        dimensions: [{ field: "status" }],
+        time_bucket: { field: "occurred_at", bucket: "month" },
+        order_by: { kind: "time_bucket", direction: "asc" },
+        top_n: 10,
+      });
+      const series = (status, field) => sequential.data
+        .filter((row) => row.status === status)
+        .sort((left, right) => String(left.time_bucket).localeCompare(String(right.time_bucket)))
+        .map((row) => row[field]);
+      assert(sequential.data.length === 4
+        && sequential.privacy?.suppressed_groups === 1
+        && JSON.stringify(series("active", "duration_lag_change")) === JSON.stringify([null, 0])
+        && JSON.stringify(series("paused", "duration_lag_change")) === JSON.stringify([null, 0])
+        && JSON.stringify(series("active", "duration_lag_percentage")) === JSON.stringify([null, 0])
+        && JSON.stringify(series("paused", "duration_lag_percentage")) === JSON.stringify([null, 0])
+        && JSON.stringify(series("active", "duration_moving_average")) === JSON.stringify([2_100, 2_100])
+        && JSON.stringify(series("paused", "duration_moving_average")) === JSON.stringify([2_250, 2_250]),
+      `${engine} ${expectedLine} changed reviewed lag or moving-average semantics.`, sequential);
+    } finally {
+      await calendarRuntime.close();
+    }
+
     const derived = await runtime.explore({
       kind: "aggregate",
       resource: childResourceId,
@@ -1001,7 +1411,7 @@ async function verifyReviewedRuntime(input) {
     `${engine} ${expectedLine} changed derived scope or relationship semantics.`, derived);
 
     for (const field of ["case_label", "accent_label", "trailing_label"]) {
-      if (expectedTier === "compatible_limited") {
+      if (!schemaChecks) {
         await assertRejects(
           () => runtime.explore({
             kind: "aggregate",
@@ -1011,7 +1421,7 @@ async function verifyReviewedRuntime(input) {
             top_n: 10,
           }),
           "not reviewed",
-          `MySQL 5.7 accepted ${field} grouping without trusted CHECK vocabulary.`,
+          `${engine} ${expectedLine} accepted ${field} grouping without trusted CHECK vocabulary.`,
         );
         continue;
       }
@@ -1053,6 +1463,25 @@ async function verifyReviewedRuntime(input) {
       && Number(running.data[1]?.duration_running_total) > Number(running.data[0]?.duration_running_total),
     `${engine} ${expectedLine} failed its reviewed post-suppression running total.`, running);
 
+    const reviewedMeasures = await runtime.explore({
+      kind: "aggregate",
+      resource: resourceId,
+      measures: [
+        { derived_measure: "average_duration_per_event" },
+        { derived_measure: "event_item_count" },
+      ],
+      top_n: 1,
+    });
+    assert(reviewedMeasures.data.length === 1
+      && reviewedMeasures.data[0]?.event_item_count === 52,
+    `${engine} ${expectedLine} failed its reviewed named or child-count measure.`, reviewedMeasures);
+    assertClose(
+      reviewedMeasures.data[0]?.average_duration_per_event,
+      10_300 / 26,
+      `${engine} ${expectedLine} reviewed per-unit measure`,
+      engine === "mysql" ? 1e-5 : 1e-9,
+    );
+
     if (automaticBands) {
       const autoBand = await runtime.explore({
         kind: "aggregate",
@@ -1064,6 +1493,17 @@ async function verifyReviewedRuntime(input) {
       assert(autoBand.data.length === 2
         && autoBand.privacy?.auto_bands?.[0]?.raw_edges_returned === false,
       `${engine} ${expectedLine} failed reviewed automatic band execution.`, autoBand);
+      const equalWidth = await runtime.explore({
+        kind: "aggregate",
+        resource: resourceId,
+        measures: [{ function: "count" }],
+        dimensions: [{ numeric_band: { field: "duration_ms", method: "equal_width", buckets: 4 } }],
+        top_n: 10,
+      });
+      assert(equalWidth.data.length >= 2
+        && equalWidth.privacy?.auto_bands?.[0]?.raw_edges_returned === false
+        && equalWidth.data.every((row) => row.count >= 5),
+      `${engine} ${expectedLine} failed reviewed equal-width automatic band execution.`, equalWidth);
     } else {
       await assertRejects(
         () => runtime.explore({
@@ -1074,19 +1514,29 @@ async function verifyReviewedRuntime(input) {
           top_n: 10,
         }),
         "not reviewed",
-        "MySQL 5.7 accepted automatic bands despite the capability tier.",
+        `${engine} ${expectedLine} accepted automatic bands despite the capability tier.`,
       );
+    }
+    const plainLabelPlan = {
+      kind: "aggregate",
+      resource: resourceId,
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "plain_label" }],
+      top_n: 10,
+    };
+    if (!schemaChecks) {
       await assertRejects(
-        () => runtime.explore({
-          kind: "aggregate",
-          resource: resourceId,
-          measures: [{ function: "count" }],
-          dimensions: [{ field: "plain_label" }],
-          top_n: 10,
-        }),
+        () => runtime.explore(plainLabelPlan),
         "not reviewed",
-        "MySQL 5.7 accepted raw unbounded text grouping.",
+        `${engine} ${expectedLine} accepted unbounded text despite its limited compatibility profile.`,
       );
+    } else {
+      const plainLabels = await runtime.explore(plainLabelPlan);
+      assert(plainLabels.data.length === 2
+        && plainLabels.data.some((row) => row.plain_label === "alpha" && row.count === 14)
+        && plainLabels.data.some((row) => row.plain_label === "beta" && row.count === 12),
+      `${engine} ${expectedLine} applied an unvalidated or unenforced CHECK to reviewed text grouping.`,
+      plainLabels);
     }
   } finally {
     await client.close().catch(() => undefined);
@@ -1100,13 +1550,25 @@ async function verifyReviewedRuntime(input) {
     authority_line: expectedLine,
     tier: expectedTier,
     automatic_bands: automaticBands,
+    schema_check_constraints: schemaChecks,
     semantic_checks: {
       decimal_precision: true,
+      distinct_counts: true,
       null_contributors: true,
+      contributor_aware_dispersion: true,
       collation_grouping: true,
       relative_window_equivalence: true,
+      all_calendar_buckets: true,
+      calendar_boundary_semantics: true,
+      bounded_comparison: true,
       derived_scope_relationship: true,
+      reviewed_named_and_child_count_measures: true,
+      all_post_suppression_metrics: true,
       suppression: true,
+      row_plans: true,
+      equal_width_automatic_bands: automaticBands,
+      unenforced_check_constraints_excluded: true,
+      cli_inspect: true,
       workbench_compatibility: true,
     },
   };
@@ -1456,57 +1918,155 @@ async function verifyProductionHttp(input) {
   };
 }
 
-async function verifyUnsupportedPostgres(line) {
-  const adminUrl = `postgresql://compat_admin:compat_admin_password@127.0.0.1:${line.port}/compatdb`;
-  await seedPostgres(adminUrl);
-  const readerUrl = `postgresql://compat_reader:${readerPassword}@127.0.0.1:${line.port}/compatdb`;
-  const env = { ...process.env, COMPAT_DATABASE_URL: readerUrl, SYNAPSOR_TENANT_ID: "acme" };
+async function verifyUnsupportedDatabaseLine(input) {
+  await input.seed(input.adminUrl);
+  const env = { ...process.env, COMPAT_DATABASE_URL: input.readerUrl, SYNAPSOR_TENANT_ID: "acme" };
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), `synapsor-unsupported-${input.engine}-`));
+  projectRoots.push(projectRoot);
   const inspection = await inspectDatabase({
-    engine: "postgres",
+    engine: input.engine,
     databaseUrlEnv: "COMPAT_DATABASE_URL",
-    schema: "compat",
+    schema: input.schema,
     env,
   });
+  assert(input.line.detectedVersion.test(inspection.server_version),
+    `${input.product} compatibility fixture did not start the intended unsupported release.`,
+    inspection.server_version);
   const compatibility = databaseServerCompatibility(inspection);
+  const normalizedReleaseLineMatches = compatibility.normalized_version === input.line.expected
+    || compatibility.normalized_version.startsWith(`${input.line.expected}.`);
   assert(compatibility.tier === "unsupported"
     && compatibility.authority === undefined
-    && compatibility.normalized_version?.startsWith(`${line.expected}.`),
-    "PostgreSQL below the supported floor did not produce an explicit unsupported tier.", compatibility);
+    && normalizedReleaseLineMatches,
+  `${input.product} below the supported floor did not produce an explicit unsupported tier.`, compatibility);
+  verifyInspectCli({
+    engine: input.engine,
+    schema: input.schema,
+    env,
+    serverVersion: inspection.server_version,
+    tier: "unsupported",
+  });
   await assertRejects(
     async () => buildAutoBoundary({
       inspection,
-      project: projectSummary("/tmp/synapsor-unsupported-postgres"),
+      project: projectSummary(projectRoot),
       sourceEnv: "COMPAT_DATABASE_URL",
-      inspectedSchema: "compat",
-      overrides: reviewOverrides("compat.events"),
+      inspectedSchema: input.schema,
+      overrides: reviewOverrides(input.resourceId),
     }),
     "unsupported",
-    "PostgreSQL below the supported floor reached boundary authoring.",
+    `${input.product} below the supported floor reached boundary authoring.`,
   );
+  const configPath = path.join(projectRoot, "synapsor.runner.json");
+  fs.writeFileSync(configPath, `${JSON.stringify({
+    version: 1,
+    mode: "read_only",
+    storage: { sqlite_path: path.join(projectRoot, ".synapsor/local.db") },
+    sources: {
+      [input.sourceName]: {
+        engine: input.engine,
+        read_url_env: "COMPAT_DATABASE_URL",
+        statement_timeout_ms: 3_000,
+      },
+    },
+    trusted_context: {
+      provider: "environment",
+      values: {
+        tenant_id_env: "SYNAPSOR_TENANT_ID",
+        principal_env: "SYNAPSOR_PRINCIPAL",
+      },
+    },
+    contexts: {
+      local_operator: {
+        provider: "environment",
+        values: {
+          tenant_id_env: "SYNAPSOR_TENANT_ID",
+          principal_env: "SYNAPSOR_PRINCIPAL",
+        },
+      },
+    },
+    capabilities: [],
+  }, null, 2)}\n`, "utf8");
+  const doctorInvocation = productionExploreRunnerInvocation(root, [
+    "doctor", "--config", configPath, "--json",
+  ]);
+  const doctorResult = run(doctorInvocation.command, doctorInvocation.args, {
+    env,
+    allowFailure: true,
+  });
+  let doctor;
+  try {
+    doctor = JSON.parse(doctorResult.stdout);
+  } catch {
+    throw new Error(`${input.product} ${input.line.expected} Doctor did not return structured compatibility guidance.\n${doctorResult.stdout}\n${doctorResult.stderr}`);
+  }
+  const versionCheck = doctor.checks?.find((check) =>
+    check.name === `source:${input.sourceName}:server-version`);
+  assert(doctor.ok === false
+    && versionCheck?.ok === false
+    && versionCheck?.level === "fail"
+    && versionCheck?.message.includes(inspection.server_version)
+    && input.supportedRangePattern.test(versionCheck?.message ?? ""),
+  `Doctor did not explain the unsupported ${input.product} release before authoring.`, {
+    status: doctorResult.status,
+    version_check: versionCheck,
+  });
   return {
-    engine: "postgres",
+    engine: input.engine,
     exact_version: inspection.server_version,
-    authority_line: line.expected,
+    authority_line: input.line.expected,
     tier: "unsupported",
     automatic_bands: false,
+    cli_inspect: true,
+    doctor_refusal: true,
   };
+}
+
+function verifyUnsupportedPostgres(line) {
+  return verifyUnsupportedDatabaseLine({
+    line,
+    engine: "postgres",
+    product: "PostgreSQL",
+    schema: "compat",
+    resourceId: "compat.events",
+    sourceName: "compat_postgres",
+    adminUrl: `postgresql://compat_admin:compat_admin_password@127.0.0.1:${line.port}/compatdb`,
+    readerUrl: `postgresql://compat_reader:${readerPassword}@127.0.0.1:${line.port}/compatdb`,
+    seed: seedPostgres,
+    supportedRangePattern: /PostgreSQL 13 through 18/,
+  });
+}
+
+function verifyUnsupportedMysql(line) {
+  return verifyUnsupportedDatabaseLine({
+    line,
+    engine: "mysql",
+    product: "MySQL",
+    schema: "compatdb",
+    resourceId: "compatdb.events",
+    sourceName: "compat_mysql",
+    adminUrl: `mysql://root:compat_admin_password@127.0.0.1:${line.port}`,
+    readerUrl: `mysql://compat_reader:${readerPassword}@127.0.0.1:${line.port}/compatdb`,
+    seed: seedMysql,
+    supportedRangePattern: /MySQL 5\.7, or GA MySQL 8\.0\.11 and newer 8\.x/,
+  });
 }
 
 async function main() {
   if (mysql57SoakOnly && !mysql57SoakRequested) {
     throw new Error("SYNAPSOR_MYSQL57_COMPAT_SOAK_ONLY requires SYNAPSOR_MYSQL57_COMPAT_SOAK=1.");
   }
-  run("docker", [
-    "compose", "-p", composeProject, "-f", compose, "up", "-d", "--wait",
-    ...(mysql57SoakOnly ? ["control", "mysql57"] : []),
-  ], { inherit: true });
   const results = [];
   const httpResults = [];
   const mysql57SoakIdentities = mysql57SoakRequested ? productionExploreSoakIdentities() : [];
   try {
+    run("docker", [
+      "compose", "-p", composeProject, "-f", compose, "up", "-d", "--wait",
+      ...(mysql57SoakOnly ? ["control", "mysql57"] : []),
+    ], { inherit: true });
     for (const line of mysql57SoakOnly ? [] : postgresLines) {
       const adminUrl = `postgresql://compat_admin:compat_admin_password@127.0.0.1:${line.port}/compatdb`;
-      if (!line.supported) {
+      if (line.supported === false) {
         results.push(await verifyUnsupportedPostgres(line));
         continue;
       }
@@ -1518,10 +2078,17 @@ async function main() {
         expectedLine: line.expected,
         expectedTier: "full",
         automaticBands: true,
+        detectedVersion: line.detectedVersion,
       }));
     }
-    for (const line of mysql57SoakOnly ? mysqlLines.slice(0, 1) : mysqlLines) {
+    for (const line of mysql57SoakOnly
+      ? mysqlLines.filter((candidate) => candidate.expected === "5.7")
+      : mysqlLines) {
       const adminUrl = `mysql://root:compat_admin_password@127.0.0.1:${line.port}`;
+      if (line.supported === false) {
+        results.push(await verifyUnsupportedMysql(line));
+        continue;
+      }
       await seedMysql(adminUrl);
       results.push(await verifyReviewedRuntime({
         engine: "mysql",
@@ -1530,6 +2097,8 @@ async function main() {
         expectedLine: line.expected,
         expectedTier: line.tier,
         automaticBands: line.automaticBands,
+        schemaChecks: line.schemaChecks,
+        detectedVersion: line.detectedVersion,
       }));
       if (line.expected === "5.7" && mysql57SoakRequested) {
         await seedMysql57Soak(adminUrl, mysql57SoakIdentities);

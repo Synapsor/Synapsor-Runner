@@ -30,19 +30,72 @@ describe("schema inspector helpers", () => {
         authority: { version_line: String(major) },
       });
     }
-    expect(databaseServerCompatibility({
+    const mysql80 = databaseServerCompatibility({
       engine: "mysql",
-      server_version: "8.0.42",
-    })).toMatchObject({
+      server_version: "8.0.42-commercial",
+    });
+    expect(mysql80).toMatchObject({
       supported: true,
       tier: "full",
       normalized_version: "8.0",
       authority: { version_line: "8.x" },
     });
+    const mysql8015 = databaseServerCompatibility({
+      engine: "mysql",
+      server_version: "8.0.15",
+    });
+    expect(mysql8015).toMatchObject({
+      supported: true,
+      tier: "compatible_limited",
+      full_feature_version: "8.0.16",
+      authority: {
+        version_line: "8.0-pre-check",
+        features: {
+          automatic_numeric_bands: true,
+          schema_check_constraints: false,
+        },
+      },
+    });
+    const mysql8016 = databaseServerCompatibility({
+      engine: "mysql",
+      server_version: "8.0.16",
+    });
+    expect(mysql8016).toMatchObject({ supported: true, tier: "full" });
+    expect(mysql8016.authority).toEqual(mysql80.authority);
     expect(databaseServerCompatibility({
       engine: "mysql",
-      server_version: "MySQL 8.4",
-    })).toMatchObject({ supported: true, tier: "full", authority: { version_line: "8.x" } });
+      server_version: "8.0.10",
+    })).toMatchObject({
+      supported: false,
+      tier: "unsupported",
+      reason: "unsupported_release_line",
+    });
+    expect(databaseServerCompatibility({
+      engine: "mysql",
+      server_version: "8.0.11",
+    })).toMatchObject({
+      supported: true,
+      tier: "compatible_limited",
+      authority: {
+        version_line: "8.0-pre-check",
+        features: {
+          automatic_numeric_bands: true,
+          schema_check_constraints: false,
+        },
+      },
+    });
+    for (const release of ["8.1.0", "8.2.0", "8.3.0", "MySQL 8.4"]) {
+      const compatibility = databaseServerCompatibility({
+        engine: "mysql",
+        server_version: release,
+      });
+      expect(compatibility).toMatchObject({
+        supported: true,
+        tier: "full",
+        authority: { version_line: "8.x" },
+      });
+      expect(compatibility.authority).toEqual(mysql80.authority);
+    }
     expect(databaseServerCompatibility({
       engine: "postgres",
       server_version: "PostgreSQL 12.22",
@@ -70,9 +123,17 @@ describe("schema inspector helpers", () => {
       server_version: "PostgreSQL 19.0",
     })).toMatchObject({ supported: false, reason: "above_tested_range" });
     expect(databaseServerCompatibility({
+      engine: "postgres",
+      server_version: "PostgreSQL 18beta1 (Debian 18~beta1-1.pgdg13+1)",
+    })).toMatchObject({ supported: false, reason: "unsupported_release_line" });
+    expect(databaseServerCompatibility({
       engine: "mysql",
       server_version: "9.0.1",
     })).toMatchObject({ supported: false, reason: "above_tested_range" });
+    expect(databaseServerCompatibility({
+      engine: "mysql",
+      server_version: "8.0.16-rc",
+    })).toMatchObject({ supported: false, reason: "unsupported_release_line" });
     expect(databaseServerCompatibility({
       engine: "mysql",
       server_version: "5.8.0",
@@ -85,7 +146,7 @@ describe("schema inspector helpers", () => {
     expect(() => assertSupportedDatabaseServerVersion({
       engine: "mysql",
       server_version: "5.6.51",
-    })).toThrow(/MySQL 5\.7, or MySQL 8\.x/i);
+    })).toThrow(/MySQL 5\.7, or GA MySQL 8\.0\.11 and newer 8\.x/i);
     expect(assertSupportedDatabaseServerVersion({
       engine: "mysql",
       server_version: "5.7.44",

@@ -82,11 +82,64 @@ services:
       timeout: 5s
       retries: 40
 
+  mysql56:
+    image: mysql:5.6
+    environment: *mysql-environment
+    ports:
+      - "127.0.0.1:55656:3306"
+    healthcheck: *mysql-healthcheck
+
   mysql80:
     image: mysql:8.0
     environment: *mysql-environment
     ports:
       - "127.0.0.1:55680:3306"
+    healthcheck: *mysql-healthcheck
+
+  mysql8015:
+    image: mysql:8.0.15
+    environment: *mysql-environment
+    ports:
+      - "127.0.0.1:55715:3306"
+    healthcheck: *mysql-healthcheck
+
+  mysql8011:
+    image: mysql:8.0.11
+    environment: *mysql-environment
+    ports:
+      - "127.0.0.1:55711:3306"
+    healthcheck:
+      test: ["CMD-SHELL", "mysql --protocol=TCP -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD -Nse 'SELECT 1' >/dev/null 2>&1"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+
+  mysql8016:
+    image: mysql:8.0.16
+    environment: *mysql-environment
+    ports:
+      - "127.0.0.1:55716:3306"
+    healthcheck: *mysql-healthcheck
+
+  mysql81:
+    image: mysql:8.1
+    environment: *mysql-environment
+    ports:
+      - "127.0.0.1:55781:3306"
+    healthcheck: *mysql-healthcheck
+
+  mysql82:
+    image: mysql:8.2
+    environment: *mysql-environment
+    ports:
+      - "127.0.0.1:55782:3306"
+    healthcheck: *mysql-healthcheck
+
+  mysql83:
+    image: mysql:8.3
+    environment: *mysql-environment
+    ports:
+      - "127.0.0.1:55783:3306"
     healthcheck: *mysql-healthcheck
 
   mysql84:

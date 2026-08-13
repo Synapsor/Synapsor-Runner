@@ -6,9 +6,10 @@ Protect, explicit production HTTP Explore under a stricter identity/privacy
 posture,
 guarded writes, opt-in proposal/evidence freshness, verified operator identity,
 default-off supervised execution, and quiet human-attention delivery. Reviewed
-aggregate paths are limited to proven star/depth-two many-to-one relationships,
-not a general join planner. Optional local Workbench Ask is a client of the
-existing reviewed tools; the complete no-model path remains the default.
+aggregate paths are limited to proven many-to-one relationships with a default
+depth of two and an explicitly reviewed hard maximum of three, not a general
+join planner. Optional local Workbench Ask is a client of the existing reviewed
+tools; the complete no-model path remains the default.
 Runner does not become a generic database query tool, Synapsor Cloud, or an
 enterprise SLA.
 
@@ -90,9 +91,9 @@ enterprise SLA.
   `avg`, categorical dimensions, fixed UTC time buckets, typed filters,
   bounded top/bottom-N over a separately reviewed candidate population,
   Runner-resolved fixed relative UTC windows, signed absolute/percentage movers
-  from an exact or relative two-range comparison, up to
-  three reviewed relationship paths of at most two proven
-  many-to-one links each, cohort suppression, and durable
+  from an exact or relative two-range comparison, up to three reviewed
+  relationship paths with a default depth of two and explicit hard maximum of
+  three proven many-to-one links each, cohort suppression, and durable
   extraction/differencing budgets.
 - Relative windows in Runner 1.7.0 require reviewed UTC authority. Arbitrary
   IANA business timezones and DST-aware relative calendar semantics are not yet
@@ -179,10 +180,14 @@ truth for the model-facing tools.
   only the explicitly reviewed authoring cube described above. Named running,
   lag, rank, moving-average, and share operations run after suppression and do
   not accept SQL or window definitions from the model.
-- PostgreSQL older than 13 or newer than 18, MySQL older than 5.7 or newer than
-  major 8, MariaDB, and unrecognized MySQL-compatible products. MySQL 5.7 is supported only through its explicit
-  limited grammar tier; technical compatibility does not imply current vendor
-  security support. See [Database Server Compatibility](database-server-compatibility.md).
+- PostgreSQL older than 13 or newer than 18, MySQL older than 5.7, pre-GA MySQL
+  8.0.0-8.0.10, MySQL newer than major 8, MariaDB, and unrecognized
+  MySQL-compatible products. Alpha, beta, release-candidate, development, and
+  snapshot server builds are also refused rather than inheriting stable-release
+  authority. MySQL 5.7 and 8.0.11-8.0.15 are supported only
+  through explicit limited grammar tiers; technical
+  compatibility does not imply current vendor security support. See
+  [Database Server Compatibility](database-server-compatibility.md).
 - Automatic policy widening or activation from graduated-trust metrics.
 - Immutable/WORM compliance storage from the local report exporter.
 

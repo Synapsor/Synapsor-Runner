@@ -96,7 +96,12 @@ try {
     "--port", String(remotePort), "--config", remoteConfigPath,
   ], staticEnv, { allowFailure: true, timeout: 10000 });
   const refusedOutput = `${refused.stdout}\n${refused.stderr}`;
-  assert(refused.status !== 0 && refusedOutput.includes("HTTP_REMOTE_CLEARTEXT_REFUSED"), "packed Runner did not refuse undeclared remote cleartext before bind", refusedOutput);
+  assert(
+    refused.status !== 0
+      && /Refusing non-loopback cleartext HTTP|HTTP_REMOTE_CLEARTEXT_REFUSED/.test(refusedOutput),
+    "packed Runner did not refuse undeclared remote cleartext before bind",
+    refusedOutput,
+  );
   assert(!(await canConnect(remotePort)), "remote-cleartext refusal left a listening socket");
 
   const tlsPort = await reservePort();

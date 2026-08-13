@@ -156,14 +156,15 @@ no-database demo, wire your database, then read deeper concepts.
 - [Bounded Aggregate Reads](aggregate-reads.md): fixed production scalar
   aggregates plus reviewed aggregate Explore.
 - [Database Server Compatibility](database-server-compatibility.md): supported
-  PostgreSQL/MySQL source lines, MySQL 5.7 capability gating, version-lock
+  PostgreSQL/MySQL source lines, older-MySQL capability tiers, version-lock
   behavior, and the exact live release matrix.
 - [Production Scoped Explore Over HTTP](production-scoped-explore-http.md):
   opt-in ad-hoc production analytics with verified JWT scope, per-principal and
   tenant budgets, atomic accounting, and the exact two-tool surface.
 - [Reviewed Relationship Paths](reviewed-relationships.md): catalog-proven
-  star/depth-two aggregate paths, demand-driven operator review, nullable-link
-  semantics, per-relation scope, and the permanent no-general-join boundary.
+  bounded many-to-one aggregate paths, demand-driven operator review,
+  default-depth-two and explicit depth-three limits, nullable-link semantics,
+  per-relation scope, and the permanent no-general-join boundary.
 - [Reviewed Database Views](reviewed-database-views.md): expose a reviewed
   derived measure without adding formulas or SQL to the model-facing planner.
 

@@ -13,11 +13,12 @@ database/Prisma/Drizzle/OpenAPI/Synapsor evidence, and generates disabled
 review artifacts without sampling source rows or using an LLM.
 
 Before review, Runner also checks the source server release. PostgreSQL 13-18
-and MySQL 8.x expose the complete reviewed grammar; MySQL 5.7 uses a supported
-limited tier and omits unsupported options before they reach the model.
-Below-floor, future unverified, and unrecognized products fail with the detected version. See
-[Database Server Compatibility](database-server-compatibility.md) before using
-an older installation.
+and MySQL 8.0.16+ expose the complete reviewed grammar. MySQL 8.0.11-8.0.15
+uses a supported tier without `CHECK`-derived categorical authority; MySQL 5.7
+also omits automatic bands. Unsupported options disappear before model discovery.
+Below-floor, future unverified, and unrecognized products fail with the detected
+version. See [Database Server Compatibility](database-server-compatibility.md)
+before using an older installation.
 
 ## Fast path
 

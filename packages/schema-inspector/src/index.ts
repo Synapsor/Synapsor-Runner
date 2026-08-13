@@ -26,7 +26,7 @@ export type DatabaseGrammarFeature =
 export type DatabaseServerAuthority = {
   schema_version: typeof DATABASE_SERVER_AUTHORITY_VERSION;
   engine: SourceEngine;
-  /** PostgreSQL major, or the stable MySQL grammar line (5.7 or 8.x). */
+  /** PostgreSQL major, or the stable MySQL grammar profile (5.7, pre-CHECK 8.0, or 8.x). */
   version_line: string;
   features: Record<DatabaseGrammarFeature, boolean>;
 };
@@ -42,9 +42,9 @@ export const DATABASE_SERVER_SUPPORT = {
   mysql: {
     product: "MySQL",
     minimum_compatible_version: "5.7",
-    full_feature_version: "8.0",
+    full_feature_version: "8.0.16",
     maximum_supported_major: 8,
-    supported_range: "MySQL 5.7, or MySQL 8.x for the complete grammar",
+    supported_range: "MySQL 5.7, or GA MySQL 8.0.11 and newer 8.x releases; complete grammar starts at 8.0.16",
   },
 } as const;
 
@@ -95,8 +95,8 @@ export function databaseServerCompatibility(input: {
     };
   }
   const match = input.engine === "postgres"
-    ? detected.match(/(?:PostgreSQL\s+)?(\d+)(?:\.(\d+))?/i)
-    : detected.match(/^(?:MySQL\s+)?(\d+)(?:\.(\d+))?/i);
+    ? detected.match(/(?:PostgreSQL\s+)?(\d+)(?:\.(\d+))?(?:\.(\d+))?/i)
+    : detected.match(/^(?:MySQL\s+)?(\d+)(?:\.(\d+))?(?:\.(\d+))?/i);
   if (!match) {
     return {
       ...common,
@@ -108,6 +108,8 @@ export function databaseServerCompatibility(input: {
   }
   const major = Number(match[1]);
   const minor = Number(match[2] ?? 0);
+  const patch = Number(match[3] ?? 0);
+  const prerelease = /(?:^|[0-9._-])(?:alpha|beta|rc|devel|snapshot)\d*(?:$|[^a-z])/i.test(detected);
   const [minimumMajor, minimumMinor] = support.minimum_compatible_version.split(".").map(Number) as [number, number];
   const supported = major > minimumMajor || (major === minimumMajor && minor >= minimumMinor);
   if (!supported) {
@@ -121,8 +123,11 @@ export function databaseServerCompatibility(input: {
     };
   }
   const releaseLineSupported = input.engine === "postgres"
-    ? major <= support.maximum_supported_major
-    : (major === 5 && minor === 7) || major === 8;
+    ? major <= support.maximum_supported_major && !prerelease
+    : !prerelease && (
+      (major === 5 && minor === 7)
+      || (major === 8 && (minor > 0 || patch >= 11))
+    );
   if (!releaseLineSupported) {
     return {
       ...common,
@@ -140,6 +145,11 @@ export function databaseServerCompatibility(input: {
     };
   }
   const mysql57 = input.engine === "mysql" && major === 5 && minor === 7;
+  const mysql80 = input.engine === "mysql" && major === 8 && minor === 0;
+  const mysql80BeforeEnforcedChecks = mysql80 && patch < 16;
+  const automaticNumericBands = !mysql57;
+  const schemaCheckConstraints = !mysql57 && !mysql80BeforeEnforcedChecks;
+  const limited = !automaticNumericBands || !schemaCheckConstraints;
   const authority: DatabaseServerAuthority = {
     schema_version: DATABASE_SERVER_AUTHORITY_VERSION,
     engine: input.engine,
@@ -147,23 +157,27 @@ export function databaseServerCompatibility(input: {
       ? String(major)
       : mysql57
         ? "5.7"
-        : "8.x",
+        : mysql80BeforeEnforcedChecks
+          ? "8.0-pre-check"
+          : "8.x",
     features: {
-      automatic_numeric_bands: !mysql57,
-      schema_check_constraints: !mysql57,
+      automatic_numeric_bands: automaticNumericBands,
+      schema_check_constraints: schemaCheckConstraints,
     },
   };
-  const limitations = mysql57
-    ? [
-      "Automatic numeric bands are unavailable because MySQL 5.7 has no window functions or common table expressions.",
-      "CHECK constraints are neither enforced nor available as reviewed vocabulary evidence; text-like categorical fields cannot be grouped or categorically filtered unless a bounded native ENUM is present.",
-    ]
-    : [];
+  const limitations = [
+    ...(!automaticNumericBands
+      ? ["Automatic numeric bands are unavailable because this release has no usable window-function and common-table-expression support."]
+      : []),
+    ...(!schemaCheckConstraints
+      ? ["CHECK constraints are not reliable reviewed vocabulary evidence on this release; text-like categorical fields cannot be grouped or categorically filtered unless a bounded native ENUM is present."]
+      : []),
+  ];
   return {
     ...common,
     normalized_version: `${major}.${minor}`,
     supported: true,
-    tier: mysql57 ? "compatible_limited" : "full",
+    tier: limited ? "compatible_limited" : "full",
     authority,
     limitations,
   };
@@ -1358,6 +1372,7 @@ async function inspectPostgres(
        JOIN pg_catalog.pg_class c ON c.oid = con.conrelid
        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
        WHERE con.contype = 'c'
+         AND con.convalidated
          AND n.nspname NOT IN ('pg_catalog', 'information_schema')
          AND ($1::text IS NULL OR n.nspname = $1)
          ${postgresResourcePredicate("n.nspname", "c.relname")}
@@ -1568,6 +1583,11 @@ async function inspectMysql(
     await connection.query("START TRANSACTION READ ONLY").catch(() => connection.query("START TRANSACTION"));
     await connection.query("SET SESSION max_execution_time = ?", [Number(options.statementTimeoutMs ?? 3000)]).catch(() => undefined);
     const [versionRows] = await connection.query<mysql.RowDataPacket[]>("SELECT VERSION() AS version, CURRENT_USER() AS `current_user`");
+    const serverVersion = String(versionRows[0]?.version ?? "unknown");
+    const schemaCheckConstraintsAvailable = databaseServerCompatibility({
+      engine: "mysql",
+      server_version: serverVersion,
+    }).authority?.features.schema_check_constraints === true;
     const schemaParam = options.schema ?? null;
     const selectedResources = normalizedInspectionResources(options.resources);
     const tableFilter = mysqlResourcePredicate(selectedResources, "table_schema", "table_name");
@@ -1673,25 +1693,28 @@ async function inspectMysql(
       [schemaParam, schemaParam, ...tableFilter.params],
     );
     let checkRows: mysql.RowDataPacket[] = [];
-    try {
-      const [rows] = await connection.query<mysql.RowDataPacket[]>(
-        `SELECT tc.table_schema AS \`schema\`, tc.table_name AS table_name,
-                tc.constraint_name AS name, cc.check_clause AS definition
-         FROM information_schema.table_constraints tc
-         JOIN information_schema.check_constraints cc
+    if (schemaCheckConstraintsAvailable) {
+      try {
+        const [rows] = await connection.query<mysql.RowDataPacket[]>(
+          `SELECT tc.table_schema AS \`schema\`, tc.table_name AS table_name,
+                  tc.constraint_name AS name, cc.check_clause AS definition
+           FROM information_schema.table_constraints tc
+           JOIN information_schema.check_constraints cc
            ON cc.constraint_schema = tc.constraint_schema
           AND cc.constraint_name = tc.constraint_name
-         WHERE tc.constraint_type = 'CHECK'
-           AND tc.table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
-           AND (? IS NULL OR tc.table_schema = ?)
-           ${keyFilter.sql}
-         ORDER BY tc.table_schema, tc.table_name, tc.constraint_name`,
-        [schemaParam, schemaParam, ...keyFilter.params],
-      );
-      checkRows = rows;
-    } catch {
-      // Older MySQL-compatible servers do not expose CHECK_CONSTRAINTS.
-      // Native ENUM/SET metadata remains available through COLUMN_TYPE.
+           WHERE tc.constraint_type = 'CHECK'
+             AND tc.enforced = 'YES'
+             AND tc.table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
+             AND (? IS NULL OR tc.table_schema = ?)
+             ${keyFilter.sql}
+           ORDER BY tc.table_schema, tc.table_name, tc.constraint_name`,
+          [schemaParam, schemaParam, ...keyFilter.params],
+        );
+        checkRows = rows;
+      } catch {
+        // A supported server may still hide CHECK_CONSTRAINTS from this role.
+        // Native ENUM/SET metadata remains available through COLUMN_TYPE.
+      }
     }
     const [grantRows] = await connection.query<mysql.RowDataPacket[]>("SHOW GRANTS FOR CURRENT_USER");
     const normalizedMysqlGrants = grantRows.map((row) => String(Object.values(row)[0] ?? ""));
@@ -1744,7 +1767,7 @@ async function inspectMysql(
     await connection.query("COMMIT").catch(() => undefined);
     return normalizeInspection({
       engine: "mysql",
-      server_version: String(versionRows[0]?.version ?? "unknown"),
+      server_version: serverVersion,
       current_user: String(versionRows[0]?.current_user ?? "unknown"),
       role: {
         verified: mysqlGrants.verified,

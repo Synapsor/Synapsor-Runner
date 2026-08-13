@@ -14,6 +14,7 @@ import {
   activateExplorationBoundary,
   buildAutoBoundary,
   compareGenerationLock,
+  databaseServerCompatibilityForLock,
   deactivateExplorationBoundary,
   emptyReviewOverrides,
   explorationBoundaryCandidateDigest,
@@ -179,7 +180,32 @@ describe("Auto Boundary compiler", () => {
       },
       project: projectSummary("/workspace/unsupported-mysql"),
       sourceEnv: "DATABASE_URL",
-    })).toThrow(/MySQL 5\.7, or MySQL 8\.x/i);
+    })).toThrow(/MySQL 5\.7/i);
+  });
+
+  it("renders the database capability snapshot stored in a lock instead of reclassifying it", () => {
+    const compatibility = databaseServerCompatibilityForLock({
+      engine: "mysql",
+      database_server_version: "8.0.15",
+      database_server_tier: "full",
+      database_server_authority: {
+        schema_version: "synapsor.database-server-authority.v1",
+        engine: "mysql",
+        version_line: "8.x",
+        features: {
+          automatic_numeric_bands: true,
+          schema_check_constraints: true,
+        },
+      },
+    });
+    expect(compatibility).toMatchObject({
+      detected_version: "8.0.15",
+      tier: "full",
+      authority: {
+        version_line: "8.x",
+        features: { schema_check_constraints: true },
+      },
+    });
   });
 
   it("offers a hospital tenant column for review without silently inferring custom authority", () => {

@@ -1673,7 +1673,7 @@ async function interactiveReviewedAnalyticsReview(input: {
       if (!automaticBandsAvailable) {
         process.stdout.write([
           `Automatic numeric bands are unavailable on ${context.lock.database_server_version ?? "this database release"}.`,
-          "MySQL 5.7 lacks the window functions and common table expressions required for safe scoped edge computation.",
+          "This database release lacks the window functions and common table expressions required for safe scoped edge computation.",
           "Fixed reviewed numeric bands and Runner-side post-suppression calculations remain available. No change was made.",
           "",
         ].join("\n"));

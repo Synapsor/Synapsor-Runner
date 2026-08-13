@@ -1010,11 +1010,13 @@ legacy locks also retain the whole-schema compatibility path.
 ### Database Capability Profiles
 
 Inspection resolves one server capability profile before review. PostgreSQL
-13-18 and MySQL 8.x receive the complete grammar. MySQL 5.7 receives a supported
-limited profile: automatic bands and `CHECK`-derived categorical vocabularies
-are unavailable, while native `ENUM`, fixed bands, dispersion, relative time,
-relationships, trusted scope, and Runner-side post-suppression metrics remain
-available. PostgreSQL below 13 or above 18, MySQL below 5.7 or above major 8,
+13-18 and MySQL 8.0.16+ receive the complete grammar. MySQL 8.0.11-8.0.15
+receives a supported profile without unenforced `CHECK`-derived categorical
+vocabularies. MySQL 5.7 also omits automatic bands. Native `ENUM`, fixed bands,
+dispersion, relative time, relationships, trusted scope, and Runner-side
+post-suppression metrics remain available. PostgreSQL below 13 or above 18,
+MySQL below 5.7, pre-GA MySQL
+8.0.0-8.0.10, or MySQL above major 8,
 MariaDB, and unrecognized products are refused.
 
 This filtering is part of authoring authority. Unsupported controls are absent

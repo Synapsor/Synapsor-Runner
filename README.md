@@ -263,20 +263,19 @@ and [HTTP MCP](docs/http-mcp.md).
 
 ## You May Not Need Runner
 
-A dedicated read-only account or one or two fixed low-risk application
-operations may already be enough. Runner becomes useful when flexible agent
-questions or multiple tools need one reviewed boundary, when writes need
-outside-model decisions, or when evidence, retries, conflicts, receipts, and
-replay would otherwise be rebuilt for every integration.
+A read-only account or a few fixed low-risk operations may suffice. Runner is
+useful when flexible agent questions or multiple tools need one reviewed
+boundary, writes require outside-model decisions, or integrations need common
+evidence, retries, conflicts, receipts, and replay.
 
 ## Trust And Verification
 
 Start with the [Security Boundary](docs/security-boundary.md). Live gates cover
-scope, exclusions, mutation, conflicts, freshness, suppression, and replay on
-PostgreSQL/MySQL. Runner does not replace least privilege, host security, or
-application authorization. Support covers PostgreSQL 13-18, MySQL 8.x, and a
-limited MySQL 5.7 tier. Unsupported SQL is removed before model
-discovery. See [Database Server Compatibility](docs/database-server-compatibility.md).
+scope, mutation, freshness, suppression, and replay. Runner does not replace
+database or application authorization. Supported sources are PostgreSQL 13-18,
+full-grammar MySQL 8.0.16+, and limited-tier MySQL 8.0.11-8.0.15 or 5.7.
+Unsupported grammar is hidden before model discovery. See
+[Database Server Compatibility](docs/database-server-compatibility.md).
 
 Runner uses SQLite or a Postgres ledger. Synapsor Cloud adds
 registry, approval, jobs, and redacted activity; credentials and

@@ -6,8 +6,10 @@ Current `1.7.0` scope:
 
 - local semantic MCP tools over Postgres/MySQL without raw SQL tools;
 - explicit source-server capability profiles: complete reviewed grammar on
-  PostgreSQL 13-18 and MySQL 8.x, a fail-closed limited grammar on MySQL 5.7,
-  and pre-authority refusal outside those lines or for MariaDB/unrecognized products;
+  PostgreSQL 13-18 and MySQL 8.0.16+, fail-closed limited grammar on MySQL
+  8.0.11-8.0.15 and MySQL 5.7,
+  and pre-authority refusal outside those lines, for prerelease servers, or for
+  MariaDB/unrecognized products;
 - one-command, resumable, review-by-exception onboarding from
   `DATABASE_URL` to a real safe read, bounded exploration, protected named
   tools, guided write proposals, and host-neutral MCP client setup;
@@ -41,9 +43,9 @@ Current `1.7.0` scope:
   ranked high-cardinality candidate populations under a separate reviewed
   ceiling, signed absolute/percentage movers from an exact two-period
   comparison in one read-only snapshot, reviewed relative UTC windows resolved
-  once by Runner for rows/aggregates/comparisons, and at
-  most three activated star/depth-two relationship paths, each containing one
-  or two proven many-to-one links with fan-out one;
+  once by Runner for rows/aggregates/comparisons, and at most three activated
+  relationship paths. Each path defaults to at most two proven many-to-one
+  links with fan-out one; an explicit reviewed limit may permit a third link;
 - demand-driven operator review for an exact inactive catalog-proven path,
   explicit nullable-link semantics, per-relation trusted scope, and fail-closed
   rejection of one-to-many, many-to-many, stale, or ambiguous paths;

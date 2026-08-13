@@ -769,6 +769,7 @@ function postgresSoakOperations() {
       name: "model_scope_refusal",
       weight: 2,
       expected_refusal: true,
+      audit_expectation: "pre_handler_no_query_audit",
       request: () => ({
         name: "app.explore_data",
         arguments: {
@@ -2071,7 +2072,9 @@ async function main() {
         schema: controlSchema,
         soak: result,
         additional_successful_explore_queries: ollama.accepted_explore_queries,
-        additional_expected_refusals: ollama.expected_refusals,
+        // A question may recover after one or more refused tool calls. Audit
+        // every Explore attempt, not only questions whose final outcome refused.
+        additional_expected_refusals: ollama.refused_explore_queries,
         forbidden_values: [
           "soak-",
           "synthetic kept-out",

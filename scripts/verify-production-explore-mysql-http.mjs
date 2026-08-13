@@ -1168,6 +1168,7 @@ function mysqlSoakOperations() {
       name: "model_scope_refusal",
       weight: 2,
       expected_refusal: true,
+      audit_expectation: "pre_handler_no_query_audit",
       request: () => ({
         name: "app.explore_data",
         arguments: {
