@@ -139,6 +139,16 @@ for the Synapsor Cloud CLI.
   leaves the revision disabled for explicit review and activation. It never
   restores a removed operation or widens an existing narrowed vocabulary; CLI,
   Workbench, and Ask handoff summaries name the exact field and recovery step.
+- Source-checkout bundle freshness now fails closed for authoring, activation,
+  serving, and reviewed execution while leaving explicitly read-only diagnostics
+  available with a stale-build warning: help/version, `config validate`,
+  metadata-only `inspect`, and `boundary status`. The complete repository test
+  gate rebuilds and verifies this bundle after source tests, and package prepack
+  still rebuilds it atomically before publication.
+- Live PostgreSQL and MySQL qualification separately exercises the reviewed
+  `max_analysis_relationship_hops` authority: depth three returns exact results only
+  after that axis is raised to 3, depth two refuses the same plan, 4 exceeds the hard
+  ceiling, and `max_derived_scope_hops` remains 2 throughout.
 - Local/staging Explore and existing protected named capabilities retain their
   existing behavior. Spec and DSL `1.9.0` add the new fixed aggregate operations
   and post-suppression transforms without admitting model-authored expressions.

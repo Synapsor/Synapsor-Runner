@@ -174,10 +174,13 @@ where supported, tenant/principal isolation, strict plan schemas, and the exact
 two-tool MCP surface. Every supported line also executes exact reviewed physical
 identifiers containing spaces and Unicode; Runner quotes them per dialect after
 boundary resolution, while labels and unreviewed names remain invalid plan IDs.
-Separate release gates cover relationship depths through
-three, child counts, Workbench, schema-width scaling, complete HTTP auth
-rejection, shared accounting, and packed-package execution on PostgreSQL and
-MySQL.
+Separate live PostgreSQL/MySQL release gates cover the two independent path
+authorities: an analysis relationship at depth three is refused while
+`max_analysis_relationship_hops` remains two, succeeds with exact results when
+only that reviewed limit becomes three, and is refused at four while
+`max_derived_scope_hops` remains two. Other gates cover child counts,
+Workbench, schema-width scaling, complete HTTP auth rejection, shared
+accounting, and packed-package execution on both engines.
 
 Use the matrix as a regression gate, not as permission to run an unmaintained
 database indefinitely. Vendor security updates, managed-service policies, and

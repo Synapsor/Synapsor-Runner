@@ -45,6 +45,11 @@
   product hard ceilings. Relationship and derived-scope depth remain two by
   default and can be raised independently only through an explicit reviewed
   opt-in to the absolute hard cap of three, with cost advisories intact.
+- Qualifies that independence on live PostgreSQL and MySQL: a three-link
+  model-facing analysis relationship is refused at the default analysis depth
+  of two, returns exact results after only `max_analysis_relationship_hops` is
+  reviewed as three, and remains capped below four while
+  `max_derived_scope_hops` stays two.
 - Reads production evidence and query audits from the shared PostgreSQL control
   store in CLI and Workbench, including for MySQL application sources, without
   persisting result values or revealing raw trusted scope. Generates secret-free
@@ -65,6 +70,10 @@
 - Clarifies when a table is absent because the reviewed read role cannot see it,
   and gives an exact reviewed-limit remedy when a valid three-hop scope path is
   attempted under the default two-hop authority.
+- Keeps source-checkout diagnostics usable when the ignored local Runner bundle
+  is stale: help/version, `config validate`, metadata-only `inspect`, and
+  `boundary status` run with an explicit warning, while authoring, activation,
+  serving, and reviewed execution remain blocked until the bundle is rebuilt.
 - Makes `production_explore.enabled` select the locked Streamable HTTP two-tool
   surface directly, while retaining `--production-explore` as an explicit
   generated launch marker. Enabled production configs now refuse incompatible
