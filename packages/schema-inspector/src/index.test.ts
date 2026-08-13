@@ -132,6 +132,11 @@ describe("schema inspector helpers", () => {
     expect(deriveSchemaDeclaredEnumValues({
       engine: "mysql",
       column_name: "status",
+      check_definitions: ["(`status` in (_utf8mb4\\'open\\',_utf8mb4\\'paid\\',_utf8mb4\\'void\\'))"],
+    })).toEqual(["open", "paid", "void"]);
+    expect(deriveSchemaDeclaredEnumValues({
+      engine: "mysql",
+      column_name: "status",
       column_type: "enum('open','paid','can''t_bill')",
     })).toEqual(["open", "paid", "can't_bill"]);
     expect(deriveSchemaDeclaredEnumValues({

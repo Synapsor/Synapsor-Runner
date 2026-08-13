@@ -1,6 +1,7 @@
 import { PassThrough } from "node:stream";
 import type { ReadStream, WriteStream } from "node:tty";
 import { describe, expect, it } from "vitest";
+import { DATABASE_SERVER_AUTHORITY_VERSION } from "@synapsor-runner/schema-inspector";
 import {
   createBoundaryReviewInteractiveSession,
   formatBoundaryOverviewMap,
@@ -1068,6 +1069,43 @@ describe("boundary review terminal picker", () => {
       if (previousNoColor === undefined) delete process.env.NO_COLOR;
       else process.env.NO_COLOR = previousNoColor;
     }
+  });
+
+  it("explains the reduced MySQL 5.7 grammar in the focused CLI editor", async () => {
+    const { input, output } = fakeTerminal();
+    const view = reviewView();
+    view.database_server_compatibility = {
+      engine: "mysql",
+      detected_version: "5.7.44",
+      normalized_version: "5.7.44",
+      minimum_compatible_version: "5.7",
+      full_feature_version: "8.0",
+      supported_range: "MySQL 5.7, or MySQL 8.x for the complete grammar",
+      supported: true,
+      tier: "compatible_limited",
+      limitations: [
+        "automatic numeric bands are unavailable",
+        "CHECK constraints are not trusted as categorical vocabulary",
+      ],
+      authority: {
+        schema_version: DATABASE_SERVER_AUTHORITY_VERSION,
+        engine: "mysql",
+        version_line: "5.7",
+        features: {
+          schema_check_constraints: false,
+          automatic_numeric_bands: false,
+        },
+      },
+    };
+    const edited = createBoundaryReviewInteractiveSession(input, output)
+      .editFieldTiers(view, { focusedAccess: true });
+    const rendered = stripAnsi(output.read()?.toString() ?? "");
+
+    expect(rendered).toContain("Database grammar: 5.7.44 uses the supported limited tier.");
+    expect(rendered).toContain("bounded native ENUM");
+    expect(rendered).toContain("automatic numeric bands are unavailable");
+    await send(input, "b");
+    await expect(edited).resolves.toBe("back");
   });
 
   it("uses a compact aligned column table on narrow terminals", async () => {

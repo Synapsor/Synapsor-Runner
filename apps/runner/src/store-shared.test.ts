@@ -106,4 +106,49 @@ describe("shared PostgreSQL production Explore audit hydration", () => {
       store.close();
     }
   });
+
+  it("hydrates a production audit snapshot atomically in one outer transaction", () => {
+    const evidenceEvent = (id: string): ProductionExploreAuditEventInput => ({
+      event_id: id,
+      event_kind: "evidence_bundle",
+      created_at: "2026-08-11T10:22:30.000Z",
+      payload: {
+        evidence_bundle: {
+          evidence_bundle_id: id,
+          tenant_id: "keyed:tenant-fixture",
+          payload: {
+            schema_version: "synapsor.analytics-evidence.v1",
+            capability: "app.explore_data",
+            source_id: "app_postgres",
+            source_table: "public.orders",
+            query_fingerprint: `sha256:${id}`,
+            result_values_persisted: false,
+          },
+          items: [],
+          query_audit: [],
+        },
+      },
+    });
+    const malformed: ProductionExploreAuditEventInput = {
+      ...evidenceEvent("ev_explore_bad_batch"),
+      payload: { evidence_bundle: { evidence_bundle_id: "wrong-id" } },
+    };
+    const store = new ProposalStore(":memory:");
+    try {
+      expect(importProductionExploreAuditEvents(store, [
+        evidenceEvent("ev_explore_batch_1"),
+        evidenceEvent("ev_explore_batch_2"),
+      ])).toEqual({ imported: 2, skipped: 0 });
+      expect(store.listEvidenceBundles()).toHaveLength(2);
+
+      expect(() => importProductionExploreAuditEvents(store, [
+        evidenceEvent("ev_explore_rolled_back"),
+        malformed,
+      ])).toThrow("ev_explore_bad_batch is malformed");
+      expect(store.getEvidenceBundle("ev_explore_rolled_back")).toBeUndefined();
+      expect(store.listEvidenceBundles()).toHaveLength(2);
+    } finally {
+      store.close();
+    }
+  });
 });

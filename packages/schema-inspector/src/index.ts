@@ -264,7 +264,10 @@ export function deriveSchemaDeclaredEnumValues(input: {
     if (nativeMysqlValues) declaredSets.push(nativeMysqlValues);
   }
   for (const definition of input.check_definitions ?? []) {
-    const values = parseSimpleMembershipCheck(definition, input.column_name);
+    const normalizedDefinition = input.engine === "mysql"
+      ? decodeMysqlInformationSchemaCheck(definition)
+      : definition;
+    const values = parseSimpleMembershipCheck(normalizedDefinition, input.column_name);
     if (values) declaredSets.push(values);
   }
   if (!declaredSets.length) return undefined;
@@ -282,6 +285,21 @@ export function deriveSchemaDeclaredEnumValues(input: {
     return undefined;
   }
   return values;
+}
+
+function decodeMysqlInformationSchemaCheck(definition: string): string {
+  let decoded = "";
+  for (let index = 0; index < definition.length; index += 1) {
+    const character = definition[index]!;
+    const next = definition[index + 1];
+    if (character === "\\" && (next === "\\" || next === "'")) {
+      decoded += next;
+      index += 1;
+      continue;
+    }
+    decoded += character;
+  }
+  return decoded;
 }
 
 function parseMysqlEnumOrSet(columnType: string): string[] | undefined {

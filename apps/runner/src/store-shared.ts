@@ -470,7 +470,7 @@ export async function withSharedPostgresRuntimeStoreBridge<T>(
   callback: (storePath: string) => Promise<T>,
 ): Promise<T> {
   const mirror = sharedPostgresLedgerMirrorOptions(args, config);
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-runtime-store-bridge-"));
+  const tempDir = await runtimeStoreTemporaryDirectory("synapsor-runtime-store-bridge-");
   const storePath = path.join(tempDir, "local.db");
   try {
     return await withSharedPostgresLedgerMirrorLock(mirror, command, async () => {
@@ -529,7 +529,7 @@ export async function withSharedPostgresRuntimeStoreReadBridge<T>(
   callback: (storePath: string) => Promise<T>,
 ): Promise<T> {
   const mirror = sharedPostgresLedgerMirrorOptions(args, config);
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-runtime-store-read-"));
+  const tempDir = await runtimeStoreTemporaryDirectory("synapsor-runtime-store-read-");
   const storePath = path.join(tempDir, "local.db");
   try {
     let snapshot: Awaited<ReturnType<typeof fetchSharedPostgresRuntimeReadSnapshot>>;
@@ -570,6 +570,26 @@ export async function withSharedPostgresRuntimeStoreReadBridge<T>(
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
   }
+}
+
+
+async function runtimeStoreTemporaryDirectory(prefix: string): Promise<string> {
+  if (process.platform === "linux") {
+    try {
+      const sharedMemory = await fs.statfs("/dev/shm");
+      const availableBytes = Number(sharedMemory.bavail) * Number(sharedMemory.bsize);
+      if (availableBytes >= 256 * 1024 * 1024) {
+        const directory = await fs.mkdtemp(path.join("/dev/shm", prefix));
+        await fs.chmod(directory, 0o700);
+        return directory;
+      }
+    } catch {
+      // Minimal containers may omit /dev/shm; the ordinary OS temp path remains valid.
+    }
+  }
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
+  await fs.chmod(directory, 0o700);
+  return directory;
 }
 
 
@@ -861,36 +881,38 @@ export function importProductionExploreAuditEvents(
   events: ProductionExploreAuditEventInput[],
 ): { imported: number; skipped: number } {
   let imported = 0;
-  for (const event of events) {
-    if (event.event_kind === "evidence_bundle") {
-      const rawEvidence = event.payload.evidence_bundle;
-      if (!isRecord(rawEvidence)) throw malformedProductionAuditEvent(event);
-      const evidenceBundleId = requiredProductionAuditString(rawEvidence, "evidence_bundle_id", event);
-      if (evidenceBundleId !== event.event_id) throw malformedProductionAuditEvent(event);
-      const evidencePayload = rawEvidence.payload;
-      if (!isRecord(evidencePayload)) throw malformedProductionAuditEvent(event);
-      const rawItems = rawEvidence.items;
-      const rawAudits = rawEvidence.query_audit;
-      if (rawItems !== undefined && !Array.isArray(rawItems)) throw malformedProductionAuditEvent(event);
-      if (rawAudits !== undefined && !Array.isArray(rawAudits)) throw malformedProductionAuditEvent(event);
-      store.recordEvidenceBundle({
-        evidence_bundle_id: evidenceBundleId,
-        proposal_id: optionalProductionAuditString(rawEvidence.proposal_id),
-        tenant_id: requiredProductionAuditString(rawEvidence, "tenant_id", event),
-        payload: evidencePayload,
-        items: (rawItems ?? []).map((item) => {
-          if (!isRecord(item)) throw malformedProductionAuditEvent(event);
-          return item;
-        }),
-        query_audit: (rawAudits ?? []).map((audit) => productionQueryAuditInput(audit, event)),
-        created_at: event.created_at,
-      });
+  store.transaction(() => {
+    for (const event of events) {
+      if (event.event_kind === "evidence_bundle") {
+        const rawEvidence = event.payload.evidence_bundle;
+        if (!isRecord(rawEvidence)) throw malformedProductionAuditEvent(event);
+        const evidenceBundleId = requiredProductionAuditString(rawEvidence, "evidence_bundle_id", event);
+        if (evidenceBundleId !== event.event_id) throw malformedProductionAuditEvent(event);
+        const evidencePayload = rawEvidence.payload;
+        if (!isRecord(evidencePayload)) throw malformedProductionAuditEvent(event);
+        const rawItems = rawEvidence.items;
+        const rawAudits = rawEvidence.query_audit;
+        if (rawItems !== undefined && !Array.isArray(rawItems)) throw malformedProductionAuditEvent(event);
+        if (rawAudits !== undefined && !Array.isArray(rawAudits)) throw malformedProductionAuditEvent(event);
+        store.recordEvidenceBundle({
+          evidence_bundle_id: evidenceBundleId,
+          proposal_id: optionalProductionAuditString(rawEvidence.proposal_id),
+          tenant_id: requiredProductionAuditString(rawEvidence, "tenant_id", event),
+          payload: evidencePayload,
+          items: (rawItems ?? []).map((item) => {
+            if (!isRecord(item)) throw malformedProductionAuditEvent(event);
+            return item;
+          }),
+          query_audit: (rawAudits ?? []).map((audit) => productionQueryAuditInput(audit, event)),
+          created_at: event.created_at,
+        });
+        imported += 1;
+        continue;
+      }
+      store.recordQueryAudit(productionQueryAuditInput(event.payload.query_audit, event));
       imported += 1;
-      continue;
     }
-    store.recordQueryAudit(productionQueryAuditInput(event.payload.query_audit, event));
-    imported += 1;
-  }
+  });
   return { imported, skipped: 0 };
 }
 

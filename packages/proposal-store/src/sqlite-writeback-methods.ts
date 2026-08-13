@@ -572,7 +572,7 @@ export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & Prop
       const now = validatedRecordedAt(input.created_at, "evidence bundle");
       const proposal = input.proposal_id ? this.requireProposal(input.proposal_id) : undefined;
       const metadata = this.evidenceMetadata({ proposal, payload: input.payload, items: input.items ?? [] });
-      this.transaction(() => {
+      const record = () => {
         this.db.prepare(`
           INSERT OR REPLACE INTO evidence_bundles (
             evidence_bundle_id,
@@ -627,7 +627,9 @@ export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & Prop
             created_at: audit.created_at ?? now,
           });
         }
-      });
+      };
+      if (this.db.isTransaction) record();
+      else this.transaction(record);
     },
   
   recordQueryAudit(input: QueryAuditRecordInput): void {

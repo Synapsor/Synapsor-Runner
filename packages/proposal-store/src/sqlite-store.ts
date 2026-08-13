@@ -57,7 +57,9 @@ export interface ProposalStore
     ProposalStoreMetricsPolicyMethods,
     ProposalStoreAttentionMethods,
     ProposalStoreCloudControlMethods,
-    ProposalStoreShadowMethods {}
+    ProposalStoreShadowMethods {
+  transaction<T>(fn: () => T): T;
+}
 
 installProposalStoreMethods(
   ProposalStore.prototype,
