@@ -37,6 +37,7 @@
     "test:principal-scope": "corepack pnpm build:runner-package && node scripts/verify-principal-row-scope.mjs",
     "test:proposal-freshness": "corepack pnpm exec tsc -b --force && node scripts/verify-proposal-evidence-freshness.mjs",
     "test:database-scope": "corepack pnpm build:runner-package && node scripts/verify-postgres-database-scope.mjs",
+    "test:database-version-compatibility": "corepack pnpm build:runner-package && node scripts/verify-database-version-compatibility.mjs",
     "test:principal-scope:packed": "./scripts/verify-packed-principal-row-scope.sh",
     "test:compliance-report": "vitest run apps/runner/src/compliance-report.test.ts",
     "test:aggregate-read": "corepack pnpm build && node scripts/verify-aggregate-read.mjs",

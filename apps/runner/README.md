@@ -271,15 +271,16 @@ replay would otherwise be rebuilt for every integration.
 
 ## Trust And Verification
 
-Start with the [Security Boundary](docs/security-boundary.md). Conformance and
-live disposable-database gates cover trusted scope, excluded fields, no
-pre-approval mutation, idempotency, conflicts, freshness, privacy suppression,
-receipts, and replay across PostgreSQL and MySQL. Runner does not replace
-least-privilege roles, host security, or application authorization.
+Start with the [Security Boundary](docs/security-boundary.md). Live gates cover
+scope, exclusions, mutation, conflicts, freshness, suppression, and replay on
+PostgreSQL/MySQL. Runner does not replace least privilege, host security, or
+application authorization. Support covers PostgreSQL 13-18, MySQL 8.x, and a
+limited MySQL 5.7 tier. Unsupported SQL is removed before model
+discovery. See [Database Server Compatibility](docs/database-server-compatibility.md).
 
-Runner works alone with local SQLite or an opt-in shared Postgres ledger.
-Synapsor Cloud adds shared registry, approval, leased jobs, and redacted
-activity chronology; credentials and guarded execution stay local. Browse
+Runner uses SQLite or a Postgres ledger. Synapsor Cloud adds
+registry, approval, jobs, and redacted activity; credentials and
+execution stay local. Browse
 [Capability Authoring](docs/capability-authoring.md), [OSS vs Cloud](docs/oss-vs-cloud.md),
 or the [documentation index](docs/README.md).
 

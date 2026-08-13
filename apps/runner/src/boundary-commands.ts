@@ -3,6 +3,8 @@ import {
 } from "@synapsor-runner/proposal-store";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
+  databaseGrammarFeatureAvailable,
+  databaseServerCompatibility,
   inspectDatabase
 } from "@synapsor-runner/schema-inspector";
 import crypto from "node:crypto";
@@ -1623,12 +1625,31 @@ async function interactiveReviewedAnalyticsReview(input: {
     process.stdout.write(`${input.resourceId} is not in this disabled boundary. No change was made.\n`);
     return 0;
   }
+  const serverCompatibility = context.lock.database_server_version
+    ? databaseServerCompatibility({
+      engine: context.lock.engine,
+      server_version: context.lock.database_server_version,
+    })
+    : undefined;
+  const automaticBandsAvailable = context.lock.database_server_authority
+    ? databaseGrammarFeatureAvailable(
+      context.lock.database_server_authority,
+      "automatic_numeric_bands",
+    )
+    : serverCompatibility?.authority
+      ? databaseGrammarFeatureAvailable(
+        serverCompatibility.authority,
+        "automatic_numeric_bands",
+      )
+      : true;
   process.stdout.write([
     `\nREVIEWED ANALYTICS - ${input.resourceId}`,
     "These are human-reviewed limits. The AI can select only the choices shown by Runner; it cannot send formulas, bucket edges, or joins.",
     "1  Add a fixed numeric band",
     "2  Remove a fixed numeric band",
-    "3  Enable automatic numeric bands",
+    automaticBandsAvailable
+      ? "3  Enable automatic numeric bands"
+      : `3  Automatic numeric bands unavailable on ${context.lock.database_server_version ?? "this database release"}`,
     "4  Disable automatic numeric bands",
     "5  Add a named ratio or per-unit metric",
     "6  Add a post-suppression calculation",
@@ -1649,6 +1670,15 @@ async function interactiveReviewedAnalyticsReview(input: {
       return removeReviewedNumericBand(input, resource);
     }
     if (entered.trim() === "3") {
+      if (!automaticBandsAvailable) {
+        process.stdout.write([
+          `Automatic numeric bands are unavailable on ${context.lock.database_server_version ?? "this database release"}.`,
+          "MySQL 5.7 lacks the window functions and common table expressions required for safe scoped edge computation.",
+          "Fixed reviewed numeric bands and Runner-side post-suppression calculations remain available. No change was made.",
+          "",
+        ].join("\n"));
+        return 0;
+      }
       return addReviewedAutoBand(input, resource);
     }
     if (entered.trim() === "4") {

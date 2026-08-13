@@ -341,6 +341,12 @@ describe("boundary operator-plane CLI", () => {
         "--reason", "Service visits are isolated by the reviewed tenant column.",
         "--json",
       ];
+      const excessiveAnalysisDepth = mutationArgs.map((value, index) =>
+        mutationArgs[index - 1] === "--max-analysis-relationship-hops" ? "4" : value);
+      await expect(boundaryReviewCommand(
+        excessiveAnalysisDepth,
+        async () => inspection,
+      )).rejects.toThrow(/--max-analysis-relationship-hops must be an integer from 1 through 3/i);
       await expect(boundaryReviewCommand(mutationArgs, async () => inspection)).resolves.toBe(0);
       const preview = JSON.parse(output);
       expect(preview).toMatchObject({
@@ -1137,7 +1143,7 @@ describe("boundary operator-plane CLI", () => {
         "--project-root", root,
       ], async () => structuredClone(inspection))).resolves.toBe(0);
       expect(output).toContain(
-        "schema, database-role posture, and trusted-context authority are unchanged",
+        "schema, database-server capabilities, database-role posture, and trusted-context authority are unchanged",
       );
 
       output = "";
@@ -4258,6 +4264,61 @@ describe("boundary operator-plane CLI", () => {
       expect(context.candidate.pack.resources[0]!.auto_bands).toBeUndefined();
       expect(context.progress?.review_overrides.resources["public.service_visits"]?.auto_bands)
         .toBeUndefined();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("refuses automatic numeric-band review on MySQL 5.7 through the shared CLI and Workbench mutation path", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-mysql57-auto-band-"));
+    const inspection = boundaryInspection();
+    inspection.engine = "mysql";
+    inspection.server_version = "MySQL 5.7.44-log";
+    inspection.tables[0]!.columns.push({
+      name: "duration_ms",
+      data_type: "integer",
+      nullable: false,
+      generated: false,
+      ordinal_position: inspection.tables[0]!.columns.length + 1,
+      suggestions: {
+        tenant: false,
+        conflict: false,
+        sensitive: false,
+        immutable: false,
+        large_or_binary: false,
+      },
+    });
+    inspection.tables[0]!.suggestions.default_visible_columns.push("duration_ms");
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await expect(prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.service_visits",
+        auto_band: {
+          field: "duration_ms",
+          methods: ["quantile"],
+          min_buckets: 3,
+          max_buckets: 8,
+          label_style: "ordinal",
+        },
+        actor: "analytics-owner",
+        reason: "This request must be rejected before it can become authority.",
+      }, async () => inspection)).rejects.toThrow(
+        /automatic numeric bands.*unavailable.*MySQL 5\.7/i,
+      );
+      const context = await loadBoundaryReviewContext(root);
+      expect(context.candidate.pack.resources[0]!.auto_bands).toBeUndefined();
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

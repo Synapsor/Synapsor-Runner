@@ -30,6 +30,7 @@ import {
   resolveExploreTrustedScope,
   type ExploreTrustedScope,
 } from "./explore-trusted-scope.js";
+import { cliCommandName } from "./cli-command-meta.js";
 import { padTerminalBlock } from "./terminal-layout.js";
 
 export type InstantCliBoundaryActivationResult =
@@ -138,9 +139,23 @@ async function activateInstantCliBoundaryAttempt(
     const missingBindings = error instanceof ExploreTrustedScopeError
       ? error.missingBindings
       : [];
+    if (missingBindings.length > 0) {
+      write([
+        "Quick Start needs trusted row scope before it can read source data.",
+        `Missing operator binding: ${missingBindings.join(", ")}`,
+        error instanceof Error ? error.message : "Runner could not verify the database credential's row scope.",
+        "Trusted values stay outside model arguments; Runner will not guess them from source rows.",
+        "Quick Start paused. Nothing was activated.",
+        "Set the missing value in the operator environment, then resume:",
+        ...missingBindings.map((binding) => `  export ${binding}='<trusted value>'`),
+        `  ${cliCommandName()} start --from-env ${input.lock.source_env} --cli`,
+        "Workbench enforces the same requirement and keeps activation disabled until its process receives the value.",
+        "",
+      ].join("\n"));
+      return { accepted: false, reason: "operator_cancelled" };
+    }
     write([
       "Quick Start needs trusted row scope before it can read source data.",
-      ...(missingBindings.length ? [`Missing operator binding: ${missingBindings.join(", ")}`] : []),
       error instanceof Error ? error.message : "Runner could not verify the database credential's row scope.",
       "Trusted values stay outside model arguments; Runner will not guess them from source rows.",
       "Opening the detailed boundary editor. Nothing is active.",

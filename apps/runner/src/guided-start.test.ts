@@ -9,6 +9,7 @@ import {
   activateInstantCliBoundary,
   type InstantCliBoundaryActivationResult,
 } from "./instant-cli-boundary.js";
+import { ExploreTrustedScopeError } from "./explore-trusted-scope.js";
 
 const suiteCwd = process.cwd();
 
@@ -673,6 +674,61 @@ describe("guided start surfaces", () => {
       )).resolves.toBe(0);
       expect(runBoundaryReview).not.toHaveBeenCalled();
       expect(runPostActivationHandoff).not.toHaveBeenCalled();
+      await expect(fs.access(path.join(
+        projectRoot,
+        ".synapsor/exploration-boundary.active.json",
+      ))).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      process.chdir(suiteCwd);
+      await fs.rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("pauses with actionable setup guidance when a trusted environment binding is missing", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-start-cli-binding-"));
+    const schemaInspector = vi.fn(async () => inspection());
+    const runBoundaryReview = vi.fn(async () => 0);
+    const runPostActivationHandoff = vi.fn(async () => 0);
+    const promptText = vi.fn(async () => "e");
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    process.chdir(projectRoot);
+
+    try {
+      await expect(start(
+        ["--from-env", "DATABASE_URL", "--cli"],
+        {
+          interactive: true,
+          schemaInspector,
+          runInstantCliBoundary: (input) => activateInstantCliBoundary({
+            ...input,
+            env: { ...process.env, SYNAPSOR_TENANT_ID: undefined },
+            resolveTrustedScopeFn: vi.fn(async () => {
+              throw new ExploreTrustedScopeError(
+                "Scoped Explore requires trusted SYNAPSOR_TENANT_ID outside model arguments.",
+                ["SYNAPSOR_TENANT_ID"],
+              );
+            }),
+            session: { promptText },
+          }),
+          runBoundaryReview,
+          runPostActivationHandoff,
+          openWorkbench: vi.fn(async () => 0),
+        },
+      )).resolves.toBe(0);
+
+      expect(promptText).not.toHaveBeenCalled();
+      expect(runBoundaryReview).not.toHaveBeenCalled();
+      expect(runPostActivationHandoff).not.toHaveBeenCalled();
+      expect(output).toContain("Missing operator binding: SYNAPSOR_TENANT_ID");
+      expect(output).toContain("Quick Start paused. Nothing was activated.");
+      expect(output).toContain("export SYNAPSOR_TENANT_ID='<trusted value>'");
+      expect(output).toContain("synapsor-runner start --from-env DATABASE_URL --cli");
+      expect(output).toContain("Workbench enforces the same requirement");
+      expect(output).not.toContain("Opening the detailed boundary editor");
       await expect(fs.access(path.join(
         projectRoot,
         ".synapsor/exploration-boundary.active.json",

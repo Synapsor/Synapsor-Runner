@@ -5,6 +5,9 @@ The canonical scope page is [Current Limitations](limitations.md).
 Current `1.7.0` scope:
 
 - local semantic MCP tools over Postgres/MySQL without raw SQL tools;
+- explicit source-server capability profiles: complete reviewed grammar on
+  PostgreSQL 13-18 and MySQL 8.x, a fail-closed limited grammar on MySQL 5.7,
+  and pre-authority refusal outside those lines or for MariaDB/unrecognized products;
 - one-command, resumable, review-by-exception onboarding from
   `DATABASE_URL` to a real safe read, bounded exploration, protected named
   tools, guided write proposals, and host-neutral MCP client setup;

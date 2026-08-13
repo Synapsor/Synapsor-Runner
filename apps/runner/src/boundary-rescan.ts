@@ -102,6 +102,12 @@ export type BoundaryRescanReport = {
   role_posture_fingerprint: `sha256:${string}`;
   previous_trusted_context_fingerprint?: `sha256:${string}`;
   trusted_context_fingerprint?: `sha256:${string}`;
+  previous_database_server_version?: string;
+  database_server_version?: string;
+  previous_database_server_tier?: "full" | "compatible_limited";
+  database_server_tier?: "full" | "compatible_limited";
+  database_server_authority_changed?: boolean;
+  database_server_authority_changes?: string[];
   schema_changed: boolean;
   role_posture_changed: boolean;
   trusted_context_changed?: boolean;
@@ -455,9 +461,9 @@ export async function readBoundaryRescanReport(
 export function formatBoundaryRescanReport(report: BoundaryRescanReport): string {
   if (!report.changed) {
     if (report.authoring_baseline_refreshed) {
-      return "Rescan complete: the reviewed schema, database-role posture, and trusted-context authority are unchanged. Runner repaired the private boundary-authoring baseline so new CLI and Workbench boundaries can use the configured trusted bindings. No active boundary or reviewed revision changed.";
+      return "Rescan complete: the reviewed schema, database-server capabilities, database-role posture, and trusted-context authority are unchanged. Runner repaired the private boundary-authoring baseline so new CLI and Workbench boundaries can use the configured trusted bindings. No active boundary or reviewed revision changed.";
     }
-    return "Rescan complete: the reviewed schema, database-role posture, and trusted-context authority are unchanged. No boundary revision was created.";
+    return "Rescan complete: the reviewed schema, database-server capabilities, database-role posture, and trusted-context authority are unchanged. No boundary revision was created.";
   }
   const lines = [
     "RESCAN RECONCILIATION",
@@ -473,6 +479,12 @@ export function formatBoundaryRescanReport(report: BoundaryRescanReport): string
       ? [
           "Trusted context changed:",
           ...(report.trusted_context_changes ?? []).map((change) => `  - ${change}`),
+        ]
+      : []),
+    ...(report.database_server_authority_changed
+      ? [
+          "Database server capability authority changed:",
+          ...(report.database_server_authority_changes ?? []).map((change) => `  - ${change}`),
         ]
       : []),
   ];
@@ -919,6 +931,36 @@ function rescanReport(input: {
     input.previousTrustedContext,
     input.configuredTrustedContext,
   );
+  const previousServerAuthority = input.oldLock.database_server_authority;
+  const currentServerAuthority = input.selectedBuild.lock.database_server_authority;
+  const serverAuthorityMetadataMissing = !input.oldLock.database_server_version
+    || !input.oldLock.database_server_tier
+    || !previousServerAuthority;
+  const serverAuthorityChanged = serverAuthorityMetadataMissing
+    || canonicalJsonDigest({
+      authority: previousServerAuthority ?? null,
+      tier: input.oldLock.database_server_tier ?? null,
+    }) !== canonicalJsonDigest({
+      authority: currentServerAuthority ?? null,
+      tier: input.selectedBuild.lock.database_server_tier ?? null,
+    });
+  const serverAuthorityChanges = serverAuthorityChanged
+    ? [
+        serverAuthorityMetadataMissing
+          ? `recorded detected server ${input.selectedBuild.lock.database_server_version ?? input.inspection.server_version} as the ${input.selectedBuild.lock.database_server_tier ?? "supported"} capability tier`
+          : previousServerAuthority && currentServerAuthority
+          ? `release line changed from ${previousServerAuthority.engine} ${previousServerAuthority.version_line} to ${currentServerAuthority.engine} ${currentServerAuthority.version_line}`
+          : previousServerAuthority
+            ? `the reviewed ${previousServerAuthority.engine} ${previousServerAuthority.version_line} capability profile is no longer available`
+            : `recorded the ${currentServerAuthority?.engine ?? input.inspection.engine} ${currentServerAuthority?.version_line ?? input.inspection.server_version} capability profile for this boundary`,
+        ...(currentServerAuthority?.features.automatic_numeric_bands === false
+          ? ["automatic numeric bands are unavailable on this release line and were removed from review authority"]
+          : []),
+        ...(currentServerAuthority?.features.schema_check_constraints === false
+          ? ["CHECK constraints cannot provide reviewed value vocabularies on this release line"]
+          : []),
+      ]
+    : [];
   const totals = {
     boundaries: input.entries.length,
     kept_confirmations: sum(input.entries, (entry) => entry.kept_confirmations),
@@ -945,11 +987,25 @@ function rescanReport(input: {
     role_posture_fingerprint: input.selectedBuild.lock.role_posture_fingerprint,
     previous_trusted_context_fingerprint: previousTrustedContextFingerprint,
     trusted_context_fingerprint: trustedContextFingerprint,
+    ...(input.oldLock.database_server_version
+      ? { previous_database_server_version: input.oldLock.database_server_version }
+      : {}),
+    ...(input.selectedBuild.lock.database_server_version
+      ? { database_server_version: input.selectedBuild.lock.database_server_version }
+      : {}),
+    ...(input.oldLock.database_server_tier
+      ? { previous_database_server_tier: input.oldLock.database_server_tier }
+      : {}),
+    ...(input.selectedBuild.lock.database_server_tier
+      ? { database_server_tier: input.selectedBuild.lock.database_server_tier }
+      : {}),
+    database_server_authority_changed: serverAuthorityChanged,
+    database_server_authority_changes: serverAuthorityChanges,
     schema_changed: schemaChanged,
     role_posture_changed: roleChanged,
     trusted_context_changed: trustedContextChanged,
     trusted_context_changes: trustedContextChanges,
-    changed: schemaChanged || roleChanged || trustedContextChanged || policyChanged,
+    changed: schemaChanged || roleChanged || trustedContextChanged || serverAuthorityChanged || policyChanged,
     boundaries: input.entries,
     totals,
     source_database_changed: false,

@@ -1,6 +1,10 @@
 import { CloudLinkedSynchronizer, bindPostgresTrustedScope, capabilityWritebackMode, createDefaultRuntimeStore, describeIsolationAssurance, preflightGeneratedAuthority, type RuntimeCapabilityConfig, type RuntimeConfig, type SourceIsolationAssurance } from "@synapsor-runner/mcp-server";
 import { createPostgresPool, inspectPostgresRlsTarget, type PostgresRlsOperation } from "@synapsor-runner/postgres";
 import {
+  databaseServerCompatibility,
+  databaseServerCompatibilityMessage,
+} from "@synapsor-runner/schema-inspector";
+import {
   ProposalStore
 } from "@synapsor-runner/proposal-store";
 import {
@@ -273,6 +277,25 @@ export async function localDoctor(args: string[]): Promise<number> {
       additionalSchemas,
     });
     inspectionsBySource.set(sourceName, inspections);
+    const inspectedServerVersions = new Map(
+      inspections.map((inspection) => [
+        `${inspection.engine}\u0000${inspection.server_version}`,
+        inspection,
+      ]),
+    );
+    for (const inspection of inspectedServerVersions.values()) {
+      const compatibility = databaseServerCompatibility(inspection);
+      checks.push({
+        name: `source:${sourceName}:server-version`,
+        ok: compatibility.supported,
+        level: compatibility.tier === "full"
+          ? "pass"
+          : compatibility.tier === "compatible_limited"
+            ? "warn"
+            : "fail",
+        message: databaseServerCompatibilityMessage(compatibility),
+      });
+    }
     if (source.database_scope?.mode === "postgres_rls") {
       checks.push(...await postgresRlsDoctorChecks({
         config: parsed,

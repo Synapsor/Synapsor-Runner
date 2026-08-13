@@ -1,5 +1,7 @@
 import { validateRunnerCapabilityConfig } from "@synapsor-runner/config";
 import {
+  databaseServerCompatibility,
+  databaseServerCompatibilityMessage,
   inspectDatabase,
   rolePostureFingerprint,
   type InspectEngine,
@@ -36,8 +38,10 @@ export async function inspect(args: string[]): Promise<number> {
     env: databaseInput.env,
   });
   if (args.includes("--json")) {
+    const serverCompatibility = databaseServerCompatibility(inspection);
     process.stdout.write(`${JSON.stringify({
       ...inspection,
+      server_compatibility: serverCompatibility,
       role_posture_fingerprint: rolePostureFingerprint(inspection),
     }, null, 2)}\n`);
   } else {
@@ -51,10 +55,13 @@ export async function inspect(args: string[]): Promise<number> {
 
 
 function formatSchemaInspectionForCli(inspection: SchemaInspection, databaseUrlEnv: string): string {
+  const serverCompatibility = databaseServerCompatibility(inspection);
   const lines = [
     "Synapsor schema inspection",
     `Engine: ${inspection.engine}`,
     `Server: ${inspection.server_version}`,
+    `Server support: ${serverCompatibility.tier === "full" ? "FULL" : serverCompatibility.tier === "compatible_limited" ? "COMPATIBLE - LIMITED GRAMMAR" : "UNSUPPORTED"}`,
+    `  ${databaseServerCompatibilityMessage(serverCompatibility)}`,
     `Current user: ${inspection.current_user}`,
     `Role posture fingerprint: ${rolePostureFingerprint(inspection)}`,
     `Schemas: ${inspection.schemas.join(", ") || "(none)"}`,

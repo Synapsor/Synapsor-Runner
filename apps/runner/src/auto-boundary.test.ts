@@ -15,6 +15,7 @@ import {
   buildAutoBoundary,
   compareGenerationLock,
   deactivateExplorationBoundary,
+  emptyReviewOverrides,
   explorationBoundaryCandidateDigest,
   loadActivatedExplorationBoundary,
   loadActivatedExplorationBoundaries,
@@ -52,11 +53,35 @@ describe("Auto Boundary compiler", () => {
     expect(first.exploration_boundary.activation).toBe("disabled_unreviewed");
     expect(first.exploration_boundary.spec_version).toBe(AUTO_BOUNDARY_SPEC_VERSION);
     expect(first.lock.spec_version).toBe(AUTO_BOUNDARY_SPEC_VERSION);
+    expect(first.lock.database_server_version).toBe("PostgreSQL 16");
+    expect(first.lock.database_server_tier).toBe("full");
+    expect(first.lock.database_server_authority).toMatchObject({
+      engine: "postgres",
+      version_line: "16",
+    });
+    expect(first.exploration_boundary).toMatchObject({
+      database_server_version: "PostgreSQL 16",
+      database_server_tier: "full",
+      database_server_authority: {
+        engine: "postgres",
+        version_line: "16",
+      },
+    });
     expect(AUTO_BOUNDARY_SPEC_VERSION).toBe("1.9.0");
     expect(first.contract).toEqual(compileAgentDsl(first.dsl));
     expect(first.contract_digest).toBe(canonicalJsonDigest(first.contract));
     expect(first.contract_digest).toBe(second.contract_digest);
     expect(first.lock.schema_fingerprint).toBe(second.lock.schema_fingerprint);
+    const legacyVersionLock = structuredClone(first.lock);
+    delete legacyVersionLock.database_server_version;
+    delete legacyVersionLock.database_server_tier;
+    delete legacyVersionLock.database_server_authority;
+    expect(compareGenerationLock(legacyVersionLock, inspection)).toMatchObject({
+      current: false,
+      changes: expect.arrayContaining([
+        "database server capability authority is not recorded",
+      ]),
+    });
     expect(first.exploration_boundary.budgets.max_queries_per_session).toBe(1000);
     expect(first.exploration_boundary.budgets.rate_limit_per_minute).toBe(120);
     expect(first.exploration_boundary.budgets.max_extracted_cells_per_session).toBe(4000);
@@ -72,6 +97,89 @@ describe("Auto Boundary compiler", () => {
     expect(JSON.stringify(first)).not.toContain("postgres://");
     expect(JSON.stringify(first)).not.toContain("tenant-acme");
     expect(JSON.stringify(first)).not.toContain("customer@example.com");
+    const alteredTier = structuredClone(first.exploration_boundary);
+    alteredTier.database_server_tier = "compatible_limited";
+    expect(() => reviewExplorationBoundaryCandidate(
+      first.exploration_boundary,
+      alteredTier,
+    )).toThrow(/database_server_tier cannot change during boundary review/i);
+  });
+
+  it("drafts MySQL 5.7 with limited grammar and still refuses an older server", () => {
+    const inspection = {
+      ...churnInspection(),
+      engine: "mysql" as const,
+      server_version: "5.7.44",
+    };
+    inspection.tables[0]!.columns.find((field) => field.name === "region")!.enum_values = [
+      "north",
+      "south",
+    ];
+    const compatible = buildAutoBoundary({
+      inspection,
+      project: projectSummary("/workspace/legacy-mysql"),
+      sourceEnv: "DATABASE_URL",
+    });
+    expect(compatible.lock.database_server_authority).toMatchObject({
+      engine: "mysql",
+      version_line: "5.7",
+      features: { automatic_numeric_bands: false },
+    });
+    expect(compatible.lock.database_server_tier).toBe("compatible_limited");
+    expect(compatible.exploration_boundary).toMatchObject({
+      database_server_version: "5.7.44",
+      database_server_tier: "compatible_limited",
+      database_server_authority: {
+        engine: "mysql",
+        version_line: "5.7",
+      },
+    });
+    expect(compatible.exploration_boundary.pack.resources[0]!.groupable_fields)
+      .toContain("region");
+    expect(compatible.exploration_boundary.pack.resources[0]!.groupable_fields)
+      .not.toContain("reason_category");
+    expect(compatible.exploration_boundary.pack.resources[0]!.filterable_fields)
+      .toHaveProperty("region");
+    expect(compatible.exploration_boundary.pack.resources[0]!.filterable_fields)
+      .not.toHaveProperty("reason_category");
+
+    const autoBandDefinition = {
+      field: "monthly_revenue_cents",
+      methods: ["quantile"] as Array<"quantile">,
+      min_buckets: 3,
+      max_buckets: 8,
+      label_style: "ordinal" as const,
+    };
+    const overrides = applyManagedBoundaryReviewDecision(emptyReviewOverrides(), {
+      kind: "auto_band",
+      resource_id: "public.subscriptions",
+      field: "monthly_revenue_cents",
+      definition: autoBandDefinition,
+      actor: "analytics-owner",
+      reason: "Exercise the release-specific authoring gate.",
+      decided_at: "2026-08-12T00:00:00.000Z",
+    });
+    expect(() => buildAutoBoundary({
+      inspection,
+      project: projectSummary("/workspace/legacy-mysql-auto-band"),
+      sourceEnv: "DATABASE_URL",
+      overrides,
+    })).toThrow(/automatic numeric bands.*unavailable.*5\.7/i);
+    const pruned = pruneAutoBoundaryReviewOverrides(inspection, overrides);
+    expect(pruned.overrides.resources["public.subscriptions"]?.auto_bands).toBeUndefined();
+    expect(pruned.removed).toContain(
+      "public.subscriptions.monthly_revenue_cents: reviewed automatic numeric bands are unavailable on 5.7.44",
+    );
+
+    expect(() => buildAutoBoundary({
+      inspection: {
+        ...churnInspection(),
+        engine: "mysql",
+        server_version: "5.6.51",
+      },
+      project: projectSummary("/workspace/unsupported-mysql"),
+      sourceEnv: "DATABASE_URL",
+    })).toThrow(/MySQL 5\.7, or MySQL 8\.x/i);
   });
 
   it("offers a hospital tenant column for review without silently inferring custom authority", () => {
@@ -2513,12 +2621,26 @@ describe("Auto Boundary compiler", () => {
       });
       expect(active).toMatchObject({
         deployment_profile: "production",
+        database_server_version: "PostgreSQL 16",
+        database_server_tier: "full",
+        database_server_authority: {
+          engine: "postgres",
+          version_line: "16",
+        },
         trusted_context: {
           provider: "http_claims",
           tenant_claim: "org_id",
           principal_claim: "sub",
         },
         activation: { state: "active", actor: "production-owner@example.test" },
+      });
+      await expect(loadActivatedExplorationBoundary(projectRoot)).resolves.toMatchObject({
+        database_server_version: "PostgreSQL 16",
+        database_server_tier: "full",
+        database_server_authority: {
+          engine: "postgres",
+          version_line: "16",
+        },
       });
     } finally {
       await fs.rm(projectRoot, { recursive: true, force: true });

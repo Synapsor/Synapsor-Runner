@@ -1054,6 +1054,59 @@ describe("Scoped Explore", () => {
     }
   });
 
+  it("returns the same canonical calendar bucket labels for PostgreSQL and MySQL driver values", async () => {
+    const fixture = await activatedFixture((candidate) => {
+      candidate.pack.resources[0]!.time_bucket_fields.churned_at = [
+        "hour", "day", "week", "month", "quarter", "year", "day_of_week",
+      ];
+    });
+    const responses: Array<Record<string, unknown>> = [
+      { time_bucket: new Date("2026-07-14T09:00:00.000Z"), measure_0: 6, __cohort_size: 6 },
+      { time_bucket: "2026-07-14", measure_0: 6, __cohort_size: 6 },
+      { time_bucket: new Date("2026-07-13T00:00:00.000Z"), measure_0: 6, __cohort_size: 6 },
+      { time_bucket: "2026-07-01", measure_0: 6, __cohort_size: 6 },
+      { time_bucket: new Date("2026-07-01T00:00:00.000Z"), measure_0: 6, __cohort_size: 6 },
+      { time_bucket: "2026-Q3", measure_0: 6, __cohort_size: 6 },
+      { time_bucket: 2026, measure_0: 6, __cohort_size: 6 },
+      { time_bucket: "2", measure_0: 6, __cohort_size: 6 },
+    ];
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: {
+        execute: async () => [],
+        executeBatch: async () => [[structuredClone(responses.shift()!)]],
+        close: async () => undefined,
+      },
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    const expected = [
+      ["hour", "2026-07-14T09:00:00Z"],
+      ["day", "2026-07-14"],
+      ["week", "2026-07-13"],
+      ["month", "2026-07-01"],
+      ["quarter", "2026-Q3"],
+      ["quarter", "2026-Q3"],
+      ["year", "2026"],
+      ["day_of_week", 2],
+    ] as const;
+    try {
+      for (const [bucket, label] of expected) {
+        const result = await runtime.explore({
+          kind: "aggregate",
+          resource: "public.subscriptions",
+          measures: [{ function: "count" }],
+          time_bucket: { field: "churned_at", bucket },
+          top_n: 10,
+        });
+        expect(result.data).toEqual([{ time_bucket: label, count: 6 }]);
+      }
+    } finally {
+      await runtime.close();
+    }
+  });
+
   it("emits no tenant predicate only for an explicit single-organization boundary", async () => {
     const fixture = await activatedFixture();
     const boundary = structuredClone(fixture.boundary);
@@ -3133,6 +3186,180 @@ describe("Scoped Explore", () => {
     expect(separateQuery!.sql.match(/(?:LEFT )?JOIN "public"\."order_events"/g)).toHaveLength(2);
   });
 
+  it("refuses an unsupported database server before compiling a local or HTTP query", async () => {
+    const fixture = await activatedFixture();
+    for (const transport of ["stdio", "streamable_http"] as const) {
+      if (transport === "streamable_http") {
+        await rewriteActiveBoundary(fixture.root, (active) => {
+          active.deployment_profile = "production";
+        });
+      }
+      let error: ScopedExploreError | undefined;
+      try {
+        await prepareScopedExplore({
+          projectRoot: fixture.root,
+          transport,
+          mode: transport === "stdio" ? "local_authoring" : "production_http",
+          env: fixture.env,
+          inspectDatabaseFn: async () => ({
+            ...fixture.inspection,
+            server_version: "PostgreSQL 12.22",
+          }),
+        });
+      } catch (caught) {
+        error = caught as ScopedExploreError;
+      }
+      expect(error?.code).toBe("EXPLORE_SERVER_VERSION_UNSUPPORTED");
+      expect(error?.message).toMatch(/PostgreSQL 13 through 18/i);
+    }
+  });
+
+  it("serves the reviewed MySQL 5.7 grammar but stales it on a release-line change", async () => {
+    const mysql57 = {
+      ...churnInspection(),
+      engine: "mysql" as const,
+      server_version: "5.7.44",
+    };
+    const fixture = await activatedFixture(undefined, mysql57);
+    const prepared = await prepareScopedExplore({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => mysql57,
+    });
+    expect(prepared.lock.database_server_authority).toMatchObject({
+      version_line: "5.7",
+      features: { automatic_numeric_bands: false },
+    });
+    expect(prepared.boundary).toMatchObject({
+      database_server_version: "5.7.44",
+      database_server_tier: "compatible_limited",
+      database_server_authority: {
+        engine: "mysql",
+        version_line: "5.7",
+      },
+    });
+    const resource = prepared.boundary.pack.resources[0]!;
+    expect(resource.auto_bands).toBeUndefined();
+    expect(resource.groupable_fields).not.toContain("region");
+    expect(resource.filterable_fields).not.toHaveProperty("region");
+    await expect(prepareScopedExplore({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => ({
+        ...mysql57,
+        server_version: "5.7.45",
+      }),
+    })).resolves.toMatchObject({
+      boundary: { database_server_version: "5.7.44" },
+      inspection: { server_version: "5.7.45" },
+    });
+
+    for (const transport of ["stdio", "streamable_http"] as const) {
+      if (transport === "streamable_http") {
+        await rewriteActiveBoundary(fixture.root, (active) => {
+          active.deployment_profile = "production";
+        });
+      }
+      await expect(prepareScopedExplore({
+        projectRoot: fixture.root,
+        transport,
+        mode: transport === "stdio" ? "local_authoring" : "production_http",
+        env: fixture.env,
+        inspectDatabaseFn: async () => ({
+          ...mysql57,
+          server_version: "8.0.42",
+        }),
+      })).rejects.toMatchObject({
+        code: "EXPLORE_LOCK_STALE",
+        message: expect.stringMatching(/release line changed from mysql 5\.7 to mysql 8\.x/i),
+      });
+    }
+  });
+
+  it("serves the full PostgreSQL 13 grammar but stales it on a major-version change", async () => {
+    const postgres13 = {
+      ...churnInspection(),
+      server_version: "PostgreSQL 13.23",
+    };
+    const fixture = await activatedFixture(undefined, postgres13);
+    const prepared = await prepareScopedExplore({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => postgres13,
+    });
+    expect(prepared.lock.database_server_authority).toMatchObject({
+      engine: "postgres",
+      version_line: "13",
+      features: {
+        automatic_numeric_bands: true,
+        schema_check_constraints: true,
+      },
+    });
+    expect(prepared.boundary).toMatchObject({
+      database_server_version: "PostgreSQL 13.23",
+      database_server_tier: "full",
+      database_server_authority: {
+        engine: "postgres",
+        version_line: "13",
+      },
+    });
+    await expect(prepareScopedExplore({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => ({
+        ...postgres13,
+        server_version: "PostgreSQL 13.24",
+      }),
+    })).resolves.toMatchObject({
+      boundary: { database_server_version: "PostgreSQL 13.23" },
+      inspection: { server_version: "PostgreSQL 13.24" },
+    });
+
+    for (const transport of ["stdio", "streamable_http"] as const) {
+      if (transport === "streamable_http") {
+        await rewriteActiveBoundary(fixture.root, (active) => {
+          active.deployment_profile = "production";
+        });
+      }
+      await expect(prepareScopedExplore({
+        projectRoot: fixture.root,
+        transport,
+        mode: transport === "stdio" ? "local_authoring" : "production_http",
+        env: fixture.env,
+        inspectDatabaseFn: async () => ({
+          ...postgres13,
+          server_version: "PostgreSQL 14.20",
+        }),
+      })).rejects.toMatchObject({
+        code: "EXPLORE_LOCK_STALE",
+        message: expect.stringMatching(/release line changed from postgres 13 to postgres 14/i),
+      });
+    }
+  });
+
+  it("refuses a served boundary whose activated artifact omits its reviewed server tier", async () => {
+    const fixture = await activatedFixture();
+    await rewriteActiveBoundary(fixture.root, (active) => {
+      delete active.database_server_version;
+      delete active.database_server_tier;
+      delete active.database_server_authority;
+    });
+
+    await expect(prepareScopedExplore({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+    })).rejects.toMatchObject({
+      code: "EXPLORE_LOCK_STALE",
+      message: expect.stringMatching(/activated boundary does not record.*database server capability tier/is),
+    });
+  });
+
   it("fails closed when a derived-scope prepared plan is missing authority dependencies", async () => {
     const fixture = await activatedDerivedScopeFixture();
     const prepared = await prepareScopedExplore({
@@ -3623,7 +3850,7 @@ describe("Scoped Explore", () => {
       });
       expect(result.data).toEqual([{
         region: "north",
-        time_bucket: "2026-06-02T00:00:00.000Z",
+        time_bucket: "2026-06-02",
         count: 8,
       }]);
       expect(result).toMatchObject({
@@ -5899,19 +6126,10 @@ async function rewriteActiveBoundary(
   const activePath = path.join(root, ".synapsor/exploration-boundary.active.json");
   const active = JSON.parse(await fs.readFile(activePath, "utf8")) as Record<string, any>;
   mutate(active);
+  const { activation: _activation, ...activeAuthority } = active;
   active.activation.digest = canonicalJsonDigest({
-    schema_version: active.schema_version,
+    ...activeAuthority,
     activation: "reviewed",
-    deployment_profile: active.deployment_profile,
-    source: active.source,
-    compiler_version: active.compiler_version,
-    spec_version: active.spec_version,
-    ...(active.reporting_timezone ? { reporting_timezone: active.reporting_timezone } : {}),
-    trusted_context: active.trusted_context,
-    generation_lock_fingerprint: active.generation_lock_fingerprint,
-    role_posture_fingerprint: active.role_posture_fingerprint,
-    pack: active.pack,
-    budgets: active.budgets,
   });
   await fs.writeFile(activePath, `${JSON.stringify(active, null, 2)}\n`, "utf8");
   const setPath = path.join(root, ".synapsor/exploration-boundaries.active.json");

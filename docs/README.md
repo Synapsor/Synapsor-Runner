@@ -155,6 +155,9 @@ no-database demo, wire your database, then read deeper concepts.
   policy outcomes, tenant handling, and hidden-field behavior.
 - [Bounded Aggregate Reads](aggregate-reads.md): fixed production scalar
   aggregates plus reviewed aggregate Explore.
+- [Database Server Compatibility](database-server-compatibility.md): supported
+  PostgreSQL/MySQL source lines, MySQL 5.7 capability gating, version-lock
+  behavior, and the exact live release matrix.
 - [Production Scoped Explore Over HTTP](production-scoped-explore-http.md):
   opt-in ad-hoc production analytics with verified JWT scope, per-principal and
   tenant budgets, atomic accounting, and the exact two-tool surface.

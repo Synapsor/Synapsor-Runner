@@ -1,7 +1,9 @@
 import { Pool } from "pg";
 import { describe, expect, it, vi } from "vitest";
 import {
+  assertSupportedDatabaseServerVersion,
   assessDirectWritePrerequisites,
+  databaseServerCompatibility,
   deriveSchemaDeclaredEnumValues,
   generateRunnerConfigFromSpec,
   inspectDatabase,
@@ -13,6 +15,83 @@ import {
 } from "./index.js";
 
 describe("schema inspector helpers", () => {
+  it("resolves full, compatible-limited, and unsupported database grammar tiers", () => {
+    expect(databaseServerCompatibility({
+      engine: "postgres",
+      server_version: "PostgreSQL 13.23 (Debian 13.23-1.pgdg13+1)",
+    })).toMatchObject({ supported: true, tier: "full", normalized_version: "13.23" });
+    for (const major of [14, 15, 16, 17, 18]) {
+      expect(databaseServerCompatibility({
+        engine: "postgres",
+        server_version: `PostgreSQL ${major}.1`,
+      })).toMatchObject({
+        supported: true,
+        tier: "full",
+        authority: { version_line: String(major) },
+      });
+    }
+    expect(databaseServerCompatibility({
+      engine: "mysql",
+      server_version: "8.0.42",
+    })).toMatchObject({
+      supported: true,
+      tier: "full",
+      normalized_version: "8.0",
+      authority: { version_line: "8.x" },
+    });
+    expect(databaseServerCompatibility({
+      engine: "mysql",
+      server_version: "MySQL 8.4",
+    })).toMatchObject({ supported: true, tier: "full", authority: { version_line: "8.x" } });
+    expect(databaseServerCompatibility({
+      engine: "postgres",
+      server_version: "PostgreSQL 12.22",
+    })).toMatchObject({ supported: false, reason: "below_minimum" });
+    expect(databaseServerCompatibility({
+      engine: "mysql",
+      server_version: "MySQL 5.7.44-log",
+    })).toMatchObject({
+      supported: true,
+      tier: "compatible_limited",
+      authority: {
+        version_line: "5.7",
+        features: {
+          automatic_numeric_bands: false,
+          schema_check_constraints: false,
+        },
+      },
+    });
+    expect(databaseServerCompatibility({
+      engine: "mysql",
+      server_version: "5.6.51",
+    })).toMatchObject({ supported: false, reason: "below_minimum" });
+    expect(databaseServerCompatibility({
+      engine: "postgres",
+      server_version: "PostgreSQL 19.0",
+    })).toMatchObject({ supported: false, reason: "above_tested_range" });
+    expect(databaseServerCompatibility({
+      engine: "mysql",
+      server_version: "9.0.1",
+    })).toMatchObject({ supported: false, reason: "above_tested_range" });
+    expect(databaseServerCompatibility({
+      engine: "mysql",
+      server_version: "5.8.0",
+    })).toMatchObject({ supported: false, reason: "unsupported_release_line" });
+    expect(databaseServerCompatibility({
+      engine: "mysql",
+      server_version: "10.11.11-MariaDB",
+    })).toMatchObject({ supported: false, reason: "unsupported_product" });
+
+    expect(() => assertSupportedDatabaseServerVersion({
+      engine: "mysql",
+      server_version: "5.6.51",
+    })).toThrow(/MySQL 5\.7, or MySQL 8\.x/i);
+    expect(assertSupportedDatabaseServerVersion({
+      engine: "mysql",
+      server_version: "5.7.44",
+    }).tier).toBe("compatible_limited");
+  });
+
   it("closes the PostgreSQL pool when its initial connection fails", async () => {
     const connect = vi.spyOn(Pool.prototype, "connect")
       .mockRejectedValue(new Error("transient connect failure"));
@@ -543,6 +622,7 @@ describe("schema inspector helpers", () => {
     };
     expect(summarizeInspection(inspection)).toContain("public.invoices");
     expect(summarizeInspection(inspection)).toContain("tenant=tenant_id");
+    expect(summarizeInspection(inspection)).toContain("Server support: FULL");
   });
 
   it("keeps advisory catalog index metadata outside reviewed schema fingerprints", () => {

@@ -680,6 +680,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     let activeBoundaries=[];
     let boundaryLibrary={selected_name:"",entries:[]};
     let boundaryRescanReport=null;
+    let databaseServerCompatibility=null;
     let candidateDigest;
 	    let currentView="overview";
 	    const validViews=new Set(["overview","exceptions","activate","explore","protect","action"]);
@@ -2370,6 +2371,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     function reviewedAnalyticsPanel(resource){
       const bands=resource.numeric_bands||[];
       const autoBands=resource.auto_bands||[];
+      const automaticBandsAvailable=databaseServerCompatibility?.authority?.features?.automatic_numeric_bands!==false;
       const measures=resource.derived_measures||[];
       const fields=reviewedAnalyticsFieldChoices(resource);
       const autoBandFields=(resource.aggregate_measures||[]).slice().sort();
@@ -2384,7 +2386,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const bandForm=fields.length
         ?'<div class="review-form"><h4>Add a fixed numeric band</h4><p>Choose a reviewed numeric field and fixed bucket boundaries. The AI receives only the saved name and labels; it cannot supply edges.</p><div class="form-grid"><label class="field">Numeric field<select id="analytics-band-field">'+fields.map(item=>'<option value="'+option(item)+'">'+esc(item.label)+'</option>').join("")+'</select></label><label class="field">Saved name<input id="analytics-band-name" type="text" maxlength="64" placeholder="order_value_band"></label><label class="field">Plain-language label<input id="analytics-band-label" type="text" maxlength="120" placeholder="Order value band"></label><label class="field">Bucket edges<input id="analytics-band-edges" type="text" maxlength="512" placeholder="1000, 5000"></label><label class="field">Labels, lowest to highest<input id="analytics-band-labels" type="text" maxlength="2048" placeholder="Under 10 | 10 to 49 | 50 or more"></label></div><div class="actions"><button id="save-numeric-band" type="button">Save numeric band</button></div></div>'
         :'<div class="risk high"><strong>No reviewed numeric field is available.</strong><p>Review a numeric aggregate field before defining a band.</p></div>';
-      const autoBandForm=autoBandFields.length
+      const autoBandForm=!automaticBandsAvailable
+        ?'<div class="risk"><strong>Automatic numeric bands are unavailable on '+esc(databaseServerCompatibility?.detected_version||"this database release")+'.</strong><p>MySQL 5.7 has no window functions or common table expressions for scoped edge computation. Fixed reviewed bands and Runner-side post-suppression calculations remain available. This unavailable grammar is not shown to the model.</p></div>'
+        :autoBandFields.length
         ?'<div class="review-form"><h4>Allow automatic numeric bands</h4><p>Approve a bounded method once. The AI may choose only the method and bucket count; Runner computes bands from trusted scoped rows and never exposes raw edges.</p><div class="form-grid"><label class="field">Numeric field<select id="analytics-auto-band-field">'+autoBandFields.map(field=>'<option value="'+esc(field)+'">'+esc(field)+'</option>').join("")+'</select></label><label class="field">Allowed method<select id="analytics-auto-band-method"><option value="quantile">Quantile only (recommended)</option><option value="equal_width">Equal width only</option><option value="both">Quantile or equal width</option></select></label><label class="field">Fewest buckets<input id="analytics-auto-band-min" type="number" min="2" max="16" value="3"></label><label class="field">Most buckets<input id="analytics-auto-band-max" type="number" min="2" max="16" value="10"></label><label class="field">Minimum bucket width<input id="analytics-auto-band-width" type="number" min="0" step="any" placeholder="Required for equal width" disabled></label><label class="field">Labels<select id="analytics-auto-band-label-style"><option value="ordinal">Ordinal (recommended; no data-derived numbers)</option><option value="rounded">Outward-rounded ranges</option></select></label><label class="field">Round labels outward to<input id="analytics-auto-band-round" type="number" min="0" step="any" placeholder="Required for rounded labels" disabled></label></div><div class="actions"><button id="save-auto-band" type="button">Save automatic-band policy</button></div></div>'
         :'<div class="risk high"><strong>No reviewed numeric field is available for automatic bands.</strong><p>Review a numeric aggregate field first.</p></div>';
       const derivedForm=operands.length
@@ -2896,6 +2900,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		      const resourceHeading=resource?.label
 		        ?'<h3>'+esc(resource.label)+'</h3><p><code>'+esc(selectedResource)+'</code></p>'
 		        :'<h3>'+esc(selectedResource)+'</h3>';
+		      const serverCompatibilityNotice=databaseServerCompatibility?.tier==="compatible_limited"
+		        ?'<div class="risk"><strong>Supported limited database grammar · '+esc(databaseServerCompatibility.detected_version)+'</strong><p>Text-like categorical fields need a bounded native ENUM before Runner offers grouping or categorical filtering. Automatic numeric bands are unavailable. Fixed bands, numeric/time analysis, derived scope, and Runner-side post-suppression calculations remain available.</p></div>'
+		        :"";
 		      const header='<div class="split-actions"><div>'+resourceHeading+'<p>'+(source
 	        ?'Choose one explicit tier per column. Visible values may enter model context. Runner-only raw fields remain usable: raw values stay local or become response-only tokens, while reviewed derived results remain available. Kept-out columns cannot be used.'
 		        :'<span class="badge bad">Blocked</span> Its columns remain visible for diagnosis, but no authority can be activated yet.')+'</p></div><div class="actions">'+privacyButton+'<button class="secondary" id="back-resources" type="button">Back to '+esc(reviewedCollectionLabel())+'</button></div></div>'
@@ -2932,7 +2939,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	        const scopeGuidance=review.scope_resolution_guidance;
 	        const scopeExplanation=scopeGuidance?'<div class="risk-list">'+scopeGuidance.why.map(reason=>'<div class="risk unresolved"><strong>Why this table is unavailable</strong><p>'+esc(reason)+'</p></div>').join("")+'</div><div class="band notice"><strong>What makes it addable</strong><ul>'+scopeGuidance.remediation.map(action=>'<li>'+esc(action)+'</li>').join("")+'</ul></div>':'';
 	        const blockedDetails='<details class="access-secondary" data-access-secondary open><summary>Resolve blocked access</summary><div class="risk-list">'+(review.blockers||[]).map(blocker=>'<div class="risk high"><strong>'+esc(blocker)+'</strong><p>This object stays unavailable; unrelated safe resources can continue.</p></div>').join("")+'</div>'+scopeExplanation+'<div class="scope-grid" style="margin-top:12px"><div><strong>Row identity candidates</strong><p>'+esc((review.primary_key?.candidates||[]).join(", ")||"none")+'</p></div><div><strong>Direct tenant columns</strong><p>'+esc((review.tenant_key?.candidates||[]).join(", ")||"none")+'</p></div><div><strong>Mandatory proven tenant paths</strong><p>'+esc(derivedTenantCandidates.join("; ")||"none")+'</p></div></div>'+resolution+'<p>Sensitive or unresolved fields kept unavailable: '+esc(kept.join(", ")||"none detected")+'.</p></details>';
-	        byId("resource-detail").innerHTML=header+blockedDetails+columnList;
+	        byId("resource-detail").innerHTML=header+serverCompatibilityNotice+blockedDetails+columnList;
 		      byId("back-resources").onclick=backFromResourceDetail;
 		      if(byId("open-resource-privacy"))byId("open-resource-privacy").onclick=()=>{
 		        const section=document.querySelector("[data-cohort-review-section]");
@@ -2991,7 +2998,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      const resourceSignoff=focusedAccessReview
 	        ?'<div class="band notice"><strong>One final confirmation, not one checkbox per table.</strong><p>Step 2 shows this table together with the complete boundary, then records every exact digest-bound decision at once.</p></div>'
 	        :'<div class="actions"><label class="check"><input id="resource-signoff" type="checkbox" data-review-decision="'+esc(selectedResource)+'" '+(resourceConfirmed?"checked":"")+(resource&&!unresolvedRelationship?"":" disabled")+'><span>I reviewed which records and fields this agent may use, including privacy limits and related data.</span></label></div>';
-	      byId("resource-detail").innerHTML=header+resourceMetadata+columnList+scopeReview+relationshipReview+cohortReview+reviewedAnalytics+advanced+resourceSignoff;
+	      byId("resource-detail").innerHTML=header+serverCompatibilityNotice+resourceMetadata+columnList+scopeReview+relationshipReview+cohortReview+reviewedAnalytics+advanced+resourceSignoff;
 	      byId("back-resources").onclick=backFromResourceDetail;
 	      if(byId("open-resource-privacy"))byId("open-resource-privacy").onclick=()=>{
 	        const section=document.querySelector("[data-cohort-review-section]");
@@ -3320,9 +3327,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         ?"Runner found reviewed inputs that need a disabled reconciled revision. Existing active authority remains unchanged."
         :baselineRefreshed
           ?"The reviewed database and authority are unchanged, but the private boundary-authoring baseline is stale. Repairing it restores new-boundary authoring in both CLI and Workbench without changing any reviewed revision."
-          :"The reviewed schema, database-role posture, trusted context, and private authoring baseline already match. Nothing needs to be applied.";
+          :"The reviewed schema, database-server capabilities, database-role posture, trusted context, and private authoring baseline already match. Nothing needs to be applied.";
       const facts=[
         ["Schema",diff&&diff.schema_changed?"Changed":"Unchanged"],
+        ["Database capabilities",diff&&diff.database_server_authority_changed?"Changed":"Unchanged"],
         ["Database role",diff&&diff.role_posture_changed?"Changed":"Unchanged"],
         ["Trusted context",diff&&diff.trusted_context_changed?"Changed":"Unchanged"],
         ["Boundaries checked",totals.boundaries??0],
@@ -3335,6 +3343,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const trustedChanges=rescanList(diff&&diff.trusted_context_changes);
       const trustedMarkup=trustedChanges.length
         ?'<h4>Trusted-context changes</h4><ul>'+trustedChanges.map(change=>'<li>'+esc(change)+'</li>').join("")+'</ul>'
+        :"";
+      const serverChanges=rescanList(diff&&diff.database_server_authority_changes);
+      const serverMarkup=serverChanges.length
+        ?'<h4>Database capability changes</h4><ul>'+serverChanges.map(change=>'<li>'+esc(change)+'</li>').join("")+'</ul>'
         :"";
       const boundaryRows=rescanList(diff&&diff.boundaries).map(boundary=>{
         const details=rescanBoundaryDetails(boundary);
@@ -3356,7 +3368,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         :baselineRefreshed
           ?"Applying repairs private authoring state only. No boundary review is required."
           :"No generated file, active boundary, protected capability, ledger record, or source row changed.";
-      return '<h3>'+esc(title)+'</h3><p>'+esc(summary)+'</p><div class="result-table"><table><tbody>'+factRows+'</tbody></table></div>'+trustedMarkup+boundariesMarkup+'<p>'+esc(consequence)+'</p>'+action;
+      return '<h3>'+esc(title)+'</h3><p>'+esc(summary)+'</p><div class="result-table"><table><tbody>'+factRows+'</tbody></table></div>'+trustedMarkup+serverMarkup+boundariesMarkup+'<p>'+esc(consequence)+'</p>'+action;
     }
 
     async function previewProjectRescan(){
@@ -6153,6 +6165,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		        entries:[]
 		      };
 	      boundaryRescanReport=payload.boundary_rescan_report||null;
+	      databaseServerCompatibility=payload.database_server_compatibility||null;
 	      if(accessBaselineColumns===null)accessBaselineColumns=accessColumnSnapshot(candidate);
 	      reviewReport=payload.review;
 	      activeBoundary=payload.active;

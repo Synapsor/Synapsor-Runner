@@ -1007,6 +1007,27 @@ schema. Nothing is cached between queries. Draft and rescan continue to inspect
 the whole schema because they must discover new tables, columns, and paths;
 legacy locks also retain the whole-schema compatibility path.
 
+### Database Capability Profiles
+
+Inspection resolves one server capability profile before review. PostgreSQL
+13-18 and MySQL 8.x receive the complete grammar. MySQL 5.7 receives a supported
+limited profile: automatic bands and `CHECK`-derived categorical vocabularies
+are unavailable, while native `ENUM`, fixed bands, dispersion, relative time,
+relationships, trusted scope, and Runner-side post-suppression metrics remain
+available. PostgreSQL below 13 or above 18, MySQL below 5.7 or above major 8,
+MariaDB, and unrecognized products are refused.
+
+This filtering is part of authoring authority. Unsupported controls are absent
+from CLI and Workbench, absent from `app.describe_data`, and cannot enter the
+activated pack. The compiler therefore never receives a reviewed feature and
+then silently changes its meaning for an older server. The exact detected
+version, resolved tier, and stable capability line are immutable fields in the
+draft, generation lock, and activated boundary. A major/tier change requires
+reconciling rescan and explicit activation; a patch update in
+the same line does not create false drift. See
+[Database Server Compatibility](database-server-compatibility.md) for the
+tested matrix and operational support distinction.
+
 ### Reviewed Automatic Numeric Bands
 
 A reviewer may opt one model-visible numeric measure into automatic grouping.

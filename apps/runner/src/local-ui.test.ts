@@ -3420,11 +3420,11 @@ export default defineCapability({
     }
   });
 
-  it("keeps MySQL trusted bindings startable after a Workbench review reset", async () => {
+  it("keeps MySQL 5.7 trusted bindings startable while Workbench hides unsupported auto bands", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-mysql-baseline-"));
     const inspection = boundaryReviewInspection();
     inspection.engine = "mysql";
-    inspection.server_version = "MySQL 8.4";
+    inspection.server_version = "MySQL 5.7.44-log";
     inspection.schemas = ["clinicdb"];
     const table = inspection.tables[0]!;
     table.schema = "clinicdb";
@@ -3449,7 +3449,21 @@ export default defineCapability({
         large_or_binary: false,
       },
     });
-    table.suggestions.default_visible_columns.push("attending");
+    table.columns.push({
+      name: "duration_ms",
+      data_type: "integer",
+      nullable: false,
+      generated: false,
+      ordinal_position: table.columns.length + 1,
+      suggestions: {
+        tenant: false,
+        conflict: false,
+        sensitive: false,
+        immutable: false,
+        large_or_binary: false,
+      },
+    });
+    table.suggestions.default_visible_columns.push("attending", "duration_ms");
     const build = buildAutoBoundary({
       inspection,
       project: {
@@ -3491,6 +3505,46 @@ export default defineCapability({
       await postJson(`http://${server.host}:${server.port}/api/project/start-over`, headers, {
         confirmation: "START OVER REVIEW",
       });
+      const boundaryState = await getJson(
+        `http://${server.host}:${server.port}/api/boundary`,
+        headers,
+      );
+      expect(boundaryState.database_server_compatibility).toMatchObject({
+        tier: "compatible_limited",
+        detected_version: "MySQL 5.7.44-log",
+        authority: {
+          version_line: "5.7",
+          features: { automatic_numeric_bands: false },
+        },
+      });
+      const autoBandResponse = await fetch(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        {
+          method: "POST",
+          headers: {
+            ...headers,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            kind: "auto_band",
+            resource_id: "clinicdb.members",
+            field: "duration_ms",
+            definition: {
+              field: "duration_ms",
+              methods: ["quantile"],
+              min_buckets: 3,
+              max_buckets: 8,
+              label_style: "ordinal",
+            },
+            actor: "workbench-reviewer",
+            reason: "Workbench must refuse unavailable grammar before review authority changes.",
+          }),
+        },
+      );
+      expect(autoBandResponse.ok).toBe(false);
+      await expect(autoBandResponse.text()).resolves.toMatch(
+        /automatic numeric bands.*unavailable.*MySQL 5\.7/i,
+      );
       const baseline = JSON.parse(await fs.readFile(
         path.join(tempDir, ".synapsor/auto-boundary-policy-baseline.json"),
         "utf8",

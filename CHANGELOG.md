@@ -101,6 +101,17 @@
   renders that same reconciliation report shape, distinguishes a private
   baseline repair from a reviewable authority change, and keeps its exact
   preview confirmation stable immediately after a review reset.
+- Versions source-database grammar authority instead of assuming the newest
+  engine. PostgreSQL 13-18 and MySQL 8.x expose the complete reviewed Explore
+  grammar; MySQL 5.7 uses a supported limited tier with automatic bands and
+  unreliable `CHECK`-derived vocabularies omitted in CLI, Workbench, locks, and
+  MCP discovery. Below-floor PostgreSQL/MySQL and MariaDB fail before review or
+  execution. Future unverified majors also fail instead of inheriting authority
+  accidentally. Every draft, generation lock, and activated boundary records
+  the exact detected version, resolved tier, and stable grammar authority;
+  PostgreSQL major or MySQL 5.7/8.x changes fail closed until reconciling rescan
+  and re-activation. The release matrix runs PostgreSQL 12 refusal, PostgreSQL
+  13-18, MySQL 5.7/8.0/8.4, local MCP, and JWT-authenticated production HTTP.
 
 Prepared package versions: `@synapsor/runner@1.7.0` and the optional
 `synapsor-runner@1.7.0` command alias, plus `@synapsor/spec@1.9.0` and

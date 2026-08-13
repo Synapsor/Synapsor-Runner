@@ -228,7 +228,7 @@ export async function createSavedBoundary(input: BoundaryLibraryContext & {
   const compatibleActive = findCompatibleActiveBoundary(input.draft, active);
   if (active.length && !compatibleActive) {
     throw new Error(
-      "A new boundary cannot join the current Ask session because its generated source or trusted scope differs from the active reviewed boundaries.",
+      "A new boundary cannot join the current Ask session because its generated source, trusted scope, or database capability tier differs from the active reviewed boundaries. Rescan stale boundaries before adding another one.",
     );
   }
   if (compatibleActive) {
@@ -292,9 +292,15 @@ function findCompatibleActiveBoundary(
   active: Awaited<ReturnType<typeof readActiveBoundaryIdentities>>,
 ): ActivatedExplorationBoundary | undefined {
   const trustedContextDigest = canonicalJsonDigest(draft.trusted_context);
+  const databaseServerAuthorityDigest = canonicalJsonDigest(
+    draft.database_server_authority ?? null,
+  );
   return active.find(({ boundary }) =>
     boundary.source === draft.source
-    && canonicalJsonDigest(boundary.trusted_context) === trustedContextDigest)?.boundary;
+    && canonicalJsonDigest(boundary.trusted_context) === trustedContextDigest
+    && boundary.database_server_tier === draft.database_server_tier
+    && canonicalJsonDigest(boundary.database_server_authority ?? null)
+      === databaseServerAuthorityDigest)?.boundary;
 }
 
 export async function switchSavedBoundary(input: BoundaryLibraryContext & {
@@ -917,7 +923,19 @@ async function readActiveBoundaryProgress(
     source: active.source,
     compiler_version: active.compiler_version,
     spec_version: active.spec_version,
+    ...(active.database_server_version
+      ? { database_server_version: active.database_server_version }
+      : {}),
+    ...(active.database_server_tier
+      ? { database_server_tier: active.database_server_tier }
+      : {}),
+    ...(active.database_server_authority
+      ? { database_server_authority: structuredClone(active.database_server_authority) }
+      : {}),
     ...(active.reporting_timezone ? { reporting_timezone: active.reporting_timezone } : {}),
+    ...(active.organization_scope
+      ? { organization_scope: structuredClone(active.organization_scope) }
+      : {}),
     trusted_context: structuredClone(active.trusted_context),
     generation_lock_fingerprint: active.generation_lock_fingerprint,
     role_posture_fingerprint: active.role_posture_fingerprint,

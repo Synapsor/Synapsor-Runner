@@ -3,7 +3,10 @@ import path from "node:path";
 import { Buffer } from "node:buffer";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
+  assertDatabaseGrammarFeature,
+  databaseServerCompatibility,
   inspectDatabase,
+  type DatabaseServerCompatibility,
   type SchemaInspection,
 } from "@synapsor-runner/schema-inspector";
 import {
@@ -320,6 +323,7 @@ export type BoundaryResourceReviewView = {
   generated_candidate: ExplorationBoundaryDraft["pack"]["resources"][number] | null;
   bindings: BoundaryReviewMutationBindings;
   reviewed_budgets?: ExplorationBoundaryDraft["budgets"];
+  database_server_compatibility?: DatabaseServerCompatibility;
   source_database_changed: false;
 };
 
@@ -421,6 +425,14 @@ export async function inspectBoundaryResourceReview(
     generated_candidate: generatedCandidate,
     bindings: reviewBindings(state),
     reviewed_budgets: structuredClone(state.candidate.budgets),
+    ...(state.lock.database_server_version
+      ? {
+          database_server_compatibility: databaseServerCompatibility({
+            engine: state.lock.engine,
+            server_version: state.lock.database_server_version,
+          }),
+        }
+      : {}),
     source_database_changed: false,
   };
 }
@@ -579,6 +591,9 @@ export async function prepareBoundaryResourceReviewMutation(
     schema: state.lock.inspected_schema,
     env: process.env,
   });
+  if (request.auto_band && request.auto_band.remove !== true) {
+    assertDatabaseGrammarFeature(inspection, "automatic_numeric_bands");
+  }
   assertCurrentInspectedResource(inspection, request.resource_id);
   const project = await detectProjectContext(projectRoot);
   const evidence = await loadStructuredProjectEvidence(project);
@@ -721,6 +736,11 @@ export async function prepareBoundaryReviewMutationBatch(
     schema: state.lock.inspected_schema,
     env: process.env,
   });
+  for (const request of requests) {
+    if (request.auto_band && request.auto_band.remove !== true) {
+      assertDatabaseGrammarFeature(inspection, "automatic_numeric_bands");
+    }
+  }
   for (const request of requests) assertCurrentInspectedResource(inspection, request.resource_id);
   const project = await detectProjectContext(projectRoot);
   const evidence = await loadStructuredProjectEvidence(project);

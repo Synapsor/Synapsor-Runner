@@ -179,6 +179,10 @@ truth for the model-facing tools.
   only the explicitly reviewed authoring cube described above. Named running,
   lag, rank, moving-average, and share operations run after suppression and do
   not accept SQL or window definitions from the model.
+- PostgreSQL older than 13 or newer than 18, MySQL older than 5.7 or newer than
+  major 8, MariaDB, and unrecognized MySQL-compatible products. MySQL 5.7 is supported only through its explicit
+  limited grammar tier; technical compatibility does not imply current vendor
+  security support. See [Database Server Compatibility](database-server-compatibility.md).
 - Automatic policy widening or activation from graduated-trust metrics.
 - Immutable/WORM compliance storage from the local report exporter.
 

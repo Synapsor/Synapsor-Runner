@@ -146,15 +146,20 @@ authority explicitly.
 
 ### Database Compatibility For Reviewed Analytics
 
-The 1.7.0 release gates execute these analytics on PostgreSQL 16 and MySQL 8.
-Those are the documented tested database lines for the expanded grammar; this
-release makes no broader server-version claim. Standard deviation and variance
-compile to each engine's `STDDEV_*` and `VAR_*` aggregate functions. Calendar
-grouping and correlated child counts compile through engine-specific fixed SQL.
-Automatic quantiles use each engine's `CUME_DIST` window function inside a
-scoped CTE; equal-width bands use scoped `MIN`/`MAX` bounds. This is one reason
-the compatibility claim is limited to PostgreSQL 16 and MySQL 8 rather than
-older server releases.
+Runner supports the complete reviewed grammar on PostgreSQL 13-18 and MySQL 8.x.
+MySQL 5.7 is a supported limited tier: dispersion, fixed bands, calendar/relative
+time, and post-suppression metrics remain available, while automatic bands and
+`CHECK`-derived text vocabularies are omitted during review. Native MySQL
+`ENUM` fields remain bounded categorical dimensions. PostgreSQL 12 and older,
+MySQL older than 5.7, future unverified majors, and MariaDB are refused before
+reviewed authority can run.
+
+Standard deviation and variance compile to each engine's `STDDEV_*` and
+`VAR_*` aggregate functions. Calendar grouping and correlated child counts
+compile through engine-specific fixed SQL. Automatic bands use a scoped
+`CUME_DIST` CTE only on a server profile that supports it; a MySQL 5.7 boundary
+cannot contain or advertise that grammar. See the exact live versions and drift
+rules in [Database Server Compatibility](database-server-compatibility.md).
 Post-suppression running totals, lag changes, ranks, moving averages, and shares
 run in Runner after bounded groups are returned, so they do not depend on
 database window-function support. Already-correct plans have one shared

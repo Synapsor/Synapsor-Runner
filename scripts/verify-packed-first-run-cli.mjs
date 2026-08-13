@@ -51,14 +51,15 @@ try {
     assert.ok(resource, `${fixture.engine} did not activate ${fixture.resource}`);
     assert.equal(resource.primary_key, fixture.identity);
     assert.equal(resource.tenant_key, fixture.tenant);
-    assert.equal(active.deployment_profile, "staging");
+    assert.equal(active.deployment_profile, "development");
     assertProjectHasNoCredential(projectRoot, fixture.databaseUrl);
 
     results.push({
       engine: fixture.engine,
       fresh_project: true,
       packed_artifact: true,
-      blocked_scope_resolved_inline: true,
+      missing_trusted_scope_paused_with_guidance: true,
+      trusted_scope_supplied_outside_model: true,
       column_review_remained_open: true,
       boundary_activated: true,
       reached_model_choice: true,
@@ -135,34 +136,48 @@ async function resetFixture(fixture) {
 
 async function runFirstUseJourney({ cli, fixture, projectRoot }) {
   const started = Date.now();
-  const env = {
+  const baseEnv = {
     ...process.env,
     DATABASE_URL: fixture.databaseUrl,
     TERM: "xterm-256color",
     COLUMNS: "120",
     LINES: "40",
   };
-  delete env.SYNAPSOR_TENANT_ID;
-  delete env.SYNAPSOR_PRINCIPAL;
-  delete env.OPENAI_API_KEY;
-  delete env.ANTHROPIC_API_KEY;
-  delete env.NO_COLOR;
+  delete baseEnv.SYNAPSOR_TENANT_ID;
+  delete baseEnv.SYNAPSOR_PRINCIPAL;
+  delete baseEnv.OPENAI_API_KEY;
+  delete baseEnv.ANTHROPIC_API_KEY;
+  delete baseEnv.NO_COLOR;
 
   const command = `stty cols 120 rows 40; ${shellQuote(cli)} start --from-env DATABASE_URL --cli`;
-  const child = spawn("script", ["-qefc", command, "/dev/null"], {
-    cwd: projectRoot,
-    env,
-    stdio: ["pipe", "pipe", "pipe"],
-    detached: true,
-  });
-  let output = "";
-  let stderr = "";
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  child.stdout.on("data", (chunk) => { output += chunk; });
-  child.stderr.on("data", (chunk) => { stderr += chunk; });
+  const missingBindingSession = spawnCliSession({ command, projectRoot, env: baseEnv });
+  await waitForValue(
+    () => /Missing operator binding:\s*SYNAPSOR_TENANT_ID/i.test(missingBindingSession.transcript())
+      ? true
+      : undefined,
+    60_000,
+    () => `${fixture.engine} first-run did not identify its missing trusted binding.\n${tail(missingBindingSession.transcript())}`,
+  );
+  assert.match(missingBindingSession.transcript(), /Quick Start paused\. Nothing was activated\./i);
+  assert.match(missingBindingSession.transcript(), /export SYNAPSOR_TENANT_ID='<trusted value>'/i);
+  assert.match(missingBindingSession.transcript(), /start --from-env DATABASE_URL --cli/i);
+  assert.doesNotMatch(missingBindingSession.transcript(), /Opening the detailed boundary editor/i);
+  const paused = await waitForExit(
+    missingBindingSession.child,
+    15_000,
+    () => `${fixture.engine} first-run did not pause cleanly for its missing trusted binding.\n${tail(missingBindingSession.transcript())}`,
+  );
+  assert.equal(paused.code, 0, `${fixture.engine} missing-binding pause exited with ${paused.code ?? paused.signal}`);
+  await assert.rejects(
+    fsp.access(path.join(projectRoot, ".synapsor", "exploration-boundary.active.json")),
+    (error) => error?.code === "ENOENT",
+    `${fixture.engine} activated authority without its trusted tenant binding`,
+  );
 
-  const transcript = () => stripTerminal(`${output}\n${stderr}`);
+  const env = { ...baseEnv, SYNAPSOR_TENANT_ID: "acme" };
+  const session = spawnCliSession({ command, projectRoot, env });
+  const { child, transcript } = session;
+
   const checkpoint = async (pattern, label, timeoutMs = 60_000) => {
     await waitForValue(
       () => pattern.test(transcript()) ? true : undefined,
@@ -172,19 +187,20 @@ async function runFirstUseJourney({ cli, fixture, projectRoot }) {
   };
 
   try {
-    await checkpoint(/Quick Start could not prove a conservative connected starter boundary/i, "blocked Quick Start handoff");
-    await checkpoint(/blocked:\s*1\s+issue/i, "blocked table row");
+    await checkpoint(/YOUR FIRST SAFE QUESTION/i, "resumed Quick Start review");
+    await checkpoint(/ENTER Start asking\s+E Change access/i, "Quick Start decision");
+    child.stdin.write("e\r");
+
+    await checkpoint(new RegExp(`EDIT ACCESS - reviewed_staging[\\s\\S]*${escapeRegExp(fixture.resource)}`), "focused boundary editor");
     child.stdin.write("\r");
 
-    await checkpoint(new RegExp(`RESOLVE TABLE ACCESS - ${escapeRegExp(fixture.resource)}`), "inline scope resolver");
-    await checkpoint(/Record ID\s+id[\s\S]*Tenant isolation\s+tenant_id/i, "source-inspected scope choices");
+    await checkpoint(new RegExp(`REVIEW COLUMNS - ${escapeRegExp(fixture.resource)}`), "column review");
     child.stdin.write("\r");
 
-    await checkpoint(new RegExp(`REVIEW COLUMNS - ${escapeRegExp(fixture.resource)}`), "column review after scope resolution");
-    await checkpoint(/Saved structural review[\s\S]*Agent authority activated: no/i, "disabled structural decision");
-    child.stdin.write("\r");
-
-    await checkpoint(/draft changed - activate to use/i, "parent table editor after column review");
+    await checkpoint(
+      /Agent authority (?:is unchanged|changed: no)\.[\s\S]*EDIT ACCESS - reviewed_staging/i,
+      "parent table editor after column review",
+    );
     child.stdin.write("c");
 
     await checkpoint(/REVIEW EXACT BOUNDARY/i, "whole-boundary review");
@@ -217,6 +233,24 @@ async function runFirstUseJourney({ cli, fixture, projectRoot }) {
       });
     }
   }
+}
+
+function spawnCliSession({ command, projectRoot, env }) {
+  const child = spawn("script", ["-qefc", command, "/dev/null"], {
+    cwd: projectRoot,
+    env,
+    stdio: ["pipe", "pipe", "pipe"],
+    detached: true,
+  });
+  let output = "";
+  let stderr = "";
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (chunk) => { output += chunk; });
+  child.stderr.on("data", (chunk) => { stderr += chunk; });
+
+  const transcript = () => stripTerminal(`${output}\n${stderr}`);
+  return { child, transcript };
 }
 
 function sourceSnapshot(fixture) {

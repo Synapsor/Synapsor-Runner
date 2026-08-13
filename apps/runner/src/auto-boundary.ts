@@ -5,10 +5,14 @@ import { Buffer } from "node:buffer";
 import { compileAgentDsl, formatAgentDsl } from "@synapsor/dsl";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
+  assertDatabaseGrammarFeature,
+  assertSupportedDatabaseServerVersion,
+  databaseServerCompatibility,
   rolePostureFingerprint,
   schemaFingerprintForInspection,
   classifySensitivity,
   type SchemaInspection,
+  type DatabaseServerAuthority,
   type SensitivityClassification,
   type TableInfo,
 } from "@synapsor-runner/schema-inspector";
@@ -464,6 +468,12 @@ export type ExplorationBoundaryDraft = {
   source: string;
   compiler_version: string;
   spec_version: string;
+  /** Exact server version observed when this boundary authority was generated. */
+  database_server_version?: string;
+  /** Stable supported grammar tier resolved from the detected server release. */
+  database_server_tier?: "full" | "compatible_limited";
+  /** Release-line capability profile that constrains reviewable grammar. */
+  database_server_authority?: DatabaseServerAuthority;
   /**
    * New generated boundaries bind one reporting timezone into their reviewed
    * authority. It remains optional solely so pre-1.6.6 active-boundary
@@ -592,6 +602,12 @@ export type GenerationLock = {
   compiler_version: string;
   spec_version: string;
   engine: SchemaInspection["engine"];
+  /** Exact source server version observed when this lock was generated. */
+  database_server_version?: string;
+  /** Stable supported grammar tier resolved from the detected server release. */
+  database_server_tier?: "full" | "compatible_limited";
+  /** Binds reviewed grammar availability to one database release line. */
+  database_server_authority?: DatabaseServerAuthority;
   source_env: string;
   inspected_schema?: string;
   schema_fingerprint: `sha256:${string}`;
@@ -844,6 +860,7 @@ export function pruneAutoBoundaryReviewOverrides(
   } = {},
 ): { overrides: AutoBoundaryReviewOverrides; removed: string[] } {
   const current = normalizeAutoBoundaryReviewOverrides(input);
+  const serverAuthority = databaseServerCompatibility(inspection).authority;
   const tables = new Map(inspection.tables.map((table) => [`${table.schema}.${table.name}`, table]));
   const resources: AutoBoundaryReviewOverrides["resources"] = {};
   const removed: string[] = [];
@@ -942,6 +959,12 @@ export function pruneAutoBoundaryReviewOverrides(
       AutoBoundaryReviewOverrides["resources"][string]["auto_bands"]
     > = {};
     for (const [field, autoBandDecision] of Object.entries(decision.auto_bands ?? {})) {
+      if (serverAuthority?.features.automatic_numeric_bands === false) {
+        removed.push(
+          `${resourceId}.${field}: reviewed automatic numeric bands are unavailable on ${inspection.server_version}`,
+        );
+        continue;
+      }
       if (!columns.has(field)) {
         removed.push(`${resourceId}.${field}: reviewed auto-band field no longer exists`);
         continue;
@@ -1068,6 +1091,18 @@ export function pruneAutoBoundaryReviewOverrides(
 }
 
 export function buildAutoBoundary(input: BuildAutoBoundaryInput): AutoBoundaryBuild {
+  const compatibility = assertSupportedDatabaseServerVersion(input.inspection);
+  if (!compatibility.authority) {
+    throw new Error("The compatible database server did not produce a grammar authority profile.");
+  }
+  if (!compatibility.authority.features.automatic_numeric_bands
+    && Object.values(input.overrides?.resources ?? {}).some((resource) =>
+      Object.keys(resource.auto_bands ?? {}).length > 0)) {
+    assertDatabaseGrammarFeature(
+      compatibility.authority,
+      "automatic_numeric_bands",
+    );
+  }
   const build = buildAutoBoundaryOnce(input);
   const hasPolicy = Object.keys(build.overrides.resources).length > 0;
   const baseline = hasPolicy
@@ -1159,6 +1194,10 @@ function configuredTrustedContextForBuild(
 }
 
 function buildAutoBoundaryOnce(input: BuildAutoBoundaryInput): AutoBoundaryBuildCore {
+  const serverCompatibility = assertSupportedDatabaseServerVersion(input.inspection);
+  if (!serverCompatibility.authority || serverCompatibility.tier === "unsupported") {
+    throw new Error("The compatible database server did not produce a grammar authority profile.");
+  }
   const parsedEvidence = input.parsedEvidence ?? [];
   const existingContracts = input.existingContracts ?? [];
   const overrides = normalizeAutoBoundaryReviewOverrides(input.overrides);
@@ -1201,6 +1240,9 @@ function buildAutoBoundaryOnce(input: BuildAutoBoundaryInput): AutoBoundaryBuild
     compiler_version: AUTO_BOUNDARY_COMPILER_VERSION,
     spec_version: AUTO_BOUNDARY_SPEC_VERSION,
     engine: input.inspection.engine,
+    database_server_version: input.inspection.server_version,
+    database_server_tier: serverCompatibility.tier,
+    database_server_authority: serverCompatibility.authority,
     source_env: input.sourceEnv,
     ...(input.inspectedSchema ? { inspected_schema: input.inspectedSchema } : {}),
     schema_fingerprint: schemaFingerprint,
@@ -1224,6 +1266,9 @@ function buildAutoBoundaryOnce(input: BuildAutoBoundaryInput): AutoBoundaryBuild
     {
       deploymentProfile: input.deploymentProfile ?? "staging",
       configuredTrustedContext,
+      databaseServerVersion: input.inspection.server_version,
+      databaseServerTier: serverCompatibility.tier,
+      databaseServerAuthority: serverCompatibility.authority,
       ...(organizationScope ? { organizationScope } : {}),
     },
   );
@@ -1583,7 +1628,25 @@ export function compareGenerationLock(
 } {
   const schemaFingerprint = schemaFingerprintForInspection(inspection);
   const roleFingerprint = rolePostureFingerprint(inspection);
+  const currentServerCompatibility = databaseServerCompatibility(inspection);
+  const currentServerAuthority = currentServerCompatibility.authority;
+  const reviewedServerAuthority = lock.database_server_authority;
+  const serverAuthorityMissing = !lock.database_server_version
+    || !lock.database_server_tier
+    || !reviewedServerAuthority;
+  const serverAuthorityChanged = !serverAuthorityMissing
+    && (canonicalJsonDigest(currentServerAuthority ?? null)
+      !== canonicalJsonDigest(reviewedServerAuthority)
+      || currentServerCompatibility.tier !== lock.database_server_tier);
+  const serverAuthorityChanges = serverAuthorityMissing
+    ? ["database server capability authority is not recorded"]
+    : serverAuthorityChanged
+      ? [
+        `database server release line changed from ${reviewedServerAuthority.engine} ${reviewedServerAuthority.version_line} to ${currentServerAuthority ? `${currentServerAuthority.engine} ${currentServerAuthority.version_line}` : inspection.server_version}`,
+      ]
+      : [];
   const changes = [
+    ...serverAuthorityChanges,
     ...(schemaFingerprint !== lock.schema_fingerprint ? ["schema metadata changed"] : []),
     ...(roleFingerprint !== lock.role_posture_fingerprint ? ["database role, grants, ownership, or RLS posture changed"] : []),
     ...(lock.compiler_version !== AUTO_BOUNDARY_COMPILER_VERSION ? ["Auto Boundary compiler version changed"] : []),
@@ -1916,6 +1979,15 @@ export async function activateExplorationBoundary(input: {
     source: candidate.source,
     compiler_version: candidate.compiler_version,
     spec_version: candidate.spec_version,
+    ...(candidate.database_server_version
+      ? { database_server_version: candidate.database_server_version }
+      : {}),
+    ...(candidate.database_server_tier
+      ? { database_server_tier: candidate.database_server_tier }
+      : {}),
+    ...(candidate.database_server_authority
+      ? { database_server_authority: structuredClone(candidate.database_server_authority) }
+      : {}),
     ...(candidate.reporting_timezone ? { reporting_timezone: candidate.reporting_timezone } : {}),
     ...(candidate.organization_scope ? { organization_scope: candidate.organization_scope } : {}),
     trusted_context: candidate.trusted_context,
@@ -1955,12 +2027,35 @@ export function assertCurrentExplorationBoundaryAuthority(input: {
   inspection: SchemaInspection;
   candidate: ExplorationBoundaryDraft;
 }): void {
+  const compatibility = assertSupportedDatabaseServerVersion(input.inspection);
+  if (!input.lock.database_server_version
+    || !input.lock.database_server_tier
+    || !input.lock.database_server_authority) {
+    throw new Error([
+      "Generation lock is stale: database server capability authority is not recorded.",
+      generationLockRemediation(input.lock),
+    ].join("\n"));
+  }
+  if (input.candidate.database_server_version !== input.lock.database_server_version
+    || input.candidate.database_server_tier !== input.lock.database_server_tier
+    || canonicalJsonDigest(input.candidate.database_server_authority ?? null)
+      !== canonicalJsonDigest(input.lock.database_server_authority)) {
+    throw new Error(
+      "The reviewed boundary and generation lock disagree on database server capability authority.",
+    );
+  }
   const comparison = compareGenerationLock(input.lock, input.inspection);
   if (!comparison.current) {
     throw new Error([
       `Generation lock is stale: ${comparison.changes.join("; ")}.`,
       generationLockRemediation(input.lock),
     ].join("\n"));
+  }
+  if (input.candidate.pack.resources.some((resource) => resource.auto_bands?.length)) {
+    assertDatabaseGrammarFeature(
+      compatibility.authority ?? input.inspection,
+      "automatic_numeric_bands",
+    );
   }
   assertExploreRolePosture(input.inspection, input.candidate);
   if (input.candidate.organization_scope) {
@@ -2198,21 +2293,12 @@ function validateActivatedExplorationBoundary(
       reviewedDerivedScopeHopLimit(active.budgets),
     );
   }
-  const authority = {
-    schema_version: active.schema_version,
-    activation: "reviewed",
-    deployment_profile: active.deployment_profile,
-    source: active.source,
-    compiler_version: active.compiler_version,
-    spec_version: active.spec_version,
-    ...(active.reporting_timezone ? { reporting_timezone: active.reporting_timezone } : {}),
-    ...(active.organization_scope ? { organization_scope: active.organization_scope } : {}),
-    trusted_context: active.trusted_context,
-    generation_lock_fingerprint: active.generation_lock_fingerprint,
-    role_posture_fingerprint: active.role_posture_fingerprint,
-    pack: active.pack,
-    budgets: active.budgets,
-  };
+  const {
+    activation: _activation,
+    unresolved_decisions: _unresolved,
+    ...activeAuthority
+  } = active as ActivatedExplorationBoundary & { unresolved_decisions?: unknown };
+  const authority = { ...activeAuthority, activation: "reviewed" };
   if (canonicalJsonDigest(authority) !== active.activation.digest) {
     throw new Error("Activated exploration boundary digest does not match its authority.");
   }
@@ -2523,6 +2609,8 @@ export function generationLockSharedFactsDigest(
     schema_fingerprint: lock.schema_fingerprint,
     role_posture_fingerprint: lock.role_posture_fingerprint,
     reporting_timezone: lock.reporting_timezone ?? null,
+    database_server_tier: lock.database_server_tier ?? null,
+    database_server_authority: lock.database_server_authority ?? null,
     organization_scope: lock.organization_scope ?? null,
     trusted_context_fingerprint: lock.trusted_context_fingerprint ?? null,
   });
@@ -3739,8 +3827,20 @@ function assertBoundaryCandidateNarrowsDraft(
   if (!/^[a-z][a-z0-9_.-]{0,63}$/.test(candidate.pack.name)) {
     throw new Error("The reviewed authoring pack name must be a stable lower-case identifier.");
   }
-  for (const immutable of ["source", "compiler_version", "spec_version", "generation_lock_fingerprint", "role_posture_fingerprint"] as const) {
+  for (const immutable of [
+    "source",
+    "compiler_version",
+    "spec_version",
+    "database_server_version",
+    "database_server_tier",
+    "generation_lock_fingerprint",
+    "role_posture_fingerprint",
+  ] as const) {
     if (candidate[immutable] !== draft[immutable]) throw new Error(`${immutable} cannot change during boundary review.`);
+  }
+  if (canonicalJsonDigest(candidate.database_server_authority ?? null)
+    !== canonicalJsonDigest(draft.database_server_authority ?? null)) {
+    throw new Error("database_server_authority cannot change during boundary review.");
   }
   if (candidate.reporting_timezone !== draft.reporting_timezone) {
     throw new Error("reporting_timezone cannot change during boundary review.");
@@ -4963,6 +5063,9 @@ function buildExplorationBoundaryDraft(
   options: {
     deploymentProfile: "development" | "staging" | "production";
     configuredTrustedContext: ConfiguredTrustedContextAuthority;
+    databaseServerVersion: string;
+    databaseServerTier: "full" | "compatible_limited";
+    databaseServerAuthority: DatabaseServerAuthority;
     organizationScope?: SingleOrganizationScope;
   },
 ): ExplorationBoundaryDraft {
@@ -4981,6 +5084,15 @@ function buildExplorationBoundaryDraft(
     const enumDisabledFields = new Set(resource.fields
       .filter((field) => field.enum_review_override?.values.length === 0)
       .map((field) => field.name));
+    const reviewedFieldEnums = Object.fromEntries(resource.fields
+      .flatMap((field) => {
+        const values = reviewedBoundaryEnumValues(field, keptOutSet, trustedScopeFields);
+        return values ? [[field.name, values] as const] : [];
+      }));
+    const categoricalAnalysisAvailable = (field: AutoBoundaryField): boolean =>
+      options.databaseServerAuthority.features.schema_check_constraints
+      || !field.groupable_suggestion
+      || Boolean(reviewedFieldEnums[field.name]?.length);
     const selectable = resource.fields
       .filter((field) => field.raw_visible_suggestion
         && (!trustedScopeFields.has(field.name) || trustedScopeReadableFields.has(field.name)))
@@ -4989,7 +5101,8 @@ function buildExplorationBoundaryDraft(
     const filterable = Object.fromEntries(resource.fields
       .filter((field) => field.raw_visible_suggestion
         && !trustedScopeFields.has(field.name)
-        && !enumDisabledFields.has(field.name))
+        && !enumDisabledFields.has(field.name)
+        && categoricalAnalysisAvailable(field))
       .map((field) => [field.name, operatorsForType(field.data_type)]));
     const relationships = resource.relationships
       .filter((relationship) => {
@@ -5107,18 +5220,15 @@ function buildExplorationBoundaryDraft(
         ? { principal_scope: structuredClone(resource.derived_principal_scope.selected) }
         : {}),
       field_types: Object.fromEntries(resource.fields.map((field) => [field.name, field.data_type])),
-      field_enums: Object.fromEntries(resource.fields
-        .flatMap((field) => {
-          const values = reviewedBoundaryEnumValues(field, keptOutSet, trustedScopeFields);
-          return values ? [[field.name, values] as const] : [];
-        })),
+      field_enums: reviewedFieldEnums,
       selectable_fields: selectable,
       filterable_fields: filterable,
       sortable_fields: sortable,
       groupable_fields: resource.fields.filter((field) => field.groupable_suggestion
         && !keptOutSet.has(field.name)
         && !trustedScopeFields.has(field.name)
-        && !enumDisabledFields.has(field.name)).map((field) => field.name),
+        && !enumDisabledFields.has(field.name)
+        && categoricalAnalysisAvailable(field)).map((field) => field.name),
       aggregate_measures: resource.fields.filter((field) => field.aggregate_measure_suggestion
         && !keptOutSet.has(field.name)
         && !trustedScopeFields.has(field.name)).map((field) => field.name),
@@ -5159,6 +5269,9 @@ function buildExplorationBoundaryDraft(
     source: sourceName,
     compiler_version: AUTO_BOUNDARY_COMPILER_VERSION,
     spec_version: AUTO_BOUNDARY_SPEC_VERSION,
+    database_server_version: options.databaseServerVersion,
+    database_server_tier: options.databaseServerTier,
+    database_server_authority: structuredClone(options.databaseServerAuthority),
     reporting_timezone: "UTC",
     ...(options.organizationScope ? { organization_scope: options.organizationScope } : {}),
     trusted_context: options.deploymentProfile === "production"
@@ -5422,6 +5535,8 @@ function reviewMarkdown(build: AutoBoundaryBuild): string {
     "Status: disabled and unreviewed. These files grant no runtime authority until a human activates the exact reviewed digest in the local Workbench.",
     "",
     `Candidate contract digest: \`${build.contract_digest}\``,
+    `Database server: \`${build.lock.engine} ${build.lock.database_server_version ?? "not recorded by this lock"}\``,
+    `Database capability tier: \`${build.lock.database_server_tier ?? "not recorded by this lock"}\``,
     `Schema fingerprint: \`${build.lock.schema_fingerprint}\``,
     `Role posture fingerprint: \`${build.lock.role_posture_fingerprint}\``,
     "",

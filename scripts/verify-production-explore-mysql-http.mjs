@@ -25,16 +25,31 @@ import {
   loadGenerationLockSnapshot,
   writeAutoBoundaryArtifacts,
 } from "../apps/runner/dist/auto-boundary.js";
-import { createSavedBoundary } from "../apps/runner/dist/boundary-library.js";
+import {
+  createSavedBoundary,
+  synchronizeBoundaryLibrary,
+} from "../apps/runner/dist/boundary-library.js";
 import {
   commitBoundaryResourceReviewMutation,
   prepareBoundaryResourceReviewMutation,
 } from "../apps/runner/dist/boundary-review-mutation.js";
 import {
+  createBoundaryReviewProgress,
+  readBoundaryReviewProgress,
+  saveBoundaryReviewProgress,
+} from "../apps/runner/dist/boundary-review-domain.js";
+import {
+  commitBoundaryRescan,
+  prepareBoundaryRescan,
+} from "../apps/runner/dist/boundary-rescan.js";
+import { initializeGuidedProject } from "../apps/runner/dist/guided-project.js";
+import { startLocalUiServer } from "../apps/runner/dist/local-ui.js";
+import {
   assertProductionExploreStartup,
   productionExploreSessionFactory,
 } from "../apps/runner/dist/mcp-runtime.js";
 import { derivedScopeIndexDoctorChecks } from "../apps/runner/dist/derived-scope-index-doctor.js";
+import { createScopedExploreBoundarySetRuntime } from "../apps/runner/dist/scoped-explore-boundary-set.js";
 import { createScopedExploreRuntime } from "../apps/runner/dist/scoped-explore.js";
 import {
   productionExploreRunnerInvocation,
@@ -64,6 +79,7 @@ const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-production-e
 const authoringLifecycleProjectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-production-explore-mysql-authoring-"));
 const singleOrganizationProjectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-production-explore-mysql-single-org-http-"));
 const localParityProjectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-production-explore-mysql-local-parity-"));
+const workbenchProjectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-production-explore-mysql-workbench-"));
 const mysqlAdminUrl = "mysql://root:root_password@127.0.0.1:53309";
 const mysqlReadUrl = "mysql://synapsor_production_reader:synapsor_production_reader_password@127.0.0.1:53309/synapsor_production_explore";
 const mysqlSingleOrganizationReadUrl = "mysql://synapsor_production_reader:synapsor_production_reader_password@127.0.0.1:53309/synapsor_single_org_explore";
@@ -86,7 +102,7 @@ function median(values) {
   return sorted[Math.floor(sorted.length / 2)] ?? 0;
 }
 
-async function verifyMysqlProductionAuthoringLifecycle({ inspection, env }) {
+async function verifyMysqlProductionAuthoringLifecycle({ inspection, env, mysqlAdmin }) {
   const configPath = path.join(authoringLifecycleProjectRoot, "synapsor.runner.json");
   const configInitInvocation = productionExploreRunnerInvocation(root, [
     "config", "init", "--production-explore",
@@ -141,6 +157,28 @@ async function verifyMysqlProductionAuthoringLifecycle({ inspection, env }) {
     async () => inspection,
   );
   await commitBoundaryResourceReviewMutation(authoringLifecycleProjectRoot, reviewedMutation);
+  const partialProgress = await readBoundaryReviewProgress(
+    authoringLifecycleProjectRoot,
+    reviewedMutation.build.exploration_boundary,
+  );
+  assert(partialProgress, "MySQL production review mutation did not persist its review progress.");
+  const reviewedProgress = createBoundaryReviewProgress({
+    draft: reviewedMutation.build.exploration_boundary,
+    candidate: partialProgress.candidate,
+    confirmedDecisions: partialProgress.candidate.unresolved_decisions,
+    previous: partialProgress,
+    actor: "production-owner@example.test",
+    reason: "Confirm the exact production boundary before activation.",
+    revision: partialProgress.revision + 1,
+    now: "2026-08-12T17:59:00.000Z",
+  });
+  await saveBoundaryReviewProgress(authoringLifecycleProjectRoot, reviewedProgress);
+  await synchronizeBoundaryLibrary({
+    projectRoot: authoringLifecycleProjectRoot,
+    draft: reviewedMutation.build.exploration_boundary,
+    currentCandidate: reviewedProgress.candidate,
+    currentProgress: reviewedProgress,
+  });
   const reviewedBaseline = JSON.parse(fs.readFileSync(
     path.join(authoringLifecycleProjectRoot, ".synapsor/auto-boundary-policy-baseline.json"),
     "utf8",
@@ -157,14 +195,14 @@ async function verifyMysqlProductionAuthoringLifecycle({ inspection, env }) {
   assert(reviewedLock.trusted_context_authority?.tenant_binding === "tenant_id"
     && reviewedLock.trusted_context_authority?.principal_binding === "owner_id",
   "MySQL production review mutation discarded configured binding authority.", reviewedLock);
-  const candidateDigest = explorationBoundaryCandidateDigest(reviewedMutation.candidate);
+  const candidateDigest = explorationBoundaryCandidateDigest(reviewedProgress.candidate);
   await activateExplorationBoundary({
     projectRoot: authoringLifecycleProjectRoot,
-    candidate: reviewedMutation.candidate,
+    candidate: reviewedProgress.candidate,
     expectedDigest: candidateDigest,
     actor: "production-owner@example.test",
     confirmation: `ACTIVATE ${candidateDigest}`,
-    confirmedDecisions: reviewedMutation.candidate.unresolved_decisions,
+    confirmedDecisions: reviewedProgress.candidate.unresolved_decisions,
     currentInspection: inspection,
   });
   const active = await loadActivatedExplorationBoundaries(authoringLifecycleProjectRoot);
@@ -182,10 +220,18 @@ async function verifyMysqlProductionAuthoringLifecycle({ inspection, env }) {
   );
   assert(startup.ok,
     "The reviewed MySQL binding authority did not pass production startup attestation.", startup);
+  const rescan = await verifyMysqlLiveRescanReconciliation({
+    projectRoot: authoringLifecycleProjectRoot,
+    inspection,
+    env,
+    mysqlAdmin,
+    activeCandidate: reviewedProgress.candidate,
+  });
   const second = await createSavedBoundary({
     projectRoot: authoringLifecycleProjectRoot,
-    draft: reviewedMutation.build.exploration_boundary,
-    currentCandidate: reviewedMutation.candidate,
+    draft: rescan.draft,
+    currentCandidate: rescan.progress.candidate,
+    currentProgress: rescan.progress,
     name: "mysql_events_secondary",
     resourceId: sourceId,
     actor: "secondary-production-owner@example.test",
@@ -197,7 +243,361 @@ async function verifyMysqlProductionAuthoringLifecycle({ inspection, env }) {
     reviewed_bindings_preserved: true,
     startup_attestation_passed: true,
     second_boundary_startable: true,
+    rescan_reconciliation: rescan.result,
   };
+}
+
+async function verifyMysqlLiveRescanReconciliation({
+  projectRoot: lifecycleRoot,
+  inspection,
+  env,
+  mysqlAdmin,
+  activeCandidate,
+}) {
+  const activeBefore = await loadActivatedExplorationBoundaries(lifecycleRoot);
+  const activeDigest = activeBefore[0]?.activation.digest;
+  assert(activeDigest, "MySQL rescan verification requires one active reviewed revision.");
+  const addedField = "rescan_only_note";
+  let restored;
+  await mysqlAdmin.query(
+    `ALTER TABLE ${sourceSchema}.events ADD COLUMN ${addedField} varchar(64) NULL`,
+  );
+  try {
+    const changedInspection = await inspectDatabase({
+      engine: "mysql",
+      databaseUrlEnv: "MYSQL_DATABASE_URL",
+      schema: sourceSchema,
+      env,
+    });
+    const preview = await prepareBoundaryRescan({
+      projectRoot: lifecycleRoot,
+      inspection: changedInspection,
+      now: "2026-08-12T18:00:00.000Z",
+    });
+    const entry = preview.report.boundaries.find((item) =>
+      item.boundary_name === activeCandidate.pack.name);
+    assert(preview.report.changed === true
+      && preview.report.schema_changed === true
+      && preview.report.totals.invalidated_decisions === 0
+      && preview.report.totals.newly_available_fields === 1
+      && entry?.newly_available_fields.some((field) =>
+        field.resource_id === sourceId && field.field === addedField),
+    "A live MySQL unreviewed-column rescan did not preserve decisions and report one new field.", preview.report);
+    const reconciledResource = preview.selectedProgress.candidate.pack.resources.find((resource) =>
+      resource.id === sourceId);
+    assert(reconciledResource
+      && reconciledResource.selectable_fields?.includes(addedField) !== true
+      && reconciledResource.model_withheld_fields?.includes(addedField) !== true
+      && reconciledResource.kept_out_fields?.includes(addedField) === true,
+    "MySQL rescan auto-exposed a newly inspected field instead of keeping it unavailable.", reconciledResource);
+    await commitBoundaryRescan(preview);
+    const activeAfterCommit = await loadActivatedExplorationBoundaries(lifecycleRoot);
+    assert(activeAfterCommit[0]?.activation.digest === activeDigest,
+      "Committing a MySQL rescan changed the served active revision before review.", {
+        before: activeDigest,
+        after: activeAfterCommit[0]?.activation.digest,
+      });
+  } finally {
+    await mysqlAdmin.query(
+      `ALTER TABLE ${sourceSchema}.events DROP COLUMN ${addedField}`,
+    );
+  }
+
+  const restoredInspection = await inspectDatabase({
+    engine: "mysql",
+    databaseUrlEnv: "MYSQL_DATABASE_URL",
+    schema: sourceSchema,
+    env,
+  });
+  restored = await prepareBoundaryRescan({
+    projectRoot: lifecycleRoot,
+    inspection: restoredInspection,
+    now: "2026-08-12T18:01:00.000Z",
+  });
+  await commitBoundaryRescan(restored);
+  assert(restored.selectedProgress.candidate.pack.resources.find((resource) =>
+    resource.id === sourceId)?.kept_out_fields?.includes(addedField) !== true,
+  "MySQL rescan retained a review decision for a field that was removed again.", restored.selectedProgress.candidate);
+
+  await mysqlAdmin.query(
+    `ALTER TABLE ${sourceSchema}.events MODIFY amount_cents BIGINT NOT NULL`,
+  );
+  try {
+    const typeChangedInspection = await inspectDatabase({
+      engine: "mysql",
+      databaseUrlEnv: "MYSQL_DATABASE_URL",
+      schema: sourceSchema,
+      env,
+    });
+    const typePreview = await prepareBoundaryRescan({
+      projectRoot: lifecycleRoot,
+      inspection: typeChangedInspection,
+      now: "2026-08-12T18:02:00.000Z",
+    });
+    const entry = typePreview.report.boundaries.find((item) =>
+      item.boundary_name === activeCandidate.pack.name);
+    assert(typePreview.report.changed === true
+      && entry?.changed_field_types.some((field) =>
+        field.resource_id === sourceId && field.field === "amount_cents")
+      && (entry?.kept_confirmations ?? 0) > 0
+      && (entry?.invalidated_decisions.length ?? 0) === 0,
+    "A live MySQL reviewed-column type change was not reported while preserving still-valid review confirmations.", typePreview.report);
+    const activeDuringDrift = await loadActivatedExplorationBoundaries(lifecycleRoot);
+    assert(activeDuringDrift[0]?.activation.digest === activeDigest,
+      "Preparing a MySQL type-drift reconciliation changed active authority.", activeDuringDrift);
+  } finally {
+    await mysqlAdmin.query(
+      `ALTER TABLE ${sourceSchema}.events MODIFY amount_cents INT NOT NULL`,
+    );
+  }
+  const finalInspection = await inspectDatabase({
+    engine: "mysql",
+    databaseUrlEnv: "MYSQL_DATABASE_URL",
+    schema: sourceSchema,
+    env,
+  });
+  const noChange = await prepareBoundaryRescan({
+    projectRoot: lifecycleRoot,
+    inspection: finalInspection,
+    now: "2026-08-12T18:03:00.000Z",
+  });
+  assert(noChange.report.changed === false
+    && noChange.report.schema_changed === false
+    && noChange.report.totals.invalidated_decisions === 0,
+  "The live MySQL rescan fixture did not return to a clean reconciled state.", noChange.report);
+  return {
+    draft: restored.selectedBuild.exploration_boundary,
+    progress: restored.selectedProgress,
+    result: {
+      unrelated_field_preserved_decisions: true,
+      new_field_not_auto_exposed: true,
+      active_revision_unchanged: true,
+      reviewed_type_change_reported_without_auto_activation: true,
+      source_schema_restored: true,
+    },
+  };
+}
+
+async function verifyMysqlWorkbenchMultiBoundary({ inspection, env, mysqlAdmin }) {
+  const configuredTrustedContext = {
+    schema_version: CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION,
+    provider: "environment",
+    tenant_binding: "tenant_id",
+    principal_binding: "owner_id",
+    tenant_env: "SYNAPSOR_TENANT_ID",
+    principal_env: "SYNAPSOR_PRINCIPAL",
+  };
+  const reviewValue = (value, reason) => ({
+    value,
+    actor: "workbench-owner@example.test",
+    reason,
+    decided_at: "2026-08-12T18:10:00.000Z",
+  });
+  const build = buildAutoBoundary({
+    inspection,
+    project: {
+      root: workbenchProjectRoot,
+      package_manager: "unknown",
+      frameworks: [],
+      schema_inputs: [],
+      database_env_names: ["MYSQL_DATABASE_URL"],
+    },
+    sourceEnv: "MYSQL_DATABASE_URL",
+    sourceName: "local_mysql",
+    inspectedSchema: sourceSchema,
+    deploymentProfile: "staging",
+    configuredTrustedContext,
+    overrides: {
+      schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+      resources: {
+        [sourceId]: {
+          tenant_key: reviewValue("tenant_id", "Events are isolated by tenant_id."),
+          principal_key: reviewValue("owner_id", "Events are isolated by owner_id."),
+        },
+        [scopedOrdersId]: {
+          tenant_key: reviewValue("tenant_id", "Orders are isolated by tenant_id."),
+          principal_key: reviewValue("owner_id", "Orders are isolated by owner_id."),
+        },
+      },
+    },
+  });
+  const written = await writeAutoBoundaryArtifacts({ projectRoot: workbenchProjectRoot, build });
+  const guided = await initializeGuidedProject({
+    projectRoot: workbenchProjectRoot,
+    build,
+    runnerVersion: "1.7.0",
+  });
+  const config = JSON.parse(fs.readFileSync(guided.config_path, "utf8"));
+  config.trusted_context = {
+    provider: "environment",
+    tenant_binding: "tenant_id",
+    principal_binding: "owner_id",
+    values: {
+      tenant_id_env: "SYNAPSOR_TENANT_ID",
+      principal_env: "SYNAPSOR_PRINCIPAL",
+    },
+  };
+  fs.writeFileSync(guided.config_path, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  const primaryCandidate = structuredClone(build.exploration_boundary);
+  primaryCandidate.pack.resources = primaryCandidate.pack.resources.filter((resource) =>
+    resource.id === sourceId || resource.id === scopedOrdersId);
+  assert(primaryCandidate.pack.resources.length === 2,
+    "MySQL Workbench fixture did not contain both directly scoped resources.", primaryCandidate.pack.resources);
+  const primaryDigest = explorationBoundaryCandidateDigest(primaryCandidate);
+  await activateExplorationBoundary({
+    projectRoot: workbenchProjectRoot,
+    candidate: primaryCandidate,
+    expectedDigest: primaryDigest,
+    actor: "workbench-owner@example.test",
+    confirmation: `ACTIVATE ${primaryDigest}`,
+    confirmedDecisions: primaryCandidate.unresolved_decisions,
+    currentInspection: inspection,
+  });
+  const server = await startLocalUiServer({
+    projectRoot: workbenchProjectRoot,
+    boundaryRoot: written.root,
+    configPath: guided.config_path,
+    storePath: guided.store_path,
+    token: "mysql-workbench-multi-boundary-token",
+    csrfToken: "mysql-workbench-multi-boundary-csrf",
+    schemaInspector: async (input) => inspectDatabase({
+      ...input,
+      env: { ...env, ...(input.env ?? {}) },
+    }),
+    scopedExploreRuntimeFactory: async (input) => createScopedExploreBoundarySetRuntime({
+      ...input,
+      env: { ...env, ...input.env },
+    }),
+  });
+  const request = async (method, pathname, body) => {
+    const response = await fetch(`http://${server.host}:${server.port}${pathname}`, {
+      method,
+      headers: {
+        "x-synapsor-ui-token": server.token,
+        ...(method === "POST"
+          ? { "x-synapsor-csrf": server.csrfToken, "content-type": "application/json" }
+          : {}),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    return { status: response.status, payload: await response.json() };
+  };
+  const before = await sourceSnapshot(mysqlAdmin);
+  try {
+    const page = await fetch(`http://${server.host}:${server.port}/`, {
+      headers: { "x-synapsor-ui-token": server.token },
+    });
+    assert(page.status === 200 && (await page.text()).includes("Synapsor Runner"),
+      "The secured MySQL Workbench page did not load.");
+    const trusted = await request("POST", "/api/explore/trusted-context", {
+      tenant: "acme",
+      principal: "alice",
+    });
+    assert(trusted.status === 200 && trusted.payload.configured === true,
+      "MySQL Workbench did not bind its trusted local tenant/principal context.", trusted);
+    const created = await request("POST", "/api/boundary/library/create", {
+      name: "mysql_events_workbench_secondary",
+      resource_id: sourceId,
+      actor: "workbench-owner@example.test",
+    });
+    assert(created.status === 200
+      && created.payload.candidate?.pack?.resources?.length === 1
+      && created.payload.candidate.pack.resources[0]?.tenant_key === "tenant_id"
+      && created.payload.candidate.pack.resources[0]?.principal_key === "owner_id",
+    "Workbench did not create a second MySQL boundary from the configured policy baseline.", created);
+    const staged = await request("POST", "/api/boundary/progress", {
+      candidate: created.payload.candidate,
+      confirmed_decisions: created.payload.candidate.unresolved_decisions,
+      expected_revision: created.payload.review_progress.revision,
+      actor: "workbench-owner@example.test",
+    });
+    assert(staged.status === 200, "Workbench did not review the second MySQL boundary.", staged);
+    const selected = await request("GET", "/api/boundary");
+    const preview = await request("POST", "/api/boundary/preview", {
+      candidate: selected.payload.candidate,
+      expected_revision: staged.payload.revision,
+      actor: "workbench-owner@example.test",
+      confirmed_decisions: selected.payload.candidate.unresolved_decisions,
+    });
+    assert(preview.status === 200, "Workbench did not preview the second MySQL boundary.", preview);
+    const activated = await request("POST", "/api/boundary/activate", {
+      candidate: preview.payload.candidate,
+      expected_digest: preview.payload.digest,
+      actor: "workbench-owner@example.test",
+      confirmation: `ACTIVATE ${preview.payload.digest}`,
+      confirmed_decisions: preview.payload.candidate.unresolved_decisions,
+    });
+    assert(activated.status === 200
+      && activated.payload.active_boundary_added === "mysql_events_workbench_secondary",
+    "Workbench did not activate its second MySQL boundary.", activated);
+    const active = await loadActivatedExplorationBoundaries(workbenchProjectRoot);
+    assert(active.map((boundary) => boundary.pack.name).sort().join(",")
+      === "mysql_events_workbench_secondary,reviewed_staging",
+    "Workbench activation did not preserve the existing MySQL active boundary.", active);
+
+    const eventsPlan = {
+      kind: "aggregate",
+      resource: sourceId,
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "category" }],
+      top_n: 10,
+    };
+    const ambiguous = await request("POST", "/api/explore/run", { plan: eventsPlan });
+    assert(ambiguous.status === 409
+      && ambiguous.payload.error_code === "EXPLORE_BOUNDARY_REQUIRED",
+    "Workbench did not fail closed on an overlapping MySQL resource without a boundary selector.", ambiguous);
+    const primary = await request("POST", "/api/explore/run", {
+      boundary: "reviewed_staging",
+      plan: eventsPlan,
+    });
+    const secondary = await request("POST", "/api/explore/run", {
+      boundary: "mysql_events_workbench_secondary",
+      plan: eventsPlan,
+    });
+    assert(primary.status === 200
+      && secondary.status === 200
+      && primary.payload.result?.boundary_name === "reviewed_staging"
+      && secondary.payload.result?.boundary_name === "mysql_events_workbench_secondary"
+      && JSON.stringify(primary.payload.result.data) === JSON.stringify(secondary.payload.result.data),
+    "Workbench did not route equivalent MySQL queries to each exact reviewed boundary.", {
+      primary,
+      secondary,
+    });
+    const crossBoundary = await request("POST", "/api/explore/run", {
+      boundary: "mysql_events_workbench_secondary",
+      plan: {
+        kind: "aggregate",
+        resource: scopedOrdersId,
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "category" }],
+        top_n: 10,
+      },
+    });
+    assert(crossBoundary.status === 409
+      && crossBoundary.payload.error_code === "EXPLORE_RESOURCE_FORBIDDEN",
+    "Workbench allowed a MySQL resource outside the selected boundary.", crossBoundary);
+    const unknown = await request("POST", "/api/explore/run", {
+      boundary: "unknown_boundary",
+      plan: eventsPlan,
+    });
+    assert(unknown.status === 409
+      && unknown.payload.error_code === "EXPLORE_BOUNDARY_FORBIDDEN",
+    "Workbench did not refuse an unknown MySQL boundary name.", unknown);
+    const after = await sourceSnapshot(mysqlAdmin);
+    assert(JSON.stringify(after) === JSON.stringify(before),
+      "The MySQL Workbench multi-boundary journey mutated the source database.", { before, after });
+    return {
+      secured_page_loaded: true,
+      second_boundary_created_and_activated: true,
+      exact_boundary_routing: true,
+      overlap_ambiguity_refused: true,
+      cross_boundary_resource_refused: true,
+      unknown_boundary_refused: true,
+      source_database_changed: false,
+    };
+  } finally {
+    await server.close();
+  }
 }
 
 async function verifySchemaWidthScaling({ mysqlAdmin, client, env, plan, resources }) {
@@ -1115,7 +1515,16 @@ async function main() {
     });
     assert(inspection.role_posture?.verified === true && inspection.role_posture.read_only === true,
       "MySQL production fixture reader is not demonstrably read-only.", inspection.role_posture);
-    const mysqlAuthoringLifecycle = await verifyMysqlProductionAuthoringLifecycle({ inspection, env });
+    const mysqlAuthoringLifecycle = await verifyMysqlProductionAuthoringLifecycle({
+      inspection,
+      env,
+      mysqlAdmin,
+    });
+    const mysqlWorkbenchMultiBoundary = await verifyMysqlWorkbenchMultiBoundary({
+      inspection,
+      env,
+      mysqlAdmin,
+    });
     const build = buildAutoBoundary({
       inspection,
       project: {
@@ -1563,6 +1972,7 @@ async function main() {
         ambiguity_refused: true,
         primary_boundary_query: primary.ok,
         secondary_boundary_query: secondary.ok,
+        workbench_multi_boundary: mysqlWorkbenchMultiBoundary,
         source_database_changed: false,
       }, null, 2)}\n`);
       return;
@@ -2347,6 +2757,7 @@ async function main() {
       complete_jwt_rejection_matrix: authRefusals.map((item) => item.label),
       generated_http_client_configs: generatedHttpClients,
       mysql_authoring_lifecycle: mysqlAuthoringLifecycle,
+      mysql_workbench_multi_boundary: mysqlWorkbenchMultiBoundary,
       metadata_only_catalog: true,
       analytics_http_stdio_parity: true,
       production_operator_ledger: operatorLedger,
@@ -2368,6 +2779,7 @@ async function main() {
     fs.rmSync(authoringLifecycleProjectRoot, { recursive: true, force: true });
     fs.rmSync(singleOrganizationProjectRoot, { recursive: true, force: true });
     fs.rmSync(localParityProjectRoot, { recursive: true, force: true });
+    fs.rmSync(workbenchProjectRoot, { recursive: true, force: true });
   }
 }
 

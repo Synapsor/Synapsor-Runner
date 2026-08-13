@@ -1,0 +1,97 @@
+services:
+  postgres12:
+    image: postgres:12
+    environment: &postgres-environment
+      POSTGRES_DB: compatdb
+      POSTGRES_USER: compat_admin
+      POSTGRES_PASSWORD: compat_admin_password
+    ports:
+      - "127.0.0.1:55612:5432"
+    healthcheck: &postgres-healthcheck
+      test: ["CMD-SHELL", "pg_isready -U compat_admin -d compatdb"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  postgres13:
+    image: postgres:13
+    environment: *postgres-environment
+    ports:
+      - "127.0.0.1:55613:5432"
+    healthcheck: *postgres-healthcheck
+
+  postgres14:
+    image: postgres:14
+    environment: *postgres-environment
+    ports:
+      - "127.0.0.1:55614:5432"
+    healthcheck: *postgres-healthcheck
+
+  postgres15:
+    image: postgres:15
+    environment: *postgres-environment
+    ports:
+      - "127.0.0.1:55615:5432"
+    healthcheck: *postgres-healthcheck
+
+  postgres16:
+    image: postgres:16
+    environment: *postgres-environment
+    ports:
+      - "127.0.0.1:55616:5432"
+    healthcheck: *postgres-healthcheck
+
+  postgres17:
+    image: postgres:17
+    environment: *postgres-environment
+    ports:
+      - "127.0.0.1:55617:5432"
+    healthcheck: *postgres-healthcheck
+
+  postgres18:
+    image: postgres:18
+    environment: *postgres-environment
+    ports:
+      - "127.0.0.1:55618:5432"
+    healthcheck: *postgres-healthcheck
+
+  control:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: controldb
+      POSTGRES_USER: compat_admin
+      POSTGRES_PASSWORD: compat_admin_password
+    ports:
+      - "127.0.0.1:55620:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U compat_admin -d controldb"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  mysql57:
+    image: mysql:5.7
+    environment: &mysql-environment
+      MYSQL_DATABASE: compatdb
+      MYSQL_ROOT_PASSWORD: compat_admin_password
+    ports:
+      - "127.0.0.1:55657:3306"
+    healthcheck: &mysql-healthcheck
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+
+  mysql80:
+    image: mysql:8.0
+    environment: *mysql-environment
+    ports:
+      - "127.0.0.1:55680:3306"
+    healthcheck: *mysql-healthcheck
+
+  mysql84:
+    image: mysql:8.4
+    environment: *mysql-environment
+    ports:
+      - "127.0.0.1:55684:3306"
+    healthcheck: *mysql-healthcheck

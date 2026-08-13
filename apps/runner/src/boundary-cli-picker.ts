@@ -1126,6 +1126,12 @@ async function editFieldTiers(
               ? formatDerivedScopePath((view.candidate ?? view.generated_candidate)!.principal_scope!)
               : "not configured")
         }`,
+        ...(view.database_server_compatibility?.tier === "compatible_limited"
+          ? [theme.warning(
+              `Database grammar: ${safeTerminalText(view.database_server_compatibility.detected_version)} uses the supported limited tier. `
+              + "Text grouping/filtering requires a bounded native ENUM; automatic numeric bands are unavailable.",
+            )]
+          : []),
         ...(enumValues
           ? [`${theme.key("E")} Edit allowed values for selected column: ${reviewedEnumValues!.length} of ${enumValues.length}`]
           : []),

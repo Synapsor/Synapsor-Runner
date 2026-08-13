@@ -8,6 +8,7 @@ const fixture = vi.hoisted(() => ({
   digest: `sha256:${"b".repeat(64)}` as const,
   errorCode: undefined as string | undefined,
   exploredPlans: [] as unknown[],
+  autoBands: true,
 }));
 
 vi.mock("./scoped-explore.js", async (importOriginal) => {
@@ -25,13 +26,19 @@ vi.mock("./scoped-explore.js", async (importOriginal) => {
       boundary: {
         activation: { digest: fixture.digest },
         pack: {
-          resources: [{ id: "public.sessions" }],
+          resources: [{
+            id: "public.sessions",
+            ...(fixture.autoBands ? { auto_bands: [{ field: "duration_ms" }] } : {}),
+          }],
         },
       },
       session_fingerprint: `sha256:${"c".repeat(64)}`,
       describe: () => ({
         ok: true,
-        resources: [{ id: "public.sessions" }],
+        resources: [{
+          id: "public.sessions",
+          ...(fixture.autoBands ? { auto_bands: [{ field: "duration_ms" }] } : {}),
+        }],
         source_database_changed: false,
       }),
       explore: async (plan: unknown) => {
@@ -63,7 +70,10 @@ vi.mock("./scoped-explore-boundary-set.js", async () => ({
       activation: { digest: fixture.digest },
       pack: {
         name: "reviewed_staging",
-        resources: [{ id: "public.sessions" }],
+        resources: [{
+          id: "public.sessions",
+          ...(fixture.autoBands ? { auto_bands: [{ field: "duration_ms" }] } : {}),
+        }],
       },
     } as never;
     return {
@@ -74,7 +84,10 @@ vi.mock("./scoped-explore-boundary-set.js", async () => ({
       describe: async () => ({
         ok: true,
         outcome: { type: "success" },
-        resources: [{ id: "public.sessions" }],
+        resources: [{
+          id: "public.sessions",
+          ...(fixture.autoBands ? { auto_bands: [{ field: "duration_ms" }] } : {}),
+        }],
         source_database_changed: false,
       }),
       explore: async (plan: unknown) => {
@@ -107,6 +120,7 @@ afterEach(async () => {
   fixture.closes = 0;
   fixture.errorCode = undefined;
   fixture.exploredPlans.length = 0;
+  fixture.autoBands = true;
   await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
 });
 
@@ -211,6 +225,24 @@ describe("Ask authoring/runtime separation", () => {
       const exploreSchema = JSON.stringify(listed.find((tool) => tool.name === "app.explore_data")?.input_schema);
       expect(exploreSchema).toContain("equal_width");
       expect(exploreSchema).not.toMatch(/"edges"|"width"|"offset"|"labels"/);
+      fixture.autoBands = false;
+      const limitedGateway = await createWorkbenchAskMcpGateway({
+        configPath,
+        storePath: ":memory:",
+        projectRoot: root,
+        env: {},
+        mode: "auto",
+      });
+      try {
+        const limitedTool = (await limitedGateway.listTools()).find(
+          (tool) => tool.name === "app.explore_data",
+        );
+        expect(limitedTool?.description).not.toMatch(/auto-band|quantile|equal_width/i);
+        expect(JSON.stringify(limitedTool?.input_schema)).not.toMatch(/quantile|equal_width/i);
+        expect(limitedTool?.description).toContain('"time_window"');
+      } finally {
+        await limitedGateway.close();
+      }
       await expect(gateway.callTool("app.describe_data", { limit: 99 })).resolves.toMatchObject({
         ok: false,
         error_code: "MCP_TOOL_ARGUMENTS_INVALID",
@@ -325,7 +357,7 @@ describe("Ask authoring/runtime separation", () => {
     } finally {
       await gateway.close();
     }
-    expect(fixture.closes).toBe(1);
+    expect(fixture.closes).toBe(2);
   });
 
   it("refuses an explicit runtime session instead of silently switching while Explore is active", async () => {

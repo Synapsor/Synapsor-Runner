@@ -11,6 +11,7 @@ import {
   loadAutoBoundaryPolicyBaseline,
   loadActivatedExplorationBoundaries,
   writeAutoBoundaryArtifacts,
+  type GenerationLock,
 } from "./auto-boundary.js";
 import {
   applyManagedBoundaryReviewDecision,
@@ -551,6 +552,10 @@ describe("boundary rescan reconciliation", () => {
       orders.row_level_security = false;
       orders.row_level_security_policies = [];
       orders.role_posture!.row_security_effective_for_current_role = false;
+      orders.columns = orders.columns.filter((column) => column.name !== "tenant_id");
+      orders.suggestions.tenant_columns = [];
+      orders.suggestions.default_visible_columns = orders.suggestions.default_visible_columns
+        .filter((field) => field !== "tenant_id");
       const build = buildAutoBoundary({
         inspection,
         project: {
@@ -586,6 +591,151 @@ describe("boundary rescan reconciliation", () => {
         .rejects.toMatchObject({ code: "ENOENT" });
       await expect(fs.access(path.join(root, ".synapsor/boundary-review-progress.json")))
         .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reconciles a MySQL 8 to 5.7 capability downgrade and removes unavailable auto bands", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-mysql-capability-rescan-"));
+    try {
+      const inspection = normalizedCommerceInspection();
+      inspection.engine = "mysql";
+      inspection.server_version = "MySQL 8.4.9";
+      inspection.schemas = ["appdb"];
+      inspection.tables = [inspection.tables.find((item) => item.name === "orders")!];
+      const orders = inspection.tables[0]!;
+      orders.schema = "appdb";
+      orders.row_level_security = false;
+      orders.row_level_security_policies = [];
+      orders.role_posture!.row_security_effective_for_current_role = false;
+      orders.columns = orders.columns.filter((column) => column.name !== "tenant_id");
+      orders.suggestions.tenant_columns = [];
+      orders.suggestions.default_visible_columns = orders.suggestions.default_visible_columns
+        .filter((field) => field !== "tenant_id");
+      orders.columns.push(column("duration_ms", "integer", false, orders.columns.length + 1));
+      orders.suggestions.default_visible_columns.push("duration_ms");
+      const definition = {
+        field: "duration_ms",
+        methods: ["quantile"] as Array<"quantile">,
+        min_buckets: 3,
+        max_buckets: 8,
+        label_style: "ordinal" as const,
+      };
+      const overrides = applyManagedBoundaryReviewDecision(emptyReviewOverrides(), {
+        kind: "auto_band",
+        resource_id: "appdb.orders",
+        field: "duration_ms",
+        definition,
+        actor: "owner@example.test",
+        reason: "Review automatic value bands on the full MySQL grammar line.",
+        decided_at: "2026-08-12T00:00:00.000Z",
+      });
+      const build = buildAutoBoundary({
+        inspection,
+        project: {
+          root,
+          package_manager: "npm",
+          frameworks: ["node"],
+          schema_inputs: [],
+          database_env_names: ["DATABASE_URL"],
+        },
+        sourceEnv: "DATABASE_URL",
+        inspectedSchema: "appdb",
+        overrides,
+        singleOrganization: { organizationId: "clinic-one" },
+      });
+      expect(build.exploration_boundary.pack.resources[0]!.auto_bands).toEqual([definition]);
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const progress = createBoundaryReviewProgress({
+        draft: build.exploration_boundary,
+        candidate: build.exploration_boundary,
+        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        reviewOverrides: overrides,
+        actor: "owner@example.test",
+        revision: 1,
+      });
+      await saveBoundaryReviewProgress(root, progress);
+      await synchronizeBoundaryLibrary({
+        projectRoot: root,
+        draft: build.exploration_boundary,
+        currentCandidate: progress.candidate,
+        currentProgress: progress,
+      });
+
+      const downgraded = structuredClone(inspection);
+      downgraded.server_version = "MySQL 5.7.44-log";
+      const preview = await prepareBoundaryRescan({ projectRoot: root, inspection: downgraded });
+      expect(preview.report).toMatchObject({
+        changed: true,
+        schema_changed: false,
+        role_posture_changed: false,
+        database_server_authority_changed: true,
+        previous_database_server_version: "MySQL 8.4.9",
+        database_server_version: "MySQL 5.7.44-log",
+        previous_database_server_tier: "full",
+        database_server_tier: "compatible_limited",
+      });
+      expect(preview.report.database_server_authority_changes).toEqual(expect.arrayContaining([
+        "release line changed from mysql 8.x to mysql 5.7",
+        "automatic numeric bands are unavailable on this release line and were removed from review authority",
+      ]));
+      expect(preview.report.boundaries[0]!.pruned_review_inputs).toContain(
+        "appdb.orders.duration_ms: reviewed automatic numeric bands are unavailable on MySQL 5.7.44-log",
+      );
+      expect(preview.selectedProgress.candidate.pack.resources[0]!.auto_bands).toBeUndefined();
+      expect(preview.selectedProgress.candidate).toMatchObject({
+        database_server_version: "MySQL 5.7.44-log",
+        database_server_tier: "compatible_limited",
+        database_server_authority: {
+          engine: "mysql",
+          version_line: "5.7",
+        },
+      });
+      expect(formatBoundaryRescanReport(preview.report)).toMatch(
+        /database server capability authority changed.*release line changed from mysql 8\.x to mysql 5\.7/is,
+      );
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("reconciles a legacy lock that does not record database capability metadata", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-server-authority-backfill-"));
+    try {
+      const { inspection } = await writeReviewedCommerceProject(root);
+      const lockPath = path.join(root, ".synapsor/generation-lock.json");
+      const legacyLock = JSON.parse(await fs.readFile(lockPath, "utf8")) as GenerationLock;
+      delete legacyLock.database_server_version;
+      delete legacyLock.database_server_tier;
+      delete legacyLock.database_server_authority;
+      await fs.writeFile(lockPath, `${JSON.stringify(legacyLock, null, 2)}\n`);
+
+      const preview = await prepareBoundaryRescan({ projectRoot: root, inspection });
+      expect(preview.report).toMatchObject({
+        changed: true,
+        schema_changed: false,
+        role_posture_changed: false,
+        database_server_authority_changed: true,
+        database_server_version: "PostgreSQL 16",
+        database_server_tier: "full",
+      });
+      expect(preview.report).not.toHaveProperty("previous_database_server_version");
+      expect(preview.report).not.toHaveProperty("previous_database_server_tier");
+      expect(preview.report.database_server_authority_changes).toContain(
+        "recorded detected server PostgreSQL 16 as the full capability tier",
+      );
+      await commitBoundaryRescan(preview);
+
+      const reconciledLock = JSON.parse(await fs.readFile(lockPath, "utf8")) as GenerationLock;
+      expect(reconciledLock).toMatchObject({
+        database_server_version: "PostgreSQL 16",
+        database_server_tier: "full",
+        database_server_authority: {
+          engine: "postgres",
+          version_line: "16",
+        },
+      });
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

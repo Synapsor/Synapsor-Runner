@@ -18,6 +18,227 @@ export {
 export type SourceEngine = "postgres" | "mysql";
 export type InspectEngine = SourceEngine | "auto";
 
+export const DATABASE_SERVER_AUTHORITY_VERSION =
+  "synapsor.database-server-authority.v1";
+export type DatabaseGrammarFeature =
+  | "automatic_numeric_bands"
+  | "schema_check_constraints";
+export type DatabaseServerAuthority = {
+  schema_version: typeof DATABASE_SERVER_AUTHORITY_VERSION;
+  engine: SourceEngine;
+  /** PostgreSQL major, or the stable MySQL grammar line (5.7 or 8.x). */
+  version_line: string;
+  features: Record<DatabaseGrammarFeature, boolean>;
+};
+
+export const DATABASE_SERVER_SUPPORT = {
+  postgres: {
+    product: "PostgreSQL",
+    minimum_compatible_version: "13.0",
+    full_feature_version: "13.0",
+    maximum_supported_major: 18,
+    supported_range: "PostgreSQL 13 through 18",
+  },
+  mysql: {
+    product: "MySQL",
+    minimum_compatible_version: "5.7",
+    full_feature_version: "8.0",
+    maximum_supported_major: 8,
+    supported_range: "MySQL 5.7, or MySQL 8.x for the complete grammar",
+  },
+} as const;
+
+export type DatabaseServerCompatibility = {
+  engine: SourceEngine;
+  detected_version: string;
+  normalized_version?: string;
+  minimum_compatible_version: string;
+  full_feature_version: string;
+  supported_range: string;
+  supported: boolean;
+  tier: "full" | "compatible_limited" | "unsupported";
+  authority?: DatabaseServerAuthority;
+  limitations: string[];
+  reason?:
+    | "unrecognized_version"
+    | "unsupported_product"
+    | "below_minimum"
+    | "above_tested_range"
+    | "unsupported_release_line";
+};
+
+/**
+ * Resolve one deterministic grammar profile before authoring. A reviewed pack
+ * can contain only features supported by this profile, so query compilation
+ * never guesses at runtime or silently downgrades a model request.
+ */
+export function databaseServerCompatibility(input: {
+  engine: SourceEngine;
+  server_version: string;
+}): DatabaseServerCompatibility {
+  const support = DATABASE_SERVER_SUPPORT[input.engine];
+  const detected = input.server_version.trim();
+  const common = {
+    engine: input.engine,
+    detected_version: detected || "unknown",
+    minimum_compatible_version: support.minimum_compatible_version,
+    full_feature_version: support.full_feature_version,
+    supported_range: support.supported_range,
+  };
+  if (input.engine === "mysql" && /mariadb/i.test(detected)) {
+    return {
+      ...common,
+      supported: false,
+      tier: "unsupported",
+      limitations: ["MariaDB is not in the tested MySQL compatibility matrix."],
+      reason: "unsupported_product",
+    };
+  }
+  const match = input.engine === "postgres"
+    ? detected.match(/(?:PostgreSQL\s+)?(\d+)(?:\.(\d+))?/i)
+    : detected.match(/^(?:MySQL\s+)?(\d+)(?:\.(\d+))?/i);
+  if (!match) {
+    return {
+      ...common,
+      supported: false,
+      tier: "unsupported",
+      limitations: ["Runner could not determine a supported database release line."],
+      reason: "unrecognized_version",
+    };
+  }
+  const major = Number(match[1]);
+  const minor = Number(match[2] ?? 0);
+  const [minimumMajor, minimumMinor] = support.minimum_compatible_version.split(".").map(Number) as [number, number];
+  const supported = major > minimumMajor || (major === minimumMajor && minor >= minimumMinor);
+  if (!supported) {
+    return {
+      ...common,
+      normalized_version: `${major}.${minor}`,
+      supported: false,
+      tier: "unsupported",
+      limitations: ["The detected server is below the minimum compatible release line."],
+      reason: "below_minimum",
+    };
+  }
+  const releaseLineSupported = input.engine === "postgres"
+    ? major <= support.maximum_supported_major
+    : (major === 5 && minor === 7) || major === 8;
+  if (!releaseLineSupported) {
+    return {
+      ...common,
+      normalized_version: `${major}.${minor}`,
+      supported: false,
+      tier: "unsupported",
+      limitations: [
+        major > support.maximum_supported_major
+          ? "The detected server is newer than the release lines verified for this Runner version."
+          : "The detected server is not one of the explicitly supported release lines.",
+      ],
+      reason: major > support.maximum_supported_major
+        ? "above_tested_range"
+        : "unsupported_release_line",
+    };
+  }
+  const mysql57 = input.engine === "mysql" && major === 5 && minor === 7;
+  const authority: DatabaseServerAuthority = {
+    schema_version: DATABASE_SERVER_AUTHORITY_VERSION,
+    engine: input.engine,
+    version_line: input.engine === "postgres"
+      ? String(major)
+      : mysql57
+        ? "5.7"
+        : "8.x",
+    features: {
+      automatic_numeric_bands: !mysql57,
+      schema_check_constraints: !mysql57,
+    },
+  };
+  const limitations = mysql57
+    ? [
+      "Automatic numeric bands are unavailable because MySQL 5.7 has no window functions or common table expressions.",
+      "CHECK constraints are neither enforced nor available as reviewed vocabulary evidence; text-like categorical fields cannot be grouped or categorically filtered unless a bounded native ENUM is present.",
+    ]
+    : [];
+  return {
+    ...common,
+    normalized_version: `${major}.${minor}`,
+    supported: true,
+    tier: mysql57 ? "compatible_limited" : "full",
+    authority,
+    limitations,
+  };
+}
+
+export function databaseServerCompatibilityMessage(
+  compatibility: DatabaseServerCompatibility,
+): string {
+  if (compatibility.tier === "full") {
+    return `Detected ${compatibility.detected_version}; the complete reviewed Explore grammar is available.`;
+  }
+  if (compatibility.tier === "compatible_limited") {
+    return [
+      `Detected ${compatibility.detected_version}; this is a supported compatibility tier.`,
+      ...compatibility.limitations,
+      "Unavailable features are omitted during review and cannot enter the model-facing boundary.",
+    ].join(" ");
+  }
+  const reason = compatibility.reason === "unsupported_product"
+    ? "MariaDB and other MySQL-compatible products are not in the tested support matrix."
+    : compatibility.reason === "unrecognized_version"
+      ? "Runner could not determine a supported server version from the database response."
+      : compatibility.reason === "above_tested_range"
+        ? "The detected server is newer than the release lines verified for this Runner version."
+        : compatibility.reason === "unsupported_release_line"
+          ? "The detected release line is not in this Runner version's explicit compatibility matrix."
+          : "The detected server is below the minimum supported version.";
+  return [
+    `Database server version ${compatibility.detected_version} is unsupported.`,
+    reason,
+    `Synapsor Runner requires ${compatibility.supported_range}.`,
+    "Use a supported source release before drafting, activating, or serving reviewed Explore authority.",
+  ].join(" ");
+}
+
+export function databaseGrammarFeatureAvailable(
+  input: { engine: SourceEngine; server_version: string } | DatabaseServerAuthority,
+  feature: DatabaseGrammarFeature,
+): boolean {
+  const authority = "features" in input
+    ? input
+    : databaseServerCompatibility(input).authority;
+  return authority?.features[feature] === true;
+}
+
+export function assertDatabaseGrammarFeature(
+  input: { engine: SourceEngine; server_version: string } | DatabaseServerAuthority,
+  feature: DatabaseGrammarFeature,
+): void {
+  if (databaseGrammarFeatureAvailable(input, feature)) return;
+  const label = feature === "automatic_numeric_bands"
+    ? "Automatic numeric bands"
+    : "Schema CHECK-constraint vocabularies";
+  const version = "server_version" in input
+    ? input.server_version
+    : `${input.engine} ${input.version_line}`;
+  throw new Error(
+    `${label} are unavailable on ${version}. `
+    + "Runner omits unsupported grammar during review; no authority was changed.",
+  );
+}
+
+export function assertSupportedDatabaseServerVersion(input: {
+  engine: SourceEngine;
+  server_version: string;
+}): DatabaseServerCompatibility {
+  const compatibility = databaseServerCompatibility(input);
+  if (!compatibility.supported) {
+    const error = new Error(databaseServerCompatibilityMessage(compatibility));
+    error.name = "DATABASE_SERVER_VERSION_UNSUPPORTED";
+    throw error;
+  }
+  return compatibility;
+}
+
 const MAX_SCHEMA_ENUM_VALUES = 64;
 const MAX_SCHEMA_ENUM_VALUE_CHARACTERS = 64;
 const MAX_SCHEMA_ENUM_SERIALIZED_BYTES = 2_048;
@@ -890,9 +1111,11 @@ export function generateRunnerConfigFromSpec(spec: OnboardingSelectionSpec): Gen
 
 export function summarizeInspection(inspection: SchemaInspection): string {
   const rolePosture = inspection.role_posture;
+  const compatibility = databaseServerCompatibility(inspection);
   const lines = [
     `Engine: ${inspection.engine}`,
     `Server: ${inspection.server_version}`,
+    `Server support: ${compatibility.tier === "full" ? "FULL" : compatibility.tier === "compatible_limited" ? "COMPATIBLE - LIMITED GRAMMAR" : "UNSUPPORTED"} - ${databaseServerCompatibilityMessage(compatibility)}`,
     `Current user: ${inspection.current_user}`,
     `Role posture: ${rolePosture?.verified ? "verified" : "unverified"}; ${rolePosture?.read_only ? "read-only" : "not read-only"}`,
     `Role posture fingerprint: ${rolePostureFingerprint(inspection)}`,
@@ -1748,6 +1971,10 @@ function normalizeInspection(input: {
     ...(writableRelations.length ? [`current role has write authority on ${writableRelations.length} inspected relation(s)`] : []),
     ...(!roleVerified ? ["effective role posture could not be fully verified"] : []),
   ];
+  const compatibility = databaseServerCompatibility({
+    engine: input.engine,
+    server_version: input.server_version,
+  });
   return {
     engine: input.engine,
     server_version: input.server_version,
@@ -1764,7 +1991,12 @@ function normalizeInspection(input: {
     inspected_at: new Date().toISOString(),
     schemas: input.schemas,
     tables,
-    warnings: ["Inspection reads metadata only. Column classifications are suggestions, not a complete data-classification system."],
+    warnings: [
+      "Inspection reads metadata only. Column classifications are suggestions, not a complete data-classification system.",
+      ...(compatibility.tier === "full"
+        ? []
+        : [`Database compatibility: ${databaseServerCompatibilityMessage(compatibility)}`]),
+    ],
     ...(input.globalTenantIsolationEvidence
       ? { global_tenant_isolation_evidence: [...input.globalTenantIsolationEvidence].sort() }
       : {}),

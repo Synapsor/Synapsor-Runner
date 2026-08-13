@@ -20,6 +20,8 @@ import {
   shapePrivacySuppressedGroups,
 } from "@synapsor-runner/protocol";
 import {
+  assertDatabaseGrammarFeature,
+  assertSupportedDatabaseServerVersion,
   inspectDatabase,
   inspectDatabaseWithConnection,
   type SchemaInspection,
@@ -228,6 +230,7 @@ export type ScopedExploreErrorCode =
   | "EXPLORE_PRIVACY_BUDGET_EXHAUSTED"
   | "EXPLORE_RATE_LIMITED"
   | "EXPLORE_RESPONSE_TOO_LARGE"
+  | "EXPLORE_SERVER_VERSION_UNSUPPORTED"
   | "EXPLORE_SOURCE_UNAVAILABLE";
 
 export class ScopedExploreError extends Error {
@@ -368,6 +371,70 @@ export async function prepareScopedExplore(input: {
       : {}),
     env: input.env ?? process.env,
   });
+  let serverCompatibility: ReturnType<typeof assertSupportedDatabaseServerVersion>;
+  try {
+    serverCompatibility = assertSupportedDatabaseServerVersion(inspection);
+  } catch (error) {
+    throw new ScopedExploreError(
+      "EXPLORE_SERVER_VERSION_UNSUPPORTED",
+      safeError(error),
+    );
+  }
+  if (!lock.database_server_version
+    || !lock.database_server_tier
+    || !lock.database_server_authority) {
+    throw new ScopedExploreError(
+      "EXPLORE_LOCK_STALE",
+      [
+        "Generated authority is stale: the generation lock does not record its database server capability tier.",
+        generationLockRemediation(lock),
+      ].join("\n"),
+    );
+  }
+  if (!boundary.database_server_version
+    || !boundary.database_server_tier
+    || !boundary.database_server_authority) {
+    throw new ScopedExploreError(
+      "EXPLORE_LOCK_STALE",
+      [
+        "Generated authority is stale: the activated boundary does not record its reviewed database server capability tier.",
+        generationLockRemediation(lock),
+      ].join("\n"),
+    );
+  }
+  if (boundary.database_server_version !== lock.database_server_version
+    || boundary.database_server_tier !== lock.database_server_tier
+    || canonicalJsonDigest(boundary.database_server_authority)
+      !== canonicalJsonDigest(lock.database_server_authority)) {
+    throw new ScopedExploreError(
+      "EXPLORE_BOUNDARY_MISMATCH",
+      "The active boundary and generation lock disagree on database server capability authority.",
+    );
+  }
+  if (canonicalJsonDigest(serverCompatibility.authority ?? null)
+      !== canonicalJsonDigest(lock.database_server_authority)
+    || serverCompatibility.tier !== lock.database_server_tier) {
+    throw new ScopedExploreError(
+      "EXPLORE_LOCK_STALE",
+      [
+        `Generated authority is stale: the database server release line changed from ${lock.database_server_authority.engine} ${lock.database_server_authority.version_line} to ${serverCompatibility.authority ? `${serverCompatibility.authority.engine} ${serverCompatibility.authority.version_line}` : inspection.server_version}.`,
+        generationLockRemediation(lock),
+      ].join("\n"),
+    );
+  }
+  if (boundary.pack.resources.some((resource) => resource.auto_bands?.length)) {
+    try {
+      assertDatabaseGrammarFeature(
+        serverCompatibility.authority ?? inspection,
+        "automatic_numeric_bands",
+      );
+    } catch (error) {
+      throw new ScopedExploreError("EXPLORE_LOCK_STALE", [
+        `Generated authority is stale: ${safeError(error)}`,
+        generationLockRemediation(lock),
+      ].join("\n"));
+    }
+  }
   if (lock.authority_dependencies) {
     if (lock.compiler_version !== boundary.compiler_version || lock.spec_version !== boundary.spec_version) {
       throw new ScopedExploreError("EXPLORE_BOUNDARY_MISMATCH", "The active boundary and generation lock disagree on compiler or Spec version.");
@@ -2649,7 +2716,13 @@ function shapeExploreResponse(
         ? autoBandLabel(resource, dimension.numeric_band, row, index)
         : safeDatabaseValue(row[`dimension_${index}`]);
     });
-    if (plan.time_bucket && !plan.comparison) output.time_bucket = safeDatabaseValue(row.time_bucket);
+    if (plan.time_bucket && !plan.comparison) {
+      output.time_bucket = canonicalTimeBucketValue(
+        row.time_bucket,
+        plan.time_bucket.bucket,
+        boundary.reporting_timezone,
+      );
+    }
     plan.measures.forEach((_measure, index) => {
       output[`measure_${index}`] = finiteNumberOrNull(row[`measure_${index}`]);
     });
@@ -5656,6 +5729,39 @@ function safeDatabaseValue(value: unknown): Scalar {
   if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
   if (value instanceof Date) return value.toISOString();
   return String(value);
+}
+
+function canonicalTimeBucketValue(
+  value: unknown,
+  bucket: TimeBucket,
+  reportingTimezone: "UTC" | undefined,
+): Scalar {
+  if (value === null || value === undefined) return null;
+  if (bucket === "day_of_week") {
+    const day = typeof value === "number" ? value : Number(value);
+    return Number.isInteger(day) && day >= 1 && day <= 7 ? day : safeDatabaseValue(value);
+  }
+
+  const text = value instanceof Date ? value.toISOString() : String(value).trim();
+  if (bucket === "quarter") {
+    const named = /^(\d{4})-Q([1-4])$/.exec(text);
+    if (named) return `${named[1]}-Q${named[2]}`;
+    const dated = /^(\d{4})-(\d{2})-\d{2}/.exec(text);
+    if (dated) return `${dated[1]}-Q${Math.floor((Number(dated[2]) - 1) / 3) + 1}`;
+    return safeDatabaseValue(value);
+  }
+
+  const dated = /^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}))?/.exec(text);
+  if (bucket === "year") return dated?.[1] ?? (/^\d{4}$/.test(text) ? text : safeDatabaseValue(value));
+  if (bucket === "hour" && dated?.[4]) {
+    const separator = reportingTimezone === "UTC" ? "T" : " ";
+    const suffix = reportingTimezone === "UTC" ? "Z" : "";
+    return `${dated[1]}-${dated[2]}-${dated[3]}${separator}${dated[4]}:00:00${suffix}`;
+  }
+  if ((bucket === "day" || bucket === "week" || bucket === "month") && dated) {
+    return `${dated[1]}-${dated[2]}-${dated[3]}`;
+  }
+  return safeDatabaseValue(value);
 }
 
 function direction(value: unknown): Direction {

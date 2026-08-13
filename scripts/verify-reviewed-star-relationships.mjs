@@ -126,6 +126,38 @@ function fixtureRows() {
       occurredAt: "2026-07-15 00:00:00",
     });
   }
+  const metricSeries = [
+    ["growth", [10, 20, 30]],
+    ["retained", [40, 50, 60]],
+  ];
+  for (const [segment, weeklyAmounts] of metricSeries) {
+    for (let week = 0; week < weeklyAmounts.length; week += 1) {
+      for (let index = 0; index < 5; index += 1) {
+        rows.push({
+          id: `metric-${segment}-${week}-${index}`,
+          tenant: "acme",
+          store: "store-a",
+          product: "product-energy",
+          amount: weeklyAmounts[week],
+          scenario: "metrics",
+          segment,
+          occurredAt: `2026-07-${String(6 + (week * 7)).padStart(2, "0")} 00:00:00`,
+        });
+      }
+    }
+  }
+  for (let index = 0; index < 2; index += 1) {
+    rows.push({
+      id: `metric-private-${index}`,
+      tenant: "acme",
+      store: "store-a",
+      product: "product-energy",
+      amount: 999,
+      scenario: "metrics",
+      segment: "private-small",
+      occurredAt: "2026-07-13 00:00:00",
+    });
+  }
   return rows;
 }
 
@@ -568,6 +600,8 @@ async function verifyEngine(engine, readUrl, inspectedSchema, admin) {
 
   const depthThreeCandidate = structuredClone(build.exploration_boundary);
   depthThreeCandidate.budgets.max_analysis_relationship_hops = 3;
+  assert(depthThreeCandidate.budgets.max_derived_scope_hops === 2,
+    `${engine} raising analysis depth implicitly raised derived-scope depth`, depthThreeCandidate.budgets);
   for (const resource of depthThreeCandidate.pack.resources) {
     for (const relationship of resource.relationships) {
       if (relationship.unmatched_rows === "review_required") relationship.unmatched_rows = "exclude";
@@ -611,6 +645,201 @@ async function verifyEngine(engine, readUrl, inspectedSchema, admin) {
       `${engine} depth-three aggregate reported a source mutation`, result);
   } finally {
     await depthThreeRuntime.close();
+  }
+
+  const metricsCandidate = structuredClone(build.exploration_boundary);
+  const metricsFact = metricsCandidate.pack.resources.find((resource) => resource.id === factId);
+  assert(metricsFact, `${engine} metrics candidate omitted the sales fact resource`);
+  metricsFact.derived_measures = [
+    {
+      name: "amount_ratio_per_sale",
+      label: "Amount ratio per sale",
+      shape: "ratio",
+      numerator: { function: "sum", field: "amount_cents" },
+      denominator: { function: "count" },
+      null_policy: "null_on_zero_or_null_denominator",
+    },
+    {
+      name: "amount_per_sale",
+      label: "Amount per sale",
+      shape: "per_unit_average",
+      numerator: { function: "sum", field: "amount_cents" },
+      denominator: { function: "count" },
+      null_policy: "null_on_zero_or_null_denominator",
+    },
+    {
+      name: "distinct_sale_percentage",
+      label: "Distinct sale percentage",
+      shape: "percentage",
+      numerator: { function: "count_distinct", field: "id" },
+      denominator: { function: "count" },
+      null_policy: "null_on_zero_or_null_denominator",
+    },
+    {
+      name: "amount_running_total",
+      label: "Amount running total",
+      shape: "running_total",
+      base_measure: { function: "sum", field: "amount_cents" },
+    },
+    {
+      name: "amount_rank",
+      label: "Amount rank",
+      shape: "rank",
+      base_measure: { function: "sum", field: "amount_cents" },
+      direction: "desc",
+    },
+    {
+      name: "amount_lag_change",
+      label: "Amount change from prior period",
+      shape: "lag_absolute_change",
+      base_measure: { function: "sum", field: "amount_cents" },
+    },
+    {
+      name: "amount_lag_percentage",
+      label: "Amount percentage change from prior period",
+      shape: "lag_percentage_change",
+      base_measure: { function: "sum", field: "amount_cents" },
+    },
+    {
+      name: "amount_moving_average",
+      label: "Two-period amount moving average",
+      shape: "moving_average",
+      base_measure: { function: "sum", field: "amount_cents" },
+      window_size: 2,
+    },
+    {
+      name: "amount_share",
+      label: "Share of released amount",
+      shape: "share_of_released_total",
+      base_measure: { function: "sum", field: "amount_cents" },
+    },
+  ];
+  for (const resource of metricsCandidate.pack.resources) {
+    for (const relationship of resource.relationships) {
+      if (relationship.unmatched_rows === "review_required") relationship.unmatched_rows = "exclude";
+    }
+  }
+  const metricsReviewed = reviewExplorationBoundaryCandidate(
+    build.exploration_boundary,
+    metricsCandidate,
+  );
+  await activateExplorationBoundary({
+    projectRoot,
+    candidate: metricsReviewed.candidate,
+    expectedDigest: metricsReviewed.digest,
+    actor: "reviewed-metrics-verifier",
+    confirmation: `ACTIVATE ${metricsReviewed.digest}`,
+    confirmedDecisions: metricsReviewed.candidate.unresolved_decisions,
+    currentInspection: inspection,
+  });
+  const metricsRuntime = await createScopedExploreRuntime({
+    projectRoot,
+    transport: "stdio",
+    env,
+  });
+  try {
+    const commonPlan = {
+      kind: "aggregate",
+      resource: factId,
+      dimensions: [{ field: "segment" }],
+      where: [{ field: "scenario", op: "eq", value: "metrics" }],
+      top_n: 10,
+    };
+    const ratioResult = await metricsRuntime.explore({
+      ...commonPlan,
+      measures: [
+        { derived_measure: "amount_ratio_per_sale" },
+        { derived_measure: "amount_per_sale" },
+        { derived_measure: "distinct_sale_percentage" },
+      ],
+    });
+    const ratioRows = new Map(ratioResult.data.map((row) => [row.segment, row]));
+    assert(ratioResult.privacy?.suppressed_groups === 1
+      && !ratioRows.has("private-small")
+      && ratioRows.get("growth")?.amount_ratio_per_sale === 20
+      && ratioRows.get("growth")?.amount_per_sale === 20
+      && ratioRows.get("growth")?.distinct_sale_percentage === 100
+      && ratioRows.get("retained")?.amount_ratio_per_sale === 50
+      && ratioRows.get("retained")?.amount_per_sale === 50
+      && ratioRows.get("retained")?.distinct_sale_percentage === 100,
+    `${engine} returned incorrect reviewed ratio/per-unit metrics or included a suppressed input`, ratioResult);
+
+    const rankedResult = await metricsRuntime.explore({
+      ...commonPlan,
+      measures: [
+        { derived_measure: "amount_rank" },
+        { derived_measure: "amount_share" },
+      ],
+    });
+    const rankedRows = new Map(rankedResult.data.map((row) => [row.segment, row]));
+    const growthShare = Number(rankedRows.get("growth")?.amount_share);
+    const retainedShare = Number(rankedRows.get("retained")?.amount_share);
+    assert(rankedResult.privacy?.suppressed_groups === 1
+      && !rankedRows.has("private-small")
+      && rankedRows.get("growth")?.amount_rank === 2
+      && rankedRows.get("retained")?.amount_rank === 1
+      && Math.abs(growthShare - (100 * 300 / 1050)) < 1e-9
+      && Math.abs(retainedShare - (100 * 750 / 1050)) < 1e-9,
+    `${engine} ranked or shared against suppressed groups`, rankedResult);
+
+    const sequentialPlan = {
+      ...commonPlan,
+      time_bucket: { field: "occurred_at", bucket: "week" },
+      order_by: { kind: "time_bucket", direction: "asc" },
+    };
+    const sequentialResult = await metricsRuntime.explore({
+      ...sequentialPlan,
+      measures: [
+        { derived_measure: "amount_running_total" },
+        { derived_measure: "amount_lag_change" },
+        { derived_measure: "amount_lag_percentage" },
+      ],
+    });
+    const series = (segment, field) => sequentialResult.data
+      .filter((row) => row.segment === segment)
+      .sort((left, right) => String(left.time_bucket).localeCompare(String(right.time_bucket)))
+      .map((row) => row[field]);
+    assert(sequentialResult.privacy?.suppressed_groups === 1
+      && !sequentialResult.data.some((row) => row.segment === "private-small")
+      && JSON.stringify(series("growth", "amount_running_total")) === JSON.stringify([50, 150, 300])
+      && JSON.stringify(series("retained", "amount_running_total")) === JSON.stringify([200, 450, 750])
+      && JSON.stringify(series("growth", "amount_lag_change")) === JSON.stringify([null, 50, 50])
+      && JSON.stringify(series("retained", "amount_lag_change")) === JSON.stringify([null, 50, 50])
+      && JSON.stringify(series("growth", "amount_lag_percentage")) === JSON.stringify([null, 100, 50])
+      && JSON.stringify(series("retained", "amount_lag_percentage")) === JSON.stringify([null, 25, 20]),
+    `${engine} returned incorrect post-suppression running or lag metrics`, sequentialResult);
+
+    const movingResult = await metricsRuntime.explore({
+      ...sequentialPlan,
+      measures: [{ derived_measure: "amount_moving_average" }],
+    });
+    const movingSeries = (segment) => movingResult.data
+      .filter((row) => row.segment === segment)
+      .sort((left, right) => String(left.time_bucket).localeCompare(String(right.time_bucket)))
+      .map((row) => row.amount_moving_average);
+    assert(movingResult.privacy?.suppressed_groups === 1
+      && !movingResult.data.some((row) => row.segment === "private-small")
+      && JSON.stringify(movingSeries("growth")) === JSON.stringify([50, 75, 125])
+      && JSON.stringify(movingSeries("retained")) === JSON.stringify([200, 225, 275]),
+    `${engine} returned an incorrect reviewed moving average`, movingResult);
+
+    await metricsRuntime.explore({
+      ...commonPlan,
+      measures: [{
+        derived_measure: "amount_per_sale",
+        formula: "SUM(amount_cents) / COUNT(*)",
+      }],
+    }).then(
+      () => assert(false, `${engine} accepted a model-authored formula`),
+      (error) => assert(error?.code === "EXPLORE_PLAN_INVALID"
+        && /formula|unsupported/i.test(error?.message ?? ""),
+      `${engine} refused a model-authored formula with an unexpected error`, {
+        code: error?.code,
+        message: error?.message,
+      }),
+    );
+  } finally {
+    await metricsRuntime.close();
   }
 
   assert(fact.groupable_fields.includes("segment"),
@@ -702,7 +931,7 @@ async function verifyEngine(engine, readUrl, inspectedSchema, admin) {
   }
   const after = await sourceSnapshot(engine, admin);
   assert(JSON.stringify(after) === JSON.stringify(before), `${engine} live read verification changed source rows`, { before, after });
-  console.log(`${engine} reviewed relationship/ranking verification passed with exact totals, explicit depth-three opt-in (${depthThreeExecutionDurationMs} ms end-to-end verifier latency), nullable semantics, high-cardinality top-N, period movers, suppression, scope, and fan-out refusal.`);
+  console.log(`${engine} reviewed relationship/ranking verification passed with exact totals, independent depth-three analysis opt-in (${depthThreeExecutionDurationMs} ms end-to-end verifier latency), the complete reviewed metric family, nullable semantics, high-cardinality top-N, period movers, suppression, scope, and fan-out refusal.`);
 }
 
 run("docker", ["compose", "-f", compose, "up", "-d", "--wait", "postgres", "mysql"], { inherit: true });

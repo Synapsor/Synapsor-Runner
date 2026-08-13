@@ -188,6 +188,7 @@ const publicDocs = [
   "cursor-plugin.md",
   "current-scope.md",
   "database-enforced-scope.md",
+  "database-server-compatibility.md",
   "doctor.md",
   "effect-regression.md",
   "fresh-developer-usability.md",

@@ -20,7 +20,10 @@ import {
   type WorkerQueueItem,
 } from "@synapsor-runner/proposal-store";
 import { canonicalJsonDigest, protocolVersions, type FreshnessProofV1 } from "@synapsor-runner/protocol";
-import { inspectDatabase } from "@synapsor-runner/schema-inspector";
+import {
+  databaseServerCompatibility,
+  inspectDatabase,
+} from "@synapsor-runner/schema-inspector";
 import { cursorProjectStatus } from "./cursor-project.js";
 import {
   detectManagedMcpClientCommand,
@@ -703,6 +706,16 @@ async function handleRequest(input: {
       return;
     }
     const draft = JSON.parse(await fs.readFile(path.join(boundaryRoot, "exploration-boundary.draft.json"), "utf8")) as ExplorationBoundaryDraft;
+    const generationLock = JSON.parse(await fs.readFile(
+      path.join(projectRoot, ".synapsor/generation-lock.json"),
+      "utf8",
+    )) as GenerationLock;
+    const serverCompatibility = generationLock.database_server_version
+      ? databaseServerCompatibility({
+        engine: generationLock.engine,
+        server_version: generationLock.database_server_version,
+      })
+      : null;
     const review = JSON.parse(await fs.readFile(
       path.join(boundaryRoot, "generation-review.json"),
       "utf8",
@@ -745,16 +758,15 @@ async function handleRequest(input: {
         instantTenantScopeSource = "environment";
       } else if (instantCandidate.trusted_context.database_role_tenant && instantMissingBindings.length === 0) {
         try {
-          const lock = JSON.parse(await fs.readFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "utf8")) as GenerationLock;
           const inspection = await schemaInspector({
-            engine: lock.engine,
-            databaseUrlEnv: lock.source_env,
-            schema: lock.inspected_schema,
+            engine: generationLock.engine,
+            databaseUrlEnv: generationLock.source_env,
+            schema: generationLock.inspected_schema,
             env: process.env,
           });
           const scope = await resolveTrustedScopeFn({
             boundary: instantCandidate,
-            lock,
+            lock: generationLock,
             inspection,
             env: process.env,
           });
@@ -812,6 +824,7 @@ async function handleRequest(input: {
           .filter((decision) => !confirmedDecisions.includes(decision.decision)),
       },
       review: reviewForDisplay,
+      database_server_compatibility: serverCompatibility,
       candidate_digest: explorationBoundaryCandidateDigest(candidate),
       boundary_library: boundaryLibrary,
       boundary_rescan_report: await readBoundaryRescanReport(projectRoot),
@@ -1311,7 +1324,19 @@ async function handleRequest(input: {
       source: active.source,
       compiler_version: active.compiler_version,
       spec_version: active.spec_version,
+      ...(active.database_server_version
+        ? { database_server_version: active.database_server_version }
+        : {}),
+      ...(active.database_server_tier
+        ? { database_server_tier: active.database_server_tier }
+        : {}),
+      ...(active.database_server_authority
+        ? { database_server_authority: structuredClone(active.database_server_authority) }
+        : {}),
       ...(active.reporting_timezone ? { reporting_timezone: active.reporting_timezone } : {}),
+      ...(active.organization_scope
+        ? { organization_scope: structuredClone(active.organization_scope) }
+        : {}),
       trusted_context: structuredClone(active.trusted_context),
       generation_lock_fingerprint: active.generation_lock_fingerprint,
       role_posture_fingerprint: active.role_posture_fingerprint,

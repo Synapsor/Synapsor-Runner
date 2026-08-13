@@ -20,7 +20,7 @@ all of them together through `doctor --preflight`; it does not provision them.
 
 | Component | What it must provide | Why Runner needs it |
 | --- | --- | --- |
-| Application source | A PostgreSQL 16 or MySQL 8 database and a read-only, non-owner credential | This is the reviewed data source. Runner never uses the control-store writer against it. |
+| Application source | A [supported PostgreSQL/MySQL source](database-server-compatibility.md) and a read-only, non-owner credential | PostgreSQL 13-18 and MySQL 8.x expose the complete reviewed grammar; MySQL 5.7 exposes its documented limited tier. Runner never uses the control-store writer against this source. |
 | Control store | A separate PostgreSQL database and a role allowed to run the fixed Synapsor migration and write accounting records | Production budgets and audit evidence must be atomic across processes and replicas. A MySQL source still requires this PostgreSQL control store; there is no shared-MySQL control store. |
 | Identity provider (IdP) | An OAuth authorization server that issues asymmetrically signed JWT access tokens | It authenticates people, issues and refreshes tokens, and publishes signing keys. |
 | HTTPS boundary | Direct TLS at Runner or an explicitly trusted TLS-terminating proxy | Bearer tokens must not cross an unprotected network channel. |
@@ -165,13 +165,16 @@ parent query and child subquery, rechecks every participating resource and scope
 dependency against the generation lock, and releases only parent cohorts of at
 least five. A model cannot provide the child table, key, predicate, or formula.
 
-The 1.7.0 production gates execute the expanded grammar on PostgreSQL 16 and
-MySQL 8. These are the documented tested server lines. Fixed post-suppression
-operations run in Runner rather than database window SQL, so their behavior is
-identical across those engines. No compatibility claim is made here for older
-database releases. Automatic quantiles specifically rely on the reviewed
-PostgreSQL 16/MySQL 8 `CUME_DIST` implementation; equal-width bands use scoped
-`MIN`/`MAX` bounds in the same read-only transaction.
+Production HTTP reads the same database capability profile stored in the
+boundary lock as local stdio. PostgreSQL 13-18 and MySQL 8.x expose the complete
+reviewed grammar. MySQL 5.7 remains usable with automatic bands and
+`CHECK`-derived categorical vocabularies omitted before tool discovery; native
+`ENUM`, fixed bands, dispersion, relative time, and Runner-side
+post-suppression operations remain available. The 1.7.0 gate exercises real
+RS256-authenticated production HTTP against PostgreSQL 13.23 and MySQL 5.7.44,
+in addition to the current-engine production suites. See
+[Database Server Compatibility](database-server-compatibility.md) for the full
+matrix and server-change reconciliation rules.
 
 ## 1. Configure The Secured Runtime
 

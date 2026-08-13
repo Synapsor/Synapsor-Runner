@@ -18,6 +18,7 @@ describe("Auto Boundary Workbench renderer", () => {
       ["reviewed relationships and visual map", ["Reviewed data map", "renderBoundaryGraphSvg", "Each reviewed join uses its own labeled connection lane"]],
       ["numeric bands", ["Add a fixed numeric band", "kind:\"numeric_band\""]],
       ["automatic numeric bands", ["Allow automatic numeric bands", "kind:\"auto_band\"", "raw edges"]],
+      ["database capability tiers", ["Automatic numeric bands are unavailable on", "This unavailable grammar is not shown to the model", "Supported limited database grammar", "Database capability changes"]],
       ["reviewed relative UTC windows", ["Reviewed UTC window", "Reviewed relative UTC window", "Exact UTC date ranges", "Operator-only resolved UTC window", "time_window", "compare_to"]],
       ["named and post-suppression measures", ["Add a named derived metric", "Add a post-suppression calculation", "kind:\"derived_measure\""]],
       ["safe child-count measures", ["Add a safe child-count metric", "Count child records without a raw one-to-many join"]],
@@ -100,6 +101,11 @@ describe("Auto Boundary Workbench renderer", () => {
       schema_changed: true,
       role_posture_changed: false,
       trusted_context_changed: false,
+      database_server_authority_changed: true,
+      database_server_authority_changes: [
+        "release line changed from mysql 8.x to mysql 5.7",
+        "automatic numeric bands are unavailable on this release line and were removed from review authority",
+      ],
       totals,
       boundaries: [{
         boundary_name: "reviewed_staging",
@@ -118,6 +124,8 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(changed).toContain("Apply disabled reconciliation");
     expect(changed).toContain("public.orders.channel: new column kept out until reviewed");
     expect(changed).toContain("resource.public.orders.field_visibility: reviewed input changed");
+    expect(changed).toContain("Database capabilities</th><td>Changed");
+    expect(changed).toContain("release line changed from mysql 8.x to mysql 5.7");
 
     const repaired = render({
       changed: false,

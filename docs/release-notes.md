@@ -116,6 +116,13 @@ for the Synapsor Cloud CLI.
   missing-data measures. Sequential metrics omit undated records, MySQL restores
   pooled session timezones, and Workbench relationship labels use separate graph
   lanes instead of overlapping.
+- Source-server authority is now versioned and capability-gated. PostgreSQL
+  13-18 and MySQL 8.x receive the complete reviewed grammar; MySQL 5.7 remains usable
+  with automatic bands and `CHECK`-derived vocabularies omitted before review
+  and model discovery. PostgreSQL 12 and older, pre-5.7 MySQL, MariaDB, and
+  unrecognized or future unverified products fail before authority can run. A live matrix verifies
+  PostgreSQL 13-18, MySQL 5.7/8.0/8.4, below-floor refusal, local MCP, and real
+  production HTTP on the oldest/limited tiers.
 - Local/staging Explore and existing protected named capabilities retain their
   existing behavior. Spec and DSL `1.9.0` add the new fixed aggregate operations
   and post-suppression transforms without admitting model-authored expressions.

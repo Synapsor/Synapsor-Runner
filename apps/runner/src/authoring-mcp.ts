@@ -66,6 +66,11 @@ export function createScopedExploreMcpServer(
   options: { mode?: "local_authoring" | "production_http" } = {},
 ): McpServer {
   const production = options.mode === "production_http";
+  const automaticBandsReviewed = (isBoundarySetRuntime(runtime)
+    ? runtime.boundaries
+    : [runtime.boundary]).some((boundary) => boundary.pack.resources.some(
+      (resource) => Boolean(resource.auto_bands?.length),
+    ));
   const absoluteRowTimeWindow = z.object({
     field: fieldId,
     start: z.string().datetime(),
@@ -191,13 +196,18 @@ export function createScopedExploreMcpServer(
     boundary: optionalBoundarySelector,
     plan,
   }).strict();
+  const reviewedOptionalControls = [
+    "time_window",
+    'order_by kind "comparison_change"',
+    ...(automaticBandsReviewed ? ['auto-band methods "quantile" or "equal_width"'] : []),
+  ].join(", ");
   const exploreDiscoveryInput = z.object({
     boundary: optionalBoundarySelector,
     plan: z.object({
       kind: z.string().describe('Exactly "rows" or "aggregate".'),
       resource: resourceId,
     }).passthrough().describe(
-      'Copy one complete plan from app.describe_data or this tool description. Optional reviewed controls include time_window, order_by kind "comparison_change", and auto-band methods "quantile" or "equal_width". Dimension-by-time returns one row per dimension/time combination. Runner strictly validates every nested key before execution.',
+      `Copy one complete plan from app.describe_data or this tool description. Optional reviewed controls include ${reviewedOptionalControls}. Dimension-by-time returns one row per dimension/time combination. Runner strictly validates every nested key before execution.`,
     ),
   }).strict();
 
@@ -243,7 +253,7 @@ export function createScopedExploreMcpServer(
   )));
   server.registerTool(SCOPED_EXPLORE_QUERY_TOOL, {
     title: "Explore reviewed data",
-    description: exploreToolDescription(production),
+    description: exploreToolDescription(production, automaticBandsReviewed),
     inputSchema: exploreDiscoveryInput,
     outputSchema: scopedExploreQueryToolOutputSchema,
     annotations: {
@@ -323,7 +333,7 @@ function invalidExploreKindMessage(): string {
     '{"plan":{"kind":"aggregate","resource":"<exact resource id from app.describe_data>","measures":[{"function":"count"}],"top_n":25}}';
 }
 
-function exploreToolDescription(production: boolean): string {
+function exploreToolDescription(production: boolean, automaticBandsReviewed: boolean): string {
   return [
     `Runs one reviewed read-only ${production ? "production" : "local"} plan.`,
     "Call app.describe_data first and copy exact ids. Send {boundary?,plan:{...}}; plan.kind is exactly rows or aggregate.",
@@ -331,7 +341,9 @@ function exploreToolDescription(production: boolean): string {
     'Relationship: keep "relationship":"<id>" separate from the related field; never concatenate them.',
     'Rows: {"plan":{"kind":"rows","resource":"<exact resource id>","select":["<field>"]}}. Omitted limit uses Runner\'s reviewed bound.',
     'Named controls use {"derived_measure":"<name>"} in measures or {"numeric_band":"<name>"} in dimensions.',
-    'Reviewed auto-band example: {"numeric_band":{"field":"amount_cents","method":"quantile","buckets":5}}. Copy the field, method, and bucket range from app.describe_data; never send edges, widths, offsets, formulas, or labels.',
+    ...(automaticBandsReviewed
+      ? ['Reviewed auto-band example: {"numeric_band":{"field":"amount_cents","method":"quantile","buckets":5}}. Copy the field, method, and bucket range from app.describe_data; never send edges, widths, offsets, formulas, or labels.']
+      : []),
     'Reviewed relative time uses {"time_window":{"field":"<reviewed time field>","window":"<exact name from app.describe_data>"}}; Runner resolves it once in authority-bound UTC. Never calculate dates or invent offsets.',
     "Filter values must be concrete, not null. Use null_count, non_null_count, or completion_rate for reviewed missing-data analysis.",
     "No cross-boundary joins, SQL, model-selected tenant/principal, mutation, approval, or commit.",
