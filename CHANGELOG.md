@@ -39,9 +39,10 @@
   before `app.explore_data`, consume no Explore query/differencing budget, and
   cannot be narrated as the requested answer. Canonical field IDs match in
   underscore, hyphenated, and readable forms; reviewer labels match exactly;
-  and resource-qualified compound fields allow narrow shorthand such as
-  `encounters by type` for `encounter_type` without accepting an unrelated
-  modifier such as `insurance type`. Adds bounded CLI/Workbench Ask
+  and a bare trailing term can identify exactly one reviewed grouping field on
+  the named resource, such as `shipments by mode` for `carrier_mode`. If the
+  term also matches `delivery_mode`, Runner refuses before execution and names
+  both choices instead of guessing. Adds bounded CLI/Workbench Ask
   token settings, including an in-session `/limits` update that preserves
   conversation context; these client-side spend/context controls remain outside
   reviewed database and privacy authority.

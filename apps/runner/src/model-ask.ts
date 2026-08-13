@@ -2025,17 +2025,11 @@ function explorePlanIntentMismatch(
 
   const dimensions = Array.isArray(plan.dimensions) ? plan.dimensions.filter(isRecord) : [];
   if (dimensions.length > 0) {
-    const unmatched = dimensions.find((dimension) =>
-      !questionMentionsPlanDimension(normalizedQuestion, dimension, resource));
-    if (!unmatched) return undefined;
-    const field = typeof unmatched.field === "string"
-      ? unmatched.field
-      : typeof unmatched.numeric_band === "string"
-        ? unmatched.numeric_band
-        : isRecord(unmatched.numeric_band) && typeof unmatched.numeric_band.field === "string"
-          ? unmatched.numeric_band.field
-          : "(unknown)";
-    return `The question does not name the plan's reviewed dimension ${field} on ${resource.id}.`;
+    for (const dimension of dimensions) {
+      const mismatch = planDimensionIntentMismatch(normalizedQuestion, dimension, resource);
+      if (mismatch) return mismatch;
+    }
+    return undefined;
   }
   if (explicitGroupingRequested(normalizedQuestion)) {
     const timeBucket = isRecord(plan.time_bucket) ? plan.time_bucket : undefined;
@@ -2111,39 +2105,53 @@ function questionHasExplicitPlanAnchor(question: string): boolean {
   return Boolean(explicitQuestionEntity(normalized)) || explicitGroupingRequested(normalized);
 }
 
-function questionMentionsPlanDimension(
+function planDimensionIntentMismatch(
   question: string,
   dimension: Record<string, unknown>,
   resource: Record<string, unknown>,
-): boolean {
+): string | undefined {
+  const genericMismatch = (field: string) =>
+    `The question does not name the plan's reviewed dimension ${field} on ${resource.id}.`;
   if (typeof dimension.numeric_band === "string") {
     const bands = Array.isArray(resource.numeric_bands) ? resource.numeric_bands.filter(isRecord) : [];
     const band = bands.find((candidate) => candidate.name === dimension.numeric_band);
-    return questionMentionsMetadataName(question, dimension.numeric_band)
+    const named = questionMentionsMetadataName(question, dimension.numeric_band)
       || questionMentionsMetadataName(question, band?.label)
       || (typeof band?.field === "string" && questionExplicitlyMentionsField(question, band.field));
+    return named ? undefined : genericMismatch(dimension.numeric_band);
   }
   if (isRecord(dimension.numeric_band) && typeof dimension.numeric_band.field === "string") {
-    return questionExplicitlyMentionsField(question, dimension.numeric_band.field);
+    return questionExplicitlyMentionsField(question, dimension.numeric_band.field)
+      ? undefined
+      : genericMismatch(dimension.numeric_band.field);
   }
-  if (typeof dimension.field !== "string") return false;
+  if (typeof dimension.field !== "string") return genericMismatch("(unknown)");
   const relationship = typeof dimension.relationship === "string"
     && Array.isArray(resource.relationships)
     ? resource.relationships.filter(isRecord).find((candidate) => candidate.id === dimension.relationship)
     : undefined;
   const fieldOwner = relationship ?? resource;
-  if (questionExplicitlyMentionsField(question, dimension.field)) return true;
+  if (questionExplicitlyMentionsField(question, dimension.field)) return undefined;
   if (reviewedFieldLabels(fieldOwner, dimension.field)
-    .some((label) => questionMentionsMetadataName(question, label))) return true;
-  if (!relationship && questionMentionsResourceQualifiedField(question, dimension.field, resource)) {
-    return true;
+    .some((label) => questionMentionsMetadataName(question, label))) return undefined;
+  if (!relationship) {
+    const trailing = reviewedTrailingFieldResolution(question, resource);
+    if (trailing.kind === "one" && trailing.field === dimension.field) return undefined;
+    if (trailing.kind === "one") {
+      return `The question's grouping shorthand names reviewed field ${trailing.field} on ${resource.id}, but the plan selected ${dimension.field}.`;
+    }
+    if (trailing.kind === "ambiguous") {
+      return `The question's grouping shorthand is ambiguous among reviewed fields ${trailing.fields.join(", ")} on ${resource.id}; name one exact reviewed field or label.`;
+    }
+    return genericMismatch(dimension.field);
   }
-  if (!relationship) return false;
   const target = typeof relationship.target_resource === "string"
     ? relationship.target_resource.split(".").at(-1)?.toLowerCase() ?? ""
     : "";
   return [...resourceNameVariants(target, relationship.target_label)]
-    .some((variant) => relationshipGroupingMentionsTarget(question, variant));
+    .some((variant) => relationshipGroupingMentionsTarget(question, variant))
+    ? undefined
+    : genericMismatch(dimension.field);
 }
 
 function reviewedFieldLabels(owner: Record<string, unknown>, field: string): string[] {
@@ -2158,26 +2166,39 @@ function reviewedFieldLabels(owner: Record<string, unknown>, field: string): str
   return labels;
 }
 
-function questionMentionsResourceQualifiedField(
+type ReviewedTrailingFieldResolution =
+  | { kind: "none" }
+  | { kind: "one"; field: string }
+  | { kind: "ambiguous"; fields: string[] };
+
+function reviewedTrailingFieldResolution(
   question: string,
-  field: string,
   resource: Record<string, unknown>,
-): boolean {
-  if (typeof resource.id !== "string") return false;
+): ReviewedTrailingFieldResolution {
+  if (typeof resource.id !== "string") return { kind: "none" };
   const table = resource.id.split(".").at(-1)?.toLowerCase() ?? "";
   const resourceVariants = resourceNameVariants(table, resource.label);
   if (![...resourceVariants].some((variant) =>
-    variant.length >= 3 && wordPosition(question, variant) >= 0)) return false;
+    variant.length >= 3 && wordPosition(question, variant) >= 0)) return { kind: "none" };
 
-  const readableField = field.toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  const matches = safeStringList(resource.groupable_fields).filter((field) => {
+    const aliases = [field, ...reviewedFieldLabels(resource, field)];
+    return aliases.some((alias) => trailingNameTerms(alias)
+      .some((term) => groupingPhraseMentionsExactTerm(question, term)));
+  }).sort((left, right) => left.localeCompare(right));
+  if (matches.length === 1) return { kind: "one", field: matches[0]! };
+  if (matches.length > 1) return { kind: "ambiguous", fields: matches };
+  return { kind: "none" };
+}
+
+function trailingNameTerms(value: string): string[] {
+  const words = value.toLowerCase().split(/[_\s-]+/u).filter(Boolean);
   const suffixes = new Set<string>();
-  for (const variant of resourceVariants) {
-    const readableVariant = variant.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
-    if (readableVariant.length < 3 || !readableField.startsWith(`${readableVariant} `)) continue;
-    const suffix = readableField.slice(readableVariant.length + 1).trim();
+  for (let index = 1; index < words.length; index += 1) {
+    const suffix = words.slice(index).join(" ");
     if (suffix.length >= 3) suffixes.add(suffix);
   }
-  return [...suffixes].some((suffix) => groupingPhraseMentionsExactTerm(question, suffix));
+  return [...suffixes];
 }
 
 function groupingPhraseMentionsExactTerm(question: string, term: string): boolean {
@@ -2736,8 +2757,16 @@ function localPlanRequirements(
     || /\b(?:automatic|adaptive|auto)[ -]bands?\b/.test(normalized);
   const requestedBucketCount = bucketCountFromQuestion(normalized);
   const bandIntent = autoBandIntent || /\b(?:bands?|buckets?|histogram)\b/.test(normalized);
-  const mentionedReviewedGroupingField = safeStringList(resource.groupable_fields)
-    .some((field) => questionMentionsField(normalized, field))
+  const reviewedDirectGroupFields = safeStringList(resource.groupable_fields);
+  const explicitlyMentionedDirectGroupFields = reviewedDirectGroupFields
+    .filter((field) => questionMentionsField(normalized, field)
+      || reviewedFieldLabels(resource, field)
+        .some((label) => questionMentionsMetadataName(normalized, label)));
+  const trailingGroupResolution = explicitlyMentionedDirectGroupFields.length === 0
+    ? reviewedTrailingFieldResolution(normalized, resource)
+    : { kind: "none" as const };
+  const mentionedReviewedGroupingField = explicitlyMentionedDirectGroupFields.length > 0
+    || trailingGroupResolution.kind !== "none"
     || (Array.isArray(resource.relationships) && resource.relationships.filter(isRecord)
       .some((relationship) => safeStringList(relationship.groupable_fields)
         .some((field) => questionExplicitlyMentionsField(normalized, field))));
@@ -2746,13 +2775,21 @@ function localPlanRequirements(
     || (/\bby\b/.test(normalized) && mentionedReviewedGroupingField)
     || (/\b(?:which|what)\b.*\b(?:most|least|highest|lowest|top|bottom)\b/.test(normalized)
       && mentionedReviewedGroupingField)
-    || /\b(?:for|within) each\b/.test(normalized)
+    || /\b(?:for|within|of) each\b/.test(normalized)
+    || trailingGroupResolution.kind !== "none"
     || bandIntent;
   const dimensionCandidates: LocalPlanDimension[] = [];
   const groupingAmbiguities: string[] = [];
   if (groupingRequested) {
-    const directGroupFields = safeStringList(resource.groupable_fields)
-      .filter((candidate) => questionMentionsField(normalized, candidate));
+    const directGroupFields = [
+      ...explicitlyMentionedDirectGroupFields,
+      ...(trailingGroupResolution.kind === "one" ? [trailingGroupResolution.field] : []),
+    ];
+    if (trailingGroupResolution.kind === "ambiguous") {
+      groupingAmbiguities.push(
+        `Grouping shorthand is ambiguous; name one reviewed field: ${trailingGroupResolution.fields.join(", ")}.`,
+      );
+    }
     const relationshipGroupFields: Array<{
       field: string;
       relationship: string;

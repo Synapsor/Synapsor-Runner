@@ -148,11 +148,14 @@ substituted plan executes no source query, consumes no Explore query or
 differencing budget, and is never returned to the provider for a prose summary.
 Exact field IDs can be written with their original separators (`encounter_type`),
 hyphens (`encounter-type`), or spaces (`encounter type`). A reviewed field label
-is also valid intent evidence. When a compound field starts with the already
-named resource, the remaining grouping term may be used directly, so
-`encounters by type` can identify `encounter_type`; `encounters by insurance
-type` does not match that shorthand. Use a reviewed label such as `Visit type`
-when a domain synonym should be accepted.
+is also valid intent evidence. A trailing term may be used when the question
+names the resource and exactly one of its reviewed direct grouping fields or
+labels ends with that term. For example, `shipments by mode` identifies
+`carrier_mode` and `shipments per zone` identifies `warehouse_zone`. If both
+`carrier_mode` and `delivery_mode` are reviewed, `shipments by mode` refuses
+before execution and names both choices. Use the full ID or a reviewed label to
+disambiguate. This resolution is derived from reviewed metadata; it contains no
+domain vocabulary.
 This is a correctness guard in Runner's built-in Ask client. An external MCP
 host sends only a structured plan to production HTTP Runner, so that host must
 retain the original question and apply its own semantic evaluation; server-side

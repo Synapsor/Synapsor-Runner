@@ -1175,6 +1175,119 @@ describe("Workbench BYOM Ask", () => {
     expect(exploreCalls).toBe(0);
   });
 
+  it.each([
+    { question: "Break down shipments by mode.", field: "carrier_mode" },
+    { question: "How many shipments of each mode?", field: "carrier_mode" },
+    { question: "How many shipments are there per zone?", field: "warehouse_zone" },
+    { question: "Break down shipments by tier.", field: "service_level_code" },
+  ])("uses the same unambiguous reviewed suffix resolution for a local model: $question", async ({
+    question,
+    field,
+  }) => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name) => {
+        if (name === "app.describe_data") {
+          return {
+            ok: true,
+            value: {
+              ok: true,
+              resources: [{
+                id: "public.shipments",
+                label: "Shipments",
+                fields: [
+                  { id: "carrier_mode", label: "Carrier mode" },
+                  { id: "warehouse_zone", label: "Warehouse zone" },
+                  { id: "service_level_code", label: "Service tier" },
+                ],
+                groupable_fields: ["carrier_mode", "warehouse_zone", "service_level_code"],
+                aggregate_measure_functions: {},
+              }],
+              source_database_changed: false,
+            },
+          };
+        }
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    let requests = 0;
+    const result = await session.run(question, gateway, {
+      requestJson: async () => {
+        requests += 1;
+        return requests === 1
+          ? openAiToolCall("local_shipment_suffix", "app__explore_data", {
+            plan: {
+              kind: "aggregate",
+              resource: "public.shipments",
+              measures: [{ function: "count" }],
+              dimensions: [{ field }],
+            },
+          })
+          : openAiText("The reviewed result is available.");
+      },
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]);
+    expect(exploreCalls).toBe(1);
+  });
+
+  it("keeps an ambiguous local-model suffix fail-closed and names the reviewed choices", async () => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name) => {
+        if (name === "app.describe_data") {
+          return {
+            ok: true,
+            value: {
+              ok: true,
+              resources: [{
+                id: "public.shipments",
+                label: "Shipments",
+                fields: [
+                  { id: "carrier_mode", label: "Carrier mode" },
+                  { id: "delivery_mode", label: "Delivery mode" },
+                ],
+                groupable_fields: ["carrier_mode", "delivery_mode"],
+                aggregate_measure_functions: {},
+              }],
+              source_database_changed: false,
+            },
+          };
+        }
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run("Break down shipments by mode.", gateway, {
+      requestJson: async () => openAiToolCall("local_ambiguous_shipment_suffix", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.shipments",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "carrier_mode" }],
+        },
+      }),
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ error_code: "LOCAL_PLAN_INTENT_MISMATCH", status: "refused" }),
+    ]);
+    expect(result.tool_calls[0]?.result.message).toContain("carrier_mode");
+    expect(result.tool_calls[0]?.result.message).toContain("delivery_mode");
+    expect(exploreCalls).toBe(0);
+  });
+
   it("accepts reviewed resource and field labels as intentional Ask semantics", async () => {
     const calls: string[] = [];
     let metadataCalls = 0;
@@ -1367,6 +1480,309 @@ describe("Workbench BYOM Ask", () => {
     expect(result.tool_calls).toEqual([
       expect.objectContaining({ error_code: "ASK_PLAN_INTENT_MISMATCH", status: "refused" }),
     ]);
+    expect(exploreCalls).toBe(0);
+  });
+
+  it.each([
+    {
+      question: "Break down shipments by mode.",
+      field: "carrier_mode",
+    },
+    {
+      question: "How many shipments of each mode?",
+      field: "carrier_mode",
+    },
+    {
+      question: "Shipments per zone.",
+      field: "warehouse_zone",
+    },
+    {
+      question: "Break down shipments by band.",
+      field: "priority_band",
+    },
+    {
+      question: "Break down shipments by tier.",
+      field: "service_level_code",
+      labels: { service_level_code: "Service tier" },
+    },
+  ])("accepts one unambiguous reviewed trailing field or label term: $question", async ({
+    question,
+    field,
+    labels,
+  }) => {
+    let exploreCalls = 0;
+    const fields = [
+      { id: "carrier_mode", label: "Carrier mode" },
+      { id: "warehouse_zone", label: "Warehouse zone" },
+      { id: "priority_band", label: "Priority band" },
+      { id: "service_level_code", label: labels?.service_level_code ?? "Service level code" },
+    ];
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: {
+          ok: true,
+          resources: [{
+            id: "public.shipments",
+            label: "Shipments",
+            fields,
+            groupable_fields: fields.map((candidate) => candidate.id),
+          }],
+          source_database_changed: false,
+        },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-4.1",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    let requests = 0;
+    const result = await session.run(question, gateway, {
+      requestJson: async () => {
+        requests += 1;
+        return requests === 1
+          ? openAiToolCall("unambiguous_shipment_suffix", "app__explore_data", {
+            plan: {
+              kind: "aggregate",
+              resource: "public.shipments",
+              measures: [{ function: "count" }],
+              dimensions: [{ field }],
+            },
+          })
+          : openAiText("The reviewed result is available.");
+      },
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]);
+    expect(exploreCalls).toBe(1);
+  });
+
+  it("refuses an ambiguous reviewed trailing field term and names every candidate", async () => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: {
+          ok: true,
+          resources: [{
+            id: "public.shipments",
+            label: "Shipments",
+            fields: [
+              { id: "carrier_mode", label: "Carrier mode" },
+              { id: "delivery_mode", label: "Delivery mode" },
+            ],
+            groupable_fields: ["carrier_mode", "delivery_mode"],
+          }],
+          source_database_changed: false,
+        },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-4.1",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    const result = await session.run("Break down shipments by mode.", gateway, {
+      requestJson: async () => openAiToolCall("ambiguous_shipment_suffix", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.shipments",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "carrier_mode" }],
+        },
+      }),
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ error_code: "ASK_PLAN_INTENT_MISMATCH", status: "refused" }),
+    ]);
+    expect(result.tool_calls[0]?.result.message).toContain("carrier_mode");
+    expect(result.tool_calls[0]?.result.message).toContain("delivery_mode");
+    expect(result.tool_calls[0]?.result.message).toContain("ambiguous");
+    expect(exploreCalls).toBe(0);
+  });
+
+  it("accepts an exact reviewed field ID that disambiguates duplicate suffixes", async () => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: {
+          ok: true,
+          resources: [{
+            id: "public.shipments",
+            label: "Shipments",
+            fields: [
+              { id: "carrier_mode", label: "Carrier mode" },
+              { id: "delivery_mode", label: "Delivery mode" },
+            ],
+            groupable_fields: ["carrier_mode", "delivery_mode"],
+          }],
+          source_database_changed: false,
+        },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-4.1",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    let requests = 0;
+    const result = await session.run("Break down shipments by carrier_mode.", gateway, {
+      requestJson: async () => {
+        requests += 1;
+        return requests === 1
+          ? openAiToolCall("exact_shipment_mode", "app__explore_data", {
+            plan: {
+              kind: "aggregate",
+              resource: "public.shipments",
+              measures: [{ function: "count" }],
+              dimensions: [{ field: "carrier_mode" }],
+            },
+          })
+          : openAiText("The reviewed result is available.");
+      },
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]);
+    expect(exploreCalls).toBe(1);
+  });
+
+  it("does not resolve a bare suffix unless the question names the reviewed resource", async () => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: {
+          ok: true,
+          resources: [{
+            id: "public.shipments",
+            label: "Shipments",
+            fields: [{ id: "carrier_mode", label: "Carrier mode" }],
+            groupable_fields: ["carrier_mode"],
+          }],
+          source_database_changed: false,
+        },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-4.1",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    const result = await session.run("Break down the reviewed records by mode.", gateway, {
+      requestJson: async () => openAiToolCall("unnamed_resource_suffix", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.shipments",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "carrier_mode" }],
+        },
+      }),
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ error_code: "ASK_PLAN_INTENT_MISMATCH", status: "refused" }),
+    ]);
+    expect(exploreCalls).toBe(0);
+  });
+
+  it("refuses when a unique reviewed suffix names a different field than the proposed plan", async () => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: {
+          ok: true,
+          resources: [{
+            id: "public.shipments",
+            label: "Shipments",
+            fields: [
+              { id: "carrier_mode", label: "Carrier mode" },
+              { id: "warehouse_zone", label: "Warehouse zone" },
+            ],
+            groupable_fields: ["carrier_mode", "warehouse_zone"],
+          }],
+          source_database_changed: false,
+        },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-4.1",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    const result = await session.run("Break down shipments by zone.", gateway, {
+      requestJson: async () => openAiToolCall("wrong_shipment_suffix", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.shipments",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "carrier_mode" }],
+        },
+      }),
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ error_code: "ASK_PLAN_INTENT_MISMATCH", status: "refused" }),
+    ]);
+    expect(result.tool_calls[0]?.result.message).toContain("warehouse_zone");
+    expect(result.tool_calls[0]?.result.message).toContain("carrier_mode");
     expect(exploreCalls).toBe(0);
   });
 
