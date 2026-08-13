@@ -26,10 +26,15 @@ const MAX_HISTORY_CHARS = 16_384;
 const MAX_HISTORY_TOOL_CONTEXT_CHARS = 12_288;
 const MAX_ANSWER_CHARS = 16_384;
 // A normal analytical conversation can make several bounded provider calls per
-// question. Keep a hard session ceiling without turning a few useful follow-up
-// questions into an artificial first-run failure.
-const MAX_SESSION_REPORTED_TOKENS = 200_000;
+// question. Keep bounded defaults while letting the operator choose a larger
+// client-side spend ceiling for a long investigation.
+const DEFAULT_SESSION_REPORTED_TOKEN_BUDGET = 200_000;
+const MIN_SESSION_REPORTED_TOKEN_BUDGET = 1_000;
+const MAX_SESSION_REPORTED_TOKEN_BUDGET = 5_000_000;
+const DEFAULT_PROVIDER_OUTPUT_TOKENS = 1_200;
 const FINAL_ANSWER_MAX_COMPLETION_TOKENS = 4_096;
+const MIN_PROVIDER_OUTPUT_TOKENS = 256;
+const MAX_PROVIDER_OUTPUT_TOKENS = 16_384;
 const FINAL_ANSWER_INSTRUCTION = [
   "Give the final concise answer now using only the Runner tool results already present in this turn.",
   "Do not request another tool or invent a value.",
@@ -52,6 +57,11 @@ const LOCAL_PLAN_MISMATCH_RUNNER_ANSWER = [
   "The selected local model produced a reviewed plan that did not match the question, so Runner did not execute it.",
   "No source query ran.",
   "Retry the question or choose a stronger tool-using model.",
+].join(" ");
+const PLAN_SUBSTITUTION_RUNNER_ANSWER = [
+  "The selected model substituted a reviewed resource or grouping that did not match the question, so Runner refused the plan before execution.",
+  "The substituted Explore plan did not reach source execution, and no Explore query or differencing budget was consumed.",
+  "Ask about an available reviewed resource or update access before retrying.",
 ].join(" ");
 const LOCAL_PLAN_EXECUTED_RUNNER_ANSWER = [
   "Runner executed the intent-checked reviewed plan.",
@@ -78,6 +88,8 @@ export type AskProviderConfigurationInput = {
   api_key?: string;
   api_key_env?: string;
   request_timeout_seconds?: number;
+  session_token_budget?: number;
+  max_output_tokens?: number;
   authority_digest: `sha256:${string}`;
   egress_acknowledged: boolean;
 };
@@ -89,6 +101,8 @@ export type AskProviderPublicConfiguration = {
   endpoint_scope: "official_remote" | "custom_remote" | "custom_loopback";
   credential_source: "session_paste" | "environment" | "none";
   request_timeout_seconds: number;
+  session_token_budget: number;
+  max_output_tokens?: number;
   authority_digest: `sha256:${string}`;
   consent_fingerprint: `sha256:${string}`;
   configured_at: string;
@@ -155,6 +169,18 @@ export type AskSessionStatus = {
   running: boolean;
   history_turns: number;
   configuration?: AskProviderPublicConfiguration;
+  token_usage?: AskSessionTokenUsage;
+};
+
+export type AskSessionTokenUsage = {
+  reported_tokens: number;
+  session_token_budget: number;
+  remaining_reported_tokens: number;
+};
+
+export type AskTokenLimitUpdate = {
+  session_token_budget?: number;
+  max_output_tokens?: number | null;
 };
 
 type ResolvedAskProviderConfiguration = AskProviderPublicConfiguration & {
@@ -243,9 +269,44 @@ export class WorkbenchAskSession {
       running: this.#active !== undefined,
       history_turns: this.#history.length,
       ...(this.#configuration
-        ? { configuration: publicAskConfiguration(this.#configuration) }
+        ? {
+            configuration: publicAskConfiguration(this.#configuration),
+            token_usage: askSessionTokenUsage(this.#configuration, this.#reportedTokens),
+          }
         : {}),
     };
+  }
+
+  updateTokenLimits(input: AskTokenLimitUpdate): AskSessionStatus {
+    if (!this.#configuration) {
+      throw new AskError("ASK_NOT_CONFIGURED", "Choose a provider before changing Ask token limits.");
+    }
+    if (this.#active) {
+      throw new AskError("ASK_ALREADY_RUNNING", "Wait for the active Ask request before changing its token limits.", 409);
+    }
+    if (input.session_token_budget === undefined && input.max_output_tokens === undefined) {
+      throw new AskError("ASK_TOKEN_LIMITS_REQUIRED", "Choose at least one Ask token limit to change.");
+    }
+    const sessionTokenBudget = input.session_token_budget === undefined
+      ? this.#configuration.session_token_budget
+      : resolveAskSessionTokenBudget(input.session_token_budget);
+    if (sessionTokenBudget < this.#reportedTokens) {
+      throw new AskError(
+        "ASK_SESSION_TOKEN_BUDGET_BELOW_USAGE",
+        `The Ask session has already reported ${this.#reportedTokens.toLocaleString("en-US")} tokens. Choose a session budget at or above that usage, or clear the conversation first.`,
+      );
+    }
+    const next = {
+      ...this.#configuration,
+      session_token_budget: sessionTokenBudget,
+    };
+    if (input.max_output_tokens === null) {
+      delete next.max_output_tokens;
+    } else if (input.max_output_tokens !== undefined) {
+      next.max_output_tokens = resolveAskMaxOutputTokens(input.max_output_tokens);
+    }
+    this.#configuration = next;
+    return this.status();
   }
 
   rebindAuthority(
@@ -292,11 +353,14 @@ export class WorkbenchAskSession {
       throw new AskError("ASK_ALREADY_RUNNING", "One Ask request is already running in this Workbench session.", 409);
     }
     const normalizedQuestion = safeQuestion(question);
-    if (this.#reportedTokens >= MAX_SESSION_REPORTED_TOKENS) {
+    if (this.#reportedTokens >= this.#configuration.session_token_budget) {
       await gateway.close().catch(() => undefined);
       throw new AskError(
         "ASK_SESSION_TOKEN_BUDGET_EXCEEDED",
-        "This in-memory Ask session reached its fixed reported-token budget. Clear the conversation before continuing: type /clear in the CLI or use Clear in Workbench.",
+        askSessionTokenBudgetMessage(
+          this.#reportedTokens,
+          this.#configuration.session_token_budget,
+        ),
         429,
       );
     }
@@ -328,14 +392,17 @@ export class WorkbenchAskSession {
       if (controller.signal.aborted) throw new AskError("ASK_CANCELLED", "The Ask request was cancelled.", 499);
       const reportedTokens = result.usage?.total_tokens
         ?? (result.usage?.input_tokens ?? 0) + (result.usage?.output_tokens ?? 0);
-      if (this.#reportedTokens + reportedTokens > MAX_SESSION_REPORTED_TOKENS) {
+      this.#reportedTokens += reportedTokens;
+      if (this.#reportedTokens > this.#configuration.session_token_budget) {
         throw new AskError(
           "ASK_SESSION_TOKEN_BUDGET_EXCEEDED",
-          "The provider reported usage beyond the fixed Ask session token budget, so the result was not accepted. Type /clear in the CLI or use Clear in Workbench before continuing.",
+          `The provider response was not accepted because it crossed the Ask session limit. ${askSessionTokenBudgetMessage(
+            this.#reportedTokens,
+            this.#configuration.session_token_budget,
+          )}`,
           429,
         );
       }
-      this.#reportedTokens += reportedTokens;
       const runnerContext = providerHistoryByResult.get(result);
       this.#history = boundedHistory([
         ...this.#history,
@@ -429,6 +496,10 @@ export function resolveAskProviderConfiguration(
     input.request_timeout_seconds,
     endpointScope,
   );
+  const sessionTokenBudget = resolveAskSessionTokenBudget(input.session_token_budget);
+  const maxOutputTokens = input.max_output_tokens === undefined
+    ? undefined
+    : resolveAskMaxOutputTokens(input.max_output_tokens);
   const apiKeyEnv = input.api_key_env?.trim();
   if (apiKeyEnv && !/^[A-Z_][A-Z0-9_]{0,127}$/.test(apiKeyEnv)) {
     throw new AskError("ASK_KEY_ENV_INVALID", "The provider credential environment variable name is invalid.");
@@ -469,6 +540,8 @@ export function resolveAskProviderConfiguration(
     endpoint_scope: endpointScope,
     credential_source: pasted ? "session_paste" : fromEnvironment ? "environment" : "none",
     request_timeout_seconds: requestTimeoutSeconds,
+    session_token_budget: sessionTokenBudget,
+    ...(maxOutputTokens === undefined ? {} : { max_output_tokens: maxOutputTokens }),
     authority_digest: input.authority_digest,
     consent_fingerprint: consentFingerprint,
     configured_at: now.toISOString(),
@@ -677,7 +750,10 @@ async function runOpenAiCompatibleTurn(input: {
           ? { type: "function", function: { name: forcedExploreProviderName } }
           : "auto",
         parallel_tool_calls: false,
-        max_completion_tokens: 1_200,
+        max_completion_tokens: askProviderOutputTokenLimit(
+          input.configuration,
+          DEFAULT_PROVIDER_OUTPUT_TOKENS,
+        ),
       },
       signal: input.signal,
       timeoutMs: input.configuration.request_timeout_seconds * 1_000,
@@ -973,6 +1049,28 @@ async function runOpenAiCompatibleTurn(input: {
               requirements = localPlanRequirements(input.question, { resources: [focusedResource] });
             }
           }
+        }
+      }
+      if (input.configuration.provider !== "openai_compatible"
+        && canonicalName === "app.explore_data") {
+        const intentRefusal = await explorePlanIntentRefusal({
+          question: input.question,
+          traces: localDirectCatalogTrace ? [...traces, localDirectCatalogTrace] : traces,
+          gateway: input.gateway,
+          prepared: input.prepared,
+          callId: call.id,
+          providerName: call.name,
+          args: directArguments,
+          focusedResource: focusedResourceForRequirements,
+          onProgress: input.onProgress,
+        });
+        if (intentRefusal) {
+          traces.push(intentRefusal.trace);
+          providerHistory.push(providerHistoryEntry(intentRefusal.trace, intentRefusal.providerResult));
+          return rememberProviderHistory(
+            completePlanSubstitutionAnswer(input.configuration, traces, usage),
+            providerHistory,
+          );
         }
       }
       if (compoundQuestions.length > 0
@@ -1432,7 +1530,10 @@ async function runAnthropicTurn(input: {
       },
       body: {
         model: input.configuration.model,
-        max_tokens: 1_200,
+        max_tokens: askProviderOutputTokenLimit(
+          input.configuration,
+          DEFAULT_PROVIDER_OUTPUT_TOKENS,
+        ),
         system: askSystemPrompt(),
         messages,
         tools: providerTools.map((tool) => ({
@@ -1510,6 +1611,27 @@ async function runAnthropicTurn(input: {
       const id = safeProviderIdentifier(call.id, "tool call");
       const name = safeProviderIdentifier(call.name, "tool name");
       const args = safeToolArguments(call.input);
+      const canonicalName = input.prepared.canonicalByProvider.get(name);
+      if (canonicalName === "app.explore_data") {
+        const intentRefusal = await explorePlanIntentRefusal({
+          question: input.question,
+          traces,
+          gateway: input.gateway,
+          prepared: input.prepared,
+          callId: id,
+          providerName: name,
+          args,
+          onProgress: input.onProgress,
+        });
+        if (intentRefusal) {
+          traces.push(intentRefusal.trace);
+          providerHistory.push(providerHistoryEntry(intentRefusal.trace, intentRefusal.providerResult));
+          return rememberProviderHistory(
+            completePlanSubstitutionAnswer(input.configuration, traces, usage),
+            providerHistory,
+          );
+        }
+      }
       const executed = await executeProviderTool(
         input.gateway,
         input.prepared,
@@ -1588,7 +1710,10 @@ async function requestOpenAiFinalAnswer(input: {
       ],
       // Reasoning models can consume the smaller tool-loop allowance without
       // emitting visible text when summarizing a non-trivial result set.
-      max_completion_tokens: FINAL_ANSWER_MAX_COMPLETION_TOKENS,
+      max_completion_tokens: askProviderOutputTokenLimit(
+        input.configuration,
+        FINAL_ANSWER_MAX_COMPLETION_TOKENS,
+      ),
     },
     signal: input.signal,
     timeoutMs: input.configuration.request_timeout_seconds * 1_000,
@@ -1641,7 +1766,10 @@ async function requestOpenAiCompatiblePlanJson(input: {
       ],
       response_format: { type: "json_object" },
       temperature: 0,
-      max_completion_tokens: 1_200,
+      max_completion_tokens: askProviderOutputTokenLimit(
+        input.configuration,
+        DEFAULT_PROVIDER_OUTPUT_TOKENS,
+      ),
     },
     signal: input.signal,
     timeoutMs: input.configuration.request_timeout_seconds * 1_000,
@@ -1688,7 +1816,10 @@ async function requestAnthropicFinalAnswer(input: {
     },
     body: {
       model: input.configuration.model,
-      max_tokens: 1_200,
+      max_tokens: askProviderOutputTokenLimit(
+        input.configuration,
+        DEFAULT_PROVIDER_OUTPUT_TOKENS,
+      ),
       system: `${askSystemPrompt()} ${FINAL_ANSWER_INSTRUCTION}`,
       messages,
     },
@@ -1787,6 +1918,240 @@ function providerToolName(
   canonicalName: string,
 ): string | undefined {
   return prepared.providerTools.find((tool) => tool.canonicalName === canonicalName)?.providerName;
+}
+
+async function explorePlanIntentRefusal(input: {
+  question: string;
+  traces: AskToolTrace[];
+  gateway: AskToolGateway;
+  prepared: PreparedProviderTools;
+  callId: string;
+  providerName: string;
+  args: Record<string, unknown>;
+  focusedResource?: Record<string, unknown>;
+  onProgress?: AskProviderDependencies["onProgress"];
+}): Promise<{
+  trace: AskToolTrace;
+  providerResult: Record<string, unknown>;
+} | undefined> {
+  if (localCompoundAnalysisQuestions(input.question, 2).length > 0) return undefined;
+  const plan = isRecord(input.args.plan) ? input.args.plan : undefined;
+  if (!plan || typeof plan.resource !== "string") return undefined;
+  const resource = input.focusedResource
+    ?? localCatalogResourceForDirectCall(input.traces, input.args)
+    ?? await loadFocusedIntentResource(input);
+  const mismatch = resource
+    ? explorePlanIntentMismatch(input.question, input.args, resource)
+    : questionHasExplicitPlanAnchor(input.question)
+      ? "Runner could not verify the selected resource against the entity or grouping named in the question."
+      : undefined;
+  if (!mismatch) return undefined;
+  const providerResult = {
+    ok: false,
+    error_code: "ASK_PLAN_INTENT_MISMATCH",
+    message: `The plan was not executed because it substituted reviewed data that did not match the question. ${mismatch}`,
+    source_query_executed: false,
+    explore_budget_consumed: false,
+    source_database_changed: false,
+  };
+  return {
+    trace: {
+      call_id: safeProviderIdentifier(input.callId, "tool call"),
+      tool: "app.explore_data",
+      provider_tool: input.providerName,
+      status: "refused",
+      error_code: "ASK_PLAN_INTENT_MISMATCH",
+      arguments: input.args,
+      result: providerResult,
+    },
+    providerResult,
+  };
+}
+
+async function loadFocusedIntentResource(input: {
+  gateway: AskToolGateway;
+  prepared: PreparedProviderTools;
+  callId: string;
+  args: Record<string, unknown>;
+  onProgress?: AskProviderDependencies["onProgress"];
+}): Promise<Record<string, unknown> | undefined> {
+  const plan = isRecord(input.args.plan) ? input.args.plan : undefined;
+  if (!plan || typeof plan.resource !== "string") return undefined;
+  const boundary = typeof input.args.boundary === "string" && input.args.boundary.length > 0
+    ? input.args.boundary
+    : undefined;
+  const metadataArguments = { ...(boundary ? { boundary } : {}), resource: plan.resource };
+  if (input.gateway.describeOperatorMetadata) {
+    try {
+      const focused = await input.gateway.describeOperatorMetadata(metadataArguments);
+      if (!focused.ok || !Array.isArray(focused.value.resources)) return undefined;
+      return focused.value.resources.filter(isRecord).find((candidate) =>
+        candidate.id === plan.resource
+        && (boundary === undefined || candidate.boundary_name === boundary));
+    } catch {
+      return undefined;
+    }
+  }
+  const providerName = providerToolName(input.prepared, "app.describe_data");
+  if (!providerName) return undefined;
+  const focused = await executeProviderTool(
+    input.gateway,
+    input.prepared,
+    `runner_intent_catalog_${crypto.createHash("sha256").update(input.callId).digest("hex").slice(0, 12)}`,
+    providerName,
+    metadataArguments,
+    input.onProgress,
+  );
+  if (focused.trace.status !== "ok" || !Array.isArray(focused.providerResult.resources)) return undefined;
+  return focused.providerResult.resources.filter(isRecord).find((candidate) =>
+    candidate.id === plan.resource
+    && (boundary === undefined || candidate.boundary_name === boundary));
+}
+
+function explorePlanIntentMismatch(
+  question: string,
+  args: Record<string, unknown>,
+  resource: Record<string, unknown>,
+): string | undefined {
+  const plan = isRecord(args.plan) ? args.plan : undefined;
+  if (!plan || typeof plan.resource !== "string" || typeof resource.id !== "string") return undefined;
+  const normalizedQuestion = question.toLowerCase();
+  const subject = explicitQuestionEntity(normalizedQuestion);
+  if (subject
+    && !genericQuestionEntity(subject)
+    && !questionEntityMatchesPlan(subject, plan, resource)) {
+    return `The question explicitly names ${JSON.stringify(subject)}, but the plan selected resource ${resource.id}.`;
+  }
+
+  const dimensions = Array.isArray(plan.dimensions) ? plan.dimensions.filter(isRecord) : [];
+  if (dimensions.length > 0) {
+    const unmatched = dimensions.find((dimension) =>
+      !questionMentionsPlanDimension(normalizedQuestion, dimension, resource));
+    if (!unmatched) return undefined;
+    const field = typeof unmatched.field === "string"
+      ? unmatched.field
+      : typeof unmatched.numeric_band === "string"
+        ? unmatched.numeric_band
+        : isRecord(unmatched.numeric_band) && typeof unmatched.numeric_band.field === "string"
+          ? unmatched.numeric_band.field
+          : "(unknown)";
+    return `The question does not name the plan's reviewed dimension ${field} on ${resource.id}.`;
+  }
+  if (explicitGroupingRequested(normalizedQuestion)) {
+    const timeBucket = isRecord(plan.time_bucket) ? plan.time_bucket : undefined;
+    if (timeBucket && typeof timeBucket.bucket === "string"
+      && wordPosition(normalizedQuestion, timeBucket.bucket.toLowerCase()) >= 0) return undefined;
+    return "The question requests a grouping, but the plan contains no matching reviewed dimension.";
+  }
+  return undefined;
+}
+
+function explicitQuestionEntity(question: string): string | undefined {
+  const suffix = String.raw`(?=\s+(?:are|were|is|was|do|does|did|have|has|by|per|across|for\s+each|within\s+each)\b|[?.!,;]|$)`;
+  const patterns = [
+    new RegExp(String.raw`\bhow\s+many\s+(?:the\s+)?(.+?)${suffix}`, "iu"),
+    new RegExp(String.raw`\b(?:number|count)\s+of\s+(?:the\s+)?(.+?)${suffix}`, "iu"),
+    new RegExp(String.raw`\bcount\s+(?:the\s+)?(.+?)${suffix}`, "iu"),
+    new RegExp(String.raw`\bbreak\s+down\s+(?:the\s+)?(.+?)${suffix}`, "iu"),
+    new RegExp(String.raw`\b(?:show|list|give\s+me)\s+(?:all|every)\s+(?:the\s+)?(.+?)${suffix}`, "iu"),
+  ];
+  for (const pattern of patterns) {
+    const value = question.match(pattern)?.[1]?.trim().replace(/\s+/g, " ");
+    if (value) return value.slice(0, 160);
+  }
+  return undefined;
+}
+
+function genericQuestionEntity(subject: string): boolean {
+  const meaningful = subject.split(/[^a-z0-9_]+/u).filter((word) =>
+    word && !["all", "active", "available", "reviewed", "records", "record", "rows", "row", "results", "result", "data", "there"].includes(word));
+  return meaningful.length === 0;
+}
+
+function questionEntityMatchesPlan(
+  subject: string,
+  plan: Record<string, unknown>,
+  resource: Record<string, unknown>,
+): boolean {
+  const table = typeof resource.id === "string"
+    ? resource.id.split(".").at(-1)?.toLowerCase() ?? ""
+    : "";
+  if ([...resourceNameVariants(table, table.replace(/[_-]+/g, " "), resource.label)]
+    .some((variant) => variant.length >= 3 && wordPosition(subject, variant) >= 0)) return true;
+  const measures = Array.isArray(plan.measures) ? plan.measures.filter(isRecord) : [];
+  return measures.some((measure) => {
+    if (typeof measure.derived_measure === "string") {
+      const definition = Array.isArray(resource.derived_measures)
+        ? resource.derived_measures.filter(isRecord).find((candidate) =>
+            candidate.name === measure.derived_measure)
+        : undefined;
+      return questionMentionsMetadataName(subject, measure.derived_measure)
+        || questionMentionsMetadataName(subject, definition?.label);
+    }
+    if (typeof measure.field !== "string") return false;
+    if (questionExplicitlyMentionsField(subject, measure.field)
+      || reviewedFieldLabels(resource, measure.field)
+        .some((label) => questionMentionsMetadataName(subject, label))) return true;
+    if (measure.function !== "count_distinct") return false;
+    const readable = measure.field.toLowerCase().replace(/[_-]+/g, " ");
+    const entity = readable.replace(/\s+id$/u, "").trim();
+    return [...resourceNameVariants(entity)]
+      .some((variant) => variant.length >= 3 && wordPosition(subject, variant) >= 0);
+  });
+}
+
+function explicitGroupingRequested(question: string): boolean {
+  return /\b(?:by|across)\b/u.test(question)
+    || /\b(?:for|within)\s+each\b/u.test(question);
+}
+
+function questionHasExplicitPlanAnchor(question: string): boolean {
+  const normalized = question.toLowerCase();
+  return Boolean(explicitQuestionEntity(normalized)) || explicitGroupingRequested(normalized);
+}
+
+function questionMentionsPlanDimension(
+  question: string,
+  dimension: Record<string, unknown>,
+  resource: Record<string, unknown>,
+): boolean {
+  if (typeof dimension.numeric_band === "string") {
+    const bands = Array.isArray(resource.numeric_bands) ? resource.numeric_bands.filter(isRecord) : [];
+    const band = bands.find((candidate) => candidate.name === dimension.numeric_band);
+    return questionMentionsMetadataName(question, dimension.numeric_band)
+      || questionMentionsMetadataName(question, band?.label)
+      || (typeof band?.field === "string" && questionExplicitlyMentionsField(question, band.field));
+  }
+  if (isRecord(dimension.numeric_band) && typeof dimension.numeric_band.field === "string") {
+    return questionExplicitlyMentionsField(question, dimension.numeric_band.field);
+  }
+  if (typeof dimension.field !== "string") return false;
+  const relationship = typeof dimension.relationship === "string"
+    && Array.isArray(resource.relationships)
+    ? resource.relationships.filter(isRecord).find((candidate) => candidate.id === dimension.relationship)
+    : undefined;
+  const fieldOwner = relationship ?? resource;
+  if (questionExplicitlyMentionsField(question, dimension.field)) return true;
+  if (reviewedFieldLabels(fieldOwner, dimension.field)
+    .some((label) => questionMentionsMetadataName(question, label))) return true;
+  if (!relationship) return false;
+  const target = typeof relationship.target_resource === "string"
+    ? relationship.target_resource.split(".").at(-1)?.toLowerCase() ?? ""
+    : "";
+  return [...resourceNameVariants(target, relationship.target_label)]
+    .some((variant) => relationshipGroupingMentionsTarget(question, variant));
+}
+
+function reviewedFieldLabels(owner: Record<string, unknown>, field: string): string[] {
+  const labels: string[] = [];
+  if (isRecord(owner.field_labels) && typeof owner.field_labels[field] === "string") {
+    labels.push(owner.field_labels[field]);
+  }
+  if (Array.isArray(owner.fields)) {
+    const metadata = owner.fields.filter(isRecord).find((candidate) => candidate.id === field);
+    if (typeof metadata?.label === "string") labels.push(metadata.label);
+  }
+  return labels;
 }
 
 async function executeProviderTool(
@@ -2169,6 +2534,20 @@ function completeLocalPlanMismatchAnswer(
   return completeAskResult(
     configuration,
     LOCAL_PLAN_MISMATCH_RUNNER_ANSWER,
+    traces,
+    usage,
+    "runner",
+  );
+}
+
+function completePlanSubstitutionAnswer(
+  configuration: ResolvedAskProviderConfiguration,
+  traces: AskToolTrace[],
+  usage: AskTurnResult["usage"],
+): AskTurnResult {
+  return completeAskResult(
+    configuration,
+    PLAN_SUBSTITUTION_RUNNER_ANSWER,
     traces,
     usage,
     "runner",
@@ -3324,6 +3703,7 @@ function askSystemPrompt(): string {
     "Tenant and principal scope are injected and enforced by Runner outside model arguments; never ask the user to supply them for a data plan and never send them in tool arguments.",
     "When a question may be answerable from reviewed data, perform catalog discovery with app.describe_data and attempt the smallest valid app.explore_data plan instead of asking the user to identify Runner internals.",
     "For every Explore plan, copy the exact resource id from app.describe_data into plan.resource. Copy exact field and relationship ids too; the catalog intentionally exposes no alternative aliases. If Runner reports an ambiguous resource, retry with one of the exact boundary and resource pairs it lists.",
+    "If the entity or grouping explicitly named in the question is absent from the reviewed catalog, state that limitation and do not substitute a different reviewed resource or field.",
     "Each catalog resource includes one valid_plan_example. For smaller models, copy that complete plan first and change only fields or functions whose exact reviewed ids are present on the same resource; never invent a friendlier column name.",
     "When several reviewed boundaries are active, inspect their catalog and run each data plan against exactly one boundary; never combine boundaries.",
     "Never invent SQL, database identifiers, tenant/principal values, tools, permissions, or results.",
@@ -3422,10 +3802,65 @@ function publicAskConfiguration(configuration: ResolvedAskProviderConfiguration)
     endpoint_scope: configuration.endpoint_scope,
     credential_source: configuration.credential_source,
     request_timeout_seconds: configuration.request_timeout_seconds,
+    session_token_budget: configuration.session_token_budget,
+    ...(configuration.max_output_tokens === undefined
+      ? {}
+      : { max_output_tokens: configuration.max_output_tokens }),
     authority_digest: configuration.authority_digest,
     consent_fingerprint: configuration.consent_fingerprint,
     configured_at: configuration.configured_at,
   };
+}
+
+function askSessionTokenUsage(
+  configuration: ResolvedAskProviderConfiguration,
+  reportedTokens: number,
+): AskSessionTokenUsage {
+  return {
+    reported_tokens: reportedTokens,
+    session_token_budget: configuration.session_token_budget,
+    remaining_reported_tokens: Math.max(0, configuration.session_token_budget - reportedTokens),
+  };
+}
+
+function askSessionTokenBudgetMessage(used: number, limit: number): string {
+  const usage = `${used.toLocaleString("en-US")} of ${limit.toLocaleString("en-US")}`;
+  if (used >= MAX_SESSION_REPORTED_TOKEN_BUDGET) {
+    return `This in-memory Ask session used ${usage} allowed provider-reported tokens. Clear the conversation with /clear in CLI or Clear in Workbench before continuing.`;
+  }
+  return `This in-memory Ask session used ${usage} allowed provider-reported tokens. Raise the limit without clearing context with /limits --session-tokens <higher-value> in CLI or Ask limits in Workbench.`;
+}
+
+function askProviderOutputTokenLimit(
+  configuration: ResolvedAskProviderConfiguration,
+  defaultLimit: number,
+): number {
+  return configuration.max_output_tokens ?? defaultLimit;
+}
+
+export function resolveAskSessionTokenBudget(value: number | undefined): number {
+  if (value === undefined) return DEFAULT_SESSION_REPORTED_TOKEN_BUDGET;
+  if (!Number.isSafeInteger(value)
+    || value < MIN_SESSION_REPORTED_TOKEN_BUDGET
+    || value > MAX_SESSION_REPORTED_TOKEN_BUDGET) {
+    throw new AskError(
+      "ASK_SESSION_TOKEN_BUDGET_INVALID",
+      `Ask session token budget must be a whole number from ${MIN_SESSION_REPORTED_TOKEN_BUDGET.toLocaleString("en-US")} through ${MAX_SESSION_REPORTED_TOKEN_BUDGET.toLocaleString("en-US")}.`,
+    );
+  }
+  return value;
+}
+
+export function resolveAskMaxOutputTokens(value: number): number {
+  if (!Number.isSafeInteger(value)
+    || value < MIN_PROVIDER_OUTPUT_TOKENS
+    || value > MAX_PROVIDER_OUTPUT_TOKENS) {
+    throw new AskError(
+      "ASK_MAX_OUTPUT_TOKENS_INVALID",
+      `Maximum model output tokens must be a whole number from ${MIN_PROVIDER_OUTPUT_TOKENS.toLocaleString("en-US")} through ${MAX_PROVIDER_OUTPUT_TOKENS.toLocaleString("en-US")}.`,
+    );
+  }
+  return value;
 }
 
 export function resolveAskRequestTimeoutSeconds(

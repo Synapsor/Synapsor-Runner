@@ -147,7 +147,7 @@ export function renderAnalyticsTurn(
       ? "Structured values rendered by Runner. Model prose cannot replace or alter them."
       : refusedSourceExecuted
         ? "Runner executed a read-only query, then discarded its result because the reviewed privacy boundary blocked its release."
-        : "No data query ran because Runner rejected the attempted plans before source execution.",
+        : "No attempted Explore plan reached source execution because Runner rejected it first.",
   );
   for (const analysis of successfulData) {
     lines.push(...renderAnalysis(analysis, width, options.ansi === true));

@@ -31,7 +31,9 @@ import { redactCliErrorMessage } from "./cli-logging.js";
 import { startLocalUiServer } from "./local-ui.js";
 import {
   AskError,
+  resolveAskMaxOutputTokens,
   resolveAskRequestTimeoutSeconds,
+  resolveAskSessionTokenBudget,
   WorkbenchAskSession,
   type AskProviderDependencies,
   type AskProvider,
@@ -111,6 +113,8 @@ export async function tryAsk(
       "--mode",
       "--consent",
       "--timeout",
+      "--session-token-budget",
+      "--max-output-tokens",
       "--verbose",
       "--json",
     ]),
@@ -133,6 +137,8 @@ export async function tryAsk(
   const provider = providerValue(optionalArg(args, "--provider"));
   const model = resolveAskModel(provider, optionalArg(args, "--model"));
   const requestTimeoutSeconds = parseAskTimeoutSeconds(optionalArg(args, "--timeout"));
+  const sessionTokenBudget = parseAskSessionTokenBudget(optionalArg(args, "--session-token-budget"));
+  const maxOutputTokens = parseAskMaxOutputTokens(optionalArg(args, "--max-output-tokens"));
   const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
   const guidedState = await readGuidedOnboardingState(projectRoot);
   const boundaryArtifactsRoot = path.resolve(
@@ -203,6 +209,12 @@ export async function tryAsk(
       ...(requestTimeoutSeconds === undefined
         ? {}
         : { request_timeout_seconds: requestTimeoutSeconds }),
+      ...(sessionTokenBudget === undefined
+        ? {}
+        : { session_token_budget: sessionTokenBudget }),
+      ...(maxOutputTokens === undefined
+        ? {}
+        : { max_output_tokens: maxOutputTokens }),
       ...(pastedSecret
         ? { api_key: pastedSecret }
         : apiKeyEnv
@@ -565,6 +577,31 @@ export async function tryAsk(
           await gateway?.close().catch(() => undefined);
         }
       },
+      askTokenLimits: () => {
+        const status = session.status();
+        if (!status.token_usage || !status.configuration) {
+          throw new AskError("ASK_NOT_CONFIGURED", "Choose a provider before viewing Ask token limits.");
+        }
+        return {
+          token_usage: status.token_usage,
+          ...(status.configuration.max_output_tokens === undefined
+            ? {}
+            : { max_output_tokens: status.configuration.max_output_tokens }),
+        };
+      },
+      updateAskTokenLimits: (limits) => {
+        const status = session.updateTokenLimits(limits);
+        if (!status.token_usage || !status.configuration) {
+          throw new AskError("ASK_NOT_CONFIGURED", "Choose a provider before changing Ask token limits.");
+        }
+        configuration = status.configuration;
+        return {
+          token_usage: status.token_usage,
+          ...(status.configuration.max_output_tokens === undefined
+            ? {}
+            : { max_output_tokens: status.configuration.max_output_tokens }),
+        };
+      },
       clearConversation: () => session.clearConversation(),
       cancel: () => session.cancel(),
       });
@@ -718,6 +755,8 @@ async function requireEgressConsent(input: {
       model: input.model,
       endpointOrigin: input.configuration.endpoint_origin,
       requestTimeoutSeconds: input.configuration.request_timeout_seconds,
+      sessionTokenBudget: input.configuration.session_token_budget,
+      maxOutputTokens: input.configuration.max_output_tokens,
       tools: input.tools,
     };
     writeInteractiveStdout(formatProviderEgressReview(
@@ -750,6 +789,8 @@ export function formatProviderEgressReview(input: {
   model: string;
   endpointOrigin: string;
   requestTimeoutSeconds?: number;
+  sessionTokenBudget?: number;
+  maxOutputTokens?: number;
 }, color = false): string {
   const theme = terminalTheme(color);
   return [
@@ -760,6 +801,12 @@ export function formatProviderEgressReview(input: {
     ...(input.requestTimeoutSeconds === undefined
       ? []
       : [`  Model request timeout: ${theme.key(`${input.requestTimeoutSeconds} seconds`)} per provider call`]),
+    ...(input.sessionTokenBudget === undefined
+      ? []
+      : [`  Ask session token budget: ${theme.key(input.sessionTokenBudget.toLocaleString("en-US"))} provider-reported tokens`]),
+    `  Provider output limit: ${input.maxOutputTokens === undefined
+      ? theme.key("automatic provider-call defaults")
+      : theme.key(`${input.maxOutputTokens.toLocaleString("en-US")} tokens per call`)}`,
     "  Model-withheld and kept-out raw values are never sent.",
     "  Trusted scope stays fixed outside model arguments; its raw column value is sent only when reviewed as Model + Runner.",
     "  The model cannot activate, approve, apply, or change this authority.",
@@ -770,6 +817,16 @@ export function formatProviderEgressReview(input: {
 export function parseAskTimeoutSeconds(value: string | undefined): number | undefined {
   if (value === undefined) return undefined;
   return resolveAskRequestTimeoutSeconds(Number(value), "official_remote");
+}
+
+export function parseAskSessionTokenBudget(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  return resolveAskSessionTokenBudget(Number(value));
+}
+
+export function parseAskMaxOutputTokens(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  return resolveAskMaxOutputTokens(Number(value));
 }
 
 export function formatProviderEgressActivationNotice(input: {

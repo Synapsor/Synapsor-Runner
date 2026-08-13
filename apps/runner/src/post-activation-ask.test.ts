@@ -114,7 +114,12 @@ describe("post-activation Ask handoff", () => {
     const prompts: Array<[string, string]> = [];
     const runAsk = vi.fn(async () => 0);
     await expect(runPostActivationAskHandoff(
-      { projectRoot: "/tmp/reviewed-project", requestTimeoutSeconds: 180 },
+      {
+        projectRoot: "/tmp/reviewed-project",
+        requestTimeoutSeconds: 180,
+        sessionTokenBudget: 350_000,
+        maxOutputTokens: 2_048,
+      },
       {
         chooseRoute: async () => "openai-compatible",
         promptWithDefault: async (prompt, defaultValue) => {
@@ -138,6 +143,8 @@ describe("post-activation Ask handoff", () => {
       "--model", "llama3.2",
       "--base-url", "http://127.0.0.1:11434/v1",
       "--timeout", "180",
+      "--session-token-budget", "350000",
+      "--max-output-tokens", "2048",
     ]);
   });
 

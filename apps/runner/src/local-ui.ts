@@ -3003,6 +3003,12 @@ async function handleRequest(input: {
         ...(body.request_timeout_seconds === undefined
           ? {}
           : { request_timeout_seconds: askNumberValue(body.request_timeout_seconds) }),
+        ...(body.session_token_budget === undefined
+          ? {}
+          : { session_token_budget: askNumberValue(body.session_token_budget) }),
+        ...(body.max_output_tokens === undefined
+          ? {}
+          : { max_output_tokens: askNumberValue(body.max_output_tokens) }),
         authority_digest: authorityDigest,
         egress_acknowledged: body.egress_acknowledged === true,
       }, process.env);
@@ -3021,6 +3027,52 @@ async function handleRequest(input: {
       sendAskFailure(response, error);
     } finally {
       await gateway?.close().catch(() => undefined);
+    }
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/ask/limits") {
+    const profile = await resolveWorkbenchDeploymentProfile(projectRoot, deploymentProfile);
+    const unavailable = askWorkbenchAccessFailure(profile, workbenchHost);
+    if (unavailable) {
+      sendJson(response, 404, {
+        ok: false,
+        error_code: "ASK_SURFACE_UNAVAILABLE",
+        error: unavailable,
+        source_database_changed: false,
+      });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, {
+        ok: false,
+        error_code: "ASK_CSRF_REQUIRED",
+        error: "CSRF token required for Ask limit changes.",
+      });
+      return;
+    }
+    const body = await readJsonBody(request);
+    try {
+      const status = askSession.updateTokenLimits({
+        ...(body.session_token_budget === undefined
+          ? {}
+          : { session_token_budget: askNumberValue(body.session_token_budget) }),
+        ...(body.max_output_tokens === undefined
+          ? {}
+          : {
+              max_output_tokens: body.max_output_tokens === null
+                ? null
+                : askNumberValue(body.max_output_tokens),
+            }),
+      });
+      sendJson(response, 200, {
+        ok: true,
+        session: status,
+        source_database_changed: false,
+        next_action: "Continue the same Ask conversation with the updated client-side limits.",
+      });
+    } catch (error) {
+      sendAskFailure(response, error);
     }
     return;
   }
@@ -6213,6 +6265,10 @@ function askFailureNextAction(code: string): string {
   }
   if (code === "ASK_PROVIDER_PERMISSION_DENIED") {
     return "Review the provider key's project and model permissions, or choose another provider or model.";
+  }
+  if (code === "ASK_SESSION_TOKEN_BUDGET_EXCEEDED"
+    || code === "ASK_SESSION_TOKEN_BUDGET_BELOW_USAGE") {
+    return "Open Ask limits and raise the reported-token session budget without clearing the conversation, or clear only when you intend to discard its context.";
   }
   if (code === "ASK_PROVIDER_RATE_LIMITED") {
     return "Wait for the provider limit to reset, review provider quota, or choose another configured model.";

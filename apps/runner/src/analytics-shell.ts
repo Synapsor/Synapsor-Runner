@@ -15,6 +15,8 @@ import {
   safeTerminalText,
 } from "./analytics-shell-render.js";
 import type {
+  AskSessionTokenUsage,
+  AskTokenLimitUpdate,
   AskTurnResult,
 } from "./model-ask.js";
 import type { PendingBoundaryReviewSummary } from "./ask-authority.js";
@@ -70,6 +72,7 @@ const COMMANDS = [
   "/access",
   "/access-workbench",
   "/refresh-access",
+  "/limits",
   "/clear",
   "/exit",
 ];
@@ -85,6 +88,7 @@ const COMMAND_DESCRIPTIONS: Record<string, string> = {
   "/access": "Add or edit reviewed boundaries",
   "/access-workbench": "Open the visual access editor",
   "/refresh-access": "Use access activated outside this shell",
+  "/limits": "Show or change this Ask session's token limits",
   "/clear": "Clear this model conversation",
   "/exit": "Close the analytics shell",
 };
@@ -125,6 +129,65 @@ type CatalogCommandRequest =
       export_requested: boolean;
       export_path?: string;
     };
+
+type AskLimitsCommandRequest = AskTokenLimitUpdate & {
+  changed: boolean;
+};
+
+function parseAskLimitsCommand(line: string): AskLimitsCommandRequest | { error: string } {
+  const rest = line.slice("/limits".length).trim();
+  if (!rest) return { changed: false };
+  const tokens = shellArgumentTokens(rest);
+  if (!tokens) return { error: "A quoted limits argument is not closed." };
+  const result: AskLimitsCommandRequest = { changed: false };
+  for (let index = 0; index < tokens.length; index += 1) {
+    const option = tokens[index]!;
+    const value = tokens[index + 1];
+    if (option === "--session-tokens") {
+      if (result.session_token_budget !== undefined) return { error: "--session-tokens may be supplied only once." };
+      if (!value || !/^[1-9][0-9]*$/.test(value)) return { error: "--session-tokens requires a positive whole number." };
+      result.session_token_budget = Number(value);
+      result.changed = true;
+      index += 1;
+      continue;
+    }
+    if (option === "--max-output-tokens") {
+      if (result.max_output_tokens !== undefined) return { error: "--max-output-tokens may be supplied only once." };
+      if (!value || (value !== "automatic" && !/^[1-9][0-9]*$/.test(value))) {
+        return { error: "--max-output-tokens requires a positive whole number or automatic." };
+      }
+      result.max_output_tokens = value === "automatic" ? null : Number(value);
+      result.changed = true;
+      index += 1;
+      continue;
+    }
+    return { error: `Unknown Ask limits option ${option}.` };
+  }
+  return result;
+}
+
+function renderAskTokenLimits(input: {
+  token_usage: AskSessionTokenUsage;
+  max_output_tokens?: number;
+  changed: boolean;
+  color: boolean;
+}): string {
+  const theme = terminalTheme(input.color);
+  const usage = input.token_usage;
+  return [
+    "",
+    theme.title(input.changed ? "ASK SESSION LIMITS UPDATED" : "ASK SESSION LIMITS"),
+    `  ${theme.key("Reported usage")}  ${theme.value(`${usage.reported_tokens.toLocaleString("en-US")} / ${usage.session_token_budget.toLocaleString("en-US")}`)} ${theme.dim(`(${usage.remaining_reported_tokens.toLocaleString("en-US")} remaining)`)}`,
+    `  ${theme.key("Session budget")}  ${theme.value(usage.session_token_budget.toLocaleString("en-US"))} ${theme.dim("provider-reported tokens; conversation preserved when raised")}`,
+    `  ${theme.key("Output limit")}    ${input.max_output_tokens === undefined
+      ? theme.value("Automatic") + " " + theme.dim("1,200 ordinary calls; existing provider-specific final-pass default")
+      : theme.value(input.max_output_tokens.toLocaleString("en-US")) + " " + theme.dim("tokens on every provider call")}`,
+    "",
+    theme.dim("These are client spend/context controls, not database authority or Explore privacy budgets."),
+    `${theme.dim("Change: ")}${theme.scope("/limits --session-tokens <number>")} ${theme.dim("or ")}${theme.scope("/limits --max-output-tokens <number|automatic>")}`,
+    "",
+  ].join("\n");
+}
 
 function parseCatalogCommand(line: string): CatalogCommandRequest | { error: string } {
   const rest = line.slice("/catalog".length).trim();
@@ -411,6 +474,32 @@ function argumentCommandSuggestions(line: string): SlashCommandSuggestion[] | un
     return [];
   }
 
+  if (normalized === "/limits" || normalized.startsWith("/limits ")) {
+    const rest = line.slice("/limits".length).trimStart();
+    if (!rest) {
+      return [
+        syntaxSuggestion("/limits --session-tokens <number>", "Raise or lower the cumulative reported-token budget"),
+        syntaxSuggestion("/limits --max-output-tokens <number>", "Override every provider call's output-token limit"),
+        suggestion("/limits --max-output-tokens automatic", "Restore provider-call defaults"),
+      ];
+    }
+    const partial = rest.match(/(?:^|\s)(--[^\s]*)$/)?.[1] ?? "";
+    if (partial) {
+      return [
+        ...(startsWithToken("--session-tokens", partial)
+          ? [syntaxSuggestion("/limits --session-tokens <number>", "Choose 1,000-5,000,000 reported tokens")]
+          : []),
+        ...(startsWithToken("--max-output-tokens", partial)
+          ? [syntaxSuggestion("/limits --max-output-tokens <number>", "Choose 256-16,384 output tokens")]
+          : []),
+      ];
+    }
+    if (/--max-output-tokens\s+a[^\s]*$/i.test(rest)) {
+      return [suggestion("/limits --max-output-tokens automatic", "Restore provider-call defaults")];
+    }
+    return [];
+  }
+
   if (normalized === "/access" || normalized.startsWith("/access ")) {
     const rest = line.slice("/access".length).trim();
     if (!rest || startsWithToken("workbench", rest)) {
@@ -564,6 +653,14 @@ export type AnalyticsShellInput = {
     boundaryCatalog?: BoundaryCatalogModel;
     pendingBoundaryReview?: PendingBoundaryReviewSummary;
   }>;
+  askTokenLimits?(): {
+    token_usage: AskSessionTokenUsage;
+    max_output_tokens?: number;
+  };
+  updateAskTokenLimits?(input: AskTokenLimitUpdate): {
+    token_usage: AskSessionTokenUsage;
+    max_output_tokens?: number;
+  };
   clearConversation(): void;
   cancel(): boolean;
 };
@@ -1124,6 +1221,10 @@ async function handleShellCommand(
       "  /access                      Add or edit reviewed boundaries",
       "  /access-workbench            Open the visual access editor",
       "  /refresh-access              Use access activated in Workbench or another terminal",
+      "  /limits                      Show this Ask session's token usage and limits",
+      "  /limits --session-tokens N   Change its cumulative reported-token budget without clearing context",
+      "  /limits --max-output-tokens N|automatic",
+      "                               Override or restore provider-call output limits",
       "  /clear                       Clear this model conversation",
       "  /exit                        Close the shell",
       "  Ctrl+D                       Close the shell (Ctrl+C twice also exits)",
@@ -1182,6 +1283,41 @@ async function handleShellCommand(
       catalog: input.boundaryCatalog,
       color: input.io.isTerminal?.() === true && !("NO_COLOR" in process.env),
       columns: input.io.columns(),
+    }));
+    return "continue";
+  }
+  if (line === "/limits" || line.startsWith("/limits ")) {
+    const parsed = parseAskLimitsCommand(line);
+    if ("error" in parsed) {
+      input.io.write([
+        "",
+        `Ask limits were not changed: ${safeTerminalText(parsed.error)}`,
+        "Usage: /limits [--session-tokens <number>] [--max-output-tokens <number|automatic>]",
+        "",
+        "",
+      ].join("\n"));
+      return "continue";
+    }
+    const readLimits = input.askTokenLimits;
+    const updateLimits = input.updateAskTokenLimits;
+    if (!readLimits || (parsed.changed && !updateLimits)) {
+      input.io.write("Ask token-limit controls are unavailable in this shell. Restart with `try ask --session-token-budget <number>` when needed.\n\n");
+      return "continue";
+    }
+    const limits = parsed.changed
+      ? updateLimits!({
+          ...(parsed.session_token_budget === undefined
+            ? {}
+            : { session_token_budget: parsed.session_token_budget }),
+          ...(parsed.max_output_tokens === undefined
+            ? {}
+            : { max_output_tokens: parsed.max_output_tokens }),
+        })
+      : readLimits();
+    input.io.write(renderAskTokenLimits({
+      ...limits,
+      changed: parsed.changed,
+      color: input.io.isTerminal?.() === true && !("NO_COLOR" in process.env),
     }));
     return "continue";
   }

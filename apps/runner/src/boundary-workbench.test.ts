@@ -426,6 +426,12 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain('id="ask-key" type="password"');
     expect(html).toContain('id="ask-timeout" type="number" min="1" max="600"');
     expect(html).toContain("request_timeout_seconds=Number(requestTimeout)");
+    expect(html).toContain('id="ask-session-token-budget" type="number" min="1000" max="5000000"');
+    expect(html).toContain('id="ask-live-session-token-budget" type="number" min="1000" max="5000000"');
+    expect(html).toContain('id="ask-max-output-tokens" type="number" min="256" max="16384"');
+    expect(html).toContain('post("/api/ask/limits"');
+    expect(html).toContain("Conversation context was preserved");
+    expect(html).toContain('code==="ASK_SESSION_TOKEN_BUDGET_EXCEEDED"');
     expect(html).toContain("s per model request");
     expect(html).toContain('maxlength="4000"');
     expect(html).toContain('post("/api/ask/run",{question})');

@@ -112,6 +112,15 @@ for the Synapsor Cloud CLI.
   does not match the question before source execution. When the local JSON-plan
   rescue is needed, Runner renders the verified result without asking the weak
   model to reinterpret its values.
+- The same pre-execution intent guard now covers built-in OpenAI and Anthropic
+  Ask. A model cannot answer a question about an unavailable entity by silently
+  running a different reviewed table or grouping: Runner returns
+  `ASK_PLAN_INTENT_MISMATCH`, executes no Explore query, spends no Explore query
+  or differencing budget, and never gives the substituted result back to the
+  provider for narration. Ask's cumulative provider-reported token budget and
+  per-call output request are bounded operator settings in CLI and Workbench;
+  `/limits` can raise them without clearing the current conversation. These
+  client controls do not change reviewed database or privacy authority.
 - Explore refuses ambiguous SQL-null filter literals with guidance to reviewed
   missing-data measures. Sequential metrics omit undated records, MySQL restores
   pooled session timezones, and Workbench relationship labels use separate graph

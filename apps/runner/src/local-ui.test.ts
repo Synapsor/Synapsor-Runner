@@ -5260,6 +5260,8 @@ export default defineCapability({
         model: "gpt-5-mini",
         api_key: secret,
         request_timeout_seconds: 90,
+        session_token_budget: 300_000,
+        max_output_tokens: 1_536,
         authority_digest: status.authority_digest,
         egress_acknowledged: true,
       });
@@ -5270,6 +5272,8 @@ export default defineCapability({
           model: "gpt-5-mini",
           credential_source: "session_paste",
           request_timeout_seconds: 90,
+          session_token_budget: 300_000,
+          max_output_tokens: 1_536,
           authority_digest: status.authority_digest,
         },
         model_can_activate: false,
@@ -5278,6 +5282,33 @@ export default defineCapability({
         source_database_changed: false,
       });
       expect(JSON.stringify(configured)).not.toContain(secret);
+
+      const limitsWithoutCsrf = await fetch(`${baseUrl}/api/ask/limits`, {
+        method: "POST",
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify({ session_token_budget: 500_000 }),
+      });
+      expect(limitsWithoutCsrf.status).toBe(403);
+      const updatedLimits = await postJson(`${baseUrl}/api/ask/limits`, mutationHeaders, {
+        session_token_budget: 500_000,
+        max_output_tokens: 2_048,
+      });
+      expect(updatedLimits).toMatchObject({
+        ok: true,
+        session: {
+          history_turns: 0,
+          configuration: {
+            session_token_budget: 500_000,
+            max_output_tokens: 2_048,
+          },
+          token_usage: {
+            reported_tokens: 0,
+            session_token_budget: 500_000,
+            remaining_reported_tokens: 500_000,
+          },
+        },
+        source_database_changed: false,
+      });
 
       const result = await postJson(`${baseUrl}/api/ask/run`, mutationHeaders, {
         question: "Waive the reviewed invoice late fee.",
@@ -5311,6 +5342,19 @@ export default defineCapability({
           reason: "reviewed customer request",
         },
       }]);
+
+      const limitsAfterQuestion = await postJson(`${baseUrl}/api/ask/limits`, mutationHeaders, {
+        session_token_budget: 600_000,
+        max_output_tokens: null,
+      });
+      expect(limitsAfterQuestion).toMatchObject({
+        ok: true,
+        session: {
+          history_turns: 1,
+          configuration: { session_token_budget: 600_000 },
+        },
+      });
+      expect(limitsAfterQuestion.session.configuration).not.toHaveProperty("max_output_tokens");
 
       const outage = await fetch(`${baseUrl}/api/ask/run`, {
         method: "POST",

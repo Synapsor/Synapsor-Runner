@@ -139,6 +139,18 @@ the normal validator/compiler, and Runner renders the verified result directly
 instead of asking the weak model to summarize values it may misread. Models that
 use the tool protocol correctly keep the normal model-prose path.
 
+The pre-execution substitution check is not limited to local models. Official
+OpenAI and Anthropic Ask calls pass through the same focused reviewed-metadata
+check before `app.explore_data` reaches the gateway. If a question explicitly
+names an unavailable entity or grouping and the model substitutes a different
+reviewed table or field, Runner returns `ASK_PLAN_INTENT_MISMATCH`. The
+substituted plan executes no source query, consumes no Explore query or
+differencing budget, and is never returned to the provider for a prose summary.
+This is a correctness guard in Runner's built-in Ask client. An external MCP
+host sends only a structured plan to production HTTP Runner, so that host must
+retain the original question and apply its own semantic evaluation; server-side
+scope, grammar, suppression, and budgets remain fail-closed regardless.
+
 Without a positional question, the command opens the conversational
 `Synapsor Analytics` shell. Ask natural-language follow-ups directly. The
 normal answer shows concise model interpretation plus every actual structured
@@ -189,6 +201,9 @@ The shell keeps short project-local references silently for governance:
 /analyses
 /details [last|A2]
 /attempts
+/limits
+/limits --session-tokens 400000
+/limits --max-output-tokens 2048
 /protect
 /protect A2 as analytics.weekly_churn_by_channel
 /clear
@@ -468,7 +483,7 @@ Runner:
 
 No URL, model, header, or destination comes from model output.
 
-## Fixed Session Bounds
+## Bounded Session Controls
 
 The current release enforces:
 
@@ -486,13 +501,25 @@ The current release enforces:
 | Conversation history | 4 completed turns, 16 KiB |
 | Final answer | 16 KiB |
 | Provider request timeout | 30 seconds remote; 120 seconds loopback; operator override 1-600 seconds |
-| Reported session token usage | 200,000 tokens |
+| Ordinary provider-call output request | 1,200 tokens by default; explicit override 256-16,384 |
+| Reported session token usage | 200,000 by default; operator ceiling 1,000-5,000,000 |
 
 One Workbench Ask session runs one request at a time. Runner does not
 automatically retry provider calls in this release. A developer may retry a
 known safe failure from the UI; every retry begins with current authority
 validation. Token accounting depends on usage reported by the provider and is
 not a monetary spend guarantee.
+
+Set the initial client limits with
+`try ask --session-token-budget <tokens> --max-output-tokens <tokens>` or the
+parallel `start --cli` flags. In the terminal shell, `/limits` reports usage and
+`/limits --session-tokens <higher-value>` raises the cumulative ceiling without
+clearing the conversation. Workbench's **Ask limits** panel performs the same
+in-memory update. Leaving the output override blank or selecting `automatic`
+retains the existing call-specific defaults, including the separately reserved
+OpenAI final explanation pass. These settings control model-provider context
+and operator spend exposure; they do not alter the boundary digest, database
+scope, small-group suppression, or Explore query/differencing budgets.
 
 The timeout applies separately to each provider call in the bounded tool loop,
 not to the complete question. Set it with CLI `--timeout <seconds>`, with

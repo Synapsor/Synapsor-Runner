@@ -66,7 +66,7 @@ Commands:
 
 Examples:
   ${cmd} try --prove --yes --no-open
-  ${cmd} try ask --provider openai [--model <model>] [--verbose]
+  ${cmd} try ask --provider openai [--model <model>] [--verbose] [--session-token-budget 200000]
   ${cmd} start --from-env DATABASE_URL
   ${cmd} start --from-env DATABASE_URL --cli
   ${cmd} start --action refund_order --description "Propose one reviewed order refund"
@@ -120,7 +120,7 @@ Global options:
   ${cmd} try explore --resource public.orders --measure derived:average_order_value --time-bucket created_at:quarter
   ${cmd} try explore --resource public.orders --sum total_cents --group-band order_value_band
   ${cmd} try explore --plan '{"kind":"aggregate",...}'
-  ${cmd} try ask --provider openai [--model <model>] [--timeout 30]
+  ${cmd} try ask --provider openai [--model <model>] [--timeout 30] [--session-token-budget 200000] [--max-output-tokens 4096]
   ${cmd} try ask --provider anthropic [--model <model>] [--timeout 30]
   ${cmd} try ask --provider openai-compatible --model <model> --base-url http://127.0.0.1:11434/v1 [--timeout 120]
   ${cmd} try ask "Which reviewed regions changed most by week?" --provider openai
@@ -139,6 +139,10 @@ Choose the intended path:
     does not open the demo UI. --timeout is the whole-number timeout in seconds
     for each provider call (1-600). Remote providers default to 30 seconds;
     loopback OpenAI-compatible endpoints default to 120 seconds.
+    --session-token-budget sets the cumulative provider-reported session ceiling
+    from 1,000 through 5,000,000 (default 200,000). --max-output-tokens sets one
+    256-16,384 override for every provider call. In the shell, /limits changes
+    either token setting without clearing conversation context.
 
 Run the complete Synapsor commit-boundary proof without Docker, a database,
 signup, API key, MCP client, or LLM call. A deterministic simulated agent uses
@@ -337,7 +341,7 @@ Options:
     start: `Usage:
   # Recommended interactive first run
   ${cmd} start --from-env DATABASE_URL [--schema public]
-  ${cmd} start --from-env DATABASE_URL --cli [--schema public] [--verbose] [--timeout 120]
+  ${cmd} start --from-env DATABASE_URL --cli [--schema public] [--verbose] [--timeout 120] [--session-token-budget 200000] [--max-output-tokens 4096]
   ${cmd} start --from-env DATABASE_URL --rescan
   ${cmd} start --from-env DATABASE_URL --cli --single-tenant --organization-id internal-finance
 
@@ -376,6 +380,10 @@ existing MCP client, or Later; E opens detailed multi-table/column review.
 For the terminal model handoff, \`--timeout <seconds>\` sets the per-provider-call
 timeout from 1 through 600 seconds. Without an override, hosted and remote
 providers use 30 seconds while a loopback OpenAI-compatible model uses 120.
+The same terminal handoff accepts \`--session-token-budget <tokens>\` and
+\`--max-output-tokens <tokens>\`; Workbench exposes parallel Ask-limit fields.
+These bound the local model client and provider spend/context only. They do not
+change reviewed database authority or Explore privacy/differencing budgets.
 Submitting the first question confirms the displayed provider/model/origin
 egress review. In the Analytics shell, \`/access\` opens the terminal boundary
 editor and \`/access-workbench\` opens its visual counterpart. \`--no-open\`

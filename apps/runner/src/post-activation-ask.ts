@@ -96,6 +96,8 @@ export async function runPostActivationAskHandoff(
     autoStartConfiguredProvider?: boolean;
     consentOnFirstQuestion?: boolean;
     requestTimeoutSeconds?: number;
+    sessionTokenBudget?: number;
+    maxOutputTokens?: number;
     selection?: PostActivationAskSelection;
   },
   dependencies: PostActivationAskDependencies = {},
@@ -154,6 +156,12 @@ export async function runPostActivationAskHandoff(
   if (input.requestTimeoutSeconds !== undefined) {
     askArgs.push("--timeout", String(input.requestTimeoutSeconds));
   }
+  if (input.sessionTokenBudget !== undefined) {
+    askArgs.push("--session-token-budget", String(input.sessionTokenBudget));
+  }
+  if (input.maxOutputTokens !== undefined) {
+    askArgs.push("--max-output-tokens", String(input.maxOutputTokens));
+  }
 
   const routeLabel = route === "openai"
     ? "OpenAI"
@@ -171,6 +179,12 @@ export async function runPostActivationAskHandoff(
     ...(input.requestTimeoutSeconds === undefined
       ? []
       : [`Model request timeout: ${theme.key(`${input.requestTimeoutSeconds} seconds`)} per provider call`]),
+    ...(input.sessionTokenBudget === undefined
+      ? []
+      : [`Ask session token budget: ${theme.key(input.sessionTokenBudget.toLocaleString("en-US"))} provider-reported tokens`]),
+    ...(input.maxOutputTokens === undefined
+      ? []
+      : [`Provider output limit: ${theme.key(input.maxOutputTokens.toLocaleString("en-US"))} tokens per call`]),
     "",
   ].join("\n"));
   const runAsk = dependencies.runAsk
@@ -206,6 +220,8 @@ export async function runPostActivationAskHandoff(
         projectRoot: input.projectRoot,
         consentOnFirstQuestion: input.consentOnFirstQuestion,
         requestTimeoutSeconds: input.requestTimeoutSeconds,
+        sessionTokenBudget: input.sessionTokenBudget,
+        maxOutputTokens: input.maxOutputTokens,
       }, dependencies);
     }
     stderr.write([

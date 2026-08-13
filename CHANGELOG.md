@@ -34,6 +34,13 @@
   compact catalog guidance, strict benign argument normalization, intent-checked
   JSON-plan recovery, and Runner-owned fallback results improve small-model DX
   without widening the two-tool grammar or trusted scope.
+- Extends deterministic Ask intent checks to official OpenAI and Anthropic
+  adapters. Explicit unavailable-entity or grouping substitutions are refused
+  before `app.explore_data`, consume no Explore query/differencing budget, and
+  cannot be narrated as the requested answer. Adds bounded CLI/Workbench Ask
+  token settings, including an in-session `/limits` update that preserves
+  conversation context; these client-side spend/context controls remain outside
+  reviewed database and privacy authority.
 - Refuses ambiguous SQL-null filter literals with missing-data guidance, omits
   undated records from sequential metrics, restores MySQL session timezone
   before pooled reuse, and gives each Workbench relationship a separate

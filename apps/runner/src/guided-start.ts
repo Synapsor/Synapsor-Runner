@@ -75,7 +75,11 @@ import {
 } from "./instant-cli-boundary.js";
 import { createBoundaryReviewInteractiveSession, terminalTheme } from "./boundary-cli-picker.js";
 import { mcpSmoke } from "./mcp-runtime.js";
-import { resolveAskRequestTimeoutSeconds } from "./model-ask.js";
+import {
+  resolveAskMaxOutputTokens,
+  resolveAskRequestTimeoutSeconds,
+  resolveAskSessionTokenBudget,
+} from "./model-ask.js";
 import { displayPath, init, isScriptedOnboardingArgs, runInitWizard } from "./onboarding.js";
 import { detectProjectContext, formatProjectDetection } from "./project-detection.js";
 import {
@@ -104,6 +108,8 @@ export type GuidedStartDependencies = {
     autoStartConfiguredProvider?: boolean;
     consentOnFirstQuestion?: boolean;
     requestTimeoutSeconds?: number;
+    sessionTokenBudget?: number;
+    maxOutputTokens?: number;
     selection?: PostActivationAskSelection;
   }) => Promise<number>;
   openWorkbench?: (args: string[]) => Promise<number>;
@@ -116,8 +122,10 @@ export async function start(
   dependencies: GuidedStartDependencies = {},
 ): Promise<number> {
   if (args.includes("--action")) return startSafeAction(args);
-  if (args.includes("--timeout") && !args.includes("--cli")) {
-    throw new Error("start --timeout configures the terminal model session and requires --cli. Workbench has its own model request timeout setting.");
+  const terminalAskFlags = ["--timeout", "--session-token-budget", "--max-output-tokens"];
+  const terminalAskFlag = terminalAskFlags.find((flag) => args.includes(flag));
+  if (terminalAskFlag && !args.includes("--cli")) {
+    throw new Error(`start ${terminalAskFlag} configures the terminal model session and requires --cli. Workbench has its own Ask settings.`);
   }
   const interactive = dependencies.interactive
     ?? (process.stdin.isTTY === true && process.stdout.isTTY === true);
@@ -264,12 +272,25 @@ async function startAutoBoundary(
   args: string[],
   dependencies: GuidedStartDependencies = {},
 ): Promise<number> {
-  assertKnownOptions(args, new Set(["--from-env", "--engine", "--schema", "--no-open", "--open-ui", "--cli", "--force", "--rescan", "--no-graduation-tip", "--verbose", "--single-tenant", "--organization-id", "--timeout"]), "start --from-env Auto Boundary");
+  assertKnownOptions(args, new Set(["--from-env", "--engine", "--schema", "--no-open", "--open-ui", "--cli", "--force", "--rescan", "--no-graduation-tip", "--verbose", "--single-tenant", "--organization-id", "--timeout", "--session-token-budget", "--max-output-tokens"]), "start --from-env Auto Boundary");
   const cliMode = args.includes("--cli");
   const rawRequestTimeout = optionalArg(args, "--timeout");
   const requestTimeoutSeconds = rawRequestTimeout === undefined
     ? undefined
     : resolveAskRequestTimeoutSeconds(Number(rawRequestTimeout), "official_remote");
+  const rawSessionTokenBudget = optionalArg(args, "--session-token-budget");
+  const sessionTokenBudget = rawSessionTokenBudget === undefined
+    ? undefined
+    : resolveAskSessionTokenBudget(Number(rawSessionTokenBudget));
+  const rawMaxOutputTokens = optionalArg(args, "--max-output-tokens");
+  const maxOutputTokens = rawMaxOutputTokens === undefined
+    ? undefined
+    : resolveAskMaxOutputTokens(Number(rawMaxOutputTokens));
+  const terminalAskLimits = {
+    ...(requestTimeoutSeconds === undefined ? {} : { requestTimeoutSeconds }),
+    ...(sessionTokenBudget === undefined ? {} : { sessionTokenBudget }),
+    ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
+  };
   const writeGuidedOutput = (value: string) => process.stdout.write(
     cliMode && process.stdout.isTTY === true ? padTerminalBlock(value) : value,
   );
@@ -280,12 +301,14 @@ async function startAutoBoundary(
       autoStartConfiguredProvider?: boolean;
       consentOnFirstQuestion?: boolean;
       requestTimeoutSeconds?: number;
+      sessionTokenBudget?: number;
+      maxOutputTokens?: number;
       selection?: PostActivationAskSelection;
     }) => runPostActivationAskHandoff(input));
   const activationHandoff: BoundaryActivationHandoff = (input) =>
     runPostActivationHandoff({
       projectRoot: input.projectRoot,
-      ...(requestTimeoutSeconds === undefined ? {} : { requestTimeoutSeconds }),
+      ...terminalAskLimits,
     });
   const runBoundaryReview = dependencies.runBoundaryReview
     ?? ((reviewArgs, inspector, handoff) =>
@@ -374,7 +397,7 @@ async function startAutoBoundary(
       if (activeBoundaryExists) {
         return runPostActivationHandoff({
           projectRoot: project.root,
-          ...(requestTimeoutSeconds === undefined ? {} : { requestTimeoutSeconds }),
+          ...terminalAskLimits,
         });
       }
       const context = await loadBoundaryReviewContext(project.root);
@@ -389,7 +412,7 @@ async function startAutoBoundary(
         if (instant.accepted) {
           return runPostActivationHandoff({
             projectRoot: project.root,
-            ...(requestTimeoutSeconds === undefined ? {} : { requestTimeoutSeconds }),
+            ...terminalAskLimits,
             selection: instant.askSelection,
             consentOnFirstQuestion: true,
           });
@@ -443,7 +466,7 @@ async function startAutoBoundary(
       if (!prepared.report.changed && activeBoundaryExists) {
         return runPostActivationHandoff({
           projectRoot: project.root,
-          ...(requestTimeoutSeconds === undefined ? {} : { requestTimeoutSeconds }),
+          ...terminalAskLimits,
         });
       }
       return runBoundaryReview(
@@ -547,7 +570,7 @@ async function startAutoBoundary(
     if (instant.accepted) {
       return runPostActivationHandoff({
         projectRoot: project.root,
-        ...(requestTimeoutSeconds === undefined ? {} : { requestTimeoutSeconds }),
+        ...terminalAskLimits,
         selection: instant.askSelection,
         consentOnFirstQuestion: true,
       });

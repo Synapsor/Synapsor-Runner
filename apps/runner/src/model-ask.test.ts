@@ -4,7 +4,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AskError,
   askToolSurfaceDigest,
+  resolveAskMaxOutputTokens,
   resolveAskProviderConfiguration,
+  resolveAskSessionTokenBudget,
   secureAskJsonRequest,
   WorkbenchAskSession,
   type AskProviderDependencies,
@@ -176,6 +178,68 @@ describe("Workbench BYOM Ask", () => {
         authority_digest: authorityDigest,
         egress_acknowledged: true,
       }, {}, new Date())).toThrowError(expect.objectContaining({ code: "ASK_TIMEOUT_INVALID" }));
+    }
+  });
+
+  it("uses bounded Ask token defaults and validates operator overrides", () => {
+    const authorityDigest = askToolSurfaceDigest(tools);
+    const defaults = resolveAskProviderConfiguration({
+      provider: "openai",
+      model: "gpt-5-mini",
+      api_key: "sk-test-credential",
+      authority_digest: authorityDigest,
+      egress_acknowledged: true,
+    }, {}, new Date());
+    const overridden = resolveAskProviderConfiguration({
+      provider: "openai",
+      model: "gpt-5-mini",
+      api_key: "sk-test-credential",
+      session_token_budget: 750_000,
+      max_output_tokens: 8_192,
+      authority_digest: authorityDigest,
+      egress_acknowledged: true,
+    }, {}, new Date());
+
+    expect(defaults.session_token_budget).toBe(200_000);
+    expect(defaults.max_output_tokens).toBeUndefined();
+    expect(overridden).toMatchObject({
+      session_token_budget: 750_000,
+      max_output_tokens: 8_192,
+    });
+    for (const value of [999, 5_000_001, 1.5, Number.NaN]) {
+      expect(() => resolveAskSessionTokenBudget(value)).toThrowError(expect.objectContaining({
+        code: "ASK_SESSION_TOKEN_BUDGET_INVALID",
+      }));
+    }
+    for (const value of [255, 16_385, 1.5, Number.NaN]) {
+      expect(() => resolveAskMaxOutputTokens(value)).toThrowError(expect.objectContaining({
+        code: "ASK_MAX_OUTPUT_TOKENS_INVALID",
+      }));
+    }
+  });
+
+  it("applies one explicit output-token override to OpenAI and Anthropic calls", async () => {
+    const authorityDigest = askToolSurfaceDigest(tools);
+    for (const provider of ["openai", "anthropic"] as const) {
+      const session = new WorkbenchAskSession();
+      session.configure({
+        provider,
+        model: provider === "openai" ? "gpt-5-mini" : "claude-test",
+        api_key: "provider-session-key",
+        max_output_tokens: 2_048,
+        authority_digest: authorityDigest,
+        egress_acknowledged: true,
+      });
+      await session.run("Count reviewed records.", testGateway().gateway, {
+        requestJson: async (request) => {
+          if (provider === "openai") {
+            expect(request.body.max_completion_tokens).toBe(2_048);
+            return { status: 200, body: { choices: [{ message: { role: "assistant", content: "Ready." } }] } };
+          }
+          expect(request.body.max_tokens).toBe(2_048);
+          return { status: 200, body: { content: [{ type: "text", text: "Ready." }] } };
+        },
+      });
     }
   });
 
@@ -814,6 +878,506 @@ describe("Workbench BYOM Ask", () => {
     expect(result.answer).toBe("The reviewed count is 12.");
     expect(result.tool_calls[0]?.tool).toBe("app.explore_data");
     expect(result.usage).toEqual({ input_tokens: 15, output_tokens: 8, total_tokens: 23 });
+  });
+
+  it.each([
+    {
+      question: "How many patients are there by insurance tier?",
+      resource: "public.encounters",
+      resourceLabel: "Encounters",
+      dimension: { field: "attending" },
+      fields: [
+        { id: "attending", label: "Attending" },
+        { id: "encounter_type", label: "Encounter type" },
+      ],
+    },
+    {
+      question: "How many observation events are there by event type?",
+      resource: "public.encounters",
+      resourceLabel: "Encounters",
+      dimension: { field: "encounter_type" },
+      fields: [
+        { id: "attending", label: "Attending" },
+        { id: "encounter_type", label: "Encounter type" },
+      ],
+    },
+    {
+      question: "Break down patients by sex at birth.",
+      resource: "public.encounters",
+      resourceLabel: "Encounters",
+      dimension: { field: "attending" },
+      fields: [{ id: "attending", label: "Attending" }],
+    },
+    {
+      question: "How many referral requests are there?",
+      resource: "public.encounters",
+      resourceLabel: "Encounters",
+      dimension: { field: "attending" },
+      fields: [{ id: "attending", label: "Attending" }],
+    },
+    {
+      question: "Break down event annotations by annotation kind.",
+      resource: "public.observation_events",
+      resourceLabel: "Observation events",
+      dimension: { field: "event_type" },
+      fields: [{ id: "event_type", label: "Event type" }],
+    },
+    {
+      question: "Break down event annotations by encounter department.",
+      resource: "public.observation_events",
+      resourceLabel: "Observation events",
+      dimension: {
+        field: "department",
+        relationship: "observation_events_observation_id_fkey__observations_encounter_id_fkey",
+      },
+      fields: [{ id: "event_type", label: "Event type" }],
+      relationships: [{
+        id: "observation_events_observation_id_fkey__observations_encounter_id_fkey",
+        target_resource: "public.encounters",
+        target_label: "Encounters",
+        fields: [{ id: "department", label: "Department" }],
+        groupable_fields: ["department"],
+      }],
+    },
+  ])("refuses OpenAI resource and field substitution before Explore accounting: $question", async ({
+    question,
+    resource,
+    resourceLabel,
+    dimension,
+    fields,
+    relationships,
+  }) => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const metadataCalls: Record<string, unknown>[] = [];
+    let exploreCalls = 0;
+    const focusedMetadata = {
+      ok: true,
+      catalog_view: "resource_detail",
+      metadata_only: true,
+      resources: [{
+        id: resource,
+        label: resourceLabel,
+        fields,
+        groupable_fields: fields.map((field) => field.id),
+        aggregate_measure_functions: {},
+        ...(relationships ? { relationships } : {}),
+      }],
+      source_database_changed: false,
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async (args) => {
+        metadataCalls.push(args);
+        return { ok: true, value: focusedMetadata };
+      },
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-4.1",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    const requestJson = vi.fn(async () => openAiToolCall("substituted_plan", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource,
+          measures: [{ function: "count" }],
+          dimensions: [dimension],
+          top_n: 25,
+        },
+      }));
+    const result = await session.run(question, gateway, { requestJson });
+
+    expect(result).toMatchObject({
+      answer_source: "runner",
+      answer_is_untrusted_model_output: false,
+      source_database_changed: false,
+      tool_calls: [{
+        tool: "app.explore_data",
+        status: "refused",
+        error_code: "ASK_PLAN_INTENT_MISMATCH",
+        result: {
+          source_query_executed: false,
+          explore_budget_consumed: false,
+        },
+      }],
+    });
+    expect(result.answer).toContain("did not reach source execution");
+    expect(result.answer).toContain("no Explore query or differencing budget was consumed");
+    expect(exploreCalls).toBe(0);
+    expect(calls).toEqual([]);
+    expect(metadataCalls).toEqual([{ resource }]);
+    expect(requestJson).toHaveBeenCalledTimes(1);
+  });
+
+  it("applies the same pre-execution substitution refusal to Anthropic Ask", async () => {
+    let exploreCalls = 0;
+    let metadataCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => {
+        metadataCalls += 1;
+        return {
+          ok: true,
+          value: {
+            ok: true,
+            resources: [{
+              id: "public.encounters",
+              fields: [{ id: "encounter_type", label: "Encounter type" }],
+              groupable_fields: ["encounter_type"],
+            }],
+            source_database_changed: false,
+          },
+        };
+      },
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "anthropic",
+      model: "claude-test",
+      api_key: "anthropic-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    const result = await session.run("How many observation events are there by event type?", gateway, {
+      requestJson: async () => ({
+        status: 200,
+        body: {
+          content: [{
+            type: "tool_use",
+            id: "substituted_anthropic_plan",
+            name: "app__explore_data",
+            input: {
+              plan: {
+                kind: "aggregate",
+                resource: "public.encounters",
+                measures: [{ function: "count" }],
+                dimensions: [{ field: "encounter_type" }],
+              },
+            },
+          }],
+        },
+      }),
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ error_code: "ASK_PLAN_INTENT_MISMATCH", status: "refused" }),
+    ]);
+    expect(result.answer_source).toBe("runner");
+    expect(exploreCalls).toBe(0);
+    expect(metadataCalls).toBe(1);
+  });
+
+  it("fails closed when explicit Ask intent cannot be checked against reviewed metadata", async () => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => {
+        throw new Error("metadata lookup unavailable");
+      },
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-4.1",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    const result = await session.run("How many encounters are there by event type?", gateway, {
+      requestJson: async () => openAiToolCall("unchecked_plan", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.encounters",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "encounter_type" }],
+        },
+      }),
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ error_code: "ASK_PLAN_INTENT_MISMATCH", status: "refused" }),
+    ]);
+    expect(result.tool_calls[0]?.result.message).toContain("could not verify");
+    expect(exploreCalls).toBe(0);
+  });
+
+  it("keeps the local-model repair guard fail-closed for an unavailable entity and grouping", async () => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        if (name === "app.describe_data") {
+          return {
+            ok: true,
+            value: {
+              ok: true,
+              resources: [{
+                id: "public.encounters",
+                fields: [
+                  { id: "attending", label: "Attending" },
+                  { id: "encounter_type", label: "Encounter type" },
+                ],
+                groupable_fields: ["attending", "encounter_type"],
+                aggregate_measure_functions: {},
+              }],
+              source_database_changed: false,
+            },
+          };
+        }
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run("How many patients are there by insurance tier?", gateway, {
+      requestJson: async () => openAiToolCall("local_substituted_plan", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.encounters",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "attending" }],
+        },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      answer_source: "runner",
+      tool_calls: [{
+        tool: "app.explore_data",
+        status: "refused",
+        error_code: "LOCAL_PLAN_INTENT_MISMATCH",
+      }],
+    });
+    expect(exploreCalls).toBe(0);
+  });
+
+  it("accepts reviewed resource and field labels as intentional Ask semantics", async () => {
+    const calls: string[] = [];
+    let metadataCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name) => {
+        calls.push(name);
+        return {
+          ok: true,
+          value: { ok: true, data: [{ c7: "visit", measure_0: 12 }], source_database_changed: false },
+        };
+      },
+      describeOperatorMetadata: async () => {
+        metadataCalls += 1;
+        return {
+          ok: true,
+          value: {
+            ok: true,
+            resources: [{
+              id: "legacy.t_0031",
+              label: "Clinical encounters",
+              fields: [{ id: "c7", label: "Event type" }],
+              groupable_fields: ["c7"],
+            }],
+            source_database_changed: false,
+          },
+        };
+      },
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-4.1",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    let request = 0;
+    const result = await session.run("How many clinical encounters are there by event type?", gateway, {
+      requestJson: async () => {
+        request += 1;
+        return request === 1
+          ? openAiToolCall("labeled_plan", "app__explore_data", {
+            plan: {
+              kind: "aggregate",
+              resource: "legacy.t_0031",
+              measures: [{ function: "count" }],
+              dimensions: [{ field: "c7" }],
+            },
+          })
+          : openAiText("The reviewed result contains 12 clinical encounters.");
+      },
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]);
+    expect(calls).toEqual(["app.explore_data"]);
+    expect(metadataCalls).toBe(1);
+  });
+
+  it.each([
+    {
+      question: "How many patients are there by insurance tier?",
+      resource: {
+        id: "public.encounters",
+        label: "Encounters",
+        fields: [{ id: "patient_id", label: "Patient" }],
+        count_distinct_fields: ["patient_id"],
+        relationships: [{
+          id: "encounters_patient_id_fkey",
+          target_resource: "public.patients",
+          target_label: "Patients",
+          fields: [{ id: "insurance_tier", label: "Insurance tier" }],
+          groupable_fields: ["insurance_tier"],
+        }],
+      },
+      plan: {
+        kind: "aggregate",
+        resource: "public.encounters",
+        measures: [{ function: "count_distinct", field: "patient_id" }],
+        dimensions: [{ field: "insurance_tier", relationship: "encounters_patient_id_fkey" }],
+      },
+    },
+    {
+      question: "What is revenue per order?",
+      resource: {
+        id: "public.orders",
+        label: "Orders",
+        derived_measures: [{ name: "revenue_per_order", label: "Revenue per order" }],
+      },
+      plan: {
+        kind: "aggregate",
+        resource: "public.orders",
+        measures: [{ derived_measure: "revenue_per_order" }],
+      },
+    },
+    {
+      question: "Break down revenue by channel.",
+      resource: {
+        id: "public.orders",
+        label: "Orders",
+        fields: [
+          { id: "amount_cents", label: "Revenue" },
+          { id: "channel", label: "Channel" },
+        ],
+        groupable_fields: ["channel"],
+        aggregate_measure_functions: { amount_cents: ["sum"] },
+      },
+      plan: {
+        kind: "aggregate",
+        resource: "public.orders",
+        measures: [{ function: "sum", field: "amount_cents" }],
+        dimensions: [{ field: "channel" }],
+      },
+    },
+  ])("allows an intentional official-provider plan for: $question", async ({ question, resource, plan }) => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: { ok: true, resources: [resource], source_database_changed: false },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-4.1",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    let requests = 0;
+    const result = await session.run(question, gateway, {
+      requestJson: async () => {
+        requests += 1;
+        return requests === 1
+          ? openAiToolCall("intentional_plan", "app__explore_data", { plan })
+          : openAiText("The reviewed result is available.");
+      },
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]);
+    expect(exploreCalls).toBe(1);
+  });
+
+  it("refuses an unsolicited dimension even when the question has no grouping preposition", async () => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: {
+          ok: true,
+          resources: [{
+            id: "public.encounters",
+            fields: [{ id: "attending", label: "Attending" }],
+            groupable_fields: ["attending"],
+          }],
+          source_database_changed: false,
+        },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-4.1",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    const result = await session.run("How many encounters are there?", gateway, {
+      requestJson: async () => openAiToolCall("unsolicited_dimension", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.encounters",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "attending" }],
+        },
+      }),
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ error_code: "ASK_PLAN_INTENT_MISMATCH", status: "refused" }),
+    ]);
+    expect(exploreCalls).toBe(0);
   });
 
   it("reserves one no-tools Anthropic pass after an empty post-tool answer", async () => {
@@ -3512,8 +4076,45 @@ describe("Workbench BYOM Ask", () => {
     await expect(runBudgetedTurn(testGateway().gateway)).resolves.toMatchObject({ ok: true });
     await expect(runBudgetedTurn(testGateway().gateway)).rejects.toMatchObject({
       code: "ASK_SESSION_TOKEN_BUDGET_EXCEEDED",
-      message: expect.stringContaining("/clear"),
+      message: expect.stringContaining("/limits --session-tokens"),
     });
+    expect(budgeted.status()).toMatchObject({
+      history_turns: 1,
+      token_usage: {
+        reported_tokens: 220_000,
+        session_token_budget: 200_000,
+        remaining_reported_tokens: 0,
+      },
+    });
+    const raised = budgeted.updateTokenLimits({
+      session_token_budget: 400_000,
+      max_output_tokens: 2_048,
+    });
+    expect(raised).toMatchObject({
+      history_turns: 1,
+      configuration: {
+        session_token_budget: 400_000,
+        max_output_tokens: 2_048,
+      },
+      token_usage: {
+        reported_tokens: 220_000,
+        remaining_reported_tokens: 180_000,
+      },
+    });
+    await expect(runBudgetedTurn(testGateway().gateway)).resolves.toMatchObject({ ok: true });
+    expect(budgeted.status()).toMatchObject({
+      history_turns: 2,
+      token_usage: {
+        reported_tokens: 330_000,
+        session_token_budget: 400_000,
+        remaining_reported_tokens: 70_000,
+      },
+    });
+    expect(() => budgeted.updateTokenLimits({ session_token_budget: 300_000 }))
+      .toThrowError(expect.objectContaining({ code: "ASK_SESSION_TOKEN_BUDGET_BELOW_USAGE" }));
+    const automatic = budgeted.updateTokenLimits({ max_output_tokens: null });
+    expect(automatic.configuration?.max_output_tokens).toBeUndefined();
+    expect(automatic.history_turns).toBe(2);
   });
 
   it("enforces a wall-clock timeout and refuses an oversized response without exposing provider contents", async () => {

@@ -527,6 +527,14 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
                 <label class="field">Model request timeout (seconds)
                   <input id="ask-timeout" type="number" min="1" max="600" step="1" placeholder="Automatic">
                 </label>
+                <label class="field">Session reported-token budget
+                  <input id="ask-session-token-budget" type="number" min="1000" max="5000000" step="1000" placeholder="200000">
+                  <span>Client spend/context control. This does not change Explore privacy budgets.</span>
+                </label>
+                <label class="field">Maximum output tokens per provider call
+                  <input id="ask-max-output-tokens" type="number" min="256" max="16384" step="1" placeholder="Automatic">
+                  <span>Leave blank to retain the existing provider-call defaults.</span>
+                </label>
               </div>
               <details id="ask-credential-details">
                 <summary>Credential options</summary>
@@ -566,6 +574,21 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           <div id="ask-chat" class="hidden">
             <div id="ask-submit-consent" class="ask-disclosure hidden"></div>
             <div class="ask-disclosure"><strong>Session-only conversation</strong><p>Questions, tool results, and model responses stay in memory and are cleared when this Workbench stops or you select Clear. Model output is untrusted; database facts must come through a reviewed tool call.</p></div>
+            <details id="ask-live-limits" class="ask-history">
+              <summary><span>Ask limits</span><small id="ask-limit-usage">Loading reported-token usage...</small></summary>
+              <div class="ask-history-body">
+                <p>Raise these in-memory client limits without clearing this conversation. They do not change reviewed database access, cohort suppression, or Explore privacy accounting.</p>
+                <div class="ask-grid">
+                  <label class="field">Session reported-token budget
+                    <input id="ask-live-session-token-budget" type="number" min="1000" max="5000000" step="1000">
+                  </label>
+                  <label class="field">Maximum output tokens per provider call
+                    <input id="ask-live-max-output-tokens" type="number" min="256" max="16384" step="1" placeholder="Automatic">
+                  </label>
+                </div>
+                <div class="actions"><button id="update-ask-limits" class="secondary" type="button">Update Ask limits</button><span id="ask-limit-status" class="status-message" role="status" aria-live="polite"></span></div>
+              </div>
+            </details>
             <details id="ask-boundary-guide" class="ask-boundary-guide">
               <summary><span class="ask-boundary-summary"><strong>What can I ask?</strong><small id="ask-boundary-summary">Loading tables and the reviewed relationship map...</small></span></summary>
               <div id="ask-boundary-body" class="ask-boundary-body"></div>
@@ -3568,9 +3591,15 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         byId("ask-provider").value=session.configuration.provider;
         byId("ask-model").value=session.configuration.model;
         byId("ask-timeout").value=String(session.configuration.request_timeout_seconds||"");
+        byId("ask-session-token-budget").value=String(session.configuration.session_token_budget||200000);
+        byId("ask-max-output-tokens").value=session.configuration.max_output_tokens===undefined?"":String(session.configuration.max_output_tokens);
+        byId("ask-live-session-token-budget").value=String(session.configuration.session_token_budget||200000);
+        byId("ask-live-max-output-tokens").value=session.configuration.max_output_tokens===undefined?"":String(session.configuration.max_output_tokens);
+        const tokenUsage=session.token_usage||{reported_tokens:0,session_token_budget:session.configuration.session_token_budget||200000,remaining_reported_tokens:session.configuration.session_token_budget||200000};
+        byId("ask-limit-usage").textContent=Number(tokenUsage.reported_tokens||0).toLocaleString()+" / "+Number(tokenUsage.session_token_budget||0).toLocaleString()+" reported tokens · "+Number(tokenUsage.remaining_reported_tokens||0).toLocaleString()+" remaining";
         updateAskProviderFields(false);
         byId("ask-configured-model").textContent=providerLabel(session.configuration.provider)+" · "+session.configuration.model;
-        byId("ask-configured-detail").textContent="Direct to "+session.configuration.endpoint_origin+" · "+session.configuration.request_timeout_seconds+"s per model request · "+credentialSourceLabel(session.configuration.credential_source)+" · no Synapsor relay or saved conversation.";
+        byId("ask-configured-detail").textContent="Direct to "+session.configuration.endpoint_origin+" · "+session.configuration.request_timeout_seconds+"s per model request · "+Number(session.configuration.session_token_budget||200000).toLocaleString()+" reported tokens per session · "+credentialSourceLabel(session.configuration.credential_source)+" · no Synapsor relay or saved conversation.";
         byId("ask-config-status").className="status-message";
         byId("ask-config-status").textContent=consentCurrent
           ?"Ready. Provider key and conversation remain in this Workbench process only."
@@ -3716,6 +3745,15 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           detail:error.payload?.next_action||"Reload the current boundary set and acknowledge provider egress again.",
           action:"Reload reviewed access",
           reload:true
+        };
+      }
+      if(code==="ASK_SESSION_TOKEN_BUDGET_EXCEEDED"||code==="ASK_SESSION_TOKEN_BUDGET_BELOW_USAGE"){
+        return {
+          title:"Ask session token limit reached",
+          message:error.message,
+          detail:error.payload?.next_action||"Raise the reported-token budget without clearing this conversation.",
+          action:"Open Ask limits",
+          limits:true
         };
       }
       if(code.startsWith("ASK_PROVIDER_")){
@@ -4180,6 +4218,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         if(provider==="openai_compatible")body.base_url=byId("ask-base-url").value.trim();
         const requestTimeout=byId("ask-timeout").value.trim();
         if(requestTimeout)body.request_timeout_seconds=Number(requestTimeout);
+        const sessionTokenBudget=byId("ask-session-token-budget").value.trim();
+        if(sessionTokenBudget)body.session_token_budget=Number(sessionTokenBudget);
+        const maxOutputTokens=byId("ask-max-output-tokens").value.trim();
+        if(maxOutputTokens)body.max_output_tokens=Number(maxOutputTokens);
         if(keySource==="session"){
           const pastedKey=byId("ask-key").value.trim();
           const looksLikeAssignment=/^(?:export\\s+)?[A-Za-z_][A-Za-z0-9_]*\\s*=/.test(pastedKey);
@@ -4208,6 +4250,30 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           review.classList.add("needs-attention");
           requestAnimationFrame(()=>{review.scrollIntoView({behavior:"smooth",block:"center"});byId("ask-egress").focus()});
         }
+      }
+    }
+
+    async function updateAskLimits(){
+      const button=byId("update-ask-limits");
+      const status=byId("ask-limit-status");
+      button.disabled=true;
+      status.className="status-message";
+      status.textContent="Updating in-memory Ask limits...";
+      try{
+        const sessionBudget=byId("ask-live-session-token-budget").value.trim();
+        if(!sessionBudget)throw new Error("Enter the cumulative session reported-token budget.");
+        const outputLimit=byId("ask-live-max-output-tokens").value.trim();
+        await post("/api/ask/limits",{
+          session_token_budget:Number(sessionBudget),
+          max_output_tokens:outputLimit?Number(outputLimit):null
+        });
+        status.textContent="Ask limits updated. Conversation context was preserved.";
+        await loadAskStatus();
+      }catch(error){
+        status.className="status-message error";
+        status.textContent=error.message;
+      }finally{
+        button.disabled=false;
       }
     }
 
@@ -4366,6 +4432,13 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           +'</div>');
         const errorAction=transcript.lastElementChild?.querySelector("[data-ask-error-action]");
         if(errorAction)errorAction.onclick=async()=>{
+          if(presentation.limits){
+            const limits=byId("ask-live-limits");
+            limits.open=true;
+            limits.scrollIntoView({behavior:"smooth",block:"center"});
+            byId("ask-live-session-token-budget").focus();
+            return;
+          }
           if(presentation.reload){
             await loadAskStatus();
             return;
@@ -6298,6 +6371,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       }
     };
     byId("configure-ask").onclick=configureAsk;
+    byId("update-ask-limits").onclick=updateAskLimits;
     byId("change-ask-provider").onclick=showAskConfiguration;
     byId("run-ask").onclick=runAsk;
     byId("ask-question").addEventListener("keydown",event=>{

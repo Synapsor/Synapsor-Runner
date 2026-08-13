@@ -13,6 +13,8 @@ import {
 import {
   formatProviderEgressActivationNotice,
   formatProviderEgressReview,
+  parseAskMaxOutputTokens,
+  parseAskSessionTokenBudget,
   parseEgressConfirmation,
   parseAskTimeoutSeconds,
   providerDisplayLabel,
@@ -86,6 +88,25 @@ describe("try ask", () => {
     }
   });
 
+  it("accepts only bounded whole-number Ask token limits", () => {
+    expect(parseAskSessionTokenBudget(undefined)).toBeUndefined();
+    expect(parseAskSessionTokenBudget("1000")).toBe(1_000);
+    expect(parseAskSessionTokenBudget("5000000")).toBe(5_000_000);
+    expect(parseAskMaxOutputTokens(undefined)).toBeUndefined();
+    expect(parseAskMaxOutputTokens("256")).toBe(256);
+    expect(parseAskMaxOutputTokens("16384")).toBe(16_384);
+    for (const value of ["999", "5000001", "1.5", "many"]) {
+      expect(() => parseAskSessionTokenBudget(value)).toThrowError(expect.objectContaining({
+        code: "ASK_SESSION_TOKEN_BUDGET_INVALID",
+      }));
+    }
+    for (const value of ["255", "16385", "1.5", "many"]) {
+      expect(() => parseAskMaxOutputTokens(value)).toThrowError(expect.objectContaining({
+        code: "ASK_MAX_OUTPUT_TOKENS_INVALID",
+      }));
+    }
+  });
+
   it("runs the OpenAI flag path without --model using the documented default", async () => {
     const fixture = await askProject();
     const consent = vi.fn(async () => true);
@@ -97,12 +118,14 @@ describe("try ask", () => {
     }));
 
     await expect(tryAsk([
-      "Count reviewed rows.",
+      "Count reviewed sessions by region and week.",
       "--project-root", fixture.root,
       "--config", fixture.configPath,
       "--store", fixture.storePath,
       "--provider", "openai",
       "--timeout", "75",
+      "--session-token-budget", "350000",
+      "--max-output-tokens", "2048",
     ], {
       env: fixture.env,
       gatewayFactory: testGatewayFactory([]),
@@ -111,9 +134,16 @@ describe("try ask", () => {
       bindPlansToAnswer: async () => undefined,
     })).resolves.toBe(0);
 
-    expect(consent).toHaveBeenCalledWith(expect.objectContaining({ model: "gpt-5-mini" }));
+    expect(consent).toHaveBeenCalledWith(expect.objectContaining({
+      model: "gpt-5-mini",
+      sessionTokenBudget: 350_000,
+      maxOutputTokens: 2_048,
+    }));
     expect(requestJson).toHaveBeenCalledWith(expect.objectContaining({
-      body: expect.objectContaining({ model: "gpt-5-mini" }),
+      body: expect.objectContaining({
+        model: "gpt-5-mini",
+        max_completion_tokens: 2_048,
+      }),
       timeoutMs: 75_000,
     }));
   });
@@ -136,7 +166,7 @@ describe("try ask", () => {
     let requests = 0;
 
     await expect(tryAsk([
-      "Count reviewed rows.",
+      "Count reviewed sessions by region and week.",
       "--project-root", fixture.root,
       "--config", fixture.configPath,
       "--store", fixture.storePath,
@@ -296,10 +326,10 @@ describe("try ask", () => {
         }],
       },
     });
-    expect(calls).toEqual([{
-      name: "app.explore_data",
-      args: { plan: aggregatePlan() },
-    }]);
+    expect(calls).toEqual([
+      { name: "app.describe_data", args: { resource: "public.sessions" } },
+      { name: "app.explore_data", args: { plan: aggregatePlan() } },
+    ]);
     expect(JSON.stringify(requestBodies[0])).toContain("app__explore_data");
     expect(output.join("")).not.toContain(secret);
     expect(await projectContents(fixture.root)).not.toContain(secret);
@@ -384,7 +414,7 @@ describe("try ask", () => {
     const env = { ...fixture.env, ANTHROPIC_API_KEY: secret };
 
     await expect(tryAsk([
-      "Count the reviewed weekly changes.",
+      "Count the reviewed sessions by region and week.",
       "--project-root", fixture.root,
       "--config", fixture.configPath,
       "--store", fixture.storePath,
@@ -428,7 +458,10 @@ describe("try ask", () => {
       answer: "The reviewed count is 12.",
       answer_is_untrusted_model_output: true,
     });
-    expect(calls).toHaveLength(1);
+    expect(calls).toEqual([
+      { name: "app.describe_data", args: { resource: "public.sessions" } },
+      { name: "app.explore_data", args: { plan: aggregatePlan() } },
+    ]);
     expect(requests).toBe(2);
 
     await expect(tryAsk([
@@ -472,7 +505,7 @@ describe("try ask", () => {
     const readSecret = vi.fn(async () => secret);
     const answers: Array<string | undefined> = [
       "/access",
-      "Count the reviewed rows in the new boundary.",
+      "Count the reviewed sessions by region and week in the new boundary.",
       undefined,
     ];
     const runPostAccessAsk = vi.fn(async () => 0);
@@ -901,6 +934,28 @@ function testGatewayFactory(
     listTools: async () => structuredClone(tools),
     callTool: async (name, args) => {
       calls.push({ name, args: structuredClone(args) });
+      if (name === "app.describe_data") {
+        return {
+          ok: true,
+          value: {
+            ok: true,
+            catalog_view: "resource_detail",
+            metadata_only: true,
+            resources: [{
+              id: "public.sessions",
+              ...(typeof args.boundary === "string" ? { boundary_name: args.boundary } : {}),
+              fields: [
+                { id: "region", label: "Region" },
+                { id: "started_at", label: "Started at" },
+              ],
+              groupable_fields: ["region"],
+              time_bucket_fields: { started_at: ["week"] },
+              aggregate_measure_functions: {},
+            }],
+            source_database_changed: false,
+          },
+        };
+      }
       return {
         ok: true,
         value: {

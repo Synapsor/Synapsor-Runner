@@ -80,13 +80,19 @@ enterprise SLA.
 - Optional development/staging loopback Workbench Ask through OpenAI,
   Anthropic, or a configured OpenAI-compatible endpoint. Provider calls use the
   exact active MCP/runtime surface, explicit direct-egress consent, in-memory
-  credential/history state, fixed tool/time/size/token bounds, and
+  credential/history state, fixed tool/size bounds, bounded operator-configured
+  request time and token ceilings, and
   proposal-only write behavior.
 - CLI `try ask` through the same provider/MCP engine. It accepts no command-line
   key, opens a bounded conversational shell when no question is supplied,
   labels model prose as untrusted, renders Runner-verified results
   independently, and keeps expiring analysis references out of routine output.
   `/protect` remains an operator command and never becomes a model tool.
+  The built-in OpenAI, Anthropic, and OpenAI-compatible adapters refuse an
+  explicit entity/grouping substitution before Explore execution. A generic
+  production HTTP resource server receives a plan without the original human
+  question, so an external MCP host remains responsible for that semantic
+  question-to-plan check.
 - Reviewed bounded aggregate Explore with `count`, `count_distinct`, `sum`,
   `avg`, categorical dimensions, fixed UTC time buckets, typed filters,
   bounded top/bottom-N over a separately reviewed candidate population,

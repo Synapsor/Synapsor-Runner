@@ -45,7 +45,12 @@ describe("guided start surfaces", () => {
 
     try {
       await expect(start(
-        ["--from-env", "DATABASE_URL", "--cli", "--timeout", "180"],
+        [
+          "--from-env", "DATABASE_URL", "--cli",
+          "--timeout", "180",
+          "--session-token-budget", "350000",
+          "--max-output-tokens", "2048",
+        ],
         {
           interactive: true,
           schemaInspector,
@@ -62,6 +67,8 @@ describe("guided start surfaces", () => {
       expect(runPostActivationHandoff).toHaveBeenCalledWith({
         projectRoot,
         requestTimeoutSeconds: 180,
+        sessionTokenBudget: 350_000,
+        maxOutputTokens: 2_048,
         selection: {
           route: "openai",
           model: "gpt-5-mini",

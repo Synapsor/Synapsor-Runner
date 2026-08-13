@@ -499,6 +499,28 @@ describe("Synapsor Analytics shell", () => {
     expect(original).toContain("guessed product table");
   });
 
+  it("renders an Ask intent mismatch as a pre-execution refusal", () => {
+    const refused = refusedAnalysis(
+      "ASK_PLAN_INTENT_MISMATCH",
+      "The plan was not executed because it substituted reviewed data that did not match the question.",
+    );
+    refused.result.source_query_executed = false;
+    refused.result.explore_budget_consumed = false;
+    const runnerTurn = {
+      ...turn("The selected model substituted an unrelated resource, so Runner refused the plan before execution."),
+      answer: "The selected model substituted an unrelated resource, so Runner refused the plan before execution.",
+      answer_source: "runner" as const,
+      answer_is_untrusted_model_output: false,
+    };
+
+    const output = renderAnalyticsTurn(runnerTurn, [refused]);
+
+    expect(output).toContain("RUNNER BOUNDARY EXPLANATION");
+    expect(output).toContain("No attempted Explore plan reached source execution because Runner rejected it first.");
+    expect(output).toContain("Refused (ASK_PLAN_INTENT_MISMATCH)");
+    expect(output).not.toContain("executed a read-only query");
+  });
+
   it("reports a complementary privacy refusal as an executed and discarded read", () => {
     const refused = refusedAnalysis(
       "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
@@ -1469,6 +1491,17 @@ describe("Synapsor Analytics shell", () => {
       "/protect <A#>",
       "/protect <A#> as <name>",
     ]);
+    expect(slashCommandSuggestions("/limits")).toEqual([
+      "/limits --session-tokens <number>",
+      "/limits --max-output-tokens <number>",
+      "/limits --max-output-tokens automatic",
+    ]);
+    expect(slashCommandSuggestions("/limits --s")).toEqual([
+      "/limits --session-tokens <number>",
+    ]);
+    expect(slashCommandSuggestions("/limits --max-output-tokens a")).toEqual([
+      "/limits --max-output-tokens automatic",
+    ]);
     expect(slashCommandSuggestions("/catalog --d")).toEqual(["/catalog --diagram"]);
     expect(slashCommandSuggestions("/catalog --m")).toEqual([]);
     expect(slashCommandSuggestions("/catalog --e")).toEqual(["/catalog --diagram --export"]);
@@ -1912,6 +1945,64 @@ describe("Synapsor Analytics shell", () => {
 
     expect(clearConversation).toHaveBeenCalledOnce();
     expect(io.output()).toContain("Durable evidence and protected drafts were not deleted");
+  });
+
+  it("shows and raises Ask token limits without clearing conversation context", async () => {
+    const io = fakeIo([
+      "/limits",
+      "/limits --session-tokens 400000 --max-output-tokens 2048",
+      "/limits --max-output-tokens automatic",
+      "/exit",
+    ]);
+    const clearConversation = vi.fn();
+    let current = {
+      token_usage: {
+        reported_tokens: 220_000,
+        session_token_budget: 250_000,
+        remaining_reported_tokens: 30_000,
+      },
+      max_output_tokens: undefined as number | undefined,
+    };
+    const updateAskTokenLimits = vi.fn((limits: {
+      session_token_budget?: number;
+      max_output_tokens?: number | null;
+    }) => {
+      const sessionTokenBudget = limits.session_token_budget ?? current.token_usage.session_token_budget;
+      current = {
+        token_usage: {
+          reported_tokens: current.token_usage.reported_tokens,
+          session_token_budget: sessionTokenBudget,
+          remaining_reported_tokens: sessionTokenBudget - current.token_usage.reported_tokens,
+        },
+        max_output_tokens: limits.max_output_tokens === null
+          ? undefined
+          : limits.max_output_tokens ?? current.max_output_tokens,
+      };
+      return current;
+    });
+    await runAnalyticsShell({
+      providerLabel: "OpenAI",
+      profileLabel: "development",
+      reviewedDataAreas: 1,
+      io,
+      ask: vi.fn(),
+      listAnalyses: async () => [],
+      protect: vi.fn(),
+      askTokenLimits: () => current,
+      updateAskTokenLimits,
+      clearConversation,
+      cancel: vi.fn(() => false),
+    });
+
+    expect(updateAskTokenLimits).toHaveBeenNthCalledWith(1, {
+      session_token_budget: 400_000,
+      max_output_tokens: 2_048,
+    });
+    expect(updateAskTokenLimits).toHaveBeenNthCalledWith(2, { max_output_tokens: null });
+    expect(clearConversation).not.toHaveBeenCalled();
+    expect(io.output()).toContain("ASK SESSION LIMITS UPDATED");
+    expect(io.output()).toContain("220,000 / 400,000");
+    expect(io.output()).toContain("conversation preserved when raised");
   });
 
   it("lists recent and durable query history while redacting plan literals", async () => {
