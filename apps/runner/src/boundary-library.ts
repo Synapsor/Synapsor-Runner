@@ -724,11 +724,13 @@ function rebaseBoundaryResource(current: BoundaryResource, stored: BoundaryResou
     current.filterable_fields,
     selectable,
   );
-  resource.field_enums = intersectStoredMap(
-    stored.field_enums,
-    current.field_enums,
+  resource.field_enums = rebaseStoredFieldEnums({
+    stored,
+    current,
     selectable,
-  );
+    retainedFilterableFields: resource.filterable_fields,
+    retainedGroupableFields: resource.groupable_fields,
+  });
   resource.time_bucket_fields = intersectStoredMap(
     stored.time_bucket_fields,
     current.time_bucket_fields,
@@ -762,6 +764,35 @@ function intersectStoredMap<T extends string>(
     const allowed = new Set(currentValues);
     const values = storedValues.filter((value) => allowed.has(value));
     if (values.length) result[field] = values;
+  }
+  return result;
+}
+
+function rebaseStoredFieldEnums(input: {
+  stored: BoundaryResource;
+  current: BoundaryResource;
+  selectable: Set<string>;
+  retainedFilterableFields: BoundaryResource["filterable_fields"];
+  retainedGroupableFields: string[];
+}): BoundaryResource["field_enums"] {
+  const result = intersectStoredMap(
+    input.stored.field_enums,
+    input.current.field_enums,
+    input.selectable,
+  );
+  for (const [field, values] of Object.entries(input.current.field_enums)) {
+    if (Object.hasOwn(input.stored.field_enums, field)
+      || !input.selectable.has(field)
+      || values.length === 0) {
+      continue;
+    }
+    const hadLegacyCategoricalAuthority = Object.hasOwn(input.stored.filterable_fields, field)
+      || input.stored.groupable_fields.includes(field);
+    const retainsCategoricalAuthority = Object.hasOwn(input.retainedFilterableFields, field)
+      || input.retainedGroupableFields.includes(field);
+    if (hadLegacyCategoricalAuthority && retainsCategoricalAuthority) {
+      result[field] = [...values];
+    }
   }
   return result;
 }

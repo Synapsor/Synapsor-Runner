@@ -4970,6 +4970,9 @@ function schemaDriftAttentionDetails(diff: JsonRecord): Record<string, string | 
       ? totals.removed_resources
       : count(diff.removed_resources),
     fields_added: typeof totals.newly_available_fields === "number" ? totals.newly_available_fields : 0,
+    value_allowlists_added: typeof totals.newly_proven_value_allowlists === "number"
+      ? totals.newly_proven_value_allowlists
+      : 0,
     relationships_added: typeof totals.newly_available_relationships === "number"
       ? totals.newly_available_relationships
       : 0,

@@ -35,6 +35,7 @@ import {
   prepareBoundaryRescan,
   readBoundaryRescanReport,
 } from "./boundary-rescan.js";
+import { compileExplorePlan, validateExplorePlan } from "./scoped-explore.js";
 
 describe("boundary rescan reconciliation", () => {
   it("repairs a stale policy-neutral authoring baseline without changing reviewed authority", async () => {
@@ -749,6 +750,176 @@ describe("boundary rescan reconciliation", () => {
       expect(formatBoundaryRescanReport(preview.report)).toMatch(
         /database server capability authority changed.*release line changed from mysql 8\.x to mysql 5\.7/is,
       );
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("reconciles legacy MySQL categorical authority when an enforced CHECK vocabulary becomes provable", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-mysql-legacy-check-rescan-"));
+    try {
+      const legacyInspection = normalizedCommerceInspection();
+      legacyInspection.engine = "mysql";
+      legacyInspection.server_version = "MySQL 8.4.9";
+      legacyInspection.schemas = ["clinicdb"];
+      legacyInspection.tables = [legacyInspection.tables.find((item) => item.name === "orders")!];
+      const legacyOrders = legacyInspection.tables[0]!;
+      legacyOrders.schema = "clinicdb";
+      legacyOrders.row_level_security = false;
+      legacyOrders.row_level_security_policies = [];
+      legacyOrders.role_posture!.row_security_effective_for_current_role = false;
+      legacyOrders.columns = legacyOrders.columns.filter((field) => field.name !== "tenant_id");
+      legacyOrders.suggestions.tenant_columns = [];
+      legacyOrders.suggestions.default_visible_columns = legacyOrders.suggestions.default_visible_columns
+        .filter((field) => field !== "tenant_id");
+      delete legacyOrders.columns.find((field) => field.name === "status")!.enum_values;
+      const privateStatus = column("private_status", "text", false, legacyOrders.columns.length + 1);
+      const priority = column("priority", "text", false, legacyOrders.columns.length + 2);
+      legacyOrders.columns.push(privateStatus, priority);
+      legacyOrders.columns.find((field) => field.name === "priority")!.enum_values = [
+        "urgent",
+        "routine",
+        "deferred",
+      ];
+      legacyOrders.suggestions.default_visible_columns.push("private_status", "priority");
+
+      const project = {
+        root,
+        package_manager: "npm" as const,
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      };
+      const legacyBuild = buildAutoBoundary({
+        inspection: legacyInspection,
+        project,
+        sourceEnv: "DATABASE_URL",
+        inspectedSchema: "clinicdb",
+        singleOrganization: { organizationId: "clinic-one" },
+      });
+      const legacyResource = legacyBuild.exploration_boundary.pack.resources[0]!;
+      expect(legacyResource.groupable_fields).toContain("status");
+      expect(legacyResource.filterable_fields).toHaveProperty("status");
+      expect(legacyResource.field_enums).not.toHaveProperty("status");
+      const legacyCandidate = structuredClone(legacyBuild.exploration_boundary);
+      const legacyCandidateResource = legacyCandidate.pack.resources[0]!;
+      delete legacyCandidateResource.filterable_fields.private_status;
+      legacyCandidateResource.groupable_fields = legacyCandidateResource.groupable_fields
+        .filter((field) => field !== "private_status");
+      legacyCandidateResource.field_enums.priority = ["urgent"];
+
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build: legacyBuild });
+      const legacyProgress = createBoundaryReviewProgress({
+        draft: legacyBuild.exploration_boundary,
+        candidate: legacyCandidate,
+        confirmedDecisions: legacyCandidate.unresolved_decisions,
+        actor: "legacy-owner@example.test",
+        revision: 1,
+      });
+      await saveBoundaryReviewProgress(root, legacyProgress);
+      await synchronizeBoundaryLibrary({
+        projectRoot: root,
+        draft: legacyBuild.exploration_boundary,
+        currentCandidate: legacyProgress.candidate,
+        currentProgress: legacyProgress,
+      });
+      const legacyDigest = explorationBoundaryCandidateDigest(legacyProgress.candidate);
+      await activateExplorationBoundary({
+        projectRoot: root,
+        candidate: legacyProgress.candidate,
+        expectedDigest: legacyDigest,
+        actor: "legacy-owner@example.test",
+        confirmation: `ACTIVATE ${legacyDigest}`,
+        confirmedDecisions: legacyProgress.candidate.unresolved_decisions,
+        currentInspection: legacyInspection,
+      });
+
+      const currentInspection = structuredClone(legacyInspection);
+      currentInspection.tables[0]!.columns.find((field) => field.name === "status")!.enum_values = [
+        "scheduled",
+        "completed",
+        "no_show",
+        "cancelled",
+      ];
+      currentInspection.tables[0]!.columns.find((field) => field.name === "private_status")!.enum_values = [
+        "internal",
+        "external",
+      ];
+      const preview = await prepareBoundaryRescan({ projectRoot: root, inspection: currentInspection });
+      const reconciled = preview.selectedProgress.candidate.pack.resources[0]!;
+      expect(reconciled.groupable_fields).toContain("status");
+      expect(reconciled.filterable_fields).toHaveProperty("status");
+      expect(reconciled.field_enums.status).toEqual([
+        "scheduled",
+        "completed",
+        "no_show",
+        "cancelled",
+      ]);
+      expect(reconciled.filterable_fields).not.toHaveProperty("private_status");
+      expect(reconciled.groupable_fields).not.toContain("private_status");
+      expect(reconciled.field_enums).not.toHaveProperty("private_status");
+      expect(reconciled.field_enums.priority).toEqual(["urgent"]);
+      expect(preview.report.boundaries[0]!.invalidated_decisions.map((decision) => decision.id))
+        .toContain("resource.clinicdb.orders.field_permissions");
+      expect(preview.report.boundaries[0]!.newly_proven_value_allowlists).toEqual([{
+        resource_id: "clinicdb.orders",
+        field: "status",
+        value_count: 4,
+      }]);
+      expect(preview.report.totals.newly_proven_value_allowlists).toBe(1);
+      expect(formatBoundaryRescanReport(preview.report)).toMatch(
+        /clinicdb\.orders\.status: an enforced schema vocabulary now narrows existing filter\/group authority to 4 reviewed values; confirm field permissions, then activate/i,
+      );
+      expect((await loadActivatedExplorationBoundaries(root))[0]!.activation.digest).toBe(legacyDigest);
+
+      await commitBoundaryRescan(preview);
+      expect((await loadActivatedExplorationBoundaries(root))[0]!.activation.digest).toBe(legacyDigest);
+      const reconciledDigest = explorationBoundaryCandidateDigest(preview.selectedProgress.candidate);
+      const active = await activateExplorationBoundary({
+        projectRoot: root,
+        candidate: preview.selectedProgress.candidate,
+        reviewDraft: preview.selectedBuild.exploration_boundary,
+        generationLock: preview.selectedBuild.lock,
+        expectedDigest: reconciledDigest,
+        actor: "owner@example.test",
+        confirmation: `ACTIVATE ${reconciledDigest}`,
+        confirmedDecisions: preview.selectedProgress.candidate.unresolved_decisions,
+        currentInspection,
+      });
+      expect(active.pack.resources[0]!.field_enums.status).toEqual([
+        "scheduled",
+        "completed",
+        "no_show",
+        "cancelled",
+      ]);
+      const plan = validateExplorePlan({
+        kind: "aggregate",
+        resource: "clinicdb.orders",
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "status" }],
+        top_n: 10,
+      }, active);
+      const [compiled] = compileExplorePlan(plan, active, {
+        tenant: "clinic-one",
+        principal: "reviewer",
+      }, "mysql");
+      expect(compiled?.sql).toMatch(/CASE WHEN t0\.`status` IS NULL THEN NULL/);
+      expect(compiled?.params).toEqual(expect.arrayContaining([
+        "scheduled",
+        "completed",
+        "no_show",
+        "cancelled",
+      ]));
+      expect(() => validateExplorePlan({
+        kind: "rows",
+        resource: "clinicdb.orders",
+        select: ["id", "status"],
+        where: [{ field: "status", op: "eq", value: "retired" }],
+        limit: 5,
+      }, active)).toThrowError(expect.objectContaining({
+        code: "EXPLORE_PLAN_INVALID",
+        message: expect.stringMatching(/not a reviewed value/i),
+      }));
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

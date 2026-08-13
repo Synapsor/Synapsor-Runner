@@ -180,6 +180,8 @@ function reconciliationSummary(entry: BoundaryRescanEntry): NonNullable<
       `${relationship.resource_id}.${relationship.relationship_id}: new relationship is available to review`),
     ...entry.newly_available_resources.map((resource) =>
       `${resource}: new table is available to review`),
+    ...(entry.newly_proven_value_allowlists ?? []).map((item) =>
+      `${item.resource_id}.${item.field}: an enforced schema vocabulary now narrows existing filter/group authority to ${item.value_count} reviewed values; confirm field permissions, then activate`),
     ...entry.pruned_review_inputs,
   ];
   return {

@@ -68,6 +68,12 @@ export type BoundaryRescanRelationshipChange = {
   target_resource: string;
 };
 
+export type BoundaryRescanValueAllowlistChange = {
+  resource_id: string;
+  field: string;
+  value_count: number;
+};
+
 export type BoundaryRescanEntry = {
   boundary_id: `bnd_${string}`;
   boundary_name: string;
@@ -88,6 +94,7 @@ export type BoundaryRescanEntry = {
   changed_field_types: BoundaryRescanFieldChange[];
   newly_available_relationships: BoundaryRescanRelationshipChange[];
   removed_relationships: BoundaryRescanRelationshipChange[];
+  newly_proven_value_allowlists?: BoundaryRescanValueAllowlistChange[];
   pruned_review_inputs: string[];
 };
 
@@ -123,6 +130,7 @@ export type BoundaryRescanReport = {
     newly_available_resources: number;
     newly_available_fields: number;
     newly_available_relationships: number;
+    newly_proven_value_allowlists?: number;
     removed_resources: number;
     removed_fields: number;
     removed_relationships: number;
@@ -473,6 +481,9 @@ export function formatBoundaryRescanReport(report: BoundaryRescanReport): string
     `Newly available: ${report.totals.newly_available_resources} tables, `
       + `${report.totals.newly_available_fields} columns, `
       + `${report.totals.newly_available_relationships} relationships`,
+    ...((report.totals.newly_proven_value_allowlists ?? 0) > 0
+      ? [`Newly proven value allowlists: ${report.totals.newly_proven_value_allowlists}`]
+      : []),
     `Removed: ${report.totals.removed_resources} tables, ${report.totals.removed_fields} columns, `
       + `${report.totals.removed_relationships} relationships`,
     ...(report.trusted_context_changed
@@ -501,6 +512,8 @@ export function formatBoundaryRescanReport(report: BoundaryRescanReport): string
       ...boundary.removed_resources.map((resource) => `${resource}: reviewed table was removed`),
       ...boundary.newly_available_resources.map((resource) =>
         `${resource}: new table is available to review`),
+      ...(boundary.newly_proven_value_allowlists ?? []).map((item) =>
+        `${item.resource_id}.${item.field}: an enforced schema vocabulary now narrows existing filter/group authority to ${item.value_count} reviewed values; confirm field permissions, then activate`),
       ...boundary.pruned_review_inputs,
       ...boundary.newly_available_fields.map((field) =>
         `${field.resource_id}.${field.field}: new column is kept out until reviewed`),
@@ -853,9 +866,11 @@ function rescanEntry(input: {
   const changedFieldTypes: BoundaryRescanFieldChange[] = [];
   const newlyAvailableRelationships: BoundaryRescanRelationshipChange[] = [];
   const removedRelationships: BoundaryRescanRelationshipChange[] = [];
+  const newlyProvenValueAllowlists: BoundaryRescanValueAllowlistChange[] = [];
   for (const [resourceId, before] of beforeResources) {
     const generated = generatedResources.get(resourceId);
     if (!generated) continue;
+    const after = afterResources.get(resourceId);
     const beforeFields = new Set(Object.keys(before.field_types));
     const generatedFields = new Set(Object.keys(generated.field_types));
     for (const field of generatedFields) {
@@ -866,6 +881,15 @@ function rescanEntry(input: {
     }
     for (const field of beforeFields) {
       if (!generatedFields.has(field)) removedFields.push({ resource_id: resourceId, field });
+    }
+    for (const [field, values] of Object.entries(after?.field_enums ?? {})) {
+      if (!before.field_enums[field]?.length && values.length) {
+        newlyProvenValueAllowlists.push({
+          resource_id: resourceId,
+          field,
+          value_count: values.length,
+        });
+      }
     }
     const beforeRelationships = new Map(before.relationships.map((relationship) => [relationship.id, relationship]));
     const generatedRelationships = new Map(generated.relationships.map((relationship) => [relationship.id, relationship]));
@@ -909,6 +933,7 @@ function rescanEntry(input: {
     changed_field_types: sortFieldChanges(changedFieldTypes),
     newly_available_relationships: sortRelationshipChanges(newlyAvailableRelationships),
     removed_relationships: sortRelationshipChanges(removedRelationships),
+    newly_proven_value_allowlists: sortValueAllowlistChanges(newlyProvenValueAllowlists),
     pruned_review_inputs: [...input.prunedReviewInputs].sort(),
   };
 }
@@ -969,6 +994,10 @@ function rescanReport(input: {
     newly_available_resources: sum(input.entries, (entry) => entry.newly_available_resources.length),
     newly_available_fields: sum(input.entries, (entry) => entry.newly_available_fields.length),
     newly_available_relationships: sum(input.entries, (entry) => entry.newly_available_relationships.length),
+    newly_proven_value_allowlists: sum(
+      input.entries,
+      (entry) => entry.newly_proven_value_allowlists?.length ?? 0,
+    ),
     removed_resources: sum(input.entries, (entry) => entry.removed_resources.length),
     removed_fields: sum(input.entries, (entry) => entry.removed_fields.length),
     removed_relationships: sum(input.entries, (entry) => entry.removed_relationships.length),
@@ -1130,6 +1159,13 @@ function sortRelationshipChanges(
   return changes.sort((left, right) =>
     left.resource_id.localeCompare(right.resource_id)
     || left.relationship_id.localeCompare(right.relationship_id));
+}
+
+function sortValueAllowlistChanges(
+  changes: BoundaryRescanValueAllowlistChange[],
+): BoundaryRescanValueAllowlistChange[] {
+  return changes.sort((left, right) =>
+    left.resource_id.localeCompare(right.resource_id) || left.field.localeCompare(right.field));
 }
 
 function invalidationKey(input: { id: string; previous_input_digest: string }): string {

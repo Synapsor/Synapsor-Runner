@@ -1353,6 +1353,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		          ...(selectedRescanEntry.removed_fields||[]).map(item=>item.resource_id+"."+item.field+": reviewed column was removed"),
 		          ...(selectedRescanEntry.newly_available_fields||[]).map(item=>item.resource_id+"."+item.field+": new column is kept out until reviewed"),
 		          ...(selectedRescanEntry.newly_available_relationships||[]).map(item=>item.resource_id+"."+item.relationship_id+": new relationship is available to review"),
+		          ...(selectedRescanEntry.newly_proven_value_allowlists||[]).map(item=>item.resource_id+"."+item.field+": an enforced schema vocabulary now narrows existing filter/group authority to "+item.value_count+" reviewed values; confirm field permissions, then activate"),
 		          ...(selectedRescanEntry.pruned_review_inputs||[])
 		        ]
 		        :[];
@@ -3328,6 +3329,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       for(const relationship of rescanList(boundary.removed_relationships))details.push(relationship.resource_id+"."+relationship.relationship_id+": reviewed relationship removed");
       for(const resource of rescanList(boundary.removed_resources))details.push(resource+": reviewed table removed");
       for(const resource of rescanList(boundary.newly_available_resources))details.push(resource+": new table available to review");
+      for(const item of rescanList(boundary.newly_proven_value_allowlists))details.push(item.resource_id+"."+item.field+": an enforced schema vocabulary now narrows existing filter/group authority to "+item.value_count+" reviewed values; confirm field permissions, then activate");
       for(const detail of rescanList(boundary.pruned_review_inputs))details.push(detail);
       for(const field of rescanList(boundary.newly_available_fields))details.push(field.resource_id+"."+field.field+": new column kept out until reviewed");
       for(const relationship of rescanList(boundary.newly_available_relationships))details.push(relationship.resource_id+"."+relationship.relationship_id+": new relationship available to review");
@@ -3352,6 +3354,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         ["Boundaries checked",totals.boundaries??0],
         ["Decisions kept",totals.kept_confirmations??0],
         ["Prior decisions invalidated",totals.invalidated_decisions??0],
+        ["Newly proven value allowlists",totals.newly_proven_value_allowlists??0],
         ["Newly available",(totals.newly_available_resources??0)+" tables, "+(totals.newly_available_fields??0)+" columns, "+(totals.newly_available_relationships??0)+" relationships"],
         ["Removed",(totals.removed_resources??0)+" tables, "+(totals.removed_fields??0)+" columns, "+(totals.removed_relationships??0)+" relationships"]
       ];

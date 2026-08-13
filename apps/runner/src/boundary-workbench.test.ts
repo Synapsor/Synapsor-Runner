@@ -89,6 +89,7 @@ describe("Auto Boundary Workbench renderer", () => {
       kept_confirmations: 7,
       safely_carried_confirmations: 0,
       invalidated_decisions: 1,
+      newly_proven_value_allowlists: 1,
       newly_available_resources: 0,
       newly_available_fields: 1,
       newly_available_relationships: 0,
@@ -118,12 +119,19 @@ describe("Auto Boundary Workbench renderer", () => {
         newly_available_resources: [],
         newly_available_fields: [{ resource_id: "public.orders", field: "channel" }],
         newly_available_relationships: [],
+        newly_proven_value_allowlists: [{
+          resource_id: "public.orders",
+          field: "status",
+          value_count: 4,
+        }],
         pruned_review_inputs: [],
       }],
     });
     expect(changed).toContain("Apply disabled reconciliation");
     expect(changed).toContain("public.orders.channel: new column kept out until reviewed");
     expect(changed).toContain("resource.public.orders.field_visibility: reviewed input changed");
+    expect(changed).toContain("public.orders.status: an enforced schema vocabulary now narrows existing filter/group authority to 4 reviewed values; confirm field permissions, then activate");
+    expect(changed).toContain("Newly proven value allowlists</th><td>1");
     expect(changed).toContain("Database capabilities</th><td>Changed");
     expect(changed).toContain("release line changed from mysql 8.x to mysql 5.7");
 

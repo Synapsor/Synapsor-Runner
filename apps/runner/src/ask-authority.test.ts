@@ -242,6 +242,11 @@ describe("Ask authority summaries", () => {
           changed_field_types: [],
           newly_available_relationships: [],
           removed_relationships: [],
+          newly_proven_value_allowlists: [{
+            resource_id: "public.orders",
+            field: "status",
+            value_count: 4,
+          }],
           pruned_review_inputs: [],
         }],
       }),
@@ -252,7 +257,10 @@ describe("Ask authority summaries", () => {
         reconciliation: {
           kept_decisions: 6,
           decisions_requiring_review: 0,
-          details: ["public.orders.new_status: new column is kept out until reviewed"],
+          details: [
+            "public.orders.new_status: new column is kept out until reviewed",
+            "public.orders.status: an enforced schema vocabulary now narrows existing filter/group authority to 4 reviewed values; confirm field permissions, then activate",
+          ],
         },
       }],
     });

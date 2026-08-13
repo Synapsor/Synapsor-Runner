@@ -132,6 +132,13 @@ for the Synapsor Cloud CLI.
   case variants, and unreviewed names remain invalid. The supported-version
   matrix runs real row and aggregate plans over these identifiers locally and
   over representative production HTTP paths.
+- Legacy MySQL boundaries whose categorical filter/group authority predates
+  enforced-`CHECK` vocabulary extraction can now reconcile forward. Rescan
+  attaches the newly proven values only as a strict allowlist over an operation
+  the boundary already had, invalidates that field-permissions confirmation, and
+  leaves the revision disabled for explicit review and activation. It never
+  restores a removed operation or widens an existing narrowed vocabulary; CLI,
+  Workbench, and Ask handoff summaries name the exact field and recovery step.
 - Local/staging Explore and existing protected named capabilities retain their
   existing behavior. Spec and DSL `1.9.0` add the new fixed aggregate operations
   and post-suppression transforms without admitting model-authored expressions.

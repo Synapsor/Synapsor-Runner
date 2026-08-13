@@ -107,6 +107,17 @@ candidate and require review. Runner never silently translates policy into
 another query. An upgrade may make options available, but never auto-enables or
 auto-activates them.
 
+One legacy narrowing is handled explicitly. Older MySQL Runner builds could
+activate a text field for categorical filtering or grouping before the inspector
+attached its enforced `CHECK` vocabulary. When a current rescan proves that
+vocabulary, Runner retains only the already-reviewed operation and attaches the
+schema values as its new allowlist. This narrows the old surface; it does not add
+a field operation. The field-permissions confirmation is invalidated, the exact
+values appear only in a disabled reconciled revision, and the operator must
+review and activate that revision. A categorical permission previously removed
+by the reviewer is not restored, and an existing human-narrowed allowlist is
+never widened to the full schema vocabulary.
+
 Boundaries created before these fields existed are not silently grandfathered.
 Their next query refuses with reconciling-rescan guidance. Rescan records the
 detected version, tier, and authority line in a disabled candidate while
@@ -124,7 +135,9 @@ review and activation.
   patch. `inspect` and Doctor report the live detected release. Both limited
   MySQL profiles are visibly marked, and the review surfaces name only the
   unavailable options before a reviewer can select them.
-- The rescan report names a changed server authority and any removed grammar.
+- The rescan report names a changed server authority, any removed grammar, and
+  every newly proven schema vocabulary that now narrows legacy categorical
+  authority. CLI and Workbench show the same review-and-activate instruction.
 - Runtime returns `EXPLORE_SERVER_VERSION_UNSUPPORTED` or a stale-lock refusal
   before source SQL when live authority no longer matches the lock.
 
