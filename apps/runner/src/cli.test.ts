@@ -3099,6 +3099,14 @@ END
     await fs.writeFile(path.join(tempDir, ".synapsor/generation-lock.json"), JSON.stringify({
       engine: "mysql",
       source_env: "RETAIL_DATABASE_URL",
+      trusted_context_authority: {
+        schema_version: "synapsor.configured-trusted-context-authority.v1",
+        provider: "http_claims",
+        tenant_binding: "tenant_id",
+        principal_binding: "attending",
+        tenant_claim: "organization_id",
+        principal_claim: "sub",
+      },
     }));
     const output: string[] = [];
     vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
@@ -3155,7 +3163,11 @@ END
           read_only: true,
         },
       },
-      trusted_context: { provider: "http_claims" },
+      trusted_context: {
+        provider: "http_claims",
+        tenant_binding: "tenant_id",
+        principal_binding: "attending",
+      },
       session_auth: {
         provider: "jwt_asymmetric",
         tenant_claim: "organization_id",
@@ -3257,6 +3269,114 @@ END
     ])).rejects.toThrow(
       /--principal-claim user_id must match the reviewed boundary claim sub exactly/,
     );
+    await expect(main([
+      "config",
+      "init",
+      "--production-explore",
+      "--project-root",
+      tempDir,
+      "--output",
+      path.join(tempDir, "wrong-binding.runner.json"),
+      "--tenant-binding",
+      "organization_id",
+    ])).rejects.toThrow(
+      /--tenant-binding organization_id must match the reviewed boundary binding tenant_id exactly/,
+    );
+  });
+
+  it("requires an explicit tenant column binding before scaffolding multi-tenant MySQL production Explore", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-config-mysql-bindings-"));
+    const baseArgs = [
+      "config", "init", "--production-explore",
+      "--project-root", tempDir,
+      "--engine", "mysql",
+      "--tenant-claim", "tenant_id",
+      "--principal-claim", "sub",
+      "--issuer", "https://identity.example.test",
+      "--audience", "https://runner.example.test/mcp",
+      "--accounting-namespace", "clinic.production",
+      "--json",
+    ];
+    await expect(main([
+      ...baseArgs,
+      "--output", path.join(tempDir, "missing-binding.runner.json"),
+    ])).rejects.toThrow(/requires --tenant-binding <column>.*MySQL has no PostgreSQL RLS metadata/i);
+
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    await expect(main([
+      ...baseArgs,
+      "--output", configPath,
+      "--tenant-binding", "tenant_id",
+      "--principal-binding", "attending",
+    ])).resolves.toBe(0);
+    const config = JSON.parse(await fs.readFile(configPath, "utf8"));
+    expect(config.trusted_context).toEqual({
+      provider: "http_claims",
+      tenant_binding: "tenant_id",
+      principal_binding: "attending",
+    });
+    expect(JSON.stringify(config)).not.toMatch(/mysql:\/\/|postgres(?:ql)?:\/\//i);
+  });
+
+  it("routes a binding added after an older MySQL production draft through reconciliation before preflight", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-config-mysql-reconcile-"));
+    await fs.mkdir(path.join(tempDir, "synapsor/generated"), { recursive: true });
+    await fs.mkdir(path.join(tempDir, ".synapsor"), { recursive: true });
+    await fs.writeFile(path.join(tempDir, "synapsor/generated/exploration-boundary.draft.json"), JSON.stringify({
+      deployment_profile: "production",
+      source: "local_mysql",
+      trusted_context: {
+        provider: "http_claims",
+        tenant_claim: "tenant_id",
+        principal_claim: "sub",
+      },
+    }));
+    await fs.writeFile(path.join(tempDir, ".synapsor/generation-lock.json"), JSON.stringify({
+      engine: "mysql",
+      source_env: "DATABASE_URL",
+      trusted_context_authority: {
+        schema_version: "synapsor.configured-trusted-context-authority.v1",
+        provider: "http_claims",
+        tenant_claim: "tenant_id",
+        principal_claim: "sub",
+      },
+    }));
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    await expect(main([
+      "config", "init", "--production-explore",
+      "--project-root", tempDir,
+      "--output", configPath,
+      "--tenant-binding", "tenant_id",
+      "--principal-binding", "attending",
+      "--issuer", "https://identity.example.test",
+      "--audience", "https://runner.example.test/mcp",
+      "--accounting-namespace", "clinic.production",
+      "--json",
+    ])).resolves.toBe(0);
+    const result = JSON.parse(output.join(""));
+    expect(result).toMatchObject({
+      binding_reconciliation_required: true,
+      binding_reconciliation_command: expect.stringContaining(
+        `boundary rescan --from-env DATABASE_URL --project-root '${tempDir}'`,
+      ),
+      next_action: expect.stringMatching(/boundary rescan.*review and activate.*production preflight/i),
+    });
+    const config = JSON.parse(await fs.readFile(configPath, "utf8"));
+    expect(config.trusted_context).toEqual({
+      provider: "http_claims",
+      tenant_binding: "tenant_id",
+      principal_binding: "attending",
+    });
   });
 
   it("generates production Explore config for a reviewed fixed organization with no tenant claim", async () => {

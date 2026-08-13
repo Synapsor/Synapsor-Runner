@@ -10,7 +10,10 @@ import mysql from "../packages/mysql/node_modules/mysql2/promise.js";
 import { Pool } from "pg";
 import { ProposalStore } from "../packages/proposal-store/dist/index.js";
 import { inspectDatabase } from "../packages/schema-inspector/dist/index.js";
-import { startStreamableHttpMcpServer } from "../packages/mcp-server/dist/index.js";
+import {
+  loadRuntimeConfigFromFile,
+  startStreamableHttpMcpServer,
+} from "../packages/mcp-server/dist/index.js";
 import {
   AUTO_BOUNDARY_OVERRIDES_VERSION,
   CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION,
@@ -23,6 +26,10 @@ import {
   writeAutoBoundaryArtifacts,
 } from "../apps/runner/dist/auto-boundary.js";
 import { createSavedBoundary } from "../apps/runner/dist/boundary-library.js";
+import {
+  commitBoundaryResourceReviewMutation,
+  prepareBoundaryResourceReviewMutation,
+} from "../apps/runner/dist/boundary-review-mutation.js";
 import {
   assertProductionExploreStartup,
   productionExploreSessionFactory,
@@ -54,6 +61,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const compose = path.join(root, "examples/runner-fleet/docker-compose.yml");
 const composeProject = `synapsor-production-explore-mysql-${process.pid}`;
 const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-production-explore-mysql-http-"));
+const authoringLifecycleProjectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-production-explore-mysql-authoring-"));
 const singleOrganizationProjectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-production-explore-mysql-single-org-http-"));
 const localParityProjectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-production-explore-mysql-local-parity-"));
 const mysqlAdminUrl = "mysql://root:root_password@127.0.0.1:53309";
@@ -76,6 +84,120 @@ function assert(condition, message, detail) {
 function median(values) {
   const sorted = [...values].sort((left, right) => left - right);
   return sorted[Math.floor(sorted.length / 2)] ?? 0;
+}
+
+async function verifyMysqlProductionAuthoringLifecycle({ inspection, env }) {
+  const configPath = path.join(authoringLifecycleProjectRoot, "synapsor.runner.json");
+  const configInitInvocation = productionExploreRunnerInvocation(root, [
+    "config", "init", "--production-explore",
+    "--project-root", authoringLifecycleProjectRoot,
+    "--output", configPath,
+    "--engine", "mysql",
+    "--source", "local_mysql",
+    "--read-url-env", "MYSQL_DATABASE_URL",
+    "--tenant-binding", "tenant_id",
+    "--principal-binding", "owner_id",
+    "--tenant-claim", "tenant_id",
+    "--principal-claim", "sub",
+    "--issuer", "https://identity.example",
+    "--audience", "https://runner.example/mcp",
+    "--accounting-namespace", "verify.production.mysql.authoring",
+    "--json",
+  ]);
+  run(configInitInvocation.command, configInitInvocation.args, { env });
+  const configuredTrustedContext = {
+    schema_version: CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION,
+    provider: "http_claims",
+    tenant_binding: "tenant_id",
+    principal_binding: "owner_id",
+    tenant_claim: "tenant_id",
+    principal_claim: "sub",
+  };
+  const build = buildAutoBoundary({
+    inspection,
+    project: {
+      root: authoringLifecycleProjectRoot,
+      package_manager: "unknown",
+      frameworks: [],
+      schema_inputs: [],
+      database_env_names: ["MYSQL_DATABASE_URL"],
+    },
+    sourceEnv: "MYSQL_DATABASE_URL",
+    sourceName: "local_mysql",
+    inspectedSchema: sourceSchema,
+    deploymentProfile: "production",
+    httpClaims: { tenantClaim: "tenant_id", principalClaim: "sub" },
+    configuredTrustedContext,
+  });
+  await writeAutoBoundaryArtifacts({ projectRoot: authoringLifecycleProjectRoot, build });
+  const reviewedMutation = await prepareBoundaryResourceReviewMutation(
+    authoringLifecycleProjectRoot,
+    {
+      resource_id: sourceId,
+      minimum_cohort_size: 4,
+      actor: "production-owner@example.test",
+      reason: "Exercise the live MySQL config-draft-review-activate lifecycle.",
+    },
+    async () => inspection,
+  );
+  await commitBoundaryResourceReviewMutation(authoringLifecycleProjectRoot, reviewedMutation);
+  const reviewedBaseline = JSON.parse(fs.readFileSync(
+    path.join(authoringLifecycleProjectRoot, ".synapsor/auto-boundary-policy-baseline.json"),
+    "utf8",
+  ));
+  const reviewedLock = JSON.parse(fs.readFileSync(
+    path.join(authoringLifecycleProjectRoot, ".synapsor/generation-lock.json"),
+    "utf8",
+  ));
+  assert(reviewedBaseline.boundary.pack.resources.some((reviewedResource) =>
+    reviewedResource.id === sourceId
+    && reviewedResource.tenant_key === "tenant_id"
+    && reviewedResource.principal_key === "owner_id"),
+  "MySQL production review mutation discarded the configured authoring baseline.", reviewedBaseline);
+  assert(reviewedLock.trusted_context_authority?.tenant_binding === "tenant_id"
+    && reviewedLock.trusted_context_authority?.principal_binding === "owner_id",
+  "MySQL production review mutation discarded configured binding authority.", reviewedLock);
+  const candidateDigest = explorationBoundaryCandidateDigest(reviewedMutation.candidate);
+  await activateExplorationBoundary({
+    projectRoot: authoringLifecycleProjectRoot,
+    candidate: reviewedMutation.candidate,
+    expectedDigest: candidateDigest,
+    actor: "production-owner@example.test",
+    confirmation: `ACTIVATE ${candidateDigest}`,
+    confirmedDecisions: reviewedMutation.candidate.unresolved_decisions,
+    currentInspection: inspection,
+  });
+  const active = await loadActivatedExplorationBoundaries(authoringLifecycleProjectRoot);
+  const runtimeConfig = loadRuntimeConfigFromFile(configPath);
+  const startup = await assertProductionExploreStartup(
+    runtimeConfig,
+    {
+      ...env,
+      SYNAPSOR_CONTROL_DATABASE_URL: controlUrl,
+      SYNAPSOR_EXPLORE_BUDGET_HMAC_KEY: "shared-production-mysql-authoring-hmac-key-material",
+      SYNAPSOR_SESSION_JWKS_URL: "https://identity.example/.well-known/jwks.json",
+    },
+    async () => active,
+    async () => ({ boundary: active[0], lock: reviewedLock }),
+  );
+  assert(startup.ok,
+    "The reviewed MySQL binding authority did not pass production startup attestation.", startup);
+  const second = await createSavedBoundary({
+    projectRoot: authoringLifecycleProjectRoot,
+    draft: reviewedMutation.build.exploration_boundary,
+    currentCandidate: reviewedMutation.candidate,
+    name: "mysql_events_secondary",
+    resourceId: sourceId,
+    actor: "secondary-production-owner@example.test",
+  });
+  assert(second.candidate.pack.resources[0]?.tenant_key === "tenant_id"
+    && second.candidate.pack.resources[0]?.principal_key === "owner_id",
+  "MySQL production review/activation did not leave a startable second-boundary baseline.", second);
+  return {
+    reviewed_bindings_preserved: true,
+    startup_attestation_passed: true,
+    second_boundary_startable: true,
+  };
 }
 
 async function verifySchemaWidthScaling({ mysqlAdmin, client, env, plan, resources }) {
@@ -993,6 +1115,7 @@ async function main() {
     });
     assert(inspection.role_posture?.verified === true && inspection.role_posture.read_only === true,
       "MySQL production fixture reader is not demonstrably read-only.", inspection.role_posture);
+    const mysqlAuthoringLifecycle = await verifyMysqlProductionAuthoringLifecycle({ inspection, env });
     const build = buildAutoBoundary({
       inspection,
       project: {
@@ -2223,6 +2346,7 @@ async function main() {
       derived_scope_indexes_attested: true,
       complete_jwt_rejection_matrix: authRefusals.map((item) => item.label),
       generated_http_client_configs: generatedHttpClients,
+      mysql_authoring_lifecycle: mysqlAuthoringLifecycle,
       metadata_only_catalog: true,
       analytics_http_stdio_parity: true,
       production_operator_ledger: operatorLedger,
@@ -2241,6 +2365,7 @@ async function main() {
     await Promise.allSettled([control.end(), mysqlAdmin.end()]);
     run("docker", ["compose", "-p", composeProject, "-f", compose, "down", "-v", "--remove-orphans"], { allowFailure: true });
     fs.rmSync(projectRoot, { recursive: true, force: true });
+    fs.rmSync(authoringLifecycleProjectRoot, { recursive: true, force: true });
     fs.rmSync(singleOrganizationProjectRoot, { recursive: true, force: true });
     fs.rmSync(localParityProjectRoot, { recursive: true, force: true });
   }

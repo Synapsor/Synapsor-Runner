@@ -100,6 +100,7 @@ async function configInit(args: string[]): Promise<number> {
     new Set([
       "--output", "--out", "-o", "--engine", "--read-url-env", "--source", "--json",
       "--production-explore", "--project-root", "--tenant-claim", "--principal-claim",
+      "--tenant-binding", "--principal-binding",
       "--single-tenant-organization-id",
       "--issuer", "--audience", "--accounting-namespace", "--oauth-scope",
       "--control-url-env", "--jwks-url-env", "--hmac-key-env", "--http-channel",
@@ -123,6 +124,10 @@ async function configInit(args: string[]): Promise<number> {
   if (!isEnvironmentName(readUrlEnv)) {
     throw new Error("config init --read-url-env must name an environment variable, not contain a URL.");
   }
+  const requestedTenantBinding = optionalTrimmedArg(args, "--tenant-binding");
+  const requestedPrincipalBinding = optionalTrimmedArg(args, "--principal-binding");
+  const reviewedTenantBinding = drafted?.lock.trusted_context_authority?.tenant_binding;
+  const reviewedPrincipalBinding = drafted?.lock.trusted_context_authority?.principal_binding;
   if (drafted) {
     if (drafted.boundary.deployment_profile !== "production"
       || drafted.boundary.trusted_context.provider !== "http_claims") {
@@ -136,6 +141,18 @@ async function configInit(args: string[]): Promise<number> {
     const requestedTenantClaim = optionalArg(args, "--tenant-claim");
     const requestedPrincipalClaim = optionalArg(args, "--principal-claim");
     const requestedOrganizationId = optionalArg(args, "--single-tenant-organization-id");
+    if (requestedTenantBinding && reviewedTenantBinding
+      && requestedTenantBinding !== reviewedTenantBinding) {
+      throw new Error(
+        `Production config --tenant-binding ${requestedTenantBinding} must match the reviewed boundary binding ${reviewedTenantBinding} exactly. Rescan and review the boundary to change it.`,
+      );
+    }
+    if (requestedPrincipalBinding && reviewedPrincipalBinding
+      && requestedPrincipalBinding !== reviewedPrincipalBinding) {
+      throw new Error(
+        `Production config --principal-binding ${requestedPrincipalBinding} must match the reviewed boundary binding ${reviewedPrincipalBinding} exactly. Rescan and review the boundary to change it.`,
+      );
+    }
     if (requestedTenantClaim && requestedTenantClaim !== reviewedTenantClaim) {
       throw new Error(
         `Production config --tenant-claim ${requestedTenantClaim} must match the reviewed boundary claim ${reviewedTenantClaim} exactly. Regenerate and review the boundary to change it.`,
@@ -153,6 +170,11 @@ async function configInit(args: string[]): Promise<number> {
       );
     }
   }
+  const bindingReconciliationRequired = Boolean(drafted) && (
+    (requestedTenantBinding !== undefined && requestedTenantBinding !== reviewedTenantBinding)
+    || (requestedPrincipalBinding !== undefined
+      && requestedPrincipalBinding !== reviewedPrincipalBinding)
+  );
   const config = productionExplore
     ? productionExploreConfigTemplate({
       projectRoot: projectRootValue,
@@ -161,6 +183,8 @@ async function configInit(args: string[]): Promise<number> {
       readUrlEnv,
       tenantClaim: optionalArg(args, "--tenant-claim") ?? productionClaim(drafted?.boundary, "tenant"),
       principalClaim: optionalArg(args, "--principal-claim") ?? productionClaim(drafted?.boundary, "principal"),
+      tenantBinding: requestedTenantBinding ?? reviewedTenantBinding,
+      principalBinding: requestedPrincipalBinding ?? reviewedPrincipalBinding,
       singleOrganizationId: optionalArg(args, "--single-tenant-organization-id")
         ?? drafted?.boundary.organization_scope?.organization_id,
       issuer: optionalArg(args, "--issuer"),
@@ -190,8 +214,8 @@ async function configInit(args: string[]): Promise<number> {
         tenant_id_env: "SYNAPSOR_TENANT_ID",
         principal_env: "SYNAPSOR_PRINCIPAL",
       },
-      tenant_binding: "tenant_id",
-      principal_binding: "principal",
+      tenant_binding: requestedTenantBinding ?? "tenant_id",
+      principal_binding: requestedPrincipalBinding ?? "principal",
     },
     capabilities: [],
     strict: true,
@@ -223,6 +247,9 @@ async function configInit(args: string[]): Promise<number> {
         : ["--trusted-tls-proxy"]),
     ].join(" ")
     : undefined;
+  const bindingReconciliationCommand = bindingReconciliationRequired
+    ? `${cliCommandName()} boundary rescan --from-env ${readUrlEnv} --project-root ${shellQuote(projectRootValue)}`
+    : undefined;
   const result = {
     ok: true,
     config_path: absoluteOutput,
@@ -239,8 +266,16 @@ async function configInit(args: string[]): Promise<number> {
     ...(productionPreflightCommand
       ? { preflight_command: productionPreflightCommand }
       : {}),
+    ...(bindingReconciliationCommand
+      ? {
+          binding_reconciliation_required: true,
+          binding_reconciliation_command: bindingReconciliationCommand,
+        }
+      : {}),
     next_action: productionExplore
-      ? "Set the referenced secret environment values, initialize the shared control store, then run the production preflight."
+      ? bindingReconciliationCommand
+        ? `Run ${bindingReconciliationCommand}, review and activate the reconciled boundary, then initialize the shared control store and run the production preflight.`
+        : "Set the referenced secret environment values, initialize the shared control store, then run the production preflight."
       : `Run ${cliCommandName()} start --from-env ${readUrlEnv} to draft a reviewed boundary, or author capabilities manually.`,
   };
   if (args.includes("--json")) {
@@ -254,6 +289,12 @@ async function configInit(args: string[]): Promise<number> {
         ? [
           "Generated: shared control store, asymmetric JWT claims, secured HTTP, OAuth scope, tenant ceilings, and bounded source/session pools.",
           "Secret values were not read or written. Generate the shared HMAC key from at least 32 random bytes; do not use a 32-character hex key.",
+          ...(bindingReconciliationCommand
+            ? [
+                "The configured column bindings are newer than the existing reviewed draft; production startup remains blocked until reconciliation.",
+                `Reconcile the existing boundary: ${bindingReconciliationCommand}`,
+              ]
+            : []),
           `Initialize the shared control store: ${controlStoreMigrationCommand}`,
           `Check every production prerequisite together: ${productionPreflightCommand}`,
         ]
@@ -307,6 +348,8 @@ function productionExploreConfigTemplate(input: {
   readUrlEnv: string;
   tenantClaim?: string;
   principalClaim?: string;
+  tenantBinding?: string;
+  principalBinding?: string;
   singleOrganizationId?: string;
   issuer?: string;
   audience?: string;
@@ -330,6 +373,11 @@ function productionExploreConfigTemplate(input: {
   }
   if (!input.principalClaim || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(input.principalClaim)) {
     throw new Error("config init --production-explore requires --principal-claim <claim>, or a production boundary draft containing that reviewed claim binding.");
+  }
+  if (input.engine === "mysql" && !input.singleOrganizationId && !input.tenantBinding) {
+    throw new Error(
+      "config init --production-explore --engine mysql requires --tenant-binding <column> for multi-tenant boundary authoring. MySQL has no PostgreSQL RLS metadata from which Runner can prove the tenant column; the binding remains reviewer-gated and is never model-authored.",
+    );
   }
   const issuer = exactHttpsUrl(input.issuer, "--issuer");
   const audience = exactHttpsUrl(input.audience, "--audience");
@@ -368,7 +416,11 @@ function productionExploreConfigTemplate(input: {
         statement_timeout_ms: 3000,
       },
     },
-    trusted_context: { provider: "http_claims" },
+    trusted_context: {
+      provider: "http_claims",
+      ...(input.tenantBinding ? { tenant_binding: input.tenantBinding } : {}),
+      ...(input.principalBinding ? { principal_binding: input.principalBinding } : {}),
+    },
     session_auth: {
       provider: "jwt_asymmetric",
       algorithms: ["RS256"],
@@ -410,6 +462,14 @@ function productionExploreConfigTemplate(input: {
     strict: true,
     result_format: 2,
   };
+}
+
+function optionalTrimmedArg(args: string[], option: string): string | undefined {
+  const value = optionalArg(args, option);
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) throw new Error(`config init ${option} must name a database column.`);
+  return trimmed;
 }
 
 function exactHttpsUrl(value: string | undefined, option: string): string {

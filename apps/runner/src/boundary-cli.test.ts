@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
+import { loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
 import {
   AUTO_BOUNDARY_OVERRIDES_VERSION,
@@ -51,6 +52,7 @@ import { boundaryCommand } from "./guided-start.js";
 import { initializeGuidedProject, readGuidedOnboardingState } from "./guided-project.js";
 import { prepareScopedExplore } from "./scoped-explore.js";
 import { selectActiveExploreBoundary } from "./scoped-explore-boundary-set.js";
+import { inspectProductionExploreStartup } from "./mcp-runtime.js";
 
 describe("boundary operator-plane CLI", () => {
   afterEach(() => {
@@ -4576,20 +4578,39 @@ describe("boundary operator-plane CLI", () => {
         }),
       ]);
       await writeAutoBoundaryArtifacts({ projectRoot: root, build });
-      const firstDigest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+      const reviewed = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "clinicdb.service_visits",
+        minimum_cohort_size: 4,
+        actor: "first-reviewer",
+        reason: "Use a reviewed four-row aggregate cohort in the first boundary.",
+      }, async () => inspection);
+      await commitBoundaryResourceReviewMutation(root, reviewed);
+      const firstContext = await loadBoundaryReviewContext(root);
+      const baselineAfterReview = JSON.parse(await fs.readFile(
+        path.join(root, ".synapsor/auto-boundary-policy-baseline.json"),
+        "utf8",
+      ));
+      expect(baselineAfterReview.boundary.pack.resources).toEqual([
+        expect.objectContaining({
+          id: "clinicdb.service_visits",
+          tenant_key: "tenant_id",
+        }),
+      ]);
+      const firstDigest = explorationBoundaryCandidateDigest(firstContext.candidate);
       await activateExplorationBoundary({
         projectRoot: root,
-        candidate: build.exploration_boundary,
+        candidate: firstContext.candidate,
         expectedDigest: firstDigest,
         actor: "first-reviewer",
         confirmation: `ACTIVATE ${firstDigest}`,
-        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        confirmedDecisions: firstContext.candidate.unresolved_decisions,
         currentInspection: inspection,
       });
       const second = await createSavedBoundary({
         projectRoot: root,
-        draft: build.exploration_boundary,
-        currentCandidate: build.exploration_boundary,
+        draft: firstContext.draft,
+        currentCandidate: firstContext.candidate,
+        currentProgress: firstContext.progress,
         name: "visits_secondary",
         resourceId: "clinicdb.service_visits",
         actor: "second-reviewer",
@@ -4603,7 +4624,7 @@ describe("boundary operator-plane CLI", () => {
       expect(second.review_overrides.resources).toEqual({});
 
       const completed = createBoundaryReviewProgress({
-        draft: build.exploration_boundary,
+        draft: firstContext.draft,
         candidate: second.candidate,
         confirmedDecisions: second.candidate.unresolved_decisions,
         previous: second,
@@ -4643,6 +4664,159 @@ describe("boundary operator-plane CLI", () => {
         "visits_secondary",
         "clinicdb.service_visits",
       ).pack.name).toBe("visits_secondary");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("preserves reviewed MySQL HTTP bindings and its authoring baseline through review mutation", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-mysql-production-review-bindings-"));
+    const inspection = boundaryInspection();
+    inspection.engine = "mysql";
+    inspection.server_version = "MySQL 8.4";
+    inspection.schemas = ["clinicdb"];
+    const table = inspection.tables[0]!;
+    table.schema = "clinicdb";
+    table.row_level_security = false;
+    table.row_level_security_policies = [];
+    table.role_posture = {
+      ...table.role_posture!,
+      row_security_forced: false,
+      row_security_effective_for_current_role: false,
+    };
+    table.columns.push({
+      name: "attending",
+      data_type: "varchar",
+      nullable: false,
+      generated: false,
+      ordinal_position: table.columns.length + 1,
+      suggestions: {
+        tenant: false,
+        conflict: false,
+        sensitive: false,
+        immutable: false,
+        large_or_binary: false,
+      },
+    });
+    table.suggestions.default_visible_columns.push("attending");
+    const configuredTrustedContext = {
+      schema_version: CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION,
+      provider: "http_claims" as const,
+      tenant_binding: "tenant_id",
+      principal_binding: "attending",
+      tenant_claim: "tenant_id",
+      principal_claim: "sub",
+    } as const;
+    const configPath = path.join(root, "synapsor.runner.json");
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await expect(main([
+      "config", "init", "--production-explore",
+      "--project-root", root,
+      "--output", configPath,
+      "--engine", "mysql",
+      "--source", "local_mysql",
+      "--read-url-env", "DATABASE_URL",
+      "--tenant-binding", "tenant_id",
+      "--principal-binding", "attending",
+      "--tenant-claim", "tenant_id",
+      "--principal-claim", "sub",
+      "--issuer", "https://identity.example.test",
+      "--audience", "https://runner.example.test/mcp",
+      "--accounting-namespace", "clinic.production",
+    ])).resolves.toBe(0);
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      sourceName: "local_mysql",
+      inspectedSchema: "clinicdb",
+      deploymentProfile: "production",
+      httpClaims: { tenantClaim: "tenant_id", principalClaim: "sub" },
+      configuredTrustedContext,
+    });
+    try {
+      expect(build.policy_baseline.boundary.pack.resources).toEqual([
+        expect.objectContaining({
+          id: "clinicdb.service_visits",
+          tenant_key: "tenant_id",
+          principal_key: "attending",
+        }),
+      ]);
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const preview = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "clinicdb.service_visits",
+        minimum_cohort_size: 4,
+        actor: "production-reviewer@example.test",
+        reason: "Require four contributing rows before releasing an aggregate.",
+      }, async () => inspection);
+      await commitBoundaryResourceReviewMutation(root, preview);
+
+      const [baseline, lock, context] = await Promise.all([
+        fs.readFile(path.join(root, ".synapsor/auto-boundary-policy-baseline.json"), "utf8").then(JSON.parse),
+        fs.readFile(path.join(root, ".synapsor/generation-lock.json"), "utf8").then(JSON.parse),
+        loadBoundaryReviewContext(root),
+      ]);
+      expect(baseline.boundary.pack.resources).toEqual([
+        expect.objectContaining({
+          id: "clinicdb.service_visits",
+          tenant_key: "tenant_id",
+          principal_key: "attending",
+        }),
+      ]);
+      expect(lock.trusted_context_authority).toEqual(configuredTrustedContext);
+      expect(lock.trusted_context_fingerprint).toBe(build.lock.trusted_context_fingerprint);
+      expect(context.candidate).toMatchObject({
+        deployment_profile: "production",
+        trusted_context: {
+          provider: "http_claims",
+          tenant_claim: "tenant_id",
+          principal_claim: "sub",
+        },
+        budgets: expect.any(Object),
+        pack: {
+          resources: [expect.objectContaining({
+            id: "clinicdb.service_visits",
+            tenant_key: "tenant_id",
+            principal_key: "attending",
+            minimum_cohort_size: 4,
+          })],
+        },
+      });
+
+      const candidateDigest = explorationBoundaryCandidateDigest(context.candidate);
+      await activateExplorationBoundary({
+        projectRoot: root,
+        candidate: context.candidate,
+        expectedDigest: candidateDigest,
+        actor: "production-reviewer@example.test",
+        confirmation: `ACTIVATE ${candidateDigest}`,
+        confirmedDecisions: context.candidate.unresolved_decisions,
+        currentInspection: inspection,
+      });
+      const active = await loadActivatedExplorationBoundaries(root);
+      const runtimeConfig = loadRuntimeConfigFromFile(configPath);
+      const startup = await inspectProductionExploreStartup(
+        runtimeConfig,
+        {
+          DATABASE_URL: "mysql://reviewed:secret@mysql.internal/clinicdb",
+          SYNAPSOR_CONTROL_DATABASE_URL: "postgresql://control:secret@control.internal/synapsor",
+          SYNAPSOR_EXPLORE_BUDGET_HMAC_KEY: "production-budget-hmac-key-material-1234567890",
+          SYNAPSOR_SESSION_JWKS_URL: "https://identity.example.test/.well-known/jwks.json",
+        },
+        async () => active,
+        async () => ({ boundary: active[0]!, lock }) as Awaited<ReturnType<typeof prepareScopedExplore>>,
+      );
+      expect(startup.ok).toBe(true);
+      expect(startup.checks).toContainEqual(expect.objectContaining({
+        name: "active-production-boundaries",
+        ok: true,
+      }));
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

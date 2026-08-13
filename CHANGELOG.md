@@ -76,6 +76,11 @@
   config/store-shaped launch entries; new client configs and managed installs
   emit the explicit authoring command, and inactive projects refuse instead of
   producing a zero-tool server.
+- Preserves explicit MySQL tenant/principal binding evidence through every
+  CLI and Workbench review mutation, so the policy-neutral baseline and
+  production generation lock cannot be reset during review. Production config
+  scaffolding now carries reviewed bindings and requires an explicit tenant
+  column for multi-tenant MySQL instead of producing an unusable setup.
 - Activates independently reviewed saved boundaries against their own immutable
   review state and generation-lock snapshot instead of whichever boundary owns
   the project-global draft. CLI and Workbench can now add a second boundary

@@ -24,6 +24,7 @@ import {
   type AutoBoundaryField,
   type AutoBoundaryBuild,
   type BoundaryInference,
+  type ConfiguredTrustedContextAuthority,
   type DerivedScopeInference,
   type ActivatedExplorationBoundary,
   type ExplorationBoundaryDraft,
@@ -60,6 +61,7 @@ import {
   blockedTenantScopeGuidance,
   type BlockedTenantScopeGuidance,
 } from "./boundary-scope-guidance.js";
+import { resolveConfiguredTrustedContextAuthority } from "./configured-trusted-context.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -557,6 +559,10 @@ export async function prepareBoundaryResourceReviewMutation(
 ): Promise<BoundaryReviewMutationPreview> {
   validateBoundaryResourceRequest(request);
   const state = await loadBoundaryReviewFiles(projectRoot);
+  const configuredTrustedContext = await configuredTrustedContextForReviewMutation(
+    projectRoot,
+    state,
+  );
   const reviewed = state.review.resources.find((resource) => resource.id === request.resource_id);
   if (!reviewed) {
     throw new Error(
@@ -576,12 +582,14 @@ export async function prepareBoundaryResourceReviewMutation(
   assertCurrentInspectedResource(inspection, request.resource_id);
   const project = await detectProjectContext(projectRoot);
   const evidence = await loadStructuredProjectEvidence(project);
-  const cleanBuild = buildReviewMutationBoundary({
+  const mutationBuild = buildReviewMutationBoundary({
     inspection,
     project,
     evidence,
     state,
+    configuredTrustedContext,
   });
+  const cleanBuild = mutationBuild.build;
   let overrides = boundaryReviewOverridesForCandidate({
     progress: state.progress,
     baseline: cleanBuild.exploration_boundary,
@@ -601,6 +609,9 @@ export async function prepareBoundaryResourceReviewMutation(
     inspectedSchema: state.lock.inspected_schema,
     overrides,
     deploymentProfile: state.candidate.deployment_profile,
+    configuredTrustedContext,
+    useConfiguredTrustedContextForInference:
+      mutationBuild.useConfiguredTrustedContextForInference,
     ...(state.candidate.trusted_context.provider === "http_claims" ? {
       httpClaims: {
         tenantClaim: state.candidate.trusted_context.tenant_claim,
@@ -687,6 +698,10 @@ export async function prepareBoundaryReviewMutationBatch(
     throw new Error(`Boundary-review decision file repeats resource(s): ${[...new Set(duplicateResources)].sort().join(", ")}.`);
   }
   const state = await loadBoundaryReviewFiles(projectRoot);
+  const configuredTrustedContext = await configuredTrustedContextForReviewMutation(
+    projectRoot,
+    state,
+  );
   if (expectedBindings) assertBindingsEqual(expectedBindings, reviewBindings(state));
   const knownResources = new Set(state.review.resources.map((resource) => resource.id));
   const unknown = requests.filter((request) => !knownResources.has(request.resource_id));
@@ -709,12 +724,14 @@ export async function prepareBoundaryReviewMutationBatch(
   for (const request of requests) assertCurrentInspectedResource(inspection, request.resource_id);
   const project = await detectProjectContext(projectRoot);
   const evidence = await loadStructuredProjectEvidence(project);
-  const cleanBuild = buildReviewMutationBoundary({
+  const mutationBuild = buildReviewMutationBoundary({
     inspection,
     project,
     evidence,
     state,
+    configuredTrustedContext,
   });
+  const cleanBuild = mutationBuild.build;
   let overrides = boundaryReviewOverridesForCandidate({
     progress: state.progress,
     baseline: cleanBuild.exploration_boundary,
@@ -736,6 +753,9 @@ export async function prepareBoundaryReviewMutationBatch(
     inspectedSchema: state.lock.inspected_schema,
     overrides,
     deploymentProfile: state.candidate.deployment_profile,
+    configuredTrustedContext,
+    useConfiguredTrustedContextForInference:
+      mutationBuild.useConfiguredTrustedContextForInference,
     ...(state.candidate.trusted_context.provider === "http_claims" ? {
       httpClaims: {
         tenantClaim: state.candidate.trusted_context.tenant_claim,
@@ -857,8 +877,12 @@ function buildReviewMutationBoundary(input: {
   project: Awaited<ReturnType<typeof detectProjectContext>>;
   evidence: Awaited<ReturnType<typeof loadStructuredProjectEvidence>>;
   state: BoundaryReviewFiles;
-}): AutoBoundaryBuild {
-  return buildAutoBoundary({
+  configuredTrustedContext: ConfiguredTrustedContextAuthority;
+}): {
+  build: AutoBoundaryBuild;
+  useConfiguredTrustedContextForInference: boolean;
+} {
+  const buildInput = {
     inspection: input.inspection,
     project: input.project,
     parsedEvidence: input.evidence.parsed,
@@ -866,6 +890,7 @@ function buildReviewMutationBoundary(input: {
     sourceEnv: input.state.lock.source_env,
     inspectedSchema: input.state.lock.inspected_schema,
     deploymentProfile: input.state.candidate.deployment_profile,
+    configuredTrustedContext: input.configuredTrustedContext,
     ...(input.state.candidate.trusted_context.provider === "http_claims" ? {
       httpClaims: {
         tenantClaim: input.state.candidate.trusted_context.tenant_claim,
@@ -877,7 +902,85 @@ function buildReviewMutationBoundary(input: {
         organizationId: input.state.candidate.organization_scope.organization_id,
       },
     } : {}),
+  };
+  const reviewedInferencePosture =
+    input.state.lock.configured_trusted_context_used_for_inference;
+  if (reviewedInferencePosture !== undefined) {
+    return {
+      build: buildAutoBoundary({
+        ...buildInput,
+        useConfiguredTrustedContextForInference: reviewedInferencePosture,
+      }),
+      useConfiguredTrustedContextForInference: reviewedInferencePosture,
+    };
+  }
+  const withoutConfiguredInference = buildAutoBoundary({
+    ...buildInput,
+    useConfiguredTrustedContextForInference: false,
   });
+  const withConfiguredInference = buildAutoBoundary({
+    ...buildInput,
+    useConfiguredTrustedContextForInference: true,
+  });
+  const expectedScopeInference = scopeInferenceDigest(input.state.review.resources);
+  const withoutMatches = scopeInferenceDigest(
+    withoutConfiguredInference.review.resources,
+  ) === expectedScopeInference;
+  const withMatches = scopeInferenceDigest(
+    withConfiguredInference.review.resources,
+  ) === expectedScopeInference;
+  if (!withoutMatches && !withMatches) {
+    throw new Error(
+      "The inspected scope evidence no longer matches this boundary's policy-neutral baseline. Run synapsor-runner boundary rescan before editing reviewed access.",
+    );
+  }
+  if (withMatches && !withoutMatches) {
+    return {
+      build: withConfiguredInference,
+      useConfiguredTrustedContextForInference: true,
+    };
+  }
+  return {
+    build: withoutConfiguredInference,
+    useConfiguredTrustedContextForInference: false,
+  };
+}
+
+function scopeInferenceDigest(
+  resources: BoundaryReviewFiles["review"]["resources"],
+): `sha256:${string}` {
+  return canonicalJsonDigest(resources.map((resource) => ({
+    id: resource.id,
+    tenant_key: resource.tenant_key.selected ?? null,
+    tenant_scope: resource.derived_tenant_scope?.selected ?? null,
+    shared_reference_scope: resource.shared_reference_scope?.selected ?? null,
+    principal_key: resource.principal_key.selected ?? null,
+    principal_scope: resource.derived_principal_scope?.selected ?? null,
+  })));
+}
+
+async function configuredTrustedContextForReviewMutation(
+  projectRoot: string,
+  state: BoundaryReviewFiles,
+): Promise<ConfiguredTrustedContextAuthority> {
+  const authority = await resolveConfiguredTrustedContextAuthority({
+    projectRoot,
+    sourceEnv: state.lock.source_env,
+    candidate: state.candidate,
+    ...(state.lock.trusted_context_authority
+      ? { fallbackAuthority: state.lock.trusted_context_authority }
+      : {}),
+  });
+  const reviewedFingerprint = state.lock.trusted_context_fingerprint
+    ?? (state.lock.trusted_context_authority
+      ? canonicalJsonDigest(state.lock.trusted_context_authority)
+      : undefined);
+  if (reviewedFingerprint && canonicalJsonDigest(authority) !== reviewedFingerprint) {
+    throw new Error(
+      "Runner config trusted-context authority changed after this boundary draft. Run synapsor-runner boundary rescan, review the reconciled scope decisions, then retry this edit.",
+    );
+  }
+  return authority;
 }
 
 export async function commitBoundaryReviewMutationBatch(

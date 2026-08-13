@@ -3502,6 +3502,41 @@ export default defineCapability({
           principal_key: "attending",
         }),
       ]);
+      const reviewed = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        headers,
+        {
+          kind: "minimum_cohort",
+          resource_id: "clinicdb.members",
+          value: 4,
+          actor: "workbench-reviewer",
+          reason: "Require four contributing rows for this Workbench boundary.",
+        },
+      );
+      expect(reviewed).toMatchObject({
+        ok: true,
+        candidate: {
+          pack: {
+            resources: [expect.objectContaining({
+              id: "clinicdb.members",
+              tenant_key: "tenant_id",
+              principal_key: "attending",
+              minimum_cohort_size: 4,
+            })],
+          },
+        },
+      });
+      const baselineAfterReview = JSON.parse(await fs.readFile(
+        path.join(tempDir, ".synapsor/auto-boundary-policy-baseline.json"),
+        "utf8",
+      ));
+      expect(baselineAfterReview.boundary.pack.resources).toEqual([
+        expect.objectContaining({
+          id: "clinicdb.members",
+          tenant_key: "tenant_id",
+          principal_key: "attending",
+        }),
+      ]);
 
       const draftPath = path.join(tempDir, "synapsor/generated/exploration-boundary.draft.json");
       const draftBeforeRepair = await fs.readFile(draftPath, "utf8");

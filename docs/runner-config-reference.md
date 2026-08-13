@@ -292,13 +292,24 @@ Providers are `environment`, `static_dev`, `http_claims`, and `cloud_session`.
 Capabilities may reference a context by name. The model never receives tenant
 or principal as an overridable argument.
 
-For Explore authoring, `principal_binding` may also exactly name a non-null
-source column such as `rep`. On a fresh `boundary draft`, Runner records that
+For Explore authoring, `tenant_binding` and `principal_binding` exactly name
+source columns rather than JWT claim names. `tenant_binding` is required for a
+multi-tenant MySQL production scaffold because MySQL has no PostgreSQL RLS
+metadata from which Runner can establish a policy-neutral authoring baseline.
+PostgreSQL can instead use effective reviewed RLS evidence. `principal_binding`
+may name a non-null source column such as `rep`. On a fresh `boundary draft`, Runner records that
 match as a per-boundary disabled review seed; it does not infer authority from
 the name and does not activate it. The operator can confirm or replace the
 direct column with a proven derived principal path in `/access` or Workbench.
 No match, a nullable column, or a binary/large column leaves principal row scope
-unconfigured. The trusted principal value still comes from
+unconfigured. `config init --production-explore` accepts
+`--tenant-binding <column>` and `--principal-binding <column>`, carries reviewed
+bindings forward from an existing draft lock, and rejects a conflicting value.
+When a binding is added to a legacy draft that reviewed it as unset, config init
+marks reconciliation as required and prints the exact `boundary rescan` command;
+production startup remains fail-closed until that revision is reviewed and
+activated.
+The trusted principal value still comes from
 `values.principal_env` locally or the verified JWT claim over production HTTP.
 
 The language-neutral canonical contract can preserve a `session` binding for

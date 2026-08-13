@@ -194,16 +194,34 @@ synapsor-runner config init --production-explore \
   --read-url-env DATABASE_URL \
   --tenant-claim tenant_id \
   --principal-claim sub \
+  --tenant-binding tenant_id \
+  --principal-binding rep \
   --issuer https://identity.example \
   --audience https://runner.example/mcp \
   --accounting-namespace acme.analytics.production
 ```
 
 If a production draft already exists, `config init --production-explore` can
-reuse its engine, source, read-credential environment name, and exact claim
-bindings. The config-first path avoids the chicken-and-egg failure where an
+reuse its engine, source, read-credential environment name, exact claim names,
+and reviewed tenant/principal column bindings. The config-first path avoids the chicken-and-egg failure where an
 environment-bound local config is discovered while requesting a production
 HTTP-claims draft.
+
+For a multi-tenant MySQL source, name the tenant column up front because MySQL
+does not expose PostgreSQL RLS policy metadata that could prove it. Add
+`--tenant-binding tenant_id` to the command above, changing `tenant_id` to the
+exact non-null tenant column in your schema. Add
+`--principal-binding attending` when rows also need a reviewed principal
+predicate. Runner records these as review inputs; it does not activate them or
+let the model supply either value. Omitting `--tenant-binding` for multi-tenant
+MySQL fails during config generation instead of producing a boundary-authoring
+dead end. Single-organization MySQL does not need a tenant binding.
+
+If a production MySQL draft predates these bindings, `config init` writes the
+new config but does not pretend the old draft reviewed it. Its next action is an
+exact `boundary rescan` command. Reconcile, review, and activate that disabled
+revision before running production preflight; unchanged curated policy is
+preserved by the reconciliation path.
 
 The generated file includes shared-control-store, JWT/JWKS, secured HTTP,
 OAuth, tenant-budget, source-pool, and per-principal session-cap settings. The
@@ -229,7 +247,9 @@ customize it.
     }
   },
   "trusted_context": {
-    "provider": "http_claims"
+    "provider": "http_claims",
+    "tenant_binding": "tenant_id",
+    "principal_binding": "rep"
   },
   "session_auth": {
     "provider": "jwt_asymmetric",
@@ -405,7 +425,7 @@ synapsor-runner boundary review \
 ```
 
 The draft reads the config already placed in that project and verifies that its
-source and claim names match. Review tables, columns, relationships, tenant
+source, claim names, and any configured column bindings match. Review tables, columns, relationships, tenant
 scope, optional row-principal scope, cohort minimums, and per-principal query,
 extraction, and differencing limits. Activate the exact production boundary
 through the normal human review action. A development/staging boundary cannot

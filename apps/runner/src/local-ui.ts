@@ -93,8 +93,8 @@ import {
   commitBoundaryRescan,
   prepareBoundaryRescan,
   readBoundaryRescanReport,
-  resolveConfiguredTrustedContextAuthority,
 } from "./boundary-rescan.js";
+import { resolveConfiguredTrustedContextAuthority } from "./configured-trusted-context.js";
 import { blockedTenantScopeGuidance } from "./boundary-scope-guidance.js";
 import { buildInstantFirstValue } from "./instant-first-value.js";
 import {
