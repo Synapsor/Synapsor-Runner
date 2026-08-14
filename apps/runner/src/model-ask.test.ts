@@ -1238,6 +1238,69 @@ describe("Workbench BYOM Ask", () => {
     expect(exploreCalls).toBe(1);
   });
 
+  it("uses a unique reviewed measure to anchor an unqualified suffix for a local model", async () => {
+    let exploreCalls = 0;
+    const shipments = {
+      id: "public.shipments",
+      label: "Shipments",
+      fields: [
+        { id: "carrier_mode", label: "Carrier mode" },
+        { id: "transit_hours", label: "Transit hours" },
+      ],
+      groupable_fields: ["carrier_mode"],
+      aggregate_measure_functions: { transit_hours: ["avg"] },
+    };
+    const deliveries = {
+      id: "public.deliveries",
+      label: "Deliveries",
+      fields: [{ id: "delivery_cost_cents", label: "Delivery cost" }],
+      groupable_fields: [],
+      aggregate_measure_functions: { delivery_cost_cents: ["avg"] },
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        if (name === "app.describe_data") {
+          return {
+            ok: true,
+            value: {
+              ok: true,
+              resources: args?.resource === "public.shipments" ? [shipments] : [shipments, deliveries],
+              next_cursor: null,
+              source_database_changed: false,
+            },
+          };
+        }
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    let requests = 0;
+    const result = await session.run("What is the average transit time in hours by mode?", gateway, {
+      requestJson: async () => {
+        requests += 1;
+        return requests === 1
+          ? openAiToolCall("local_unique_measure_anchor", "app__explore_data", {
+            plan: {
+              kind: "aggregate",
+              resource: "public.shipments",
+              measures: [{ function: "avg", field: "transit_hours" }],
+              dimensions: [{ field: "carrier_mode" }],
+            },
+          })
+          : openAiText("The reviewed result is available.");
+      },
+    });
+
+    expect(result.tool_calls.at(-1)).toEqual(
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    );
+    expect(exploreCalls).toBe(1);
+  });
+
   it("keeps an ambiguous local-model suffix fail-closed and names the reviewed choices", async () => {
     let exploreCalls = 0;
     const gateway: AskToolGateway = {
@@ -1730,6 +1793,237 @@ describe("Workbench BYOM Ask", () => {
       expect.objectContaining({ error_code: "ASK_PLAN_INTENT_MISMATCH", status: "refused" }),
     ]);
     expect(exploreCalls).toBe(0);
+  });
+
+  it("accepts an unqualified suffix when another reviewed measure uniquely anchors the resource", async () => {
+    let exploreCalls = 0;
+    const shipments = {
+      id: "public.shipments",
+      label: "Shipments",
+      fields: [
+        { id: "carrier_mode", label: "Carrier mode" },
+        { id: "transit_hours", label: "Transit hours" },
+      ],
+      groupable_fields: ["carrier_mode"],
+      aggregate_measure_functions: { transit_hours: ["avg"] },
+    };
+    const deliveries = {
+      id: "public.deliveries",
+      label: "Deliveries",
+      fields: [{ id: "delivery_cost_cents", label: "Delivery cost" }],
+      groupable_fields: [],
+      aggregate_measure_functions: { delivery_cost_cents: ["avg"] },
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name) => {
+        if (name === "app.describe_data") {
+          return {
+            ok: true,
+            value: {
+              ok: true,
+              resources: [shipments, deliveries],
+              next_cursor: null,
+              source_database_changed: false,
+            },
+          };
+        }
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: { ok: true, resources: [shipments], source_database_changed: false },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-4.1",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    let requests = 0;
+    const result = await session.run("What is the average transit time in hours by mode?", gateway, {
+      requestJson: async () => {
+        requests += 1;
+        if (requests === 1) return openAiToolCall("list_anchor_catalog", "app__describe_data", {});
+        if (requests === 2) {
+          return openAiToolCall("unique_measure_anchor", "app__explore_data", {
+            plan: {
+              kind: "aggregate",
+              resource: "public.shipments",
+              measures: [{ function: "avg", field: "transit_hours" }],
+              dimensions: [{ field: "carrier_mode" }],
+            },
+          });
+        }
+        return openAiText("The reviewed result is available.");
+      },
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ tool: "app.describe_data", status: "ok" }),
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]);
+    expect(exploreCalls).toBe(1);
+  });
+
+  it("keeps an unqualified suffix fail-closed when its measure anchor spans resources", async () => {
+    let exploreCalls = 0;
+    const resources = ["public.shipments", "public.delivery_runs"].map((id) => ({
+      id,
+      fields: [
+        { id: "carrier_mode", label: "Carrier mode" },
+        { id: "transit_hours", label: "Transit hours" },
+      ],
+      groupable_fields: ["carrier_mode"],
+      aggregate_measure_functions: { transit_hours: ["avg"] },
+    }));
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name) => {
+        if (name === "app.describe_data") {
+          return {
+            ok: true,
+            value: { ok: true, resources, next_cursor: null, source_database_changed: false },
+          };
+        }
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: { ok: true, resources: [resources[0]], source_database_changed: false },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-4.1",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    let requests = 0;
+    const result = await session.run("What is the average transit time in hours by mode?", gateway, {
+      requestJson: async () => {
+        requests += 1;
+        return requests === 1
+          ? openAiToolCall("list_ambiguous_anchor_catalog", "app__describe_data", {})
+          : openAiToolCall("ambiguous_measure_anchor", "app__explore_data", {
+            plan: {
+              kind: "aggregate",
+              resource: "public.shipments",
+              measures: [{ function: "avg", field: "transit_hours" }],
+              dimensions: [{ field: "carrier_mode" }],
+            },
+          });
+      },
+    });
+
+    expect(result.tool_calls.at(-1)).toEqual(
+      expect.objectContaining({ error_code: "ASK_PLAN_INTENT_MISMATCH", status: "refused" }),
+    );
+    expect(exploreCalls).toBe(0);
+  });
+
+  it("defers a malformed comparison dimension to strict Explore validation before intent matching", async () => {
+    let exploreCalls = 0;
+    const shipments = {
+      id: "public.shipments",
+      label: "Shipments",
+      fields: [
+        { id: "warehouse_zone", label: "Warehouse zone" },
+        { id: "shipped_at", label: "Shipped at" },
+      ],
+      groupable_fields: ["warehouse_zone"],
+      time_bucket_fields: { shipped_at: ["month"] },
+      relative_time_window_fields: ["shipped_at"],
+      aggregate_measure_functions: {},
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name) => {
+        if (name === "app.describe_data") {
+          return {
+            ok: true,
+            value: {
+              ok: true,
+              resources: [shipments],
+              next_cursor: null,
+              source_database_changed: false,
+            },
+          };
+        }
+        exploreCalls += 1;
+        return {
+          ok: false,
+          error_code: "EXPLORE_PLAN_INVALID",
+          value: {
+            ok: false,
+            error_code: "EXPLORE_PLAN_INVALID",
+            message: "Use plan.comparison and plan.time_bucket as sibling keys.",
+            source_database_changed: false,
+          },
+        };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: { ok: true, resources: [shipments], source_database_changed: false },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-4.1",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    let requests = 0;
+    const result = await session.run(
+      "Compare this month with the preceding period: how many shipments by warehouse zone per month?",
+      gateway,
+      {
+        requestJson: async () => {
+          requests += 1;
+          if (requests === 1) return openAiToolCall("comparison_catalog", "app__describe_data", {});
+          if (requests === 2) {
+            return openAiToolCall("malformed_comparison", "app__explore_data", {
+              plan: {
+                kind: "aggregate",
+                resource: "public.shipments",
+                measures: [{ function: "count" }],
+                dimensions: [
+                  { field: "warehouse_zone" },
+                  { field: "shipped_at", time_bucket: "month" },
+                ],
+                time_window: {
+                  field: "shipped_at",
+                  window: "this_month",
+                  compare_to: "preceding_period",
+                },
+              },
+            });
+          }
+          return openAiText("Runner refused the malformed plan.");
+        },
+      },
+    );
+
+    expect(result.tool_calls.at(-1)).toEqual(
+      expect.objectContaining({ error_code: "EXPLORE_PLAN_INVALID", status: "refused" }),
+    );
+    expect(result.tool_calls.at(-1)?.error_code).not.toBe("ASK_PLAN_INTENT_MISMATCH");
+    expect(exploreCalls).toBe(1);
   });
 
   it("refuses when a unique reviewed suffix names a different field than the proposed plan", async () => {

@@ -282,7 +282,7 @@ export function createScopedExploreMcpServer(
           const path = issue?.path.length ? issue.path.join(".") : "plan";
           throw new ScopedExploreError(
             "EXPLORE_PLAN_INVALID",
-            `Invalid Explore plan at ${path}: ${issue?.message ?? "the plan did not match the reviewed grammar"}`,
+            `Invalid Explore plan at ${path}: ${explorePlanValidationMessage(issue)}`,
             { issues: validated.error.issues.map((item) => ({ path: item.path, message: item.message })) },
           );
         }
@@ -333,6 +333,42 @@ function invalidExploreKindMessage(): string {
     '{"plan":{"kind":"aggregate","resource":"<exact resource id from app.describe_data>","measures":[{"function":"count"}],"top_n":25}}';
 }
 
+function comparisonPlanRecoveryMessage(): string {
+  return 'use plan.comparison and plan.time_bucket in this complete shape: {"plan":{"kind":"aggregate","resource":"<exact resource id>","measures":[{"function":"count"}],"dimensions":[{"field":"<group field>"}],"time_bucket":{"field":"<reviewed time field>","bucket":"month"},"comparison":{"field":"<same time field>","window":"this_month","compare_to":"preceding_period"}}}; time_bucket and comparison are sibling plan keys';
+}
+
+function explorePlanValidationMessage(issue: z.ZodIssue | undefined): string {
+  if (!issue) return "the plan did not match the reviewed grammar";
+  if (issue.code === z.ZodIssueCode.unrecognized_keys) {
+    const keys = new Set(issue.keys);
+    if (keys.has("filter") || keys.has("filters")) {
+      return 'use plan.where:[{"field":"<exact field>","op":"eq","value":"<reviewed value>"}]; filter and filters are not grammar keys';
+    }
+    if (keys.has("comparison_partner") || keys.has("comparison_to") || keys.has("compare_to")) {
+      return comparisonPlanRecoveryMessage();
+    }
+    if (keys.has("time_bucket") && issue.path.includes("dimensions")) {
+      return comparisonPlanRecoveryMessage();
+    }
+    if (keys.has("limit") && issue.path.includes("plan")) {
+      return 'aggregate plans use top_n, not limit; rows plans use limit';
+    }
+  }
+  if (issue.path.includes("comparison")) {
+    return comparisonPlanRecoveryMessage();
+  }
+  if (issue.path.includes("time_window")) {
+    return 'time_window accepts only field plus one reviewed window name (or absolute start/end); use plan.comparison for two periods';
+  }
+  if (issue.path.includes("where")) {
+    return 'where must be an array of {"field":"<exact field>","op":"eq|neq|lt|lte|gt|gte|in","value":<concrete value>}';
+  }
+  if (issue.path.includes("order_by")) {
+    return 'aggregate order_by is one object; use "order_by":{"kind":"measure","index":0,"direction":"desc"},"top_n":25';
+  }
+  return issue.message;
+}
+
 function exploreToolDescription(production: boolean, automaticBandsReviewed: boolean): string {
   return [
     `Runs one reviewed read-only ${production ? "production" : "local"} plan.`,
@@ -344,8 +380,9 @@ function exploreToolDescription(production: boolean, automaticBandsReviewed: boo
     ...(automaticBandsReviewed
       ? ['Reviewed auto-band example: {"numeric_band":{"field":"amount_cents","method":"quantile","buckets":5}}. Copy the field, method, and bucket range from app.describe_data; never send edges, widths, offsets, formulas, or labels.']
       : []),
-    'Reviewed relative time uses {"time_window":{"field":"<reviewed time field>","window":"<exact name from app.describe_data>"}}; Runner resolves it once in authority-bound UTC. Never calculate dates or invent offsets.',
-    "Filter values must be concrete, not null. Use null_count, non_null_count, or completion_rate for reviewed missing-data analysis.",
+    'Filter example: "where":[{"field":"status","op":"eq","value":"completed"}]. Use exactly where + op, never filter(s) + operator. Values must be concrete, not null; use null_count, non_null_count, or completion_rate for missing-data analysis.',
+    'Ranked aggregate example: "order_by":{"kind":"measure","index":0,"direction":"desc"},"top_n":25. Aggregate order_by is one object and uses top_n, never limit.',
+    'One reviewed relative window uses {"time_window":{"field":"<reviewed time field>","window":"previous_month"}}. Complete two-period plan: {"plan":{"kind":"aggregate","resource":"<exact resource id>","measures":[{"function":"count"}],"dimensions":[{"field":"<group field>"}],"time_bucket":{"field":"<time field>","bucket":"month"},"comparison":{"field":"<time field>","window":"this_month","compare_to":"preceding_period"}}}. time_bucket and comparison are sibling plan keys, never nested. Runner resolves names once in authority-bound UTC. Never calculate dates or invent offsets.',
     "No cross-boundary joins, SQL, model-selected tenant/principal, mutation, approval, or commit.",
   ].join(" ");
 }

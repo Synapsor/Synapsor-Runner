@@ -5506,7 +5506,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const filters=(plan.where||[]).map(item=>fieldReferenceLabel(resource,item)+" "+(item.op==="eq"?"equals":item.op)+" "+JSON.stringify(item.value)).join(", ");
       const timeWindow=plan.time_window?" limited to "+relativeWindowLabel(plan.time_window.window)+" using "+fieldReferenceLabel(resource,plan.time_window):"";
       const comparison=plan.comparison?.window?" comparing "+relativeWindowLabel(plan.comparison.window)+" with "+relativeWindowLabel(plan.comparison.compare_to):plan.comparison?" comparing two exact UTC ranges":"";
-      return "Calculate "+measures+" for "+resourceLabel(resource).toLowerCase()+(groups?" grouped by "+groups:"")+(plan.time_bucket?" for each "+plan.time_bucket.bucket:"")+timeWindow+comparison+(filters?" where "+filters:"")+" with at most "+plan.top_n+" groups.";
+      const groupLimit=Number.isInteger(plan.top_n)?" with at most "+plan.top_n+" groups":"";
+      return "Calculate "+measures+" for "+resourceLabel(resource).toLowerCase()+(groups?" grouped by "+groups:"")+(plan.time_bucket?" for each "+plan.time_bucket.bucket:"")+timeWindow+comparison+(filters?" where "+filters:"")+groupLimit+".";
     }
 
     function resultColumnLabel(plan,key,semantics,boundaryName){

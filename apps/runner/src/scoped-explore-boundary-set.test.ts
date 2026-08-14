@@ -320,6 +320,11 @@ describe("Scoped Explore active boundary routing", () => {
       expect(exploreTool.description).toContain('"plan":{"kind":"aggregate"');
       expect(exploreTool.description).toContain('"plan":{"kind":"rows"');
       expect(exploreTool.description).toContain("<exact resource id>");
+      expect(exploreTool.description).toContain('"where":[{"field":"status","op":"eq"');
+      expect(exploreTool.description).toContain('"order_by":{"kind":"measure","index":0');
+      expect(exploreTool.description).toContain('"time_bucket":{"field":"<time field>","bucket":"month"},"comparison"');
+      expect(exploreTool.description).toContain('"comparison":{"field":"<time field>","window":"this_month","compare_to":"preceding_period"}');
+      expect(exploreTool.description).toContain("sibling plan keys, never nested");
       expect(exploreTool.description).not.toContain("public.invoices");
       expect(exploreTool.inputSchema).toMatchObject({
         properties: {
@@ -550,16 +555,82 @@ describe("Scoped Explore active boundary routing", () => {
           },
         },
       });
+      const invalidFilterAlias = await client.callTool({
+        name: "app.explore_data",
+        arguments: {
+          plan: {
+            kind: "aggregate",
+            resource: "public.invoices",
+            measures: [{ function: "count" }],
+            filters: [{ field: "status", operator: "eq", value: "open" }],
+          },
+        },
+      });
+      const invalidComparisonAlias = await client.callTool({
+        name: "app.explore_data",
+        arguments: {
+          plan: {
+            kind: "aggregate",
+            resource: "public.invoices",
+            measures: [{ function: "count" }],
+            time_window: { field: "created_at", window: "this_month" },
+            comparison_partner: "preceding_period",
+          },
+        },
+      });
+      const invalidComparisonToAlias = await client.callTool({
+        name: "app.explore_data",
+        arguments: {
+          plan: {
+            kind: "aggregate",
+            resource: "public.invoices",
+            measures: [{ function: "count" }],
+            time_window: { field: "created_at", window: "this_month" },
+            comparison_to: "preceding_period",
+          },
+        },
+      });
+      const invalidRootCompareToAlias = await client.callTool({
+        name: "app.explore_data",
+        arguments: {
+          plan: {
+            kind: "aggregate",
+            resource: "public.invoices",
+            measures: [{ function: "count" }],
+            time_window: { field: "created_at", window: "this_month" },
+            compare_to: "preceding_period",
+          },
+        },
+      });
       expect(requiredResourceNull.isError).toBe(true);
       expect(requiredKindNull.isError).toBe(true);
       expect(unknownKey.isError).toBe(true);
       expect(unknownFlatKey.isError).toBe(true);
       expect(malformedContainer.isError).toBe(true);
       expect(invalidKind.isError).toBe(true);
+      expect(invalidFilterAlias.isError).toBe(true);
+      expect(invalidComparisonAlias.isError).toBe(true);
+      expect(invalidComparisonToAlias.isError).toBe(true);
+      expect(invalidRootCompareToAlias.isError).toBe(true);
       const invalidKindContent = invalidKind.content as Array<{ type: string; text?: string }>;
       const invalidKindText = invalidKindContent.find((entry) => entry.type === "text")?.text ?? "";
       expect(invalidKindText).toContain("plan.kind must be exactly rows or aggregate");
       expect(invalidKindText).toContain('{\\"plan\\":{\\"kind\\":\\"aggregate\\"');
+      const invalidFilterText = (invalidFilterAlias.content as Array<{ type: string; text?: string }>)
+        .find((entry) => entry.type === "text")?.text ?? "";
+      expect(invalidFilterText).toContain("use plan.where");
+      expect(invalidFilterText).toContain("filter and filters are not grammar keys");
+      const invalidComparisonText = (invalidComparisonAlias.content as Array<{ type: string; text?: string }>)
+        .find((entry) => entry.type === "text")?.text ?? "";
+      expect(invalidComparisonText).toContain("use plan.comparison");
+      expect(invalidComparisonText).toContain("plan.time_bucket");
+      expect(invalidComparisonText).toContain("compare_to");
+      for (const response of [invalidComparisonToAlias, invalidRootCompareToAlias]) {
+        const responseText = (response.content as Array<{ type: string; text?: string }>)
+          .find((entry) => entry.type === "text")?.text ?? "";
+        expect(responseText).toContain("plan.comparison");
+        expect(responseText).toContain("preceding_period");
+      }
       expect(explore).toHaveBeenCalledTimes(callCount + 2);
       expect(explore.mock.calls.slice(-2).map(([plan]) => plan)).toEqual([
         {

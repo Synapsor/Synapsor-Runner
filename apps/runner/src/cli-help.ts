@@ -427,7 +427,7 @@ the local reviewed contract and proposal before writeback.
   ${cmd} boundary delete old_draft --yes [--project-root .]
   ${cmd} boundary review resource public.orders [--project-root .] [--map|--json]
   ${cmd} boundary review resource public.orders --include --tenant-key tenant_id --no-principal --visible-fields id,status --actor reviewer@example.com --reason "Reviewed tenant-scoped order access"
-  ${cmd} boundary review resource public.order_items --include --tenant-scope-path order_items_order_id_fkey --actor reviewer@example.com --reason "Order items inherit tenant scope through their required order"
+  ${cmd} boundary review resource public.order_items --include --tenant-scope-path order_items_order_id_fkey --principal-scope-path order_items_order_id_fkey --actor reviewer@example.com --reason "Order items inherit tenant and principal scope through their required order"
   ${cmd} boundary review resource public.product_catalog --include --shared-reference --acknowledge-table-has-no-per-tenant-rows --actor owner@example.com --reason "Every tenant receives the same reviewed catalog rows"
   ${cmd} boundary review resource public.orders --withhold-from-model customer_segment --actor reviewer@example.com --reason "Use this grouping locally without sending segment values to the model"
   ${cmd} boundary review resource public.orders --label "Orders" --description "Customer purchases recorded at checkout" --field-label total_cents="Order total" --field-description total_cents="Gross amount in cents" --actor reviewer@example.com --reason "Document legacy database identifiers"
@@ -623,7 +623,7 @@ Resource decision flags:
   --tenant-key <column>
   --tenant-scope-path <path-id>
   --shared-reference --acknowledge-table-has-no-per-tenant-rows
-  --principal-key <column> | --no-principal
+  --principal-key <column> | --principal-scope-path <path-id> | --no-principal
   --keep-out <column,...>
   --withhold-from-model <column,...>
   --allow-reviewed-field <column,...>

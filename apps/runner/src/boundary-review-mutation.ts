@@ -65,6 +65,7 @@ import {
   type BlockedTenantScopeGuidance,
 } from "./boundary-scope-guidance.js";
 import { resolveConfiguredTrustedContextAuthority } from "./configured-trusted-context.js";
+import { synchronizeBoundaryLibrary } from "./boundary-library.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -1082,6 +1083,12 @@ async function commitPreparedBoundaryReviewMutation(input: {
     preserveReviewProgress: true,
     preserveActiveBoundary: true,
     reviewProgress: progress,
+  });
+  await synchronizeBoundaryLibrary({
+    projectRoot: input.projectRoot,
+    draft: input.build.exploration_boundary,
+    currentCandidate: input.candidate,
+    currentProgress: progress,
   });
   return {
     candidate_digest: progress.candidate_digest,

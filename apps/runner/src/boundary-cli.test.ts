@@ -917,6 +917,7 @@ describe("boundary operator-plane CLI", () => {
       expect(stderr).toContain("No boundary decision was supplied");
       expect(stderr).toContain("--withhold-from-model");
       expect(stdout).toContain("Resource decision flags:");
+      expect(stdout).toContain("--principal-scope-path <path-id>");
       await expect(fs.access(path.join(root, ".synapsor/boundary-review-progress.json")))
         .rejects.toMatchObject({ code: "ENOENT" });
     } finally {
@@ -3567,6 +3568,16 @@ describe("boundary operator-plane CLI", () => {
         reason: "Keep status unavailable in this reviewed analytics boundary.",
       }, async () => driftedInspection);
       await commitBoundaryResourceReviewMutation(root, preview);
+
+      const libraryAfterMutation = JSON.parse(await fs.readFile(
+        path.join(root, ".synapsor/boundary-library.json"),
+        "utf8",
+      ));
+      expect(libraryAfterMutation.selected_name).toBe(build.exploration_boundary.pack.name);
+      expect(
+        libraryAfterMutation.boundaries[build.exploration_boundary.pack.name]
+          .candidate.pack.resources[0].kept_out_fields,
+      ).toContain("status");
 
       context = await loadBoundaryReviewContext(root);
       const snapshot = await synchronizeBoundaryLibrary({

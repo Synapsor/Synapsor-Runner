@@ -67,6 +67,40 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(graph).toContain("rep_id → id");
   });
 
+  it("omits an undefined aggregate group limit from model-authored plan summaries", () => {
+    const html = renderBoundaryWorkbench("test-csrf");
+    const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? "";
+    const start = script.indexOf("function planSentence");
+    const end = script.indexOf("function resultColumnLabel", start);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    const renderer = script.slice(start, end);
+    const render = (plan: Record<string, unknown>): string => {
+      const context: Record<string, unknown> = {
+        plan,
+        result: "",
+        describedResourceForPlan: () => ({ id: "clinicdb.encounters" }),
+        resourceLabel: () => "Encounters",
+        fieldReferenceLabel: (_resource: unknown, item: { field?: string }) => item.field ?? "Field",
+        relativeWindowLabel: (value: string) => value,
+      };
+      vm.runInNewContext(`${renderer}; result=planSentence(plan,"reviewed_staging");`, context);
+      return String(context.result);
+    };
+    const plan = {
+      kind: "aggregate",
+      resource: "clinicdb.encounters",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "department" }],
+      where: [{ field: "status", op: "eq", value: "completed" }],
+    };
+    expect(render(plan)).toBe(
+      'Calculate the number of records for encounters grouped by department where status equals "completed".',
+    );
+    expect(render({ ...plan, top_n: 25 })).toContain("with at most 25 groups.");
+    expect(render(plan)).not.toContain("undefined");
+  });
+
   it("renders current reconciliation, baseline-repair, and clean rescan reports", () => {
     const html = renderBoundaryWorkbench("test-csrf");
     const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? "";

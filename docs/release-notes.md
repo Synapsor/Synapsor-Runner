@@ -126,6 +126,20 @@ for the Synapsor Cloud CLI.
   per-call output request are bounded operator settings in CLI and Workbench;
   `/limits` can raise them without clearing the current conversation. These
   client controls do not change reviewed database or privacy authority.
+- Explore's compact tool guidance includes copyable enum-filter, ranked-query,
+  and relative-comparison shapes. A malformed `filter(s)`, aggregate `limit`, or
+  comparison partner remains refused by the strict grammar, while the refusal
+  points to the canonical `where`/`op`, `top_n`, or
+  `comparison`/`compare_to` keys for a bounded retry.
+- If a model leaves the relationship off a grouped field that is available
+  through one reviewed path, Runner executes nothing and returns the exact
+  corrected dimension with that path ID. Multiple matching paths remain an
+  explicit refusal. This applies through the reviewed three-hop ceiling and to
+  count-only categorical child tables.
+- CLI and Workbench boundary edits persist their selected library revision
+  atomically with review progress, preventing an already-activated revision from
+  being reported as a pending edit. CLI help and previews also show the reviewed
+  `--principal-scope-path` option for derived principal scope.
 - Explore refuses ambiguous SQL-null filter literals with guidance to reviewed
   missing-data measures. Sequential metrics omit undated records, MySQL restores
   pooled session timezones, and Workbench relationship labels use separate graph

@@ -5374,7 +5374,8 @@ function addComposedExplorationPaths(
   for (const root of resources) {
     const factShaped = root.relationships.length >= 2
       || root.aggregate_measures.some((field) => !isReferenceIdentifierName(field))
-      || Object.keys(root.time_bucket_fields).length > 0;
+      || Object.keys(root.time_bucket_fields).length > 0
+      || (root.relationships.length > 0 && root.groupable_fields.length > 0);
     if (!factShaped) continue;
     const directTargets = new Set(
       root.relationships

@@ -1046,7 +1046,17 @@ async function runOpenAiCompatibleTurn(input: {
               : undefined;
             if (focusedResource) {
               focusedResourceForRequirements = focusedResource;
-              requirements = localPlanRequirements(input.question, { resources: [focusedResource] });
+              const intentTraces = localDirectCatalogTrace
+                ? [...traces, localDirectCatalogTrace]
+                : traces;
+              requirements = localPlanRequirements(input.question, { resources: [focusedResource] }, {
+                allowUnqualifiedTrailingField: planHasUniqueMeasureResourceAnchor(
+                  input.question,
+                  directArguments,
+                  focusedResource,
+                  completeIntentCatalogResources(intentTraces, directArguments),
+                ),
+              });
             }
           }
         }
@@ -1937,11 +1947,22 @@ async function explorePlanIntentRefusal(input: {
   if (localCompoundAnalysisQuestions(input.question, 2).length > 0) return undefined;
   const plan = isRecord(input.args.plan) ? input.args.plan : undefined;
   if (!plan || typeof plan.resource !== "string") return undefined;
+  if (!explorePlanHasComparableIntentShape(plan)) return undefined;
   const resource = input.focusedResource
     ?? localCatalogResourceForDirectCall(input.traces, input.args)
     ?? await loadFocusedIntentResource(input);
+  const allowUnqualifiedTrailingField = resource
+    ? planHasUniqueMeasureResourceAnchor(
+      input.question,
+      input.args,
+      resource,
+      completeIntentCatalogResources(input.traces, input.args),
+    )
+    : false;
   const mismatch = resource
-    ? explorePlanIntentMismatch(input.question, input.args, resource)
+    ? explorePlanIntentMismatch(input.question, input.args, resource, {
+      allowUnqualifiedTrailingField,
+    })
     : questionHasExplicitPlanAnchor(input.question)
       ? "Runner could not verify the selected resource against the entity or grouping named in the question."
       : undefined;
@@ -1966,6 +1987,29 @@ async function explorePlanIntentRefusal(input: {
     },
     providerResult,
   };
+}
+
+function explorePlanHasComparableIntentShape(plan: Record<string, unknown>): boolean {
+  const rootAliases = ["comparison_partner", "comparison_to", "compare_to"];
+  if (rootAliases.some((key) => plan[key] !== undefined)) return false;
+  const timeWindow = isRecord(plan.time_window) ? plan.time_window : undefined;
+  if (timeWindow && rootAliases.some((key) => timeWindow[key] !== undefined)) return false;
+  if (!Array.isArray(plan.dimensions)) return true;
+  return plan.dimensions.every((value) => {
+    if (!isRecord(value)) return false;
+    const keys = Object.keys(value);
+    if (typeof value.field === "string") {
+      return keys.every((key) => key === "field" || key === "relationship")
+        && (value.relationship === undefined || typeof value.relationship === "string");
+    }
+    if (typeof value.numeric_band === "string") return keys.length === 1;
+    if (!isRecord(value.numeric_band) || keys.length !== 1) return false;
+    const bandKeys = Object.keys(value.numeric_band);
+    return typeof value.numeric_band.field === "string"
+      && typeof value.numeric_band.method === "string"
+      && typeof value.numeric_band.buckets === "number"
+      && bandKeys.every((key) => key === "field" || key === "method" || key === "buckets");
+  });
 }
 
 async function loadFocusedIntentResource(input: {
@@ -2012,6 +2056,7 @@ function explorePlanIntentMismatch(
   question: string,
   args: Record<string, unknown>,
   resource: Record<string, unknown>,
+  options: { allowUnqualifiedTrailingField?: boolean } = {},
 ): string | undefined {
   const plan = isRecord(args.plan) ? args.plan : undefined;
   if (!plan || typeof plan.resource !== "string" || typeof resource.id !== "string") return undefined;
@@ -2026,7 +2071,7 @@ function explorePlanIntentMismatch(
   const dimensions = Array.isArray(plan.dimensions) ? plan.dimensions.filter(isRecord) : [];
   if (dimensions.length > 0) {
     for (const dimension of dimensions) {
-      const mismatch = planDimensionIntentMismatch(normalizedQuestion, dimension, resource);
+      const mismatch = planDimensionIntentMismatch(normalizedQuestion, dimension, resource, options);
       if (mismatch) return mismatch;
     }
     return undefined;
@@ -2109,6 +2154,7 @@ function planDimensionIntentMismatch(
   question: string,
   dimension: Record<string, unknown>,
   resource: Record<string, unknown>,
+  options: { allowUnqualifiedTrailingField?: boolean } = {},
 ): string | undefined {
   const genericMismatch = (field: string) =>
     `The question does not name the plan's reviewed dimension ${field} on ${resource.id}.`;
@@ -2135,7 +2181,11 @@ function planDimensionIntentMismatch(
   if (reviewedFieldLabels(fieldOwner, dimension.field)
     .some((label) => questionMentionsMetadataName(question, label))) return undefined;
   if (!relationship) {
-    const trailing = reviewedTrailingFieldResolution(question, resource);
+    const trailing = reviewedTrailingFieldResolution(
+      question,
+      resource,
+      options.allowUnqualifiedTrailingField === true,
+    );
     if (trailing.kind === "one" && trailing.field === dimension.field) return undefined;
     if (trailing.kind === "one") {
       return `The question's grouping shorthand names reviewed field ${trailing.field} on ${resource.id}, but the plan selected ${dimension.field}.`;
@@ -2174,11 +2224,12 @@ type ReviewedTrailingFieldResolution =
 function reviewedTrailingFieldResolution(
   question: string,
   resource: Record<string, unknown>,
+  allowWithoutResource = false,
 ): ReviewedTrailingFieldResolution {
   if (typeof resource.id !== "string") return { kind: "none" };
   const table = resource.id.split(".").at(-1)?.toLowerCase() ?? "";
   const resourceVariants = resourceNameVariants(table, resource.label);
-  if (![...resourceVariants].some((variant) =>
+  if (!allowWithoutResource && ![...resourceVariants].some((variant) =>
     variant.length >= 3 && wordPosition(question, variant) >= 0)) return { kind: "none" };
 
   const matches = safeStringList(resource.groupable_fields).filter((field) => {
@@ -2642,6 +2693,7 @@ type LocalPlanRequirements = {
 function localPlanRequirements(
   question: string,
   focusedCatalog: Record<string, unknown>,
+  options: { allowUnqualifiedTrailingField?: boolean } = {},
 ): LocalPlanRequirements | undefined {
   const resource = Array.isArray(focusedCatalog.resources)
     ? focusedCatalog.resources.find(isRecord)
@@ -2763,7 +2815,11 @@ function localPlanRequirements(
       || reviewedFieldLabels(resource, field)
         .some((label) => questionMentionsMetadataName(normalized, label)));
   const trailingGroupResolution = explicitlyMentionedDirectGroupFields.length === 0
-    ? reviewedTrailingFieldResolution(normalized, resource)
+    ? reviewedTrailingFieldResolution(
+      normalized,
+      resource,
+      options.allowUnqualifiedTrailingField === true,
+    )
     : { kind: "none" as const };
   const mentionedReviewedGroupingField = explicitlyMentionedDirectGroupFields.length > 0
     || trailingGroupResolution.kind !== "none"
@@ -3092,7 +3148,16 @@ function localPlanRequirementsForDirectCall(
   args: Record<string, unknown>,
 ): LocalPlanRequirements | undefined {
   const resource = localCatalogResourceForDirectCall(traces, args);
-  return resource ? localPlanRequirements(question, { resources: [resource] }) : undefined;
+  if (!resource) return undefined;
+  const allowUnqualifiedTrailingField = planHasUniqueMeasureResourceAnchor(
+    question,
+    args,
+    resource,
+    completeIntentCatalogResources(traces, args),
+  );
+  return localPlanRequirements(question, { resources: [resource] }, {
+    allowUnqualifiedTrailingField,
+  });
 }
 
 function localCatalogResourceForDirectCall(
@@ -3109,6 +3174,71 @@ function localCatalogResourceForDirectCall(
     if (resource) return resource;
   }
   return undefined;
+}
+
+function completeIntentCatalogResources(
+  traces: AskToolTrace[],
+  args: Record<string, unknown>,
+): Record<string, unknown>[] | undefined {
+  const boundary = typeof args.boundary === "string" && args.boundary.length > 0
+    ? args.boundary
+    : undefined;
+  for (const trace of [...traces].reverse()) {
+    if (trace.tool !== "app.describe_data"
+      || trace.status !== "ok"
+      || hasFocusedCatalogResource(trace.arguments)
+      || trace.result.next_cursor !== null
+      || !Array.isArray(trace.result.resources)) continue;
+    const resources = trace.result.resources.filter(isRecord).filter((resource) =>
+      boundary === undefined || resource.boundary_name === boundary);
+    return resources.length > 0 ? resources : undefined;
+  }
+  return undefined;
+}
+
+function unambiguousMeasureQuestionResource(
+  question: string,
+  resources: Record<string, unknown>[],
+): { resource: string; boundary?: string } | undefined {
+  const candidates = resources.flatMap((resource) => {
+    if (typeof resource.id !== "string") return [];
+    const requirements = localPlanRequirements(question, { resources: [resource] });
+    const measure = requirements?.measure;
+    if (!measure || (!("derived_measure" in measure)
+      && measure.function === "count"
+      && measure.field === undefined)) return [];
+    return [{
+      resource: resource.id,
+      ...(typeof resource.boundary_name === "string" ? { boundary: resource.boundary_name } : {}),
+      measure,
+    }];
+  });
+  const identities = new Set(candidates.map((candidate) =>
+    `${candidate.boundary ?? ""}\u0000${candidate.resource}`));
+  return identities.size === 1
+    ? { resource: candidates[0]!.resource, ...(candidates[0]!.boundary ? { boundary: candidates[0]!.boundary } : {}) }
+    : undefined;
+}
+
+function planHasUniqueMeasureResourceAnchor(
+  question: string,
+  args: Record<string, unknown>,
+  resource: Record<string, unknown>,
+  catalogResources: Record<string, unknown>[] | undefined,
+): boolean {
+  if (!catalogResources || typeof resource.id !== "string") return false;
+  const selected = unambiguousMeasureQuestionResource(question, catalogResources);
+  const boundary = typeof args.boundary === "string" && args.boundary.length > 0
+    ? args.boundary
+    : undefined;
+  if (!selected
+    || selected.resource !== resource.id
+    || (boundary !== undefined && selected.boundary !== boundary)) return false;
+  const requirements = localPlanRequirements(question, { resources: [resource] });
+  const plan = isRecord(args.plan) ? args.plan : undefined;
+  const measures = plan && Array.isArray(plan.measures) ? plan.measures.filter(isRecord) : [];
+  return Boolean(requirements?.measure
+    && measures.some((measure) => localPlanMeasureMatches(measure, requirements.measure!)));
 }
 
 function localCompoundAnalysisQuestions(question: string, toolCallCount: number): string[] {
@@ -3134,12 +3264,21 @@ function localPlanRequirementsFromQuestionCatalog(
       || trace.status !== "ok"
       || hasFocusedCatalogResource(trace.arguments)
       || !Array.isArray(trace.result.resources)) continue;
-    const selection = unambiguousQuestionResource(question, trace.result.resources);
+    const resources = trace.result.resources.filter(isRecord);
+    const measureSelection = trace.result.next_cursor === null
+      ? unambiguousMeasureQuestionResource(question, resources)
+      : undefined;
+    const selection = unambiguousQuestionResource(question, resources) ?? measureSelection;
     if (!selection) return undefined;
-    const resource = trace.result.resources.filter(isRecord).find((candidate) =>
+    const resource = resources.find((candidate) =>
       candidate.id === selection.resource
       && (selection.boundary === undefined || candidate.boundary_name === selection.boundary));
-    return resource ? localPlanRequirements(question, { resources: [resource] }) : undefined;
+    const allowUnqualifiedTrailingField = Boolean(measureSelection
+      && measureSelection.resource === selection.resource
+      && measureSelection.boundary === selection.boundary);
+    return resource ? localPlanRequirements(question, { resources: [resource] }, {
+      allowUnqualifiedTrailingField,
+    }) : undefined;
   }
   return undefined;
 }

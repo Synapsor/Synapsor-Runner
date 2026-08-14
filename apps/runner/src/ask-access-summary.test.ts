@@ -248,6 +248,49 @@ describe("Ask access summaries", () => {
     expect(guidance?.message).toContain("order_items_product_id_fkey");
     expect(guidance?.next_action).toContain("group Order items by Category");
   });
+
+  it("routes a target grouping field through its one exact reviewed relationship", async () => {
+    const root = await fixtureProject();
+    await activateFixtureBoundary(root);
+    const guidance = await resolveAskAccessGuidance({
+      projectRoot: root,
+      question: "How many order items are there by category?",
+      toolCalls: [{
+        call_id: "call-target-field",
+        tool: "app.explore_data",
+        provider_tool: "app__explore_data",
+        status: "refused",
+        error_code: "EXPLORE_FIELD_FORBIDDEN",
+        arguments: {
+          boundary: "reviewed_staging",
+          plan: {
+            kind: "aggregate",
+            resource: "public.order_items",
+            measures: [{ function: "count" }],
+            dimensions: [{ field: "category" }],
+            top_n: 10,
+          },
+        },
+        result: {
+          ok: false,
+          details: {
+            reason: "field_operation_not_reviewed",
+            resource: "public.order_items",
+            field: "category",
+            operation: "group",
+          },
+        },
+      }],
+    });
+    expect(guidance).toMatchObject({
+      kind: "reviewed_view_required",
+      review_boundary: "reviewed_staging",
+      review_resource: "public.order_items",
+      review_field: "category",
+    });
+    expect(guidance?.message).toContain("order_items_product_id_fkey");
+    expect(guidance?.next_action).toContain("group Order items by Category");
+  });
 });
 
 async function fixtureProject(): Promise<string> {

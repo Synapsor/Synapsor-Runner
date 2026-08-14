@@ -2793,6 +2793,69 @@ describe("Scoped Explore", () => {
     }
   });
 
+  it("returns an exact reviewed relationship correction when a grouping field is not local", async () => {
+    const fixture = await activatedFixture(undefined, relationshipInspection());
+    expect(() => validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "name" }],
+      top_n: 10,
+    }, fixture.boundary)).toThrowError(expect.objectContaining({
+      code: "EXPLORE_RELATIONSHIP_FORBIDDEN",
+      message: expect.stringContaining(
+        'Retry with dimension {"field":"name","relationship":"subscriptions_region_id_fkey"}',
+      ),
+      details: expect.objectContaining({
+        reason: "relationship_required_for_field",
+        resource: "public.subscriptions",
+        field: "name",
+        operation: "group",
+        corrected_dimensions: [{
+          field: "name",
+          relationship: "subscriptions_region_id_fkey",
+        }],
+        source_query_executed: false,
+      }),
+    }));
+  });
+
+  it("lists competing reviewed relationships instead of guessing a grouping path", async () => {
+    const fixture = await activatedFixture(undefined, relationshipInspection());
+    const boundary = structuredClone(fixture.boundary);
+    const resource = boundary.pack.resources.find((candidate) =>
+      candidate.id === "public.subscriptions")!;
+    resource.relationships.push({
+      ...structuredClone(resource.relationships[0]!),
+      id: "subscriptions_backup_region_id_fkey",
+    });
+
+    expect(() => validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "name" }],
+      top_n: 10,
+    }, boundary)).toThrowError(expect.objectContaining({
+      code: "EXPLORE_RELATIONSHIP_FORBIDDEN",
+      message: expect.stringMatching(/more than one relationship.*will not guess/i),
+      details: expect.objectContaining({
+        reason: "relationship_required_for_field",
+        corrected_dimensions: [
+          {
+            field: "name",
+            relationship: "subscriptions_backup_region_id_fkey",
+          },
+          {
+            field: "name",
+            relationship: "subscriptions_region_id_fkey",
+          },
+        ],
+        source_query_executed: false,
+      }),
+    }));
+  });
+
   it("describes reviewed metadata without exposing kept-out metadata or accepting labels as authority", async () => {
     const reviewedAt = "2026-08-10T12:00:00.000Z";
     const metadata = {

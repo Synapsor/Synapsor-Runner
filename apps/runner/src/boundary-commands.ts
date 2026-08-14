@@ -4408,6 +4408,9 @@ function formatBoundaryMutationPreview(
     ...(diff.removed_relationships.length
       ? [`  Relationships removed: ${diff.removed_relationships.join(", ")}`]
       : []),
+    ...(preview.request.principal_scope_path !== undefined && diff.selected_principal_scope_path
+      ? [`  Trusted user/owner scope: mandatory reviewed path ${diff.selected_principal_scope_path}`]
+      : []),
     ...(diff.minimum_cohort_before !== diff.minimum_cohort_after
       ? [
         `  Minimum group size: ${diff.minimum_cohort_before ?? "not included"} -> ` +
@@ -4516,6 +4519,15 @@ function formatRequestedBoundaryChanges(
     lines.push(request.principal_key === null
       ? "Trusted user/owner scope: not configured."
       : `Trusted user/owner scope: ${describeReviewedField(view, request.principal_key)}`);
+  }
+  if (request.principal_scope_path !== undefined && request.principal_key === undefined) {
+    const scope = view.derived_principal_scope?.candidates.find((candidate) =>
+      candidate.path_id === request.principal_scope_path);
+    lines.push(request.principal_scope_path === null
+      ? "Trusted user/owner scope: not configured."
+      : `Trusted user/owner scope: mandatory reviewed path ${scope
+        ? formatDerivedScopePath(scope)
+        : request.principal_scope_path}`);
   }
   for (const [label, fields] of [
     ["Visible fields", request.selectable_fields],

@@ -1682,7 +1682,17 @@ function validateAggregatePlan(
     const relation = optionalString(dimension.relationship, "dimension.relationship");
     const target = relation ? relationshipResource(resource, relation, boundary) : resource;
     const field = requiredString(dimension.field, "dimension.field");
-    if (!target.groupable_fields.includes(field)) throw fieldError(target, field, "group");
+    if (!target.groupable_fields.includes(field)) {
+      if (!relation) {
+        const relationshipRequired = relationshipRequiredForGrouping(
+          resource,
+          field,
+          boundary,
+        );
+        if (relationshipRequired) throw relationshipRequired;
+      }
+      throw fieldError(target, field, "group");
+    }
     return { field, ...(relation ? { relationship: relation } : {}) };
   });
   const timeBucket = input.time_bucket === undefined ? undefined : (() => {
@@ -5848,6 +5858,51 @@ function fieldError(resource: BoundaryResource, field: string, operation: string
       resource: resource.id,
       field,
       operation,
+    },
+  );
+}
+
+function relationshipRequiredForGrouping(
+  resource: BoundaryResource,
+  field: string,
+  boundary: ActivatedExplorationBoundary,
+): ScopedExploreError | undefined {
+  const candidates = resource.relationships.flatMap((relationship) => {
+    if ((relationship.path_depth ?? 1) > reviewedAnalysisRelationshipHopLimit(boundary.budgets)) {
+      return [];
+    }
+    const target = boundary.pack.resources.find((candidate) =>
+      candidate.id === relationship.target_resource);
+    return target?.groupable_fields.includes(field)
+      ? [{ id: relationship.id, target_resource: target.id }]
+      : [];
+  }).sort((left, right) =>
+    left.id.localeCompare(right.id) || left.target_resource.localeCompare(right.target_resource));
+  if (candidates.length === 0) return undefined;
+
+  const correctedDimensions = candidates.map((candidate) => ({
+    field,
+    relationship: candidate.id,
+  }));
+  const unique = candidates.length === 1;
+  const retry = unique
+    ? `Retry with dimension ${JSON.stringify(correctedDimensions[0])}.`
+    : `Choose one exact reviewed path and retry with one of these dimensions: ${correctedDimensions.map((dimension) => JSON.stringify(dimension)).join("; ")}.`;
+  return new ScopedExploreError(
+    "EXPLORE_RELATIONSHIP_FORBIDDEN",
+    `${resource.id}.${field} is not a local grouping field. `
+      + (unique
+        ? `It is reviewed for grouping on ${candidates[0]!.target_resource} through relationship ${JSON.stringify(candidates[0]!.id)}. `
+        : `It is reviewed through more than one relationship, so Runner will not guess which path was intended. `)
+      + `${retry} No source query was executed.`,
+    {
+      reason: "relationship_required_for_field",
+      resource: resource.id,
+      field,
+      operation: "group",
+      reviewed_relationships: candidates,
+      corrected_dimensions: correctedDimensions,
+      source_query_executed: false,
     },
   );
 }

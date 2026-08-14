@@ -747,6 +747,46 @@ describe("Auto Boundary compiler", () => {
       relationship.path_depth === 3)).toBe(true);
   });
 
+  it("discovers composed paths for a count-only categorical leaf with one parent", () => {
+    const inspection = relationshipChainInspection();
+    const facts = inspection.tables.find((table) => table.name === "sales_facts")!;
+    facts.foreign_keys = facts.foreign_keys.filter((foreignKey) =>
+      foreignKey.name === "sales_facts_product_id_fkey");
+    facts.columns = facts.columns.filter((field) => ![
+      "store_id",
+      "net_revenue_cents",
+      "sold_at",
+    ].includes(field.name));
+    facts.columns.push(column("event_kind", "text"));
+    facts.check_constraints = [{
+      name: "sales_facts_event_kind_check",
+      definition: "CHECK (event_kind IN ('created', 'updated'))",
+    }];
+    facts.suggestions.default_visible_columns = facts.suggestions.default_visible_columns
+      .filter((field) => !["store_id", "net_revenue_cents", "sold_at"].includes(field))
+      .concat("event_kind");
+
+    const result = buildAutoBoundary({
+      inspection,
+      project: projectSummary("/workspace/count-only-events"),
+      sourceEnv: "DATABASE_URL",
+    });
+    const reviewedFacts = result.exploration_boundary.pack.resources.find((resource) =>
+      resource.id === "public.sales_facts")!;
+    expect(reviewedFacts.groupable_fields).toContain("event_kind");
+    expect(reviewedFacts.aggregate_measures).toEqual([]);
+    expect(reviewedFacts.relationships).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "sales_facts_product_id_fkey__products_category_id_fkey",
+        path_depth: 2,
+      }),
+      expect.objectContaining({
+        id: "sales_facts_product_id_fkey__products_category_id_fkey__categories_department_id_fkey",
+        path_depth: 3,
+      }),
+    ]));
+  });
+
   it("discovers a mandatory depth-three tenant path but keeps depth two as active default", () => {
     const inspection = depthThreeDerivedTenantScopeInspection();
     const baseline = buildAutoBoundary({

@@ -46,6 +46,25 @@
   token settings, including an in-session `/limits` update that preserves
   conversation context; these client-side spend/context controls remain outside
   reviewed database and privacy authority.
+- Live cross-engine Ask evaluation now gives models exact, compact examples for
+  enum filters, ranked aggregates, and relative-period comparisons. Common
+  malformed keys still fail strict validation, but the refusal names the exact
+  `where`/`op`, `top_n`, or `comparison`/`compare_to` shape needed to retry;
+  Runner does not silently reinterpret an unknown plan.
+- Workbench's Runner-verified plan sentence no longer prints `undefined` as an
+  aggregate group limit when a model correctly omits optional `top_n`; the
+  reviewed default remains enforced by Runner and the UI simply omits the
+  inapplicable phrase.
+- Ask can recover a missing relationship qualifier when exactly one reviewed
+  path exposes the requested grouping field: Runner refuses the first malformed
+  plan before source execution and returns the exact corrected dimension. It
+  lists competing paths instead of guessing when the field is reachable more
+  than once. Count-only categorical child tables now receive the same reviewed
+  composed-path candidates through the hard depth-three bound.
+- Saving a CLI or Workbench boundary edit now updates the selected
+  `boundary-library.json` revision in the same commit. Activating that exact
+  revision therefore no longer leaves Ask showing a false pending-change banner.
+  Derived principal paths are also documented and rendered in CLI previews.
 - Refuses ambiguous SQL-null filter literals with missing-data guidance, omits
   undated records from sequential metrics, restores MySQL session timezone
   before pooled reuse, and gives each Workbench relationship a separate
