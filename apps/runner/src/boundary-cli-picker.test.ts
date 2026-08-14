@@ -914,6 +914,37 @@ describe("boundary review terminal picker", () => {
     expect(rendered).not.toContain("Deactivate active boundary");
   });
 
+  it("keeps a color-coded blocked-removal explanation visible in the access editor", async () => {
+    const { input, output } = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const active = summary("public.observation_events", 0);
+    active.active = true;
+    active.active_boundary_name = active.candidate_boundary_name;
+    const selected = withTerminalColors(() => session.chooseResource([active], undefined, {
+      initialView: "access",
+      startAtBoundaryList: false,
+      notice: {
+        tone: "danger",
+        title: "REMOVE BLOCKED - public.observation_events",
+        lines: [
+          "Cannot remove public.observation_events because public.event_annotations depends on it.",
+          "Remove or re-scope public.event_annotations first.",
+        ],
+        footer: "No draft or active authority changed. Resolve the dependency, then press R again.",
+      },
+    }));
+    await send(input, "q");
+    await expect(selected).resolves.toBeUndefined();
+
+    const raw = output.read()?.toString() ?? "";
+    const rendered = stripAnsi(raw);
+    expect(rendered).toContain("REMOVE BLOCKED - public.observation_events");
+    expect(rendered).toContain("public.event_annotations depends on it");
+    expect(rendered).toContain("No draft or active authority changed");
+    expect(raw).toContain("\u001b[1;31mREMOVE BLOCKED - public.observation_events");
+    expect(raw).toContain("\u001b[1;33mNo draft or active authority changed");
+  });
+
   it("explains the multi-table boundary concisely and keeps the exhaustive map available", async () => {
     const first = summary("public.check_ins", 0);
     first.active = true;

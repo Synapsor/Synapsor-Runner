@@ -86,6 +86,13 @@ export type BoundaryReviewOverview = {
   }>;
 };
 
+export type BoundaryAccessNotice = {
+  tone: "danger" | "warning" | "success";
+  title: string;
+  lines: string[];
+  footer?: string;
+};
+
 export type BoundaryReviewInteractiveSession = {
   chooseResource(
     resources: BoundaryResourceReviewSummary[],
@@ -95,6 +102,7 @@ export type BoundaryReviewInteractiveSession = {
       startingBoundaryName?: string;
       startAtBoundaryList?: boolean;
       initialResourceId?: string;
+      notice?: BoundaryAccessNotice;
     },
   ): Promise<BoundaryResourceSelection | undefined>;
   editFieldTiers(
@@ -422,6 +430,7 @@ async function chooseResource(
     startingBoundaryName?: string;
     startAtBoundaryList?: boolean;
     initialResourceId?: string;
+    notice?: BoundaryAccessNotice;
   } | undefined,
   input: ReadStream,
   output: WriteStream,
@@ -1024,6 +1033,12 @@ async function chooseResource(
               theme.bold("What makes it addable"),
               ...highlighted.scope_resolution_guidance.remediation.map((line) =>
                 `  - ${safeTerminalText(line)}`),
+            ]
+          : []),
+        ...(options?.notice
+          ? [
+              "",
+              ...formatBoundaryAccessNotice(theme, options.notice),
             ]
           : []),
         "",
@@ -2207,6 +2222,27 @@ function styleTier(
 
 function styleTierConsequence(theme: TerminalTheme, tier: BoundaryFieldTier): string {
   return styleTier(theme, tier, tierConsequence(tier));
+}
+
+function noticeStyle(
+  theme: TerminalTheme,
+  tone: BoundaryAccessNotice["tone"],
+): (value: string) => string {
+  if (tone === "danger") return theme.danger;
+  if (tone === "warning") return theme.warning;
+  return theme.success;
+}
+
+function formatBoundaryAccessNotice(
+  theme: TerminalTheme,
+  notice: BoundaryAccessNotice,
+): string[] {
+  const style = noticeStyle(theme, notice.tone);
+  return [
+    style(safeTerminalText(notice.title)),
+    ...notice.lines.map((line) => style(safeTerminalText(line))),
+    ...(notice.footer ? [theme.warning(safeTerminalText(notice.footer))] : []),
+  ];
 }
 
 export function terminalTheme(color: boolean) {

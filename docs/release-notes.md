@@ -58,7 +58,11 @@ for the Synapsor Cloud CLI.
   editor. Table-level `R` is explicitly **Remove from draft**, boundary-level
   `D` is **Deactivate active boundary**, zero active boundaries remain a normal
   recoverable state, and provider handoff is deferred until the operator exits
-  access review.
+  access review. Table removal now reports and blocks reviewed scope or metric
+  dependencies without leaving `/access`; a persistent red/yellow panel names
+  the dependency and leaf-first remediation, and removal never silently cascades
+  authority. The terminal CLI is the preferred operator interface for this
+  release; the browser Workbench remains available as a preview UI.
 - Reviewed analytics now include contributor-safe standard deviation and
   variance, missing-data measures, additional calendar grains, fixed numeric
   bands, named ratios, and post-suppression running/rank/lag/moving-average/share

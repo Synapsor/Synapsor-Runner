@@ -236,7 +236,179 @@ export type BoundaryReviewMutationPreview = {
   partial_scope_resolution: boolean;
   boundary_root: string;
   source_database_changed: false;
+  resource_removal_impact?: BoundaryResourceRemovalImpact;
 };
+
+export type BoundaryResourceRemovalBlocker = {
+  resource_id: string;
+  kind: "tenant_scope" | "principal_scope" | "derived_measure" | "numeric_band";
+  detail: string;
+  path_depth: number;
+};
+
+export type BoundaryResourceRemovalImpact = {
+  resource_id: string;
+  blocking_dependencies: BoundaryResourceRemovalBlocker[];
+  pruned_relationships: Array<{
+    resource_id: string;
+    relationship_id: string;
+    target_resource: string;
+  }>;
+};
+
+export function boundaryResourceRemovalImpact(
+  candidate: ExplorationBoundaryDraft,
+  resourceId: string,
+  options: { also_removing?: Iterable<string> } = {},
+): BoundaryResourceRemovalImpact {
+  const alsoRemoving = new Set(options.also_removing ?? [resourceId]);
+  alsoRemoving.add(resourceId);
+  const blockers: BoundaryResourceRemovalBlocker[] = [];
+  const prunedRelationships: BoundaryResourceRemovalImpact["pruned_relationships"] = [];
+
+  for (const resource of candidate.pack.resources) {
+    if (alsoRemoving.has(resource.id)) continue;
+    for (const [kind, scope] of [
+      ["tenant_scope", resource.tenant_scope],
+      ["principal_scope", resource.principal_scope],
+    ] as const) {
+      if (!scope || !derivedScopeReferencesResource(scope, resourceId)) continue;
+      blockers.push({
+        resource_id: resource.id,
+        kind,
+        detail: `${kind === "tenant_scope" ? "tenant" : "principal"} scope via ${scope.path_id}`,
+        path_depth: scope.proof.links.length,
+      });
+    }
+
+    const affectedRelationshipIds = new Set<string>();
+    for (const relationship of resource.relationships) {
+      if (!relationshipReferencesResource(relationship, resourceId)) continue;
+      affectedRelationshipIds.add(relationship.id);
+      prunedRelationships.push({
+        resource_id: resource.id,
+        relationship_id: relationship.id,
+        target_resource: relationship.target_resource,
+      });
+    }
+
+    for (const measure of resource.derived_measures ?? []) {
+      if ("child_resource" in measure) {
+        if (measure.child_resource === resourceId
+          || reviewedChildCountRelationshipReferencesResource(
+            candidate,
+            measure.child_resource,
+            measure.relationship,
+            resourceId,
+          )) {
+          blockers.push({
+            resource_id: resource.id,
+            kind: "derived_measure",
+            detail: `reviewed metric ${measure.name} uses child ${measure.child_resource}`,
+            path_depth: 0,
+          });
+        }
+        continue;
+      }
+      const baseMeasures = "base_measure" in measure
+        ? [measure.base_measure]
+        : [measure.numerator, measure.denominator];
+      const usedRelationship = baseMeasures
+        .map((base) => "relationship" in base ? base.relationship : undefined)
+        .find((relationship): relationship is string =>
+          Boolean(relationship && affectedRelationshipIds.has(relationship)));
+      if (usedRelationship) {
+        blockers.push({
+          resource_id: resource.id,
+          kind: "derived_measure",
+          detail: `reviewed metric ${measure.name} uses relationship ${usedRelationship}`,
+          path_depth: relationshipDepth(resource, usedRelationship),
+        });
+      }
+    }
+
+    for (const band of resource.numeric_bands ?? []) {
+      if (!band.relationship || !affectedRelationshipIds.has(band.relationship)) continue;
+      blockers.push({
+        resource_id: resource.id,
+        kind: "numeric_band",
+        detail: `reviewed numeric band ${band.name} uses relationship ${band.relationship}`,
+        path_depth: relationshipDepth(resource, band.relationship),
+      });
+    }
+  }
+
+  return {
+    resource_id: resourceId,
+    blocking_dependencies: blockers.sort((left, right) =>
+      right.path_depth - left.path_depth
+      || left.resource_id.localeCompare(right.resource_id)
+      || left.kind.localeCompare(right.kind)
+      || left.detail.localeCompare(right.detail)),
+    pruned_relationships: prunedRelationships.sort((left, right) =>
+      left.resource_id.localeCompare(right.resource_id)
+      || left.relationship_id.localeCompare(right.relationship_id)),
+  };
+}
+
+export function formatBoundaryResourceRemovalBlocked(
+  impact: BoundaryResourceRemovalImpact,
+): string {
+  const dependents = [...new Set(
+    impact.blocking_dependencies.map((dependency) => dependency.resource_id),
+  )];
+  return [
+    `Cannot remove ${impact.resource_id} because other reviewed boundary policy still depends on it:`,
+    ...impact.blocking_dependencies.map((dependency) =>
+      `  - ${dependency.resource_id}: ${dependency.detail}`),
+    `Remove or re-scope ${dependents.join(", ")} first, then remove ${impact.resource_id}.`,
+    `Suggested leaf-first order: ${[...dependents, impact.resource_id].join(" -> ")}.`,
+  ].join("\n");
+}
+
+function assertBoundaryResourceRemovalAllowed(impact: BoundaryResourceRemovalImpact): void {
+  if (impact.blocking_dependencies.length) {
+    throw new Error(formatBoundaryResourceRemovalBlocked(impact));
+  }
+}
+
+function derivedScopeReferencesResource(
+  scope: NonNullable<ReviewedBoundaryResource["tenant_scope"]>,
+  resourceId: string,
+): boolean {
+  return scope.ancestor_resource === resourceId
+    || scope.proof.links.some((link) =>
+      link.source_resource === resourceId || link.target_resource === resourceId);
+}
+
+function relationshipReferencesResource(
+  relationship: ReviewedBoundaryResource["relationships"][number],
+  resourceId: string,
+): boolean {
+  return relationship.target_resource === resourceId
+    || (relationship.proof?.links ?? []).some((link) =>
+      link.source_resource === resourceId || link.target_resource === resourceId);
+}
+
+function reviewedChildCountRelationshipReferencesResource(
+  candidate: ExplorationBoundaryDraft,
+  childResourceId: string,
+  relationshipId: string,
+  resourceId: string,
+): boolean {
+  const child = candidate.pack.resources.find((resource) => resource.id === childResourceId);
+  if (!child) return false;
+  const relationship = child.relationships.find((item) => item.id === relationshipId);
+  if (relationship) return relationshipReferencesResource(relationship, resourceId);
+  const scope = [child.tenant_scope, child.principal_scope]
+    .find((item) => item?.path_id === relationshipId);
+  return Boolean(scope && derivedScopeReferencesResource(scope, resourceId));
+}
+
+function relationshipDepth(resource: ReviewedBoundaryResource, relationshipId: string): number {
+  return resource.relationships.find((relationship) => relationship.id === relationshipId)
+    ?.proof?.links.length ?? 0;
+}
 
 export type BoundaryReviewMutationBatchPreview = {
   schema_version: "synapsor.boundary-review-mutation-batch-preview.v1";
@@ -587,6 +759,10 @@ export async function prepareBoundaryResourceReviewMutation(
     );
   }
   validateBoundaryRequestAgainstResource(request, reviewed);
+  const resourceRemovalImpact = request.exclude
+    ? boundaryResourceRemovalImpact(state.candidate, request.resource_id)
+    : undefined;
+  if (resourceRemovalImpact) assertBoundaryResourceRemovalAllowed(resourceRemovalImpact);
   const previousBindings = reviewBindings(state);
   const managedDecisions = managedDecisionsForRequest(request);
   const inspection = await schemaInspector({
@@ -693,6 +869,7 @@ export async function prepareBoundaryResourceReviewMutation(
     partial_scope_resolution: partialScopeResolution,
     boundary_root: state.boundary_root,
     source_database_changed: false,
+    ...(resourceRemovalImpact ? { resource_removal_impact: resourceRemovalImpact } : {}),
   };
 }
 

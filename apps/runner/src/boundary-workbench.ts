@@ -1739,7 +1739,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	        return '<article class="resource" data-risk="'+risks+'"><div class="resource-head"><div><h3 class="resource-name">'+esc(review.id)+'</h3><p>'+esc(blocked?"Unavailable: "+(review.blockers||[]).join("; "):included?"Included in the agent data set":"Excluded from the agent data set")+'</p></div><span class="badge '+badgeClass+'">'+esc(badgeText)+'</span></div><div class="badges"><span class="badge">'+esc(raw)+' visible</span><span class="badge">'+esc(kept)+' hidden</span>'+(sensitiveKeptOut?'<span class="badge good">'+esc(sensitiveKeptOut)+' sensitive kept out</span>':'')+'<span class="badge">record ID: '+esc(primary)+'</span></div><p>Customer isolation: <code>'+esc(tenant)+'</code> · User/owner limit: <code>'+esc(principal)+'</code></p>'+scopeWhy+(blocked?'<p><strong>Next:</strong> '+esc(blockedResourceNextAction(review))+'</p>':'')+'<div class="actions"><button class="secondary" data-open-resource="'+esc(review.id)+'" type="button">'+esc(risks?"Review access":"Inspect access")+'</button>'+(source?'<label class="check"><input type="checkbox" data-resource-toggle="'+esc(review.id)+'" '+(included?"checked":"")+'> Include</label>':'')+'</div></article>';
 	      }).join("")||'<div class="band notice"><strong>No '+esc(reviewedCollectionLabel())+' match this view.</strong><p>The inspected resources are still available; this filter did not change authority.</p><button id="reset-resource-filter" class="secondary" type="button">Show all '+esc(reviewedCollectionLabel())+'</button></div>';
       document.querySelectorAll("[data-open-resource]").forEach(button=>button.onclick=()=>openResource(button.dataset.openResource));
-      document.querySelectorAll("[data-resource-toggle]").forEach(input=>input.onchange=()=>toggleResource(input.dataset.resourceToggle,input.checked));
+      document.querySelectorAll("[data-resource-toggle]").forEach(input=>input.onchange=()=>{
+        if(!toggleResource(input.dataset.resourceToggle,input.checked))input.checked=true;
+      });
 	      const reset=byId("reset-resource-filter");
 	      if(reset)reset.onclick=()=>setResourceFilter("all");
 	      renderResourceNavigation();
@@ -1828,9 +1830,87 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      });
 	    }
 
+    function removalScopeReferencesResource(scope,id){
+      return Boolean(scope&&(scope.ancestor_resource===id||(scope.proof?.links||[])
+        .some(link=>link.source_resource===id||link.target_resource===id)));
+    }
+
+    function removalRelationshipReferencesResource(relationship,id){
+      return relationship.target_resource===id||(relationship.proof?.links||[])
+        .some(link=>link.source_resource===id||link.target_resource===id);
+    }
+
+    function resourceRemovalImpact(id){
+      const blockers=[];
+      const pruned=[];
+      for(const resource of candidate.pack.resources){
+        if(resource.id===id)continue;
+        for(const [label,scope] of [["tenant",resource.tenant_scope],["principal",resource.principal_scope]]){
+          if(removalScopeReferencesResource(scope,id)){
+            blockers.push(resource.id+": "+label+" scope via "+scope.path_id);
+          }
+        }
+        const affected=new Set();
+        for(const relationship of resource.relationships||[]){
+          if(!removalRelationshipReferencesResource(relationship,id))continue;
+          affected.add(relationship.id);
+          pruned.push(resource.id+"."+relationship.id);
+        }
+        for(const measure of resource.derived_measures||[]){
+          if(measure.child_resource){
+            const child=currentResource(measure.child_resource);
+            const childRelationship=(child?.relationships||[]).find(item=>item.id===measure.relationship);
+            const childScope=[child?.tenant_scope,child?.principal_scope]
+              .find(scope=>scope?.path_id===measure.relationship);
+            if(measure.child_resource===id
+              ||(childRelationship&&removalRelationshipReferencesResource(childRelationship,id))
+              ||removalScopeReferencesResource(childScope,id)){
+              blockers.push(resource.id+": reviewed metric "+measure.name+" uses child "+measure.child_resource);
+            }
+            continue;
+          }
+          const bases=measure.base_measure?[measure.base_measure]:[measure.numerator,measure.denominator].filter(Boolean);
+          const relationship=bases.map(base=>base.relationship).find(value=>value&&affected.has(value));
+          if(relationship)blockers.push(resource.id+": reviewed metric "+measure.name+" uses relationship "+relationship);
+        }
+        for(const band of resource.numeric_bands||[]){
+          if(band.relationship&&affected.has(band.relationship)){
+            blockers.push(resource.id+": reviewed numeric band "+band.name+" uses relationship "+band.relationship);
+          }
+        }
+      }
+      return {blockers:[...new Set(blockers)].sort(),pruned:[...new Set(pruned)].sort()};
+    }
+
+    function showBlockedResourceRemoval(id,impact){
+      const dependentResources=[...new Set(impact.blockers.map(blocker=>blocker.split(":")[0]))];
+      const text="Cannot remove "+id+" because reviewed boundary policy still depends on it. "
+        +impact.blockers.join("; ")+". Remove or re-scope "+dependentResources.join(", ")+" first. Nothing was saved or activated.";
+      const message=byId("message");
+      message.className="status-message error";
+      message.textContent=text;
+      const detail=byId("resource-detail");
+      detail.querySelector("[data-removal-blocked]")?.remove();
+      const notice=document.createElement("div");
+      notice.className="risk high";
+      notice.dataset.removalBlocked="true";
+      const heading=document.createElement("strong");
+      heading.textContent="This table cannot be removed yet.";
+      const explanation=document.createElement("p");
+      explanation.textContent=text;
+      notice.append(heading,explanation);
+      detail.prepend(notice);
+      notice.scrollIntoView({behavior:"auto",block:"nearest"});
+    }
+
     function toggleResource(id,included){
       const source=original.pack.resources.find(resource=>resource.id===id);
-      if(!source)return;
+      if(!source)return false;
+      const removalImpact=!included?resourceRemovalImpact(id):null;
+      if(removalImpact?.blockers.length){
+        showBlockedResourceRemoval(id,removalImpact);
+        return false;
+      }
       if(included&&!currentResource(id)){
         candidate.pack.resources.push(structuredClone(source));
         candidate.pack.resources.sort((left,right)=>left.id.localeCompare(right.id));
@@ -1852,6 +1932,12 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      renderBoundaryOverview();
 	      renderStagedAccessBar();
 	      queueReviewProgressSave();
+	      if(removalImpact?.pruned.length){
+	        const message=byId("message");
+	        message.className="status-message";
+	        message.textContent="Removed from the disabled draft. Related-data paths also removed: "+removalImpact.pruned.join(", ")+". Active authority is unchanged until activation.";
+	      }
+      return true;
 	    }
 
     function syncCandidateDecisions(){
@@ -3052,7 +3138,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         renderResourceDetail();
       });
       byId("remove-selected-resource")?.addEventListener("click",()=>{
-        toggleResource(selectedResource,false);
+        if(!toggleResource(selectedResource,false))return;
         selectedResource=null;
         renderResourceNavigation();
         renderResourceDetail();

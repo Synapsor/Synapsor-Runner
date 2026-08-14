@@ -2235,6 +2235,43 @@ export default defineCapability({
         },
       });
       expect(scopedChild.tenant_key).toBeUndefined();
+      const boundary = await getJson(
+        `http://${server.host}:${server.port}/api/boundary`,
+        headers,
+      );
+      const invalidCandidate = structuredClone(boundary.candidate);
+      invalidCandidate.pack.resources = invalidCandidate.pack.resources.filter(
+        (resource: { id: string }) => resource.id !== "public.orders",
+      );
+      const blockedRemoval = await fetch(
+        `http://${server.host}:${server.port}/api/boundary/progress`,
+        {
+          method: "POST",
+          headers: { ...headers, "content-type": "application/json" },
+          body: JSON.stringify({
+            candidate: invalidCandidate,
+            confirmed_decisions: [],
+            expected_revision: boundary.review_progress.revision,
+            actor: "local-workbench-reviewer",
+          }),
+        },
+      );
+      expect(blockedRemoval.status).toBe(409);
+      await expect(blockedRemoval.json()).resolves.toMatchObject({
+        ok: false,
+        error_code: "BOUNDARY_RESOURCE_REMOVAL_DEPENDENCY",
+        error: expect.stringMatching(
+          /public\.order_items: tenant scope via order_items_order_id_fkey/i,
+        ),
+        authority_changed: false,
+        source_database_changed: false,
+      });
+      const unchanged = await getJson(
+        `http://${server.host}:${server.port}/api/boundary`,
+        headers,
+      );
+      expect(unchanged.candidate.pack.resources.map((resource: { id: string }) => resource.id).sort())
+        .toEqual(["public.order_items", "public.orders"]);
       await expect(fs.access(path.join(tempDir, ".synapsor/exploration-boundary.active.json")))
         .rejects.toMatchObject({ code: "ENOENT" });
     } finally {

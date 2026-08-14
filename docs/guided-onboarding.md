@@ -20,6 +20,16 @@ does not give the agent SQL access.
 - The model cannot activate authority, approve a proposal, or apply a write.
 - A trusted operator or worker rechecks the effect and records a receipt.
 
+## Operator Interface Status
+
+Use the terminal CLI as the preferred interface for onboarding, access review,
+Ask, Protect, diagnostics, and production setup. It is the most extensively
+qualified operator surface for this release. Workbench supports the same core
+review and Explore workflows, but its browser UI remains in preview. If its
+guidance or behavior differs from the CLI, follow the CLI. This status does not
+make the production Streamable HTTP MCP server a preview feature; it describes
+only the local browser-based operator interface.
+
 ## Before You Start
 
 Use a disposable or staging database and a dedicated SELECT-only, non-owner
@@ -30,7 +40,7 @@ Do not put a database URL in project documentation or chat. The shortest path
 uses a hidden terminal prompt:
 
 ```bash
-npx -y @synapsor/runner start
+npx -y @synapsor/runner start --cli
 ```
 
 Runner can also use an already-exported `DATABASE_URL`. When a regular `.env`
@@ -39,7 +49,7 @@ selected value only for the current Runner/Workbench process. The URL is not
 written to generated artifacts or the ledger. Runner requires Node 22.13 or
 newer.
 
-## One Command To Workbench
+## Preview Workbench Path
 
 Run this from an empty project directory or your application root:
 
@@ -58,7 +68,7 @@ The command automatically:
 6. validates every generated artifact;
 7. opens one secured loopback Workbench URL.
 
-## One Command In The Terminal
+## Preferred Terminal Path
 
 To keep the same journey browserless, add `--cli`:
 
@@ -170,8 +180,14 @@ the model in both local and production HTTP Explore.
 
 In the boundary overview, `D` means **Deactivate active boundary**. In a
 boundary's table list, `R` means **Remove from draft** and never deactivates the
-whole boundary. Deactivating the last active boundary is a normal `/access`
-state: the editor stays open, displays `Enter/C Review + activate`, and lets the
+whole boundary. Runner never silently cascades that removal: if another table's
+reviewed tenant/principal scope or named analytics policy depends on the selected
+table, removal is blocked and the editor names the dependent tables in leaf-first
+order. Remove or re-scope those dependents first. Analysis relationships that no
+longer have both endpoints are narrowed out of the disabled draft and reported;
+active authority remains unchanged until `C` review and activation. Deactivating
+the last active boundary is a normal `/access` state: the editor stays open,
+displays `Enter/C Review + activate`, and lets the
 operator restore reviewed Ask access without restarting. Activation also
 returns to `/access`; provider rebinding or model choice occurs only after the
 operator presses `Q` or Escape to finish editing.

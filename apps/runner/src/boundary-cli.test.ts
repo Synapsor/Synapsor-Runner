@@ -2866,12 +2866,96 @@ describe("boundary operator-plane CLI", () => {
       expect(chooseCalls).toBe(3);
       expect(output).toContain("Draft added: public.service_routes");
       expect(output).toContain("Draft removed: public.service_routes");
+      expect(output).toContain(
+        "Related-data path removed from the disabled draft: public.service_visits.service_visits_route_id_fkey",
+      );
       expect(output).toContain("Access editor closed. Reviewed authority is unchanged.");
       expect(output).toContain("Returning to Ask.");
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
   }, 20_000);
+
+  it("explains a scope-dependent removal and stays in the focused access editor", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-dependent-remove-"));
+    const inspection = derivedFirstTableInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const child = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.order_items",
+        include: true,
+        row_identity: "id",
+        tenant_scope_path: "order_items_order_id_fkey",
+        principal_key: null,
+        actor: "owner@example.test",
+        reason: "Each order item belongs to its required reviewed order.",
+      }, async () => inspection);
+      await commitBoundaryResourceReviewMutation(root, child);
+      const before = await loadBoundaryReviewContext(root);
+      const actions = [
+        { resource_id: "public.orders", action: "remove" as const },
+        undefined,
+      ];
+      let chooseCalls = 0;
+      let blockedNotice: Parameters<BoundaryReviewInteractiveSession["chooseResource"]>[2];
+      const session: BoundaryReviewInteractiveSession = {
+        chooseResource: async (_resources, _overview, options) => {
+          chooseCalls += 1;
+          if (chooseCalls === 2) blockedNotice = options;
+          return actions.shift();
+        },
+        editFieldTiers: async () => {
+          throw new Error("A rejected table removal must return to the table list.");
+        },
+        promptText: async () => {
+          throw new Error("Focused removal must not open a line-mode prompt.");
+        },
+        confirm: async () => {
+          throw new Error("A blocked removal must not request activation or confirmation.");
+        },
+      };
+
+      await expect(boundaryReviewCommandInternal([
+        "--project-root", root,
+        "--access",
+      ], async () => inspection, session)).resolves.toBe(0);
+      expect(chooseCalls).toBe(2);
+      expect(blockedNotice?.notice).toMatchObject({
+        tone: "danger",
+        title: "REMOVE BLOCKED - public.orders",
+      });
+      expect(blockedNotice?.notice?.lines.join("\n")).toContain(
+        "public.order_items: tenant scope via order_items_order_id_fkey",
+      );
+      expect(blockedNotice?.notice?.lines.join("\n"))
+        .toContain("Suggested leaf-first order: public.order_items -> public.orders");
+      expect(blockedNotice?.notice?.footer).toContain("No draft or active authority changed");
+      const after = await loadBoundaryReviewContext(root);
+      expect(explorationBoundaryCandidateDigest(after.candidate))
+        .toBe(explorationBoundaryCandidateDigest(before.candidate));
+      expect(after.candidate.pack.resources.map((resource) => resource.id).sort())
+        .toEqual(["public.order_items", "public.orders"]);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 25_000);
 
   it("changes one table's minimum group size with default-Yes save and activation", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-group-size-one-"));
@@ -3356,6 +3440,33 @@ describe("boundary operator-plane CLI", () => {
       const reviews = await listBoundaryResourceReviews(root);
       expect(reviews.find((resource) => resource.resource_id === "public.event_notes"))
         .toMatchObject({ included: true });
+
+      await expect(prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.order_events",
+        exclude: true,
+        actor: "owner@example.test",
+        reason: "An intermediate scope table cannot disappear beneath its reviewed leaf.",
+      }, async () => inspection)).rejects.toThrow(
+        /public\.event_notes: tenant scope via event_notes_order_event_id_fkey__order_events_order_item_id_fkey__order_items_order_id_fkey[\s\S]*leaf-first order: public\.event_notes -> public\.order_events/i,
+      );
+
+      const removeLeaf = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.event_notes",
+        exclude: true,
+        actor: "owner@example.test",
+        reason: "Remove the deepest dependent table first.",
+      }, async () => inspection);
+      expect(removeLeaf.resource_removal_impact?.blocking_dependencies).toEqual([]);
+      await commitBoundaryResourceReviewMutation(root, removeLeaf);
+      const removeMiddle = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.order_events",
+        exclude: true,
+        actor: "owner@example.test",
+        reason: "The intermediate table is removable after its dependent leaf is gone.",
+      }, async () => inspection);
+      expect(removeMiddle.resource_removal_impact?.blocking_dependencies).toEqual([]);
+      expect(removeMiddle.candidate.pack.resources.map((resource) => resource.id))
+        .not.toContain("public.order_events");
 
       await expect(prepareBoundaryResourceReviewMutation(root, {
         ...leafRequest,
@@ -4202,6 +4313,14 @@ describe("boundary operator-plane CLI", () => {
       const context = await loadBoundaryReviewContext(root);
       expect(context.candidate.pack.resources.find((resource) =>
         resource.id === "public.orders")?.derived_measures?.[0]?.name).toBe("order_item_count");
+      await expect(prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.order_items",
+        exclude: true,
+        actor: "analytics-owner",
+        reason: "Attempting to remove a reviewed metric dependency must fail closed.",
+      }, async () => inspection)).rejects.toThrow(
+        /public\.orders: reviewed metric order_item_count uses child public\.order_items/i,
+      );
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

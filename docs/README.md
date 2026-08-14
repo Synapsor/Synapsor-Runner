@@ -22,9 +22,11 @@ no-database demo, wire your database, then read deeper concepts.
   five-minute first read, repeated bounded Explore, optional Protect, first
   proposal, resumable setup, guarded development writeback, and host-neutral
   client handoff.
-- [Workbench Ask With Your Model](workbench-ask.md): optional local OpenAI,
-  Anthropic, and custom-provider chat over the exact reviewed tool surface,
-  with direct-egress consent, session-only credentials, and no added authority.
+- [Workbench Ask With Your Model](workbench-ask.md): preview browser UI for
+  optional local OpenAI, Anthropic, and custom-provider chat over the exact
+  reviewed tool surface, with direct-egress consent, session-only credentials,
+  and no added authority. The terminal CLI remains the preferred operator
+  interface.
 - [Troubleshooting First Run](troubleshooting-first-run.md): common first-run
   failures, redacted diagnostics, and fixes.
 

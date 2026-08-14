@@ -26,11 +26,54 @@ describe("Auto Boundary Workbench renderer", () => {
       ["query history and evidence", ["Query history", "Durable query ledger", "/api/explore/history?audit_id="]],
       ["local-model provider controls", ["OpenAI-compatible or local", "Model request timeout (seconds)"]],
       ["external MCP client setup", ["Use an existing AI or MCP client", "Generic stdio MCP", "Managed project installers"]],
+      ["dependency-aware table removal", ["This table cannot be removed yet", "Remove or re-scope", "Nothing was saved or activated"]],
     ];
     for (const [feature, markers] of parityMarkers) {
       for (const marker of markers) expect(html, feature).toContain(marker);
     }
     expect(html).not.toMatch(/execute_sql|model can activate|model can approve|model can apply/i);
+  });
+
+  it("blocks a Workbench table removal when another table derives scope through it", () => {
+    const html = renderBoundaryWorkbench("test-csrf");
+    const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? "";
+    const start = script.indexOf("function removalScopeReferencesResource");
+    const end = script.indexOf("function syncCandidateDecisions", start);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    const functions = script.slice(start, end);
+    const candidate = {
+      pack: {
+        resources: [{
+          id: "public.orders",
+          relationships: [],
+        }, {
+          id: "public.order_items",
+          tenant_scope: {
+            path_id: "order_items_order_id_fkey",
+            ancestor_resource: "public.orders",
+            proof: {
+              links: [{
+                source_resource: "public.order_items",
+                target_resource: "public.orders",
+              }],
+            },
+          },
+          relationships: [],
+        }],
+      },
+    };
+    const context: Record<string, unknown> = {
+      candidate,
+      currentResource: (id: string) => candidate.pack.resources.find((resource) => resource.id === id),
+    };
+    vm.runInNewContext(`${functions}; result=resourceRemovalImpact("public.orders");`, context);
+    expect(context.result).toEqual({
+      blockers: ["public.order_items: tenant scope via order_items_order_id_fkey"],
+      pruned: [],
+    });
+    expect(script).toContain("if(!toggleResource(selectedResource,false))return");
+    expect(script).toContain("if(!toggleResource(input.dataset.resourceToggle,input.checked))input.checked=true");
   });
 
   it("assigns distinct graph lanes to multiple relationships from one table", () => {

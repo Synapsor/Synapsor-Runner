@@ -33,7 +33,7 @@ Start with the problem you are solving: [safe Postgres MCP](docs/safe-postgres-m
 Use a SELECT-only, non-owner development or staging credential:
 
 ```bash
-npx -y @synapsor/runner start
+npx -y @synapsor/runner start --cli
 ```
 
 The first command needs no install. Later examples assume a global install:
@@ -49,10 +49,10 @@ inspects schema metadata, not source rows. It proposes conservative read access
 that grants the agent nothing until you review and activate it. You do not need
 to write DSL or JSON to begin.
 
-For the interactive terminal first run:
+To use the preview Workbench instead:
 
 ```bash
-synapsor-runner start --from-env DATABASE_URL --cli
+synapsor-runner start --from-env DATABASE_URL
 ```
 
 For automation, run `synapsor-runner onboard --help`; missing decisions are reported together.
@@ -64,14 +64,18 @@ the machine. Every access change remains disabled until a human confirms it.
 
 See [Database To First Safe Tool](docs/guided-onboarding.md).
 
+**Interface status:** Prefer the CLI. Workbench is preview; production
+Streamable HTTP MCP is not.
+
 ## Ask A Useful Question
 
 After review, use either of these paths. Both call the same validation and
 execution code and receive no more authority than the reviewed boundary.
 
-**Use the built-in Workbench or terminal Ask.** Supply your own OpenAI or
-Anthropic key, or use a loopback OpenAI-compatible model. Keys and conversation
-history stay in memory. A loopback model keeps provider traffic on the machine.
+**Use the preferred terminal Ask or the preview Workbench.** Supply your own
+OpenAI or Anthropic key, or use a loopback OpenAI-compatible model. Keys and
+conversation history stay in memory. A loopback model keeps provider traffic
+on the machine.
 
 ```bash
 synapsor-runner try ask --provider openai --model gpt-5-mini

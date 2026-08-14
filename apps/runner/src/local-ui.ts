@@ -172,8 +172,10 @@ import {
   type ManagedBoundaryReviewDecision,
 } from "./boundary-review-domain.js";
 import {
+  boundaryResourceRemovalImpact,
   commitBoundaryReviewMutationBatch,
   commitBoundaryResourceReviewMutation,
+  formatBoundaryResourceRemovalBlocked,
   listBoundaryResourceReviews,
   prepareBoundaryReviewMutationBatch,
   prepareBoundaryResourceReviewMutation,
@@ -1206,6 +1208,31 @@ async function handleRequest(input: {
       return;
     }
     const submittedCandidate = body.candidate as unknown as ExplorationBoundaryDraft;
+    const currentCandidate = existingProgress?.candidate
+      ?? (draft.pack.resources.length > 0
+        ? recommendedBoundaryReviewCandidate(draft)
+        : structuredClone(draft));
+    const submittedResourceIds = new Set(
+      submittedCandidate.pack.resources.map((resource) => resource.id),
+    );
+    const removedResourceIds = currentCandidate.pack.resources
+      .map((resource) => resource.id)
+      .filter((resourceId) => !submittedResourceIds.has(resourceId));
+    for (const resourceId of removedResourceIds) {
+      const impact = boundaryResourceRemovalImpact(currentCandidate, resourceId, {
+        also_removing: removedResourceIds,
+      });
+      if (!impact.blocking_dependencies.length) continue;
+      sendJson(response, 409, {
+        ok: false,
+        error_code: "BOUNDARY_RESOURCE_REMOVAL_DEPENDENCY",
+        error: formatBoundaryResourceRemovalBlocked(impact),
+        removal_impact: impact,
+        authority_changed: false,
+        source_database_changed: false,
+      });
+      return;
+    }
     const reviewAuthority = await resolveSavedBoundaryReviewAuthority({
       projectRoot,
       draft,

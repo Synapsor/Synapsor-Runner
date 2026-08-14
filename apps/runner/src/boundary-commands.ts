@@ -71,6 +71,7 @@ import {
   formatBoundaryOverviewMap,
   formatBoundaryResourceMap,
   terminalTheme,
+  type BoundaryAccessNotice,
   type BoundaryFieldTier,
   type BoundaryReviewOverview,
   type BoundaryReviewInteractiveSession,
@@ -1020,6 +1021,7 @@ async function interactiveBoundaryReviewLoop(input: {
 }): Promise<number> {
   let startAtBoundaryList = input.startAtBoundaryList;
   let selectedResourceId: string | undefined;
+  let accessNotice: BoundaryAccessNotice | undefined;
   let deferredActivationHandoff: Parameters<BoundaryActivationHandoff>[0] | undefined;
   const accessActivationInput = {
     ...input,
@@ -1041,6 +1043,8 @@ async function interactiveBoundaryReviewLoop(input: {
       ...(context.progress ? { currentProgress: context.progress } : {}),
     });
     context = await loadBoundaryReviewContext(input.projectRoot);
+    const notice = accessNotice;
+    accessNotice = undefined;
     const selected = await input.session.chooseResource(
       await listBoundaryResourceReviews(input.projectRoot),
       {
@@ -1051,6 +1055,7 @@ async function interactiveBoundaryReviewLoop(input: {
         initialView: input.initialView ?? "boundaries",
         startAtBoundaryList,
         ...(selectedResourceId ? { initialResourceId: selectedResourceId } : {}),
+        ...(notice ? { notice } : {}),
       },
     );
     if (!selected) {
@@ -1404,6 +1409,10 @@ async function interactiveBoundaryReviewLoop(input: {
         session: input.session,
         focusedAccess: input.initialView === "access",
       });
+      if (typeof result !== "number") {
+        accessNotice = result;
+        continue;
+      }
       if (result !== 0) return result;
       continue;
     }
@@ -3168,7 +3177,7 @@ async function interactiveBoundaryResourceRemoval(input: {
   schemaInspector: typeof inspectDatabase;
   session: BoundaryReviewInteractiveSession;
   focusedAccess?: boolean;
-}): Promise<number> {
+}): Promise<number | BoundaryAccessNotice> {
   if (!input.view.candidate) {
     process.stdout.write(`${input.view.resource_id} is not included. Nothing was changed.\n`);
     return 0;
@@ -3201,11 +3210,23 @@ async function interactiveBoundaryResourceRemoval(input: {
     actor,
     reason,
   };
-  const preview = await prepareBoundaryResourceReviewMutation(
-    input.projectRoot,
-    request,
-    input.schemaInspector,
-  );
+  let preview: BoundaryReviewMutationPreview;
+  try {
+    preview = await prepareBoundaryResourceReviewMutation(
+      input.projectRoot,
+      request,
+      input.schemaInspector,
+    );
+  } catch (error) {
+    if (!input.focusedAccess) throw error;
+    return {
+      tone: "danger",
+      title: `REMOVE BLOCKED - ${input.view.resource_id}`,
+      lines: redactCliErrorMessage(error instanceof Error ? error.message : String(error))
+        .split("\n"),
+      footer: "No draft or active authority changed. Resolve the dependency, then press R again.",
+    };
+  }
   if (!input.focusedAccess) {
     process.stdout.write(formatBoundaryMutationPreview(preview, input.view));
     if (!await input.session.confirm(
@@ -3217,8 +3238,15 @@ async function interactiveBoundaryResourceRemoval(input: {
     }
   }
   const committed = await commitBoundaryResourceReviewMutation(input.projectRoot, preview);
+  const prunedRelationships = preview.resource_removal_impact?.pruned_relationships ?? [];
   process.stdout.write(input.focusedAccess
-    ? formatFocusedBoundaryEditSaved(input.view.resource_id, "removed", committed.review_revision)
+    ? formatFocusedBoundaryEditSaved(
+      input.view.resource_id,
+      "removed",
+      committed.review_revision,
+      prunedRelationships.map((relationship) =>
+        `Related-data path removed from the disabled draft: ${relationship.resource_id}.${relationship.relationship_id}`),
+    )
     : formatBoundaryMutationCommit(
       input.projectRoot,
       committed.review_revision,
@@ -4075,10 +4103,12 @@ function formatFocusedBoundaryEditSaved(
   resourceId: string,
   action: "added" | "updated" | "removed",
   revision: number,
+  notes: string[] = [],
 ): string {
   return [
     "",
     `Draft ${action}: ${resourceId}`,
+    ...notes,
     `Saved in disabled boundary revision ${revision}. Agent authority changed: no.`,
     "Next: review and activate the complete boundary, or go back to keep editing.",
     "",
@@ -4350,6 +4380,9 @@ function boundaryMutationPublicPreview(preview: BoundaryReviewMutationPreview): 
     candidate_digest: preview.candidate_digest,
     generated_contract_digest: preview.generated_contract_digest,
     semantic_diff: preview.semantic_diff,
+    ...(preview.resource_removal_impact
+      ? { resource_removal_impact: preview.resource_removal_impact }
+      : {}),
     source_database_changed: false,
     authority_activated: false,
   };
