@@ -713,6 +713,7 @@ async function runOpenAiCompatibleTurn(input: {
   let usage: AskTurnResult["usage"];
   let catalogCorrectionSent = false;
   let localDirectCatalogTrace: AskToolTrace | undefined;
+  let relationshipIntentRepairAttempts = 0;
 
   for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration += 1) {
     assertAskNotCancelled(input.signal);
@@ -720,8 +721,10 @@ async function runOpenAiCompatibleTurn(input: {
       await assertAskAuthorityCurrent(input.authorityDigest, input.authorityGuard);
     }
     reportAskProgress(input.onProgress, { phase: "provider" });
-    const forcedExploreProviderName = catalogCorrectionSent
-      && !traces.some((trace) => trace.tool === "app.explore_data")
+    const forcedExploreProviderName = ((catalogCorrectionSent
+      && !traces.some((trace) => trace.tool === "app.explore_data"))
+      || (relationshipIntentRepairAttempts > 0
+        && !traces.some((trace) => trace.tool === "app.explore_data" && trace.status === "ok")))
       ? providerToolName(input.prepared, "app.explore_data")
       : undefined;
     const providerTools = forcedExploreProviderName
@@ -1077,6 +1080,17 @@ async function runOpenAiCompatibleTurn(input: {
         if (intentRefusal) {
           traces.push(intentRefusal.trace);
           providerHistory.push(providerHistoryEntry(intentRefusal.trace, intentRefusal.providerResult));
+          if (intentRefusal.retryable
+            && relationshipIntentRepairAttempts === 0
+            && toolCalls.length === 1) {
+            relationshipIntentRepairAttempts += 1;
+            messages.push({
+              role: "tool",
+              tool_call_id: call.id,
+              content: boundedToolResult(intentRefusal.providerResult),
+            });
+            continue;
+          }
           return rememberProviderHistory(
             completePlanSubstitutionAnswer(input.configuration, traces, usage),
             providerHistory,
@@ -1517,6 +1531,7 @@ async function runAnthropicTurn(input: {
   const providerHistory: ProviderHistoryEntry[] = [];
   let usage: AskTurnResult["usage"];
   let catalogCorrectionSent = false;
+  let relationshipIntentRepairAttempts = 0;
 
   for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration += 1) {
     assertAskNotCancelled(input.signal);
@@ -1524,8 +1539,10 @@ async function runAnthropicTurn(input: {
       await assertAskAuthorityCurrent(input.authorityDigest, input.authorityGuard);
     }
     reportAskProgress(input.onProgress, { phase: "provider" });
-    const forcedExploreProviderName = catalogCorrectionSent
-      && !traces.some((trace) => trace.tool === "app.explore_data")
+    const forcedExploreProviderName = ((catalogCorrectionSent
+      && !traces.some((trace) => trace.tool === "app.explore_data"))
+      || (relationshipIntentRepairAttempts > 0
+        && !traces.some((trace) => trace.tool === "app.explore_data" && trace.status === "ok")))
       ? providerToolName(input.prepared, "app.explore_data")
       : undefined;
     const providerTools = forcedExploreProviderName
@@ -1636,6 +1653,18 @@ async function runAnthropicTurn(input: {
         if (intentRefusal) {
           traces.push(intentRefusal.trace);
           providerHistory.push(providerHistoryEntry(intentRefusal.trace, intentRefusal.providerResult));
+          if (intentRefusal.retryable
+            && relationshipIntentRepairAttempts === 0
+            && calls.length === 1) {
+            relationshipIntentRepairAttempts += 1;
+            results.push({
+              type: "tool_result",
+              tool_use_id: id,
+              content: boundedToolResult(intentRefusal.providerResult),
+              is_error: true,
+            });
+            continue;
+          }
           return rememberProviderHistory(
             completePlanSubstitutionAnswer(input.configuration, traces, usage),
             providerHistory,
@@ -1943,6 +1972,7 @@ async function explorePlanIntentRefusal(input: {
 }): Promise<{
   trace: AskToolTrace;
   providerResult: Record<string, unknown>;
+  retryable: boolean;
 } | undefined> {
   if (localCompoundAnalysisQuestions(input.question, 2).length > 0) return undefined;
   const plan = isRecord(input.args.plan) ? input.args.plan : undefined;
@@ -1964,13 +1994,20 @@ async function explorePlanIntentRefusal(input: {
       allowUnqualifiedTrailingField,
     })
     : questionHasExplicitPlanAnchor(input.question)
-      ? "Runner could not verify the selected resource against the entity or grouping named in the question."
+      ? {
+        kind: "unverified" as const,
+        message: "Runner could not verify the selected resource against the entity or grouping named in the question.",
+      }
       : undefined;
   if (!mismatch) return undefined;
+  const relationshipDimensions = mismatch.relationship_dimensions ?? [];
   const providerResult = {
     ok: false,
     error_code: "ASK_PLAN_INTENT_MISMATCH",
-    message: `The plan was not executed because it substituted reviewed data that did not match the question. ${mismatch}`,
+    message: `The plan was not executed because it substituted reviewed data that did not match the question. ${mismatch.message}`,
+    ...(relationshipDimensions.length > 0
+      ? { reviewed_relationship_dimensions: relationshipDimensions }
+      : {}),
     source_query_executed: false,
     explore_budget_consumed: false,
     source_database_changed: false,
@@ -1986,6 +2023,7 @@ async function explorePlanIntentRefusal(input: {
       result: providerResult,
     },
     providerResult,
+    retryable: mismatch.kind === "dimension" && relationshipDimensions.length === 1,
   };
 }
 
@@ -2052,12 +2090,25 @@ async function loadFocusedIntentResource(input: {
     && (boundary === undefined || candidate.boundary_name === boundary));
 }
 
+type ReviewedRelationshipDimension = {
+  field: string;
+  relationship: string;
+  target_resource: string;
+  path_depth?: number;
+};
+
+type ExplorePlanIntentMismatch = {
+  kind: "resource" | "dimension" | "unverified";
+  message: string;
+  relationship_dimensions?: ReviewedRelationshipDimension[];
+};
+
 function explorePlanIntentMismatch(
   question: string,
   args: Record<string, unknown>,
   resource: Record<string, unknown>,
   options: { allowUnqualifiedTrailingField?: boolean } = {},
-): string | undefined {
+): ExplorePlanIntentMismatch | undefined {
   const plan = isRecord(args.plan) ? args.plan : undefined;
   if (!plan || typeof plan.resource !== "string" || typeof resource.id !== "string") return undefined;
   const normalizedQuestion = question.toLowerCase();
@@ -2065,14 +2116,17 @@ function explorePlanIntentMismatch(
   if (subject
     && !genericQuestionEntity(subject)
     && !questionEntityMatchesPlan(subject, plan, resource)) {
-    return `The question explicitly names ${JSON.stringify(subject)}, but the plan selected resource ${resource.id}.`;
+    return {
+      kind: "resource",
+      message: `The question explicitly names ${JSON.stringify(subject)}, but the plan selected resource ${resource.id}.`,
+    };
   }
 
   const dimensions = Array.isArray(plan.dimensions) ? plan.dimensions.filter(isRecord) : [];
   if (dimensions.length > 0) {
     for (const dimension of dimensions) {
       const mismatch = planDimensionIntentMismatch(normalizedQuestion, dimension, resource, options);
-      if (mismatch) return mismatch;
+      if (mismatch) return relationshipDimensionMismatch(normalizedQuestion, resource, mismatch);
     }
     return undefined;
   }
@@ -2080,13 +2134,90 @@ function explorePlanIntentMismatch(
     const timeBucket = isRecord(plan.time_bucket) ? plan.time_bucket : undefined;
     if (timeBucket && typeof timeBucket.bucket === "string"
       && wordPosition(normalizedQuestion, timeBucket.bucket.toLowerCase()) >= 0) return undefined;
-    return "The question requests a grouping, but the plan contains no matching reviewed dimension.";
+    return relationshipDimensionMismatch(
+      normalizedQuestion,
+      resource,
+      "The question requests a grouping, but the plan contains no matching reviewed dimension.",
+    );
   }
   return undefined;
 }
 
+function relationshipDimensionMismatch(
+  question: string,
+  resource: Record<string, unknown>,
+  mismatch: string,
+): ExplorePlanIntentMismatch {
+  const relationshipDimensions = reviewedRelationshipDimensionsNamedInQuestion(question, resource);
+  if (relationshipDimensions.length === 0) return { kind: "dimension", message: mismatch };
+  if (relationshipDimensions.length === 1) {
+    const exact = relationshipDimensions[0]!;
+    return {
+      kind: "dimension",
+      message: [
+        mismatch,
+        `The question matches the reviewed related dimension ${JSON.stringify({
+          field: exact.field,
+          relationship: exact.relationship,
+        })} on ${exact.target_resource}${exact.path_depth ? ` (path depth ${exact.path_depth})` : ""}.`,
+        "Retry app.explore_data with that exact dimension; Runner will not substitute it automatically.",
+      ].join(" "),
+      relationship_dimensions: relationshipDimensions,
+    };
+  }
+  return {
+    kind: "dimension",
+    message: [
+      mismatch,
+      `More than one reviewed related dimension matches: ${relationshipDimensions.map((candidate) =>
+        JSON.stringify({ field: candidate.field, relationship: candidate.relationship })).join(", ")}.`,
+      "Runner will not choose among them; retry with one exact reviewed relationship dimension.",
+    ].join(" "),
+    relationship_dimensions: relationshipDimensions,
+  };
+}
+
+function reviewedRelationshipDimensionsNamedInQuestion(
+  question: string,
+  resource: Record<string, unknown>,
+): ReviewedRelationshipDimension[] {
+  if (!Array.isArray(resource.relationships)) return [];
+  const groupingClause = explicitGroupingClause(question);
+  if (!groupingClause) return [];
+  const candidates = resource.relationships.filter(isRecord).flatMap((relationship) => {
+    if ((relationship.activation !== undefined && relationship.activation !== "active")
+      || typeof relationship.id !== "string"
+      || typeof relationship.target_resource !== "string") return [];
+    const target = relationship.target_resource.split(".").at(-1)?.toLowerCase() ?? "";
+    const targetNamed = [...resourceNameVariants(target, relationship.target_label)]
+      .some((variant) => variant.length >= 3 && wordPosition(groupingClause, variant) >= 0);
+    if (!targetNamed) return [];
+    return safeStringList(relationship.groupable_fields).flatMap((field) => {
+      const fieldNamed = questionExplicitlyMentionsField(groupingClause, field)
+        || reviewedFieldLabels(relationship, field)
+          .some((label) => questionMentionsMetadataName(groupingClause, label));
+      if (!fieldNamed) return [];
+      return [{
+        field,
+        relationship: relationship.id,
+        target_resource: relationship.target_resource,
+        ...(typeof relationship.path_depth === "number" ? { path_depth: relationship.path_depth } : {}),
+      }];
+    });
+  });
+  return uniqueByJson(candidates).sort((left, right) =>
+    left.relationship.localeCompare(right.relationship) || left.field.localeCompare(right.field));
+}
+
+function explicitGroupingClause(question: string): string | undefined {
+  const matches = [...question.matchAll(
+    /\b(?:grouped\s+by|broken\s+down\s+by|by|across|per|for\s+each|within\s+each|of\s+each)\s+([^?.;]+)/giu,
+  )];
+  return matches.at(-1)?.[1]?.trim().toLowerCase();
+}
+
 function explicitQuestionEntity(question: string): string | undefined {
-  const suffix = String.raw`(?=\s+(?:are|were|is|was|do|does|did|have|has|by|per|across|for\s+each|within\s+each|of\s+each|grouped\s+by|broken\s+down\s+by)\b|[?.!,;]|$)`;
+  const suffix = String.raw`(?=\s+(?:are|were|is|was|do|does|did|have|has|by|per|across|for\s+each|within\s+each|of\s+each|grouped\s+by|broken\s+down\s+by)\b|[?!,;]|$)`;
   const patterns = [
     new RegExp(String.raw`\bhow\s+many\s+(?:the\s+)?(.+?)${suffix}`, "iu"),
     new RegExp(String.raw`\b(?:number|count)\s+of\s+(?:the\s+)?(.+?)${suffix}`, "iu"),
@@ -2113,11 +2244,16 @@ function questionEntityMatchesPlan(
   plan: Record<string, unknown>,
   resource: Record<string, unknown>,
 ): boolean {
-  const table = typeof resource.id === "string"
-    ? resource.id.split(".").at(-1)?.toLowerCase() ?? ""
-    : "";
-  if ([...resourceNameVariants(table, table.replace(/[_-]+/g, " "), resource.label)]
-    .some((variant) => variant.length >= 3 && wordPosition(subject, variant) >= 0)) return true;
+  const resourceId = typeof resource.id === "string" ? resource.id.toLowerCase() : "";
+  const table = resourceId.split(".").at(-1) ?? "";
+  const resourceVariants = resourceNameVariants(
+    resourceId,
+    table,
+    table.replace(/[_-]+/g, " "),
+    resource.label,
+  );
+  if (questionEntityExactlyMatchesNames(subject, resourceVariants)) return true;
+  if (questionEntityStrictlyExtendsNames(subject, resourceVariants)) return false;
   const measures = Array.isArray(plan.measures) ? plan.measures.filter(isRecord) : [];
   return measures.some((measure) => {
     if (typeof measure.derived_measure === "string") {
@@ -2135,9 +2271,45 @@ function questionEntityMatchesPlan(
     if (measure.function !== "count_distinct") return false;
     const readable = measure.field.toLowerCase().replace(/[_-]+/g, " ");
     const entity = readable.replace(/\s+id$/u, "").trim();
-    return [...resourceNameVariants(entity)]
-      .some((variant) => variant.length >= 3 && wordPosition(subject, variant) >= 0);
+    return questionEntityExactlyMatchesNames(subject, resourceNameVariants(entity));
   });
+}
+
+function questionEntityExactlyMatchesNames(subject: string, names: Iterable<string>): boolean {
+  const subjects = normalizedQuestionEntityNames(subject);
+  return [...names].some((name) => subjects.has(normalizedEntityName(name)));
+}
+
+function questionEntityStrictlyExtendsNames(subject: string, names: Iterable<string>): boolean {
+  const subjectNames = [...normalizedQuestionEntityNames(subject)];
+  return [...names].some((name) => {
+    const normalizedName = normalizedEntityName(name);
+    if (!normalizedName) return false;
+    const nameTokens = normalizedName.split(" ");
+    return subjectNames.some((subjectName) => {
+      const subjectTokens = subjectName.split(" ");
+      if (subjectTokens.length <= nameTokens.length) return false;
+      return subjectTokens.some((_token, index) =>
+        index + nameTokens.length <= subjectTokens.length
+        && nameTokens.every((token, offset) => subjectTokens[index + offset] === token));
+    });
+  });
+}
+
+function normalizedQuestionEntityNames(subject: string): Set<string> {
+  const normalized = normalizedEntityName(subject);
+  if (!normalized) return new Set();
+  const withoutLeadingModifiers = normalized
+    .replace(/^(?:(?:the|all|every|active|available|reviewed)\s+)+/u, "")
+    .trim();
+  const withoutGenericSuffix = withoutLeadingModifiers
+    .replace(/\s+(?:catalog|table|records?|rows?|data)$/u, "")
+    .trim();
+  return new Set([normalized, withoutLeadingModifiers, withoutGenericSuffix].filter(Boolean));
+}
+
+function normalizedEntityName(value: string): string {
+  return value.toLowerCase().replace(/[_-]+/g, " ").replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
 }
 
 function explicitGroupingRequested(question: string): boolean {
@@ -2653,9 +2825,22 @@ function completePlanSubstitutionAnswer(
   traces: AskToolTrace[],
   usage: AskTurnResult["usage"],
 ): AskTurnResult {
+  const latestRefusal = [...traces].reverse().find((trace) =>
+    trace.error_code === "ASK_PLAN_INTENT_MISMATCH");
+  const relationshipDimensions = Array.isArray(latestRefusal?.result.reviewed_relationship_dimensions)
+    ? latestRefusal.result.reviewed_relationship_dimensions.filter(isRecord)
+    : [];
+  const answer = relationshipDimensions.length > 0
+    ? [
+      "The selected model did not apply Runner's reviewed relationship correction, so Runner refused the repeated plan before execution.",
+      "No Explore query or differencing budget was consumed.",
+      `Retry with one exact reviewed dimension shown in the refusal: ${relationshipDimensions.map((dimension) =>
+        JSON.stringify({ field: dimension.field, relationship: dimension.relationship })).join(", ")}.`,
+    ].join(" ")
+    : PLAN_SUBSTITUTION_RUNNER_ANSWER;
   return completeAskResult(
     configuration,
-    PLAN_SUBSTITUTION_RUNNER_ANSWER,
+    answer,
     traces,
     usage,
     "runner",

@@ -902,6 +902,44 @@ describe("Workbench BYOM Ask", () => {
       ],
     },
     {
+      question: "Break down observation events by encounter department.",
+      resource: "public.observations",
+      resourceLabel: "Observations",
+      dimension: {
+        field: "department",
+        relationship: "observations_encounter_id_fkey",
+      },
+      fields: [{ id: "event_type", label: "Event type" }],
+      relationships: [{
+        id: "observations_encounter_id_fkey",
+        target_resource: "public.encounters",
+        target_label: "Encounters",
+        fields: [{ id: "department", label: "Department" }],
+        groupable_fields: ["department"],
+      }],
+    },
+    {
+      question: "Break down order items by status.",
+      resource: "public.orders",
+      resourceLabel: "Orders",
+      dimension: { field: "status" },
+      fields: [{ id: "status", label: "Status" }],
+    },
+    {
+      question: "How many user sessions are there by status?",
+      resource: "public.users",
+      resourceLabel: "Users",
+      dimension: { field: "status" },
+      fields: [{ id: "status", label: "Status" }],
+    },
+    {
+      question: "Break down shipment events by status.",
+      resource: "public.shipments",
+      resourceLabel: "Shipments",
+      dimension: { field: "status" },
+      fields: [{ id: "status", label: "Status" }],
+    },
+    {
       question: "Break down patients by sex at birth.",
       resource: "public.encounters",
       resourceLabel: "Encounters",
@@ -1019,6 +1057,166 @@ describe("Workbench BYOM Ask", () => {
     expect(requestJson).toHaveBeenCalledTimes(1);
   });
 
+  it("gives OpenAI one bounded retry with the exact reviewed relationship dimension", async () => {
+    let exploreCalls = 0;
+    const relationship = "observation_events_observation_id_fkey__observations_encounter_id_fkey";
+    const focusedResource = {
+      id: "public.observation_events",
+      label: "Observation events",
+      fields: [{ id: "event_type", label: "Event type" }],
+      groupable_fields: ["event_type"],
+      relationships: [{
+        id: relationship,
+        activation: "active",
+        target_resource: "public.encounters",
+        target_label: "Encounters",
+        path_depth: 2,
+        fields: [{ id: "department", label: "Department" }],
+        groupable_fields: ["department"],
+      }],
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return {
+          ok: true,
+          value: { ok: true, data: [{ department: "cardiology", measure_0: 12 }], source_database_changed: false },
+        };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: { ok: true, resources: [focusedResource], source_database_changed: false },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-5-mini",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    let requests = 0;
+    const requestJson = vi.fn(async (
+      request: Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0],
+    ) => {
+      requests += 1;
+      if (requests === 1) {
+        return openAiToolCall("wrong_local_dimension", "app__explore_data", {
+          plan: {
+            kind: "aggregate",
+            resource: "public.observation_events",
+            measures: [{ function: "count" }],
+            dimensions: [{ field: "event_type" }],
+          },
+        });
+      }
+      if (requests === 2) {
+        expect(JSON.stringify(request.body)).toContain(relationship);
+        return openAiToolCall("corrected_relationship_dimension", "app__explore_data", {
+          plan: {
+            kind: "aggregate",
+            resource: "public.observation_events",
+            measures: [{ function: "count" }],
+            dimensions: [{ field: "department", relationship }],
+          },
+        });
+      }
+      return openAiText("Cardiology has 12 reviewed observation events.");
+    });
+
+    const result = await session.run(
+      "Break down observation events by encounter department.",
+      gateway,
+      { requestJson },
+    );
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ error_code: "ASK_PLAN_INTENT_MISMATCH", status: "refused" }),
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]);
+    expect(result.tool_calls[0]?.result).toMatchObject({
+      source_query_executed: false,
+      explore_budget_consumed: false,
+      reviewed_relationship_dimensions: [{
+        field: "department",
+        relationship,
+        target_resource: "public.encounters",
+        path_depth: 2,
+      }],
+    });
+    expect(exploreCalls).toBe(1);
+    expect(requestJson).toHaveBeenCalledTimes(3);
+  });
+
+  it("stops after one relationship repair when OpenAI repeats the mismatched plan", async () => {
+    let exploreCalls = 0;
+    const relationship = "observation_events_observation_id_fkey__observations_encounter_id_fkey";
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: {
+          ok: true,
+          resources: [{
+            id: "public.observation_events",
+            label: "Observation events",
+            fields: [{ id: "event_type", label: "Event type" }],
+            groupable_fields: ["event_type"],
+            relationships: [{
+              id: relationship,
+              activation: "active",
+              target_resource: "public.encounters",
+              target_label: "Encounters",
+              fields: [{ id: "department", label: "Department" }],
+              groupable_fields: ["department"],
+            }],
+          }],
+          source_database_changed: false,
+        },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-5-mini",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    const requestJson = vi.fn(async () => openAiToolCall("repeated_wrong_dimension", "app__explore_data", {
+      plan: {
+        kind: "aggregate",
+        resource: "public.observation_events",
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "event_type" }],
+      },
+    }));
+
+    const result = await session.run(
+      "Break down observation events by encounter department.",
+      gateway,
+      { requestJson },
+    );
+
+    expect(result.tool_calls).toHaveLength(2);
+    expect(result.tool_calls.every((call) => call.error_code === "ASK_PLAN_INTENT_MISMATCH")).toBe(true);
+    expect(result.answer_source).toBe("runner");
+    expect(result.answer).toContain(relationship);
+    expect(result.answer).toContain("No Explore query or differencing budget was consumed");
+    expect(exploreCalls).toBe(0);
+    expect(requestJson).toHaveBeenCalledTimes(2);
+  });
+
   it("applies the same pre-execution substitution refusal to Anthropic Ask", async () => {
     let exploreCalls = 0;
     let metadataCalls = 0;
@@ -1081,6 +1279,115 @@ describe("Workbench BYOM Ask", () => {
     expect(result.answer_source).toBe("runner");
     expect(exploreCalls).toBe(0);
     expect(metadataCalls).toBe(1);
+  });
+
+  it("gives Anthropic one bounded retry for an exact reviewed relationship dimension", async () => {
+    let exploreCalls = 0;
+    const relationship = "observation_events_observation_id_fkey__observations_encounter_id_fkey";
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return {
+          ok: true,
+          value: { ok: true, data: [{ department: "cardiology", measure_0: 12 }], source_database_changed: false },
+        };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: {
+          ok: true,
+          resources: [{
+            id: "public.observation_events",
+            label: "Observation events",
+            fields: [{ id: "event_type", label: "Event type" }],
+            groupable_fields: ["event_type"],
+            relationships: [{
+              id: relationship,
+              activation: "active",
+              target_resource: "public.encounters",
+              target_label: "Encounters",
+              path_depth: 2,
+              fields: [{ id: "department", label: "Department" }],
+              groupable_fields: ["department"],
+            }],
+          }],
+          source_database_changed: false,
+        },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "anthropic",
+      model: "claude-test",
+      api_key: "anthropic-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    let requests = 0;
+    const result = await session.run(
+      "Break down observation events by encounter department.",
+      gateway,
+      {
+        requestJson: async (request) => {
+          requests += 1;
+          if (requests === 1) {
+            return {
+              status: 200,
+              body: {
+                content: [{
+                  type: "tool_use",
+                  id: "anthropic_wrong_local_dimension",
+                  name: "app__explore_data",
+                  input: {
+                    plan: {
+                      kind: "aggregate",
+                      resource: "public.observation_events",
+                      measures: [{ function: "count" }],
+                      dimensions: [{ field: "event_type" }],
+                    },
+                  },
+                }],
+              },
+            };
+          }
+          if (requests === 2) {
+            expect(JSON.stringify(request.body)).toContain(relationship);
+            return {
+              status: 200,
+              body: {
+                content: [{
+                  type: "tool_use",
+                  id: "anthropic_corrected_relationship_dimension",
+                  name: "app__explore_data",
+                  input: {
+                    plan: {
+                      kind: "aggregate",
+                      resource: "public.observation_events",
+                      measures: [{ function: "count" }],
+                      dimensions: [{ field: "department", relationship }],
+                    },
+                  },
+                }],
+              },
+            };
+          }
+          return {
+            status: 200,
+            body: { content: [{ type: "text", text: "Cardiology has 12 reviewed observation events." }] },
+          };
+        },
+      },
+    );
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ error_code: "ASK_PLAN_INTENT_MISMATCH", status: "refused" }),
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]);
+    expect(exploreCalls).toBe(1);
+    expect(requests).toBe(3);
   });
 
   it("fails closed when explicit Ask intent cannot be checked against reviewed metadata", async () => {
@@ -1429,6 +1736,10 @@ describe("Workbench BYOM Ask", () => {
     },
     {
       question: "Break down encounters by encounter-type.",
+      fieldLabel: "Encounter type",
+    },
+    {
+      question: "Break down public.encounters by encounter_type.",
       fieldLabel: "Encounter type",
     },
     {

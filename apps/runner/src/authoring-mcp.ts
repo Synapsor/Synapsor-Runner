@@ -374,7 +374,7 @@ function exploreToolDescription(production: boolean, automaticBandsReviewed: boo
     `Runs one reviewed read-only ${production ? "production" : "local"} plan.`,
     "Call app.describe_data first and copy exact ids. Send {boundary?,plan:{...}}; plan.kind is exactly rows or aggregate.",
     'Aggregate: {"plan":{"kind":"aggregate","resource":"<exact resource id>","measures":[{"function":"count"}],"dimensions":[{"field":"<field>"}]}}. For totals or averages, use sum or avg with one exact reviewed measure field. Omitted top_n uses Runner\'s reviewed bound.',
-    'Relationship: keep "relationship":"<id>" separate from the related field; never concatenate them.',
+    'Related grouping: {"dimensions":[{"field":"<exact target field>","relationship":"<exact reviewed relationship id>"}]}. When the question asks base records by a related field, use that pair instead of a similar local field; never concatenate the ids.',
     'Rows: {"plan":{"kind":"rows","resource":"<exact resource id>","select":["<field>"]}}. Omitted limit uses Runner\'s reviewed bound.',
     'Named controls use {"derived_measure":"<name>"} in measures or {"numeric_band":"<name>"} in dimensions.',
     ...(automaticBandsReviewed

@@ -215,7 +215,9 @@ describe("Ask authoring/runtime separation", () => {
         /inspect_ticket|propose_ticket|approve|apply|commit/i,
       );
       expect(listed.find((tool) => tool.name === "app.explore_data")?.description)
-        .toContain("never concatenate them");
+        .toContain('"field":"<exact target field>","relationship":"<exact reviewed relationship id>"');
+      expect(listed.find((tool) => tool.name === "app.explore_data")?.description)
+        .toContain("instead of a similar local field");
       expect(JSON.stringify(listed.find((tool) => tool.name === "app.explore_data")?.input_schema))
         .toContain("one row per dimension/time combination");
       expect(listed.find((tool) => tool.name === "app.explore_data")?.description)
