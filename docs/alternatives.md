@@ -10,7 +10,7 @@ matches the authority and evidence your agent actually needs.
 | Direct database MCP | Disposable local data, synthetic demos, or tightly isolated development | Database credential and server implementation | The model can express SQL and may hold broad query authority |
 | Read-only database access | Exploration where database permissions and result exposure are already acceptable | Read-only role, views, RLS, and query controls | Read-only is not data-safe by itself; broad reads can still expose another tenant or sensitive columns |
 | Hand-built application tool | A few stable business operations already owned by one application team | Application endpoint or stored procedure | Your team owns every scope, review, retry, conflict, receipt, and investigation guarantee |
-| Synapsor Runner | Consequential reads or writes needing a shared reviewed boundary | Canonical capabilities plus Runner and database controls | Adds contract and operating machinery; it does not replace database security or application handlers |
+| Synapsor Runner | Consequential reads or writes needing shared database authority | Reviewed capabilities plus Runner and database controls | Adds contract and operating machinery; it does not replace database security or application handlers |
 
 ## Direct Or Raw Database MCP
 
@@ -72,9 +72,10 @@ do not support.
 
 ## Synapsor Runner
 
-Runner is useful when the model should receive reviewed semantic capabilities
-instead of SQL and the organization needs the same trust mechanics across
-tools or teams:
+Runner is a database-authority layer for AI agents: MCP connects the caller,
+database grants constrain the credential, and Runner controls the reviewed
+model-facing grammar and effect lifecycle. It is useful when the organization
+needs the same trust mechanics across tools or teams:
 
 - trusted tenant and principal values stay outside model arguments;
 - model-visible, model-withheld, and kept-out fields are reviewed in one
@@ -87,6 +88,13 @@ tools or teams:
 This is not magic and it is not a claim that these mechanics cannot be built in
 application code. Runner packages a specific enforcement and evidence model so
 each integration does not invent a subtly different one.
+
+A host confirmation that a tool may run is not the same as reviewing its exact
+database effect. Runner separates the model's proposal call from the decision,
+then binds that decision to the proposal's exact capability, target, change,
+evidence, and limits. Runner-managed direct writeback rechecks current authority
+and conflicts before mutation. App-owned executors retain responsibility for
+their own final transaction and external effects.
 
 ## What Runner Does Not Protect
 

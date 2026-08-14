@@ -4,27 +4,31 @@
 [![license: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![ci](https://github.com/Synapsor/Synapsor-Runner/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Synapsor/Synapsor-Runner/actions/workflows/ci.yml?query=branch%3Amain)
 
-**Let AI agents query and update Postgres/MySQL without giving the model raw
-SQL, unrestricted schema access, or database credentials.**
+**Database authority for AI agents.**
 
-**MCP connects the agent. Synapsor enforces the reviewed database boundary.**
+**Let agents query and propose changes to Postgres/MySQL without giving the
+model SQL or commit authority.**
 
-Synapsor Runner is an open-source safety layer between an AI agent and your
-database. You review which tables, fields, relationships, operations, and
-limits are allowed. The agent can then ask new questions or propose bounded
-changes, but it cannot exceed that reviewed access.
+**MCP connects the agent. A reviewed Synapsor boundary controls database access
+and commit.**
+
+Synapsor Runner is an open-source database-authority layer between an AI agent
+and Postgres/MySQL. You review its tables, fields, relationships, operations,
+and limits. Agents may explore within it or create exact proposals; activation,
+approval, and commit stay outside model-facing tools.
 
 ```text
-Agent sees       reviewed tools, reviewed data names, allowed operations, bounded results
-Agent never sees database credentials, raw SQL, excluded fields, unrestricted schema
-Runner handles   validation, trusted scope, execution, proposals, evidence
-Human controls   reviewed access, activation, approval, production rollout
+Agent sees       reviewed grammar, tools, bounded results, proposals
+Agent never gets raw SQL, credentials, trusted scope, activation, approval, or commit
+Runner handles   plan validation, scope injection, direct-write rechecks, receipts
+Outside model    humans control access/rollout; humans or policy approve proposals
 ```
 
-Use Runner when you want flexible agent access without building a new database
-tool for every question, and without falling back to `execute_sql`.
+The authority path is `Explore -> Protect -> Propose -> outside-model decision
+-> Commit -> Receipt`, without falling back to `execute_sql`.
 
-Start with the problem you are solving: [safe Postgres MCP](docs/safe-postgres-mcp.md),
+Read [Database Authority And Application Guardrails](docs/why-synapsor-vs-app-guardrails.md),
+or start with [safe Postgres MCP](docs/safe-postgres-mcp.md),
 [prevent arbitrary LLM SQL](docs/prevent-llm-arbitrary-sql.md), or
 [human approval for agent writes](docs/human-approval-ai-database-writes.md).
 
@@ -36,13 +40,13 @@ Use a SELECT-only, non-owner development or staging credential:
 npx -y @synapsor/runner start --cli
 ```
 
-The first command needs no install. Later examples assume a global install:
+The first command needs no install. Later examples use a global install:
 
 ```bash
 npm install --global @synapsor/runner
 ```
 
-Otherwise, prefix them with `npx -y @synapsor/runner`.
+Otherwise use `npx -y @synapsor/runner`.
 
 Paste the URL into the hidden prompt or export `DATABASE_URL`. Runner first
 inspects schema metadata, not source rows. It proposes conservative read access

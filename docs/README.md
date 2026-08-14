@@ -1,8 +1,10 @@
 # Synapsor Runner Docs
 
 Start with the README. Use this index when you need the task-specific next
-step. The order is intentional: audit the model-facing risk first, run the
-no-database demo, wire your database, then read deeper concepts.
+step. For the architecture and category, read [Database Authority And
+Application Guardrails](why-synapsor-vs-app-guardrails.md). The remaining order
+is intentional: audit the model-facing risk, run the no-database proof, wire
+your database, then read deeper concepts.
 
 ## 01 Quickstart
 

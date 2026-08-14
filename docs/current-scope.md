@@ -119,7 +119,8 @@ unless the feature is explicitly adopted.
 Out of scope:
 
 - raw `execute_sql`, SQL strings, model-generated SQL, or arbitrary identifiers;
-- production Scoped Explore or a general-purpose analytics/query AST;
+- production Scoped Explore outside the explicit secured two-tool HTTP
+  profile, or a general-purpose analytics/query AST;
 - production/shared/remote Ask, model-selected provider configuration,
   Synapsor-relayed model calls, persisted chat history, or a claim that every
   OpenAI-compatible server is supported;

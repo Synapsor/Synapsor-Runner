@@ -1,7 +1,7 @@
 {
   "name": "@synapsor/runner",
   "version": "1.7.0",
-  "description": "Let AI agents query and update Postgres/MySQL safely without giving the model raw SQL, unrestricted schema access, or database credentials.",
+  "description": "Database authority for AI agents: reviewed Postgres/MySQL access and guarded changes without model-authored SQL or commit authority.",
   "license": "Apache-2.0",
   "type": "module",
   "bin": {

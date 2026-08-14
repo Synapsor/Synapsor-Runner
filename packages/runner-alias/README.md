@@ -1,9 +1,9 @@
 # synapsor-runner
 
 This package is the short unscoped command alias for
-[`@synapsor/runner`](https://www.npmjs.com/package/@synapsor/runner), the MCP
-safety layer that lets AI agents query and update Postgres/MySQL without giving
-the model raw SQL or database credentials.
+[`@synapsor/runner`](https://www.npmjs.com/package/@synapsor/runner), the
+database-authority layer that lets AI agents query and propose changes to
+Postgres/MySQL without giving the model SQL or commit authority.
 
 ```bash
 npx -y synapsor-runner start

@@ -1,12 +1,13 @@
 # Synapsor Runner
 
-Synapsor Runner is the Apache-2.0 safety layer that lets AI agents query and
-update Postgres/MySQL without giving the model raw SQL, unrestricted schema
-access, or database credentials. Trusted tenant/principal identity, activation,
-approval, and commit stay outside the model-facing MCP surface.
+Synapsor Runner is the Apache-2.0 database-authority layer for AI agents. It
+lets agents query and propose changes to Postgres/MySQL without giving the
+model SQL, credentials, trusted tenant/principal identity, activation,
+approval, or commit authority.
 
 Start here:
 - README: https://github.com/Synapsor/Synapsor-Runner
+- Database authority and application guardrails: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/why-synapsor-vs-app-guardrails.md
 - Auto Boundary, Scoped Explore, and Protect: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/auto-boundary-and-scoped-explore.md
 - Connect a staging database: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/getting-started-own-database.md
 - Security boundary: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/security-boundary.md
@@ -22,19 +23,21 @@ Start here:
 
 Current adoption loop:
 Connect staging -> deterministic whole-schema draft -> human boundary review ->
-bounded row or PM-style aggregate Explore in Workbench or an MCP client ->
-Protect This Query -> digest-bound human activation -> named production
-capability -> proposal -> external approval -> guarded commit -> receipt and
-replay.
+bounded Explore in the CLI, preview Workbench, or an MCP client -> optional
+Protect This Query -> digest-bound human activation -> named capability ->
+exact proposal -> outside-model decision -> guarded commit -> receipt and replay.
 
 Important boundaries:
 - No raw SQL or SQL-string tool argument.
-- Scoped Explore is disabled by default and is local development/staging
-  authoring only. Production and shared/remote HTTP never advertise it.
+- Scoped Explore is disabled by default. Local development/staging may expose
+  exactly `app.describe_data` and `app.explore_data` over stdio or loopback.
+  Separately reviewed production Explore may expose those same two read-only
+  tools over secured Streamable HTTP only with verified asymmetric JWT claims,
+  reviewed budgets, rate limits, and atomic shared-Postgres accounting.
 - Aggregate Explore is a reviewed analytical cube: approved measures,
-  dimensions, time buckets, filters, and at most three activated paths of one
-  or two catalog-proven many-to-one links, plus suppression and
-  extraction/differencing budgets.
+  dimensions, time buckets, filters, and at most three activated paths. Paths
+  default to two catalog-proven many-to-one links and may be reviewed up to the
+  hard maximum of three, with suppression and extraction/differencing budgets.
 - Optional local Workbench Ask can use OpenAI, Anthropic, or a tested
   OpenAI-compatible endpoint, but it calls only the exact reviewed tools and
   adds no activation, approval, or commit authority.
@@ -43,5 +46,9 @@ Important boundaries:
   apply, commit, or widen it.
 - Existing hand-authored 1.x contracts and established CLI routes do not
   require Auto Boundary, Workbench, rescanning, or generation locks.
+- Runner-managed direct writes recheck current authority and conflict guards;
+  source-database receipt mode can commit the mutation and receipt atomically.
+  Runner-ledger mode does not claim distributed exactly-once behavior.
 - Rich multi-table transactions and external side effects remain app-owned
-  executor work after approval.
+  executor work after approval. The application owns final scope, conflict,
+  idempotency, transaction, rollback, and receipt behavior.
