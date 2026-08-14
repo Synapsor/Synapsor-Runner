@@ -90,9 +90,18 @@ function formatSchemaInspectionForCli(inspection: SchemaInspection, databaseUrlE
 }
 
 
-export async function configCommand(args: string[]): Promise<number> {
+type ConfigCommandDependencies = {
+  env?: NodeJS.ProcessEnv;
+  inspectDatabaseFn?: typeof inspectDatabase;
+};
+
+
+export async function configCommand(
+  args: string[],
+  dependencies: ConfigCommandDependencies = {},
+): Promise<number> {
   const [subcommand] = args;
-  if (subcommand === "init") return configInit(args.slice(1));
+  if (subcommand === "init") return configInit(args.slice(1), dependencies);
   if (subcommand === "validate") return configValidate(args.slice(1));
   if (subcommand === "show") return configShow(args.slice(1));
   if (subcommand === "migrate") return configMigrate(args.slice(1));
@@ -101,7 +110,10 @@ export async function configCommand(args: string[]): Promise<number> {
 }
 
 
-async function configInit(args: string[]): Promise<number> {
+async function configInit(
+  args: string[],
+  dependencies: ConfigCommandDependencies,
+): Promise<number> {
   assertKnownOptions(
     args,
     new Set([
@@ -111,15 +123,26 @@ async function configInit(args: string[]): Promise<number> {
       "--single-tenant-organization-id",
       "--issuer", "--audience", "--accounting-namespace", "--oauth-scope",
       "--control-url-env", "--jwks-url-env", "--hmac-key-env", "--http-channel",
+      "--verify-bindings",
     ]),
     "config init",
   );
   const output = outputArg(args) ?? "synapsor.runner.json";
   const productionExplore = args.includes("--production-explore");
+  const requireBindingVerification = args.includes("--verify-bindings");
+  if (requireBindingVerification && !productionExplore) {
+    throw new Error("config init --verify-bindings is available only with --production-explore.");
+  }
   const projectRootValue = optionalArg(args, "--project-root") ?? ".";
   const projectRoot = path.resolve(projectRootValue);
   const drafted = productionExplore ? await readProductionExploreDraft(projectRoot) : undefined;
-  const engine = optionalArg(args, "--engine") ?? drafted?.lock.engine ?? "postgres";
+  const requestedEngine = optionalArg(args, "--engine");
+  if (productionExplore && !requestedEngine && !drafted?.lock.engine) {
+    throw new Error(
+      "config init --production-explore requires --engine postgres|mysql when no reviewed production boundary draft is available. Runner does not infer a production engine from a credential value.",
+    );
+  }
+  const engine = requestedEngine ?? drafted?.lock.engine ?? "postgres";
   if (engine !== "postgres" && engine !== "mysql") {
     throw new Error("config init --engine must be postgres or mysql.");
   }
@@ -135,6 +158,8 @@ async function configInit(args: string[]): Promise<number> {
   const requestedPrincipalBinding = optionalTrimmedArg(args, "--principal-binding");
   const reviewedTenantBinding = drafted?.lock.trusted_context_authority?.tenant_binding;
   const reviewedPrincipalBinding = drafted?.lock.trusted_context_authority?.principal_binding;
+  const effectiveTenantBinding = requestedTenantBinding ?? reviewedTenantBinding;
+  const effectivePrincipalBinding = requestedPrincipalBinding ?? reviewedPrincipalBinding;
   if (drafted) {
     if (drafted.boundary.deployment_profile !== "production"
       || drafted.boundary.trusted_context.provider !== "http_claims") {
@@ -190,8 +215,8 @@ async function configInit(args: string[]): Promise<number> {
       readUrlEnv,
       tenantClaim: optionalArg(args, "--tenant-claim") ?? productionClaim(drafted?.boundary, "tenant"),
       principalClaim: optionalArg(args, "--principal-claim") ?? productionClaim(drafted?.boundary, "principal"),
-      tenantBinding: requestedTenantBinding ?? reviewedTenantBinding,
-      principalBinding: requestedPrincipalBinding ?? reviewedPrincipalBinding,
+      tenantBinding: effectiveTenantBinding,
+      principalBinding: effectivePrincipalBinding,
       singleOrganizationId: optionalArg(args, "--single-tenant-organization-id")
         ?? drafted?.boundary.organization_scope?.organization_id,
       issuer: optionalArg(args, "--issuer"),
@@ -232,6 +257,17 @@ async function configInit(args: string[]): Promise<number> {
   if (!validation.ok) {
     throw new Error(`Internal config-init validation failed: ${validation.errors.map((issue) => `${issue.code}: ${issue.message}`).join("; ")}`);
   }
+  const bindingVerification = productionExplore
+    ? await verifyProductionExploreBindings({
+        engine,
+        readUrlEnv,
+        tenantBinding: effectiveTenantBinding,
+        principalBinding: effectivePrincipalBinding,
+        required: requireBindingVerification,
+        env: dependencies.env ?? process.env,
+        inspectDatabaseFn: dependencies.inspectDatabaseFn ?? inspectDatabase,
+      })
+    : undefined;
   await writeFileGuarded(output, `${JSON.stringify(config, null, 2)}\n`, false);
   const parsed = JSON.parse(await fs.readFile(output, "utf8"));
   const writtenValidation = validateRunnerCapabilityConfig(parsed);
@@ -267,6 +303,7 @@ async function configInit(args: string[]): Promise<number> {
     engine,
     read_url_env: readUrlEnv,
     source_database_changed: false,
+    ...(bindingVerification ? { binding_verification: bindingVerification } : {}),
     ...(controlStoreMigrationCommand
       ? { control_store_migration_command: controlStoreMigrationCommand }
       : {}),
@@ -291,11 +328,24 @@ async function configInit(args: string[]): Promise<number> {
     process.stdout.write([
       `Created valid zero-authority ${productionExplore ? "production Explore " : ""}Runner config: ${result.config_path}`,
       `Mode: ${result.mode}`,
-      `Database credential reference: ${readUrlEnv} (value was not read or written)`,
+      `Database credential reference: ${readUrlEnv} (${bindingVerification
+        ? "value was read only for schema binding verification and was not written"
+        : "value was not read or written"})`,
+      ...(bindingVerification
+        ? [
+            "Binding verification:",
+            ...bindingVerification.checks.map((check) =>
+              `  ${check.status === "verified" ? "OK" : "WARNING"}  ${check.message}`),
+            ...bindingVerification.warnings.map((warning) => `  WARNING  ${warning}`),
+          ]
+        : []),
       ...(productionExplore
         ? [
           "Generated: shared control store, asymmetric JWT claims, secured HTTP, OAuth scope, tenant ceilings, and bounded source/session pools.",
-          "Secret values were not read or written. Generate the shared HMAC key from at least 32 random bytes; do not use a 32-character hex key.",
+          bindingVerification
+            ? "Control-store, JWT/JWKS, and HMAC secret values were not read or written. The source credential was read only for schema binding verification and was not written."
+            : "Secret values were not read or written.",
+          "Generate the shared HMAC key from at least 32 random bytes; do not use a 32-character hex key.",
           ...(bindingReconciliationCommand
             ? [
                 "The configured column bindings are newer than the existing reviewed draft; production startup remains blocked until reconciliation.",
@@ -336,6 +386,152 @@ async function readProductionExploreDraft(projectRoot: string): Promise<Producti
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;
   }
+}
+
+type ProductionBindingVerificationCheck = {
+  option: "--tenant-binding" | "--principal-binding";
+  column: string;
+  status: "verified" | "missing" | "ineligible";
+  matched_resource_count: number;
+  eligible_resource_count: number;
+  resource_examples: string[];
+  message: string;
+};
+
+type ProductionBindingVerification = {
+  status: "verified" | "warning";
+  engine: "postgres" | "mysql";
+  read_url_env: string;
+  credential_value_read: true;
+  source_rows_read: false;
+  checks: ProductionBindingVerificationCheck[];
+  warnings: string[];
+};
+
+async function verifyProductionExploreBindings(input: {
+  engine: "postgres" | "mysql";
+  readUrlEnv: string;
+  tenantBinding?: string;
+  principalBinding?: string;
+  required: boolean;
+  env: NodeJS.ProcessEnv;
+  inspectDatabaseFn: typeof inspectDatabase;
+}): Promise<ProductionBindingVerification | undefined> {
+  const requested = [
+    ...(input.tenantBinding
+      ? [{ option: "--tenant-binding" as const, column: input.tenantBinding }]
+      : []),
+    ...(input.principalBinding
+      ? [{ option: "--principal-binding" as const, column: input.principalBinding }]
+      : []),
+  ];
+  if (requested.length === 0) {
+    if (input.required) {
+      throw new Error(
+        "config init --verify-bindings requires a configured --tenant-binding or --principal-binding. PostgreSQL RLS-only and single-organization configurations have no direct column binding to verify.",
+      );
+    }
+    return undefined;
+  }
+  if (!input.env[input.readUrlEnv]?.trim()) {
+    if (input.required) {
+      throw new Error(
+        `config init --verify-bindings cannot verify ${requested.map((item) => `${item.option} ${item.column}`).join(" and ")} because ${input.readUrlEnv} is not set. Set that environment variable or omit --verify-bindings for offline config generation.`,
+      );
+    }
+    return undefined;
+  }
+
+  let inspection: SchemaInspection;
+  try {
+    inspection = await input.inspectDatabaseFn({
+      engine: input.engine,
+      databaseUrlEnv: input.readUrlEnv,
+      env: input.env,
+    });
+  } catch {
+    const warning = [
+      `Runner could not verify ${requested.map((item) => `${item.option} ${item.column}`).join(" and ")} because schema inspection using ${input.readUrlEnv} did not complete.`,
+      `Run ${cliCommandName()} inspect --engine ${input.engine} --from-env ${input.readUrlEnv} to diagnose the connection.`,
+    ].join(" ");
+    if (input.required) {
+      throw new Error(`config init --verify-bindings failed. ${warning}`);
+    }
+    return {
+      status: "warning",
+      engine: input.engine,
+      read_url_env: input.readUrlEnv,
+      credential_value_read: true,
+      source_rows_read: false,
+      checks: [],
+      warnings: [warning],
+    };
+  }
+
+  const checks = requested.map((binding): ProductionBindingVerificationCheck => {
+    const matches = inspection.tables.flatMap((table) => {
+      const column = table.columns.find((candidate) => candidate.name === binding.column);
+      return column ? [{ resource: `${table.schema}.${table.name}`, column }] : [];
+    });
+    const eligible = matches.filter(({ column }) =>
+      column.nullable === false
+      && column.suggestions.large_or_binary !== true
+      && !/(?:^|\b)(bytea|blob|binary|varbinary|image|large object|oid)(?:\b|$)/i.test(column.data_type));
+    const matchedResources = matches.map((match) => match.resource).sort();
+    const eligibleResources = eligible.map((match) => match.resource).sort();
+    if (matches.length === 0) {
+      return {
+        ...binding,
+        status: "missing",
+        matched_resource_count: 0,
+        eligible_resource_count: 0,
+        resource_examples: [],
+        message: `${binding.option} ${binding.column} does not match any column visible to the inspected ${input.engine} role. Check the flag spelling before boundary review.`,
+      };
+    }
+    if (eligible.length === 0) {
+      return {
+        ...binding,
+        status: "ineligible",
+        matched_resource_count: matches.length,
+        eligible_resource_count: 0,
+        resource_examples: matchedResources.slice(0, 8),
+        message: `${binding.option} ${binding.column} exists on ${summarizeResources(matchedResources)}, but only as nullable, large/binary, or unsupported raw columns. A direct scope binding must be a non-null scalar column.`,
+      };
+    }
+    return {
+      ...binding,
+      status: "verified",
+      matched_resource_count: matches.length,
+      eligible_resource_count: eligible.length,
+      resource_examples: eligibleResources.slice(0, 8),
+      message: `${binding.option} ${binding.column} is an eligible non-null scalar column on ${summarizeResources(eligibleResources)}. Exact boundary review and activation are still required.`,
+    };
+  });
+  const failedMessages = checks
+    .filter((check) => check.status !== "verified")
+    .map((check) => check.message);
+  if (input.required && failedMessages.length > 0) {
+    throw new Error([
+      "config init --verify-bindings failed:",
+      ...failedMessages.map((warning) => `- ${warning}`),
+    ].join("\n"));
+  }
+  return {
+    status: failedMessages.length > 0 ? "warning" : "verified",
+    engine: input.engine,
+    read_url_env: input.readUrlEnv,
+    credential_value_read: true,
+    source_rows_read: false,
+    checks,
+    warnings: [],
+  };
+}
+
+function summarizeResources(resources: string[]): string {
+  const examples = resources.slice(0, 5);
+  const remaining = resources.length - examples.length;
+  return `${examples.join(", ")}${remaining > 0 ? `, and ${remaining} more` : ""}`;
 }
 
 function productionClaim(

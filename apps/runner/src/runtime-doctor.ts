@@ -69,7 +69,7 @@ export async function localDoctor(args: string[]): Promise<number> {
       level: validation.ok && parsed.production_explore !== undefined ? "pass" : "fail",
       message: validation.ok && parsed.production_explore !== undefined
         ? "Production preflight is checking identity, transport, source, shared control store, and reviewed-boundary readiness together; it does not create or activate authority."
-        : "--preflight requires a valid production_explore config. Generate one with synapsor-runner config init --production-explore.",
+        : "--preflight requires a valid production_explore config. Generate one with synapsor-runner config init --production-explore --engine postgres|mysql, choosing the source engine explicitly.",
     });
   }
   if (validation.ok && parsed.production_explore !== undefined) {

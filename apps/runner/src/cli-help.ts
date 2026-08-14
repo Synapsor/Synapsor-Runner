@@ -184,8 +184,8 @@ activates the result.
 	`,
 	    config: `Usage:
   ${cmd} config init [--output ./synapsor.runner.json] [--engine postgres|mysql] [--read-url-env DATABASE_URL]
-  ${cmd} config init --production-explore --tenant-claim tenant_id --principal-claim sub [--tenant-binding tenant_id] [--principal-binding rep] --issuer https://identity.example --audience https://runner.example/mcp --accounting-namespace acme.analytics.production [--project-root .]
-  ${cmd} config init --production-explore --single-tenant-organization-id internal-finance --principal-claim sub --issuer https://identity.example --audience https://runner.example/mcp --accounting-namespace internal.finance.production
+  ${cmd} config init --production-explore --engine postgres|mysql --tenant-claim tenant_id --principal-claim sub [--tenant-binding tenant_id] [--principal-binding rep] [--verify-bindings] --issuer https://identity.example --audience https://runner.example/mcp --accounting-namespace acme.analytics.production [--project-root .]
+  ${cmd} config init --production-explore --engine postgres|mysql --single-tenant-organization-id internal-finance --principal-claim sub --issuer https://identity.example --audience https://runner.example/mcp --accounting-namespace internal.finance.production
   ${cmd} config validate --config ./synapsor.runner.json
   ${cmd} config migrate --config ./synapsor.runner.json --out ./synapsor.runner.migrated.json
 
@@ -196,20 +196,27 @@ With --production-explore it emits the complete zero-authority shared-Postgres,
 JWT/JWKS, secured HTTP, OAuth, budget, source-pool, and session-cap skeleton.
 It reuses source, claim, and reviewed column bindings from a production boundary
 draft when one exists; issuer, audience, and accounting namespace remain
-explicit operator inputs. Without a reviewed draft, multi-tenant setup requires
+explicit operator inputs. Without a reviewed draft, --engine postgres|mysql is
+required and is never inferred by reading a credential value. Multi-tenant setup requires
 --tenant-claim and --principal-claim; multi-tenant MySQL also requires
 --tenant-binding because MySQL has no PostgreSQL RLS metadata from which Runner
 can prove a tenant column. --principal-binding is optional and enables reviewed
 per-principal row scope when that non-null column exists. Single-organization setup requires
 --single-tenant-organization-id and --principal-claim. Optional overrides are
---engine, --source, --read-url-env, --tenant-binding, --principal-binding,
+--source, --read-url-env, --tenant-binding, --principal-binding,
 --oauth-scope, --control-url-env,
 --jwks-url-env, --hmac-key-env, and --http-channel trusted_tls_proxy|direct_tls.
+When a direct binding is configured and the named source environment variable is
+set, init reads schema metadata only and warns if the column is missing, nullable,
+or otherwise ineligible. --verify-bindings makes an unavailable source or invalid
+binding fail before the config is written. With no source value, ordinary offline
+generation skips this check silently; explicit --verify-bindings requires the value.
 Adding a binding after an older draft prints the exact reconciling boundary
 rescan command; review and activate that disabled revision before preflight.
 The generated file references DATABASE_URL, SYNAPSOR_CONTROL_DATABASE_URL,
-SYNAPSOR_SESSION_JWKS_URL, and SYNAPSOR_EXPLORE_BUDGET_HMAC_KEY by default; it
-does not read or write their values. Set those values, run doctor, then serve
+SYNAPSOR_SESSION_JWKS_URL, and SYNAPSOR_EXPLORE_BUDGET_HMAC_KEY by default.
+Binding verification may read the source URL only to connect; no secret value is
+written. Set those values, run doctor, then serve
 with --transport streamable-http --production-explore. No database URL, JWT,
 HMAC key, or other secret value is written.
 Contract paths are resolved relative to the config file. SQLite store paths are

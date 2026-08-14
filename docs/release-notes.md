@@ -54,6 +54,13 @@ for the Synapsor Cloud CLI.
   column into a disabled per-boundary review. CLI and Workbench can review a
   direct column or derived path, while activation and all trusted principal
   values remain outside the model.
+- Config-first production Explore scaffolding now requires an explicit
+  `--engine postgres|mysql` instead of silently defaulting to PostgreSQL. When a
+  source environment value is available, direct tenant/principal bindings are
+  checked against read-only schema metadata with actionable warnings;
+  `--verify-bindings` makes connectivity or binding defects fail before the
+  zero-authority config is written. Offline generation remains silent when the
+  source variable is unset.
 - The focused `/access` editor keeps activation and deactivation inside the
   editor. Table-level `R` is explicitly **Remove from draft**, boundary-level
   `D` is **Deactivate active boundary**, zero active boundaries remain a normal

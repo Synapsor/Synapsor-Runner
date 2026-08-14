@@ -305,6 +305,14 @@ No match, a nullable column, or a binary/large column leaves principal row scope
 unconfigured. `config init --production-explore` accepts
 `--tenant-binding <column>` and `--principal-binding <column>`, carries reviewed
 bindings forward from an existing draft lock, and rejects a conflicting value.
+Before a production draft exists, `--engine postgres|mysql` is mandatory and is
+never inferred from the source URL. If the named source environment variable is
+set, init checks configured direct bindings against read-only schema metadata
+and warns when a column is missing or structurally ineligible. Add
+`--verify-bindings` to make an unreachable source or invalid binding fail before
+the config is written. An unset source variable remains a silent offline path
+unless strict verification was explicitly requested. The URL value is never
+written or printed.
 When a binding is added to a legacy draft that reviewed it as unset, config init
 marks reconciliation as required and prints the exact `boundary rescan` command;
 production startup remains fail-closed until that revision is reviewed and

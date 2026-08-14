@@ -211,6 +211,22 @@ and reviewed tenant/principal column bindings. The config-first path avoids the 
 environment-bound local config is discovered while requesting a production
 HTTP-claims draft.
 
+Without an existing production draft, `--engine postgres|mysql` is required.
+Runner deliberately does not infer it from `DATABASE_URL`: doing so would read
+a credential value merely to decide which config to write and could silently
+scaffold the wrong dialect when the variable is unavailable.
+
+When a direct tenant or principal binding is configured and the named source
+environment variable is already set, `config init` performs a read-only schema
+inspection. A missing, nullable, or large/binary binding produces an actionable
+warning naming `--tenant-binding` or `--principal-binding`; the zero-authority
+config is still written. Add `--verify-bindings` to require a reachable source
+and make any such warning fail before writing the file. If the source variable
+is unset and `--verify-bindings` was not requested, offline/CI generation skips
+the check silently. Inspection reads the URL only to connect and never writes or
+prints it; it reads metadata, not source rows. This behavior is identical for
+PostgreSQL and MySQL.
+
 For a multi-tenant MySQL source, name the tenant column up front because MySQL
 does not expose PostgreSQL RLS policy metadata that could prove it. Add
 `--tenant-binding tenant_id` to the command above, changing `tenant_id` to the

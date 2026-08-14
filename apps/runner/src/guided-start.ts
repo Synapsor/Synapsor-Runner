@@ -1022,6 +1022,7 @@ export async function boundaryCommand(
     const productionConfigCommand = deploymentProfile === "production" && !configPath
       ? [
         `${cliCommandName()} config init --production-explore`,
+        `--engine ${build.lock.engine}`,
         `--project-root ${shellQuote(displayedProjectRoot)}`,
         `--output ${shellQuote(displayPath(path.join(projectRoot, "synapsor.runner.json")))}`,
         "--issuer https://identity.example",
@@ -1199,9 +1200,9 @@ async function configuredExploreTrustedContext(input: {
   decidedAt: string;
 } | undefined> {
   const config = loadRuntimeConfigFromFile(input.configPath);
-  const sourceMatches = Object.values(config.sources ?? {}).some((source) =>
+  const configuredSource = Object.values(config.sources ?? {}).find((source) =>
     source.read_url_env === input.sourceEnv);
-  if (!sourceMatches || !config.trusted_context) return undefined;
+  if (!configuredSource || !config.trusted_context) return undefined;
   const context = config.trusted_context;
   const tenantBinding = context.tenant_binding?.trim();
   const principalBinding = context.principal_binding?.trim();
@@ -1233,7 +1234,7 @@ async function configuredExploreTrustedContext(input: {
     };
   } else {
     const setup = input.deploymentProfile === "production"
-      ? ` Generate the secured runtime config first with ${cliCommandName()} config init --production-explore, then retry the production boundary draft.`
+      ? ` Generate the secured runtime config first with ${cliCommandName()} config init --production-explore --engine ${configuredSource.engine}, then retry the production boundary draft.`
       : "";
     throw new Error(
       `Runner config trusted_context.provider=${context.provider} does not match the requested ${input.deploymentProfile} Explore profile.${setup}`,

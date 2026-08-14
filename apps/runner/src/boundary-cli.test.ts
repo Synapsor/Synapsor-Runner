@@ -592,6 +592,7 @@ describe("boundary operator-plane CLI", () => {
 
       expect(output).toContain("Then generate the secured production runtime config:");
       expect(output).toContain("synapsor-runner config init --production-explore");
+      expect(output).toContain("--engine postgres");
       expect(output).toContain(`--project-root '${root}'`);
       expect(output).toContain("--issuer https://identity.example");
       expect(output).toContain("--audience https://runner.example/mcp");
@@ -1007,7 +1008,7 @@ describe("boundary operator-plane CLI", () => {
         "--tenant-claim", "tenant_id",
         "--principal-claim", "sub",
       ], async () => boundaryInspection())).rejects.toThrow(
-        /config init --production-explore.*retry the production boundary draft/i,
+        /config init --production-explore --engine postgres.*retry the production boundary draft/i,
       );
     } finally {
       await fs.rm(root, { recursive: true, force: true });
