@@ -1,8 +1,10 @@
 import readline from "node:readline";
 import type { ReadStream, WriteStream } from "node:tty";
-import type {
-  BoundaryResourceReviewSummary,
-  BoundaryResourceReviewView,
+import {
+  reviewedBoundaryFieldTier,
+  type BoundaryResourceReviewSummary,
+  type BoundaryResourceReviewView,
+  type ReviewedBoundaryFieldTier,
 } from "./boundary-review-mutation.js";
 import {
   SHARED_REFERENCE_ACKNOWLEDGEMENT,
@@ -25,7 +27,7 @@ import {
 import { blockedTenantScopeGuidance } from "./boundary-scope-guidance.js";
 import { shellQuote } from "./cli-format.js";
 
-export type BoundaryFieldTier = "visible" | "withheld_from_model" | "kept_out";
+export type BoundaryFieldTier = ReviewedBoundaryFieldTier;
 export type BoundaryFieldTierEditResult =
   | Record<string, BoundaryFieldTier>
   | {
@@ -1377,10 +1379,7 @@ function currentReviewedEnumValues(
 
 function currentFieldTier(view: BoundaryResourceReviewView, field: string): BoundaryFieldTier {
   const candidate = view.candidate ?? view.generated_candidate;
-  if (candidate?.kept_out_fields.includes(field)) return "kept_out";
-  if (candidate?.model_withheld_fields?.includes(field)) return "withheld_from_model";
-  if (candidate?.selectable_fields.includes(field)) return "visible";
-  return "kept_out";
+  return reviewedBoundaryFieldTier(candidate, field);
 }
 
 function cycleTier(current: BoundaryFieldTier, direction: 1 | -1): BoundaryFieldTier {

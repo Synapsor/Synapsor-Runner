@@ -27,6 +27,7 @@ describe("Auto Boundary Workbench renderer", () => {
       ["local-model provider controls", ["OpenAI-compatible or local", "Model request timeout (seconds)"]],
       ["external MCP client setup", ["Use an existing AI or MCP client", "Generic stdio MCP", "Managed project installers"]],
       ["dependency-aware table removal", ["This table cannot be removed yet", "Remove or re-scope", "Nothing was saved or activated"]],
+      ["effective reviewed field counts", ["reviewedFieldAccessCounts", "Runner-only</span>", "kept out</span>"]],
     ];
     for (const [feature, markers] of parityMarkers) {
       for (const marker of markers) expect(html, feature).toContain(marker);
@@ -74,6 +75,37 @@ describe("Auto Boundary Workbench renderer", () => {
     });
     expect(script).toContain("if(!toggleResource(selectedResource,false))return");
     expect(script).toContain("if(!toggleResource(input.dataset.resourceToggle,input.checked))input.checked=true");
+  });
+
+  it("counts a low-risk reviewer exclusion in every Workbench field summary", () => {
+    const html = renderBoundaryWorkbench("test-csrf");
+    const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? "";
+    const start = script.indexOf("function reviewedFieldAccessTier");
+    const end = script.indexOf("const reviewedResourceKind", start);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+
+    const resource = {
+      id: "librarydb.event_notes",
+      field_types: {
+        id: "int",
+        loan_event_id: "int",
+        note_source: "enum",
+        sentiment: "enum",
+      },
+      selectable_fields: ["id", "loan_event_id", "sentiment"],
+      model_withheld_fields: [],
+      kept_out_fields: [],
+    };
+    const review = {
+      fields: Object.keys(resource.field_types).map((name) => ({ name })),
+    };
+    const counts = vm.runInNewContext(
+      `${script.slice(start, end)}\nreviewedFieldAccessCounts(resource, review)`,
+      { resource, review },
+    );
+    expect({ ...counts }).toEqual({ visible: 3, runnerOnly: 0, keptOut: 1 });
+    expect(counts.visible + counts.runnerOnly + counts.keptOut).toBe(review.fields.length);
   });
 
   it("assigns distinct graph lanes to multiple relationships from one table", () => {

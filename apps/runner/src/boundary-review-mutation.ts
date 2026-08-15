@@ -70,6 +70,44 @@ import { synchronizeBoundaryLibrary } from "./boundary-library.js";
 
 type JsonRecord = Record<string, unknown>;
 
+type ReviewedBoundaryFieldResource = ExplorationBoundaryDraft["pack"]["resources"][number];
+
+export type ReviewedBoundaryFieldTier = "visible" | "withheld_from_model" | "kept_out";
+
+export type ReviewedBoundaryFieldCounts = {
+  model_visible_fields: number;
+  runner_output_only_fields: number;
+  kept_out_fields: number;
+};
+
+export function reviewedBoundaryFieldTier(
+  resource: ReviewedBoundaryFieldResource | null | undefined,
+  field: string,
+): ReviewedBoundaryFieldTier {
+  if (resource?.kept_out_fields.includes(field)) return "kept_out";
+  if (resource?.model_withheld_fields?.includes(field)) return "withheld_from_model";
+  if (resource?.selectable_fields.includes(field)) return "visible";
+  return "kept_out";
+}
+
+export function reviewedBoundaryFieldCounts(
+  resource: ReviewedBoundaryFieldResource | null | undefined,
+  inspectedFields: readonly string[],
+): ReviewedBoundaryFieldCounts {
+  const counts: ReviewedBoundaryFieldCounts = {
+    model_visible_fields: 0,
+    runner_output_only_fields: 0,
+    kept_out_fields: 0,
+  };
+  for (const field of new Set(inspectedFields)) {
+    const tier = reviewedBoundaryFieldTier(resource, field);
+    if (tier === "visible") counts.model_visible_fields += 1;
+    else if (tier === "withheld_from_model") counts.runner_output_only_fields += 1;
+    else counts.kept_out_fields += 1;
+  }
+  return counts;
+}
+
 export type BoundaryResourceReviewRequest = {
   resource_id: string;
   metadata?: {
@@ -638,6 +676,10 @@ export async function listBoundaryResourceReviews(
       const pendingDecisions = state.candidate.unresolved_decisions
         .filter((decision) => decision.startsWith(`${resource.id}:`) && !confirmed.has(decision));
       const scopeResolutionGuidance = blockedTenantScopeGuidance(resource);
+      const fieldCounts = reviewedBoundaryFieldCounts(
+        display,
+        resource.fields.map((field) => field.name),
+      );
       return {
         candidate_boundary_name: state.candidate.pack.name,
         ...(activeBoundary?.pack.name
@@ -654,13 +696,7 @@ export async function listBoundaryResourceReviews(
           : {}),
         pending_decisions: pendingDecisions,
         risk_count: pendingDecisions.length + resource.blockers.length,
-        model_visible_fields: display
-          ? display.selectable_fields.filter(
-            (field) => !(display.model_withheld_fields ?? []).includes(field),
-          ).length
-          : 0,
-        runner_output_only_fields: display?.model_withheld_fields?.length ?? 0,
-        kept_out_fields: display?.kept_out_fields.length ?? resource.fields.length,
+        ...fieldCounts,
         ...(display ? {
           minimum_cohort_size: display.minimum_cohort_size,
           ...(display.minimum_cohort_overridden === true

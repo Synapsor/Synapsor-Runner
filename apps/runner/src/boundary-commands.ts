@@ -87,6 +87,7 @@ import {
   listBoundaryResourceReviews,
   prepareBoundaryReviewMutationBatch,
   prepareBoundaryResourceReviewMutation,
+  reviewedBoundaryFieldTier,
   type BoundaryResourceReviewView,
   type BoundaryResourceReviewRequest,
   type BoundaryReviewMutationBatchPreview,
@@ -4174,10 +4175,7 @@ function currentBoundaryFieldTier(
   field: string,
 ): BoundaryFieldTier {
   const candidate = view.candidate ?? view.generated_candidate;
-  if (candidate?.kept_out_fields.includes(field)) return "kept_out";
-  if (candidate?.model_withheld_fields?.includes(field)) return "withheld_from_model";
-  if (candidate?.selectable_fields.includes(field)) return "visible";
-  return "kept_out";
+  return reviewedBoundaryFieldTier(candidate, field);
 }
 
 function boundaryRequestCommandArgs(

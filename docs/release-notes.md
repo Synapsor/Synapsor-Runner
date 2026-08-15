@@ -54,6 +54,10 @@ for the Synapsor Cloud CLI.
   field policies, and presents changed multi-hop relationships as readable table
   and join-column chains in the CLI and Workbench before showing the copyable path
   ID.
+- Access summaries now count fields from the effective reviewed policy rather than
+  sensitivity classification alone. Model-visible, Runner-only, and kept-out counts
+  therefore cover every inspected field, including low-risk fields an operator kept
+  unavailable explicitly.
 - Production Explore is off by default and fails closed without read-only mode,
   exact production authority, verified issuer/audience/claims and OAuth scope,
   direct TLS or a trusted TLS proxy, shared HMAC material, and initialized

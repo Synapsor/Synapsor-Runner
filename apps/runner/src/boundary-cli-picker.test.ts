@@ -10,9 +10,10 @@ import {
   terminalTheme,
   type BoundaryFieldTier,
 } from "./boundary-cli-picker.js";
-import type {
-  BoundaryResourceReviewSummary,
-  BoundaryResourceReviewView,
+import {
+  reviewedBoundaryFieldCounts,
+  type BoundaryResourceReviewSummary,
+  type BoundaryResourceReviewView,
 } from "./boundary-review-mutation.js";
 
 describe("boundary review terminal picker", () => {
@@ -1093,6 +1094,59 @@ describe("boundary review terminal picker", () => {
     expect(rendered).toContain("event_note_id");
     expect(rendered).toContain("[needs review]");
     expect(rendered).not.toContain("[free text]");
+  });
+
+  it("counts reviewer-excluded low-risk fields from effective reviewed policy", () => {
+    const view = reviewView();
+    const noteSource = {
+      ...view.fields[0]!,
+      name: "note_source",
+      data_type: "enum",
+      primary_key: false,
+      enum_values: ["staff", "system", "member"],
+      count_distinct_suggestion: false,
+      groupable_suggestion: true,
+      evidence: ["database column note_source enum"],
+    };
+    view.fields.push(noteSource);
+
+    const candidate = view.candidate!;
+    candidate.field_types.note_source = "enum";
+    candidate.field_enums.note_source = [...noteSource.enum_values];
+    expect(candidate.selectable_fields).not.toContain("note_source");
+    expect(candidate.kept_out_fields).not.toContain("note_source");
+
+    const generated = view.generated_candidate!;
+    generated.field_types.note_source = "enum";
+    generated.field_enums.note_source = [...noteSource.enum_values];
+    generated.selectable_fields.push("note_source");
+    generated.filterable_fields.note_source = ["eq", "neq", "in"];
+    generated.sortable_fields.push("note_source");
+    generated.groupable_fields.push("note_source");
+
+    const counts = reviewedBoundaryFieldCounts(
+      candidate,
+      view.fields.map((field) => field.name),
+    );
+    expect(counts).toEqual({
+      model_visible_fields: 1,
+      runner_output_only_fields: 0,
+      kept_out_fields: 2,
+    });
+    expect(
+      counts.model_visible_fields
+      + counts.runner_output_only_fields
+      + counts.kept_out_fields,
+    ).toBe(view.fields.length);
+
+    const resource = summary(view.resource_id, 0);
+    Object.assign(resource, counts);
+    const overview = formatBoundaryOverviewMap([resource], { exhaustive: true });
+    expect(overview).toContain("fields: 1 model | 0 raw Runner-only | 2 kept out");
+
+    const detail = formatBoundaryResourceMap(view);
+    expect(detail).toContain("Kept-out fields");
+    expect(detail).toContain("note_source: no operations [low structural risk]");
   });
 
   it("bounds the default overview for a large schema and exposes the full catalog explicitly", () => {

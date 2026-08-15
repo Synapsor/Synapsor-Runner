@@ -818,6 +818,33 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      return includedIds.has(connection.source)?connection.source:connection.target;
 	    };
 	    const reviewResource=id=>(reviewReport&&reviewReport.resources||[]).find(resource=>resource.id===id);
+	    function reviewedFieldAccessTier(resource,field){
+	      if(!resource)return "kept_out";
+	      if((resource.kept_out_fields||[]).includes(field))return "kept_out";
+	      if((resource.model_withheld_fields||[]).includes(field))return "runner_only";
+	      if((resource.selectable_fields||[]).includes(field))return "visible";
+	      return "kept_out";
+	    }
+	    function reviewedFieldAccessCounts(resource,review=reviewResource(resource&&resource.id)){
+	      const reviewedFields=(review&&review.fields||[]).map(field=>field.name);
+	      const fields=[...new Set(reviewedFields.length?reviewedFields:Object.keys(resource&&resource.field_types||{}))];
+	      return fields.reduce((counts,field)=>{
+	        const tier=reviewedFieldAccessTier(resource,field);
+	        if(tier==="visible")counts.visible+=1;
+	        else if(tier==="runner_only")counts.runnerOnly+=1;
+	        else counts.keptOut+=1;
+	        return counts;
+	      },{visible:0,runnerOnly:0,keptOut:0});
+	    }
+	    function totalReviewedFieldAccess(resources){
+	      return (resources||[]).reduce((total,resource)=>{
+	        const counts=reviewedFieldAccessCounts(resource);
+	        total.visible+=counts.visible;
+	        total.runnerOnly+=counts.runnerOnly;
+	        total.keptOut+=counts.keptOut;
+	        return total;
+	      },{visible:0,runnerOnly:0,keptOut:0});
+	    }
 	    const reviewedResourceKind=id=>reviewResource(id)?.type==="view"?"view":"table";
 	    const reviewedCollectionLabel=(resources=reviewReport?.resources||[])=>{
 	      return resources.some(resource=>resource.type==="view")?"tables and views":"tables";
@@ -908,9 +935,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const outsideKindLabel=otherResources===1
         ?reviewedResourceKind(outsideReviews[0]?.id)
         :reviewedCollectionLabel(outsideReviews);
-      const visibleCount=candidateResources.reduce((total,item)=>total+(item.selectable_fields||[]).filter(field=>!(item.model_withheld_fields||[]).includes(field)).length,0);
-      const runnerOnlyCount=candidateResources.reduce((total,item)=>total+(item.model_withheld_fields||[]).length,0);
-      const hiddenCount=candidateResources.reduce((total,item)=>total+(item.kept_out_fields||[]).length,0);
+	      const fieldAccess=totalReviewedFieldAccess(candidateResources);
+	      const visibleCount=fieldAccess.visible;
+	      const runnerOnlyCount=fieldAccess.runnerOnly;
+	      const hiddenCount=fieldAccess.keptOut;
       const relationshipCount=candidateResources.reduce((total,item)=>total+(item.relationships||[]).length,0);
       const includedLabels=candidateResources.map(item=>humanizeIdentifier(item.table||item.id.split(".").pop()||item.id));
       const resourceLabel=includedResourceCount===1
@@ -1312,8 +1340,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      ).length;
 	      const boundarySignoffs=globalDecisions().some(decision=>!confirmedDecisions.has(decision))?1:0;
 	      const unresolvedSignoffs=tableSignoffs+boundarySignoffs;
-	      const exposed=candidate.pack.resources.reduce((total,resource)=>total+resource.selectable_fields.length,0);
-	      const hidden=candidate.pack.resources.reduce((total,resource)=>total+resource.kept_out_fields.length,0);
+	      const fieldAccess=totalReviewedFieldAccess(candidate.pack.resources);
+	      const exposed=fieldAccess.visible;
+	      const hidden=fieldAccess.runnerOnly+fieldAccess.keptOut;
       byId("summary").innerHTML=[
 	        [candidate.pack.resources.length,reviewedCollectionLabel()+" included"],
 	        [exposed,"fields the agent can see"],
@@ -1748,8 +1777,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	        const included=Boolean(resource);
 		        const risks=riskCount({id:review.id});
 		        const sensitiveKeptOut=sensitiveKeptOutCount(review.id);
-	        const raw=resource?resource.selectable_fields.length:0;
-	        const kept=resource?resource.kept_out_fields.length:(review.fields||[]).filter(field=>field.sensitivity?.state!=="structurally_low_risk").length;
+	        const fieldAccess=reviewedFieldAccessCounts(resource,review);
+	        const raw=fieldAccess.visible;
+	        const runnerOnly=fieldAccess.runnerOnly;
+	        const kept=fieldAccess.keptOut;
 	        const primary=source?.primary_key||review.primary_key?.selected||"unresolved";
 	        const tenant=reviewedTenantScopeLabel(source,review);
 	        const principal=reviewedPrincipalScopeLabel(source,review);
@@ -1760,7 +1791,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           const reviewedDepth=Number(candidate?.budgets?.max_derived_scope_hops??candidate?.budgets?.max_relationship_hops??2);
           const availableTenantPaths=blocked?[...(review.derived_tenant_scope?.candidates||[])].sort((left,right)=>(left.proof?.links?.length||0)-(right.proof?.links?.length||0)||left.path_id.localeCompare(right.path_id)):[];
           const scopeAvailable=availableTenantPaths.length?'<div class="risk-list">'+availableTenantPaths.slice(0,3).map(path=>{const depth=path.proof?.links?.length||1;const joinColumns=derivedScopeJoinColumns(path);return '<div class="risk available"><strong>Tenant scope available ('+esc(depth)+' hop'+(depth===1?'':'s')+')</strong><p>'+esc(derivedScopePathChain(path))+'</p>'+(joinColumns?'<p>via columns: <code>'+esc(joinColumns)+'</code></p>':'')+'<p>path ID: <code>'+esc(path.path_id)+'</code></p>'+(depth>reviewedDepth?'<p>Needs max_derived_scope_hops '+esc(depth)+' (currently '+esc(reviewedDepth)+').</p>':'')+'</div>';}).join("")+'</div>':'';
-	        return '<article class="resource" data-risk="'+risks+'"><div class="resource-head"><div><h3 class="resource-name">'+esc(review.id)+'</h3><p>'+esc(blocked?"Unavailable: "+(review.blockers||[]).join("; "):included?"Included in the agent data set":"Excluded from the agent data set")+'</p></div><span class="badge '+badgeClass+'">'+esc(badgeText)+'</span></div><div class="badges"><span class="badge">'+esc(raw)+' visible</span><span class="badge">'+esc(kept)+' hidden</span>'+(sensitiveKeptOut?'<span class="badge good">'+esc(sensitiveKeptOut)+' sensitive kept out</span>':'')+'<span class="badge">record ID: '+esc(primary)+'</span></div><p>Customer isolation: <code>'+esc(tenant)+'</code> · User/owner limit: <code>'+esc(principal)+'</code></p>'+scopeWhy+scopeAvailable+(blocked?'<p><strong>Next:</strong> '+esc(blockedResourceNextAction(review))+'</p>':'')+'<div class="actions"><button class="secondary" data-open-resource="'+esc(review.id)+'" type="button">'+esc(risks?"Review access":"Inspect access")+'</button>'+(source?'<label class="check"><input type="checkbox" data-resource-toggle="'+esc(review.id)+'" '+(included?"checked":"")+'> Include</label>':'')+'</div></article>';
+	        return '<article class="resource" data-risk="'+risks+'"><div class="resource-head"><div><h3 class="resource-name">'+esc(review.id)+'</h3><p>'+esc(blocked?"Unavailable: "+(review.blockers||[]).join("; "):included?"Included in the agent data set":"Excluded from the agent data set")+'</p></div><span class="badge '+badgeClass+'">'+esc(badgeText)+'</span></div><div class="badges"><span class="badge">'+esc(raw)+' visible</span><span class="badge">'+esc(runnerOnly)+' Runner-only</span><span class="badge">'+esc(kept)+' kept out</span>'+(sensitiveKeptOut?'<span class="badge good">'+esc(sensitiveKeptOut)+' sensitive kept out</span>':'')+'<span class="badge">record ID: '+esc(primary)+'</span></div><p>Customer isolation: <code>'+esc(tenant)+'</code> · User/owner limit: <code>'+esc(principal)+'</code></p>'+scopeWhy+scopeAvailable+(blocked?'<p><strong>Next:</strong> '+esc(blockedResourceNextAction(review))+'</p>':'')+'<div class="actions"><button class="secondary" data-open-resource="'+esc(review.id)+'" type="button">'+esc(risks?"Review access":"Inspect access")+'</button>'+(source?'<label class="check"><input type="checkbox" data-resource-toggle="'+esc(review.id)+'" '+(included?"checked":"")+'> Include</label>':'')+'</div></article>';
 	      }).join("")||'<div class="band notice"><strong>No '+esc(reviewedCollectionLabel())+' match this view.</strong><p>The inspected resources are still available; this filter did not change authority.</p><button id="reset-resource-filter" class="secondary" type="button">Show all '+esc(reviewedCollectionLabel())+'</button></div>';
       document.querySelectorAll("[data-open-resource]").forEach(button=>button.onclick=()=>openResource(button.dataset.openResource));
       document.querySelectorAll("[data-resource-toggle]").forEach(input=>input.onchange=()=>{
@@ -2921,18 +2952,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      const renderColumnRow=field=>{
 	        const classification=field.sensitivity||{state:"structurally_low_risk",reason_codes:[],reasons:[]};
 	        const sensitive=classification.state!=="structurally_low_risk";
-	        const kept=Boolean((resource||source)?.kept_out_fields.includes(field.name))||(!source&&sensitive);
-	        const withheld=Boolean(resource?.model_withheld_fields?.includes(field.name));
-	        const usable=Boolean(resource&&(
-	          fieldHas(resource,field.name,"selectable_fields")
-	          ||fieldHas(resource,field.name,"filterable_fields")
-	          ||fieldHas(resource,field.name,"sortable_fields")
-	          ||fieldHas(resource,field.name,"groupable_fields")
-	          ||fieldHas(resource,field.name,"aggregate_measures")
-	          ||fieldHas(resource,field.name,"count_distinct_fields")
-	          ||fieldHas(resource,field.name,"time_bucket_fields")
-	        ));
-	        const visible=usable&&!withheld&&!kept;
+	        const reviewedTier=resource?reviewedFieldAccessTier(resource,field.name):null;
+	        const kept=reviewedTier==="kept_out"||(!source&&sensitive);
+	        const withheld=reviewedTier==="runner_only";
 	        const supportsVisibility=Boolean(source&&(
 	          fieldHas(source,field.name,"selectable_fields")
 	          ||fieldHas(source,field.name,"filterable_fields")
@@ -2942,6 +2964,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	          ||fieldHas(source,field.name,"count_distinct_fields")
 	          ||fieldHas(source,field.name,"time_bucket_fields")
 	        ));
+	        const visible=reviewedTier==="visible"&&supportsVisibility;
 		        const available=Boolean(source&&resource);
 		        const trustedScopeField=field.name===source?.tenant_key||field.name===source?.principal_key;
 		        const tier=kept
@@ -3332,15 +3355,16 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const decisionLabel=collectionLabel==="tables"?"table":"table/view";
       const nextBlocker=outstanding[0];
       const signoffsRemaining=remainingResources.length+(globalOutstanding.length?1:0);
-      byId("signoff-summary").innerHTML='<h3>'+(signoffsRemaining?esc(signoffsRemaining)+' review sign-off'+(signoffsRemaining===1?"":"s")+' remaining':'Review complete')+'</h3>'
+	      const fieldAccess=totalReviewedFieldAccess(candidate.pack.resources);
+	      byId("signoff-summary").innerHTML='<h3>'+(signoffsRemaining?esc(signoffsRemaining)+' review sign-off'+(signoffsRemaining===1?"":"s")+' remaining':'Review complete')+'</h3>'
         +(outstanding.length
           ?'<p><strong>One next step:</strong> '+esc(humanDecision(nextBlocker))+'</p><p>Each '+esc(decisionLabel)+' sign-off confirms its fields, operations, trusted scope, privacy limits, and reviewed relationships together. Runner still records all '+esc(total)+' exact digest-bound decisions underneath.</p><button id="review-next-blocker" class="secondary" type="button">Go to next sign-off</button>'
           :'<p>Every boundary-wide and '+esc(decisionLabel)+' sign-off is confirmed. Runner recorded all '+esc(total)+' exact digest-bound decisions.</p>')
         +(reviewInvalidations.length?'<p>'+esc(reviewInvalidations.length)+' earlier confirmation'+(reviewInvalidations.length===1?" was":"s were")+' invalidated because reviewed inputs changed.</p>':"")
         +'<p>'+esc(collectionLabel.replace(/\\b\\w/g,char=>char.toUpperCase()))+': '+esc(candidate.pack.resources.length)
-        +' / Model-visible fields: '+esc(candidate.pack.resources.reduce((sum,resource)=>sum+resource.selectable_fields.filter(field=>!(resource.model_withheld_fields||[]).includes(field)).length,0))
-        +' / Model-withheld fields: '+esc(candidate.pack.resources.reduce((sum,resource)=>sum+(resource.model_withheld_fields||[]).length,0))
-        +' / Kept-out fields: '+esc(candidate.pack.resources.reduce((sum,resource)=>sum+resource.kept_out_fields.length,0))+'</p>';
+	        +' / Model-visible fields: '+esc(fieldAccess.visible)
+	        +' / Model-withheld fields: '+esc(fieldAccess.runnerOnly)
+	        +' / Kept-out fields: '+esc(fieldAccess.keptOut)+'</p>';
       byId("review-next-blocker")?.addEventListener("click",()=>{
         const separator=nextBlocker.indexOf(": ");
         if(separator>0&&reviewResource(nextBlocker.slice(0,separator))){

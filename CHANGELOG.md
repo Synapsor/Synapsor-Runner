@@ -35,6 +35,9 @@
   reviewed paths, and field policies accurately, while new and removed multi-hop
   relationships use readable table and join-column chains before the exact path ID
   in both the CLI and Workbench.
+- Makes CLI and Workbench access summaries partition every inspected field by its
+  effective reviewed policy, so a low-risk field retained as kept out by an owner
+  decision is no longer omitted from the kept-out count.
 - Fails startup closed without explicit opt-in, read-only mode, secured shared
   HTTP, required OAuth scope, exact JWT issuer/audience/claims, shared HMAC
   material, shared accounting, and current exact-digest production authority.
