@@ -4892,7 +4892,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	        add(label,"Queries · rolling 24 hours","Volume",scope.volume?.queries_rolling_24_hours);
 	        add(label,"Requests · rolling minute","Volume",scope.volume?.requests_rolling_minute);
 	        add(label,"Extracted cells · rolling 24 hours","Disclosure",scope.disclosure?.extracted_cells_rolling_24_hours);
-	        add(label,"Differencing variants · rolling 24 hours","Disclosure",scope.disclosure?.differencing_variants_rolling_24_hours);
+	        const differencing=scope.disclosure?.differencing_variants_rolling_24_hours;
+	        const differencingResource=differencing?.root_resource||"current root resource";
+	        add(label,"Differencing variants for "+differencingResource+" · rolling 24 hours","Disclosure",differencing);
 	      });
 	      const warning=warnings.length
 	        ?'<div class="band notice"><strong>Reviewed budget is nearing its limit</strong>'+warnings.map(message=>'<p>'+esc(message)+'</p>').join("")+'<p>Review throughput in this boundary&apos;s Query volume settings. Disclosure controls remain separate.</p></div>'

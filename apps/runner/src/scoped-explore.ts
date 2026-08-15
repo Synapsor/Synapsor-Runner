@@ -777,6 +777,7 @@ export async function createScopedExploreRuntime(input: {
                 estimatedResponseCells,
                 now: executionStartedAt,
                 exhaustedScope,
+                resourceId: plan.resource,
               },
             ),
           );
@@ -1112,6 +1113,7 @@ export async function createScopedExploreRuntime(input: {
             }
             : {}),
           requiresDifferencing,
+          resourceId: plan.resource,
           returnedCells: response.cells,
           completedAt,
         }),
@@ -3458,6 +3460,16 @@ function describeExploreResult(input: {
       differencing_queries: differencingProtectionRequired
         ? Math.max(0, budgets.max_differencing_queries - input.budgetUsage.differencing_attempts)
         : null,
+      differencing_variants_for_root_resource: differencingProtectionRequired
+        ? {
+          resource: resource.id,
+          used: input.budgetUsage.differencing_attempts,
+          limit: budgets.max_differencing_queries,
+          remaining: Math.max(0, budgets.max_differencing_queries - input.budgetUsage.differencing_attempts),
+          window: "rolling_24_hours",
+          persists_across_sessions: true,
+        }
+        : null,
     },
     query_audit_handle: input.queryFingerprint,
     source_database_changed: false,
@@ -4053,6 +4065,7 @@ function exploreBudgetRefusalMessage(input: {
   estimatedResponseCells: number;
   now: number;
   exhaustedScope?: "principal" | "tenant";
+  resourceId: string;
 }): string {
   const scope = input.exhaustedScope === "tenant"
     ? "Tenant-wide production ceiling"
@@ -4092,8 +4105,9 @@ function exploreBudgetRefusalMessage(input: {
   if (input.code === "DIFFERENCING_BUDGET_EXHAUSTED") {
     return [
       `${scope}: disclosure-control differencing allowance exhausted.`,
-      `Used ${input.usage.differencing_attempts} of ${input.limits.max_differencing_queries} distinct protected variants in the rolling 24-hour window.`,
+      `Used ${input.usage.differencing_attempts} of ${input.limits.max_differencing_queries} distinct protected variants for root resource ${input.resourceId} in the rolling 24-hour window.`,
       `Capacity returns as earlier variants age out; all currently counted variants expire no later than ${rollingExpiry}.`,
+      "This counter follows the trusted tenant/principal scope across token renewal, reconnects, and server restarts; it is not an MCP-session counter.",
       "This privacy control is separate from query volume and prevents reconstruction through repeated variants.",
     ].join("\n");
   }
@@ -4108,6 +4122,7 @@ function describeOperatorExploreBudget(input: {
   tenantLimits?: ExploreBudgetLimits;
   tenantVariantAlreadyCounted?: boolean;
   requiresDifferencing: boolean;
+  resourceId: string;
   returnedCells: number;
   completedAt: number;
 }): Record<string, unknown> {
@@ -4133,15 +4148,20 @@ function describeOperatorExploreBudget(input: {
         usage.extracted_cells,
         limits.max_extracted_cells_per_session,
       ),
-      differencing_variants_rolling_24_hours: budgetGauge(
-        usage.differencing_attempts,
-        limits.max_differencing_queries,
-      ),
+      differencing_variants_rolling_24_hours: {
+        ...budgetGauge(
+          usage.differencing_attempts,
+          limits.max_differencing_queries,
+        ),
+        root_resource: input.resourceId,
+        persists_across_sessions: true,
+      },
     },
     warnings: budgetThresholdWarnings({
       scope,
       usage,
       limits,
+      resourceId: input.resourceId,
       queryIncrement: 1,
       extractedCellIncrement: input.returnedCells,
       differencingIncrement: input.requiresDifferencing && !variantAlreadyCounted ? 1 : 0,
@@ -4149,7 +4169,7 @@ function describeOperatorExploreBudget(input: {
   });
   return {
     operator_only: true,
-    accounting: "per trusted scope; production also enforces a tenant-wide ceiling",
+    accounting: "query, rate, and extracted-cell usage is per trusted scope; differencing variants are per trusted scope and root resource; production also enforces tenant-wide ceilings",
     rolling_24_hour_usage_expires_no_later_than: new Date(
       input.completedAt + 24 * 60 * 60 * 1000,
     ).toISOString(),
@@ -4193,6 +4213,7 @@ function budgetThresholdWarnings(input: {
   scope: "trusted_scope" | "tenant";
   usage: ExploreBudgetUsage;
   limits: ExploreBudgetLimits;
+  resourceId: string;
   queryIncrement: number;
   extractedCellIncrement: number;
   differencingIncrement: number;
@@ -4236,7 +4257,7 @@ function budgetThresholdWarnings(input: {
     "disclosure",
   );
   addIfCrossed(
-    "differencing variants",
+    `differencing variants for root resource ${input.resourceId}`,
     input.usage.differencing_attempts,
     input.limits.max_differencing_queries,
     input.differencingIncrement,

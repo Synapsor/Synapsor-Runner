@@ -2050,7 +2050,10 @@ function renderOperatorBudgetDetails(
       ["Queries / rolling 24h", asRecord(volume.queries_rolling_24_hours)],
       ["Requests / rolling minute", asRecord(volume.requests_rolling_minute)],
       ["Extracted cells / rolling 24h", asRecord(disclosure.extracted_cells_rolling_24_hours)],
-      ["Differencing variants / rolling 24h", asRecord(disclosure.differencing_variants_rolling_24_hours)],
+      [
+        `Differencing variants for ${String(asRecord(disclosure.differencing_variants_rolling_24_hours).root_resource ?? "current root resource")} / rolling 24h`,
+        asRecord(disclosure.differencing_variants_rolling_24_hours),
+      ],
     ] as const) {
       const used = numberRecordValue(gauge.used);
       const limit = numberRecordValue(gauge.limit);

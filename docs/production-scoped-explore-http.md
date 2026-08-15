@@ -614,7 +614,13 @@ secret-free checks apply. Claude Desktop remains a local stdio target; use the
 Runner reserves query, rate, extracted-cell, and differencing allowance before
 executing a source query. PostgreSQL transaction advisory locks serialize the
 read-check-reserve operation for both the authenticated principal and tenant.
-Two concurrent requests cannot both consume the final unit.
+Two concurrent requests cannot both consume the final unit. Query, rate, and
+extracted-cell counters cover the whole trusted scope. Differencing variants use
+one pool per trusted scope **and root resource**, because variants of one
+resource can be subtracted from one another while unrelated resources do not
+share a denominator. A ledger audit must therefore group or filter
+`production_explore_budget_reservations` by `resource_id` before comparing it
+with the response's differencing remainder.
 
 The boundary's per-principal query/rate limits are throughput controls. New
 1.7.0 boundaries default to 1,000 queries per rolling 24 hours and 120 requests
@@ -622,8 +628,12 @@ per rolling minute. Production `tenant_limits` add a separately configured
 tenant-wide ceiling. Extracted cells, differencing variants, minimum cohorts,
 suppression, and response bounds are disclosure controls; increasing throughput
 does not increase any of them. An exhaustion response identifies the exact
-class, used/limit values, and rolling-window expiry upper bound. Remaining
-counters are operator metadata and are never included in the model projection.
+class, used/limit values, root resource for differencing, and rolling-window
+expiry upper bound. The detailed operator gauge identifies that resource in
+both CLI and Workbench. Compact result metadata retains the backward-compatible
+`differencing_queries` remainder and pairs it with
+`differencing_variants_for_root_resource`, which states the resource,
+used/limit/remaining values, rolling window, and durable cross-session behavior.
 
 Per-principal accounting prevents one user from starving another. Tenant-wide
 ceilings and tenant-level complementary-release accounting prevent many
@@ -634,6 +644,16 @@ limits, timeouts, and the suppression-aware total defense are unchanged.
 Failed or refused attempts consume query and rate allowance. Only released
 cells consume extracted-cell allowance. Stranded reservations remain a
 conservative charge until they age out of the rolling window.
+
+None of these counters is keyed by an MCP session or bearer token. Reconnecting,
+renewing an expired JWT for the same tenant/principal, moving to another Runner
+replica, or restarting the server retains the same opaque accounting identity
+when the accounting namespace, source, HMAC key, tenant, and principal are
+unchanged. In particular, reconnecting cannot reset differencing protection.
+The activated-pack field names `max_queries_per_session` and
+`max_extracted_cells_per_session` are retained for artifact compatibility; in
+Explore their enforced semantics are durable rolling 24-hour trusted-scope
+limits, not counters that reset with an MCP session.
 
 Each HTTP query also performs a fresh generation-lock check. Current locks ask
 the schema inspector for only the reviewed authority dependencies needed by the

@@ -131,6 +131,64 @@ describePostgres("production Explore PostgreSQL accounting", () => {
     });
   });
 
+  it("keeps differencing variants across store instances while isolating root-resource pools", async () => {
+    const firstStore = new PostgresProposalRuntimeStore({ pool, schema, lockTimeoutMs: 2_000 });
+    const renewedSessionStore = new PostgresProposalRuntimeStore({ pool, schema, lockTimeoutMs: 2_000 });
+    const principal = fingerprint("renewed-session-principal");
+    const tenant = fingerprint("renewed-session-tenant");
+    const principalLimits = limits({ max_differencing_queries: 1 });
+    const tenantLimits = limits({ max_differencing_queries: 1 });
+    const firstInput = reservation({
+      id: 12,
+      principal,
+      tenant,
+      principalLimits,
+      tenantLimits,
+      resource: "public.orders",
+      variant: "orders-first",
+      now: "2026-08-04T12:11:00.000Z",
+    });
+    await expect(firstStore.claimProductionExploreBudgetReservation(firstInput))
+      .resolves.toMatchObject({ allowed: true });
+    await expect(firstStore.completeProductionExploreBudgetReservation({
+      reservation_id: firstInput.reservation_id,
+      result_released: true,
+      returned_cells: 2,
+      completed_at: "2026-08-04T12:11:00.100Z",
+    })).resolves.toEqual({ completed: true });
+
+    await expect(renewedSessionStore.claimProductionExploreBudgetReservation(reservation({
+      id: 13,
+      principal,
+      tenant,
+      principalLimits,
+      tenantLimits,
+      resource: "public.orders",
+      variant: "orders-second",
+      now: "2026-08-04T12:11:01.000Z",
+    }))).resolves.toMatchObject({
+      allowed: false,
+      code: "DIFFERENCING_BUDGET_EXHAUSTED",
+      exhausted_scope: "principal",
+      usage: { differencing_attempts: 1 },
+    });
+
+    await expect(renewedSessionStore.claimProductionExploreBudgetReservation(reservation({
+      id: 14,
+      principal,
+      tenant,
+      principalLimits,
+      tenantLimits,
+      resource: "public.members",
+      variant: "members-first",
+      now: "2026-08-04T12:11:02.000Z",
+    }))).resolves.toMatchObject({
+      allowed: true,
+      principal_usage_after_reservation: { differencing_attempts: 1 },
+      tenant_usage_after_reservation: { differencing_attempts: 1 },
+    });
+  });
+
   it("charges failed releases to query and rate budgets but not disclosure cells", async () => {
     const store = new PostgresProposalRuntimeStore({ pool, schema, lockTimeoutMs: 2_000 });
     const principal = fingerprint("failed-result-principal");
@@ -372,13 +430,15 @@ function reservation(input: {
   tenantLimits: ExploreBudgetLimits;
   estimatedCells?: number;
   now?: string;
+  resource?: string;
+  variant?: string;
 }): ProductionExploreBudgetReservationInput {
   return {
     reservation_id: reservationId(input.id),
     principal_scope_fingerprint: input.principal,
     tenant_scope_fingerprint: input.tenant,
-    resource_id: "public.orders",
-    variant_fingerprint: fingerprint(`variant-${input.id}`),
+    resource_id: input.resource ?? "public.orders",
+    variant_fingerprint: fingerprint(input.variant ?? `variant-${input.id}`),
     requires_differencing: true,
     estimated_response_cells: input.estimatedCells ?? 2,
     principal_limits: input.principalLimits,

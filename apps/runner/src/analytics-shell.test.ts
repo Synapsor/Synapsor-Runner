@@ -2122,6 +2122,21 @@ describe("Synapsor Analytics shell", () => {
   it("shows the live question and exact typed tool request without exposing SQL by default", async () => {
     const io = fakeIo(["How many sessions are in each region?", "/details A1", "/exit"]);
     const liveAnalysis = analysis("A1", 0);
+    liveAnalysis.result.operator_budget = {
+      operator_only: true,
+      trusted_scope: {
+        volume: {},
+        disclosure: {
+          differencing_variants_rolling_24_hours: {
+            root_resource: "public.sessions",
+            used: 3,
+            limit: 16,
+            remaining: 13,
+          },
+        },
+        warnings: [],
+      },
+    };
     liveAnalysis.arguments = {
       boundary: "reviewed_sessions",
       plan: liveAnalysis.plan,
@@ -2152,6 +2167,8 @@ describe("Synapsor Analytics shell", () => {
     expect(output).toContain('"boundary": "reviewed_sessions"');
     expect(output).toContain("WHAT RUNNER EXECUTED");
     expect(output).toContain("+-- Normalized validated plan");
+    expect(output).toContain("Differencing variants for public.sessions / rolling 24h");
+    expect(output).toContain("3/16 used; 13 remaining");
     expect(output).toContain("Use /details --sql");
     expect(output).not.toContain('SELECT "region"');
     expect(inspectAnalysis).toHaveBeenCalledOnce();

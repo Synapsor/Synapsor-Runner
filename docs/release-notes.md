@@ -30,8 +30,11 @@ for the Synapsor Cloud CLI.
 - New boundaries use product-scale throughput defaults of 1,000 queries per
   rolling 24 hours and 120 requests per minute while retaining the 4,000-cell,
   16-variant, cohort, and suppression disclosure defaults. CLI and Workbench
-  show operator-only remaining usage, warn at 80 percent, and provide reviewed
-  query/rate controls; models do not receive the counters.
+  show detailed operator usage, warn at 80 percent, and provide reviewed
+  query/rate controls. Differencing status now names its root-resource pool and
+  explicitly states that token renewal, reconnects, and restarts do not reset it;
+  compact result metadata retains bounded budget status, never identity or
+  credential values.
 - Per-query drift checks now fetch complete catalog metadata only for exact
   generation-lock dependencies while retaining fresh global credential,
   read-only, grant, and ownership checks, dependency-scoped RLS proof, and the

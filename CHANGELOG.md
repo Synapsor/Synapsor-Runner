@@ -18,6 +18,10 @@
   tenant reservations, rolling query/extraction/differencing limits, rate
   limits, and tenant-level complementary-release protection. Concurrent calls
   cannot both consume the final allowance.
+- Makes differencing usage auditable without mistaking a principal-wide ledger
+  sum for one resource's allowance. Result metadata, CLI, Workbench, warnings,
+  and refusals now name the current root-resource pool, and regression coverage
+  proves the pool survives token/session renewal and shared-store reattachment.
 - Reconciles rescans against each immutable boundary's own reviewed policy
   instead of destructively rebuilding or sharing resource overrides. Unchanged
   field, enum, path, shared-reference, metadata, metric, and limit decisions

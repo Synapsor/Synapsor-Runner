@@ -4396,7 +4396,10 @@ describe("Scoped Explore", () => {
     });
     const beforeMidnight = await createRuntime();
     const stableSessionFingerprint = beforeMidnight.session_fingerprint;
-    await beforeMidnight.explore(aggregatePlan("north"));
+    const firstResult = await beforeMidnight.explore(aggregatePlan("north")) as Record<string, any>;
+    expect(firstResult.operator_budget.trusted_scope.warnings).toEqual([
+      expect.stringMatching(/differencing variants for root resource public\.subscriptions reached 1\/1/i),
+    ]);
     await beforeMidnight.close();
 
     now = Date.parse("2026-07-25T00:01:00.000Z");
@@ -4448,7 +4451,7 @@ describe("Scoped Explore", () => {
         reason: {
           code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
           message: expect.stringMatching(
-            /disclosure-control differencing allowance exhausted[\s\S]*Used 1 of 1 distinct protected variants[\s\S]*prevents reconstruction/i,
+            /disclosure-control differencing allowance exhausted[\s\S]*Used 1 of 1 distinct protected variants for root resource public\.subscriptions[\s\S]*not an MCP-session counter[\s\S]*prevents reconstruction/i,
           ),
         },
       });
@@ -4540,9 +4543,16 @@ describe("Scoped Explore", () => {
       const threshold = await runtime.explore(plan) as Record<string, any>;
       expect(threshold.operator_budget).toMatchObject({
         operator_only: true,
+        accounting: expect.stringMatching(/differencing variants are per trusted scope and root resource/i),
         trusted_scope: {
           volume: {
             queries_rolling_24_hours: { used: 4, limit: 5, remaining: 1, percent_used: 80 },
+          },
+          disclosure: {
+            differencing_variants_rolling_24_hours: {
+              root_resource: "public.subscriptions",
+              persists_across_sessions: true,
+            },
           },
         },
       });
@@ -4551,6 +4561,10 @@ describe("Scoped Explore", () => {
       ]);
       const afterThreshold = await runtime.explore(plan) as Record<string, any>;
       expect(afterThreshold.operator_budget.trusted_scope.warnings).toEqual([]);
+      expect(afterThreshold.outcome.result.remaining_budgets).toMatchObject({
+        differencing_queries: null,
+        differencing_variants_for_root_resource: null,
+      });
       const projected = projectScopedExploreResultForModel({
         tool: "app.explore_data",
         arguments: { plan },
@@ -4591,7 +4605,17 @@ describe("Scoped Explore", () => {
         ok: true,
         outcome: {
           result: {
-            remaining_budgets: { differencing_queries: 0 },
+            remaining_budgets: {
+              differencing_queries: 0,
+              differencing_variants_for_root_resource: {
+                resource: "public.subscriptions",
+                used: 1,
+                limit: 1,
+                remaining: 0,
+                window: "rolling_24_hours",
+                persists_across_sessions: true,
+              },
+            },
           },
         },
       });

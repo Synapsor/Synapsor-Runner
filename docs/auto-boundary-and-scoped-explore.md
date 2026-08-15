@@ -1129,6 +1129,14 @@ result grain, semantic measure/dimension aliases, reviewed relationship paths,
 UTC authority, snapshot state, suppression, response usage, remaining budgets,
 query-audit handle, and `source_database_changed: false`.
 
+The differencing remainder is not a principal-wide sum over every table. It is
+the remaining distinct-plan allowance for the current reviewed root resource in
+the durable rolling 24-hour pool. `differencing_variants_for_root_resource`
+names that resource and reports used, limit, remaining, and
+`persists_across_sessions: true`; the older `differencing_queries` scalar remains
+as a compatibility alias for its `remaining` value. Query, rate, and
+extracted-cell remainders continue to cover the whole trusted scope.
+
 Production analytical capabilities are available through a deterministic,
 versioned catalog:
 
