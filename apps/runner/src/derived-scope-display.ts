@@ -11,21 +11,26 @@ export type DerivedScopeDisplayPath = {
   };
 };
 
+type RelationshipDisplayLink = {
+  source_resource: string;
+  target_resource: string;
+  source_columns?: string[];
+};
+
+export type RelationshipDisplayPath = {
+  source_resource: string;
+  target_resource: string;
+  links?: RelationshipDisplayLink[];
+};
+
 export function formatDerivedScopePath(scope: DerivedScopeDisplayPath): string {
   const links = scope.proof?.links ?? [];
-  const resources: string[] = [];
-  if (links[0]?.source_resource) resources.push(links[0].source_resource);
-  for (const link of links) {
-    if (resources.at(-1) !== link.source_resource) resources.push(link.source_resource);
-    if (resources.at(-1) !== link.target_resource) resources.push(link.target_resource);
-  }
-  if (resources.at(-1) !== scope.ancestor_resource) resources.push(scope.ancestor_resource);
-  if (resources.length === 0) resources.push(scope.ancestor_resource);
-
-  const namespace = commonResourceNamespace(resources);
-  const display = resources.map((resource) => namespace
-    ? resource.slice(namespace.length + 1)
-    : displayScopeResource(resource));
+  const resources = orderedPathResources(
+    links,
+    links[0]?.source_resource ?? scope.ancestor_resource,
+    scope.ancestor_resource,
+  );
+  const display = compactResourceNames(resources);
   display[display.length - 1] = `${display.at(-1)}.${scope.ancestor_column}`;
   return display.join(" -> ");
 }
@@ -33,13 +38,21 @@ export function formatDerivedScopePath(scope: DerivedScopeDisplayPath): string {
 export function formatDerivedScopeJoinColumns(
   scope: DerivedScopeDisplayPath,
 ): string | undefined {
-  const columns = (scope.proof?.links ?? []).map((link) => {
-    if (!link.source_columns?.length) return undefined;
-    return link.source_columns.join(", ");
-  });
-  return columns.every((value): value is string => value !== undefined)
-    ? columns.join(" -> ")
-    : undefined;
+  return formatJoinColumns(scope.proof?.links ?? []);
+}
+
+export function formatRelationshipPath(path: RelationshipDisplayPath): string {
+  return compactResourceNames(orderedPathResources(
+    path.links ?? [],
+    path.source_resource,
+    path.target_resource,
+  )).join(" -> ");
+}
+
+export function formatRelationshipJoinColumns(
+  path: RelationshipDisplayPath,
+): string | undefined {
+  return formatJoinColumns(path.links ?? []);
 }
 
 export function formatDerivedScopePathWithId(scope: DerivedScopeDisplayPath): string {
@@ -57,6 +70,40 @@ export function derivedScopeStartSequence(scope: DerivedScopeDisplayPath): strin
 
 function displayScopeResource(resource: string): string {
   return resource.startsWith("public.") ? resource.slice("public.".length) : resource;
+}
+
+function orderedPathResources(
+  links: RelationshipDisplayLink[],
+  sourceResource: string,
+  targetResource: string,
+): string[] {
+  const resources = [sourceResource];
+  for (const link of links) {
+    if (resources.at(-1) !== link.source_resource) resources.push(link.source_resource);
+    if (resources.at(-1) !== link.target_resource) resources.push(link.target_resource);
+  }
+  if (resources.at(-1) !== targetResource) resources.push(targetResource);
+  return resources;
+}
+
+function compactResourceNames(resources: string[]): string[] {
+  const namespace = commonResourceNamespace(resources);
+  return resources.map((resource) => namespace
+    ? resource.slice(namespace.length + 1)
+    : displayScopeResource(resource));
+}
+
+function formatJoinColumns(
+  links: RelationshipDisplayLink[],
+): string | undefined {
+  if (!links.length) return undefined;
+  const columns = links.map((link) => {
+    if (!link.source_columns?.length) return undefined;
+    return link.source_columns.join(", ");
+  });
+  return columns.every((value): value is string => value !== undefined)
+    ? columns.join(" -> ")
+    : undefined;
 }
 
 function commonResourceNamespace(resources: string[]): string | undefined {

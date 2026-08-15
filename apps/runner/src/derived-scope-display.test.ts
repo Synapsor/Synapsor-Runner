@@ -4,6 +4,8 @@ import {
   derivedScopeStartSequence,
   formatDerivedScopeJoinColumns,
   formatDerivedScopePath,
+  formatRelationshipJoinColumns,
+  formatRelationshipPath,
 } from "./derived-scope-display.js";
 
 describe("derived scope display", () => {
@@ -44,6 +46,27 @@ describe("derived scope display", () => {
     expect(formatDerivedScopeJoinColumns(value)).toBe(
       "event_note_id -> loan_event_id -> loan_id",
     );
+  });
+
+  it("renders reviewed analysis relationships without leading with their path ID", () => {
+    const value = {
+      source_resource: "librarydb.event_notes",
+      target_resource: "librarydb.loans",
+      links: [
+        {
+          source_resource: "librarydb.event_notes",
+          target_resource: "librarydb.loan_events",
+          source_columns: ["loan_event_id"],
+        },
+        {
+          source_resource: "librarydb.loan_events",
+          target_resource: "librarydb.loans",
+          source_columns: ["loan_id"],
+        },
+      ],
+    };
+    expect(formatRelationshipPath(value)).toBe("event_notes -> loan_events -> loans");
+    expect(formatRelationshipJoinColumns(value)).toBe("loan_event_id -> loan_id");
   });
 
   it("does not mutate the canonical path id or any digest-bound path evidence", () => {

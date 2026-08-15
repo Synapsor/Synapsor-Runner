@@ -602,7 +602,9 @@ describe("boundary review terminal picker", () => {
     expect(renderedPlain).toContain("A");
     expect(renderedPlain).toContain("Add related tables");
     expect(renderedPlain).toContain("ADD RELATED TABLES (1)");
-    expect(renderedPlain).toContain("Proven path: public.check_ins -> public.members");
+    expect(renderedPlain).toContain("Proven relationship (1 hop)");
+    expect(renderedPlain).toContain("check_ins -> members");
+    expect(renderedPlain).toContain("path ID: check_ins_member_id_fkey");
     expect(renderedPlain).toContain("TABLE SIGN-OFF DETAILS - public.check_ins");
     expect(renderedPlain).toContain(
       "not separate prompts.",
@@ -719,8 +721,9 @@ describe("boundary review terminal picker", () => {
     await send(input, "\u001b[B");
     const derived = stripAnsi(output.read()?.toString() ?? "");
     expect(derived).toContain("[linked to public.orders]");
-    expect(derived).toContain("Derived tenant scope: order_items -> orders.tenant_id");
-    expect(derived).toContain("Exact path ID: order_items_order_id_fkey");
+    expect(derived).toContain("Derived tenant scope (1 hop)");
+    expect(derived).toContain("order_items -> orders.tenant_id");
+    expect(derived).toContain("path ID: order_items_order_id_fkey");
     expect(derived).not.toContain("Proven path: public.order_items -> public.orders");
     await send(input, "\r");
     await expect(selected).resolves.toEqual({
@@ -752,9 +755,9 @@ describe("boundary review terminal picker", () => {
     expect(related).toContain("ADD RELATED TABLES (1)");
     expect(related).toContain("public.order_item_events");
     expect(related).toContain("[linked to public.orders]");
-    expect(related).toContain(
-      "Derived tenant scope: order_item_events -> order_items -> orders.tenant_id",
-    );
+    expect(related).toContain("Derived tenant scope (2 hops)");
+    expect(related).toContain("order_item_events -> order_items -> orders.tenant_id");
+    expect(related).toContain("via columns: parent_id -> parent_id");
     await send(input, "\r");
     await expect(selected).resolves.toEqual({
       resource_id: "public.order_item_events",
@@ -967,17 +970,15 @@ describe("boundary review terminal picker", () => {
     );
     expect(overview).toContain('NEXT BOUNDARY "reviewed_staging" (DISABLED DRAFT)');
     expect(overview).toContain("public.check_ins [ACTIVE + IN DRAFT; table sign-off complete]");
-    expect(overview).toContain("-> public.locations (many-to-one, depth 1)");
+    expect(overview).toContain("check_ins -> locations (1 hop)");
     expect(overview).toContain("Show the complete catalog: synapsor-runner boundary review --map --all");
 
     const exhaustive = formatBoundaryOverviewMap(resources, { exhaustive: true });
     expect(exhaustive).toContain("WHOLE BOUNDARY MAP (ALL TABLES)");
-    expect(exhaustive).toContain(
-      "path check_ins_location [IN NEXT BOUNDARY]",
-    );
-    expect(exhaustive).toContain(
-      "-> public.locations (many-to-one, depth 1)",
-    );
+    expect(exhaustive).toContain("relationship (1 hop) [IN NEXT BOUNDARY]");
+    expect(exhaustive).toContain("check_ins -> locations");
+    expect(exhaustive).toContain("path ID: check_ins_location");
+    expect(exhaustive).not.toContain("path check_ins_location [");
 
     const { input, output } = fakeTerminal();
     const session = createBoundaryReviewInteractiveSession(input, output);
@@ -994,6 +995,77 @@ describe("boundary review terminal picker", () => {
     expect(rendered).toContain("WHOLE BOUNDARY MAP");
     expect(rendered).toContain("R");
     expect(rendered).toContain("Remove");
+  });
+
+  it("renders included multi-hop relationships as readable chains before canonical IDs", () => {
+    const resource = summary("librarydb.event_notes", 0);
+    resource.relationships = [{
+      relationship_id: "event_notes_event_fk__loan_events_loan_fk",
+      target_resource: "librarydb.loans",
+      path_depth: 2,
+      state: "included",
+      path_links: [
+        {
+          source_resource: "librarydb.event_notes",
+          target_resource: "librarydb.loan_events",
+          source_columns: ["loan_event_id"],
+        },
+        {
+          source_resource: "librarydb.loan_events",
+          target_resource: "librarydb.loans",
+          source_columns: ["loan_id"],
+        },
+      ],
+    }];
+
+    const concise = formatBoundaryOverviewMap([resource]);
+    expect(concise).toContain("event_notes -> loan_events -> loans (2 hops)");
+    expect(concise).toContain("via columns: loan_event_id -> loan_id");
+    expect(concise).not.toContain("librarydb.event_notes -> librarydb.loan_events");
+
+    const exhaustive = formatBoundaryOverviewMap([resource], { exhaustive: true });
+    expect(exhaustive).toContain("relationship (2 hops) [IN NEXT BOUNDARY]");
+    expect(exhaustive).toContain("event_notes -> loan_events -> loans");
+    expect(exhaustive).toContain("via columns: loan_event_id -> loan_id");
+    expect(exhaustive).toContain(
+      "path ID: event_notes_event_fk__loan_events_loan_fk",
+    );
+    expect(exhaustive).not.toContain(
+      "path event_notes_event_fk__loan_events_loan_fk [",
+    );
+  });
+
+  it("uses the same human-first relationship rendering in a table access map", () => {
+    const view = reviewView();
+    const scope = twoHopDerivedScope();
+    const relationship = {
+      id: scope.path_id,
+      target_resource: scope.ancestor_resource,
+      local_columns: scope.proof.links[0]!.source_columns,
+      target_columns: scope.proof.links.at(-1)!.target_columns,
+      counted_entity: "orders",
+      cardinality: "many_to_one" as const,
+      max_fan_out: 1 as const,
+      path_depth: 2 as const,
+      proof: scope.proof,
+    };
+    view.resource_id = "public.order_item_events";
+    view.candidate = {
+      ...view.candidate!,
+      id: "public.order_item_events",
+      table: "order_item_events",
+      relationships: [relationship],
+    };
+    view.generated_candidate = view.candidate;
+
+    const rendered = formatBoundaryResourceMap(view);
+    expect(rendered).toContain("Relationship (2 hops)");
+    expect(rendered).toContain("order_item_events -> order_items -> orders");
+    expect(rendered).toContain("via columns: parent_id -> parent_id");
+    expect(rendered).toContain("path ID: events_item_fkey__items_order_fkey");
+    expect(rendered).not.toContain(
+      "events_item_fkey__items_order_fkey -> public.orders",
+    );
   });
 
   it("bounds the default overview for a large schema and exposes the full catalog explicitly", () => {
@@ -1014,7 +1086,7 @@ describe("boundary review terminal picker", () => {
     expect(overview).toContain("Auto Boundary selected 3 starting tables.");
     expect(overview).toContain("12 reviewable tables are outside this boundary; 0 are blocked.");
     expect(overview).toContain("  +6 more");
-    expect(overview).toContain("public.table_10 -> public.table_01");
+    expect(overview).toContain("table_10 -> table_01 (1 hop)");
     expect(overview).not.toContain("public.table_15");
 
     const exhaustive = formatBoundaryOverviewMap(resources, { exhaustive: true });

@@ -19,6 +19,8 @@ import {
 import {
   formatDerivedScopeJoinColumns,
   formatDerivedScopePath,
+  formatRelationshipJoinColumns,
+  formatRelationshipPath,
 } from "./derived-scope-display.js";
 import { blockedTenantScopeGuidance } from "./boundary-scope-guidance.js";
 import { shellQuote } from "./cli-format.js";
@@ -142,6 +144,7 @@ type BoundaryRelationshipConnection = {
   target_resource: string;
   relationship_id: string;
   path_depth: number;
+  path_links?: BoundaryResourceReviewSummary["relationships"][number]["path_links"];
   derived_scope?: DerivedScopePath;
 };
 
@@ -1747,11 +1750,22 @@ function mapRelationshipLines(
   if (!candidate.relationships.length) return [...lines, "|   `-- (none)"];
   candidate.relationships.forEach((relationship, index) => {
     const branch = index === candidate.relationships.length - 1 ? "`--" : "|--";
+    const continuation = index === candidate.relationships.length - 1 ? "   " : "|  ";
+    const display = {
+      source_resource: candidate.id,
+      target_resource: relationship.target_resource,
+      links: relationship.proof?.links,
+    };
+    const depth = relationship.path_depth ?? 1;
+    const joinColumns = formatRelationshipJoinColumns(display)
+      ?? relationship.local_columns.join(", ");
+    lines.push(`|   ${branch} Relationship (${depth} ${plural(depth, "hop", "hops")})`);
+    lines.push(`|   ${continuation} ${safeTerminalText(formatRelationshipPath(display))}`);
+    if (joinColumns) {
+      lines.push(`|   ${continuation} via columns: ${safeTerminalText(joinColumns)}`);
+    }
     lines.push(
-      `|   ${branch} ${safeTerminalText(relationship.local_columns.join(","))} -> ` +
-      `${safeTerminalText(relationship.target_resource)}.` +
-      `${safeTerminalText(relationship.target_columns.join(","))} ` +
-      `[many-to-one, max fan-out 1, path ${relationship.path_depth ?? 1}]`,
+      `|   ${continuation} ${theme.dim(`path ID: ${safeTerminalText(relationship.id)}`)}`,
     );
   });
   return lines;
@@ -1887,10 +1901,13 @@ function candidateResourceOverviewLines(
       `${resource.runner_output_only_fields} raw Runner-only | ${resource.kept_out_fields} kept out`,
   ];
   for (const relationship of relationships.slice(0, 3)) {
+    const display = summaryRelationshipDisplay(resource.resource_id, relationship);
+    const joinColumns = formatRelationshipJoinColumns(display);
     lines.push(
-      `    -> ${safeTerminalText(relationship.target_resource)} ` +
-      `(many-to-one, depth ${relationship.path_depth})`,
+      `    ${theme.relationship(safeTerminalText(formatRelationshipPath(display)))} ` +
+      `(${relationship.path_depth} ${plural(relationship.path_depth, "hop", "hops")})`,
     );
+    if (joinColumns) lines.push(theme.dim(`      via columns: ${safeTerminalText(joinColumns)}`));
   }
   if (relationships.length > 3) {
     lines.push(theme.dim(`    +${relationships.length - 3} more reviewed paths`));
@@ -1915,7 +1932,7 @@ function resourceNamePreview(
       : resource.derived_tenant_scope?.candidates.length
         ? [theme.dim(
             `    Available tenant path: ${safeTerminalText(
-              resource.derived_tenant_scope.candidates[0]!.path_id,
+              formatDerivedScopePath(resource.derived_tenant_scope.candidates[0]!),
             )}`,
           )]
         : []),
@@ -1932,27 +1949,37 @@ function availableRelationshipSuggestionLines(
   limit: number,
 ): string[] {
   const suggestions = resources
-    .map((resource) => ({
-      resource,
-      relationships: resource.relationships.filter(
-        (relationship) => relationship.state === "available",
+    .flatMap((resource) => resource.relationships
+      .filter((relationship) => relationship.state === "available")
+      .map((relationship) => ({ resource, relationship })));
+  const lines = suggestions.slice(0, limit).flatMap(({ resource, relationship }) => {
+    const display = summaryRelationshipDisplay(resource.resource_id, relationship);
+    const joinColumns = formatRelationshipJoinColumns(display);
+    return [
+      theme.relationship(
+        `  ${safeTerminalText(formatRelationshipPath(display))} ` +
+        `(${relationship.path_depth} ${plural(relationship.path_depth, "hop", "hops")})`,
       ),
-    }))
-    .filter(({ relationships }) => relationships.length > 0);
-  const lines = suggestions.slice(0, limit).map(({ resource, relationships }) => {
-    const targets = relationships
-      .slice(0, 4)
-      .map((relationship) => safeTerminalText(relationship.target_resource))
-      .join(", ");
-    const remainder = relationships.length > 4 ? `, +${relationships.length - 4} more` : "";
-    return theme.relationship(
-      `  ${safeTerminalText(resource.resource_id)} -> ${targets}${remainder}`,
-    );
+      ...(joinColumns
+        ? [theme.dim(`    via columns: ${safeTerminalText(joinColumns)}`)]
+        : []),
+    ];
   });
   if (suggestions.length > limit) {
-    lines.push(theme.dim(`  +${suggestions.length - limit} more tables with proven paths`));
+    lines.push(theme.dim(`  +${suggestions.length - limit} more proven paths`));
   }
   return lines;
+}
+
+function summaryRelationshipDisplay(
+  sourceResource: string,
+  relationship: BoundaryResourceReviewSummary["relationships"][number],
+) {
+  return {
+    source_resource: sourceResource,
+    target_resource: relationship.target_resource,
+    links: relationship.path_links,
+  };
 }
 
 function resourcesForPickerView(
@@ -1991,6 +2018,7 @@ function boundaryRelationshipConnections(
       target_resource: relationship.target_resource,
       relationship_id: relationship.relationship_id,
       path_depth: relationship.path_depth,
+      path_links: relationship.path_links,
     });
   }
   for (const boundaryResource of boundaryResources) {
@@ -2002,6 +2030,7 @@ function boundaryRelationshipConnections(
         target_resource: candidate.resource_id,
         relationship_id: relationship.relationship_id,
         path_depth: relationship.path_depth,
+        path_links: relationship.path_links,
       });
     }
   }
@@ -2107,24 +2136,40 @@ function relationshipConnectionDetail(
     const scopeLabel = connection.kind === "derived_principal_scope"
       ? "Derived principal scope"
       : "Derived tenant scope";
+    const joinColumns = formatDerivedScopeJoinColumns(connection.derived_scope);
     return [
       theme.relationship(
-        `${scopeLabel}: ${safeTerminalText(formatDerivedScopePath(connection.derived_scope))}`,
+        `${scopeLabel} (${connection.path_depth} ` +
+        `${plural(connection.path_depth, "hop", "hops")})`,
       ),
+      `  ${safeTerminalText(formatDerivedScopePath(connection.derived_scope))}`,
+      ...(joinColumns
+        ? [`  via columns: ${safeTerminalText(joinColumns)}`]
+        : []),
       theme.dim(
-        `Exact path ID: ${safeTerminalText(connection.relationship_id)}; continuous non-null ` +
+        `  path ID: ${safeTerminalText(connection.relationship_id)}; continuous non-null ` +
         `many-to-one catalog proof. Human review is still required before use.`,
       ),
     ];
   }
+  const display = {
+    source_resource: connection.source_resource,
+    target_resource: connection.target_resource,
+    links: connection.path_links,
+  };
+  const joinColumns = formatRelationshipJoinColumns(display);
   return [
     theme.relationship(
-      `Proven path: ${safeTerminalText(connection.source_resource)} -> ` +
-      `${safeTerminalText(connection.target_resource)}`,
+      `Proven relationship (${connection.path_depth} ` +
+      `${plural(connection.path_depth, "hop", "hops")})`,
     ),
+    `  ${safeTerminalText(formatRelationshipPath(display))}`,
+    ...(joinColumns
+      ? [`  via columns: ${safeTerminalText(joinColumns)}`]
+      : []),
     theme.dim(
-      `${safeTerminalText(connection.relationship_id)}; inspected many-to-one path; ` +
-      `depth ${connection.path_depth}. Human review is still required before use.`,
+      `  path ID: ${safeTerminalText(connection.relationship_id)}; inspected many-to-one proof. ` +
+      `Human review is still required before use.`,
     ),
   ];
 }
@@ -2287,11 +2332,15 @@ function boundaryOverviewMapLines(
         : relationship.state === "included"
           ? theme.warning("IN NEXT BOUNDARY")
           : theme.dim("AVAILABLE");
-      lines.push(`  ${branch} path ${safeTerminalText(relationship.relationship_id)} [${state}]`);
+      const display = summaryRelationshipDisplay(resource.resource_id, relationship);
+      const joinColumns = formatRelationshipJoinColumns(display);
       lines.push(
-        `      -> ${safeTerminalText(relationship.target_resource)} ` +
-        `(many-to-one, depth ${relationship.path_depth})`,
+        `  ${branch} relationship (${relationship.path_depth} ` +
+        `${plural(relationship.path_depth, "hop", "hops")}) [${state}]`,
       );
+      lines.push(`      ${safeTerminalText(formatRelationshipPath(display))}`);
+      if (joinColumns) lines.push(`      via columns: ${safeTerminalText(joinColumns)}`);
+      lines.push(`      ${theme.dim(`path ID: ${safeTerminalText(relationship.relationship_id)}`)}`);
     });
     return lines;
   });

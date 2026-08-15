@@ -2261,7 +2261,7 @@ export default defineCapability({
         ok: false,
         error_code: "BOUNDARY_RESOURCE_REMOVAL_DEPENDENCY",
         error: expect.stringMatching(
-          /public\.order_items: tenant scope via order_items_order_id_fkey/i,
+          /public\.order_items: tenant scope through order_items -> orders\.tenant_id \(path ID: order_items_order_id_fkey\)/i,
         ),
         authority_changed: false,
         source_database_changed: false,

@@ -277,7 +277,8 @@ export function boundaryResourceRemovalImpact(
       blockers.push({
         resource_id: resource.id,
         kind,
-        detail: `${kind === "tenant_scope" ? "tenant" : "principal"} scope via ${scope.path_id}`,
+        detail: `${kind === "tenant_scope" ? "tenant" : "principal"} scope through ` +
+          `${formatDerivedScopePath(scope)} (path ID: ${scope.path_id})`,
         path_depth: scope.proof.links.length,
       });
     }
@@ -533,6 +534,10 @@ export type BoundaryResourceReviewSummary = {
     target_resource: string;
     path_depth: number;
     state: "available" | "included" | "active";
+    path_links?: Array<Pick<
+      RelationshipLinkProof,
+      "source_resource" | "target_resource" | "source_columns"
+    >>;
   }>;
 };
 
@@ -2032,12 +2037,25 @@ function boundaryRelationshipSummaries(
     [candidate, "included"],
     [active, "active"],
   ] as const) {
-    for (const relationship of resource?.relationships ?? []) {
+    if (!resource) continue;
+    for (const relationship of resource.relationships) {
+      const pathLinks = relationship.proof?.links.length
+        ? relationship.proof.links
+        : [{
+            source_resource: resource.id,
+            target_resource: relationship.target_resource,
+            source_columns: relationship.local_columns,
+          }];
       relationships.set(relationship.id, {
         relationship_id: relationship.id,
         target_resource: relationship.target_resource,
         path_depth: relationship.path_depth ?? 1,
         state,
+        path_links: pathLinks.map((link) => ({
+          source_resource: link.source_resource,
+          target_resource: link.target_resource,
+          source_columns: [...link.source_columns],
+        })),
       });
     }
   }

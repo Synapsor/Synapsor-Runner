@@ -2868,7 +2868,8 @@ describe("boundary operator-plane CLI", () => {
       expect(output).toContain("Draft added: public.service_routes");
       expect(output).toContain("Draft removed: public.service_routes");
       expect(output).toContain(
-        "Related-data path removed from the disabled draft: public.service_visits.service_visits_route_id_fkey",
+        "Related-data relationship removed from the disabled draft: service_visits -> service_routes " +
+        "(path ID: service_visits_route_id_fkey)",
       );
       expect(output).toContain("Access editor closed. Reviewed authority is unchanged.");
       expect(output).toContain("Returning to Ask.");
@@ -2943,7 +2944,8 @@ describe("boundary operator-plane CLI", () => {
         title: "REMOVE BLOCKED - public.orders",
       });
       expect(blockedNotice?.notice?.lines.join("\n")).toContain(
-        "public.order_items: tenant scope via order_items_order_id_fkey",
+        "public.order_items: tenant scope through order_items -> orders.tenant_id " +
+        "(path ID: order_items_order_id_fkey)",
       );
       expect(blockedNotice?.notice?.lines.join("\n"))
         .toContain("Suggested leaf-first order: public.order_items -> public.orders");
@@ -3448,7 +3450,7 @@ describe("boundary operator-plane CLI", () => {
         actor: "owner@example.test",
         reason: "An intermediate scope table cannot disappear beneath its reviewed leaf.",
       }, async () => inspection)).rejects.toThrow(
-        /public\.event_notes: tenant scope via event_notes_order_event_id_fkey__order_events_order_item_id_fkey__order_items_order_id_fkey[\s\S]*leaf-first order: public\.event_notes -> public\.order_events/i,
+        /public\.event_notes: tenant scope through event_notes -> order_events -> order_items -> orders\.tenant_id \(path ID: event_notes_order_event_id_fkey__order_events_order_item_id_fkey__order_items_order_id_fkey\)[\s\S]*leaf-first order: public\.event_notes -> public\.order_events/i,
       );
 
       const removeLeaf = await prepareBoundaryResourceReviewMutation(root, {

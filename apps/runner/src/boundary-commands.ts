@@ -48,7 +48,11 @@ import {
   saveBoundaryReviewProgress
 } from "./boundary-review-domain.js";
 import { displayPath } from "./onboarding.js";
-import { formatDerivedScopePath } from "./derived-scope-display.js";
+import {
+  formatDerivedScopePath,
+  formatRelationshipJoinColumns,
+  formatRelationshipPath,
+} from "./derived-scope-display.js";
 import { resolveOperatorIdentity, verifyJwtOperatorProof, verifySignedOperatorProof, type OperatorIdentityConfig } from "./operator-identity.js";
 import { resolveSynapsorProject } from "./project-resolution.js";
 import { disableScopedExplore } from "./protect-query.js";
@@ -2281,10 +2285,17 @@ function reviewedChildCountChoices(
           child_resource: child.id,
           relationship,
         }, boundary.pack.resources, Boolean(boundary.organization_scope));
+        const display = {
+          source_resource: child.id,
+          target_resource: root.id,
+          links: [reviewed.link],
+        };
+        const joinColumns = formatRelationshipJoinColumns(display);
         choices.push({
           childResource: child.id,
           relationship,
-          label: `${child.id}.${reviewed.link.source_columns.join(",")} -> ${root.id}.${reviewed.link.target_columns.join(",")} (${relationship})`,
+          label: `${formatRelationshipPath(display)}` +
+            `${joinColumns ? ` via ${joinColumns}` : ""} (path ID: ${relationship})`,
         });
       } catch {
         // Only catalog-proven, currently valid paths are offered.
@@ -2305,9 +2316,14 @@ function reviewedAnalyticsFieldChoices(
   for (const relationship of root.relationships) {
     const target = boundary.pack.resources.find((item) => item.id === relationship.target_resource);
     if (!target) continue;
+    const display = {
+      source_resource: root.id,
+      target_resource: target.id,
+      links: relationship.proof?.links,
+    };
     for (const field of target.aggregate_measures) {
       choices.push({
-        label: `${relationship.id} -> ${target.id}.${field}`,
+        label: `${formatRelationshipPath(display)}.${field} (path ID: ${relationship.id})`,
         field,
         relationship: relationship.id,
       });
@@ -2324,24 +2340,37 @@ function reviewedAnalyticsOperandChoices(
     label: `COUNT rows in ${root.id}`,
     value: { function: "count" },
   }];
-  const resources = [{ resource: root, relationship: undefined as string | undefined }, ...root.relationships.flatMap((relationship) => {
+  const resources = [{
+    resource: root,
+    relationship: undefined as string | undefined,
+    pathLabel: root.id,
+  }, ...root.relationships.flatMap((relationship) => {
     const target = boundary.pack.resources.find((item) => item.id === relationship.target_resource);
-    return target ? [{ resource: target, relationship: relationship.id }] : [];
+    return target ? [{
+      resource: target,
+      relationship: relationship.id,
+      pathLabel: formatRelationshipPath({
+        source_resource: root.id,
+        target_resource: target.id,
+        links: relationship.proof?.links,
+      }),
+    }] : [];
   })];
   for (const item of resources) {
-    const prefix = item.relationship ? `${item.relationship} -> ${item.resource.id}` : item.resource.id;
     for (const field of item.resource.aggregate_measures) {
       const reviewedFunctions = item.resource.aggregate_measure_functions?.[field] ?? ["sum", "avg"];
       for (const fn of (["sum", "avg"] as const).filter((candidate) => reviewedFunctions.includes(candidate))) {
         choices.push({
-          label: `${fn.toUpperCase()} ${prefix}.${field}`,
+          label: `${fn.toUpperCase()} ${item.pathLabel}.${field}` +
+            `${item.relationship ? ` (path ID: ${item.relationship})` : ""}`,
           value: { function: fn, field, ...(item.relationship ? { relationship: item.relationship } : {}) },
         });
       }
     }
     for (const field of item.resource.count_distinct_fields) {
       choices.push({
-        label: `COUNT DISTINCT ${prefix}.${field}`,
+        label: `COUNT DISTINCT ${item.pathLabel}.${field}` +
+          `${item.relationship ? ` (path ID: ${item.relationship})` : ""}`,
         value: { function: "count_distinct", field, ...(item.relationship ? { relationship: item.relationship } : {}) },
       });
     }
@@ -2630,13 +2659,21 @@ async function confirmAndActivateFocusedBoundary(input: {
       .flatMap((resource) => resource.relationships.map((relationship) => ({
         resource: resource.id,
         relationship,
-      })))
+    })))
       .find(({ relationship }) => relationship.unmatched_rows === "review_required");
     if (!unresolvedRelationship) break;
+    const relationshipDisplay = {
+      source_resource: unresolvedRelationship.resource,
+      target_resource: unresolvedRelationship.relationship.target_resource,
+      links: unresolvedRelationship.relationship.proof?.links,
+    };
+    const joinColumns = formatRelationshipJoinColumns(relationshipDisplay);
     process.stdout.write([
       "",
       "ONE RELATIONSHIP CHOICE",
-      `${unresolvedRelationship.resource} -> ${unresolvedRelationship.relationship.target_resource}`,
+      formatRelationshipPath(relationshipDisplay),
+      ...(joinColumns ? [`via columns: ${joinColumns}`] : []),
+      `path ID: ${unresolvedRelationship.relationship.id}`,
       "Some counted rows may not have a related record. This choice changes analytical totals.",
       "K  Keep the counted row and show an empty group value",
       "E  Exclude the counted row from analyses using this relationship",
@@ -3248,7 +3285,11 @@ async function interactiveBoundaryResourceRemoval(input: {
       "removed",
       committed.review_revision,
       prunedRelationships.map((relationship) =>
-        `Related-data path removed from the disabled draft: ${relationship.resource_id}.${relationship.relationship_id}`),
+        `Related-data relationship removed from the disabled draft: ` +
+        `${formatRelationshipPath({
+          source_resource: relationship.resource_id,
+          target_resource: relationship.target_resource,
+        })} (path ID: ${relationship.relationship_id})`),
     )
     : formatBoundaryMutationCommit(
       input.projectRoot,
