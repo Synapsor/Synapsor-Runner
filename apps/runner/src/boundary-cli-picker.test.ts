@@ -1285,6 +1285,35 @@ describe("boundary review terminal picker", () => {
     expect(rendered).not.toContain("outcome: no reviewed operation");
   });
 
+  it("surfaces and selects the explicit repair for a legacy usable field with no analytical grants", async () => {
+    const terminal = fakeTerminal();
+    const view = reviewView();
+    const candidate = view.candidate!;
+    delete candidate.filterable_fields.outcome;
+    candidate.sortable_fields = [];
+    candidate.count_distinct_fields = [];
+    view.operation_repair_fields = ["outcome"];
+
+    const map = formatBoundaryResourceMap(view, { commandName: "synapsor-runner" });
+    expect(map).toContain("Operation repair available");
+    expect(map).toContain("outcome is usable but has no filter, sort, group, or measure grant");
+    expect(map).toContain("current suggestions: return, filter(eq), sort, count distinct");
+    expect(map).toContain("--allow-reviewed-field 'outcome'");
+
+    const edit = createBoundaryReviewInteractiveSession(terminal.input, terminal.output)
+      .editFieldTiers(view, { focusedAccess: true });
+    await send(terminal.input, "s");
+    await expect(edit).resolves.toMatchObject({
+      action: "restore_operations",
+      field: "outcome",
+      tiers: { outcome: "visible" },
+    });
+
+    const rendered = stripAnsi(terminal.output.read()?.toString() ?? "");
+    expect(rendered).toContain("S Restore the current inspected filter/sort/group/measure suggestions");
+    expect(rendered).toContain("Operation repair available: this usable field has no analytical grants");
+  });
+
   it("explains the reduced MySQL 5.7 grammar in the focused CLI editor", async () => {
     const { input, output } = fakeTerminal();
     const view = reviewView();

@@ -44,8 +44,10 @@ import {
 } from "./boundary-review-domain.js";
 import {
   commitBoundaryResourceReviewMutation,
+  inspectBoundaryResourceReview,
   listBoundaryResourceReviews,
   prepareBoundaryResourceReviewMutation,
+  reviewedBoundaryOperationRepairFields,
 } from "./boundary-review-mutation.js";
 import { loadCompletedBoundaryReviewOverrides } from "./boundary-review-policy.js";
 import { boundaryCommand } from "./guided-start.js";
@@ -2044,7 +2046,7 @@ describe("boundary operator-plane CLI", () => {
         "actor=sensitive-reviewer; reason=\"Support analytics needs local unique counts.\"",
       );
       expect(output).toContain(
-        "Re-including a kept-out field restored only the operations currently supported by its inspected type",
+        "Restored only the operations currently supported by the field's inspected type",
       );
       expect(output).toMatch(
         /public\.service_visits\.contact_name: return, filter\([^)]*\), sort, group, count distinct/,
@@ -4378,6 +4380,124 @@ describe("boundary operator-plane CLI", () => {
       });
       expect(fieldOperations(activated.pack.resources[0]!, "status"))
         .toEqual(fieldOperations(restoredResource, "status"));
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("repairs a legacy model-visible field with no analytical operations without changing active authority", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-field-repair-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const narrowedCandidate = structuredClone(build.exploration_boundary);
+      const narrowedResource = narrowedCandidate.pack.resources[0]!;
+      expect(narrowedResource.selectable_fields).toContain("status");
+      narrowedResource.sortable_fields = narrowedResource.sortable_fields.filter((field) => field !== "status");
+      narrowedResource.groupable_fields = narrowedResource.groupable_fields.filter((field) => field !== "status");
+      narrowedResource.aggregate_measures = narrowedResource.aggregate_measures.filter((field) => field !== "status");
+      if (narrowedResource.aggregate_measure_functions) {
+        delete narrowedResource.aggregate_measure_functions.status;
+      }
+      narrowedResource.presence_measure_fields = (narrowedResource.presence_measure_fields ?? [])
+        .filter((field) => field !== "status");
+      narrowedResource.count_distinct_fields = narrowedResource.count_distinct_fields
+        .filter((field) => field !== "status");
+      delete narrowedResource.time_bucket_fields.status;
+      await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({
+        draft: build.exploration_boundary,
+        candidate: narrowedCandidate,
+        confirmedDecisions: narrowedCandidate.unresolved_decisions,
+        actor: "narrowing-owner@example.test",
+        revision: 1,
+        now: "2026-08-15T11:00:00.000Z",
+      }));
+      const unchangedNarrowing = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.service_visits",
+        allow_reviewed_fields: ["status"],
+        actor: "owner@example.test",
+        reason: "Repeat the visible tier without changing deliberate analytical narrowing.",
+      }, async () => inspection);
+      expect(unchangedNarrowing.semantic_diff.analytical_operation_changes).toEqual([]);
+      expect(unchangedNarrowing.candidate.pack.resources[0]!.filterable_fields.status)
+        .toEqual(expect.arrayContaining(["eq", "in"]));
+      expect(unchangedNarrowing.candidate.pack.resources[0]!.groupable_fields).not.toContain("status");
+
+      const legacyCandidate = structuredClone(narrowedCandidate);
+      const legacyResource = legacyCandidate.pack.resources[0]!;
+      delete legacyResource.filterable_fields.status;
+      const legacyProgress = createBoundaryReviewProgress({
+        draft: build.exploration_boundary,
+        candidate: legacyCandidate,
+        confirmedDecisions: legacyCandidate.unresolved_decisions,
+        actor: "legacy-owner@example.test",
+        revision: 2,
+        now: "2026-08-15T12:00:00.000Z",
+      });
+      await saveBoundaryReviewProgress(root, legacyProgress);
+
+      const legacyDigest = explorationBoundaryCandidateDigest(legacyCandidate);
+      await activateExplorationBoundary({
+        projectRoot: root,
+        candidate: legacyCandidate,
+        expectedDigest: legacyDigest,
+        actor: "legacy-owner@example.test",
+        confirmation: `ACTIVATE ${legacyDigest}`,
+        confirmedDecisions: legacyCandidate.unresolved_decisions,
+        currentInspection: inspection,
+      });
+
+      const strandedView = await inspectBoundaryResourceReview(root, "public.service_visits");
+      expect(strandedView.operation_repair_fields).toEqual(["status"]);
+      const generatedWithoutReturn = structuredClone(strandedView.generated_candidate!);
+      generatedWithoutReturn.selectable_fields = generatedWithoutReturn.selectable_fields
+        .filter((field) => field !== "status");
+      expect(reviewedBoundaryOperationRepairFields(
+        strandedView.candidate,
+        generatedWithoutReturn,
+      )).toEqual([]);
+      const summaries = await listBoundaryResourceReviews(root);
+      expect(summaries.find((resource) => resource.resource_id === "public.service_visits")
+        ?.operation_repair_fields).toEqual(["status"]);
+
+      const repair = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.service_visits",
+        allow_reviewed_fields: ["status"],
+        actor: "owner@example.test",
+        reason: "Repair the analytical grants missing from the legacy review.",
+      }, async () => inspection);
+      expect(repair.semantic_diff.added_visible_fields).toEqual([]);
+      expect(repair.semantic_diff.removed_visible_fields).toEqual([]);
+      expect(repair.semantic_diff.analytical_operation_changes).toEqual([{
+        field: "status",
+        before: [],
+        after: expect.arrayContaining(["filter(eq/neq/in)", "sort", "group", "presence measures", "count distinct"]),
+      }]);
+      expect(repair.candidate_digest).not.toBe(legacyDigest);
+      await commitBoundaryResourceReviewMutation(root, repair);
+
+      const repairedView = await inspectBoundaryResourceReview(root, "public.service_visits");
+      expect(repairedView.operation_repair_fields).toEqual([]);
+      expect(repairedView.candidate?.filterable_fields.status)
+        .toEqual(expect.arrayContaining(["eq", "in"]));
+      expect(repairedView.candidate?.groupable_fields).toContain("status");
+      expect(repairedView.candidate?.presence_measure_fields).toContain("status");
+
+      const stillActive = (await loadActivatedExplorationBoundaries(root))[0]!;
+      expect(stillActive.activation.digest).toBe(legacyDigest);
+      expect(stillActive.pack.resources[0]!.groupable_fields).not.toContain("status");
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

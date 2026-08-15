@@ -299,6 +299,10 @@ tool surface:
   restores the current type-, enum-, and server-tier-backed suggestions, names
   the exact staged operations, and still leaves advanced controls available to
   narrow them before activation.
+- Legacy usable fields already stranded with zero analytical operations are
+  detected in CLI maps, `/access`, and Workbench. Repeating the same reviewed
+  usable tier explicitly repairs only current safe suggestions; ordinary rescan
+  does not widen a deliberately narrowed field, and activation remains separate.
 
 ## Final Verification After DX Follow-Up
 

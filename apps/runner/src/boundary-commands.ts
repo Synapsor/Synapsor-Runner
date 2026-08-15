@@ -3385,6 +3385,7 @@ async function interactiveBoundaryResourceReview(input: {
     }
     return enumResult;
   }
+  const operationRestore = isRestoreFieldOperationsAction(selected) ? selected : undefined;
   if (typeof selected === "string") {
     if (selected.startsWith("enum:")) {
       const enumResult = await interactiveBoundaryEnumReview({
@@ -3404,8 +3405,15 @@ async function interactiveBoundaryResourceReview(input: {
     process.stdout.write("Cancelled - no column access change was made or activated.\n");
     return 0;
   }
-  const selectedTiers = selected as Record<string, BoundaryFieldTier>;
-  const changed = changedFieldTiers(input.view, selectedTiers);
+  const selectedTiers = operationRestore
+    ? operationRestore.tiers
+    : selected as Record<string, BoundaryFieldTier>;
+  const changed = operationRestore
+    ? [{
+        field: operationRestore.field,
+        tier: currentBoundaryFieldTier(input.view, operationRestore.field),
+      }]
+    : changedFieldTiers(input.view, selectedTiers);
   const includeResource = !input.view.candidate && Boolean(input.view.generated_candidate);
   if (!changed.length && !includeResource) {
     if (input.focusedAccess) {
@@ -3424,7 +3432,7 @@ async function interactiveBoundaryResourceReview(input: {
     return "back";
   }
   const explicitReasonRequired = input.focusedAccess
-    && focusedEditNeedsExplicitReason(input.view, changed);
+    && (Boolean(operationRestore) || focusedEditNeedsExplicitReason(input.view, changed));
   const trustedScopeChange = changed.some(({ field }) => {
     const candidate = input.view.candidate ?? input.view.generated_candidate;
     return field === candidate?.tenant_key || field === candidate?.principal_key;
@@ -3444,7 +3452,11 @@ async function interactiveBoundaryResourceReview(input: {
   if (explicitReasonRequired) {
     const auditedChanges = changed.map(({ field, tier }) =>
       `${input.resourceId}.${field} -> ${focusedTierOutcome(tier)}`);
-    const reviewedChangeLabel = trustedScopeChange ? "trusted-scope" : "sensitive-field";
+    const reviewedChangeLabel = operationRestore
+      ? "analytical-operation"
+      : trustedScopeChange
+        ? "trusted-scope"
+        : "sensitive-field";
     process.stdout.write([
       `This widens ${reviewedChangeLabel} access:`,
       ...auditedChanges.map((change) => `  ${change}`),
@@ -3532,8 +3544,9 @@ async function interactiveBoundaryResourceReview(input: {
     ].join("\n"));
     return "back";
   }
-  const restoredOperationFields = changed.filter(({ field, tier }) =>
-    tier !== "kept_out" && currentBoundaryFieldTier(input.view, field) === "kept_out");
+  const restoredOperationFields = preview.semantic_diff.analytical_operation_changes
+    .filter((change) => change.before.length === 0 && change.after.length > 0)
+    .map((change) => ({ field: change.field }));
   const reviewedResource = preview.candidate.pack.resources.find(
     (resource) => resource.id === input.resourceId,
   );
@@ -3548,7 +3561,7 @@ async function interactiveBoundaryResourceReview(input: {
         `Recorded: ${input.resourceId}.${field} -> ${focusedTierOutcome(tier)}; actor=${actor}; reason=${JSON.stringify(reason)}`),
       ...(restoredOperationFields.length && reviewedResource
         ? [
-          "Re-including a kept-out field restored only the operations currently supported by its inspected type, reviewed value allowlist, and database grammar:",
+          "Restored only the operations currently supported by the field's inspected type, reviewed value allowlist, and database grammar:",
           ...restoredOperationFields.map(({ field }) =>
             `  ${input.resourceId}.${field}: ${reviewedFieldOperationSummary(reviewedResource, field)}`),
           "These grants are staged, not active. Use M to inspect them or Advanced field operations to narrow them before activation.",
@@ -3594,6 +3607,21 @@ function isMetadataFieldTierAction(value: unknown): value is {
     && typeof value === "object"
     && !Array.isArray(value)
     && (value as { action?: unknown }).action === "metadata"
+    && typeof (value as { field?: unknown }).field === "string"
+    && Boolean((value as { tiers?: unknown }).tiers)
+    && typeof (value as { tiers?: unknown }).tiers === "object"
+    && !Array.isArray((value as { tiers?: unknown }).tiers);
+}
+
+function isRestoreFieldOperationsAction(value: unknown): value is {
+  action: "restore_operations";
+  field: string;
+  tiers: Record<string, BoundaryFieldTier>;
+} {
+  return Boolean(value)
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && (value as { action?: unknown }).action === "restore_operations"
     && typeof (value as { field?: unknown }).field === "string"
     && Boolean((value as { tiers?: unknown }).tiers)
     && typeof (value as { tiers?: unknown }).tiers === "object"
@@ -4507,6 +4535,9 @@ function formatBoundaryMutationPreview(
     ...(diff.removed_visible_fields.length
       ? [`  Visible fields removed: ${diff.removed_visible_fields.join(", ")}`]
       : []),
+    ...diff.analytical_operation_changes.map((change) =>
+      `  ${change.field} analytical operations: ${change.before.join(", ") || "none"} -> ` +
+      `${change.after.join(", ") || "none"}`),
     ...(diff.added_relationships.length
       ? [`  Relationships added: ${diff.added_relationships.join(", ")}`]
       : []),

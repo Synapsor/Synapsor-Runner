@@ -447,8 +447,12 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("data-access-column-list");
     expect(html).toContain("data-field-tier");
     expect(html).toContain("reviewedFieldOperations");
+    expect(html).toContain("fieldNeedsOperationRepair");
     expect(html).toContain("Restored current inspected operation suggestions");
     expect(html).toContain("Re-including it restores only the current inspected operation suggestions");
+    expect(html).toContain("Optional analytical operation restore");
+    expect(html).toContain("Restore current suggested operations");
+    expect(html).toContain("data-restore-field-operations");
     expect(html).toContain('class="access-secondary" data-access-secondary');
     expect(html).toContain('id="access-staged" class="access-final hidden"');
     expect(html).toContain("No access changes staged");

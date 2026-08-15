@@ -108,6 +108,53 @@ export function reviewedBoundaryFieldCounts(
   return counts;
 }
 
+export function reviewedBoundaryAnalyticalOperations(
+  resource: ReviewedBoundaryFieldResource | null | undefined,
+  field: string,
+  options: { include_presence?: boolean } = {},
+): string[] {
+  if (!resource) return [];
+  const operations: string[] = [];
+  const filters = resource.filterable_fields[field];
+  if (filters?.length) operations.push(`filter(${filters.join("/")})`);
+  if (resource.sortable_fields.includes(field)) operations.push("sort");
+  if (resource.groupable_fields.includes(field)) operations.push("group");
+  if (resource.aggregate_measures.includes(field)) {
+    const functions = resource.aggregate_measure_functions?.[field] ?? [];
+    operations.push(functions.length
+      ? `aggregate(${functions.join("/")})`
+      : "aggregate measure");
+  }
+  if (options.include_presence !== false && resource.presence_measure_fields?.includes(field)) {
+    operations.push("presence measures");
+  }
+  if (resource.count_distinct_fields.includes(field)) operations.push("count distinct");
+  const buckets = resource.time_bucket_fields[field];
+  if (buckets?.length) operations.push(`time(${buckets.join("/")})`);
+  return operations;
+}
+
+export function reviewedBoundaryOperationRepairFields(
+  candidate: ReviewedBoundaryFieldResource | null | undefined,
+  generated: ReviewedBoundaryFieldResource | null | undefined,
+): string[] {
+  if (!candidate || !generated) return [];
+  return candidate.selectable_fields
+    .filter((field) => !candidate.kept_out_fields.includes(field))
+    .filter((field) => generated.selectable_fields.includes(field))
+    .filter((field) => reviewedBoundaryAnalyticalOperations(
+      candidate,
+      field,
+      { include_presence: !(candidate.model_withheld_fields ?? []).includes(field) },
+    ).length === 0)
+    .filter((field) => reviewedBoundaryAnalyticalOperations(
+      generated,
+      field,
+      { include_presence: !(candidate.model_withheld_fields ?? []).includes(field) },
+    ).length > 0)
+    .sort();
+}
+
 export type BoundaryResourceReviewRequest = {
   resource_id: string;
   metadata?: {
@@ -486,6 +533,11 @@ export type BoundaryReviewSemanticDiff = {
     before: string[];
     after: string[];
   }>;
+  analytical_operation_changes: Array<{
+    field: string;
+    before: string[];
+    after: string[];
+  }>;
   added_relationships: string[];
   removed_relationships: string[];
   minimum_cohort_before: number | null;
@@ -535,6 +587,7 @@ export type BoundaryResourceReviewView = {
   }>;
   candidate: ExplorationBoundaryDraft["pack"]["resources"][number] | null;
   generated_candidate: ExplorationBoundaryDraft["pack"]["resources"][number] | null;
+  operation_repair_fields?: string[];
   bindings: BoundaryReviewMutationBindings;
   reviewed_budgets?: ExplorationBoundaryDraft["budgets"];
   database_server_compatibility?: DatabaseServerCompatibility;
@@ -556,6 +609,7 @@ export type BoundaryResourceReviewSummary = {
   model_visible_fields: number;
   runner_output_only_fields: number;
   kept_out_fields: number;
+  operation_repair_fields?: string[];
   minimum_cohort_size?: number;
   minimum_cohort_overridden?: boolean;
   inline_resolution_available?: boolean;
@@ -643,6 +697,7 @@ export async function inspectBoundaryResourceReview(
     relationships: reviewed.relationships,
     candidate,
     generated_candidate: generatedCandidate,
+    operation_repair_fields: reviewedBoundaryOperationRepairFields(candidate, generatedCandidate),
     bindings: reviewBindings(state),
     reviewed_budgets: structuredClone(state.candidate.budgets),
     ...(state.lock.database_server_version
@@ -697,6 +752,7 @@ export async function listBoundaryResourceReviews(
         pending_decisions: pendingDecisions,
         risk_count: pendingDecisions.length + resource.blockers.length,
         ...fieldCounts,
+        operation_repair_fields: reviewedBoundaryOperationRepairFields(candidate, generated),
         ...(display ? {
           minimum_cohort_size: display.minimum_cohort_size,
           ...(display.minimum_cohort_overridden === true
@@ -1642,12 +1698,17 @@ function preserveBoundaryResourcePolicy(
     ...(editedResource ? request.withhold_from_model_fields ?? [] : []),
     ...(editedResource ? request.allow_reviewed_fields ?? [] : []),
   ]);
+  const operationRepairFields = new Set(
+    reviewedBoundaryOperationRepairFields(previous, generated),
+  );
   const restoredSuggestedOperations = new Set(
     editedResource
       ? [
           ...(request.withhold_from_model_fields ?? []),
           ...(request.allow_reviewed_fields ?? []),
-        ].filter((field) => reviewedBoundaryFieldTier(previous, field) === "kept_out")
+        ].filter((field) =>
+          reviewedBoundaryFieldTier(previous, field) === "kept_out"
+          || operationRepairFields.has(field))
       : [],
   );
   generated.selectable_fields = preserveReviewedList(
@@ -2001,6 +2062,19 @@ function semanticDiff(
         ? []
         : [{ field, before: [...beforeValues], after: [...afterValues] }];
     });
+  const operationFields = new Set([
+    ...Object.keys(beforeResource?.field_types ?? {}),
+    ...Object.keys(afterResource?.field_types ?? {}),
+  ]);
+  const analyticalOperationChanges = [...operationFields]
+    .sort()
+    .flatMap((field) => {
+      const beforeOperations = reviewedBoundaryAnalyticalOperations(beforeResource, field);
+      const afterOperations = reviewedBoundaryAnalyticalOperations(afterResource, field);
+      return JSON.stringify(beforeOperations) === JSON.stringify(afterOperations)
+        ? []
+        : [{ field, before: beforeOperations, after: afterOperations }];
+    });
   const reviewedBudgetChanges = [
     "max_ranked_groups",
     "max_queries_per_session",
@@ -2036,6 +2110,7 @@ function semanticDiff(
     added_model_withheld_fields: modelWithheld.added,
     removed_model_withheld_fields: modelWithheld.removed,
     reviewed_enum_changes: reviewedEnumChanges,
+    analytical_operation_changes: analyticalOperationChanges,
     added_relationships: relationships.added,
     removed_relationships: relationships.removed,
     minimum_cohort_before: beforeResource?.minimum_cohort_size ?? null,

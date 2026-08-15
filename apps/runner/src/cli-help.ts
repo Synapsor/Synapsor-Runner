@@ -604,7 +604,8 @@ recorded human reason and a new exact boundary fingerprint.
 Press V, W, or K to choose one directly. The footer follows standard terminal
 navigation: Up/Down navigates, Enter continues to review, Esc returns to the
 table list, B is an equivalent visible back action, M opens the selected table's
-access map, and Q quits without saving. Enter with unchanged column access
+access map, S repairs current inspected analytical suggestions when a legacy
+usable field has none, and Q quits without saving. Enter with unchanged column access
 continues to one plain-language table sign-off. A changed access tier still
 uses a validated preview in this advanced route; its disabled-draft save prompt
 uses \`[Y/n]\`, so Enter saves immediately and \`n\` discards it. The focused
@@ -634,6 +635,8 @@ Resource decision flags:
   --keep-out <column,...>
   --withhold-from-model <column,...>
   --allow-reviewed-field <column,...>
+    Also repairs a legacy model-visible field that has zero analytical grants by
+    restoring only its current inspected, server-compatible suggestions.
   --visible-fields <column,...>
   --filter-fields <column,...>
   --sort-fields <column,...>

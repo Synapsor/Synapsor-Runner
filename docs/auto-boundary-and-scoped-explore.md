@@ -542,6 +542,28 @@ suggestions before the boundary is reviewed and activated. Moving between
 **Model + Runner** and **Raw values: Runner only** preserves existing operation
 grants and changes only where raw values may appear.
 
+Boundaries reviewed before Runner 1.7.0 may contain a usable field with return
+access but no filter, sort, group, or measure operation even though the current
+inspection has safe suggestions. `/access`, the resource access map, and
+Workbench mark that state as an optional operation restore. Select the field
+and press **S** in `/access`, use **Restore current suggested operations** in
+Workbench, or run the existing reviewed exposure command again:
+
+```bash
+synapsor-runner boundary review resource public.events \
+  --allow-reviewed-field event_type \
+  --actor "$USER" \
+  --reason "Restore the current inspected analytical operations." \
+  --apply
+```
+
+For a Runner-only field, use `--withhold-from-model` instead. Repair is an
+explicit reviewed widening: it restores only current type-, allowlist-, and
+database-version-compatible suggestions, creates a disabled digest, and still
+requires exact activation. A normal rescan does not restore operations
+automatically because an operator may have deliberately narrowed them.
+The notice is therefore advisory: leaving the field return-only is valid.
+
 Trusted tenant and principal columns use the same three output tiers, but their
 scope semantics never change. Runner still injects the verified value outside
 model arguments. Keeping the column out hides it from results; Runner output

@@ -2991,6 +2991,108 @@ export default defineCapability({
     }
   });
 
+  it("repairs a legacy usable field with zero analytical grants through the Workbench route", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-operation-repair-"));
+    const inspection = boundaryReviewInspection();
+    const project = {
+      root: tempDir,
+      package_manager: "npm" as const,
+      frameworks: ["node"],
+      schema_inputs: [],
+      database_env_names: ["DATABASE_URL"],
+    };
+    const build = buildAutoBoundary({
+      inspection,
+      project,
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const written = await writeAutoBoundaryArtifacts({ projectRoot: tempDir, build });
+    const guided = await initializeGuidedProject({
+      projectRoot: tempDir,
+      build,
+      runnerVersion: "1.7.0",
+    });
+    const legacyCandidate = structuredClone(build.exploration_boundary);
+    const legacyResource = legacyCandidate.pack.resources[0]!;
+    delete legacyResource.filterable_fields.membership_status;
+    legacyResource.sortable_fields = legacyResource.sortable_fields
+      .filter((field) => field !== "membership_status");
+    legacyResource.groupable_fields = legacyResource.groupable_fields
+      .filter((field) => field !== "membership_status");
+    legacyResource.aggregate_measures = legacyResource.aggregate_measures
+      .filter((field) => field !== "membership_status");
+    if (legacyResource.aggregate_measure_functions) {
+      delete legacyResource.aggregate_measure_functions.membership_status;
+    }
+    legacyResource.presence_measure_fields = (legacyResource.presence_measure_fields ?? [])
+      .filter((field) => field !== "membership_status");
+    legacyResource.count_distinct_fields = legacyResource.count_distinct_fields
+      .filter((field) => field !== "membership_status");
+    delete legacyResource.time_bucket_fields.membership_status;
+    await saveBoundaryReviewProgress(tempDir, createBoundaryReviewProgress({
+      draft: build.exploration_boundary,
+      candidate: legacyCandidate,
+      confirmedDecisions: legacyCandidate.unresolved_decisions,
+      actor: "legacy-owner@example.test",
+      revision: 1,
+    }));
+
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      boundaryRoot: written.root,
+      configPath: guided.config_path,
+      storePath: guided.store_path,
+      token: "operation-repair-token",
+      csrfToken: "operation-repair-csrf",
+      schemaInspector: async () => inspection,
+    });
+    const headers = {
+      "x-synapsor-ui-token": "operation-repair-token",
+      "x-synapsor-csrf": "operation-repair-csrf",
+    };
+    try {
+      const before = await getJson(`http://${server.host}:${server.port}/api/boundary`, headers);
+      const beforeResource = before.candidate.pack.resources[0];
+      expect(beforeResource.selectable_fields).toContain("membership_status");
+      expect(beforeResource.groupable_fields).not.toContain("membership_status");
+
+      const repaired = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        headers,
+        {
+          kind: "field_exposure",
+          resource_id: "public.members",
+          field: "membership_status",
+          exposure: "allow_reviewed_use",
+          actor: "owner@example.test",
+          reason: "Repair the current inspected membership-status operations.",
+        },
+      );
+      const repairedResource = repaired.candidate.pack.resources[0];
+      expect(repaired.semantic_diff).toMatchObject({
+        added_visible_fields: [],
+        removed_visible_fields: [],
+        analytical_operation_changes: [{
+          field: "membership_status",
+          before: [],
+          after: expect.arrayContaining(["filter(eq/neq/in)", "sort", "group"]),
+        }],
+        authority_changed: true,
+      });
+      expect(repairedResource.filterable_fields.membership_status)
+        .toEqual(expect.arrayContaining(["eq", "in"]));
+      expect(repairedResource.groupable_fields).toContain("membership_status");
+      expect(repairedResource.presence_measure_fields).toContain("membership_status");
+      expect(repaired.active).toBeUndefined();
+      await expect(fs.access(path.join(tempDir, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("creates, opens, and deletes named Workbench boundary drafts without changing authority", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-boundary-library-"));
     const inspection = relationshipReviewInspection();

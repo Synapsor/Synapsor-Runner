@@ -2188,16 +2188,32 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       if(!resource)return "no reviewed operation";
       const operations=[];
       if((resource.selectable_fields||[]).includes(field))operations.push("return");
+      operations.push(...reviewedFieldAnalyticalOperations(resource,field));
+      return operations.length?operations.join(", "):"no reviewed operation";
+    }
+
+    function reviewedFieldAnalyticalOperations(resource,field,includePresence=true){
+      if(!resource)return [];
+      const operations=[];
       const filters=(resource.filterable_fields||{})[field];
       if(filters&&filters.length)operations.push("filter("+filters.join("/")+")");
       if((resource.sortable_fields||[]).includes(field))operations.push("sort");
       if((resource.groupable_fields||[]).includes(field))operations.push("group");
       if((resource.aggregate_measures||[]).includes(field))operations.push("aggregate measure");
-      if((resource.presence_measure_fields||[]).includes(field))operations.push("presence measures");
+      if(includePresence&&(resource.presence_measure_fields||[]).includes(field))operations.push("presence measures");
       if((resource.count_distinct_fields||[]).includes(field))operations.push("count distinct");
       const buckets=(resource.time_bucket_fields||{})[field];
       if(buckets&&buckets.length)operations.push("time("+buckets.join("/")+")");
-      return operations.length?operations.join(", "):"no reviewed operation";
+      return operations;
+    }
+
+    function fieldNeedsOperationRepair(resource,source,field){
+      if(!resource||!source||(resource.kept_out_fields||[]).includes(field))return false;
+      const includePresence=!(resource.model_withheld_fields||[]).includes(field);
+      return (resource.selectable_fields||[]).includes(field)
+        &&(source.selectable_fields||[]).includes(field)
+        &&reviewedFieldAnalyticalOperations(resource,field,includePresence).length===0
+        &&reviewedFieldAnalyticalOperations(source,field,includePresence).length>0;
     }
 
     function stagedFieldExposureMessage(resourceId,field,exposure,restored,actor){
@@ -2266,7 +2282,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const summary=byId("access-staged-summary");
       const resourceId=selectedResource;
       const restored=exposure!=="keep_out"
-        &&reviewedFieldAccessTier(currentResource(resourceId),field)==="kept_out";
+        &&(reviewedFieldAccessTier(currentResource(resourceId),field)==="kept_out"
+          ||fieldNeedsOperationRepair(currentResource(resourceId),original.pack.resources.find(resource=>resource.id===resourceId),field));
       try{
         bar.classList.remove("hidden");
         summary.textContent="Saving this disabled access choice...";
@@ -2300,7 +2317,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const status=form.querySelector("[data-review-status]");
       const resourceId=selectedResource;
       const restored=exposure!=="keep_out"
-        &&reviewedFieldAccessTier(currentResource(resourceId),field)==="kept_out";
+        &&(reviewedFieldAccessTier(currentResource(resourceId),field)==="kept_out"
+          ||fieldNeedsOperationRepair(currentResource(resourceId),original.pack.resources.find(resource=>resource.id===resourceId),field));
       try{
         if(!actor||!reason)throw new Error("Enter the human reviewer identity and a concrete reason.");
         status.className="status-message";
@@ -2999,6 +3017,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	        const reviewedTier=resource?reviewedFieldAccessTier(resource,field.name):null;
 	        const kept=reviewedTier==="kept_out"||(!source&&sensitive);
 	        const withheld=reviewedTier==="runner_only";
+	        const operationRepairNeeded=fieldNeedsOperationRepair(resource,source,field.name);
 	        const supportsVisibility=Boolean(source&&(
 	          fieldHas(source,field.name,"selectable_fields")
 	          ||fieldHas(source,field.name,"filterable_fields")
@@ -3042,12 +3061,17 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	            :!visible
 	              ?'<span class="badge">Not visible</span>'
 	              :"";
+	        const operationRepairBadge=operationRepairNeeded
+	          ?'<span class="badge warn" title="This field is usable without analytical operations, while the current inspection offers safe suggestions. Restore them only when that access is intended, then review and activate.">Optional operation restore</span>'
+	          :"";
 	        const unavailableBadge=!available
 	          ?'<span class="badge bad">'+esc(selectedKind.replace(/^./,char=>char.toUpperCase()))+' unavailable</span>'
 	          :!supportsVisibility&&!kept
 	            ?'<span class="badge">Aggregate/filter only</span>'
 	            :"";
-	        const consequence=trustedScopeField&&tier==="visible"
+	        const consequence=operationRepairNeeded
+	          ?"This field may be returned, but it has no filter, sort, group, or measure grant. Leave it return-only or explicitly restore the current inspected suggestions below."
+	          :trustedScopeField&&tier==="visible"
 	          ?"Scope remains fixed outside model arguments. The reviewed value may appear locally and enter model context."
 	          :trustedScopeField&&tier==="withheld"
 	          ?"Scope remains fixed outside model arguments. Runner may show the value locally; the model receives only a response-local token."
@@ -3065,7 +3089,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	          +'<option value="withheld" '+(tier==="withheld"?"selected":"")+'>Raw values: Runner only</option>'
 		          +'<option value="kept_out" '+(tier==="kept_out"?"selected":"")+'>Kept out</option>'
 		          +'</select><span class="access-column-consequence">'+esc(consequence)+'</span></label>';
-		        const reviewForms=!resource||disabled
+	        const reviewForms=!resource||disabled
 		          ?""
 		          :trustedScopeField
 	            ?[
@@ -3076,8 +3100,15 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		            :[
 		              tier!=="visible"?managedReviewForm(field.name,"allow_reviewed_use","Why may this field's values enter model context?"):"",
 		              tier!=="withheld"?managedReviewForm(field.name,"withhold_from_model","Why may the agent use this field while its values stay out of model context?"):"",
-		              tier!=="kept_out"?managedReviewForm(field.name,"keep_out","Why should this field become unavailable to plans?"):""
-		            ].join("");
+	              tier!=="kept_out"?managedReviewForm(field.name,"keep_out","Why should this field become unavailable to plans?"):""
+	            ].join("");
+	        const operationRepairExposure=withheld?"withhold_from_model":"allow_reviewed_use";
+	        const operationRepairControl=operationRepairNeeded
+	          ?'<div class="band notice"><strong>Optional analytical operation restore</strong><p>If this field should not remain return-only, Runner can restore the current type-, allowlist-, and server-compatible suggestions. This stages a new digest and does not activate it.</p><button class="secondary" data-restore-field-operations="'+esc(field.name)+'" data-exposure="'+esc(operationRepairExposure)+'" type="button">Restore current suggested operations</button></div>'
+	          :"";
+	        const operationRepairForm=operationRepairNeeded
+	          ?managedReviewForm(field.name,operationRepairExposure,"Why should Runner restore the current inspected analytical suggestions for this field?")
+	          :"";
 		        const schemaEnum=Array.isArray(field.enum_values)?field.enum_values:[];
 		        const enumReviewable=Boolean(resource&&schemaEnum.length&&(Object.hasOwn(source?.field_enums||{},field.name)||field.enum_review_override));
 		        const reviewedEnum=enumReviewable
@@ -3097,9 +3128,11 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		          :'<strong><code>'+esc(field.name)+'</code></strong>';
 		        const highlighted=field.name===highlightedAccessField;
 		        return '<div class="access-column '+(highlighted?"highlighted":"")+'" data-access-column="'+esc(field.name)+'" data-column-kept-out="'+esc(String(kept))+'" '+(highlighted?'data-access-highlighted="true"':"")+'>'
-		          +'<span class="access-column-copy">'+fieldName+'<small>'+esc(field.data_type||source?.field_types?.[field.name]||"unknown type")+'</small>'+(fieldMetadata?.description?'<small>'+esc(fieldMetadata.description)+'</small>':"")+'<span class="access-column-risk">'+stateBadge+unavailableBadge+'</span></span>'
-		          +tierControl
-		          +reviewForms
+	          +'<span class="access-column-copy">'+fieldName+'<small>'+esc(field.data_type||source?.field_types?.[field.name]||"unknown type")+'</small>'+(fieldMetadata?.description?'<small>'+esc(fieldMetadata.description)+'</small>':"")+'<span class="access-column-risk">'+stateBadge+operationRepairBadge+unavailableBadge+'</span></span>'
+	          +tierControl
+	          +reviewForms
+	          +operationRepairControl
+	          +operationRepairForm
 		          +enumControl
 		          +metadataControl
 		          +'</div>';
@@ -3183,7 +3216,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         return '<tr><td><code>'+esc(field)+'</code></td>'+cells+'</tr>';
       }).join(""):"";
       const advanced=resource
-        ?'<details class="access-secondary" data-access-secondary><summary>Advanced field operations</summary><p>Turning a permission off narrows access. Fields hidden by Runner cannot be restored in this review.</p><div style="overflow:auto"><table class="permission-table"><thead><tr><th>Field</th>'+advancedPermissions.map(item=>'<th>'+esc(item[0])+'</th>').join("")+'</tr></thead><tbody>'+permissionRows+'</tbody></table></div></details>'
+        ?'<details class="access-secondary" data-access-secondary><summary>Advanced field operations</summary><p>Turning a permission off narrows access. Fields hidden by Runner cannot be restored here. A usable field with no analytical grants is marked above and may restore all current safe suggestions in one reviewed action.</p><div style="overflow:auto"><table class="permission-table"><thead><tr><th>Field</th>'+advancedPermissions.map(item=>'<th>'+esc(item[0])+'</th>').join("")+'</tr></thead><tbody>'+permissionRows+'</tbody></table></div></details>'
         :'<details class="access-secondary" data-access-secondary><summary>Advanced field operations</summary><p>This '+esc(selectedKind)+' is excluded. Include it before changing analytical permissions.</p></details>';
       const organizationScopeReview=candidate.organization_scope
         ?'<div class="risk"><strong>Whole reviewed organization</strong><p>'+esc(candidate.organization_scope.organization_id)+' is fixed outside model arguments. This boundary applies no tenant predicate; changing that posture requires regenerating and reviewing the complete boundary.</p></div>'
@@ -3252,6 +3285,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         }
       });
       document.querySelectorAll("[data-open-field-review]").forEach(button=>button.onclick=()=>openManagedFieldReview(button.dataset.openFieldReview,button.dataset.exposure));
+	      document.querySelectorAll("[data-restore-field-operations]").forEach(button=>button.onclick=()=>{
+	        if(focusedAccessReview)submitFocusedFieldReview(button.dataset.restoreFieldOperations,button.dataset.exposure);
+	        else openManagedFieldReview(button.dataset.restoreFieldOperations,button.dataset.exposure);
+	      });
 	      document.querySelectorAll("[data-submit-field-review]").forEach(button=>button.onclick=()=>submitManagedFieldReview(button.dataset.submitFieldReview,button.dataset.exposure));
 	      document.querySelectorAll("[data-cancel-field-review]").forEach(button=>button.onclick=()=>button.closest("[data-managed-review-form]").classList.add("hidden"));
 	      document.querySelectorAll("[data-submit-enum-review]").forEach(button=>button.onclick=()=>submitManagedEnumReview(button.dataset.submitEnumReview,button.closest("[data-enum-review-form]")));

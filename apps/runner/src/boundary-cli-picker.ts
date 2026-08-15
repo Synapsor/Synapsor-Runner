@@ -44,6 +44,11 @@ export type BoundaryFieldTierEditResult =
       field: string;
       tiers: Record<string, BoundaryFieldTier>;
     }
+  | {
+      action: "restore_operations";
+      field: string;
+      tiers: Record<string, BoundaryFieldTier>;
+    }
   | `enum:${string}`
   | "back"
   | "privacy"
@@ -1201,6 +1206,8 @@ async function editFieldTiers(
       const reviewedEnumValues = enumValues
         ? currentReviewedEnumValues(view, highlighted, enumValues)
         : undefined;
+      const operationRepairAvailable = (view.operation_repair_fields ?? []).includes(highlighted.name)
+        && tiers[highlighted.name] !== "kept_out";
       const tableWidth = Math.max(36, Math.min(terminalContentWidth(output.columns), 116));
       const accessLayout = fieldAccessLayout(tableWidth);
       const reviewCompatibility = databaseCompatibilityLine(view.database_server_compatibility, theme);
@@ -1223,6 +1230,9 @@ async function editFieldTiers(
         ...(reviewCompatibility ? [reviewCompatibility] : []),
         ...(enumValues
           ? [`${theme.key("E")} Edit allowed values for selected column: ${reviewedEnumValues!.length} of ${enumValues.length}`]
+          : []),
+        ...(operationRepairAvailable
+          ? [`${theme.key("S")} Restore the current inspected filter/sort/group/measure suggestions for this column`]
           : []),
         `${theme.key("I")} Edit the selected column's reviewed label and description`,
         "Space cycles: MODEL + RUNNER -> RUNNER ONLY -> KEPT OUT",
@@ -1252,6 +1262,11 @@ async function editFieldTiers(
         isTrustedScopeField(view, highlighted.name)
           ? theme.scope(trustedScopeTierConsequence(tiers[highlighted.name]!))
           : styleTierConsequence(theme, tiers[highlighted.name]!),
+        ...(operationRepairAvailable
+          ? [theme.warning(
+              "Operation repair available: this usable field has no analytical grants, but the current inspected draft has safe suggestions.",
+            )]
+          : []),
         theme.dim(
           options?.focusedAccess
             ? "Enter stages these choices in the disabled boundary. Final activation is one separate confirmation."
@@ -1270,6 +1285,13 @@ async function editFieldTiers(
       if (key.name === "i") {
         return {
           action: "metadata",
+          field: highlighted.name,
+          tiers: { ...tiers },
+        };
+      }
+      if (key.name === "s" && operationRepairAvailable) {
+        return {
+          action: "restore_operations",
           field: highlighted.name,
           tiers: { ...tiers },
         };
@@ -1549,10 +1571,49 @@ function boundaryResourceMapLines(
       theme,
     ),
     ...mapTierLines(view, candidate, "kept_out", groupedFields.get("kept_out")!, theme),
+    ...operationRepairLines(view, tiers, theme, commandName),
     ...mapRelationshipLines(candidate, theme),
     `\`-- Aggregate guard: minimum group size ${candidate.minimum_cohort_size}; small groups are suppressed`,
   ];
   return lines;
+}
+
+function operationRepairLines(
+  view: BoundaryResourceReviewView,
+  tiers: Record<string, BoundaryFieldTier>,
+  theme: TerminalTheme,
+  commandName: string,
+): string[] {
+  const generated = view.generated_candidate;
+  const fields = (view.operation_repair_fields ?? [])
+    .filter((field) => tiers[field] !== "kept_out");
+  if (!generated || !fields.length) return [];
+  return [
+    `|-- ${theme.warning("Operation repair available")}`,
+    ...fields.flatMap((field, index) => {
+      const branch = index === fields.length - 1 ? "`--" : "|--";
+      const continuation = index === fields.length - 1 ? "   " : "|  ";
+      const tier = tiers[field] ?? currentFieldTier(view, field);
+      const flag = tier === "withheld_from_model" ? "--withhold-from-model" : "--allow-reviewed-field";
+      const command = [
+        commandName,
+        "boundary review resource",
+        shellQuote(view.resource_id),
+        flag,
+        shellQuote(field),
+        "--apply",
+        "--actor \"$USER\"",
+        "--reason",
+        shellQuote(`Restore the current inspected analytical operations for ${view.resource_id}.${field}.`),
+      ].join(" ");
+      return [
+        `|   ${branch} ${safeTerminalText(field)} is usable but has no filter, sort, group, or measure grant.`,
+        `|   ${continuation} current suggestions: ${boundaryFieldOperations(generated, field)}`,
+        `|   ${continuation} repair here: press S while this column is selected`,
+        `|   ${continuation} scripted repair: ${safeTerminalText(command)}`,
+      ];
+    }),
+  ];
 }
 
 function blockedRelationshipProofLines(
@@ -1915,6 +1976,11 @@ function candidateResourceOverviewLines(
     `  ${safeTerminalText(resource.resource_id)} [${theme.warning(state)}; ${review}]`,
     `    Fields: ${resource.model_visible_fields} model | ` +
       `${resource.runner_output_only_fields} raw Runner-only | ${resource.kept_out_fields} kept out`,
+    ...((resource.operation_repair_fields?.length ?? 0) > 0
+      ? [theme.warning(
+          `    Operation repair available: ${resource.operation_repair_fields!.join(", ")}`,
+        )]
+      : []),
   ];
   for (const entry of scopeEntries.slice(0, 3)) {
     const relationship = relationshipByPath.get(entry.scope.path_id);
@@ -2343,6 +2409,11 @@ function boundaryOverviewMapLines(
       `${safeTerminalText(resource.resource_id)} [${status}]`,
       `  fields: ${resource.model_visible_fields} model | ` +
       `${resource.runner_output_only_fields} raw Runner-only | ${resource.kept_out_fields} kept out`,
+      ...((resource.operation_repair_fields?.length ?? 0) > 0
+        ? [theme.warning(
+            `  repair: usable fields missing analytical grants: ${resource.operation_repair_fields!.join(", ")}`,
+          )]
+        : []),
     ];
     if (resource.status !== "draft_read") {
       lines.push(`  \`-- ${theme.danger(safeTerminalText(resource.blockers[0] ?? "review blocked"))}`);
@@ -2505,6 +2576,12 @@ function resourceState(
     };
   }
   if (resource.active && resource.included) {
+    if (resource.operation_repair_fields?.length) {
+      return {
+        text: "[active + reviewed; operation repair available]",
+        style: theme.warning,
+      };
+    }
     return resource.risk_count
       ? {
         text: "[active + updated sign-off needed]",
@@ -2513,6 +2590,12 @@ function resourceState(
       : { text: "[active + reviewed]", style: theme.success };
   }
   if (!resource.included) return { text: "[available]", style: theme.dim };
+  if (resource.operation_repair_fields?.length) {
+    return {
+      text: "[reviewed; operation repair available]",
+      style: theme.warning,
+    };
+  }
   if (resource.risk_count) {
     return {
       text: "[table sign-off needed]",
