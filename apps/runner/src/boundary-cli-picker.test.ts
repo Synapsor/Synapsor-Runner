@@ -1437,9 +1437,13 @@ describe("boundary review terminal picker", () => {
     expect(rendered).toContain("Shared reference: unavailable");
     expect(rendered).toContain("relationship loan_events_loan_fk reaches tenant-scoped resource librarydb.loans");
     expect(rendered).toContain("Available tenant-scope paths");
-    expect(rendered).toContain("librarydb.loan_events -> librarydb.loans.tenant_id (1 hop)");
-    expect(rendered).toContain("exact path ID: loan_events_loan_fk");
-    expect(rendered).toContain("required order: librarydb.loans -> librarydb.loan_events (ancestor first)");
+    expect(rendered).toContain("Tenant scope available (1 hop)");
+    expect(rendered).toContain("loan_events -> loans.tenant_id");
+    expect(rendered).toContain("via columns: order_id");
+    expect(rendered).toContain("path ID: loan_events_loan_fk");
+    expect(rendered).toContain("review order: add scoped ancestors first, then this table");
+    expect(rendered).not.toContain("librarydb.loan_events -> librarydb.loans");
+    expect(rendered).not.toContain("required order: librarydb.loans");
     expect(rendered).toContain("--row-identity 'id'");
     expect(rendered).toContain("--tenant-scope-path 'loan_events_loan_fk'");
     expect(rendered).toContain("--principal-scope-path 'loan_events_loan_fk'");
@@ -1453,7 +1457,8 @@ describe("boundary review terminal picker", () => {
     const twoHopView = blockedDerivedReviewView(twoHop);
     const twoHopRendered = formatBoundaryResourceMap(twoHopView);
     expect(twoHopRendered).toContain("events_item_fkey__items_order_fkey");
-    expect(twoHopRendered).toContain("order_item_events -> order_items -> orders.tenant_id (2 hops)");
+    expect(twoHopRendered).toContain("Tenant scope available (2 hops)");
+    expect(twoHopRendered).toContain("order_item_events -> order_items -> orders.tenant_id");
     expect(twoHopRendered).not.toContain("--max-derived-scope-hops");
 
     const threeHop = {
@@ -1474,8 +1479,10 @@ describe("boundary review terminal picker", () => {
     };
     const threeHopView = blockedDerivedReviewView(threeHop);
     const threeHopRendered = formatBoundaryResourceMap(threeHopView);
-    expect(threeHopRendered).toContain("event_notes -> order_item_events -> order_items -> orders.tenant_id (3 hops)");
-    expect(threeHopRendered).toContain("reviewed depth is 2; this path needs 3");
+    expect(threeHopRendered).toContain("Tenant scope available (3 hops)");
+    expect(threeHopRendered).toContain("event_notes -> order_item_events -> order_items -> orders.tenant_id");
+    expect(threeHopRendered).toContain("via columns: parent_id -> parent_id -> parent_id");
+    expect(threeHopRendered).toContain("needs max_derived_scope_hops 3 (currently 2)");
     expect(threeHopRendered).toContain("--tenant-scope-path 'event_notes_event_fkey__events_item_fkey__items_order_fkey'");
     expect(threeHopRendered).toContain("--max-derived-scope-hops 3");
 
@@ -1488,8 +1495,12 @@ describe("boundary review terminal picker", () => {
       exhaustive: true,
       commandName: "synapsor-runner",
     });
-    expect(overview).toContain("available: derive tenant scope via event_notes_event_fkey__events_item_fkey__items_order_fkey");
-    expect(overview).toContain("path needs max_derived_scope_hops 3; current reviewed limit is 2");
+    expect(overview).toContain("tenant scope available (3 hops)");
+    expect(overview).toContain("event_notes -> order_item_events -> order_items -> orders.tenant_id");
+    expect(overview).toContain("via columns: parent_id -> parent_id -> parent_id");
+    expect(overview).toContain("path ID: event_notes_event_fkey__events_item_fkey__items_order_fkey");
+    expect(overview).toContain("needs max_derived_scope_hops 3 (currently 2)");
+    expect(overview).not.toContain("derive tenant scope via");
     expect(overview).toContain("boundary review resource 'public.event_notes' --map shows the exact review command");
   });
 

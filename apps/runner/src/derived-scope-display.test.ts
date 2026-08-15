@@ -2,6 +2,7 @@ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { describe, expect, it } from "vitest";
 import {
   derivedScopeStartSequence,
+  formatDerivedScopeJoinColumns,
   formatDerivedScopePath,
 } from "./derived-scope-display.js";
 
@@ -31,6 +32,20 @@ describe("derived scope display", () => {
     ]);
   });
 
+  it("drops a repeated schema and renders the joining columns separately", () => {
+    const value = scope([
+      ["librarydb.note_flags", "librarydb.event_notes", "event_note_id"],
+      ["librarydb.event_notes", "librarydb.loan_events", "loan_event_id"],
+      ["librarydb.loan_events", "librarydb.loans", "loan_id"],
+    ]);
+    expect(formatDerivedScopePath(value)).toBe(
+      "note_flags -> event_notes -> loan_events -> loans.tenant_id",
+    );
+    expect(formatDerivedScopeJoinColumns(value)).toBe(
+      "event_note_id -> loan_event_id -> loan_id",
+    );
+  });
+
   it("does not mutate the canonical path id or any digest-bound path evidence", () => {
     const value = scope([
       ["public.order_item_events", "public.order_items"],
@@ -45,15 +60,16 @@ describe("derived scope display", () => {
   });
 });
 
-function scope(links: Array<[string, string]>) {
+function scope(links: Array<[string, string, string?]>) {
   return {
     path_id: links.map((_, index) => `fk_${index}`).join("__"),
     ancestor_resource: links.at(-1)?.[1] ?? "public.orders",
     ancestor_column: "tenant_id",
     proof: {
-      links: links.map(([source_resource, target_resource]) => ({
+      links: links.map(([source_resource, target_resource, sourceColumn]) => ({
         source_resource,
         target_resource,
+        ...(sourceColumn ? { source_columns: [sourceColumn] } : {}),
       })),
     },
   };

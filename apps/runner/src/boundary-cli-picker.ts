@@ -17,7 +17,7 @@ import {
   terminalContentWidth,
 } from "./terminal-layout.js";
 import {
-  derivedScopeStartSequence,
+  formatDerivedScopeJoinColumns,
   formatDerivedScopePath,
 } from "./derived-scope-display.js";
 import { blockedTenantScopeGuidance } from "./boundary-scope-guidance.js";
@@ -1046,13 +1046,17 @@ async function chooseResource(
                 ...highlighted.derived_tenant_scope.candidates.slice(0, 3).flatMap((scope) => {
                   const depth = derivedScopeDepth(scope);
                   const reviewedMaximum = highlighted.reviewed_max_derived_scope_hops ?? 2;
+                  const joinColumns = formatDerivedScopeJoinColumns(scope);
                   return [
-                    `  - ${safeTerminalText(formatDerivedScopePath(scope))} ` +
-                      `(${depth} ${plural(depth, "hop", "hops")}; exact path ID ` +
-                      `${safeTerminalText(scope.path_id)})`,
+                    `  ${theme.success(`Tenant scope available (${depth} ${plural(depth, "hop", "hops")})`)}`,
+                    `    ${safeTerminalText(formatDerivedScopePath(scope))}`,
+                    ...(joinColumns
+                      ? [`    via columns: ${safeTerminalText(joinColumns)}`]
+                      : []),
+                    `    ${theme.dim(`path ID: ${safeTerminalText(scope.path_id)}`)}`,
                     ...(depth > reviewedMaximum
                       ? [theme.warning(
-                          `    Raise reviewed derived-scope depth from ${reviewedMaximum} to ${depth} before selecting it.`,
+                          `    needs max_derived_scope_hops ${depth} (currently ${reviewedMaximum})`,
                         )]
                       : []),
                   ];
@@ -1610,9 +1614,9 @@ function availableDerivedTenantScopeLines(
     theme.bold("Available tenant-scope paths"),
     ...paths.flatMap((scope) => {
       const depth = derivedScopeDepth(scope);
+      const joinColumns = formatDerivedScopeJoinColumns(scope);
       const principalScope = view.derived_principal_scope?.candidates.find((candidate) =>
         candidate.path_id === scope.path_id);
-      const order = derivedScopeStartSequence(scope);
       const command = derivedTenantScopeReviewCommand({
         commandName,
         resourceId: view.resource_id,
@@ -1622,14 +1626,17 @@ function availableDerivedTenantScopeLines(
         ...(depth > reviewedMaximum ? { requiredMaximum: depth } : {}),
       });
       return [
-        `  ${theme.success("AVAILABLE")} ${safeTerminalText(formatDerivedScopePath(scope))} ` +
-          `(${depth} ${plural(depth, "hop", "hops")})`,
-        `    exact path ID: ${theme.value(safeTerminalText(scope.path_id))}`,
-        `    required order: ${safeTerminalText(order.join(" -> "))} (ancestor first)`,
+        `  ${theme.success(`Tenant scope available (${depth} ${plural(depth, "hop", "hops")})`)}`,
+        `    ${safeTerminalText(formatDerivedScopePath(scope))}`,
+        ...(joinColumns
+          ? [`    via columns: ${safeTerminalText(joinColumns)}`]
+          : []),
+        `    ${theme.dim(`path ID: ${safeTerminalText(scope.path_id)}`)}`,
+        `    review order: add scoped ancestors first, then this table.`,
         ...(depth > reviewedMaximum
           ? [theme.warning(
-              `    reviewed depth is ${reviewedMaximum}; this path needs ${depth}. ` +
-              `The command below raises only max_derived_scope_hops to ${depth}.`,
+              `    needs max_derived_scope_hops ${depth} (currently ${reviewedMaximum}); ` +
+              `the command below raises only this reviewed limit.`,
             )]
           : []),
         ...(principalScope
@@ -2301,23 +2308,31 @@ function availableDerivedTenantScopeSummaryLines(
   const reviewedMaximum = resource.reviewed_max_derived_scope_hops ?? 2;
   const lines = paths.slice(0, 3).flatMap((scope) => {
     const depth = derivedScopeDepth(scope);
+    const joinColumns = formatDerivedScopeJoinColumns(scope);
     return [
-      `      available: derive tenant scope via ${safeTerminalText(scope.path_id)} -> ` +
-        `${safeTerminalText(formatDerivedScopePath(scope))} ` +
-        `(${depth} ${plural(depth, "hop", "hops")})`,
+      `      ${theme.success(`tenant scope available (${depth} ${plural(depth, "hop", "hops")})`)}`,
+      `        ${safeTerminalText(formatDerivedScopePath(scope))}`,
+      ...(joinColumns
+        ? [`        via columns: ${safeTerminalText(joinColumns)}`]
+        : []),
+      `        ${theme.dim(`path ID: ${safeTerminalText(scope.path_id)}`)}`,
       ...(depth > reviewedMaximum
-        ? [`      next: path needs max_derived_scope_hops ${depth}; current reviewed limit is ${reviewedMaximum}.`]
+        ? [theme.warning(
+            `        needs max_derived_scope_hops ${depth} (currently ${reviewedMaximum})`,
+          )]
         : []),
     ];
   });
-  if (paths.length > 3) lines.push(`      available: +${paths.length - 3} more proven paths`);
+  if (paths.length > 3) {
+    lines.push(theme.success(`      ${paths.length - 3} more proven paths are available`));
+  }
   lines.push(
-    `      next: ${safeTerminalText(commandName)} boundary review resource ` +
+    theme.warning(
+      `      next: ${safeTerminalText(commandName)} boundary review resource ` +
       `${safeTerminalText(shellQuote(resource.resource_id))} --map shows the exact review command.`,
+    ),
   );
-  return lines.map((line) => line.includes("available:")
-    ? theme.success(line)
-    : theme.warning(line));
+  return lines;
 }
 
 function riskBadge(

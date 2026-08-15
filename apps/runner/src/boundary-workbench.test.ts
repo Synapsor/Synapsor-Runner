@@ -300,7 +300,11 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("Why unavailable");
     expect(html).toContain("What makes it addable");
     expect(html).toContain("scope_resolution_guidance");
-    expect(html).toContain("Proven tenant path available");
+    expect(html).toContain("Tenant scope available (");
+    expect(html).toContain("derivedScopePathChain");
+    expect(html).toContain("derivedScopeJoinColumns");
+    expect(html).toContain("commonNamespace");
+    expect(html).toContain("via columns:");
     expect(html).toContain("exact path ID");
     expect(html).toContain("Raise Derived-scope depth from ");
     expect(html).toContain("Proven tenant scope is available");
@@ -327,7 +331,7 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("user/owner limit");
     expect(html).toContain("review.fields||[]).filter(field=>field.nullable===false");
     expect(html).toContain("bytea|blob|binary|varbinary|image");
-    expect(html).toContain('return "mandatory relationship path "+shown.join(" → ")');
+    expect(html).toContain('return scope?"mandatory relationship path "+derivedScopePathChain(scope):"unresolved"');
     expect(html).toContain("Advanced exact path IDs");
     expect(html).toContain('post("/api/boundary/library/switch"');
     expect(html).toContain('post("/api/boundary/library/delete"');

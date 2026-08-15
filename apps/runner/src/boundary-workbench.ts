@@ -1202,9 +1202,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           const depth=path.proof?.links?.length||1;
           const reviewedDepth=Number(candidate?.budgets?.max_derived_scope_hops??candidate?.budgets?.max_relationship_hops??2);
           if(depth>reviewedDepth){
-            return "A proven "+depth+"-hop tenant path is available: "+derivedScopePathLabel(path)+" (exact path ID "+path.path_id+"). Raise Derived-scope depth from "+reviewedDepth+" to "+depth+" in Settings → Result shape, timeout, and path depth, then choose it.";
+            return "A proven "+depth+"-hop tenant path is shown above. Raise Derived-scope depth from "+reviewedDepth+" to "+depth+" in Settings → Result shape, timeout, and path depth, then choose it.";
           }
-          return "Choose the proven tenant path "+derivedScopePathLabel(path)+" (exact path ID "+path.path_id+").";
+          return "Choose the proven tenant path shown above.";
         }
         if(review.shared_reference_scope?.eligible){
           return "Choose a direct customer-isolation option, or explicitly review Shared reference only if "+review.id+" has the same rows for every tenant.";
@@ -1217,6 +1217,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     }
 
     function derivedScopePathLabel(scope){
+      return scope?"mandatory relationship path "+derivedScopePathChain(scope):"unresolved";
+    }
+
+    function derivedScopePathChain(scope){
       if(!scope)return "unresolved";
       const links=scope.proof?.links||[];
       const resources=[];
@@ -1227,9 +1231,17 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       });
       if(resources.at(-1)!==scope.ancestor_resource)resources.push(scope.ancestor_resource);
       if(!resources.length)resources.push(scope.ancestor_resource);
-      const shown=resources.map(resource=>resource.startsWith("public.")?resource.slice(7):resource);
+      const namespaces=resources.map(resource=>{const separator=resource.lastIndexOf(".");return separator>0?resource.slice(0,separator):null;});
+      const commonNamespace=namespaces[0]&&namespaces.every(namespace=>namespace===namespaces[0])?namespaces[0]:null;
+      const shown=resources.map(resource=>commonNamespace?resource.slice(commonNamespace.length+1):resource.startsWith("public.")?resource.slice(7):resource);
       shown[shown.length-1]=shown.at(-1)+"."+scope.ancestor_column;
-      return "mandatory relationship path "+shown.join(" → ");
+      return shown.join(" → ");
+    }
+
+    function derivedScopeJoinColumns(scope){
+      const links=scope?.proof?.links||[];
+      if(!links.length||links.some(link=>!link.source_columns?.length))return "";
+      return links.map(link=>link.source_columns.join(", ")).join(" → ");
     }
 
     function derivedScopeCostAdvisory(scope){
@@ -1747,7 +1759,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	        const scopeWhy=blocked&&review.scope_resolution_guidance?.why?.length?'<div class="risk-list">'+review.scope_resolution_guidance.why.map(reason=>'<div class="risk unresolved"><strong>Why unavailable</strong><p>'+esc(reason)+'</p></div>').join("")+'</div>':'';
           const reviewedDepth=Number(candidate?.budgets?.max_derived_scope_hops??candidate?.budgets?.max_relationship_hops??2);
           const availableTenantPaths=blocked?[...(review.derived_tenant_scope?.candidates||[])].sort((left,right)=>(left.proof?.links?.length||0)-(right.proof?.links?.length||0)||left.path_id.localeCompare(right.path_id)):[];
-          const scopeAvailable=availableTenantPaths.length?'<div class="risk-list">'+availableTenantPaths.slice(0,3).map(path=>{const depth=path.proof?.links?.length||1;return '<div class="risk available"><strong>Proven tenant path available</strong><p>'+esc(derivedScopePathLabel(path))+' · '+esc(depth)+' hop'+(depth===1?'':'s')+' · exact path ID <code>'+esc(path.path_id)+'</code></p>'+(depth>reviewedDepth?'<p>Raise reviewed Derived-scope depth from '+esc(reviewedDepth)+' to '+esc(depth)+' before selecting this path.</p>':'')+'</div>';}).join("")+'</div>':'';
+          const scopeAvailable=availableTenantPaths.length?'<div class="risk-list">'+availableTenantPaths.slice(0,3).map(path=>{const depth=path.proof?.links?.length||1;const joinColumns=derivedScopeJoinColumns(path);return '<div class="risk available"><strong>Tenant scope available ('+esc(depth)+' hop'+(depth===1?'':'s')+')</strong><p>'+esc(derivedScopePathChain(path))+'</p>'+(joinColumns?'<p>via columns: <code>'+esc(joinColumns)+'</code></p>':'')+'<p>path ID: <code>'+esc(path.path_id)+'</code></p>'+(depth>reviewedDepth?'<p>Needs max_derived_scope_hops '+esc(depth)+' (currently '+esc(reviewedDepth)+').</p>':'')+'</div>';}).join("")+'</div>':'';
 	        return '<article class="resource" data-risk="'+risks+'"><div class="resource-head"><div><h3 class="resource-name">'+esc(review.id)+'</h3><p>'+esc(blocked?"Unavailable: "+(review.blockers||[]).join("; "):included?"Included in the agent data set":"Excluded from the agent data set")+'</p></div><span class="badge '+badgeClass+'">'+esc(badgeText)+'</span></div><div class="badges"><span class="badge">'+esc(raw)+' visible</span><span class="badge">'+esc(kept)+' hidden</span>'+(sensitiveKeptOut?'<span class="badge good">'+esc(sensitiveKeptOut)+' sensitive kept out</span>':'')+'<span class="badge">record ID: '+esc(primary)+'</span></div><p>Customer isolation: <code>'+esc(tenant)+'</code> · User/owner limit: <code>'+esc(principal)+'</code></p>'+scopeWhy+scopeAvailable+(blocked?'<p><strong>Next:</strong> '+esc(blockedResourceNextAction(review))+'</p>':'')+'<div class="actions"><button class="secondary" data-open-resource="'+esc(review.id)+'" type="button">'+esc(risks?"Review access":"Inspect access")+'</button>'+(source?'<label class="check"><input type="checkbox" data-resource-toggle="'+esc(review.id)+'" '+(included?"checked":"")+'> Include</label>':'')+'</div></article>';
 	      }).join("")||'<div class="band notice"><strong>No '+esc(reviewedCollectionLabel())+' match this view.</strong><p>The inspected resources are still available; this filter did not change authority.</p><button id="reset-resource-filter" class="secondary" type="button">Show all '+esc(reviewedCollectionLabel())+'</button></div>';
       document.querySelectorAll("[data-open-resource]").forEach(button=>button.onclick=()=>openResource(button.dataset.openResource));
@@ -3076,7 +3088,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	        const derivedTenantCandidates=(review.derived_tenant_scope?.candidates||[]).map(derivedScopePathLabel);
 	        const scopeGuidance=review.scope_resolution_guidance;
 	        const reviewedDepth=Number(candidate?.budgets?.max_derived_scope_hops??candidate?.budgets?.max_relationship_hops??2);
-	        const scopeExplanation=scopeGuidance?'<div class="risk-list">'+scopeGuidance.why.map(reason=>'<div class="risk unresolved"><strong>Why this table is unavailable</strong><p>'+esc(reason)+'</p></div>').join("")+'</div><div class="band notice"><strong>What makes it addable</strong><ul>'+scopeGuidance.remediation.map(action=>'<li>'+esc(action)+'</li>').join("")+'</ul></div>':derivedTenantCandidates.length?'<div class="band notice"><strong>Proven tenant scope is available</strong><p>Choose one exact mandatory relationship path below. Paths are reviewed ancestor-first and remain outside model arguments.</p><ul>'+(review.derived_tenant_scope?.candidates||[]).map(path=>{const depth=path.proof?.links?.length||1;return '<li>'+esc(derivedScopePathLabel(path))+' · exact path ID <code>'+esc(path.path_id)+'</code>'+(depth>reviewedDepth?' · raise Derived-scope depth from '+esc(reviewedDepth)+' to '+esc(depth)+' first':'')+'</li>';}).join("")+'</ul></div>':'';
+	        const scopeExplanation=scopeGuidance?'<div class="risk-list">'+scopeGuidance.why.map(reason=>'<div class="risk unresolved"><strong>Why this table is unavailable</strong><p>'+esc(reason)+'</p></div>').join("")+'</div><div class="band notice"><strong>What makes it addable</strong><ul>'+scopeGuidance.remediation.map(action=>'<li>'+esc(action)+'</li>').join("")+'</ul></div>':derivedTenantCandidates.length?'<div class="band notice"><strong>Proven tenant scope is available</strong><p>Choose one exact mandatory relationship path below. Paths are reviewed ancestor-first and remain outside model arguments.</p><ul>'+(review.derived_tenant_scope?.candidates||[]).map(path=>{const depth=path.proof?.links?.length||1;const joinColumns=derivedScopeJoinColumns(path);return '<li><strong>Tenant scope available ('+esc(depth)+' hop'+(depth===1?'':'s')+')</strong><p>'+esc(derivedScopePathChain(path))+'</p>'+(joinColumns?'<p>via columns: <code>'+esc(joinColumns)+'</code></p>':'')+'<p>path ID: <code>'+esc(path.path_id)+'</code></p>'+(depth>reviewedDepth?'<p>Needs max_derived_scope_hops '+esc(depth)+' (currently '+esc(reviewedDepth)+').</p>':'')+'</li>';}).join("")+'</ul></div>':'';
 	        const blockedDetails='<details class="access-secondary" data-access-secondary open><summary>Resolve blocked access</summary><div class="risk-list">'+(review.blockers||[]).map(blocker=>'<div class="risk high"><strong>'+esc(blocker)+'</strong><p>This object stays unavailable; unrelated safe resources can continue.</p></div>').join("")+'</div>'+scopeExplanation+'<div class="scope-grid" style="margin-top:12px"><div><strong>Row identity candidates</strong><p>'+esc((review.primary_key?.candidates||[]).join(", ")||"none")+'</p></div><div><strong>Direct tenant columns</strong><p>'+esc((review.tenant_key?.candidates||[]).join(", ")||"none")+'</p></div><div><strong>Mandatory proven tenant paths</strong><p>'+esc(derivedTenantCandidates.join("; ")||"none")+'</p></div></div>'+resolution+'<p>Sensitive or unresolved fields kept unavailable: '+esc(kept.join(", ")||"none detected")+'.</p></details>';
 	        byId("resource-detail").innerHTML=header+serverCompatibilityNotice+blockedDetails+columnList;
 		      byId("back-resources").onclick=backFromResourceDetail;
