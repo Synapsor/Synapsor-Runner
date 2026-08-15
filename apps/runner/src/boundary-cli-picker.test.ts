@@ -1410,6 +1410,89 @@ describe("boundary review terminal picker", () => {
     });
   });
 
+  it("renders affirmative derived-scope proof and an exact review command for a blocked table", () => {
+    const view = blockedDerivedReviewView(oneHopDerivedScope(
+      "librarydb.loan_events",
+      "librarydb.loans",
+      "loan_events_loan_fk",
+    ));
+    view.derived_principal_scope = {
+      ...view.derived_tenant_scope!,
+      candidates: view.derived_tenant_scope!.candidates.map((scope) => ({
+        ...scope,
+        ancestor_column: "librarian",
+      })),
+    };
+
+    const rendered = formatBoundaryResourceMap(view, {
+      commandName: "synapsor-runner",
+    });
+
+    expect(rendered).toContain("Blocked: trusted tenant scope is unresolved.");
+    expect(rendered).toContain("What Runner already proved");
+    expect(rendered).toContain("Record identity: id (high confidence)");
+    expect(rendered).toContain("database: inspected primary key: id");
+    expect(rendered).toContain("loan_events_loan_fk: order_id -> librarydb.loans.id");
+    expect(rendered).toContain("NOT NULL; many-to-one proven; target primary key");
+    expect(rendered).toContain("Shared reference: unavailable");
+    expect(rendered).toContain("relationship loan_events_loan_fk reaches tenant-scoped resource librarydb.loans");
+    expect(rendered).toContain("Available tenant-scope paths");
+    expect(rendered).toContain("librarydb.loan_events -> librarydb.loans.tenant_id (1 hop)");
+    expect(rendered).toContain("exact path ID: loan_events_loan_fk");
+    expect(rendered).toContain("required order: librarydb.loans -> librarydb.loan_events (ancestor first)");
+    expect(rendered).toContain("--row-identity 'id'");
+    expect(rendered).toContain("--tenant-scope-path 'loan_events_loan_fk'");
+    expect(rendered).toContain("--principal-scope-path 'loan_events_loan_fk'");
+    expect(rendered).toContain("--apply --actor");
+    expect(rendered).toContain('--actor "$USER"');
+    expect(rendered).not.toContain("Why tenant isolation is unavailable");
+  });
+
+  it("prints exact multi-hop syntax and the reviewed depth change needed for a three-hop path", () => {
+    const twoHop = twoHopDerivedScope();
+    const twoHopView = blockedDerivedReviewView(twoHop);
+    const twoHopRendered = formatBoundaryResourceMap(twoHopView);
+    expect(twoHopRendered).toContain("events_item_fkey__items_order_fkey");
+    expect(twoHopRendered).toContain("order_item_events -> order_items -> orders.tenant_id (2 hops)");
+    expect(twoHopRendered).not.toContain("--max-derived-scope-hops");
+
+    const threeHop = {
+      ...twoHop,
+      path_id: `event_notes_event_fkey__${twoHop.path_id}`,
+      proof: {
+        ...twoHop.proof,
+        links: [
+          {
+            ...twoHop.proof.links[0]!,
+            constraint_name: "event_notes_event_fkey",
+            source_resource: "public.event_notes",
+            target_resource: "public.order_item_events",
+          },
+          ...twoHop.proof.links,
+        ],
+      },
+    };
+    const threeHopView = blockedDerivedReviewView(threeHop);
+    const threeHopRendered = formatBoundaryResourceMap(threeHopView);
+    expect(threeHopRendered).toContain("event_notes -> order_item_events -> order_items -> orders.tenant_id (3 hops)");
+    expect(threeHopRendered).toContain("reviewed depth is 2; this path needs 3");
+    expect(threeHopRendered).toContain("--tenant-scope-path 'event_notes_event_fkey__events_item_fkey__items_order_fkey'");
+    expect(threeHopRendered).toContain("--max-derived-scope-hops 3");
+
+    const summaryView = summary("public.event_notes", 1);
+    summaryView.status = "blocked_scope";
+    summaryView.blockers = ["trusted tenant scope is unresolved"];
+    summaryView.derived_tenant_scope = threeHopView.derived_tenant_scope;
+    summaryView.reviewed_max_derived_scope_hops = 2;
+    const overview = formatBoundaryOverviewMap([summaryView], {
+      exhaustive: true,
+      commandName: "synapsor-runner",
+    });
+    expect(overview).toContain("available: derive tenant scope via event_notes_event_fkey__events_item_fkey__items_order_fkey");
+    expect(overview).toContain("path needs max_derived_scope_hops 3; current reviewed limit is 2");
+    expect(overview).toContain("boundary review resource 'public.event_notes' --map shows the exact review command");
+  });
+
   it("sanitizes inspected names before rendering the structural map", () => {
     const view = reviewView();
     view.resource_id = "public.check_ins\u001b[2J";
@@ -1715,6 +1798,67 @@ function oneHopDerivedScope(
       digest: `sha256:${"8".repeat(64)}` as `sha256:${string}`,
     },
   };
+}
+
+function blockedDerivedReviewView(
+  scope: ReturnType<typeof oneHopDerivedScope> | ReturnType<typeof twoHopDerivedScope>,
+): BoundaryResourceReviewView {
+  const view = reviewView();
+  view.resource_id = scope.proof.links[0]!.source_resource;
+  view.status = "blocked_scope";
+  view.included = false;
+  view.blockers = ["trusted tenant scope is unresolved"];
+  view.candidate = null;
+  view.generated_candidate = null;
+  view.row_identity = {
+    selected: "id",
+    candidates: ["id"],
+    evidence: [{ source: "database", detail: "inspected primary key: id" }],
+    alternatives_considered: [{
+      value: "id",
+      confidence: "high",
+      evidence: ["database: inspected primary key: id"],
+      selected: true,
+    }],
+    confidence: "high",
+    confirmation_required: true,
+    safety_consequence: "The record ID must be reviewed.",
+  };
+  view.tenant_key = {
+    candidates: [],
+    evidence: [],
+    alternatives_considered: [],
+    confidence: "low",
+    confirmation_required: true,
+    safety_consequence: "The tenant scope must be reviewed.",
+    blocked_reason: "No direct tenant column was found.",
+  };
+  view.derived_tenant_scope = {
+    candidates: [scope],
+    confirmation_required: true,
+    safety_consequence: "Every row is scoped through this mandatory relationship path.",
+  };
+  view.shared_reference_scope = {
+    eligible: false,
+    confirmation_required: true,
+    safety_consequence: "Shared rows require explicit review.",
+    blockers: [
+      `relationship ${scope.path_id.split("__")[0]} reaches tenant-scoped resource ${scope.proof.links[0]!.target_resource}`,
+    ],
+  };
+  const firstLink = scope.proof.links[0]!;
+  view.relationships = [{
+    name: firstLink.constraint_name,
+    columns: firstLink.source_columns,
+    referenced_resource: firstLink.target_resource,
+    referenced_columns: firstLink.target_columns,
+    reviewed_cardinality: "many_to_one_candidate",
+    review_required: true,
+    nullable: firstLink.nullable,
+    cardinality_proven: true,
+    target_uniqueness: firstLink.target_uniqueness,
+  }];
+  return view;
 }
 
 function derivedScopeInference(scope: ReturnType<typeof oneHopDerivedScope> | ReturnType<typeof twoHopDerivedScope>) {

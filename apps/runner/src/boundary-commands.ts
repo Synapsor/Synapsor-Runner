@@ -742,7 +742,10 @@ async function boundaryResourceReviewCommand(
       if (args.includes("--json")) {
         throw new Error("boundary review resource accepts either --map or --json, not both.");
       }
-      process.stdout.write(formatBoundaryResourceMap(view, { color: process.stdout.isTTY }));
+      process.stdout.write(formatBoundaryResourceMap(view, {
+        color: process.stdout.isTTY,
+        commandName: cliCommandName(),
+      }));
       return 0;
     }
     if (args.includes("--json")) {

@@ -300,6 +300,10 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("Why unavailable");
     expect(html).toContain("What makes it addable");
     expect(html).toContain("scope_resolution_guidance");
+    expect(html).toContain("Proven tenant path available");
+    expect(html).toContain("exact path ID");
+    expect(html).toContain("Raise Derived-scope depth from ");
+    expect(html).toContain("Proven tenant scope is available");
     expect(html).toContain("Choose table and edit");
     expect(html).toContain('post("/api/boundary/library/create"');
     expect(html).toContain("resource_id:resourceId");

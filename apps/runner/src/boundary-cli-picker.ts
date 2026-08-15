@@ -16,8 +16,12 @@ import {
   padTerminalLine,
   terminalContentWidth,
 } from "./terminal-layout.js";
-import { formatDerivedScopePath } from "./derived-scope-display.js";
+import {
+  derivedScopeStartSequence,
+  formatDerivedScopePath,
+} from "./derived-scope-display.js";
 import { blockedTenantScopeGuidance } from "./boundary-scope-guidance.js";
+import { shellQuote } from "./cli-format.js";
 
 export type BoundaryFieldTier = "visible" | "withheld_from_model" | "kept_out";
 export type BoundaryFieldTierEditResult =
@@ -1034,7 +1038,28 @@ async function chooseResource(
               ...highlighted.scope_resolution_guidance.remediation.map((line) =>
                 `  - ${safeTerminalText(line)}`),
             ]
-          : []),
+          : highlighted.status !== "draft_read"
+            && highlighted.derived_tenant_scope?.candidates.length
+            ? [
+                "",
+                theme.success("Proven tenant scope is available"),
+                ...highlighted.derived_tenant_scope.candidates.slice(0, 3).flatMap((scope) => {
+                  const depth = derivedScopeDepth(scope);
+                  const reviewedMaximum = highlighted.reviewed_max_derived_scope_hops ?? 2;
+                  return [
+                    `  - ${safeTerminalText(formatDerivedScopePath(scope))} ` +
+                      `(${depth} ${plural(depth, "hop", "hops")}; exact path ID ` +
+                      `${safeTerminalText(scope.path_id)})`,
+                    ...(depth > reviewedMaximum
+                      ? [theme.warning(
+                          `    Raise reviewed derived-scope depth from ${reviewedMaximum} to ${depth} before selecting it.`,
+                        )]
+                      : []),
+                  ];
+                }),
+                theme.dim("Press Enter to review the exact path; no authority changes until activation."),
+              ]
+            : []),
         ...(options?.notice
           ? [
               "",
@@ -1384,7 +1409,7 @@ function trustedScopeTierConsequence(tier: BoundaryFieldTier): string {
 
 export function formatBoundaryResourceMap(
   view: BoundaryResourceReviewView,
-  options: { color?: boolean } = {},
+  options: { color?: boolean; commandName?: string } = {},
 ): string {
   const tiers = Object.fromEntries(view.fields.map((field) => [
     field.name,
@@ -1394,6 +1419,7 @@ export function formatBoundaryResourceMap(
     view,
     tiers,
     terminalTheme(options.color === true && !("NO_COLOR" in process.env)),
+    options.commandName ?? "synapsor-runner",
   ).join("\n")}\n`;
 }
 
@@ -1422,7 +1448,11 @@ export function formatBoundaryOverviewMap(
     theme.dim("Complete inspected catalog. Use boundary review --map for the concise overview."),
     boundaryOverviewSummary(resources),
     "",
-    ...boundaryOverviewMapLines(resources, theme),
+    ...boundaryOverviewMapLines(
+      resources,
+      theme,
+      options.commandName ?? "synapsor-runner",
+    ),
     "",
   ].join("\n");
 }
@@ -1431,13 +1461,42 @@ function boundaryResourceMapLines(
   view: BoundaryResourceReviewView,
   tiers: Record<string, BoundaryFieldTier>,
   theme: TerminalTheme,
+  commandName = "synapsor-runner",
 ): string[] {
   const candidate = view.candidate ?? view.generated_candidate;
   if (!candidate) {
     const scopeGuidance = blockedTenantScopeGuidance(view);
+    const derivedScopeLines = availableDerivedTenantScopeLines(view, theme, commandName);
+    const selectedIdentity = view.row_identity.selected;
+    const identityCandidate = view.row_identity.candidates[0];
+    const blocker = (
+      view.blockers.join("; ") || "record identity or trusted scope is unresolved"
+    ).replace(/[.]+$/, "");
     return [
       theme.title(`TABLE ACCESS MAP - ${safeTerminalText(view.resource_id)}`),
-      theme.warning("Blocked: record identity or trusted scope is unresolved."),
+      theme.warning(`Blocked: ${safeTerminalText(blocker)}.`),
+      "",
+      theme.bold("What Runner already proved"),
+      selectedIdentity
+        ? `  Record identity: ${theme.success(safeTerminalText(selectedIdentity))} ` +
+          `(${safeTerminalText(view.row_identity.confidence)} confidence)`
+        : identityCandidate
+          ? `  Record identity candidate: ${theme.warning(safeTerminalText(identityCandidate))} ` +
+            `(${safeTerminalText(view.row_identity.confidence)} confidence; human review required)`
+          : `  Record identity: ${theme.danger("unresolved")}`,
+      ...view.row_identity.evidence.slice(0, 3).map((evidence) =>
+        `    evidence: ${safeTerminalText(`${evidence.source}: ${evidence.detail}`)}`),
+      `  Direct tenant scope: ${view.tenant_key.selected
+        ? theme.success(safeTerminalText(view.tenant_key.selected))
+        : view.tenant_key.candidates.length
+          ? theme.warning(`${view.tenant_key.candidates.length} candidate(s); human review required`)
+          : theme.warning("unavailable")}`,
+      ...(view.tenant_key.blocked_reason
+        ? [`    why: ${safeTerminalText(view.tenant_key.blocked_reason)}`]
+        : []),
+      ...blockedRelationshipProofLines(view, theme),
+      ...(scopeGuidance ? [] : sharedReferenceProofLines(view, theme)),
+      ...derivedScopeLines,
       ...(scopeGuidance
         ? [
             "",
@@ -1488,6 +1547,134 @@ function boundaryResourceMapLines(
     `\`-- Aggregate guard: minimum group size ${candidate.minimum_cohort_size}; small groups are suppressed`,
   ];
   return lines;
+}
+
+function blockedRelationshipProofLines(
+  view: BoundaryResourceReviewView,
+  theme: TerminalTheme,
+): string[] {
+  if (!view.relationships.length) {
+    return [`  Relationships: ${theme.dim("none found")}`];
+  }
+  return [
+    `  Relationships: ${view.relationships.length}`,
+    ...view.relationships.flatMap((relationship) => {
+      const target = `${relationship.referenced_resource}.${relationship.referenced_columns.join(",")}`;
+      const uniqueness = relationship.target_uniqueness
+        ? `${relationship.target_uniqueness.kind.replaceAll("_", " ")} ` +
+          `${relationship.target_uniqueness.name}(` +
+          `${relationship.target_uniqueness.columns.join(",")})`
+        : "unique target";
+      const proof = relationship.cardinality_proven
+        ? `${relationship.nullable ? "nullable" : "NOT NULL"}; many-to-one proven; target ${uniqueness}`
+        : `${relationship.nullable ? "nullable" : "NOT NULL"}; cardinality not proven`;
+      return [
+        `    ${theme.relationship(safeTerminalText(relationship.name))}: ` +
+          `${safeTerminalText(relationship.columns.join(","))} -> ${safeTerminalText(target)}`,
+        `      ${relationship.cardinality_proven && !relationship.nullable
+          ? theme.success(safeTerminalText(proof))
+          : theme.warning(safeTerminalText(proof))}`,
+      ];
+    }),
+  ];
+}
+
+function sharedReferenceProofLines(
+  view: BoundaryResourceReviewView,
+  theme: TerminalTheme,
+): string[] {
+  if (view.shared_reference_scope?.eligible) {
+    return [`  Shared reference: ${theme.success("eligible for explicit human review")}`];
+  }
+  if (!view.shared_reference_scope?.blockers.length) return [];
+  return [
+    `  Shared reference: ${theme.warning("unavailable")}`,
+    ...view.shared_reference_scope.blockers.map((blocker) =>
+      `    why: ${safeTerminalText(blocker)}`),
+  ];
+}
+
+function availableDerivedTenantScopeLines(
+  view: BoundaryResourceReviewView,
+  theme: TerminalTheme,
+  commandName: string,
+): string[] {
+  const paths = [...(view.derived_tenant_scope?.candidates ?? [])].sort((left, right) =>
+    derivedScopeDepth(left) - derivedScopeDepth(right) || left.path_id.localeCompare(right.path_id));
+  if (!paths.length) return [];
+  const reviewedMaximum = view.reviewed_budgets?.max_derived_scope_hops
+    ?? view.reviewed_budgets?.max_relationship_hops
+    ?? 2;
+  return [
+    "",
+    theme.bold("Available tenant-scope paths"),
+    ...paths.flatMap((scope) => {
+      const depth = derivedScopeDepth(scope);
+      const principalScope = view.derived_principal_scope?.candidates.find((candidate) =>
+        candidate.path_id === scope.path_id);
+      const order = derivedScopeStartSequence(scope);
+      const command = derivedTenantScopeReviewCommand({
+        commandName,
+        resourceId: view.resource_id,
+        rowIdentity: view.row_identity.selected,
+        scope,
+        ...(principalScope ? { principalScopePath: principalScope.path_id } : {}),
+        ...(depth > reviewedMaximum ? { requiredMaximum: depth } : {}),
+      });
+      return [
+        `  ${theme.success("AVAILABLE")} ${safeTerminalText(formatDerivedScopePath(scope))} ` +
+          `(${depth} ${plural(depth, "hop", "hops")})`,
+        `    exact path ID: ${theme.value(safeTerminalText(scope.path_id))}`,
+        `    required order: ${safeTerminalText(order.join(" -> "))} (ancestor first)`,
+        ...(depth > reviewedMaximum
+          ? [theme.warning(
+              `    reviewed depth is ${reviewedMaximum}; this path needs ${depth}. ` +
+              `The command below raises only max_derived_scope_hops to ${depth}.`,
+            )]
+          : []),
+        ...(principalScope
+          ? [`    principal scope is also proven through this exact path.`]
+          : []),
+        `    review: ${safeTerminalText(command)}`,
+      ];
+    }),
+  ];
+}
+
+function derivedTenantScopeReviewCommand(input: {
+  commandName: string;
+  resourceId: string;
+  rowIdentity?: string;
+  scope: DerivedScopePath;
+  principalScopePath?: string;
+  requiredMaximum?: number;
+}): string {
+  return [
+    input.commandName,
+    "boundary review resource",
+    shellQuote(input.resourceId),
+    "--include",
+    ...(input.rowIdentity ? ["--row-identity", shellQuote(input.rowIdentity)] : []),
+    "--tenant-scope-path",
+    shellQuote(input.scope.path_id),
+    ...(input.principalScopePath
+      ? ["--principal-scope-path", shellQuote(input.principalScopePath)]
+      : []),
+    ...(input.requiredMaximum
+      ? ["--max-derived-scope-hops", String(input.requiredMaximum)]
+      : []),
+    "--apply",
+    "--actor \"$USER\"",
+    "--reason",
+    shellQuote(
+      `Rows inherit trusted scope through mandatory path ${input.scope.path_id} to ` +
+      `${input.scope.ancestor_resource}.`,
+    ),
+  ].join(" ");
+}
+
+function derivedScopeDepth(scope: DerivedScopePath): number {
+  return scope.proof.links.length;
 }
 
 function firstTableIsStartable(resource: BoundaryResourceReviewSummary): boolean {
@@ -1718,7 +1905,13 @@ function resourceNamePreview(
               ?? "trusted tenant scope is unresolved",
           )}`,
         )]
-      : []),
+      : resource.derived_tenant_scope?.candidates.length
+        ? [theme.dim(
+            `    Available tenant path: ${safeTerminalText(
+              resource.derived_tenant_scope.candidates[0]!.path_id,
+            )}`,
+          )]
+        : []),
   ]);
   if (resources.length > limit) {
     lines.push(theme.dim(`  +${resources.length - limit} more`));
@@ -2045,6 +2238,7 @@ function fitTerminalCell(value: string, width: number): string {
 function boundaryOverviewMapLines(
   resources: BoundaryResourceReviewSummary[],
   theme: TerminalTheme,
+  commandName = "synapsor-runner",
 ): string[] {
   if (!resources.length) return [theme.warning("(no inspected tables or views)")];
   return resources.flatMap((resource) => {
@@ -2072,6 +2266,7 @@ function boundaryOverviewMapLines(
             `      next: ${safeTerminalText(line)}`),
         );
       }
+      lines.push(...availableDerivedTenantScopeSummaryLines(resource, theme, commandName));
       return lines;
     }
     if (!resource.relationships.length) {
@@ -2093,6 +2288,36 @@ function boundaryOverviewMapLines(
     });
     return lines;
   });
+}
+
+function availableDerivedTenantScopeSummaryLines(
+  resource: BoundaryResourceReviewSummary,
+  theme: TerminalTheme,
+  commandName: string,
+): string[] {
+  const paths = [...(resource.derived_tenant_scope?.candidates ?? [])].sort((left, right) =>
+    derivedScopeDepth(left) - derivedScopeDepth(right) || left.path_id.localeCompare(right.path_id));
+  if (!paths.length) return [];
+  const reviewedMaximum = resource.reviewed_max_derived_scope_hops ?? 2;
+  const lines = paths.slice(0, 3).flatMap((scope) => {
+    const depth = derivedScopeDepth(scope);
+    return [
+      `      available: derive tenant scope via ${safeTerminalText(scope.path_id)} -> ` +
+        `${safeTerminalText(formatDerivedScopePath(scope))} ` +
+        `(${depth} ${plural(depth, "hop", "hops")})`,
+      ...(depth > reviewedMaximum
+        ? [`      next: path needs max_derived_scope_hops ${depth}; current reviewed limit is ${reviewedMaximum}.`]
+        : []),
+    ];
+  });
+  if (paths.length > 3) lines.push(`      available: +${paths.length - 3} more proven paths`);
+  lines.push(
+    `      next: ${safeTerminalText(commandName)} boundary review resource ` +
+      `${safeTerminalText(shellQuote(resource.resource_id))} --map shows the exact review command.`,
+  );
+  return lines.map((line) => line.includes("available:")
+    ? theme.success(line)
+    : theme.warning(line));
 }
 
 function riskBadge(

@@ -36,6 +36,7 @@ import {
   type ExplorationAutoBandPolicy,
   type ExplorationPostAggregateOperation,
   type GenerationLock,
+  type RelationshipLinkProof,
   type SharedReferenceScopeInference,
 } from "./auto-boundary.js";
 import {
@@ -491,6 +492,7 @@ export type BoundaryResourceReviewView = {
     review_required: true;
     nullable: boolean;
     cardinality_proven: boolean;
+    target_uniqueness?: RelationshipLinkProof["target_uniqueness"];
   }>;
   candidate: ExplorationBoundaryDraft["pack"]["resources"][number] | null;
   generated_candidate: ExplorationBoundaryDraft["pack"]["resources"][number] | null;
@@ -521,6 +523,7 @@ export type BoundaryResourceReviewSummary = {
   first_table_startable?: boolean;
   first_table_guidance?: string;
   first_table_scope_label?: string;
+  reviewed_max_derived_scope_hops?: number;
   derived_tenant_scope?: DerivedScopeInference;
   shared_reference_scope?: SharedReferenceScopeInference;
   derived_principal_scope?: DerivedScopeInference;
@@ -668,6 +671,7 @@ export async function listBoundaryResourceReviews(
             || resource.derived_tenant_scope?.candidates.length
             || resource.shared_reference_scope?.eligible,
           ),
+        reviewed_max_derived_scope_hops: reviewedDerivedScopeHopLimit(state.candidate.budgets),
         ...firstTable,
         ...(resource.derived_tenant_scope
           ? { derived_tenant_scope: structuredClone(resource.derived_tenant_scope) }
