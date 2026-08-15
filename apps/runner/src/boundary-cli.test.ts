@@ -2044,17 +2044,33 @@ describe("boundary operator-plane CLI", () => {
         "actor=sensitive-reviewer; reason=\"Support analytics needs local unique counts.\"",
       );
       expect(output).toContain(
-        "Runner only controls where raw values can appear; it does not grant Group, Total/Average, or Count unique.",
+        "Re-including a kept-out field restored only the operations currently supported by its inspected type",
       );
-      expect(output).toContain("--group-fields, --measure-fields, or --count-distinct-fields");
+      expect(output).toMatch(
+        /public\.service_visits\.contact_name: return, filter\([^)]*\), sort, group, count distinct/,
+      );
+      expect(output).toContain("These grants are staged, not active.");
 
       const progressPath = path.join(root, ".synapsor/boundary-review-progress.json");
       const applied = JSON.parse(await fs.readFile(progressPath, "utf8")) as {
         revision: number;
-        candidate: { pack: { resources: Array<{ id: string; model_withheld_fields?: string[] }> } };
+        candidate: { pack: { resources: Array<{
+          id: string;
+          model_withheld_fields?: string[];
+          filterable_fields: Record<string, string[]>;
+          sortable_fields: string[];
+          groupable_fields: string[];
+          count_distinct_fields: string[];
+        }> } };
       };
-      expect(applied.candidate.pack.resources.find((resource) =>
-        resource.id === "public.service_visits")?.model_withheld_fields).toContain("contact_name");
+      const appliedResource = applied.candidate.pack.resources.find((resource) =>
+        resource.id === "public.service_visits")!;
+      expect(appliedResource.model_withheld_fields).toContain("contact_name");
+      expect(appliedResource.filterable_fields.contact_name)
+        .toEqual(expect.arrayContaining(["eq", "in"]));
+      expect(appliedResource.sortable_fields).toContain("contact_name");
+      expect(appliedResource.groupable_fields).toContain("contact_name");
+      expect(appliedResource.count_distinct_fields).toContain("contact_name");
       const appliedRevision = applied.revision;
 
       output = "";
@@ -4254,6 +4270,114 @@ describe("boundary operator-plane CLI", () => {
       expect(resource.field_enums).not.toHaveProperty("status");
       expect(resource.filterable_fields).not.toHaveProperty("status");
       expect(resource.groupable_fields).not.toContain("status");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("restores current inspected operation suggestions when a kept-out enum becomes model-visible again", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-field-restore-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const fieldOperations = (
+      resource: typeof build.exploration_boundary.pack.resources[number],
+      field: string,
+    ) => ({
+      selectable: resource.selectable_fields.includes(field),
+      filters: resource.filterable_fields[field] ?? null,
+      sortable: resource.sortable_fields.includes(field),
+      groupable: resource.groupable_fields.includes(field),
+      aggregate: resource.aggregate_measures.includes(field),
+      aggregate_functions: resource.aggregate_measure_functions?.[field] ?? null,
+      presence: resource.presence_measure_fields?.includes(field) ?? false,
+      count_distinct: resource.count_distinct_fields.includes(field),
+      time_buckets: resource.time_bucket_fields[field] ?? null,
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const keepOut = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.service_visits",
+        keep_out_fields: ["status"],
+        actor: "owner@example.test",
+        reason: "Temporarily remove lifecycle status from this boundary.",
+      }, async () => inspection);
+      await commitBoundaryResourceReviewMutation(root, keepOut);
+
+      let context = await loadBoundaryReviewContext(root);
+      const keptOutResource = context.candidate.pack.resources[0]!;
+      expect(keptOutResource.kept_out_fields).toContain("status");
+      expect(fieldOperations(keptOutResource, "status")).toEqual({
+        selectable: false,
+        filters: null,
+        sortable: false,
+        groupable: false,
+        aggregate: false,
+        aggregate_functions: null,
+        presence: false,
+        count_distinct: false,
+        time_buckets: null,
+      });
+
+      const keptOutDigest = explorationBoundaryCandidateDigest(context.candidate);
+      await activateExplorationBoundary({
+        projectRoot: root,
+        candidate: context.candidate,
+        expectedDigest: keptOutDigest,
+        actor: "owner@example.test",
+        confirmation: `ACTIVATE ${keptOutDigest}`,
+        confirmedDecisions: context.candidate.unresolved_decisions,
+        currentInspection: inspection,
+      });
+
+      const restore = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.service_visits",
+        allow_reviewed_fields: ["status"],
+        actor: "owner@example.test",
+        reason: "Restore reviewed categorical analysis for lifecycle status.",
+      }, async () => inspection);
+      const restoredResource = restore.candidate.pack.resources[0]!;
+      const generatedResource = restore.build.exploration_boundary.pack.resources[0]!;
+      expect(restoredResource.kept_out_fields).not.toContain("status");
+      expect(fieldOperations(restoredResource, "status"))
+        .toEqual(fieldOperations(generatedResource, "status"));
+      expect(fieldOperations(restoredResource, "status")).toMatchObject({
+        selectable: true,
+        filters: expect.arrayContaining(["eq", "in"]),
+        sortable: true,
+        groupable: true,
+        presence: true,
+        count_distinct: true,
+      });
+      await commitBoundaryResourceReviewMutation(root, restore);
+
+      const stillActive = (await loadActivatedExplorationBoundaries(root))[0]!;
+      expect(stillActive.activation.digest).toBe(keptOutDigest);
+      expect(fieldOperations(stillActive.pack.resources[0]!, "status").selectable).toBe(false);
+
+      context = await loadBoundaryReviewContext(root);
+      const restoredDigest = explorationBoundaryCandidateDigest(context.candidate);
+      const activated = await activateExplorationBoundary({
+        projectRoot: root,
+        candidate: context.candidate,
+        expectedDigest: restoredDigest,
+        actor: "owner@example.test",
+        confirmation: `ACTIVATE ${restoredDigest}`,
+        confirmedDecisions: context.candidate.unresolved_decisions,
+        currentInspection: inspection,
+      });
+      expect(fieldOperations(activated.pack.resources[0]!, "status"))
+        .toEqual(fieldOperations(restoredResource, "status"));
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

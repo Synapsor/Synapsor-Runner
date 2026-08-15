@@ -1395,10 +1395,10 @@ function tierLabel(tier: BoundaryFieldTier): string {
 
 function tierConsequence(tier: BoundaryFieldTier): string {
   if (tier === "visible") {
-    return "Model + Runner: reviewed values appear locally and may be sent to the configured model.";
+    return "Model + Runner: reviewed values appear locally and may be sent to the configured model; re-including a kept-out field restores its current inspected operation suggestions.";
   }
   if (tier === "withheld_from_model") {
-    return "Raw values: Runner only. Raw values stay local or become response-only tokens; reviewed derived results remain usable.";
+    return "Raw values: Runner only. Raw values stay local or become response-only tokens; re-including a kept-out field restores its current inspected operation suggestions.";
   }
   return "Kept out: the field cannot be selected, filtered, sorted, grouped, joined, or aggregated.";
 }
@@ -1712,9 +1712,13 @@ function mapTierLines(
   if (!fields.length) return [...lines, "|   `-- (none)"];
   fields.forEach((field, index) => {
     const branch = index === fields.length - 1 ? "`--" : "|--";
+    const restoresSuggestedOperations = tier !== "kept_out"
+      && currentFieldTier(view, field) === "kept_out";
     const operations = tier === "kept_out"
       ? "no operations"
-      : boundaryFieldOperations(candidate, field);
+      : restoresSuggestedOperations
+        ? "current inspected operation suggestions restore on save; reopen M for exact grants"
+        : boundaryFieldOperations(candidate, field);
     const sourceField = view.fields.find((item) => item.name === field);
     const risk = sourceField ? riskBadge(view, sourceField) : "";
     lines.push(
@@ -1735,6 +1739,7 @@ function boundaryFieldOperations(
   if (candidate.sortable_fields.includes(field)) operations.push("sort");
   if (candidate.groupable_fields.includes(field)) operations.push("group");
   if (candidate.aggregate_measures.includes(field)) operations.push("aggregate measure");
+  if (candidate.presence_measure_fields?.includes(field)) operations.push("presence measures");
   if (candidate.count_distinct_fields.includes(field)) operations.push("count distinct");
   const buckets = candidate.time_bucket_fields[field];
   if (buckets?.length) operations.push(`time(${buckets.join("/")})`);

@@ -2610,6 +2610,50 @@ export default defineCapability({
           },
         },
       });
+      const keptOutEnum = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        mutationHeaders,
+        {
+          kind: "field_exposure",
+          resource_id: "public.members",
+          field: "membership_status",
+          exposure: "keep_out",
+          actor: "owner@example.test",
+          reason: "Temporarily remove membership status from every Explore operation.",
+        },
+      );
+      const keptOutResource = keptOutEnum.candidate.pack.resources[0];
+      expect(keptOutResource.kept_out_fields).toContain("membership_status");
+      expect(keptOutResource.selectable_fields).not.toContain("membership_status");
+      expect(keptOutResource.filterable_fields).not.toHaveProperty("membership_status");
+      expect(keptOutResource.sortable_fields).not.toContain("membership_status");
+      expect(keptOutResource.groupable_fields).not.toContain("membership_status");
+      expect(keptOutResource.presence_measure_fields ?? []).not.toContain("membership_status");
+
+      const restoredEnum = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        mutationHeaders,
+        {
+          kind: "field_exposure",
+          resource_id: "public.members",
+          field: "membership_status",
+          exposure: "allow_reviewed_use",
+          actor: "owner@example.test",
+          reason: "Restore the current schema-backed membership status operations.",
+        },
+      );
+      const restoredResource = restoredEnum.candidate.pack.resources[0];
+      expect(restoredResource.kept_out_fields).not.toContain("membership_status");
+      expect(restoredResource.selectable_fields).toContain("membership_status");
+      expect(restoredResource.filterable_fields.membership_status)
+        .toEqual(expect.arrayContaining(["eq", "in"]));
+      expect(restoredResource.sortable_fields).toContain("membership_status");
+      expect(restoredResource.groupable_fields).toContain("membership_status");
+      expect(restoredResource.presence_measure_fields).toContain("membership_status");
+      expect(restoredResource.count_distinct_fields).toContain("membership_status");
+      expect(restoredResource.field_enums.membership_status).toEqual(["active", "paused"]);
+      expect(restoredEnum.active).toEqual(activeBeforeReview);
+
       const autoBandReview = await postJson(
         `http://${server.host}:${server.port}/api/boundary/regenerate`,
         mutationHeaders,
@@ -3472,6 +3516,9 @@ export default defineCapability({
       row_security_forced: false,
       row_security_effective_for_current_role: false,
     };
+    const membershipStatus = table.columns.find((field) => field.name === "membership_status")!;
+    membershipStatus.data_type = "enum";
+    membershipStatus.enum_values = ["active", "paused", "cancelled"];
     table.columns.push({
       name: "attending",
       data_type: "varchar",
@@ -3617,6 +3664,47 @@ export default defineCapability({
           },
         },
       });
+      const keptOutStatus = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        headers,
+        {
+          kind: "field_exposure",
+          resource_id: "clinicdb.members",
+          field: "membership_status",
+          exposure: "keep_out",
+          actor: "workbench-reviewer",
+          reason: "Temporarily remove membership status from this MySQL boundary.",
+        },
+      );
+      expect(keptOutStatus.candidate.pack.resources[0]).toMatchObject({
+        kept_out_fields: expect.arrayContaining(["membership_status"]),
+      });
+      expect(keptOutStatus.candidate.pack.resources[0].groupable_fields)
+        .not.toContain("membership_status");
+
+      const restoredStatus = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        headers,
+        {
+          kind: "field_exposure",
+          resource_id: "clinicdb.members",
+          field: "membership_status",
+          exposure: "allow_reviewed_use",
+          actor: "workbench-reviewer",
+          reason: "Restore native-enum operations supported by the MySQL 5.7 grammar tier.",
+        },
+      );
+      const restoredStatusResource = restoredStatus.candidate.pack.resources[0];
+      expect(restoredStatusResource.kept_out_fields).not.toContain("membership_status");
+      expect(restoredStatusResource.filterable_fields.membership_status)
+        .toEqual(expect.arrayContaining(["eq", "in"]));
+      expect(restoredStatusResource.sortable_fields).toContain("membership_status");
+      expect(restoredStatusResource.groupable_fields).toContain("membership_status");
+      expect(restoredStatusResource.presence_measure_fields).toContain("membership_status");
+      expect(restoredStatusResource.count_distinct_fields).toContain("membership_status");
+      expect(restoredStatusResource.field_enums.membership_status)
+        .toEqual(["active", "paused", "cancelled"]);
+      expect(restoredStatusResource.auto_bands ?? []).toEqual([]);
       const baselineAfterReview = JSON.parse(await fs.readFile(
         path.join(tempDir, ".synapsor/auto-boundary-policy-baseline.json"),
         "utf8",

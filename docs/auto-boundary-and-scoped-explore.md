@@ -532,6 +532,16 @@ Choose a table with the arrow keys, then choose each column's access explicitly:
 - **K - Kept out:** the field cannot be selected, filtered, sorted, grouped,
   joined, or aggregated.
 
+Moving a field from **Kept out** back to either usable tier restores only the
+operation suggestions that Runner can currently derive from the inspected type,
+the reviewed categorical allowlist, and the database-server grammar tier. The
+editor names those staged operations after saving, and the access map shows the
+exact result before activation. Existing custom relationships, bands, and named
+metrics are not resurrected. Advanced field operations may narrow the restored
+suggestions before the boundary is reviewed and activated. Moving between
+**Model + Runner** and **Raw values: Runner only** preserves existing operation
+grants and changes only where raw values may appear.
+
 Trusted tenant and principal columns use the same three output tiers, but their
 scope semantics never change. Runner still injects the verified value outside
 model arguments. Keeping the column out hides it from results; Runner output

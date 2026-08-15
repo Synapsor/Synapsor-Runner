@@ -294,9 +294,11 @@ tool surface:
   Escape prints a cancelled/no-change result; successful edits name the exact
   field, new access, actor, and reason; and identical repeats report unchanged
   without creating another revision or requesting another reason.
-- Choosing Runner-only now explains that visibility is not analytical
-  capability: it does not grant Group, Total/Average, or Count unique, and the
-  editor points to the separate advanced operation controls.
+- Moving between Model + Runner and Runner-only preserves existing analytical
+  operations and changes raw-value egress only. Re-including a kept-out field
+  restores the current type-, enum-, and server-tier-backed suggestions, names
+  the exact staged operations, and still leaves advanced controls available to
+  narrow them before activation.
 
 ## Final Verification After DX Follow-Up
 

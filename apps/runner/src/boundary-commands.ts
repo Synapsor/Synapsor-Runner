@@ -3532,6 +3532,11 @@ async function interactiveBoundaryResourceReview(input: {
     ].join("\n"));
     return "back";
   }
+  const restoredOperationFields = changed.filter(({ field, tier }) =>
+    tier !== "kept_out" && currentBoundaryFieldTier(input.view, field) === "kept_out");
+  const reviewedResource = preview.candidate.pack.resources.find(
+    (resource) => resource.id === input.resourceId,
+  );
   process.stdout.write(input.focusedAccess
     ? [
       formatFocusedBoundaryEditSaved(
@@ -3541,10 +3546,17 @@ async function interactiveBoundaryResourceReview(input: {
       ).trimEnd(),
       ...changed.map(({ field, tier }) =>
         `Recorded: ${input.resourceId}.${field} -> ${focusedTierOutcome(tier)}; actor=${actor}; reason=${JSON.stringify(reason)}`),
-      ...(changed.some(({ tier }) => tier === "withheld_from_model")
+      ...(restoredOperationFields.length && reviewedResource
         ? [
-          "Access-level note: Runner only controls where raw values can appear; it does not grant Group, Total/Average, or Count unique.",
-          "If an operation was refused, review that operation separately in Workbench Advanced field operations or with --group-fields, --measure-fields, or --count-distinct-fields.",
+          "Re-including a kept-out field restored only the operations currently supported by its inspected type, reviewed value allowlist, and database grammar:",
+          ...restoredOperationFields.map(({ field }) =>
+            `  ${input.resourceId}.${field}: ${reviewedFieldOperationSummary(reviewedResource, field)}`),
+          "These grants are staged, not active. Use M to inspect them or Advanced field operations to narrow them before activation.",
+        ]
+        : changed.some(({ tier }) => tier === "withheld_from_model")
+        ? [
+          "Access-level note: changing Model + Runner to Runner only preserves existing operation grants and changes only where raw values may appear.",
+          "Review additional or narrower operations separately in Workbench Advanced field operations or with --group-fields, --measure-fields, or --count-distinct-fields.",
         ]
         : []),
       "",
@@ -4176,6 +4188,24 @@ function currentBoundaryFieldTier(
 ): BoundaryFieldTier {
   const candidate = view.candidate ?? view.generated_candidate;
   return reviewedBoundaryFieldTier(candidate, field);
+}
+
+function reviewedFieldOperationSummary(
+  resource: BoundaryReviewMutationPreview["candidate"]["pack"]["resources"][number],
+  field: string,
+): string {
+  const operations: string[] = [];
+  if (resource.selectable_fields.includes(field)) operations.push("return");
+  const filters = resource.filterable_fields[field];
+  if (filters?.length) operations.push(`filter(${filters.join("/")})`);
+  if (resource.sortable_fields.includes(field)) operations.push("sort");
+  if (resource.groupable_fields.includes(field)) operations.push("group");
+  if (resource.aggregate_measures.includes(field)) operations.push("aggregate measure");
+  if (resource.presence_measure_fields?.includes(field)) operations.push("presence measures");
+  if (resource.count_distinct_fields.includes(field)) operations.push("count distinct");
+  const buckets = resource.time_bucket_fields[field];
+  if (buckets?.length) operations.push(`time(${buckets.join("/")})`);
+  return operations.length ? operations.join(", ") : "no reviewed operation";
 }
 
 function boundaryRequestCommandArgs(

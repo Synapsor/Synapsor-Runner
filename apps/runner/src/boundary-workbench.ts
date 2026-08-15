@@ -2184,6 +2184,36 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       resource.relationships=resource.relationships.filter(relation=>!relation.local_columns.includes(field));
     }
 
+    function reviewedFieldOperations(resource,field){
+      if(!resource)return "no reviewed operation";
+      const operations=[];
+      if((resource.selectable_fields||[]).includes(field))operations.push("return");
+      const filters=(resource.filterable_fields||{})[field];
+      if(filters&&filters.length)operations.push("filter("+filters.join("/")+")");
+      if((resource.sortable_fields||[]).includes(field))operations.push("sort");
+      if((resource.groupable_fields||[]).includes(field))operations.push("group");
+      if((resource.aggregate_measures||[]).includes(field))operations.push("aggregate measure");
+      if((resource.presence_measure_fields||[]).includes(field))operations.push("presence measures");
+      if((resource.count_distinct_fields||[]).includes(field))operations.push("count distinct");
+      const buckets=(resource.time_bucket_fields||{})[field];
+      if(buckets&&buckets.length)operations.push("time("+buckets.join("/")+")");
+      return operations.length?operations.join(", "):"no reviewed operation";
+    }
+
+    function stagedFieldExposureMessage(resourceId,field,exposure,restored,actor){
+      const label=exposure==="allow_reviewed_use"
+        ?"Model + Runner"
+        :exposure==="withhold_from_model"
+          ?"Raw values: Runner only"
+          :"Kept out";
+      const operations=restored
+        ?" Restored current inspected operation suggestions: "+reviewedFieldOperations(currentResource(resourceId),field)+"."
+        :"";
+      return "Recorded: "+resourceId+"."+field+" -> "+label+"."+operations
+        +(actor?" Actor: "+actor+".":"")
+        +" This disabled revision still requires review and activation.";
+    }
+
     function setPermission(id,field,key,enabled){
       const source=original.pack.resources.find(resource=>resource.id===id);
       const resource=currentResource(id);
@@ -2234,12 +2264,15 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     async function submitFocusedFieldReview(field,exposure){
       const bar=byId("access-staged");
       const summary=byId("access-staged-summary");
+      const resourceId=selectedResource;
+      const restored=exposure!=="keep_out"
+        &&reviewedFieldAccessTier(currentResource(resourceId),field)==="kept_out";
       try{
         bar.classList.remove("hidden");
         summary.textContent="Saving this disabled access choice...";
         await post("/api/boundary/regenerate",{
           kind:"field_exposure",
-          resource_id:selectedResource,
+          resource_id:resourceId,
           field,
           exposure,
           actor:localWorkbenchActor(),
@@ -2249,6 +2282,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         focusedAccessReview=true;
         document.body.classList.remove("quick-start-mode");
         await load();
+        offerStagedActivation();
+        byId("access-staged-summary").textContent=stagedFieldExposureMessage(
+          resourceId,field,exposure,restored,localWorkbenchActor()
+        );
       }catch(error){
         summary.textContent=error.message;
         bar.classList.remove("hidden");
@@ -2261,13 +2298,16 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const actor=form.querySelector("[data-review-actor]").value.trim();
       const reason=form.querySelector("[data-review-reason]").value.trim();
       const status=form.querySelector("[data-review-status]");
+      const resourceId=selectedResource;
+      const restored=exposure!=="keep_out"
+        &&reviewedFieldAccessTier(currentResource(resourceId),field)==="kept_out";
       try{
         if(!actor||!reason)throw new Error("Enter the human reviewer identity and a concrete reason.");
         status.className="status-message";
         status.textContent="Saving this reviewed choice and updating only the affected access...";
         await post("/api/boundary/regenerate",{
           kind:"field_exposure",
-          resource_id:selectedResource,
+          resource_id:resourceId,
           field,
           exposure,
           actor,
@@ -2277,6 +2317,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         focusedAccessReview=true;
         document.body.classList.remove("quick-start-mode");
         await load();
+        offerStagedActivation();
+        byId("access-staged-summary").textContent=stagedFieldExposureMessage(
+          resourceId,field,exposure,restored,actor
+        );
       }catch(error){
         status.className="status-message error";
         status.textContent=error.message;
@@ -3014,7 +3058,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		          :tier==="withheld"
 	            ?"Usable in reviewed plans. Raw values stay local or become response-only tokens; reviewed derived results remain available."
 	            :tier==="kept_out"
-	              ?"Unavailable for selection, filtering, grouping, sorting, or measures."
+	              ?"Unavailable for selection, filtering, grouping, sorting, or measures. Re-including it restores only the current inspected operation suggestions in the disabled draft."
 	              :"Unavailable until this table's safe identity and scope are resolved.";
 		        const tierControl='<label class="access-column-tier">Access tier<select data-field-tier data-field-resource="'+esc(selectedResource)+'" data-field-name="'+esc(field.name)+'" data-current-tier="'+esc(tier)+'" data-trusted-scope="'+esc(String(trustedScopeField))+'" '+(disabled?"disabled":"")+'>'
 	          +'<option value="visible" '+(tier==="visible"?"selected":"")+'>Model + Runner</option>'

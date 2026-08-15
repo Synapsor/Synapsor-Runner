@@ -1642,6 +1642,14 @@ function preserveBoundaryResourcePolicy(
     ...(editedResource ? request.withhold_from_model_fields ?? [] : []),
     ...(editedResource ? request.allow_reviewed_fields ?? [] : []),
   ]);
+  const restoredSuggestedOperations = new Set(
+    editedResource
+      ? [
+          ...(request.withhold_from_model_fields ?? []),
+          ...(request.allow_reviewed_fields ?? []),
+        ].filter((field) => reviewedBoundaryFieldTier(previous, field) === "kept_out")
+      : [],
+  );
   generated.selectable_fields = preserveReviewedList(
     generated.selectable_fields,
     previous.selectable_fields,
@@ -1650,28 +1658,41 @@ function preserveBoundaryResourcePolicy(
   generated.sortable_fields = preserveReviewedList(
     generated.sortable_fields,
     previous.sortable_fields,
+    restoredSuggestedOperations,
   );
   generated.groupable_fields = preserveReviewedList(
     generated.groupable_fields,
     previous.groupable_fields,
+    restoredSuggestedOperations,
   );
   generated.aggregate_measures = preserveReviewedList(
     generated.aggregate_measures,
     previous.aggregate_measures,
+    restoredSuggestedOperations,
   );
-  if (previous.aggregate_measure_functions) {
-    generated.aggregate_measure_functions = preserveReviewedMap(
-      generated.aggregate_measure_functions ?? {},
-      previous.aggregate_measure_functions,
-    );
+  const generatedAggregateMeasureFunctions = generated.aggregate_measure_functions ?? {};
+  const aggregateMeasureFunctions = preserveReviewedMap(
+    generatedAggregateMeasureFunctions,
+    previous.aggregate_measure_functions ?? {},
+    restoredSuggestedOperations,
+  );
+  const restoredAggregateFunction = [...restoredSuggestedOperations].some((field) =>
+    Object.hasOwn(generatedAggregateMeasureFunctions, field));
+  if (previous.aggregate_measure_functions || restoredAggregateFunction) {
+    generated.aggregate_measure_functions = aggregateMeasureFunctions;
   } else {
     delete generated.aggregate_measure_functions;
   }
-  if (previous.presence_measure_fields) {
-    generated.presence_measure_fields = preserveReviewedList(
-      generated.presence_measure_fields ?? [],
-      previous.presence_measure_fields,
-    ).filter((field) => !(generated.model_withheld_fields ?? []).includes(field));
+  const generatedPresenceMeasureFields = generated.presence_measure_fields ?? [];
+  const presenceMeasureFields = preserveReviewedList(
+    generatedPresenceMeasureFields,
+    previous.presence_measure_fields ?? [],
+    restoredSuggestedOperations,
+  ).filter((field) => !(generated.model_withheld_fields ?? []).includes(field));
+  const restoredPresenceMeasure = generatedPresenceMeasureFields.some((field) =>
+    restoredSuggestedOperations.has(field));
+  if (previous.presence_measure_fields || restoredPresenceMeasure) {
+    generated.presence_measure_fields = presenceMeasureFields;
   } else {
     delete generated.presence_measure_fields;
   }
@@ -1693,14 +1714,17 @@ function preserveBoundaryResourcePolicy(
   generated.count_distinct_fields = preserveReviewedList(
     generated.count_distinct_fields,
     previous.count_distinct_fields,
+    restoredSuggestedOperations,
   );
   generated.filterable_fields = preserveReviewedMap(
     generated.filterable_fields,
     previous.filterable_fields,
+    restoredSuggestedOperations,
   );
   generated.time_bucket_fields = preserveReviewedMap(
     generated.time_bucket_fields,
     previous.time_bucket_fields,
+    restoredSuggestedOperations,
   );
 
   const previousRelationships = new Map(
@@ -1751,9 +1775,14 @@ function preserveReviewedList(
 function preserveReviewedMap<T extends string>(
   generated: Record<string, T[]>,
   previous: Record<string, T[]>,
+  explicitlyChanged: ReadonlySet<string> = new Set(),
 ): Record<string, T[]> {
   const result: Record<string, T[]> = {};
   for (const [field, generatedValues] of Object.entries(generated)) {
+    if (explicitlyChanged.has(field)) {
+      if (generatedValues.length) result[field] = [...generatedValues];
+      continue;
+    }
     const previousValues = previous[field];
     if (!previousValues) continue;
     const previousSet = new Set(previousValues);

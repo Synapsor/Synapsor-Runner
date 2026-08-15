@@ -1260,6 +1260,31 @@ describe("boundary review terminal picker", () => {
     }
   });
 
+  it("explains staged operation restoration before a kept-out field is saved", async () => {
+    const terminal = fakeTerminal();
+    const view = reviewView();
+    const candidate = view.candidate!;
+    candidate.selectable_fields = candidate.selectable_fields.filter((field) => field !== "outcome");
+    delete candidate.filterable_fields.outcome;
+    candidate.sortable_fields = candidate.sortable_fields.filter((field) => field !== "outcome");
+    candidate.groupable_fields = candidate.groupable_fields.filter((field) => field !== "outcome");
+    candidate.count_distinct_fields = candidate.count_distinct_fields.filter((field) => field !== "outcome");
+    candidate.kept_out_fields.push("outcome");
+
+    const edit = createBoundaryReviewInteractiveSession(terminal.input, terminal.output)
+      .editFieldTiers(view, { focusedAccess: true });
+    await send(terminal.input, "v");
+    await send(terminal.input, "m");
+    await send(terminal.input, "b");
+    await expect(edit).resolves.toBe("back");
+
+    const rendered = stripAnsi(terminal.output.read()?.toString() ?? "");
+    expect(rendered).toMatch(
+      /current inspected operation suggestions restore on save; reopen M for exact\s+grants/,
+    );
+    expect(rendered).not.toContain("outcome: no reviewed operation");
+  });
+
   it("explains the reduced MySQL 5.7 grammar in the focused CLI editor", async () => {
     const { input, output } = fakeTerminal();
     const view = reviewView();
