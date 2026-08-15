@@ -20,6 +20,7 @@ export type SensitivityClassification = {
 export type SensitivityClassificationInput = {
   name: string;
   dataType?: string;
+  constrainedValues?: readonly string[];
   description?: string;
   source: SensitivityEvidenceSource;
   writeOnly?: boolean;
@@ -31,6 +32,7 @@ type NormalizedEvidence = {
   descriptionCompact: string;
   descriptionTokens: Set<string>;
   dataType: string;
+  hasConstrainedValues: boolean;
 };
 
 type Rule = {
@@ -240,13 +242,15 @@ export function classifySensitivity(input: SensitivityClassificationInput): Sens
   }
 
   const unresolved: Array<{ code: string; reason: string }> = [];
-  if (UNRESOLVED_COMPACT_NAMES.has(evidence.compact)) {
+  if (UNRESOLVED_COMPACT_NAMES.has(evidence.compact)
+    && canContainDisplayName(evidence)) {
     unresolved.push({
       code: "ambiguous_display_name",
       reason: "The field may contain a person's display name, so its exposure requires explicit review.",
     });
   }
-  if ([...evidence.tokens].some((token) => UNRESOLVED_NAME_TOKENS.has(token))) {
+  if ([...evidence.tokens].some((token) => UNRESOLVED_NAME_TOKENS.has(token))
+    && canContainUnconstrainedText(evidence)) {
     unresolved.push({
       code: "unconstrained_free_text_name",
       reason: "The field name indicates unconstrained notes, comments, descriptions, or payload content.",
@@ -316,7 +320,34 @@ function normalizeEvidence(input: SensitivityClassificationInput): NormalizedEvi
     descriptionCompact: description.replaceAll("_", ""),
     descriptionTokens: new Set(description.split("_").filter(Boolean)),
     dataType: String(input.dataType ?? "").trim().toLowerCase(),
+    hasConstrainedValues: Boolean(input.constrainedValues?.length),
   };
+}
+
+function canContainUnconstrainedText(evidence: NormalizedEvidence): boolean {
+  if (evidence.hasConstrainedValues) return false;
+  const type = evidence.dataType;
+  if (!type || type === "unknown" || type === "user-defined") return true;
+  if (/(?:^|\b)(enum|set)(?:\b|\()/i.test(type)) return false;
+  if (/(?:^|\b)(text|char|varchar|nvarchar|nchar|citext|clob|string)(?:\b|$)/i.test(type)) {
+    return true;
+  }
+  if (UNRESOLVED_DATA_TYPES.has(type)
+    || /(?:^|\b)(json|jsonb|xml|object|array)(?:\b|$)/i.test(type)) {
+    return true;
+  }
+  if (/(?:^|\b)(smallint|int|integer|bigint|tinyint|mediumint|serial|bigserial|numeric|decimal|real|double|float|money|number|boolean|bool|bit|uuid|date|time|timestamp|interval|year|bytea|blob|binary|varbinary|image|inet|cidr|macaddr|geometry|geography)(?:\b|$)/i.test(type)) {
+    return false;
+  }
+  return true;
+}
+
+function canContainDisplayName(evidence: NormalizedEvidence): boolean {
+  if (evidence.hasConstrainedValues) return true;
+  const type = evidence.dataType;
+  if (!type || type === "unknown" || type === "user-defined") return true;
+  if (/(?:^|\b)(enum|set)(?:\b|\()/i.test(type)) return true;
+  return canContainUnconstrainedText(evidence);
 }
 
 function splitIdentifier(value: string): string {

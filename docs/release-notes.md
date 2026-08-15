@@ -43,6 +43,12 @@ for the Synapsor Cloud CLI.
   decisions whose schema, role posture, or trusted-context inputs changed are
   invalidated. Human policy is stored per immutable boundary ID, so reviewing a
   shared table in one boundary cannot mutate another boundary.
+- Generated boundary authority now records compiler version `1.7.0`; boundaries
+  from the `1.6.6` compiler require one reconciling rescan and explicit
+  re-activation. The rescan preserves existing field and scope policy rather
+  than widening it. Bounded enums and structured scalar foreign keys are no
+  longer described as free text solely because a name contains `note`; the
+  review UI marks genuinely unresolved fields as **Needs review**.
 - Production Explore is off by default and fails closed without read-only mode,
   exact production authority, verified issuer/audience/claims and OAuth scope,
   direct TLS or a trusted TLS proxy, shared HMAC material, and initialized

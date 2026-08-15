@@ -1128,6 +1128,9 @@ function candidateFieldFromOpenApi(name: string, schema: unknown, required: bool
   const sensitivity = classifySensitivity({
     name,
     dataType: typeof schema.type === "string" ? schema.type : undefined,
+    ...(Array.isArray(schema.enum)
+      ? { constrainedValues: schema.enum.filter((value): value is string => typeof value === "string") }
+      : {}),
     description: typeof schema.description === "string" ? schema.description : undefined,
     source: "openapi",
     writeOnly: schema.writeOnly === true,

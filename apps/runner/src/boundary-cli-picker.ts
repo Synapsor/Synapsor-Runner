@@ -1775,14 +1775,20 @@ function boundaryOverviewSummary(resources: BoundaryResourceReviewSummary[]): st
   const included = resources.filter((resource) => resource.included).length;
   const active = resources.filter((resource) => resource.active).length;
   const blocked = resources.filter((resource) => resource.status !== "draft_read").length;
-  const includedRelationships = resources.reduce(
-    (total, resource) =>
-      total + resource.relationships.filter((relationship) => relationship.state !== "available").length,
-    0,
-  );
+  const reviewedPaths = new Set<string>();
+  for (const resource of resources) {
+    for (const relationship of resource.relationships) {
+      if (relationship.state !== "available") {
+        reviewedPaths.add(`${resource.resource_id}\u0000${relationship.relationship_id}`);
+      }
+    }
+    for (const entry of selectedDerivedScopeEntries(resource)) {
+      reviewedPaths.add(`${resource.resource_id}\u0000${entry.scope.path_id}`);
+    }
+  }
   const name = resources[0]?.candidate_boundary_name ?? "reviewed_staging";
   return `Next boundary "${safeTerminalText(name)}": ${included}/${resources.length} tables | ` +
-    `active ${active} | reviewed paths ${includedRelationships} | blocked ${blocked}`;
+    `active ${active} | reviewed paths ${reviewedPaths.size} | blocked ${blocked}`;
 }
 
 function boundaryOverviewFirstRunLines(
@@ -1895,12 +1901,36 @@ function candidateResourceOverviewLines(
   const relationships = resource.relationships.filter(
     (relationship) => relationship.state !== "available",
   );
+  const scopeEntries = selectedDerivedScopeEntries(resource);
+  const scopePathIds = new Set(scopeEntries.map((entry) => entry.scope.path_id));
+  const relationshipByPath = new Map(relationships.map((relationship) => [
+    relationship.relationship_id,
+    relationship,
+  ]));
   const lines = [
     `  ${safeTerminalText(resource.resource_id)} [${theme.warning(state)}; ${review}]`,
     `    Fields: ${resource.model_visible_fields} model | ` +
       `${resource.runner_output_only_fields} raw Runner-only | ${resource.kept_out_fields} kept out`,
   ];
-  for (const relationship of relationships.slice(0, 3)) {
+  for (const entry of scopeEntries.slice(0, 3)) {
+    const relationship = relationshipByPath.get(entry.scope.path_id);
+    const depth = derivedScopeDepth(entry.scope);
+    const role = entry.roles.join(" + ");
+    lines.push(
+      `    ${theme.relationship(
+        `${role}${relationship ? " + analysis relationship" : ""}: ` +
+        `${safeTerminalText(formatDerivedScopePath(entry.scope))} ` +
+        `(${depth} ${plural(depth, "hop", "hops")})`,
+      )}`,
+    );
+    const joinColumns = formatDerivedScopeJoinColumns(entry.scope);
+    if (joinColumns) lines.push(theme.dim(`      via columns: ${safeTerminalText(joinColumns)}`));
+  }
+  const remainingRelationships = relationships.filter(
+    (relationship) => !scopePathIds.has(relationship.relationship_id),
+  );
+  const remainingSlots = Math.max(0, 3 - scopeEntries.length);
+  for (const relationship of remainingRelationships.slice(0, remainingSlots)) {
     const display = summaryRelationshipDisplay(resource.resource_id, relationship);
     const joinColumns = formatRelationshipJoinColumns(display);
     lines.push(
@@ -1909,8 +1939,10 @@ function candidateResourceOverviewLines(
     );
     if (joinColumns) lines.push(theme.dim(`      via columns: ${safeTerminalText(joinColumns)}`));
   }
-  if (relationships.length > 3) {
-    lines.push(theme.dim(`    +${relationships.length - 3} more reviewed paths`));
+  const renderedPaths = Math.min(3, scopeEntries.length + remainingRelationships.length);
+  const totalPaths = scopeEntries.length + remainingRelationships.length;
+  if (totalPaths > renderedPaths) {
+    lines.push(theme.dim(`    +${totalPaths - renderedPaths} more reviewed paths`));
   }
   return lines;
 }
@@ -2321,17 +2353,39 @@ function boundaryOverviewMapLines(
       lines.push(...availableDerivedTenantScopeSummaryLines(resource, theme, commandName));
       return lines;
     }
-    if (!resource.relationships.length) {
-      lines.push(`  \`-- ${theme.dim("no proven relationship candidate")}`);
+    const scopeEntries = selectedDerivedScopeEntries(resource);
+    const scopePathIds = new Set(scopeEntries.map((entry) => entry.scope.path_id));
+    const relationshipByPath = new Map(resource.relationships.map((relationship) => [
+      relationship.relationship_id,
+      relationship,
+    ]));
+    for (const entry of scopeEntries) {
+      const relationship = relationshipByPath.get(entry.scope.path_id);
+      const depth = derivedScopeDepth(entry.scope);
+      const state = relationship ? relationshipStateLabel(relationship, theme) : undefined;
+      lines.push(
+        `  |-- reviewed ${entry.roles.join(" + ")} ` +
+        `${relationship ? "+ analysis relationship " : ""}` +
+        `(${depth} ${plural(depth, "hop", "hops")})${state ? ` [${state}]` : ""}`,
+      );
+      lines.push(`      ${safeTerminalText(formatDerivedScopePath(entry.scope))}`);
+      const joinColumns = formatDerivedScopeJoinColumns(entry.scope);
+      if (joinColumns) lines.push(`      via columns: ${safeTerminalText(joinColumns)}`);
+      lines.push(`      ${theme.dim(`path ID: ${safeTerminalText(entry.scope.path_id)}`)}`);
+    }
+    const remainingRelationships = resource.relationships.filter(
+      (relationship) => !scopePathIds.has(relationship.relationship_id),
+    );
+    if (!scopeEntries.length && !remainingRelationships.length) {
+      lines.push(`  \`-- ${theme.dim("no reviewed analysis relationship")}`);
       return lines;
     }
-    resource.relationships.forEach((relationship, index) => {
-      const branch = index === resource.relationships.length - 1 ? "`--" : "|--";
-      const state = relationship.state === "active"
-        ? theme.success("ACTIVE")
-        : relationship.state === "included"
-          ? theme.warning("IN NEXT BOUNDARY")
-          : theme.dim("AVAILABLE");
+    if (scopeEntries.length && !resource.relationships.length) {
+      lines.push(`  \`-- ${theme.dim("no separate reviewed analysis relationship")}`);
+    }
+    remainingRelationships.forEach((relationship, index) => {
+      const branch = index === remainingRelationships.length - 1 ? "`--" : "|--";
+      const state = relationshipStateLabel(relationship, theme);
       const display = summaryRelationshipDisplay(resource.resource_id, relationship);
       const joinColumns = formatRelationshipJoinColumns(display);
       lines.push(
@@ -2391,8 +2445,43 @@ function riskBadge(
   if (isTrustedScopeField(view, field.name)) return "[trusted scope fixed; output tier reviewed]";
   if (field.primary_key) return "[record ID]";
   if (field.sensitivity.state === "high_confidence_sensitive") return "[sensitive]";
-  if (field.sensitivity.state === "unresolved_free_text") return "[free text]";
+  if (field.sensitivity.state === "unresolved_free_text") return "[needs review]";
   return "[low structural risk]";
+}
+
+function relationshipStateLabel(
+  relationship: BoundaryResourceReviewSummary["relationships"][number],
+  theme: TerminalTheme,
+): string {
+  return relationship.state === "active"
+    ? theme.success("ACTIVE")
+    : relationship.state === "included"
+      ? theme.warning("IN NEXT BOUNDARY")
+      : theme.dim("AVAILABLE");
+}
+
+function selectedDerivedScopeEntries(
+  resource: BoundaryResourceReviewSummary,
+): Array<{ scope: DerivedScopePath; roles: string[] }> {
+  const entries = [
+    ...(resource.derived_tenant_scope?.selected
+      ? [{ scope: resource.derived_tenant_scope.selected, role: "tenant scope" }]
+      : []),
+    ...(resource.derived_principal_scope?.selected
+      ? [{ scope: resource.derived_principal_scope.selected, role: "principal scope" }]
+      : []),
+  ];
+  const grouped = new Map<string, { scope: DerivedScopePath; roles: string[] }>();
+  for (const entry of entries) {
+    const key = `${entry.scope.path_id}\u0000${entry.scope.ancestor_column}`;
+    const current = grouped.get(key);
+    if (current) current.roles.push(entry.role);
+    else grouped.set(key, { scope: entry.scope, roles: [entry.role] });
+  }
+  return [...grouped.values()].sort((left, right) =>
+    derivedScopeDepth(left.scope) - derivedScopeDepth(right.scope)
+      || left.scope.path_id.localeCompare(right.scope.path_id)
+      || left.roles.join("+").localeCompare(right.roles.join("+")));
 }
 
 function resourceState(

@@ -2067,6 +2067,9 @@ function normalizeColumn(column: RawColumn, primaryKey: string[]): ColumnInfo {
   const sensitivity = classifySensitivity({
     name,
     dataType: String(column.data_type || column.udt_name || "unknown"),
+    ...(Array.isArray(column.enum_values) && column.enum_values.length
+      ? { constrainedValues: column.enum_values.map(String) }
+      : {}),
     description: column.comment ?? undefined,
     source: "database",
   });

@@ -23,6 +23,13 @@
   field, enum, path, shared-reference, metadata, metric, and limit decisions
   survive; changed schema, role, or trusted-context inputs fail closed for
   focused re-review without mutating overlapping boundaries.
+- Advances generated boundary authority to compiler version `1.7.0`. Existing
+  `1.6.6` boundaries fail closed until the reconciling rescan creates a disabled
+  replacement revision; unchanged curated policy is preserved and activation
+  remains explicit. Sensitivity review is now type-aware: a bounded native enum
+  or structured scalar foreign key is not mislabeled as unconstrained free text
+  merely because its identifier contains `note`, while genuine text, unknown,
+  unstructured, and high-confidence sensitive fields remain fail-closed.
 - Fails startup closed without explicit opt-in, read-only mode, secured shared
   HTTP, required OAuth scope, exact JWT issuer/audience/claims, shared HMAC
   material, shared accounting, and current exact-digest production authority.

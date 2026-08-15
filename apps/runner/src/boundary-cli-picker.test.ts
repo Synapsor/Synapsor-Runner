@@ -1068,6 +1068,33 @@ describe("boundary review terminal picker", () => {
     );
   });
 
+  it("labels unresolved sensitivity as a review state instead of claiming a data type", () => {
+    const view = reviewView();
+    view.fields.push({
+      ...view.fields[0]!,
+      name: "event_note_id",
+      data_type: "integer",
+      primary_key: false,
+      sensitivity: {
+        state: "unresolved_free_text",
+        reason_codes: ["unconstrained_free_text_name"],
+        reasons: ["Legacy unresolved naming signal."],
+        evidence_source: "database",
+      },
+      raw_visible_suggestion: false,
+      evidence: ["database column event_note_id integer"],
+    });
+    for (const candidate of [view.candidate!, view.generated_candidate!]) {
+      candidate.field_types.event_note_id = "integer";
+      candidate.kept_out_fields.push("event_note_id");
+    }
+
+    const rendered = formatBoundaryResourceMap(view);
+    expect(rendered).toContain("event_note_id");
+    expect(rendered).toContain("[needs review]");
+    expect(rendered).not.toContain("[free text]");
+  });
+
   it("bounds the default overview for a large schema and exposes the full catalog explicitly", () => {
     const resources = Array.from({ length: 15 }, (_, index) =>
       summary(`public.table_${String(index + 1).padStart(2, "0")}`, index < 3 ? 1 : 0));
@@ -1574,6 +1601,43 @@ describe("boundary review terminal picker", () => {
     expect(overview).toContain("needs max_derived_scope_hops 3 (currently 2)");
     expect(overview).not.toContain("derive tenant scope via");
     expect(overview).toContain("boundary review resource 'public.event_notes' --map shows the exact review command");
+
+    const reviewedSummary = summary("public.event_notes", 0);
+    reviewedSummary.derived_tenant_scope = structuredClone(threeHopView.derived_tenant_scope);
+    reviewedSummary.derived_tenant_scope!.selected = structuredClone(
+      reviewedSummary.derived_tenant_scope!.candidates[0]!,
+    );
+    const reviewedOverview = formatBoundaryOverviewMap([reviewedSummary], {
+      exhaustive: true,
+    });
+    expect(reviewedOverview).toContain("reviewed paths 1");
+    expect(reviewedOverview).toContain("reviewed tenant scope (3 hops)");
+    expect(reviewedOverview).toContain(
+      "event_notes -> order_item_events -> order_items -> orders.tenant_id",
+    );
+    expect(reviewedOverview).toContain("via columns: parent_id -> parent_id -> parent_id");
+    expect(reviewedOverview).toContain(
+      "path ID: event_notes_event_fkey__events_item_fkey__items_order_fkey",
+    );
+    expect(reviewedOverview).toContain("no separate reviewed analysis relationship");
+    expect(reviewedOverview).not.toContain("no proven relationship candidate");
+
+    reviewedSummary.relationships = [{
+      relationship_id: reviewedSummary.derived_tenant_scope!.selected.path_id,
+      target_resource: reviewedSummary.derived_tenant_scope!.selected.ancestor_resource,
+      path_depth: 3,
+      state: "included",
+      path_links: reviewedSummary.derived_tenant_scope!.selected.proof.links,
+    }];
+    const combinedOverview = formatBoundaryOverviewMap([reviewedSummary], {
+      exhaustive: true,
+    });
+    expect(combinedOverview).toContain(
+      "reviewed tenant scope + analysis relationship (3 hops) [IN NEXT BOUNDARY]",
+    );
+    expect(combinedOverview).toContain("reviewed paths 1");
+    expect(combinedOverview.match(/event_notes -> order_item_events -> order_items -> orders/g))
+      .toHaveLength(1);
   });
 
   it("sanitizes inspected names before rendering the structural map", () => {

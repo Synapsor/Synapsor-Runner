@@ -42,7 +42,7 @@ export const CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION =
 export const EXPLORATION_BOUNDARY_VERSION = "synapsor.exploration-boundary.v1";
 export const AUTO_BOUNDARY_OVERRIDES_VERSION = "synapsor.auto-boundary-overrides.v1";
 export const ACTIVE_EXPLORATION_BOUNDARY_SET_VERSION = "synapsor.active-exploration-boundaries.v1";
-export const AUTO_BOUNDARY_COMPILER_VERSION = "1.6.6";
+export const AUTO_BOUNDARY_COMPILER_VERSION = "1.7.0";
 export const AUTO_BOUNDARY_SPEC_VERSION = "1.9.0";
 export const SUPPORTED_AUTO_BOUNDARY_SPEC_VERSIONS = new Set(["1.8.0", AUTO_BOUNDARY_SPEC_VERSION]);
 export const SHARED_REFERENCE_ACKNOWLEDGEMENT = "table_has_no_per_tenant_rows";
@@ -4917,17 +4917,25 @@ function buildResource(
       const deterministicClassification = classifySensitivity({
         name: column.name,
         dataType: column.data_type,
+        constrainedValues: column.enum_values,
         description: column.comment,
         source: "database",
       });
-      const databaseClassification = column.suggestions.sensitivity
-        ? moreRestrictiveSensitivity(column.suggestions.sensitivity, deterministicClassification)
-        : deterministicClassification;
       const staticClassifications = staticObjects.flatMap((item) =>
         item.object.fields
           .filter((field) => field.name === column.name)
           .map((field) => field.sensitivity));
-      const sensitivity = [databaseClassification, ...staticClassifications]
+      const sensitivity = [
+        deterministicClassification,
+        ...(column.suggestions.sensitivity
+          ? [column.suggestions.sensitivity]
+          : []),
+        ...staticClassifications,
+      ]
+        .filter((classification) => !nameOnlySensitivityRefutedByStructure(
+          classification,
+          deterministicClassification,
+        ))
         .reduce(moreRestrictiveSensitivity);
       const keptOutByClassification = sensitivity.state !== "structurally_low_risk";
       return {
@@ -5707,6 +5715,17 @@ function moreRestrictiveSensitivity(
     reasons: unique([...left.reasons, ...right.reasons]).sort(),
     evidence_source: left.evidence_source,
   };
+}
+
+function nameOnlySensitivityRefutedByStructure(
+  classification: SensitivityClassification,
+  deterministic: SensitivityClassification,
+): boolean {
+  return deterministic.state === "structurally_low_risk"
+    && classification.state === "unresolved_free_text"
+    && classification.reason_codes.length > 0
+    && classification.reason_codes.every((code) =>
+      code === "unconstrained_free_text_name" || code === "ambiguous_display_name");
 }
 
 function sourceKind(detail: string): "prisma" | "drizzle" | "openapi" | "synapsor" {

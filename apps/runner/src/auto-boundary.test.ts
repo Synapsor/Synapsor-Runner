@@ -18,6 +18,7 @@ import {
   deactivateExplorationBoundary,
   emptyReviewOverrides,
   explorationBoundaryCandidateDigest,
+  generationLockSharedFactsDigest,
   loadActivatedExplorationBoundary,
   loadActivatedExplorationBoundaries,
   pruneAutoBoundaryReviewOverrides,
@@ -56,6 +57,7 @@ describe("Auto Boundary compiler", () => {
     expect(first.lock.spec_version).toBe(AUTO_BOUNDARY_SPEC_VERSION);
     expect(first.lock.database_server_version).toBe("PostgreSQL 16");
     expect(first.lock.database_server_tier).toBe("full");
+    expect(first.lock.compiler_version).toBe("1.7.0");
     expect(first.lock.database_server_authority).toMatchObject({
       engine: "postgres",
       version_line: "16",
@@ -83,6 +85,14 @@ describe("Auto Boundary compiler", () => {
         "database server capability authority is not recorded",
       ]),
     });
+    const previousCompilerLock = {
+      ...first.lock,
+      compiler_version: "1.6.6",
+    };
+    expect(compareGenerationLock(previousCompilerLock, inspection).changes)
+      .toContain("Auto Boundary compiler version changed");
+    expect(generationLockSharedFactsDigest(previousCompilerLock))
+      .not.toBe(generationLockSharedFactsDigest(first.lock));
     expect(first.exploration_boundary.budgets.max_queries_per_session).toBe(1000);
     expect(first.exploration_boundary.budgets.rate_limit_per_minute).toBe(120);
     expect(first.exploration_boundary.budgets.max_extracted_cells_per_session).toBe(4000);
@@ -181,6 +191,67 @@ describe("Auto Boundary compiler", () => {
       project: projectSummary("/workspace/unsupported-mysql"),
       sourceEnv: "DATABASE_URL",
     })).toThrow(/MySQL 5\.7/i);
+  });
+
+  it("keeps bounded note enums and structured note foreign keys reviewable on MySQL 5.7", () => {
+    const legacyNameOnlySensitivity = {
+      state: "unresolved_free_text" as const,
+      reason_codes: ["unconstrained_free_text_name"],
+      reasons: ["The field name indicates unconstrained notes, comments, descriptions, or payload content."],
+      evidence_source: "database" as const,
+    };
+    const events = relationTable("event_notes");
+    const noteSource = column("note_source", "enum");
+    noteSource.enum_values = ["staff", "system", "member"];
+    noteSource.suggestions.sensitive = true;
+    noteSource.suggestions.sensitivity = structuredClone(legacyNameOnlySensitivity);
+    const sentiment = column("sentiment", "enum");
+    sentiment.enum_values = ["positive", "neutral", "negative"];
+    events.columns.push(noteSource, sentiment);
+    events.suggestions.default_visible_columns.push("note_source", "sentiment");
+
+    const flags = relationTable("note_flags", [{
+      name: "note_flags_note_fk",
+      columns: ["event_note_id"],
+      referenced_schema: "public",
+      referenced_table: "event_notes",
+      referenced_columns: ["id"],
+      delete_rule: "RESTRICT",
+    }]);
+    const eventNoteId = flags.columns.find((field) => field.name === "event_note_id")!;
+    eventNoteId.data_type = "integer";
+    eventNoteId.suggestions.sensitive = true;
+    eventNoteId.suggestions.sensitivity = structuredClone(legacyNameOnlySensitivity);
+
+    const inspection = churnInspection();
+    inspection.engine = "mysql";
+    inspection.server_version = "MySQL 5.7.44";
+    inspection.tables = [events, flags];
+    const generated = buildAutoBoundary({
+      inspection,
+      project: projectSummary("/workspace/mysql-57-notes"),
+      sourceEnv: "DATABASE_URL",
+    });
+
+    const reviewedEvents = generated.graph.resources.find((resource) =>
+      resource.id === "public.event_notes")!;
+    const reviewedFlags = generated.graph.resources.find((resource) =>
+      resource.id === "public.note_flags")!;
+    expect(reviewedEvents.fields.find((field) => field.name === "note_source")?.sensitivity)
+      .toMatchObject({ state: "structurally_low_risk" });
+    expect(reviewedFlags.fields.find((field) => field.name === "event_note_id")?.sensitivity)
+      .toMatchObject({ state: "structurally_low_risk" });
+
+    const eventsCandidate = generated.exploration_boundary.pack.resources.find((resource) =>
+      resource.id === "public.event_notes")!;
+    const flagsCandidate = generated.exploration_boundary.pack.resources.find((resource) =>
+      resource.id === "public.note_flags")!;
+    expect(eventsCandidate.field_enums.note_source).toEqual(["staff", "system", "member"]);
+    expect(eventsCandidate.groupable_fields).toContain("note_source");
+    expect(eventsCandidate.kept_out_fields).not.toContain("note_source");
+    expect(flagsCandidate.kept_out_fields).not.toContain("event_note_id");
+    expect(flagsCandidate.relationships.map((relationship) => relationship.id))
+      .toContain("note_flags_note_fk");
   });
 
   it("renders the database capability snapshot stored in a lock instead of reclassifying it", () => {
