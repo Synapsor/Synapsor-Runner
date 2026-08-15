@@ -15,7 +15,7 @@ describe("Auto Boundary Workbench renderer", () => {
       ["shared-reference scope", ["Shared reference - same rows for every tenant", "I confirm this table has no per-tenant rows"]],
       ["per-table and whole-boundary privacy", ["Privacy for all tables", "Save privacy change", "Save for all"]],
       ["query-volume controls and operator status", ["Queries per rolling 24 hours", "Requests per rolling minute", "Operator-only budget status", "Disclosure controls remain separate", "Differencing variants for ", "root_resource"]],
-      ["reviewed relationships and visual map", ["Reviewed data map", "renderBoundaryGraphSvg", "Each reviewed join uses its own labeled connection lane"]],
+      ["reviewed relationships and visual map", ["Reviewed data map", "renderBoundaryGraphSvg", "Each reviewed join uses its own labeled connection lane", "boundary-field-matrix", "Canonical path ID"]],
       ["numeric bands", ["Add a fixed numeric band", "kind:\"numeric_band\""]],
       ["automatic numeric bands", ["Allow automatic numeric bands", "kind:\"auto_band\"", "raw edges"]],
       ["database capability tiers", ["Reviewed source release:", "Full reviewed grammar", "reviewed release line", "Automatic numeric bands are unavailable on", "This unavailable grammar is not shown to the model", "Supported limited database grammar", "schema_check_constraints===false", "automatic_numeric_bands===false", "Database capability changes"]],
@@ -483,6 +483,14 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("data-boundary-catalog-section");
     expect(html).toContain("renderBoundaryGraphSvg");
     expect(html).toContain("boundary-catalog-graph");
+    expect(html).toContain("Reviewed fields and relationships");
+    expect(html).toContain("RET return · FLT filter · SRT sort · GRP group/band");
+    expect(html).toContain("boundaryRelationshipDisplay");
+    expect(html).toContain("commonSchema");
+    expect(html).toContain("field.operations||{}");
+    expect(html).toContain("boundaryIdentifierDisplay");
+    expect(html).toContain("Exact filter and time vocabularies");
+    expect(html).toContain("boundary-relationship-summary");
     expect(html).toContain("Each reviewed join uses its own labeled connection lane.");
     expect(html).toContain('return fieldLabel(relationship,reference.field)+" from "+relationshipTargetLabel(relationship);');
     expect(html).toContain("This is one exact active boundary; it is never merged with another.");

@@ -291,11 +291,19 @@ export async function boundaryReviewCommand(
   }
   assertKnownOptions(
     args,
-    new Set(["--project-root", "--output", "--json", "--confirm", "--actor", "--map", "--all", "--access"]),
+    new Set(["--project-root", "--output", "--json", "--confirm", "--actor", "--map", "--all", "--details", "--access"]),
     "boundary review",
   );
   if (args.includes("--all") && !args.includes("--map")) {
     throw new Error("Boundary review --all is available only with --map.");
+  }
+  if (args.includes("--details") && !args.includes("--map")) {
+    throw new Error("Boundary review --details is available only with --map.");
+  }
+  if (args.includes("--details") && !args.includes("--all")) {
+    throw new Error(
+      "Boundary review --details requires --map --all. For one table, use boundary review resource <table> --map --details.",
+    );
   }
   if (args.includes("--confirm") && args.includes("--json")) {
     throw new Error("Interactive boundary review cannot use --json; confirm decisions in a terminal, then export JSON.");
@@ -322,6 +330,7 @@ export async function boundaryReviewCommand(
       {
         color: process.stdout.isTTY,
         exhaustive: args.includes("--all"),
+        details: args.includes("--details"),
         commandName: cliCommandName(),
       },
     ));
@@ -656,6 +665,7 @@ async function boundaryResourceReviewCommand(
     "--project-root",
     "--json",
     "--map",
+    "--details",
     "--include",
     "--exclude",
     "--label",
@@ -700,6 +710,9 @@ async function boundaryResourceReviewCommand(
     "--nonce",
   ]);
   assertKnownOptions(args, allowed, "boundary review resource");
+  if (args.includes("--details") && !args.includes("--map")) {
+    throw new Error("boundary review resource --details is available only with --map.");
+  }
   const resourceId = positional(args, 0);
   if (!resourceId) {
     throw new Error("boundary review resource requires <schema.table>, for example public.orders.");
@@ -749,6 +762,8 @@ async function boundaryResourceReviewCommand(
       }
       process.stdout.write(formatBoundaryResourceMap(view, {
         color: process.stdout.isTTY,
+        columns: process.stdout.columns,
+        details: args.includes("--details"),
         commandName: cliCommandName(),
       }));
       return 0;

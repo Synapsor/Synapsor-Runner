@@ -62,6 +62,13 @@ describe("active boundary catalog", () => {
         groupable_fields: ["status"],
         aggregate_measures: ["total_cents"],
       }));
+    expect(model.boundaries[0]?.tables.find((table) => table.id === "public.orders")
+      ?.model_visible_fields.find((field) => field.name === "status")?.operations)
+      .toEqual(expect.objectContaining({
+        return_value: true,
+        group: true,
+        distinct: false,
+      }));
 
     const serialized = JSON.stringify(model);
     expect(serialized).not.toContain("customer_email");
@@ -70,12 +77,13 @@ describe("active boundary catalog", () => {
 
     const ascii = renderBoundaryCatalogAscii(model, { width: 88 });
     expect(ascii).toContain("3 tables | 2 physical joins | 3 reviewed paths");
-    expect(ascii).toContain("TABLES AND REVIEWED ANALYSIS");
-    expect(ascii).toContain("REVIEWED RELATIONSHIP MAP");
-    expect(ascii).toContain("order_id -> [public.orders].id");
-    expect(ascii).toContain("[public.orders]");
-    expect(ascii).toContain("[public.customers]");
-    expect(ascii).toContain("[many-to-one, proven, 2 joins]");
+    expect(ascii).toContain("TABLES AND REVIEWED FIELD AUTHORITY");
+    expect(ascii).toContain("RET FLT SRT GRP MEA PRE DST TIM");
+    expect(ascii).toContain("REVIEWED RELATIONSHIPS");
+    expect(ascii).toContain("invoices -> orders -> customers");
+    expect(ascii).toMatch(/via order_id -> \[reviewed hidden join\s+key\]/);
+    expect(ascii).toContain("[many-to-one; catalog proven]");
+    expect(ascii).not.toContain("|--");
     expect(ascii).toContain("TRY CROSS-TABLE QUESTIONS");
     expect(ascii).toContain('"What is the total invoice amount by customer region?"');
     expect(ascii).not.toContain("secret_join");
@@ -147,8 +155,9 @@ describe("active boundary catalog", () => {
     });
 
     const ascii = renderBoundaryCatalogAscii(model);
-    expect(ascii).toContain("Can analyze: record counts; totals/averages of total_cents; unique counts of id; group by");
-    expect(ascii).toContain("status; day/week/month using created_at");
+    expect(ascii).toContain("RET FLT SRT GRP MEA PRE DST TIM");
+    expect(ascii).toMatch(/status\s+text\s+Y\s+-\s+-\s+Y/);
+    expect(ascii).toMatch(/total_cents\s+integer\s+Y\s+-\s+-\s+-\s+Y/);
     expect(ascii).toContain("Runner-only analysis: unique counts of risk_band (raw values withheld); group by");
     expect(ascii).toContain("group by risk_band");
     expect(ascii).toContain("(labels tokenized)");
@@ -193,9 +202,9 @@ describe("active boundary catalog", () => {
     );
 
     const ascii = renderBoundaryCatalogAscii(model, { width: 100 });
-    expect(ascii).toContain("reviewed numeric bands order_value_band (total_cents)");
+    expect(ascii).toContain("total_cents  fixed band: order_value_band (Order value band)");
     expect(ascii).toContain(
-      "automatic numeric bands total_cents (quantile or equal width; 3-8 buckets; ordinal labels)",
+      "total_cents  auto band: quantile or equal width; 3-8 buckets; ordinal labels",
     );
     expect(ascii).not.toContain("1000");
     expect(ascii).not.toContain("10000");

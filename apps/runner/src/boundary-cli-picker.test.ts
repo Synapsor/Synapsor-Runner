@@ -976,9 +976,16 @@ describe("boundary review terminal picker", () => {
 
     const exhaustive = formatBoundaryOverviewMap(resources, { exhaustive: true });
     expect(exhaustive).toContain("WHOLE BOUNDARY MAP (ALL TABLES)");
-    expect(exhaustive).toContain("relationship (1 hop) [IN NEXT BOUNDARY]");
+    expect(exhaustive).toContain("R1  1 hop  analysis relationship [IN NEXT BOUNDARY]");
     expect(exhaustive).toContain("check_ins -> locations");
-    expect(exhaustive).toContain("path ID: check_ins_location");
+    expect(exhaustive).not.toContain("check_ins_location");
+    expect(exhaustive).toContain("Rerun with --details");
+    const exhaustiveDetails = formatBoundaryOverviewMap(resources, {
+      exhaustive: true,
+      details: true,
+    });
+    expect(exhaustiveDetails).toContain("PATH IDS (SCRIPTED REVIEW)");
+    expect(exhaustiveDetails).toContain("R1  check_ins_location");
     expect(exhaustive).not.toContain("path check_ins_location [");
 
     const { input, output } = fakeTerminal();
@@ -1025,12 +1032,15 @@ describe("boundary review terminal picker", () => {
     expect(concise).not.toContain("librarydb.event_notes -> librarydb.loan_events");
 
     const exhaustive = formatBoundaryOverviewMap([resource], { exhaustive: true });
-    expect(exhaustive).toContain("relationship (2 hops) [IN NEXT BOUNDARY]");
+    expect(exhaustive).toContain("R1  2 hops  analysis relationship [IN NEXT BOUNDARY]");
     expect(exhaustive).toContain("event_notes -> loan_events -> loans");
     expect(exhaustive).toContain("via columns: loan_event_id -> loan_id");
-    expect(exhaustive).toContain(
-      "path ID: event_notes_event_fk__loan_events_loan_fk",
-    );
+    expect(exhaustive).not.toContain("event_notes_event_fk__loan_events_loan_fk");
+    const detailed = formatBoundaryOverviewMap([resource], {
+      exhaustive: true,
+      details: true,
+    });
+    expect(detailed).toContain("R1  event_notes_event_fk__loan_events_loan_fk");
     expect(exhaustive).not.toContain(
       "path event_notes_event_fk__loan_events_loan_fk [",
     );
@@ -1060,10 +1070,13 @@ describe("boundary review terminal picker", () => {
     view.generated_candidate = view.candidate;
 
     const rendered = formatBoundaryResourceMap(view);
-    expect(rendered).toContain("Relationship (2 hops)");
+    expect(rendered).toContain("R1  2 hops");
     expect(rendered).toContain("order_item_events -> order_items -> orders");
-    expect(rendered).toContain("via columns: parent_id -> parent_id");
-    expect(rendered).toContain("path ID: events_item_fkey__items_order_fkey");
+    expect(rendered).toContain("via parent_id -> parent_id");
+    expect(rendered).not.toContain("events_item_fkey__items_order_fkey");
+    const detailed = formatBoundaryResourceMap(view, { details: true });
+    expect(detailed).toContain("PATH IDS (SCRIPTED REVIEW)");
+    expect(detailed).toContain("R1  events_item_fkey__items_order_fkey");
     expect(rendered).not.toContain(
       "events_item_fkey__items_order_fkey -> public.orders",
     );
@@ -1092,7 +1105,7 @@ describe("boundary review terminal picker", () => {
 
     const rendered = formatBoundaryResourceMap(view);
     expect(rendered).toContain("event_note_id");
-    expect(rendered).toContain("[needs review]");
+    expect(rendered).toMatch(/event_note_id\s+integer[^\n]+needs review/);
     expect(rendered).not.toContain("[free text]");
   });
 
@@ -1145,8 +1158,8 @@ describe("boundary review terminal picker", () => {
     expect(overview).toContain("fields: 1 model | 0 raw Runner-only | 2 kept out");
 
     const detail = formatBoundaryResourceMap(view);
-    expect(detail).toContain("Kept-out fields");
-    expect(detail).toContain("note_source: no operations [low structural risk]");
+    expect(detail).toMatch(/note_source\s+enum\s+-\s+-\s+-\s+-\s+-\s+-\s+-\s+-\s+KEPT/);
+    expect(detail).not.toContain("low structural risk");
   });
 
   it("bounds the default overview for a large schema and exposes the full catalog explicitly", () => {
@@ -1251,8 +1264,9 @@ describe("boundary review terminal picker", () => {
       expect(rendered).toContain("Space cycles: MODEL + RUNNER -> RUNNER ONLY -> KEPT OUT");
       expect(rendered).toContain("TABLE ACCESS MAP - public.check_ins");
       expect(rendered).toContain("Preview includes unsaved access choices.");
-      expect(rendered).toContain("outcome: return, filter(eq), sort, count distinct");
-      expect(rendered).toContain("Trusted tenant scope: tenant_id (direct; bound outside model arguments)");
+      expect(rendered).toContain("RET FLT SRT GRP MEA PRE DST TIM");
+      expect(rendered).toMatch(/outcome\s+text\s+Y\s+Y\s+Y\s+-\s+-\s+-\s+Y\s+-\s+RUNNER/);
+      expect(rendered).toContain("tenant scope      tenant_id (direct; trusted runtime value)");
       expect(rendered).not.toContain("tenant-secret");
     } finally {
       if (previousNoColor === undefined) delete process.env.NO_COLOR;
@@ -1279,9 +1293,7 @@ describe("boundary review terminal picker", () => {
     await expect(edit).resolves.toBe("back");
 
     const rendered = stripAnsi(terminal.output.read()?.toString() ?? "");
-    expect(rendered).toMatch(
-      /current inspected operation suggestions restore on save; reopen M for exact\s+grants/,
-    );
+    expect(rendered).toContain("outcome: record ID; restores on save");
     expect(rendered).not.toContain("outcome: no reviewed operation");
   });
 
@@ -1295,7 +1307,7 @@ describe("boundary review terminal picker", () => {
     view.operation_repair_fields = ["outcome"];
 
     const map = formatBoundaryResourceMap(view, { commandName: "synapsor-runner" });
-    expect(map).toContain("Operation repair available");
+    expect(map).toContain("OPERATION REPAIR AVAILABLE");
     expect(map).toContain("outcome is usable but has no filter, sort, group, or measure grant");
     expect(map).toContain("current suggestions: return, filter(eq), sort, count distinct");
     expect(map).toContain("--allow-reviewed-field 'outcome'");
@@ -1700,12 +1712,13 @@ describe("boundary review terminal picker", () => {
     summaryView.reviewed_max_derived_scope_hops = 2;
     const overview = formatBoundaryOverviewMap([summaryView], {
       exhaustive: true,
+      details: true,
       commandName: "synapsor-runner",
     });
     expect(overview).toContain("tenant scope available (3 hops)");
     expect(overview).toContain("event_notes -> order_item_events -> order_items -> orders.tenant_id");
     expect(overview).toContain("via columns: parent_id -> parent_id -> parent_id");
-    expect(overview).toContain("path ID: event_notes_event_fkey__events_item_fkey__items_order_fkey");
+    expect(overview).toContain("path ID A1: event_notes_event_fkey__events_item_fkey__items_order_fkey");
     expect(overview).toContain("needs max_derived_scope_hops 3 (currently 2)");
     expect(overview).not.toContain("derive tenant scope via");
     expect(overview).toContain("boundary review resource 'public.event_notes' --map shows the exact review command");
@@ -1719,15 +1732,15 @@ describe("boundary review terminal picker", () => {
       exhaustive: true,
     });
     expect(reviewedOverview).toContain("reviewed paths 1");
-    expect(reviewedOverview).toContain("reviewed tenant scope (3 hops)");
+    expect(reviewedOverview).toContain("S1  3 hops  reviewed tenant scope");
     expect(reviewedOverview).toContain(
       "event_notes -> order_item_events -> order_items -> orders.tenant_id",
     );
     expect(reviewedOverview).toContain("via columns: parent_id -> parent_id -> parent_id");
-    expect(reviewedOverview).toContain(
-      "path ID: event_notes_event_fkey__events_item_fkey__items_order_fkey",
+    expect(reviewedOverview).not.toContain(
+      "event_notes_event_fkey__events_item_fkey__items_order_fkey",
     );
-    expect(reviewedOverview).toContain("no separate reviewed analysis relationship");
+    expect(reviewedOverview).not.toContain("no separate reviewed analysis relationship");
     expect(reviewedOverview).not.toContain("no proven relationship candidate");
 
     reviewedSummary.relationships = [{
@@ -1741,7 +1754,7 @@ describe("boundary review terminal picker", () => {
       exhaustive: true,
     });
     expect(combinedOverview).toContain(
-      "reviewed tenant scope + analysis relationship (3 hops) [IN NEXT BOUNDARY]",
+      "S1  3 hops  reviewed tenant scope + analysis relationship [IN NEXT BOUNDARY]",
     );
     expect(combinedOverview).toContain("reviewed paths 1");
     expect(combinedOverview.match(/event_notes -> order_item_events -> order_items -> orders/g))

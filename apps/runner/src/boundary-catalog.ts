@@ -3,6 +3,10 @@ import type {
   ExplorationRelationship,
   RelationshipLinkProof,
 } from "./auto-boundary.js";
+import {
+  boundaryMapOperationLegend,
+  renderBoundaryMapFieldMatrix,
+} from "./boundary-map-presentation.js";
 
 export const BOUNDARY_CATALOG_SCHEMA_VERSION = "synapsor.boundary-catalog.v1" as const;
 
@@ -11,6 +15,16 @@ export type BoundaryCatalogField = {
   data_type: string;
   label?: string;
   description?: string;
+  operations?: {
+    return_value: true;
+    filter_operators: string[];
+    sort: boolean;
+    group: boolean;
+    measure: boolean;
+    presence: boolean;
+    distinct: boolean;
+    time_buckets: string[];
+  };
 };
 
 export type BoundaryCatalogTable = {
@@ -162,6 +176,18 @@ export function buildBoundaryCatalogModel(
           .map((field) => ({
             name: field,
             data_type: resource.field_types[field] ?? "reviewed",
+            operations: {
+              return_value: true as const,
+              filter_operators: [...(resource.filterable_fields[field] ?? [])],
+              sort: resource.sortable_fields.includes(field),
+              group: resource.groupable_fields.includes(field)
+                || (resource.numeric_bands ?? []).some((band) => band.field === field)
+                || (resource.auto_bands ?? []).some((policy) => policy.field === field),
+              measure: resource.aggregate_measures.includes(field),
+              presence: (resource.presence_measure_fields ?? []).includes(field),
+              distinct: resource.count_distinct_fields.includes(field),
+              time_buckets: [...(resource.time_bucket_fields[field] ?? [])],
+            },
             ...(resource.field_metadata?.[field]?.label
               ? { label: resource.field_metadata[field]!.label }
               : {}),
@@ -248,25 +274,58 @@ export function renderBoundaryCatalogAscii(
       + `${boundary.physical_relationship_count} physical ${plural(boundary.physical_relationship_count, "join")} | `
       + `${boundary.relationships.length} reviewed ${plural(boundary.relationships.length, "path")}`,
       "",
-      "TABLES AND REVIEWED ANALYSIS",
+      "TABLES AND REVIEWED FIELD AUTHORITY",
+      ...boundaryMapOperationLegend().flatMap((line) => wrapLine(line, width)),
+      "",
     );
     for (const table of boundary.tables) {
       lines.push(`[${table.label}]  ${table.id}`);
       if (table.description) {
         lines.push(...wrapWithPrefixes(table.description, width, "  ", "  "));
       }
-      lines.push(...wrapWithPrefixes(
-        `Model-visible: ${table.model_visible_fields.map(catalogFieldDisplay).join(", ") || "none"}`,
-        width,
-        "  ",
-        "    ",
+      lines.push(...renderBoundaryMapFieldMatrix(
+        table.model_visible_fields.map((field) => ({
+          field: catalogFieldDisplay(field),
+          data_type: field.data_type,
+          access: "MODEL" as const,
+          operations: {
+            return_value: field.operations?.return_value ?? true,
+            filter: (field.operations?.filter_operators.length ?? 0) > 0,
+            sort: field.operations?.sort ?? false,
+            group: field.operations?.group ?? table.groupable_fields.includes(field.name),
+            measure: field.operations?.measure ?? table.aggregate_measures.includes(field.name),
+            presence: field.operations?.presence ?? false,
+            distinct: field.operations?.distinct ?? table.count_distinct_fields.includes(field.name),
+            time: (field.operations?.time_buckets.length ?? 0) > 0
+              || table.time_bucket_fields.includes(field.name),
+          },
+        })),
+        { width, indent: "  " },
       ));
-      lines.push(...wrapWithPrefixes(
-        `Can analyze: ${tableAnalysisSummary(table)}`,
-        width,
-        "  ",
-        "    ",
-      ));
+      const exactDetails = table.model_visible_fields.flatMap((field) => {
+        const details = [
+          ...((field.operations?.filter_operators.length ?? 0) > 0
+            ? [`filter: ${field.operations!.filter_operators.join(", ")}`]
+            : []),
+          ...((field.operations?.time_buckets.length ?? 0) > 0
+            ? [`time: ${field.operations!.time_buckets.join(", ")}`]
+            : []),
+        ];
+        return details.length ? [`${catalogFieldDisplay(field)}  ${details.join(" | ")}`] : [];
+      });
+      exactDetails.push(
+        ...table.numeric_bands.map((band) =>
+          `${band.field}  fixed band: ${band.name} (${band.label})`),
+        ...table.auto_bands.map((policy) =>
+          `${policy.field}  auto band: ${policy.methods.map((method) => method.replace("_", " ")).join(" or ")}; `
+          + `${policy.min_buckets}-${policy.max_buckets} buckets; ${policy.label_style} labels`),
+      );
+      if (exactDetails.length) {
+        lines.push("  Exact operation details:");
+        for (const detail of exactDetails) {
+          lines.push(...wrapWithPrefixes(detail, width, "    ", "      "));
+        }
+      }
       const runnerOnlySummary = boundaryCatalogRunnerOnlyAnalysisSummary(table);
       if (runnerOnlySummary) {
         lines.push(...wrapWithPrefixes(
@@ -276,9 +335,15 @@ export function renderBoundaryCatalogAscii(
           "    ",
         ));
       }
-      lines.push(
-        `  Runner-only: ${table.runner_only_field_count} | Kept out: ${table.kept_out_field_count}`,
-      );
+      const restricted = [
+        ...(table.runner_only_field_count > 0
+          ? [`${table.runner_only_field_count} Runner-only`]
+          : []),
+        ...(table.kept_out_field_count > 0
+          ? [`${table.kept_out_field_count} kept out`]
+          : []),
+      ];
+      if (restricted.length) lines.push(`  Restricted fields: ${restricted.join(" | ")}`);
       if (table.outside_boundary_relationship_count > 0) {
         lines.push(
           `  Outside boundary: ${table.outside_boundary_relationship_count} relationship not available`,
@@ -297,35 +362,24 @@ export function renderBoundaryCatalogAscii(
         `To add a join: /access -> highlight ${boundary.name} -> Enter -> A Add related tables -> C Review + activate.`,
       );
     } else {
-      lines.push("REVIEWED RELATIONSHIP MAP");
-      for (const table of boundary.tables) {
-        const outgoing = boundary.relationships.filter((relationship) =>
-          relationship.source_table === table.id);
-        if (!outgoing.length) continue;
-        lines.push(`[${table.id}]`);
-        outgoing.forEach((relationship, index) => {
-          const last = index === outgoing.length - 1;
-          const branch = last ? "`--" : "|--";
-          const continuation = last ? "    " : "|   ";
-          lines.push(...wrapWithPrefixes(
-            `${relationshipPathLabel(relationship)} `
-            + `[many-to-one, ${relationship.proven ? "proven" : "proof unavailable"}, `
-            + `${relationship.path_depth} ${plural(relationship.path_depth, "join")}]`,
-            width,
-            `  ${branch} `,
-            `  ${continuation}`,
-          ));
-          for (const question of relationship.suggested_questions.slice(0, 1)) {
-            lines.push(...wrapWithPrefixes(
-              `Ask: "${question}"`,
-              width,
-              `  ${continuation}`,
-              `  ${continuation}     `,
-            ));
-          }
-        });
-        lines.push("");
-      }
+      lines.push("REVIEWED RELATIONSHIPS");
+      boundary.relationships.forEach((relationship, index) => {
+        const route = relationshipTableChain(relationship);
+        const via = relationshipJoinColumns(relationship);
+        lines.push(...wrapWithPrefixes(
+          `R${index + 1}  ${relationship.path_depth} `
+          + `${plural(relationship.path_depth, "hop")}  ${route}`
+          + `${via ? `  via ${via}` : ""}`
+          + `  [many-to-one; ${relationship.proven ? "catalog proven" : "proof unavailable"}]`,
+          width,
+          "  ",
+          "      ",
+        ));
+        const question = relationship.suggested_questions[0];
+        if (question) {
+          lines.push(...wrapWithPrefixes(`Ask: "${question}"`, width, "      ", "      "));
+        }
+      });
     }
 
     const questions = unique([
@@ -741,32 +795,6 @@ function reachableTables(
   return [...visited].sort((left, right) => left.localeCompare(right));
 }
 
-function tableAnalysisSummary(table: BoundaryCatalogTable): string {
-  return [
-    "record counts",
-    ...(table.aggregate_measures.length
-      ? [`totals/averages of ${table.aggregate_measures.join(", ")}`]
-      : []),
-    ...(table.count_distinct_fields.length
-      ? [`unique counts of ${table.count_distinct_fields.join(", ")}`]
-      : []),
-    ...(table.groupable_fields.length
-      ? [`group by ${table.groupable_fields.join(", ")}`]
-      : []),
-    ...(table.time_bucket_fields.length
-      ? [`day/week/month using ${table.time_bucket_fields.join(", ")}`]
-      : []),
-    ...((table.numeric_bands ?? []).length
-      ? [`reviewed numeric bands ${(table.numeric_bands ?? []).map((band) => `${band.name} (${band.field})`).join(", ")}`]
-      : []),
-    ...((table.auto_bands ?? []).length
-      ? [`automatic numeric bands ${(table.auto_bands ?? []).map((policy) =>
-        `${policy.field} (${policy.methods.map((method) => method.replace("_", " ")).join(" or ")}; `
-        + `${policy.min_buckets}-${policy.max_buckets} buckets; ${policy.label_style} labels)`).join(", ")}`]
-      : []),
-  ].join("; ");
-}
-
 export function boundaryCatalogRunnerOnlyAnalysisSummary(table: BoundaryCatalogTable): string {
   return [
     ...(table.runner_only_analysis.aggregate_measures.length
@@ -784,10 +812,22 @@ export function boundaryCatalogRunnerOnlyAnalysisSummary(table: BoundaryCatalogT
   ].join("; ");
 }
 
-function relationshipPathLabel(relationship: BoundaryCatalogRelationship): string {
-  return relationship.links.map((link, index) =>
-    `${index === 0 ? link.source_key : link.source_key} -> [${link.target_table}].${link.target_key}`)
-    .join(" -> ");
+function relationshipTableChain(relationship: BoundaryCatalogRelationship): string {
+  const resources = [
+    relationship.links[0]?.source_table ?? relationship.source_table,
+    ...relationship.links.map((link) => link.target_table),
+  ];
+  const schemas = resources.map((resource) => resource.includes(".")
+    ? resource.slice(0, resource.indexOf("."))
+    : "");
+  const commonSchema = schemas[0] && schemas.every((schema) => schema === schemas[0]);
+  return resources.map((resource) => commonSchema
+    ? resource.slice(resource.indexOf(".") + 1)
+    : resource).join(" -> ");
+}
+
+function relationshipJoinColumns(relationship: BoundaryCatalogRelationship): string {
+  return relationship.links.map((link) => link.source_key).join(" -> ");
 }
 
 function catalogQuestions(boundary: BoundaryCatalogBoundary): string[] {

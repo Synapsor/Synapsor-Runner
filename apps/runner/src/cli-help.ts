@@ -428,11 +428,12 @@ the local reviewed contract and proposal before writeback.
   ${cmd} boundary rescan [--from-env DATABASE_URL] [--project-root .] [--json]
   ${cmd} boundary review [--project-root .] [--output boundary-review.json] [--json]
   ${cmd} boundary review --access [--project-root .]  # focused table/column/path editor
-  ${cmd} boundary review --map [--all] [--project-root .]
+  ${cmd} boundary review --map [--project-root .]
+  ${cmd} boundary review --map --all [--details] [--project-root .]
   ${cmd} boundary review --confirm [--project-root .] [--actor reviewer@example.com]
   ${cmd} boundary rename reviewed_sales --to sales_analytics --actor reviewer@example.com --reason "Use the team-facing boundary name"
   ${cmd} boundary delete old_draft --yes [--project-root .]
-  ${cmd} boundary review resource public.orders [--project-root .] [--map|--json]
+  ${cmd} boundary review resource public.orders [--project-root .] [--map [--details]|--json]
   ${cmd} boundary review resource public.orders --include --tenant-key tenant_id --no-principal --visible-fields id,status --actor reviewer@example.com --reason "Reviewed tenant-scoped order access"
   ${cmd} boundary review resource public.order_items --include --tenant-scope-path order_items_order_id_fkey --principal-scope-path order_items_order_id_fkey --actor reviewer@example.com --reason "Order items inherit tenant and principal scope through their required order"
   ${cmd} boundary review resource public.product_catalog --include --shared-reference --acknowledge-table-has-no-per-tenant-rows --actor owner@example.com --reason "Every tenant receives the same reviewed catalog rows"
@@ -613,7 +614,10 @@ uses \`[Y/n]\`, so Enter saves immediately and \`n\` discards it. The focused
 low-risk edits because its one final exact-boundary confirmation records the
 human decision. Neither route lets the model edit or activate authority or
 requires rerunning a generated resource command. Use the resource-level
-\`--map\` to print the table map without entering the picker. Both maps are
+\`--map\` to print the table map without entering the picker. The default map is
+a compact operation matrix with human-readable relationship chains. Add
+\`--details\` (or press D in the interactive map) for exact filter/time
+vocabularies and canonical path IDs used by scripted review. Both maps are
 inspection-only. Activation remains a separate exact-digest decision under the
 focused one-confirmation presentation.
 

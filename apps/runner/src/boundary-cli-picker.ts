@@ -26,6 +26,11 @@ import {
 } from "./derived-scope-display.js";
 import { blockedTenantScopeGuidance } from "./boundary-scope-guidance.js";
 import { shellQuote } from "./cli-format.js";
+import {
+  boundaryMapOperationLegend,
+  renderBoundaryMapFieldMatrix,
+  type BoundaryMapFieldRow,
+} from "./boundary-map-presentation.js";
 
 export type BoundaryFieldTier = ReviewedBoundaryFieldTier;
 export type BoundaryFieldTierEditResult =
@@ -454,6 +459,7 @@ async function chooseResource(
   let selected = 0;
   let selectedBoundary = 0;
   let showMap = false;
+  let showMapDetails = false;
   let showReviewItems = false;
   const focusedAccess = options?.initialView === "access";
   const startingBoundaryName = options?.startingBoundaryName;
@@ -608,6 +614,7 @@ async function chooseResource(
         if (key.name === "m") {
           showReviewItems = false;
           showMap = true;
+          showMapDetails = false;
           mapOffset = Math.max(0, resources.indexOf(highlighted) - 2);
           continue;
         }
@@ -621,13 +628,19 @@ async function chooseResource(
         continue;
       }
       if (showMap) {
-        const mapLines = boundaryOverviewMapLines(resources, theme);
+        const mapLines = boundaryOverviewMapLines(
+          resources,
+          theme,
+          "synapsor-runner",
+          showMapDetails,
+        );
         const pageSize = 15;
         mapOffset = Math.min(mapOffset, Math.max(0, mapLines.length - pageSize));
         render([
           theme.title("WHOLE BOUNDARY MAP"),
           boundaryOverviewSummary(resources),
-          `${theme.key("Up/Down")} Scroll   ${theme.key("B/Esc")} Back   ${theme.key("Q")} Quit`,
+          `${theme.key("Up/Down")} Scroll   ${theme.key("D")} ${showMapDetails ? "Hide" : "Show"} path IDs   ` +
+            `${theme.key("B/Esc")} Back   ${theme.key("Q")} Quit`,
           "",
           ...mapLines.slice(mapOffset, mapOffset + pageSize),
           "",
@@ -640,6 +653,11 @@ async function chooseResource(
         const key = await nextKey();
         if (key.name === "m" || isBackKey(key) || key.name === "return" || key.name === "enter") {
           showMap = false;
+          continue;
+        }
+        if (key.name === "d") {
+          showMapDetails = !showMapDetails;
+          mapOffset = 0;
           continue;
         }
         if (isCancel(key)) return undefined;
@@ -723,6 +741,7 @@ async function chooseResource(
           }
           if (key.name === "m") {
             showMap = true;
+            showMapDetails = false;
             mapOffset = 0;
             continue;
           }
@@ -813,6 +832,7 @@ async function chooseResource(
         }
         if (key.name === "m") {
           showMap = true;
+          showMapDetails = false;
           mapOffset = 0;
           continue;
         }
@@ -878,6 +898,7 @@ async function chooseResource(
         }
         if (key.name === "m") {
           showMap = true;
+          showMapDetails = false;
           mapOffset = 0;
           continue;
         }
@@ -1100,6 +1121,7 @@ async function chooseResource(
       if (isCancel(key)) return undefined;
       if (key.name === "m") {
         showMap = true;
+        showMapDetails = false;
         mapOffset = Math.max(0, selected - 2);
         continue;
       }
@@ -1182,18 +1204,32 @@ async function editFieldTiers(
   const theme = terminalTheme(output.isTTY && !("NO_COLOR" in process.env));
   let selected = 0;
   let showMap = false;
+  let showMapDetails = false;
   return withRawKeys<BoundaryFieldTierEditResult>(input, output, async (nextKey, render) => {
     while (true) {
       if (showMap) {
+        const width = Math.max(36, Math.min(terminalContentWidth(output.columns), 116));
         render([
-          ...boundaryResourceMapLines(view, tiers, theme),
+          ...boundaryResourceMapLines(
+            view,
+            tiers,
+            theme,
+            "synapsor-runner",
+            width,
+            showMapDetails,
+          ),
           "",
-          `${theme.key("B/Esc")} Back to columns   ${theme.key("Q")} Quit`,
+          `${theme.key("D")} ${showMapDetails ? "Hide" : "Show"} exact details   ` +
+            `${theme.key("B/Esc")} Back to columns   ${theme.key("Q")} Quit`,
         ]);
         const key = await nextKey();
         if (key.name === "backspace" || (key.name === "b" && key.sequence === "b")) return "back";
         if (key.name === "m" || isBackKey(key) || key.name === "return" || key.name === "enter") {
           showMap = false;
+          continue;
+        }
+        if (key.name === "d") {
+          showMapDetails = !showMapDetails;
           continue;
         }
         if (isCancel(key)) return undefined;
@@ -1278,6 +1314,7 @@ async function editFieldTiers(
       if (isCancel(key)) return undefined;
       if (key.name === "m") {
         showMap = true;
+        showMapDetails = false;
         continue;
       }
       if (key.name === "p") return "privacy";
@@ -1437,18 +1474,27 @@ function trustedScopeTierConsequence(tier: BoundaryFieldTier): string {
 
 export function formatBoundaryResourceMap(
   view: BoundaryResourceReviewView,
-  options: { color?: boolean; commandName?: string } = {},
+  options: {
+    color?: boolean;
+    commandName?: string;
+    columns?: number;
+    details?: boolean;
+  } = {},
 ): string {
   const tiers = Object.fromEntries(view.fields.map((field) => [
     field.name,
     currentFieldTier(view, field.name),
   ])) as Record<string, BoundaryFieldTier>;
-  return `${boundaryResourceMapLines(
+  const width = Math.max(36, Math.min(terminalContentWidth(options.columns), 116));
+  const lines = boundaryResourceMapLines(
     view,
     tiers,
     terminalTheme(options.color === true && !("NO_COLOR" in process.env)),
     options.commandName ?? "synapsor-runner",
-  ).join("\n")}\n`;
+    width,
+    options.details === true,
+  );
+  return `${lines.join("\n")}\n`;
 }
 
 export function formatBoundaryOverviewMap(
@@ -1457,11 +1503,12 @@ export function formatBoundaryOverviewMap(
     color?: boolean;
     exhaustive?: boolean;
     commandName?: string;
+    details?: boolean;
   } = {},
 ): string {
   const theme = terminalTheme(options.color === true && !("NO_COLOR" in process.env));
   if (!options.exhaustive) {
-    return [
+    const lines = [
       theme.title("BOUNDARY OVERVIEW"),
       ...boundaryOverviewFirstRunLines(
         resources,
@@ -1469,9 +1516,10 @@ export function formatBoundaryOverviewMap(
         options.commandName ?? "synapsor-runner",
       ),
       "",
-    ].join("\n");
+    ];
+    return lines.join("\n");
   }
-  return [
+  const lines = [
     theme.title("WHOLE BOUNDARY MAP (ALL TABLES)"),
     theme.dim("Complete inspected catalog. Use boundary review --map for the concise overview."),
     boundaryOverviewSummary(resources),
@@ -1480,9 +1528,15 @@ export function formatBoundaryOverviewMap(
       resources,
       theme,
       options.commandName ?? "synapsor-runner",
+      options.details === true,
     ),
+    ...(options.details ? [] : [
+      "",
+      theme.dim("Canonical path IDs are hidden in the scan view. Rerun with --details for scripted review."),
+    ]),
     "",
-  ].join("\n");
+  ];
+  return lines.join("\n");
 }
 
 function boundaryResourceMapLines(
@@ -1490,6 +1544,8 @@ function boundaryResourceMapLines(
   tiers: Record<string, BoundaryFieldTier>,
   theme: TerminalTheme,
   commandName = "synapsor-runner",
+  width = 96,
+  details = false,
 ): string[] {
   const candidate = view.candidate ?? view.generated_candidate;
   if (!candidate) {
@@ -1540,40 +1596,28 @@ function boundaryResourceMapLines(
   const hasStagedChanges = view.fields.some(
     (field) => currentFieldTier(view, field.name) !== tiers[field.name],
   );
-  const groupedFields = new Map<BoundaryFieldTier, string[]>(tierOrder.map((tier) => [tier, []]));
-  for (const field of [...view.fields].sort((left, right) => left.name.localeCompare(right.name))) {
-    groupedFields.get(tiers[field.name] ?? "kept_out")!.push(field.name);
-  }
   const lines = [
     theme.title(`TABLE ACCESS MAP - ${safeTerminalText(view.resource_id)}`),
     theme.dim(hasStagedChanges
       ? "Preview includes unsaved access choices. This view cannot save or activate authority."
       : "Current disabled review candidate. This view cannot save or activate authority."),
     "",
-    theme.bold(safeTerminalText(view.resource_id)),
-    `|-- Record identity: ${safeTerminalText(candidate.primary_key)}`,
-    `|-- Trusted tenant scope: ${candidate.tenant_key
-      ? `${safeTerminalText(candidate.tenant_key)} (direct; bound outside model arguments)`
-      : candidate.tenant_scope
-        ? `${safeTerminalText(formatDerivedScopePath(candidate.tenant_scope))} (mandatory relationship path)`
-        : "Shared reference (no tenant predicate; reviewed field/privacy controls still apply)"}`,
-    `|-- Trusted principal scope: ${candidate.principal_key
-      ? `${safeTerminalText(candidate.principal_key)} (bound outside model arguments)`
-      : candidate.principal_scope
-        ? `${safeTerminalText(formatDerivedScopePath(candidate.principal_scope))} (mandatory relationship path)`
-        : "not configured"}`,
-    ...mapTierLines(view, candidate, "visible", groupedFields.get("visible")!, theme),
-    ...mapTierLines(
-      view,
-      candidate,
-      "withheld_from_model",
-      groupedFields.get("withheld_from_model")!,
-      theme,
+    theme.bold(`${safeTerminalText(view.resource_id)}  in reviewed boundary`),
+    ...boundaryResourceScopeLines(candidate),
+    "",
+    theme.bold("FIELD AUTHORITY"),
+    ...renderBoundaryMapFieldMatrix(
+      boundaryResourceFieldRows(view, candidate, tiers),
+      { width, indent: "  " },
     ),
-    ...mapTierLines(view, candidate, "kept_out", groupedFields.get("kept_out")!, theme),
+    "",
+    ...boundaryMapOperationLegend().map((line) => theme.dim(line)),
+    ...(details ? mapFieldOperationDetailLines(view, candidate, tiers, theme) : []),
     ...operationRepairLines(view, tiers, theme, commandName),
-    ...mapRelationshipLines(candidate, theme),
-    `\`-- Aggregate guard: minimum group size ${candidate.minimum_cohort_size}; small groups are suppressed`,
+    ...mapRelationshipLines(candidate, theme, details),
+    ...(!details && mapHasExactDetails(candidate)
+      ? ["", theme.dim("Exact filter/time vocabularies and canonical path IDs: rerun with --details or use --json.")]
+      : []),
   ];
   return lines;
 }
@@ -1589,10 +1633,9 @@ function operationRepairLines(
     .filter((field) => tiers[field] !== "kept_out");
   if (!generated || !fields.length) return [];
   return [
-    `|-- ${theme.warning("Operation repair available")}`,
-    ...fields.flatMap((field, index) => {
-      const branch = index === fields.length - 1 ? "`--" : "|--";
-      const continuation = index === fields.length - 1 ? "   " : "|  ";
+    "",
+    theme.warning("OPERATION REPAIR AVAILABLE"),
+    ...fields.flatMap((field) => {
       const tier = tiers[field] ?? currentFieldTier(view, field);
       const flag = tier === "withheld_from_model" ? "--withhold-from-model" : "--allow-reviewed-field";
       const command = [
@@ -1607,10 +1650,10 @@ function operationRepairLines(
         shellQuote(`Restore the current inspected analytical operations for ${view.resource_id}.${field}.`),
       ].join(" ");
       return [
-        `|   ${branch} ${safeTerminalText(field)} is usable but has no filter, sort, group, or measure grant.`,
-        `|   ${continuation} current suggestions: ${boundaryFieldOperations(generated, field)}`,
-        `|   ${continuation} repair here: press S while this column is selected`,
-        `|   ${continuation} scripted repair: ${safeTerminalText(command)}`,
+        `  ${safeTerminalText(field)} is usable but has no filter, sort, group, or measure grant.`,
+        `    current suggestions: ${boundaryFieldOperations(generated, field)}`,
+        "    repair here: press S while this column is selected",
+        `    scripted repair: ${safeTerminalText(command)}`,
       ];
     }),
   ];
@@ -1752,41 +1795,114 @@ function firstTableIsStartable(resource: BoundaryResourceReviewSummary): boolean
   return resource.status === "draft_read" || resource.inline_resolution_available === true;
 }
 
-function mapTierLines(
+function boundaryResourceScopeLines(
+  candidate: NonNullable<BoundaryResourceReviewView["candidate"]>,
+): string[] {
+  return [
+    `  ${"record identity".padEnd(18)}${safeTerminalText(candidate.primary_key)}`,
+    `  ${"tenant scope".padEnd(18)}${candidate.tenant_key
+      ? `${safeTerminalText(candidate.tenant_key)} (direct; trusted runtime value)`
+      : candidate.tenant_scope
+        ? `${safeTerminalText(formatDerivedScopePath(candidate.tenant_scope))} ` +
+          `(${candidate.tenant_scope.proof.links.length} ` +
+          `${plural(candidate.tenant_scope.proof.links.length, "hop", "hops")}, mandatory)`
+        : "shared reference (no tenant predicate)"}`,
+    `  ${"principal scope".padEnd(18)}${candidate.principal_key
+      ? `${safeTerminalText(candidate.principal_key)} (direct; trusted runtime value)`
+      : candidate.principal_scope
+        ? `${safeTerminalText(formatDerivedScopePath(candidate.principal_scope))} ` +
+          `(${candidate.principal_scope.proof.links.length} ` +
+          `${plural(candidate.principal_scope.proof.links.length, "hop", "hops")}, mandatory)`
+        : "not configured"}`,
+    `  ${"cohort guard".padEnd(18)}minimum group size ${candidate.minimum_cohort_size}; smaller groups are suppressed`,
+  ];
+}
+
+function boundaryResourceFieldRows(
   view: BoundaryResourceReviewView,
   candidate: NonNullable<BoundaryResourceReviewView["candidate"]>,
-  tier: BoundaryFieldTier,
-  fields: string[],
+  tiers: Record<string, BoundaryFieldTier>,
+): BoundaryMapFieldRow[] {
+  return [...view.fields]
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .map((field) => {
+      const tier = tiers[field.name] ?? "kept_out";
+      const restoresSuggestions = tier !== "kept_out"
+        && currentFieldTier(view, field.name) === "kept_out";
+      const authority = restoresSuggestions ? (view.generated_candidate ?? candidate) : candidate;
+      const unavailable = tier === "kept_out";
+      const notes = boundaryMapFieldNotes(view, field, restoresSuggestions);
+      return {
+        field: safeTerminalText(field.name),
+        data_type: safeTerminalText(field.data_type ?? candidate.field_types[field.name] ?? "reviewed"),
+        access: tier === "visible" ? "MODEL" : tier === "withheld_from_model" ? "RUNNER" : "KEPT",
+        operations: {
+          return_value: !unavailable && authority.selectable_fields.includes(field.name),
+          filter: !unavailable && (authority.filterable_fields[field.name]?.length ?? 0) > 0,
+          sort: !unavailable && authority.sortable_fields.includes(field.name),
+          group: !unavailable && (
+            authority.groupable_fields.includes(field.name)
+            || (authority.numeric_bands ?? []).some((band) => band.field === field.name)
+            || (authority.auto_bands ?? []).some((policy) => policy.field === field.name)
+          ),
+          measure: !unavailable && authority.aggregate_measures.includes(field.name),
+          presence: !unavailable && (authority.presence_measure_fields ?? []).includes(field.name),
+          distinct: !unavailable && authority.count_distinct_fields.includes(field.name),
+          time: !unavailable && (authority.time_bucket_fields[field.name]?.length ?? 0) > 0,
+        },
+        ...(notes.length ? { note: notes.join("; ") } : {}),
+      };
+    });
+}
+
+function boundaryMapFieldNotes(
+  view: BoundaryResourceReviewView,
+  field: BoundaryResourceReviewView["fields"][number],
+  restoresSuggestions: boolean,
+): string[] {
+  const notes: string[] = [];
+  if (isTrustedScopeField(view, field.name)) notes.push("trusted scope");
+  else if (field.primary_key) notes.push("record ID");
+  if (field.sensitivity.state === "high_confidence_sensitive") notes.push("sensitive");
+  else if (field.sensitivity.state === "unresolved_free_text") notes.push("needs review");
+  if (restoresSuggestions) notes.push("restores on save");
+  if ((view.operation_repair_fields ?? []).includes(field.name)) notes.push("repair available");
+  return notes;
+}
+
+function mapFieldOperationDetailLines(
+  view: BoundaryResourceReviewView,
+  candidate: NonNullable<BoundaryResourceReviewView["candidate"]>,
+  tiers: Record<string, BoundaryFieldTier>,
   theme: TerminalTheme,
 ): string[] {
-  const heading = tier === "visible"
-    ? "Model + Runner fields"
-    : tier === "withheld_from_model"
-      ? "Runner-output-only fields"
-      : "Kept-out fields";
-  const consequence = tier === "visible"
-    ? "real values may reach the model"
-    : tier === "withheld_from_model"
-      ? "raw values stay local or tokenized; reviewed derived results remain usable"
-      : "unavailable to every read operation";
-  const lines = [`|-- ${styleTier(theme, tier, heading)} (${consequence})`];
-  if (!fields.length) return [...lines, "|   `-- (none)"];
-  fields.forEach((field, index) => {
-    const branch = index === fields.length - 1 ? "`--" : "|--";
-    const restoresSuggestedOperations = tier !== "kept_out"
-      && currentFieldTier(view, field) === "kept_out";
-    const operations = tier === "kept_out"
-      ? "no operations"
-      : restoresSuggestedOperations
-        ? "current inspected operation suggestions restore on save; reopen M for exact grants"
-        : boundaryFieldOperations(candidate, field);
-    const sourceField = view.fields.find((item) => item.name === field);
-    const risk = sourceField ? riskBadge(view, sourceField) : "";
-    lines.push(
-      `|   ${branch} ${safeTerminalText(field)}: ${operations}${risk ? ` ${risk}` : ""}`,
-    );
-  });
-  return lines;
+  const details = [...view.fields]
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .flatMap((field) => {
+      const tier = tiers[field.name] ?? "kept_out";
+      if (tier === "kept_out") return [];
+      const restoresSuggestions = currentFieldTier(view, field.name) === "kept_out";
+      const authority = restoresSuggestions ? (view.generated_candidate ?? candidate) : candidate;
+      const values: string[] = [];
+      const filters = authority.filterable_fields[field.name];
+      if (filters?.length) values.push(`filter: ${filters.join(", ")}`);
+      const functions = authority.aggregate_measure_functions?.[field.name];
+      if (functions?.length) values.push(`measure: ${functions.join(", ")}`);
+      const buckets = authority.time_bucket_fields[field.name];
+      if (buckets?.length) values.push(`time: ${buckets.join(", ")}`);
+      const fixedBands = (authority.numeric_bands ?? [])
+        .filter((band) => band.field === field.name)
+        .map((band) => band.name);
+      if (fixedBands.length) values.push(`fixed bands: ${fixedBands.join(", ")}`);
+      const autoBands = (authority.auto_bands ?? [])
+        .filter((policy) => policy.field === field.name)
+        .map((policy) => `${policy.methods.join("/")} ${policy.min_buckets}-${policy.max_buckets}`);
+      if (autoBands.length) values.push(`auto bands: ${autoBands.join(", ")}`);
+      return values.length ? [`  ${safeTerminalText(field.name)}  ${safeTerminalText(values.join(" | "))}`] : [];
+    });
+  return details.length
+    ? ["", theme.bold("EXACT OPERATION DETAILS"), ...details]
+    : [];
 }
 
 function boundaryFieldOperations(
@@ -1810,12 +1926,14 @@ function boundaryFieldOperations(
 function mapRelationshipLines(
   candidate: NonNullable<BoundaryResourceReviewView["candidate"]>,
   theme: TerminalTheme,
+  details: boolean,
 ): string[] {
-  const lines = [`|-- ${theme.relationship("Reviewed relationships")}`];
-  if (!candidate.relationships.length) return [...lines, "|   `-- (none)"];
+  const pathIds = mapPathIdEntries(candidate);
+  if (!candidate.relationships.length && (!details || !pathIds.length)) return [];
+  const lines = candidate.relationships.length
+    ? ["", theme.relationship("RELATIONSHIPS")]
+    : [];
   candidate.relationships.forEach((relationship, index) => {
-    const branch = index === candidate.relationships.length - 1 ? "`--" : "|--";
-    const continuation = index === candidate.relationships.length - 1 ? "   " : "|  ";
     const display = {
       source_resource: candidate.id,
       target_resource: relationship.target_resource,
@@ -1824,16 +1942,44 @@ function mapRelationshipLines(
     const depth = relationship.path_depth ?? 1;
     const joinColumns = formatRelationshipJoinColumns(display)
       ?? relationship.local_columns.join(", ");
-    lines.push(`|   ${branch} Relationship (${depth} ${plural(depth, "hop", "hops")})`);
-    lines.push(`|   ${continuation} ${safeTerminalText(formatRelationshipPath(display))}`);
-    if (joinColumns) {
-      lines.push(`|   ${continuation} via columns: ${safeTerminalText(joinColumns)}`);
-    }
     lines.push(
-      `|   ${continuation} ${theme.dim(`path ID: ${safeTerminalText(relationship.id)}`)}`,
+      `  R${index + 1}  ${depth} ${plural(depth, "hop", "hops")}  ` +
+      `${safeTerminalText(formatRelationshipPath(display))}` +
+      `${joinColumns ? `  via ${safeTerminalText(joinColumns)}` : ""}`,
     );
   });
+  if (details && pathIds.length) {
+    lines.push("", theme.dim("PATH IDS (SCRIPTED REVIEW)"));
+    lines.push(...pathIds.map((entry) => `  ${entry.labels.join("/")}  ${safeTerminalText(entry.id)}`));
+  }
   return lines;
+}
+
+function mapPathIdEntries(
+  candidate: NonNullable<BoundaryResourceReviewView["candidate"]>,
+): Array<{ id: string; labels: string[] }> {
+  const entries = new Map<string, string[]>();
+  const add = (id: string | undefined, label: string) => {
+    if (!id) return;
+    const labels = entries.get(id) ?? [];
+    labels.push(label);
+    entries.set(id, labels);
+  };
+  add(candidate.tenant_scope?.path_id, "T");
+  add(candidate.principal_scope?.path_id, "P");
+  candidate.relationships.forEach((relationship, index) => add(relationship.id, `R${index + 1}`));
+  return [...entries].map(([id, labels]) => ({ id, labels }));
+}
+
+function mapHasExactDetails(
+  candidate: NonNullable<BoundaryResourceReviewView["candidate"]>,
+): boolean {
+  return Object.values(candidate.filterable_fields).some((operators) => operators.length > 0)
+    || Object.values(candidate.time_bucket_fields).some((buckets) => buckets.length > 0)
+    || Object.values(candidate.aggregate_measure_functions ?? {}).some((functions) => functions.length > 0)
+    || (candidate.numeric_bands?.length ?? 0) > 0
+    || (candidate.auto_bands?.length ?? 0) > 0
+    || mapPathIdEntries(candidate).length > 0;
 }
 
 function boundaryOverviewSummary(resources: BoundaryResourceReviewSummary[]): string {
@@ -2393,6 +2539,7 @@ function boundaryOverviewMapLines(
   resources: BoundaryResourceReviewSummary[],
   theme: TerminalTheme,
   commandName = "synapsor-runner",
+  details = false,
 ): string[] {
   if (!resources.length) return [theme.warning("(no inspected tables or views)")];
   return resources.flatMap((resource) => {
@@ -2416,7 +2563,7 @@ function boundaryOverviewMapLines(
         : []),
     ];
     if (resource.status !== "draft_read") {
-      lines.push(`  \`-- ${theme.danger(safeTerminalText(resource.blockers[0] ?? "review blocked"))}`);
+      lines.push(`  ${theme.danger(`blocked: ${safeTerminalText(resource.blockers[0] ?? "review blocked")}`)}`);
       if (resource.scope_resolution_guidance) {
         lines.push(
           ...resource.scope_resolution_guidance.why.map((line) =>
@@ -2425,7 +2572,12 @@ function boundaryOverviewMapLines(
             `      next: ${safeTerminalText(line)}`),
         );
       }
-      lines.push(...availableDerivedTenantScopeSummaryLines(resource, theme, commandName));
+      lines.push(...availableDerivedTenantScopeSummaryLines(
+        resource,
+        theme,
+        commandName,
+        details,
+      ));
       return lines;
     }
     const scopeEntries = selectedDerivedScopeEntries(resource);
@@ -2434,43 +2586,45 @@ function boundaryOverviewMapLines(
       relationship.relationship_id,
       relationship,
     ]));
+    const pathIds: Array<{ label: string; id: string }> = [];
+    let entryIndex = 0;
     for (const entry of scopeEntries) {
+      entryIndex += 1;
       const relationship = relationshipByPath.get(entry.scope.path_id);
       const depth = derivedScopeDepth(entry.scope);
       const state = relationship ? relationshipStateLabel(relationship, theme) : undefined;
+      const label = `S${entryIndex}`;
       lines.push(
-        `  |-- reviewed ${entry.roles.join(" + ")} ` +
+        `  ${label}  ${depth} ${plural(depth, "hop", "hops")}  reviewed ${entry.roles.join(" + ")} ` +
         `${relationship ? "+ analysis relationship " : ""}` +
-        `(${depth} ${plural(depth, "hop", "hops")})${state ? ` [${state}]` : ""}`,
+        `${state ? `[${state}]` : ""}`,
       );
       lines.push(`      ${safeTerminalText(formatDerivedScopePath(entry.scope))}`);
       const joinColumns = formatDerivedScopeJoinColumns(entry.scope);
       if (joinColumns) lines.push(`      via columns: ${safeTerminalText(joinColumns)}`);
-      lines.push(`      ${theme.dim(`path ID: ${safeTerminalText(entry.scope.path_id)}`)}`);
+      pathIds.push({ label, id: entry.scope.path_id });
     }
     const remainingRelationships = resource.relationships.filter(
       (relationship) => !scopePathIds.has(relationship.relationship_id),
     );
-    if (!scopeEntries.length && !remainingRelationships.length) {
-      lines.push(`  \`-- ${theme.dim("no reviewed analysis relationship")}`);
-      return lines;
-    }
-    if (scopeEntries.length && !resource.relationships.length) {
-      lines.push(`  \`-- ${theme.dim("no separate reviewed analysis relationship")}`);
-    }
     remainingRelationships.forEach((relationship, index) => {
-      const branch = index === remainingRelationships.length - 1 ? "`--" : "|--";
       const state = relationshipStateLabel(relationship, theme);
       const display = summaryRelationshipDisplay(resource.resource_id, relationship);
       const joinColumns = formatRelationshipJoinColumns(display);
+      const label = `R${index + 1}`;
       lines.push(
-        `  ${branch} relationship (${relationship.path_depth} ` +
-        `${plural(relationship.path_depth, "hop", "hops")}) [${state}]`,
+        `  ${label}  ${relationship.path_depth} ` +
+        `${plural(relationship.path_depth, "hop", "hops")}  analysis relationship [${state}]`,
       );
       lines.push(`      ${safeTerminalText(formatRelationshipPath(display))}`);
       if (joinColumns) lines.push(`      via columns: ${safeTerminalText(joinColumns)}`);
-      lines.push(`      ${theme.dim(`path ID: ${safeTerminalText(relationship.relationship_id)}`)}`);
+      pathIds.push({ label, id: relationship.relationship_id });
     });
+    if (details && pathIds.length) {
+      lines.push(`  ${theme.dim("PATH IDS (SCRIPTED REVIEW)")}`);
+      lines.push(...pathIds.map((entry) =>
+        `    ${entry.label}  ${safeTerminalText(entry.id)}`));
+    }
     return lines;
   });
 }
@@ -2479,12 +2633,13 @@ function availableDerivedTenantScopeSummaryLines(
   resource: BoundaryResourceReviewSummary,
   theme: TerminalTheme,
   commandName: string,
+  details = false,
 ): string[] {
   const paths = [...(resource.derived_tenant_scope?.candidates ?? [])].sort((left, right) =>
     derivedScopeDepth(left) - derivedScopeDepth(right) || left.path_id.localeCompare(right.path_id));
   if (!paths.length) return [];
   const reviewedMaximum = resource.reviewed_max_derived_scope_hops ?? 2;
-  const lines = paths.slice(0, 3).flatMap((scope) => {
+  const lines = paths.slice(0, 3).flatMap((scope, index) => {
     const depth = derivedScopeDepth(scope);
     const joinColumns = formatDerivedScopeJoinColumns(scope);
     return [
@@ -2493,7 +2648,9 @@ function availableDerivedTenantScopeSummaryLines(
       ...(joinColumns
         ? [`        via columns: ${safeTerminalText(joinColumns)}`]
         : []),
-      `        ${theme.dim(`path ID: ${safeTerminalText(scope.path_id)}`)}`,
+      ...(details
+        ? [`        ${theme.dim(`path ID A${index + 1}: ${safeTerminalText(scope.path_id)}`)}`]
+        : []),
       ...(depth > reviewedMaximum
         ? [theme.warning(
             `        needs max_derived_scope_hops ${depth} (currently ${reviewedMaximum})`,

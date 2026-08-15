@@ -42,6 +42,12 @@
 - Makes CLI and Workbench access summaries partition every inspected field by its
   effective reviewed policy, so a low-risk field retained as kept out by an owner
   decision is no longer omitted from the kept-out count.
+- Replaces prose-heavy table access maps with a responsive field-operation
+  matrix and gives boundary-wide maps one human-readable relationship-chain
+  format across `boundary review --map`, `/access`, active catalog exports, and
+  Workbench. Empty tiers disappear;
+  exact filter/time vocabularies and canonical path IDs remain available through
+  `--details`, the interactive `D` toggle, JSON, or expandable Workbench details.
 - Fails startup closed without explicit opt-in, read-only mode, secured shared
   HTTP, required OAuth scope, exact JWT issuer/audience/claims, shared HMAC
   material, shared accounting, and current exact-digest production authority.

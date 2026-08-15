@@ -461,6 +461,87 @@ try {
       await evaluate(page, "document.querySelector('#ask-submit-consent')?.textContent.includes('Submitting your first question confirms')"),
       "configured-model Quick Start did not bind egress disclosure to first-question submission",
     );
+    await waitForExpression(page, "document.querySelector('#view-explore .boundary-field-matrix') !== null");
+    await evaluate(page, `(() => {
+      const guide=document.querySelector('#ask-boundary-guide');
+      if(guide)guide.open=true;
+      const map=document.querySelector('#view-explore [data-boundary-catalog-map]');
+      if(map)map.open=true;
+      const detail=map?.querySelector('.boundary-catalog-boundary > details');
+      if(detail)detail.open=true;
+      map?.scrollIntoView({block:'start'});
+    })()`);
+    const desktopMap = await evaluate(page, `(() => {
+      const map=document.querySelector('#view-explore [data-boundary-catalog-map]');
+      const matrix=map?.querySelector('.boundary-field-matrix');
+      const wrapper=map?.querySelector('.boundary-field-matrix-wrap');
+      const nodes=map?.querySelector('.boundary-catalog-nodes');
+      const headers=[...(matrix?.querySelectorAll('thead th')||[])].map(node=>(node.textContent||'').trim());
+      return {
+        visible:Boolean(map?.offsetParent&&matrix?.offsetParent),
+        headers,
+        pageFits:document.documentElement.scrollWidth<=document.documentElement.clientWidth+1,
+        matrixContained:Boolean(wrapper&&wrapper.clientWidth<=map.clientWidth+1),
+        tableColumns:nodes?getComputedStyle(nodes).gridTemplateColumns:'missing',
+        exactDetailsCollapsed:[...map.querySelectorAll('.boundary-field-exact')]
+          .every(item=>item.open===false),
+        pathIdsCollapsed:[...map.querySelectorAll('.boundary-relationship-summary details')]
+          .every(item=>item.open===false),
+      };
+    })()`);
+    assert(
+      desktopMap.visible
+        && desktopMap.headers.join('|') === 'Field|RET|FLT|SRT|GRP|MEA|PRE|DST|TIM'
+        && desktopMap.pageFits
+        && desktopMap.matrixContained
+        && desktopMap.tableColumns.trim().split(/\s+/).length === 1
+        && desktopMap.exactDetailsCollapsed
+        && desktopMap.pathIdsCollapsed,
+      "reviewed data map was not a contained scan-first operation matrix",
+      desktopMap,
+    );
+    await evaluate(page, `(() => {
+      const maps=[...document.querySelectorAll('#view-explore [data-boundary-catalog-map]')];
+      const map=maps.find(node=>node.offsetParent);
+      map?.querySelector('.boundary-field-matrix-wrap')?.scrollIntoView({block:'center'});
+    })()`);
+    await screenshot(page, "workbench-reviewed-data-map-desktop.png");
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true,
+      screenWidth: 390,
+      screenHeight: 844,
+    });
+    await evaluate(page, `(() => {
+      const maps=[...document.querySelectorAll('#view-explore [data-boundary-catalog-map]')];
+      const map=maps.find(node=>node.offsetParent);
+      map?.querySelector('.boundary-field-matrix-wrap')?.scrollIntoView({block:'center'});
+    })()`);
+    const mobileMap = await evaluate(page, `(() => {
+      const wrapper=document.querySelector('#view-explore .boundary-field-matrix-wrap');
+      return {
+        pageFits:document.documentElement.scrollWidth<=document.documentElement.clientWidth+1,
+        matrixScrolls:Boolean(wrapper&&wrapper.scrollWidth>wrapper.clientWidth),
+        overflow:getComputedStyle(wrapper).overflowX,
+      };
+    })()`);
+    assert(
+      mobileMap.pageFits && mobileMap.matrixScrolls && /auto|scroll/.test(mobileMap.overflow),
+      "mobile reviewed data map escaped the viewport instead of scrolling inside its matrix",
+      mobileMap,
+    );
+    await screenshot(page, "workbench-reviewed-data-map-mobile.png");
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 1440,
+      height: 1100,
+      deviceScaleFactor: 1,
+      mobile: false,
+      screenWidth: 1440,
+      screenHeight: 1100,
+    });
+    await evaluate(page, "window.scrollTo(0,0)");
     assert(visualProviderRequests === 0, "Workbench contacted the provider before the first question");
     firstValueHumanSteps += 1;
     await typeIntoSelector(page, "#ask-question", "Which outcomes have the most check ins?");

@@ -877,6 +877,16 @@ describe("boundary operator-plane CLI", () => {
         boundarySchemaInspector: async () => inspection,
       })).rejects.toThrow(/--all is available only with --map/i);
 
+      await expect(main([
+        "boundary",
+        "review",
+        "--project-root", root,
+        "--map",
+        "--details",
+      ], {
+        boundarySchemaInspector: async () => inspection,
+      })).rejects.toThrow(/--details requires --map --all/i);
+
       stdout = "";
       await expect(main([
         "boundary",
@@ -889,10 +899,27 @@ describe("boundary operator-plane CLI", () => {
         boundarySchemaInspector: async () => inspection,
       })).resolves.toBe(0);
       expect(stdout).toContain("TABLE ACCESS MAP - public.service_visits");
-      expect(stdout).toContain("Model + Runner fields");
-      expect(stdout).toContain("status: return, filter(eq/neq/in), sort");
-      expect(stdout).toContain("Trusted tenant scope: tenant_id (direct; bound outside model arguments)");
+      expect(stdout).toContain("FIELD AUTHORITY");
+      expect(stdout).toContain("RET FLT SRT GRP MEA PRE DST TIM");
+      expect(stdout).toMatch(/status\s+text\s+Y\s+Y\s+Y/);
+      expect(stdout).toContain("tenant scope      tenant_id (direct; trusted runtime value)");
+      expect(stdout).not.toContain("filter: eq, neq, in");
       expect(stdout).not.toContain("\u001b[");
+
+      stdout = "";
+      await expect(main([
+        "boundary",
+        "review",
+        "resource",
+        "public.service_visits",
+        "--project-root", root,
+        "--map",
+        "--details",
+      ], {
+        boundarySchemaInspector: async () => inspection,
+      })).resolves.toBe(0);
+      expect(stdout).toContain("EXACT OPERATION DETAILS");
+      expect(stdout).toContain("status  filter: eq, neq, in");
       await expect(main([
         "boundary",
         "review",

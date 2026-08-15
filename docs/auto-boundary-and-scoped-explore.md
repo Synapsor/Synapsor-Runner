@@ -445,6 +445,14 @@ catalog only when needed:
 synapsor-runner boundary review --map --all
 ```
 
+The exhaustive map remains human-first: it shows compact table counts and
+readable relationship chains, and omits canonical constraint/path IDs from the
+scan view. Add `--details` when a scripted review needs those exact IDs:
+
+```bash
+synapsor-runner boundary review --map --all --details
+```
+
 The first interactive view contains only the saved boundaries that exist. `A`
 creates a named disabled copy of the selected draft, Enter opens a boundary,
 and `X` deletes a non-active draft after confirmation. Only then does Runner
@@ -592,13 +600,21 @@ Press `V`, `W`, or `K` to choose one of those access levels directly. The
 footer uses conventional terminal controls: Up/Down navigates, `Enter`
 continues to a plain-language table sign-off, `B` or `Esc` returns without
 saving, `M` shows the table's access map, and `Q` quits without saving. The map
-includes current field tiers, allowed operations, trusted-scope column names,
-candidate many-to-one paths, fan-out limits, and the cohort guard. The same safe
-map is printable without interaction:
+uses one aligned ASCII matrix so operation differences are visible by column:
+`RET` return, `FLT` filter, `SRT` sort, `GRP` group/band, `MEA` numeric measure,
+`PRE` missing-data measure, `DST` distinct count, and `TIM` time bucket. `Y`
+means reviewed and `-` means unavailable. Empty access tiers are not printed.
+Relationships lead with the readable table chain and joining columns. Press
+`D` to reveal exact filter/time vocabularies and canonical path IDs only when
+needed. The same safe map is printable without interaction:
 
 ```bash
 synapsor-runner boundary review resource public.orders --map
 ```
+
+Use `--map --details` for that exact detail layer, or `--json` for the complete
+machine-readable review record. The matrix has an ASCII-only compact layout for
+narrow terminals and does not rely on color to communicate authority.
 
 Neither map contains trusted tenant/principal values, source rows, SQL,
 credentials, or activation authority. With unchanged field access, the picker
