@@ -163,13 +163,18 @@ describe("Auto Boundary Workbench renderer", () => {
     };
     const totals = {
       boundaries: 1,
-      kept_confirmations: 7,
+      preserved_authority: {
+        resources: 6,
+        reviewed_paths: 6,
+        field_policies: 24,
+      },
+      kept_confirmations: 0,
       safely_carried_confirmations: 0,
       invalidated_decisions: 1,
       newly_proven_value_allowlists: 1,
       newly_available_resources: 0,
       newly_available_fields: 1,
-      newly_available_relationships: 0,
+      newly_available_relationships: 1,
       removed_resources: 0,
       removed_fields: 0,
       removed_relationships: 0,
@@ -187,7 +192,12 @@ describe("Auto Boundary Workbench renderer", () => {
       totals,
       boundaries: [{
         boundary_name: "reviewed_staging",
-        kept_confirmations: 7,
+        kept_confirmations: 0,
+        preserved_authority: {
+          resources: 6,
+          reviewed_paths: 6,
+          field_policies: 24,
+        },
         invalidated_decisions: [{ id: "resource.public.orders.field_visibility", reason: "reviewed_input_changed" }],
         changed_field_types: [],
         removed_fields: [],
@@ -195,7 +205,29 @@ describe("Auto Boundary Workbench renderer", () => {
         removed_resources: [],
         newly_available_resources: [],
         newly_available_fields: [{ resource_id: "public.orders", field: "channel" }],
-        newly_available_relationships: [],
+        newly_available_relationships: [{
+          resource_id: "librarydb.note_flags",
+          relationship_id: "note_flags_note_fk__event_notes_event_fk__loan_events_loan_fk",
+          target_resource: "librarydb.loans",
+          path_depth: 3,
+          path_links: [
+            {
+              source_resource: "librarydb.note_flags",
+              target_resource: "librarydb.event_notes",
+              source_columns: ["event_note_id"],
+            },
+            {
+              source_resource: "librarydb.event_notes",
+              target_resource: "librarydb.loan_events",
+              source_columns: ["loan_event_id"],
+            },
+            {
+              source_resource: "librarydb.loan_events",
+              target_resource: "librarydb.loans",
+              source_columns: ["loan_id"],
+            },
+          ],
+        }],
         newly_proven_value_allowlists: [{
           resource_id: "public.orders",
           field: "status",
@@ -209,6 +241,21 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(changed).toContain("resource.public.orders.field_visibility: reviewed input changed");
     expect(changed).toContain("public.orders.status: an enforced schema vocabulary now narrows existing filter/group authority to 4 reviewed values; confirm field permissions, then activate");
     expect(changed).toContain("Newly proven value allowlists</th><td>1");
+    expect(changed).toContain(
+      "Reviewed authority preserved</th><td>6 tables, 6 reviewed paths, 24 field policies",
+    );
+    expect(changed).not.toContain("Decisions kept");
+    expect(changed).toContain(
+      "librarydb.note_flags: new relationship is available to review (3 hops)",
+    );
+    expect(changed).toContain("note_flags -> event_notes -> loan_events -> loans");
+    expect(changed).toContain("via columns: event_note_id -> loan_event_id -> loan_id");
+    expect(changed).toContain(
+      "path ID: note_flags_note_fk__event_notes_event_fk__loan_events_loan_fk",
+    );
+    expect(changed).not.toContain(
+      "librarydb.note_flags.note_flags_note_fk__event_notes_event_fk__loan_events_loan_fk",
+    );
     expect(changed).toContain("Database capabilities</th><td>Changed");
     expect(changed).toContain("release line changed from mysql 8.x to mysql 5.7");
 

@@ -218,6 +218,10 @@ describe("boundary rescan reconciliation", () => {
         revision: 1,
         now: "2026-08-08T00:00:00.000Z",
       });
+      // Older activated revisions can carry exact reviewed authority without
+      // storing the newer per-decision confirmation records.
+      progress.confirmations = [];
+      progress.confirmed_decisions = [];
       await saveBoundaryReviewProgress(root, progress);
       await synchronizeBoundaryLibrary({
         projectRoot: root,
@@ -263,11 +267,87 @@ describe("boundary rescan reconciliation", () => {
       expect(firstPreview.report).toMatchObject({
         changed: true,
         totals: {
+          preserved_authority: {
+            resources: 3,
+            reviewed_paths: 1,
+            field_policies: 8,
+          },
+          kept_confirmations: 0,
           invalidated_decisions: 0,
           newly_available_fields: 1,
           newly_available_relationships: 1,
         },
       });
+      expect(firstPreview.report.boundaries[0]).toMatchObject({
+        kept_confirmations: 0,
+        preserved_authority: {
+          resources: 3,
+          reviewed_paths: 1,
+          field_policies: 8,
+        },
+      });
+      expect(firstPreview.report.boundaries[0]!.newly_available_relationships[0]).toMatchObject({
+        resource_id: "public.order_items",
+        relationship_id: "order_items_product_id_fkey",
+        target_resource: "public.product_catalog",
+        path_depth: 1,
+        path_links: [{
+          source_resource: "public.order_items",
+          target_resource: "public.product_catalog",
+          source_columns: ["product_id"],
+        }],
+      });
+      const formatted = formatBoundaryRescanReport(firstPreview.report);
+      expect(formatted).toContain(
+        "Reviewed authority preserved: 3 tables, 1 reviewed path, 8 field policies",
+      );
+      expect(formatted).toContain(
+        "Boundary reviewed_staging: preserved 3 tables, 1 reviewed path, 8 field policies; 0 prior decisions invalidated.",
+      );
+      expect(formatted).not.toContain("Decisions kept: 0");
+      expect(formatted).toContain("public.order_items: new relationship is available to review (1 hop)");
+      expect(formatted).toContain("order_items -> product_catalog");
+      expect(formatted).toContain("via columns: product_id");
+      expect(formatted).toContain("path ID: order_items_product_id_fkey");
+
+      const threeHopReport = structuredClone(firstPreview.report);
+      threeHopReport.boundaries[0]!.newly_available_relationships = [{
+        resource_id: "librarydb.note_flags",
+        relationship_id: "note_flags_note_fk__event_notes_event_fk__loan_events_loan_fk",
+        target_resource: "librarydb.loans",
+        path_depth: 3,
+        path_links: [
+          {
+            source_resource: "librarydb.note_flags",
+            target_resource: "librarydb.event_notes",
+            source_columns: ["event_note_id"],
+          },
+          {
+            source_resource: "librarydb.event_notes",
+            target_resource: "librarydb.loan_events",
+            source_columns: ["loan_event_id"],
+          },
+          {
+            source_resource: "librarydb.loan_events",
+            target_resource: "librarydb.loans",
+            source_columns: ["loan_id"],
+          },
+        ],
+      }];
+      const threeHopOutput = formatBoundaryRescanReport(threeHopReport);
+      expect(threeHopOutput).toContain(
+        "librarydb.note_flags: new relationship is available to review (3 hops)",
+      );
+      expect(threeHopOutput).toContain("note_flags -> event_notes -> loan_events -> loans");
+      expect(threeHopOutput).toContain(
+        "via columns: event_note_id -> loan_event_id -> loan_id",
+      );
+      expect(threeHopOutput).toContain(
+        "path ID: note_flags_note_fk__event_notes_event_fk__loan_events_loan_fk",
+      );
+      expect(threeHopOutput).not.toContain(
+        "librarydb.note_flags.note_flags_note_fk__event_notes_event_fk__loan_events_loan_fk",
+      );
       expect(firstPreview.selectedProgress.candidate.pack.resources.map((resource) => resource.id).sort())
         .toEqual(["public.order_items", "public.orders", "public.product_catalog"]);
       const reconciledItems = firstPreview.selectedProgress.candidate.pack.resources.find(

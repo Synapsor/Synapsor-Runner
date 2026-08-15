@@ -1396,13 +1396,13 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		          ...(selectedRescanEntry.changed_field_types||[]).map(item=>item.resource_id+"."+item.field+": reviewed column type changed"),
 		          ...(selectedRescanEntry.removed_fields||[]).map(item=>item.resource_id+"."+item.field+": reviewed column was removed"),
 		          ...(selectedRescanEntry.newly_available_fields||[]).map(item=>item.resource_id+"."+item.field+": new column is kept out until reviewed"),
-		          ...(selectedRescanEntry.newly_available_relationships||[]).map(item=>item.resource_id+"."+item.relationship_id+": new relationship is available to review"),
+			          ...(selectedRescanEntry.newly_available_relationships||[]).map(item=>rescanRelationshipDetail(item,"new")),
 		          ...(selectedRescanEntry.newly_proven_value_allowlists||[]).map(item=>item.resource_id+"."+item.field+": an enforced schema vocabulary now narrows existing filter/group authority to "+item.value_count+" reviewed values; confirm field permissions, then activate"),
 		          ...(selectedRescanEntry.pruned_review_inputs||[])
 		        ]
 		        :[];
 		      const rescanExplanation=selectedRescanEntry
-		        ?'<p>Rescan kept '+esc(selectedRescanEntry.kept_confirmations)+' prior decisions; '+esc((selectedRescanEntry.invalidated_decisions||[]).length)+' '+((selectedRescanEntry.invalidated_decisions||[]).length===1?'was':'were')+' invalidated. Review and activate this new exact revision separately.</p>'+(rescanDetails.length?'<ul>'+rescanDetails.slice(0,8).map(detail=>'<li>'+esc(detail)+'</li>').join("")+(rescanDetails.length>8?'<li>+'+esc(rescanDetails.length-8)+' more changes are available in this review.</li>':'')+'</ul>':'')
+			        ?'<p>Rescan preserved '+esc(rescanPreservedAuthorityText(selectedRescanEntry))+'; '+esc((selectedRescanEntry.invalidated_decisions||[]).length)+' prior '+((selectedRescanEntry.invalidated_decisions||[]).length===1?'decision was':'decisions were')+' invalidated. Review and activate this new exact revision separately.</p>'+(rescanDetails.length?'<ul>'+rescanDetails.slice(0,8).map(detail=>'<li>'+rescanDetailMarkup(detail)+'</li>').join("")+(rescanDetails.length>8?'<li>+'+esc(rescanDetails.length-8)+' more changes are available in this review.</li>':'')+'</ul>':'')
 		        :'';
 		      const pendingBoundaryChange=Boolean(selectedEntry&&(selectedEntry.policy_review_required||!selectedEntry.active||!selectedEntry.matches_active_digest));
 			      const pendingBoundaryBanner=pendingBoundaryChange
@@ -3453,6 +3453,63 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       return Array.isArray(value)?value:[];
     }
 
+    function rescanPlural(count,singular,plural){
+      return Number(count)===1?singular:plural;
+    }
+
+    function rescanPreservedAuthority(value){
+      const direct=value&&value.preserved_authority;
+      if(direct&&typeof direct==="object"){
+        return {
+          resources:Number(direct.resources)||0,
+          reviewed_paths:Number(direct.reviewed_paths)||0,
+          field_policies:Number(direct.field_policies)||0
+        };
+      }
+      return {
+        resources:rescanList(value&&value.retained_resources).length,
+        reviewed_paths:0,
+        field_policies:0
+      };
+    }
+
+    function rescanPreservedAuthorityText(value){
+      const preserved=rescanPreservedAuthority(value);
+      return preserved.resources+" "+rescanPlural(preserved.resources,"table","tables")+", "+
+        preserved.reviewed_paths+" reviewed "+rescanPlural(preserved.reviewed_paths,"path","paths")+", "+
+        preserved.field_policies+" field "+rescanPlural(preserved.field_policies,"policy","policies");
+    }
+
+    function rescanRelationshipDetail(relationship,state){
+      const action=state==="removed"?"reviewed relationship was removed":"new relationship is available to review";
+      const links=rescanList(relationship&&relationship.path_links);
+      if(!links.length)return relationship.resource_id+"."+relationship.relationship_id+": "+action;
+      const resources=[relationship.resource_id];
+      for(const link of links){
+        if(resources[resources.length-1]!==link.source_resource)resources.push(link.source_resource);
+        if(resources[resources.length-1]!==link.target_resource)resources.push(link.target_resource);
+      }
+      if(resources[resources.length-1]!==relationship.target_resource)resources.push(relationship.target_resource);
+      const namespaces=resources.map(resource=>{
+        const separator=String(resource).lastIndexOf(".");
+        return separator>0?String(resource).slice(0,separator):null;
+      });
+      const namespace=namespaces[0]&&namespaces.every(value=>value===namespaces[0])?namespaces[0]:null;
+      const path=resources.map(resource=>namespace?String(resource).slice(namespace.length+1):String(resource)).join(" -> ");
+      const columns=links.map(link=>rescanList(link.source_columns).join(", "));
+      const depth=Number(relationship.path_depth)||links.length;
+      return [
+        relationship.resource_id+": "+action+" ("+depth+" "+rescanPlural(depth,"hop","hops")+")",
+        "  "+path,
+        ...(columns.every(Boolean)?["  via columns: "+columns.join(" -> ")]:[]),
+        "  path ID: "+relationship.relationship_id
+      ].join("\\n");
+    }
+
+    function rescanDetailMarkup(detail){
+      return esc(detail).replace(/\\n/g,"<br>");
+    }
+
     function rescanBoundaryDetails(boundary){
       const details=[];
       for(const decision of rescanList(boundary.invalidated_decisions)){
@@ -3460,13 +3517,13 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       }
       for(const field of rescanList(boundary.changed_field_types))details.push(field.resource_id+"."+field.field+": reviewed column type changed");
       for(const field of rescanList(boundary.removed_fields))details.push(field.resource_id+"."+field.field+": reviewed column removed");
-      for(const relationship of rescanList(boundary.removed_relationships))details.push(relationship.resource_id+"."+relationship.relationship_id+": reviewed relationship removed");
+      for(const relationship of rescanList(boundary.removed_relationships))details.push(rescanRelationshipDetail(relationship,"removed"));
       for(const resource of rescanList(boundary.removed_resources))details.push(resource+": reviewed table removed");
       for(const resource of rescanList(boundary.newly_available_resources))details.push(resource+": new table available to review");
       for(const item of rescanList(boundary.newly_proven_value_allowlists))details.push(item.resource_id+"."+item.field+": an enforced schema vocabulary now narrows existing filter/group authority to "+item.value_count+" reviewed values; confirm field permissions, then activate");
       for(const detail of rescanList(boundary.pruned_review_inputs))details.push(detail);
       for(const field of rescanList(boundary.newly_available_fields))details.push(field.resource_id+"."+field.field+": new column kept out until reviewed");
-      for(const relationship of rescanList(boundary.newly_available_relationships))details.push(relationship.resource_id+"."+relationship.relationship_id+": new relationship available to review");
+      for(const relationship of rescanList(boundary.newly_available_relationships))details.push(rescanRelationshipDetail(relationship,"new"));
       return details;
     }
 
@@ -3486,7 +3543,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         ["Database role",diff&&diff.role_posture_changed?"Changed":"Unchanged"],
         ["Trusted context",diff&&diff.trusted_context_changed?"Changed":"Unchanged"],
         ["Boundaries checked",totals.boundaries??0],
-        ["Decisions kept",totals.kept_confirmations??0],
+        ["Reviewed authority preserved",rescanPreservedAuthorityText(totals)],
         ["Prior decisions invalidated",totals.invalidated_decisions??0],
         ["Newly proven value allowlists",totals.newly_proven_value_allowlists??0],
         ["Newly available",(totals.newly_available_resources??0)+" tables, "+(totals.newly_available_fields??0)+" columns, "+(totals.newly_available_relationships??0)+" relationships"],
@@ -3503,13 +3560,13 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         :"";
       const boundaryRows=rescanList(diff&&diff.boundaries).map(boundary=>{
         const details=rescanBoundaryDetails(boundary);
-        const shown=details.slice(0,8).map(detail=>'<li>'+esc(detail)+'</li>').join("");
+        const shown=details.slice(0,8).map(detail=>'<li>'+rescanDetailMarkup(detail)+'</li>').join("");
         const more=details.length>8?'<li>+'+esc(details.length-8)+' more changes are available in the boundary review.</li>':"";
         const detailMarkup=details.length?'<ul>'+shown+more+'</ul>':'No reviewed inputs changed.';
-        return '<tr><td data-label="Boundary"><code>'+esc(boundary.boundary_name)+'</code></td><td data-label="Kept">'+esc(boundary.kept_confirmations??0)+'</td><td data-label="Invalidated">'+esc(rescanList(boundary.invalidated_decisions).length)+'</td><td data-label="Details">'+detailMarkup+'</td></tr>';
+        return '<tr><td data-label="Boundary"><code>'+esc(boundary.boundary_name)+'</code></td><td data-label="Preserved">'+esc(rescanPreservedAuthorityText(boundary))+'</td><td data-label="Invalidated">'+esc(rescanList(boundary.invalidated_decisions).length)+'</td><td data-label="Details">'+detailMarkup+'</td></tr>';
       }).join("");
       const boundariesMarkup=boundaryRows
-        ?'<h4>Boundary reconciliation</h4><div class="result-table"><table><thead><tr><th>Boundary</th><th>Kept</th><th>Invalidated</th><th>Details</th></tr></thead><tbody>'+boundaryRows+'</tbody></table></div>'
+        ?'<h4>Boundary reconciliation</h4><div class="result-table"><table><thead><tr><th>Boundary</th><th>Preserved authority</th><th>Invalidated</th><th>Details</th></tr></thead><tbody>'+boundaryRows+'</tbody></table></div>'
         :"";
       const action=changed
         ?'<button id="apply-rescan" type="button">Apply disabled reconciliation</button>'

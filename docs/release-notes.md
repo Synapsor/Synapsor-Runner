@@ -49,6 +49,11 @@ for the Synapsor Cloud CLI.
   than widening it. Bounded enums and structured scalar foreign keys are no
   longer described as free text solely because a name contains `note`; the
   review UI marks genuinely unresolved fields as **Needs review**.
+- Rescan output now distinguishes preserved reviewed authority from internal
+  confirmation-record storage. It reports retained tables, reviewed paths, and
+  field policies, and presents changed multi-hop relationships as readable table
+  and join-column chains in the CLI and Workbench before showing the copyable path
+  ID.
 - Production Explore is off by default and fails closed without read-only mode,
   exact production authority, verified issuer/audience/claims and OAuth scope,
   direct TLS or a trusted TLS proxy, shared HMAC material, and initialized

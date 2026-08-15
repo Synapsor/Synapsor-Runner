@@ -49,6 +49,10 @@ import {
   configuredTrustedContextFromBoundary,
   resolveConfiguredTrustedContextAuthority,
 } from "./configured-trusted-context.js";
+import {
+  formatRelationshipJoinColumns,
+  formatRelationshipPath,
+} from "./derived-scope-display.js";
 
 export { resolveConfiguredTrustedContextAuthority } from "./configured-trusted-context.js";
 
@@ -66,6 +70,18 @@ export type BoundaryRescanRelationshipChange = {
   resource_id: string;
   relationship_id: string;
   target_resource: string;
+  path_depth?: number;
+  path_links?: Array<{
+    source_resource: string;
+    target_resource: string;
+    source_columns: string[];
+  }>;
+};
+
+export type BoundaryRescanPreservedAuthority = {
+  resources: number;
+  reviewed_paths: number;
+  field_policies: number;
 };
 
 export type BoundaryRescanValueAllowlistChange = {
@@ -80,7 +96,10 @@ export type BoundaryRescanEntry = {
   deployment_profile: ExplorationBoundaryDraft["deployment_profile"];
   previous_candidate_digest: `sha256:${string}`;
   candidate_digest: `sha256:${string}`;
+  /** Exact confirmation records retained. Legacy active revisions may have none. */
   kept_confirmations: number;
+  /** Concrete reviewed policy carried forward, independent of confirmation storage format. */
+  preserved_authority?: BoundaryRescanPreservedAuthority;
   safely_carried_confirmations: string[];
   invalidated_decisions: Array<{
     id: string;
@@ -124,6 +143,7 @@ export type BoundaryRescanReport = {
   boundaries: BoundaryRescanEntry[];
   totals: {
     boundaries: number;
+    preserved_authority?: BoundaryRescanPreservedAuthority;
     kept_confirmations: number;
     safely_carried_confirmations: number;
     invalidated_decisions: number;
@@ -473,10 +493,11 @@ export function formatBoundaryRescanReport(report: BoundaryRescanReport): string
     }
     return "Rescan complete: the reviewed schema, database-server capabilities, database-role posture, and trusted-context authority are unchanged. No boundary revision was created.";
   }
+  const preserved = preservedAuthorityForReport(report);
   const lines = [
     "RESCAN RECONCILIATION",
     `Boundaries checked: ${report.totals.boundaries}`,
-    `Decisions kept: ${report.totals.kept_confirmations}`,
+    `Reviewed authority preserved: ${formatPreservedAuthority(preserved)}`,
     `Prior decisions invalidated: ${report.totals.invalidated_decisions}`,
     `Newly available: ${report.totals.newly_available_resources} tables, `
       + `${report.totals.newly_available_fields} columns, `
@@ -508,7 +529,7 @@ export function formatBoundaryRescanReport(report: BoundaryRescanReport): string
       ...boundary.removed_fields.map((field) =>
         `${field.resource_id}.${field.field}: reviewed column was removed`),
       ...boundary.removed_relationships.map((relationship) =>
-        `${relationship.resource_id}.${relationship.relationship_id}: reviewed relationship was removed`),
+        formatBoundaryRescanRelationshipChange(relationship, "removed")),
       ...boundary.removed_resources.map((resource) => `${resource}: reviewed table was removed`),
       ...boundary.newly_available_resources.map((resource) =>
         `${resource}: new table is available to review`),
@@ -518,11 +539,12 @@ export function formatBoundaryRescanReport(report: BoundaryRescanReport): string
       ...boundary.newly_available_fields.map((field) =>
         `${field.resource_id}.${field.field}: new column is kept out until reviewed`),
       ...boundary.newly_available_relationships.map((relationship) =>
-        `${relationship.resource_id}.${relationship.relationship_id}: new relationship is available to review`),
+        formatBoundaryRescanRelationshipChange(relationship, "new")),
     ];
+    const boundaryPreserved = preservedAuthorityForEntry(boundary);
     lines.push(
       "",
-      `Boundary ${boundary.boundary_name}: kept ${boundary.kept_confirmations}; `
+      `Boundary ${boundary.boundary_name}: preserved ${formatPreservedAuthority(boundaryPreserved)}; `
         + `${boundary.invalidated_decisions.length} prior decisions invalidated.`,
       ...details.slice(0, 8).map((detail) => `  - ${detail}`),
       ...(details.length > 8 ? [`  - +${details.length - 8} more changes; open /access for the full review.`] : []),
@@ -543,6 +565,59 @@ export function formatBoundaryRescanReport(report: BoundaryRescanReport): string
         ]),
   );
   return safeTerminalText(lines.join("\n"));
+}
+
+export function preservedAuthorityForEntry(
+  entry: BoundaryRescanEntry,
+): BoundaryRescanPreservedAuthority {
+  return entry.preserved_authority ?? {
+    resources: entry.retained_resources.length,
+    reviewed_paths: 0,
+    field_policies: 0,
+  };
+}
+
+export function formatPreservedAuthority(
+  preserved: BoundaryRescanPreservedAuthority,
+): string {
+  return `${preserved.resources} ${plural(preserved.resources, "table", "tables")}, `
+    + `${preserved.reviewed_paths} reviewed ${plural(preserved.reviewed_paths, "path", "paths")}, `
+    + `${preserved.field_policies} field ${plural(preserved.field_policies, "policy", "policies")}`;
+}
+
+export function formatBoundaryRescanRelationshipChange(
+  relationship: BoundaryRescanRelationshipChange,
+  state: "new" | "removed",
+): string {
+  const action = state === "new"
+    ? "new relationship is available to review"
+    : "reviewed relationship was removed";
+  const links = relationship.path_links ?? [];
+  if (!links.length) {
+    return `${relationship.resource_id}.${relationship.relationship_id}: ${action}`;
+  }
+  const depth = relationship.path_depth ?? links.length;
+  const display = {
+    source_resource: relationship.resource_id,
+    target_resource: relationship.target_resource,
+    links,
+  };
+  const joinColumns = formatRelationshipJoinColumns(display);
+  return [
+    `${relationship.resource_id}: ${action} (${depth} ${plural(depth, "hop", "hops")})`,
+    `    ${formatRelationshipPath(display)}`,
+    ...(joinColumns ? [`    via columns: ${joinColumns}`] : []),
+    `    path ID: ${relationship.relationship_id}`,
+  ].join("\n");
+}
+
+function preservedAuthorityForReport(
+  report: BoundaryRescanReport,
+): BoundaryRescanPreservedAuthority {
+  return report.totals.preserved_authority ?? report.boundaries.reduce(
+    (total, entry) => addPreservedAuthority(total, preservedAuthorityForEntry(entry)),
+    emptyPreservedAuthority(),
+  );
 }
 
 function runnerConfigDecision(value: {
@@ -851,6 +926,91 @@ function fieldAccess(resource: BoundaryResource, field: string): "visible" | "wi
   return (resource.model_withheld_fields ?? []).includes(field) ? "withheld" : "visible";
 }
 
+function preservedAuthorityCounts(
+  beforeResources: Map<string, BoundaryResource>,
+  afterResources: Map<string, BoundaryResource>,
+): BoundaryRescanPreservedAuthority {
+  const preserved = emptyPreservedAuthority();
+  for (const [resourceId, before] of beforeResources) {
+    const after = afterResources.get(resourceId);
+    if (!after) continue;
+    preserved.resources += 1;
+
+    const beforePaths = reviewedPathSnapshots(before);
+    const afterPaths = reviewedPathSnapshots(after);
+    for (const [pathId, digest] of beforePaths) {
+      if (afterPaths.get(pathId) === digest) preserved.reviewed_paths += 1;
+    }
+
+    for (const field of Object.keys(before.field_types)) {
+      if (!Object.hasOwn(after.field_types, field)) continue;
+      if (canonicalJsonDigest(reviewedFieldPolicy(before, field))
+        === canonicalJsonDigest(reviewedFieldPolicy(after, field))) {
+        preserved.field_policies += 1;
+      }
+    }
+  }
+  return preserved;
+}
+
+function reviewedPathSnapshots(resource: BoundaryResource): Map<string, `sha256:${string}`> {
+  const roles = new Map<string, Array<{ role: string; authority: unknown }>>();
+  const add = (pathId: string, role: string, authority: unknown): void => {
+    const current = roles.get(pathId) ?? [];
+    current.push({ role, authority });
+    roles.set(pathId, current);
+  };
+  if (resource.tenant_scope) add(resource.tenant_scope.path_id, "tenant_scope", resource.tenant_scope);
+  if (resource.principal_scope) {
+    add(resource.principal_scope.path_id, "principal_scope", resource.principal_scope);
+  }
+  for (const relationship of resource.relationships) {
+    add(relationship.id, "analysis_relationship", relationship);
+  }
+  return new Map([...roles].map(([pathId, entries]) => [
+    pathId,
+    canonicalJsonDigest(entries.sort((left, right) => left.role.localeCompare(right.role))),
+  ]));
+}
+
+function reviewedFieldPolicy(resource: BoundaryResource, field: string): unknown {
+  return {
+    data_type: resource.field_types[field],
+    exposure: fieldAccess(resource, field),
+    filter_operators: resource.filterable_fields[field] ?? null,
+    sortable: resource.sortable_fields.includes(field),
+    groupable: resource.groupable_fields.includes(field),
+    aggregate_measure: resource.aggregate_measures.includes(field),
+    aggregate_functions: resource.aggregate_measure_functions?.[field] ?? null,
+    presence_measure: resource.presence_measure_fields?.includes(field) ?? false,
+    count_distinct: resource.count_distinct_fields.includes(field),
+    time_bucket: resource.time_bucket_fields[field] ?? null,
+    enum_values: resource.field_enums[field] ?? null,
+    metadata: resource.field_metadata?.[field] ?? null,
+    row_identity: resource.primary_key === field,
+    tenant_key: resource.tenant_key === field,
+    principal_key: resource.principal_key === field,
+  };
+}
+
+function relationshipChange(
+  resourceId: string,
+  relationship: BoundaryResource["relationships"][number],
+): BoundaryRescanRelationshipChange {
+  const links = relationship.proof?.links.map((link) => ({
+    source_resource: link.source_resource,
+    target_resource: link.target_resource,
+    source_columns: [...link.source_columns],
+  }));
+  return {
+    resource_id: resourceId,
+    relationship_id: relationship.id,
+    target_resource: relationship.target_resource,
+    path_depth: relationship.path_depth ?? links?.length ?? 1,
+    ...(links?.length ? { path_links: links } : {}),
+  };
+}
+
 function rescanEntry(input: {
   previous: BoundaryReviewProgress;
   progress: BoundaryReviewProgress;
@@ -895,20 +1055,12 @@ function rescanEntry(input: {
     const generatedRelationships = new Map(generated.relationships.map((relationship) => [relationship.id, relationship]));
     for (const [relationshipId, relationship] of generatedRelationships) {
       if (!beforeRelationships.has(relationshipId)) {
-        newlyAvailableRelationships.push({
-          resource_id: resourceId,
-          relationship_id: relationshipId,
-          target_resource: relationship.target_resource,
-        });
+        newlyAvailableRelationships.push(relationshipChange(resourceId, relationship));
       }
     }
     for (const [relationshipId, relationship] of beforeRelationships) {
       if (!generatedRelationships.has(relationshipId)) {
-        removedRelationships.push({
-          resource_id: resourceId,
-          relationship_id: relationshipId,
-          target_resource: relationship.target_resource,
-        });
+        removedRelationships.push(relationshipChange(resourceId, relationship));
       }
     }
   }
@@ -923,6 +1075,7 @@ function rescanEntry(input: {
     previous_candidate_digest: input.previous.candidate_digest,
     candidate_digest: input.progress.candidate_digest,
     kept_confirmations: input.progress.confirmations.length,
+    preserved_authority: preservedAuthorityCounts(beforeResources, afterResources),
     safely_carried_confirmations: [...input.safelyCarried].sort(),
     invalidated_decisions: invalidated,
     retained_resources: [...afterResources.keys()].filter((id) => beforeResources.has(id)).sort(),
@@ -988,6 +1141,10 @@ function rescanReport(input: {
     : [];
   const totals = {
     boundaries: input.entries.length,
+    preserved_authority: input.entries.reduce(
+      (total, entry) => addPreservedAuthority(total, preservedAuthorityForEntry(entry)),
+      emptyPreservedAuthority(),
+    ),
     kept_confirmations: sum(input.entries, (entry) => entry.kept_confirmations),
     safely_carried_confirmations: sum(input.entries, (entry) => entry.safely_carried_confirmations.length),
     invalidated_decisions: sum(input.entries, (entry) => entry.invalidated_decisions.length),
@@ -1174,6 +1331,25 @@ function invalidationKey(input: { id: string; previous_input_digest: string }): 
 
 function sum<T>(values: T[], select: (value: T) => number): number {
   return values.reduce((total, value) => total + select(value), 0);
+}
+
+function emptyPreservedAuthority(): BoundaryRescanPreservedAuthority {
+  return { resources: 0, reviewed_paths: 0, field_policies: 0 };
+}
+
+function addPreservedAuthority(
+  left: BoundaryRescanPreservedAuthority,
+  right: BoundaryRescanPreservedAuthority,
+): BoundaryRescanPreservedAuthority {
+  return {
+    resources: left.resources + right.resources,
+    reviewed_paths: left.reviewed_paths + right.reviewed_paths,
+    field_policies: left.field_policies + right.field_policies,
+  };
+}
+
+function plural(count: number, singular: string, pluralValue: string): string {
+  return count === 1 ? singular : pluralValue;
 }
 
 function sameStrings(left: string[], right: string[]): boolean {

@@ -30,6 +30,11 @@
   or structured scalar foreign key is not mislabeled as unconstrained free text
   merely because its identifier contains `note`, while genuine text, unknown,
   unstructured, and high-confidence sensitive fields remain fail-closed.
+- Makes rescan reconciliation reporting reflect preserved authority rather than
+  only stored confirmation records. Legacy revisions now report retained tables,
+  reviewed paths, and field policies accurately, while new and removed multi-hop
+  relationships use readable table and join-column chains before the exact path ID
+  in both the CLI and Workbench.
 - Fails startup closed without explicit opt-in, read-only mode, secured shared
   HTTP, required OAuth scope, exact JWT issuer/audience/claims, shared HMAC
   material, shared accounting, and current exact-digest production authority.

@@ -20,6 +20,7 @@ import type {
   AskTurnResult,
 } from "./model-ask.js";
 import type { PendingBoundaryReviewSummary } from "./ask-authority.js";
+import { formatPreservedAuthority } from "./boundary-rescan.js";
 import type {
   AskAccessGuidance,
   ReviewedAskAccessSummary,
@@ -831,9 +832,13 @@ export function renderAnalyticsShellBanner(input: {
               : "This new reviewed boundary is still disabled and grants no Ask access.",
           ...(change.reconciliation
             ? [
-                `Rescan kept ${change.reconciliation.kept_decisions} prior decisions; `
-                  + `${change.reconciliation.decisions_requiring_review} `
-                  + `${change.reconciliation.decisions_requiring_review === 1 ? "was" : "were"} invalidated.`,
+                change.reconciliation.preserved_authority
+                  ? `Rescan preserved ${formatPreservedAuthority(change.reconciliation.preserved_authority)}; `
+                    + `${change.reconciliation.decisions_requiring_review} prior `
+                    + `${change.reconciliation.decisions_requiring_review === 1 ? "decision was" : "decisions were"} invalidated.`
+                  : `Rescan retained ${change.reconciliation.kept_decisions} exact confirmation records; `
+                    + `${change.reconciliation.decisions_requiring_review} `
+                    + `${change.reconciliation.decisions_requiring_review === 1 ? "was" : "were"} invalidated.`,
                 ...change.reconciliation.details.slice(0, 8).map((detail) =>
                   `  - ${safeTerminalText(detail)}`),
                 ...(change.reconciliation.details.length > 8

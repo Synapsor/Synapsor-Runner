@@ -231,7 +231,12 @@ describe("Ask authority summaries", () => {
           deployment_profile: "development",
           previous_candidate_digest: explorationBoundaryCandidateDigest(activeCandidate),
           candidate_digest: pendingDigest,
-          kept_confirmations: 6,
+          kept_confirmations: 0,
+          preserved_authority: {
+            resources: 1,
+            reviewed_paths: 2,
+            field_policies: 5,
+          },
           safely_carried_confirmations: [],
           invalidated_decisions: [],
           retained_resources: ["public.orders"],
@@ -240,7 +245,24 @@ describe("Ask authority summaries", () => {
           newly_available_fields: [{ resource_id: "public.orders", field: "new_status" }],
           removed_fields: [],
           changed_field_types: [],
-          newly_available_relationships: [],
+          newly_available_relationships: [{
+            resource_id: "public.order_items",
+            relationship_id: "order_items_order_fkey__orders_customer_fkey",
+            target_resource: "public.customers",
+            path_depth: 2,
+            path_links: [
+              {
+                source_resource: "public.order_items",
+                target_resource: "public.orders",
+                source_columns: ["order_id"],
+              },
+              {
+                source_resource: "public.orders",
+                target_resource: "public.customers",
+                source_columns: ["customer_id"],
+              },
+            ],
+          }],
           removed_relationships: [],
           newly_proven_value_allowlists: [{
             resource_id: "public.orders",
@@ -255,10 +277,16 @@ describe("Ask authority summaries", () => {
     await expect(resolvePendingBoundaryReviewSummary(root)).resolves.toMatchObject({
       changes: [{
         reconciliation: {
-          kept_decisions: 6,
+          kept_decisions: 0,
+          preserved_authority: {
+            resources: 1,
+            reviewed_paths: 2,
+            field_policies: 5,
+          },
           decisions_requiring_review: 0,
           details: [
             "public.orders.new_status: new column is kept out until reviewed",
+            "public.order_items: new relationship is available to review (2 hops)\n    order_items -> orders -> customers\n    via columns: order_id -> customer_id\n    path ID: order_items_order_fkey__orders_customer_fkey",
             "public.orders.status: an enforced schema vocabulary now narrows existing filter/group authority to 4 reviewed values; confirm field permissions, then activate",
           ],
         },

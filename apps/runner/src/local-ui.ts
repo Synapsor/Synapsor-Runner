@@ -5035,10 +5035,22 @@ function sensitiveFieldOverrideEvent(
 function schemaDriftAttentionDetails(diff: JsonRecord): Record<string, string | number | boolean | null> {
   const count = (value: unknown): number => Array.isArray(value) ? value.length : 0;
   const totals = isRecord(diff.totals) ? diff.totals : {};
+  const preserved = isRecord(totals.preserved_authority) ? totals.preserved_authority : {};
+  const resourcesPreserved = typeof preserved.resources === "number" ? preserved.resources : 0;
+  const pathsPreserved = typeof preserved.reviewed_paths === "number" ? preserved.reviewed_paths : 0;
+  const fieldPoliciesPreserved = typeof preserved.field_policies === "number"
+    ? preserved.field_policies
+    : 0;
   return {
     reason_code: "generation_lock_schema_changed",
     boundaries_checked: typeof totals.boundaries === "number" ? totals.boundaries : 0,
-    decisions_kept: typeof totals.kept_confirmations === "number" ? totals.kept_confirmations : 0,
+    decisions_kept: resourcesPreserved + pathsPreserved + fieldPoliciesPreserved,
+    resources_preserved: resourcesPreserved,
+    reviewed_paths_preserved: pathsPreserved,
+    field_policies_preserved: fieldPoliciesPreserved,
+    confirmation_records_retained: typeof totals.kept_confirmations === "number"
+      ? totals.kept_confirmations
+      : 0,
     decisions_requiring_review: typeof totals.invalidated_decisions === "number"
       ? totals.invalidated_decisions
       : 0,

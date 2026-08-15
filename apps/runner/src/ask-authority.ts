@@ -13,8 +13,11 @@ import {
 } from "./auto-boundary.js";
 import { resolveBoundaryRevisionState } from "./boundary-revision-state.js";
 import {
+  formatBoundaryRescanRelationshipChange,
+  preservedAuthorityForEntry,
   readBoundaryRescanReport,
   type BoundaryRescanEntry,
+  type BoundaryRescanPreservedAuthority,
 } from "./boundary-rescan.js";
 
 type ActiveBoundaryAuthorityIdentity = {
@@ -36,6 +39,7 @@ export type PendingBoundaryReviewSummary = {
     cause: "database_posture_changed" | "reviewed_access_edited";
     reconciliation?: {
       kept_decisions: number;
+      preserved_authority?: BoundaryRescanPreservedAuthority;
       decisions_requiring_review: number;
       details: string[];
     };
@@ -172,12 +176,12 @@ function reconciliationSummary(entry: BoundaryRescanEntry): NonNullable<
     ...entry.removed_fields.map((field) =>
       `${field.resource_id}.${field.field}: reviewed column was removed`),
     ...entry.removed_relationships.map((relationship) =>
-      `${relationship.resource_id}.${relationship.relationship_id}: reviewed relationship was removed`),
+      formatBoundaryRescanRelationshipChange(relationship, "removed")),
     ...entry.removed_resources.map((resource) => `${resource}: reviewed table was removed`),
     ...entry.newly_available_fields.map((field) =>
       `${field.resource_id}.${field.field}: new column is kept out until reviewed`),
     ...entry.newly_available_relationships.map((relationship) =>
-      `${relationship.resource_id}.${relationship.relationship_id}: new relationship is available to review`),
+      formatBoundaryRescanRelationshipChange(relationship, "new")),
     ...entry.newly_available_resources.map((resource) =>
       `${resource}: new table is available to review`),
     ...(entry.newly_proven_value_allowlists ?? []).map((item) =>
@@ -186,6 +190,7 @@ function reconciliationSummary(entry: BoundaryRescanEntry): NonNullable<
   ];
   return {
     kept_decisions: entry.kept_confirmations,
+    preserved_authority: preservedAuthorityForEntry(entry),
     decisions_requiring_review: entry.invalidated_decisions.length,
     details,
   };
