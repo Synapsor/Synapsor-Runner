@@ -1,11 +1,21 @@
 import readline from "node:readline";
 import type { ReadStream, WriteStream } from "node:tty";
-import { padTerminalBlock } from "./terminal-layout.js";
+import {
+  padTerminalBlock,
+  padTerminalLine,
+  terminalContentWidth,
+  wrapStyledTerminalLine,
+} from "./terminal-layout.js";
 
-type PromptKey = {
+export type TerminalKeypress = {
   name?: string;
   sequence?: string;
+  ctrl?: boolean;
+  meta?: boolean;
+  shift?: boolean;
 };
+
+type PromptKey = TerminalKeypress;
 
 export async function readTerminalTextWithEscape(
   prompt: string,
@@ -41,6 +51,77 @@ export async function readTerminalTextWithEscape(
     input.once("error", onError);
     rl.question(padTerminalBlock(prompt), (value) => finish(value.trim()));
   });
+}
+
+/**
+ * Owns raw terminal input and an in-place rendered screen for one interaction.
+ * Returning from the operation removes every listener and restores the prior
+ * terminal mode before a caller opens any readline prompt.
+ */
+export async function withRawTerminalScreen<T>(
+  input: ReadStream,
+  output: WriteStream,
+  operation: (
+    nextKey: () => Promise<TerminalKeypress>,
+    render: (lines: string[]) => void,
+  ) => Promise<T>,
+): Promise<T> {
+  if (!input.isTTY || !output.isTTY || typeof input.setRawMode !== "function") {
+    throw new Error("Interactive terminal navigation requires a real terminal.");
+  }
+  const wasRaw = input.isRaw;
+  const wasPaused = input.isPaused();
+  let renderedLines = 0;
+  const queuedKeys: TerminalKeypress[] = [];
+  const keyWaiters: Array<(key: TerminalKeypress) => void> = [];
+  let terminalClosed = false;
+  const closedKey: TerminalKeypress = { name: "escape", sequence: "\u001b" };
+  const keyHandler = (_text: string, key: TerminalKeypress) => {
+    const waiter = keyWaiters.shift();
+    if (waiter) waiter(key);
+    else queuedKeys.push(key);
+  };
+  const closeHandler = () => {
+    terminalClosed = true;
+    for (const waiter of keyWaiters.splice(0)) waiter(closedKey);
+  };
+  readline.emitKeypressEvents(input);
+  input.on("keypress", keyHandler);
+  input.once("end", closeHandler);
+  input.once("close", closeHandler);
+  input.once("error", closeHandler);
+  input.setRawMode(true);
+  input.resume();
+  output.write("\u001b[?25l");
+  const render = (lines: string[]) => {
+    if (renderedLines) output.write(`\u001b[${renderedLines}F`);
+    const width = Math.max(36, Math.min(terminalContentWidth(output.columns), 116));
+    const normalized = lines.flatMap((line) =>
+      wrapStyledTerminalLine(line, width).map((wrapped) => padTerminalLine(wrapped)));
+    const targetLines = Math.max(renderedLines, normalized.length);
+    for (let index = 0; index < targetLines; index += 1) {
+      output.write(`\u001b[2K${normalized[index] ?? ""}\n`);
+    }
+    renderedLines = targetLines;
+  };
+  const nextKey = () => {
+    const queued = queuedKeys.shift();
+    if (queued) return Promise.resolve(queued);
+    if (terminalClosed) return Promise.resolve(closedKey);
+    return new Promise<TerminalKeypress>((resolve) => keyWaiters.push(resolve));
+  };
+  try {
+    return await operation(nextKey, render);
+  } finally {
+    input.off("keypress", keyHandler);
+    input.off("end", closeHandler);
+    input.off("close", closeHandler);
+    input.off("error", closeHandler);
+    if (renderedLines) output.write(`\u001b[${renderedLines}F\u001b[0J`);
+    output.write("\u001b[?25h");
+    input.setRawMode(wasRaw);
+    if (wasPaused) input.pause();
+  }
 }
 
 export async function readTerminalActivationConfirmation(

@@ -122,7 +122,10 @@
   expand authority facts, reconstructed SQL, or raw normalized metadata only on
   request. Workbench history pages the same shared records, and routine
   successful shared-ledger reads no longer emit a structured log line unless
-  operator diagnostics are enabled.
+  operator diagnostics are enabled. Terminal browsing now follows the same
+  Up/Down, Enter, Esc, and `/` interaction model as boundary review, keeps
+  record numbers stable across pages, explains zero-result search scope, and
+  scrolls expanded evidence sections in place.
 - Makes plaintext production audit identity filters fail closed when their
   configured HMAC key is unavailable, distinguishes legacy unattributable
   principal records from a verified empty match, and renders grouped,

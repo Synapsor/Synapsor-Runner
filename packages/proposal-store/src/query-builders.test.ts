@@ -90,8 +90,14 @@ describe("Explore audit query filters", () => {
         expect.objectContaining({ query_fingerprint: "sha256:query-1" }),
       ]);
       expect(store.listQueryAudit({ search: "%" })).toHaveLength(0);
+      expect(store.listQueryAudit({ search: "query-0" })).toEqual([
+        expect.objectContaining({ query_fingerprint: "sha256:query-0" }),
+      ]);
       expect(store.listEvidenceBundles({ search: "loan_status" })).toEqual([
         expect.objectContaining({ evidence_bundle_id: "ev_search_1" }),
+      ]);
+      expect(store.listEvidenceBundles({ search: "evidence-2" })).toEqual([
+        expect.objectContaining({ evidence_bundle_id: "ev_search_2" }),
       ]);
       expect(store.listEvidenceBundles({ search: "librarydb.members", limit: 1, offset: 2 })).toEqual([
         expect.objectContaining({ evidence_bundle_id: "ev_search_0" }),

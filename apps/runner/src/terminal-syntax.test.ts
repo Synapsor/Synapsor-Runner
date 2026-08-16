@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { wrapStyledTerminalLine } from "./terminal-layout.js";
 import {
   renderTerminalCommandFrame,
   renderTerminalFact,
@@ -11,6 +12,18 @@ import {
 } from "./terminal-syntax.js";
 
 describe("terminal syntax rendering", () => {
+  it("wraps styled picker lines without counting color codes or accepting terminal controls", () => {
+    const wrapped = wrapStyledTerminalLine(
+      "\u001b[32mReviewed query\u001b[0m with a deliberately long description\u001b[2J",
+      24,
+    );
+    expect(wrapped.length).toBeGreaterThan(1);
+    expect(wrapped.join("\n")).not.toContain("\u001b[2J");
+    expect(stripAnsi(wrapped.join("\n"))).toContain("Reviewed query");
+    expect(stripAnsi(wrapped.join("\n"))).toContain("?[2J");
+    expect(stripAnsi(wrapped.join("\n")).split("\n").every((line) => line.length <= 24)).toBe(true);
+  });
+
   it("frames copy-paste commands and distinguishes executables, flags, paths, and placeholders", () => {
     const plain = renderTerminalCommandFrame([
       "synapsor-runner query-audit show <audit_id> --details --config '/tmp/project/synapsor.runner.json'",

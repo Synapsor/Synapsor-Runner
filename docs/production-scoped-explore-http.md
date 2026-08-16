@@ -372,9 +372,15 @@ timestamp or a duration such as `24h`; `--limit` defaults to 20 and is capped at
 200. `--search` searches only stored, redacted audit metadata and normalized
 plan identifiers. `--json` is suitable for automation. `evidence browse` is a
 stateful terminal audit session with ten records per page by default,
-next/back/page controls, live filters, timestamp jumps, and metadata search.
-Selecting a record opens a compact summary; authority details, reconstructed
-query, and normalized JSON plan are expanded separately. The original model or
+Up/Down selection, Enter to open, Esc to return, continuous record numbers,
+next/back/page controls, live filters, timestamp jumps, and `/` to open metadata
+search. Search covers the redacted normalized-plan identifiers used to build the
+English description, evidence/audit IDs, resource/source IDs, capability, and
+query fingerprint. A zero-result view repeats the search term and those fields;
+`text` in older `/text` examples is treated as a placeholder rather than silently
+becoming part of the query. Selecting a record opens a compact summary;
+authority details, reconstructed query, and normalized JSON plan are expanded
+and scrolled separately. The original model or
 user wording is not persisted, so lists show a deterministic plain-English
 description reconstructed from the reviewed plan rather than pretending to
 quote the original request. `--follow --json` emits newline-delimited JSON for

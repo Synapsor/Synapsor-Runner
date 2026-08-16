@@ -66,7 +66,7 @@ export function buildEvidenceQuery(filters: EvidenceSearchFilters): SqlQuery {
   addJsonEqual(clauses, params, "boundary_digest", filters.boundary);
   addObjectFilter(clauses, params, "business_object", "source_table", "object_id", filters.objectType, filters.objectId);
   addMetadataSearch(clauses, params, filters.search, [
-    "evidence_bundle_id", "source_table", "source_id", "capability", "payload_json",
+    "evidence_bundle_id", "source_table", "source_id", "capability", "query_fingerprint", "payload_json",
   ]);
   addTimeRange(clauses, params, "created_at", filters.from, filters.to);
   return finishQuery("SELECT * FROM evidence_bundles", clauses, params, filters.limit, filters.offset);
@@ -89,7 +89,7 @@ export function buildQueryAuditQuery(filters: QueryAuditSearchFilters): SqlQuery
   addExploreOutcomeFilter(clauses, params, filters.outcome, "status");
   addJsonEqual(clauses, params, "boundary_digest", filters.boundary);
   addMetadataSearch(clauses, params, filters.search, [
-    "CAST(audit_id AS TEXT)", "table_name", "source_id", "capability", "evidence_bundle_id", "payload_json",
+    "CAST(audit_id AS TEXT)", "table_name", "source_id", "capability", "evidence_bundle_id", "query_fingerprint", "payload_json",
   ]);
   addTimeRange(clauses, params, "created_at", filters.from, filters.to);
   return finishQuery("SELECT * FROM query_audit", clauses, params, filters.limit, filters.offset);

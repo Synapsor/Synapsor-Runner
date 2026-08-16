@@ -11,6 +11,7 @@ import { parseFreshnessAuthority } from "@synapsor-runner/protocol";
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import type { ReadStream, WriteStream } from "node:tty";
 import { activityFromEvidence, activityFromProposal, activityFromQueryAudit, activityFromReceipt, formatActivityItem, formatActivityNext, formatEventLine, localEventWebhookPayload, postLocalEventWebhook, redactWebhookUrl } from "./activity-formatting.js";
 import { cliCommandName } from "./cli-command-meta.js";
 import { isRecord, safeErrorMessage, showDetails, storeOptionSuffix, stringField } from "./cli-format.js";
@@ -24,8 +25,9 @@ import { formatEvidenceBrowserFacts, formatEvidenceBrowserPlan, formatEvidenceBr
 import { sharedPostgresLedgerMirrorOptions } from "./shared-ledger-domain.js";
 import { argsWithRuntimeStoreBridge, assertLocalGovernanceMutationAllowed, assertNoRuntimeStoreForLocalMutation, maybeSharedPostgresRuntimeStoreRead, runtimeStoreBridgeRequired, sharedPostgresLedgerMirrorRequested, withoutSharedPostgresLedgerMirror, withSharedPostgresLedgerMirror, withSharedPostgresRuntimeStoreBridge } from "./store-shared.js";
 import { findProposalCapability } from "./writeback-execution.js";
+import { terminalContentWidth, wrapStyledTerminalLine } from "./terminal-layout.js";
 import { renderTerminalSectionHeading, renderTerminalStyledText, safeTerminalText, terminalSyntaxColorEnabled } from "./terminal-syntax.js";
-import { readTerminalTextWithEscape } from "./terminal-prompt.js";
+import { readTerminalTextWithEscape, withRawTerminalScreen, type TerminalKeypress } from "./terminal-prompt.js";
 
 type LedgerReadSource =
   | { kind: "local_sqlite"; path: string }
@@ -298,6 +300,8 @@ async function browseEvidence(args: string[]): Promise<number> {
   const explicitLimit = optionalArg(args, "--limit");
   let pageSize = explicitLimit ? Math.min(limitFromArgs(args), 50) : 10;
   let pageNumber = 1;
+  let selectedIndex = 0;
+  let browserNotice: string | undefined;
   let filterArgs = withoutCliOptions(args, ["--interactive", "--limit"]);
   let result = await readEvidenceList(filterArgs, { limit: pageSize + 1, offset: 0 });
   process.stdout.write(ledgerReadSourceLine(result.ledgerSource));
@@ -306,69 +310,84 @@ async function browseEvidence(args: string[]): Promise<number> {
   while (true) {
     const visible = result.rows.slice(0, pageSize);
     const hasNext = result.rows.length > pageSize;
-    process.stdout.write(`\n${renderTerminalSectionHeading("Evidence browser", color)}\n`);
-    process.stdout.write(`${renderTerminalStyledText(`Page ${pageNumber} - ${visible.length} record${visible.length === 1 ? "" : "s"}${hasNext ? " - older records available" : ""}`, color, "muted")}\n`);
-    process.stdout.write(`${renderTerminalStyledText(evidenceBrowserFilterSummary(filterArgs), color, "muted")}\n\n`);
-    writeLedgerNotices(result.notes, color);
-    if (visible.length === 0) {
-      process.stdout.write(`${renderTerminalStyledText("No released-result evidence matches the current filters.", color, "warning")}\n`);
-    } else {
-      for (let index = 0; index < visible.length; index += 1) {
-        process.stdout.write(formatEvidenceBrowserRow(visible[index]!, index + 1, color));
-        if (index < visible.length - 1) process.stdout.write(auditBrowserSeparator(color));
-      }
-    }
-    process.stdout.write(`${renderTerminalStyledText("N next  B back  /text search  F filters  ? help  Q quit", color, "identifier")}\n`);
-    const answer = await readTerminalTextWithEscape(
-      `Open 1-${Math.max(visible.length, 1)} or enter a command: `,
-      process.stdin,
-      process.stdout,
-    );
-    if (!answer || answer.toLowerCase() === "q") return 0;
-
-    const normalized = answer.trim();
-    const lower = normalized.toLowerCase();
-    if (lower === "?" || lower === "help" || lower === "f" || lower === "filters") {
-      process.stdout.write(`\n${evidenceBrowserHelp(color)}\n`);
+    selectedIndex = Math.min(selectedIndex, Math.max(visible.length - 1, 0));
+    const action = await selectAuditBrowserPage({
+      title: "Evidence browser",
+      pageNumber,
+      pageSize,
+      hasNext,
+      hasPrevious: pageNumber > 1,
+      selectedIndex,
+      rows: visible.map((row, index) =>
+        formatEvidenceBrowserRow(row, ((pageNumber - 1) * pageSize) + index + 1, color)),
+      filters: evidenceBrowserFilterSummary(filterArgs),
+      notes: result.notes,
+      emptyLines: auditBrowserEmptyLines("evidence", filterArgs),
+      helpLines: evidenceBrowserHelp(color).split("\n"),
+      notice: browserNotice,
+      color,
+    });
+    browserNotice = undefined;
+    selectedIndex = action.selectedIndex;
+    if (action.kind === "quit") return 0;
+    if (action.kind === "open") {
+      const selected = visible[action.index];
+      if (selected && await browseOneEvidence(selected, color)) return 0;
       continue;
     }
-    if (lower === "n" || lower === "next") {
-      if (!hasNext) {
-        process.stdout.write(`${renderTerminalStyledText("No older evidence matches the current filters.", color, "warning")}\n`);
-        continue;
-      }
+    if (action.kind === "next") {
       pageNumber += 1;
+      selectedIndex = 0;
       result = await readEvidenceList(filterArgs, {
         limit: pageSize + 1,
         offset: (pageNumber - 1) * pageSize,
       });
       continue;
     }
-    if (lower === "b" || lower === "back" || lower === "previous" || lower === "prev") {
-      if (pageNumber === 1) {
-        process.stdout.write(`${renderTerminalStyledText("Already on the newest page.", color, "warning")}\n`);
-        continue;
-      }
+    if (action.kind === "previous") {
       pageNumber -= 1;
       result = await readEvidenceList(filterArgs, {
         limit: pageSize + 1,
         offset: (pageNumber - 1) * pageSize,
       });
+      selectedIndex = Math.max(0, Math.min(pageSize, result.rows.length) - 1);
       continue;
     }
-
-    const selected = /^\d+$/.test(normalized)
-      ? visible[Number(normalized) - 1]
-      : visible.find((row) => row.evidence_bundle_id === normalized);
-    if (selected) {
-      const shouldQuit = await browseOneEvidence(selected, color);
-      if (shouldQuit) return 0;
+    if (action.kind === "absolute") {
+      const targetPage = Math.ceil(action.number / pageSize);
+      const targetIndex = (action.number - 1) % pageSize;
+      const targetResult = await readEvidenceList(filterArgs, {
+        limit: pageSize + 1,
+        offset: (targetPage - 1) * pageSize,
+      });
+      const selected = targetResult.rows.slice(0, pageSize)[targetIndex];
+      if (!selected) {
+        browserNotice = `Record ${action.number} is outside the current evidence result set.`;
+        continue;
+      }
+      pageNumber = targetPage;
+      selectedIndex = targetIndex;
+      result = targetResult;
+      if (await browseOneEvidence(selected, color)) return 0;
       continue;
     }
-
+    const answer = await readTerminalTextWithEscape(
+      action.kind === "search"
+        ? "Search redacted audit metadata: "
+        : "Filter or navigation command (Esc to return): ",
+      process.stdin,
+      process.stdout,
+    );
+    if (answer === undefined) continue;
+    const search = action.kind === "search" ? normalizeAuditBrowserSearch(answer) : undefined;
+    if (search?.error) {
+      browserNotice = search.error;
+      continue;
+    }
+    const normalized = action.kind === "search" ? `/${search?.term ?? ""}` : answer.trim();
     const update = evidenceBrowserCommand(filterArgs, pageSize, normalized);
     if (!update) {
-      process.stdout.write(`${renderTerminalStyledText(`Unknown browser command: ${normalized}. Enter ? for help.`, color, "danger")}\n`);
+      browserNotice = `Unknown browser command: ${normalized || "(empty)"}. Press ? for help.`;
       continue;
     }
     const previousArgs = filterArgs;
@@ -377,16 +396,18 @@ async function browseEvidence(args: string[]): Promise<number> {
     filterArgs = update.args;
     pageSize = update.pageSize;
     pageNumber = update.pageNumber;
+    selectedIndex = 0;
     try {
       result = await readEvidenceList(filterArgs, {
         limit: pageSize + 1,
         offset: (pageNumber - 1) * pageSize,
       });
+      browserNotice = search?.notice;
     } catch (error) {
       filterArgs = previousArgs;
       pageSize = previousPageSize;
       pageNumber = previousPageNumber;
-      process.stdout.write(`${renderTerminalStyledText(safeErrorMessage(error), color, "danger")}\n`);
+      browserNotice = safeErrorMessage(error);
       result = await readEvidenceList(filterArgs, {
         limit: pageSize + 1,
         offset: (pageNumber - 1) * pageSize,
@@ -397,31 +418,13 @@ async function browseEvidence(args: string[]): Promise<number> {
 
 
 async function browseOneEvidence(evidence: StoredEvidenceBundle, color: boolean): Promise<boolean> {
-  process.stdout.write(`\n${formatEvidenceBrowserSummary(evidence, color)}\n`);
-  while (true) {
-    process.stdout.write(`${renderTerminalStyledText("D audit details  Q reconstructed query  P normalized plan  B list  X quit", color, "identifier")}\n`);
-    const answer = await readTerminalTextWithEscape(
-      "Evidence view: ",
-      process.stdin,
-      process.stdout,
-    );
-    if (!answer || answer.toLowerCase() === "b") return false;
-    const command = answer.toLowerCase();
-    if (command === "x" || command === "quit" || command === "exit") return true;
-    if (command === "d" || command === "details") {
-      process.stdout.write(`\n${formatEvidenceBrowserFacts(evidence, color)}\n`);
-      continue;
-    }
-    if (command === "q" || command === "query") {
-      process.stdout.write(`\n${formatEvidenceBrowserQuery(evidence, color)}\n`);
-      continue;
-    }
-    if (command === "p" || command === "plan") {
-      process.stdout.write(`\n${formatEvidenceBrowserPlan(evidence, color)}\n`);
-      continue;
-    }
-    process.stdout.write(`${renderTerminalStyledText("Choose D, Q, P, B, or X.", color, "warning")}\n`);
-  }
+  return browseAuditRecord({
+    summary: () => formatEvidenceBrowserSummary(evidence, color),
+    details: () => formatEvidenceBrowserFacts(evidence, color),
+    query: () => formatEvidenceBrowserQuery(evidence, color),
+    plan: () => formatEvidenceBrowserPlan(evidence, color),
+    color,
+  });
 }
 
 
@@ -432,8 +435,13 @@ export function evidenceBrowserCommand(
   includeRefusals = false,
 ): { args: string[]; pageSize: number; pageNumber: number } | undefined {
   if (input.startsWith("/")) {
-    const search = input.slice(1).trim();
-    return { args: replaceCliOption(args, "--search", search || undefined), pageSize, pageNumber: 1 };
+    const search = normalizeAuditBrowserSearch(input);
+    if (search.error) return undefined;
+    return {
+      args: replaceCliOption(args, "--search", search.term || undefined),
+      pageSize,
+      pageNumber: 1,
+    };
   }
   const splitAt = input.search(/\s/);
   const command = (splitAt < 0 ? input : input.slice(0, splitAt)).toLowerCase();
@@ -522,11 +530,12 @@ export function evidenceBrowserFilterSummary(
 function evidenceBrowserHelp(color: boolean): string {
   const lines = [
     renderTerminalSectionHeading("Browser commands", color),
-    "  1-50 or ev_...          open a compact evidence summary",
-    "  N / B                   next or previous page",
+    "  Up/Down + Enter         select and open a record; Esc returns",
+    "  Type a record number   open its stable number across pages",
+    "  N / B                  next or previous page",
     "  page <n>                jump to a page",
     "  size <5-50>             change records per page",
-    "  /text or search <text>  search reviewed-plan metadata",
+    "  / then type text        search redacted audit metadata",
     "  resource <schema.table> narrow to a resource",
     "  tenant <id>             narrow by tenant (value is never echoed)",
     "  principal <id>          narrow by principal (value is never echoed)",
@@ -535,6 +544,7 @@ function evidenceBrowserHelp(color: boolean): string {
     "  to <ISO> / jump <ISO>   set the upper time bound",
     "  clear                   remove live audit filters",
     "  Add 'all' after one filter command to clear only that filter.",
+    `  Search checks ${auditBrowserSearchScope("evidence")}.`,
     "  Refused/failed attempts have no evidence bundle; inspect query-audit browse.",
   ];
   return lines.join("\n");
@@ -579,6 +589,8 @@ async function browseQueryAudit(args: string[]): Promise<number> {
   const explicitLimit = optionalArg(args, "--limit");
   let pageSize = explicitLimit ? Math.min(limitFromArgs(args), 50) : 10;
   let pageNumber = 1;
+  let selectedIndex = 0;
+  let browserNotice: string | undefined;
   let filterArgs = withoutCliOptions(args, ["--interactive", "--limit"]);
   let result = await readQueryAuditList(filterArgs, { limit: pageSize + 1, offset: 0 });
   process.stdout.write(ledgerReadSourceLine(result.ledgerSource));
@@ -587,64 +599,78 @@ async function browseQueryAudit(args: string[]): Promise<number> {
   while (true) {
     const visible = result.rows.slice(0, pageSize);
     const hasNext = result.rows.length > pageSize;
-    process.stdout.write(`\n${renderTerminalSectionHeading("Query audit browser", color)}\n`);
-    process.stdout.write(`${renderTerminalStyledText(`Page ${pageNumber} - ${visible.length} record${visible.length === 1 ? "" : "s"}${hasNext ? " - older records available" : ""}`, color, "muted")}\n`);
-    process.stdout.write(`${renderTerminalStyledText(evidenceBrowserFilterSummary(filterArgs, "all query-audit records"), color, "muted")}\n\n`);
-    writeLedgerNotices(result.notes, color);
-    if (visible.length === 0) {
-      process.stdout.write(`${renderTerminalStyledText("No query-audit record matches the current filters.", color, "warning")}\n`);
-    } else {
-      for (let index = 0; index < visible.length; index += 1) {
-        process.stdout.write(formatQueryAuditBrowserRow(visible[index]!, index + 1, color));
-        if (index < visible.length - 1) process.stdout.write(auditBrowserSeparator(color));
-      }
+    selectedIndex = Math.min(selectedIndex, Math.max(visible.length - 1, 0));
+    const action = await selectAuditBrowserPage({
+      title: "Query audit browser",
+      pageNumber,
+      pageSize,
+      hasNext,
+      hasPrevious: pageNumber > 1,
+      selectedIndex,
+      rows: visible.map((row, index) =>
+        formatQueryAuditBrowserRow(row, ((pageNumber - 1) * pageSize) + index + 1, color)),
+      filters: evidenceBrowserFilterSummary(filterArgs, "all query-audit records"),
+      notes: result.notes,
+      emptyLines: auditBrowserEmptyLines("query-audit", filterArgs),
+      helpLines: queryAuditBrowserHelp(color).split("\n"),
+      notice: browserNotice,
+      color,
+    });
+    browserNotice = undefined;
+    selectedIndex = action.selectedIndex;
+    if (action.kind === "quit") return 0;
+    if (action.kind === "open") {
+      const selected = visible[action.index];
+      if (selected && await browseOneQueryAudit(selected, color)) return 0;
+      continue;
     }
-    process.stdout.write(`${renderTerminalStyledText("N next  B back  /text search  F filters  ? help  Q quit", color, "identifier")}\n`);
+    if (action.kind === "next") {
+      pageNumber += 1;
+      selectedIndex = 0;
+      result = await readQueryAuditList(filterArgs, { limit: pageSize + 1, offset: (pageNumber - 1) * pageSize });
+      continue;
+    }
+    if (action.kind === "previous") {
+      pageNumber -= 1;
+      result = await readQueryAuditList(filterArgs, { limit: pageSize + 1, offset: (pageNumber - 1) * pageSize });
+      selectedIndex = Math.max(0, Math.min(pageSize, result.rows.length) - 1);
+      continue;
+    }
+    if (action.kind === "absolute") {
+      const targetPage = Math.ceil(action.number / pageSize);
+      const targetIndex = (action.number - 1) % pageSize;
+      const targetResult = await readQueryAuditList(filterArgs, {
+        limit: pageSize + 1,
+        offset: (targetPage - 1) * pageSize,
+      });
+      const selected = targetResult.rows.slice(0, pageSize)[targetIndex];
+      if (!selected) {
+        browserNotice = `Record ${action.number} is outside the current query-audit result set.`;
+        continue;
+      }
+      pageNumber = targetPage;
+      selectedIndex = targetIndex;
+      result = targetResult;
+      if (await browseOneQueryAudit(selected, color)) return 0;
+      continue;
+    }
     const answer = await readTerminalTextWithEscape(
-      "Open #row or audit ID, or enter a command: ",
+      action.kind === "search"
+        ? "Search redacted audit metadata: "
+        : "Filter or navigation command (Esc to return): ",
       process.stdin,
       process.stdout,
     );
-    if (!answer || answer.toLowerCase() === "q") return 0;
-    const normalized = answer.trim();
-    const lower = normalized.toLowerCase();
-    if (lower === "?" || lower === "help" || lower === "f" || lower === "filters") {
-      process.stdout.write(`\n${queryAuditBrowserHelp(color)}\n`);
+    if (answer === undefined) continue;
+    const search = action.kind === "search" ? normalizeAuditBrowserSearch(answer) : undefined;
+    if (search?.error) {
+      browserNotice = search.error;
       continue;
     }
-    if (lower === "n" || lower === "next") {
-      if (!hasNext) {
-        process.stdout.write(`${renderTerminalStyledText("No older audit record matches the current filters.", color, "warning")}\n`);
-        continue;
-      }
-      pageNumber += 1;
-      result = await readQueryAuditList(filterArgs, { limit: pageSize + 1, offset: (pageNumber - 1) * pageSize });
-      continue;
-    }
-    if (lower === "b" || lower === "back" || lower === "previous" || lower === "prev") {
-      if (pageNumber === 1) {
-        process.stdout.write(`${renderTerminalStyledText("Already on the newest page.", color, "warning")}\n`);
-        continue;
-      }
-      pageNumber -= 1;
-      result = await readQueryAuditList(filterArgs, { limit: pageSize + 1, offset: (pageNumber - 1) * pageSize });
-      continue;
-    }
-
-    const selected = /^#\d+$/.test(normalized)
-      ? visible[Number(normalized.slice(1)) - 1]
-      : /^\d+$/.test(normalized)
-        ? visible.find((row) => Number(row.audit_id) === Number(normalized))
-        : undefined;
-    if (selected) {
-      const shouldQuit = await browseOneQueryAudit(selected, color);
-      if (shouldQuit) return 0;
-      continue;
-    }
-
+    const normalized = action.kind === "search" ? `/${search?.term ?? ""}` : answer.trim();
     const update = evidenceBrowserCommand(filterArgs, pageSize, normalized, true);
     if (!update) {
-      process.stdout.write(`${renderTerminalStyledText(`Unknown browser command: ${normalized}. Enter ? for help.`, color, "danger")}\n`);
+      browserNotice = `Unknown browser command: ${normalized || "(empty)"}. Press ? for help.`;
       continue;
     }
     const previousArgs = filterArgs;
@@ -653,16 +679,18 @@ async function browseQueryAudit(args: string[]): Promise<number> {
     filterArgs = update.args;
     pageSize = update.pageSize;
     pageNumber = update.pageNumber;
+    selectedIndex = 0;
     try {
       result = await readQueryAuditList(filterArgs, {
         limit: pageSize + 1,
         offset: (pageNumber - 1) * pageSize,
       });
+      browserNotice = search?.notice;
     } catch (error) {
       filterArgs = previousArgs;
       pageSize = previousPageSize;
       pageNumber = previousPageNumber;
-      process.stdout.write(`${renderTerminalStyledText(safeErrorMessage(error), color, "danger")}\n`);
+      browserNotice = safeErrorMessage(error);
       result = await readQueryAuditList(filterArgs, {
         limit: pageSize + 1,
         offset: (pageNumber - 1) * pageSize,
@@ -673,39 +701,380 @@ async function browseQueryAudit(args: string[]): Promise<number> {
 
 
 async function browseOneQueryAudit(row: Record<string, unknown>, color: boolean): Promise<boolean> {
-  process.stdout.write(`\n${formatQueryAuditBrowserSummary(row, color)}\n`);
-  while (true) {
-    process.stdout.write(`${renderTerminalStyledText("D audit details  Q reconstructed query  P normalized plan  B list  X quit", color, "identifier")}\n`);
-    const answer = await readTerminalTextWithEscape("Audit view: ", process.stdin, process.stdout);
-    if (!answer || answer.toLowerCase() === "b") return false;
-    const command = answer.toLowerCase();
-    if (command === "x" || command === "quit" || command === "exit") return true;
-    if (command === "d" || command === "details") process.stdout.write(`\n${formatQueryAuditBrowserFacts(row, color)}\n`);
-    else if (command === "q" || command === "query") process.stdout.write(`\n${formatQueryAuditBrowserQuery(row, color)}\n`);
-    else if (command === "p" || command === "plan") process.stdout.write(`\n${formatQueryAuditBrowserPlan(row, color)}\n`);
-    else process.stdout.write(`${renderTerminalStyledText("Choose D, Q, P, B, or X.", color, "warning")}\n`);
+  return browseAuditRecord({
+    summary: () => formatQueryAuditBrowserSummary(row, color),
+    details: () => formatQueryAuditBrowserFacts(row, color),
+    query: () => formatQueryAuditBrowserQuery(row, color),
+    plan: () => formatQueryAuditBrowserPlan(row, color),
+    color,
+  });
+}
+
+
+export type AuditBrowserPageAction =
+  | { kind: "open"; selectedIndex: number; index: number }
+  | { kind: "absolute"; selectedIndex: number; number: number }
+  | { kind: "next" | "previous" | "search" | "filter" | "quit"; selectedIndex: number };
+
+
+type AuditBrowserPageOptions = {
+  title: string;
+  pageNumber: number;
+  pageSize: number;
+  hasNext: boolean;
+  hasPrevious: boolean;
+  selectedIndex: number;
+  rows: string[];
+  filters: string;
+  notes: string[];
+  emptyLines: string[];
+  helpLines: string[];
+  notice?: string;
+  color: boolean;
+  input?: ReadStream;
+  output?: WriteStream;
+};
+
+
+export async function selectAuditBrowserPage(
+  options: AuditBrowserPageOptions,
+): Promise<AuditBrowserPageAction> {
+  const input = options.input ?? process.stdin;
+  const output = options.output ?? process.stdout;
+  return withRawTerminalScreen(input, output, async (nextKey, render) => {
+    let selectedIndex = Math.min(options.selectedIndex, Math.max(options.rows.length - 1, 0));
+    let numberBuffer = "";
+    let notice = options.notice;
+    let helpVisible = false;
+    while (true) {
+      render(helpVisible
+        ? [
+            ...options.helpLines,
+            "",
+            renderTerminalStyledText("Esc Back   Q Quit", options.color, "identifier"),
+          ]
+        : auditBrowserPageLines(options, selectedIndex, numberBuffer, notice, output));
+      const key = await nextKey();
+      const sequence = (key.sequence ?? "").toLowerCase();
+      const name = (key.name ?? "").toLowerCase();
+      if (helpVisible) {
+        if (isEscapeKey(key) || sequence === "?" || name === "b" || sequence === "b") {
+          helpVisible = false;
+          notice = undefined;
+        } else if (name === "q" || sequence === "q" || isTerminalExitKey(key)) {
+          return { kind: "quit", selectedIndex };
+        }
+        continue;
+      }
+      if (isTerminalExitKey(key) || name === "q" || sequence === "q") {
+        return { kind: "quit", selectedIndex };
+      }
+      if (isEscapeKey(key)) {
+        if (numberBuffer) {
+          numberBuffer = "";
+          notice = "Record-number entry cleared.";
+          continue;
+        }
+        return { kind: "quit", selectedIndex };
+      }
+      if (/^\d$/.test(sequence)) {
+        numberBuffer = `${numberBuffer}${sequence}`.slice(0, 9);
+        notice = undefined;
+        continue;
+      }
+      if (name === "backspace") {
+        numberBuffer = numberBuffer.slice(0, -1);
+        continue;
+      }
+      if (isEnterKey(key)) {
+        if (numberBuffer) {
+          const number = Number(numberBuffer);
+          if (Number.isSafeInteger(number) && number > 0) {
+            return { kind: "absolute", number, selectedIndex };
+          }
+          notice = "Record numbers begin at 1.";
+          numberBuffer = "";
+          continue;
+        }
+        if (options.rows.length > 0) {
+          return { kind: "open", index: selectedIndex, selectedIndex };
+        }
+        notice = "No record is available to open in this view.";
+        continue;
+      }
+      if (name === "up") {
+        numberBuffer = "";
+        notice = undefined;
+        if (selectedIndex > 0) selectedIndex -= 1;
+        else if (options.hasPrevious) return { kind: "previous", selectedIndex };
+        else notice = "Already at the newest matching record.";
+        continue;
+      }
+      if (name === "down") {
+        numberBuffer = "";
+        notice = undefined;
+        if (selectedIndex < options.rows.length - 1) selectedIndex += 1;
+        else if (options.hasNext) return { kind: "next", selectedIndex };
+        else notice = "Already at the oldest matching record.";
+        continue;
+      }
+      if (name === "home") {
+        selectedIndex = 0;
+        numberBuffer = "";
+        notice = undefined;
+        continue;
+      }
+      if (name === "end") {
+        selectedIndex = Math.max(options.rows.length - 1, 0);
+        numberBuffer = "";
+        notice = undefined;
+        continue;
+      }
+      if (name === "n" || sequence === "n" || name === "pagedown") {
+        if (options.hasNext) return { kind: "next", selectedIndex };
+        notice = "No older record matches the current filters.";
+        continue;
+      }
+      if (name === "b" || sequence === "b" || name === "pageup") {
+        if (options.hasPrevious) return { kind: "previous", selectedIndex };
+        notice = "Already on the newest page.";
+        continue;
+      }
+      if (sequence === "/") return { kind: "search", selectedIndex };
+      if (name === "f" || sequence === "f") return { kind: "filter", selectedIndex };
+      if (sequence === "?") {
+        helpVisible = true;
+        numberBuffer = "";
+      }
+    }
+  });
+}
+
+
+function auditBrowserPageLines(
+  options: AuditBrowserPageOptions,
+  selectedIndex: number,
+  numberBuffer: string,
+  notice: string | undefined,
+  output: WriteStream,
+): string[] {
+  const startNumber = ((options.pageNumber - 1) * options.pageSize) + 1;
+  const endNumber = startNumber + Math.max(0, options.rows.length - 1);
+  const terminalRows = Math.max(18, output.rows ?? 30);
+  const reservedRows = 10 + options.notes.length + options.emptyLines.length;
+  const visibleCount = Math.max(
+    1,
+    Math.min(options.rows.length, Math.floor(Math.max(3, terminalRows - reservedRows) / 3)),
+  );
+  const windowStart = options.rows.length <= visibleCount
+    ? 0
+    : Math.min(
+        Math.max(0, selectedIndex - Math.floor(visibleCount / 2)),
+        options.rows.length - visibleCount,
+      );
+  const windowRows = options.rows.slice(windowStart, windowStart + visibleCount);
+  const lines = [
+    renderTerminalSectionHeading(options.title, options.color),
+    renderTerminalStyledText(
+      options.rows.length
+        ? `Page ${options.pageNumber} | records ${startNumber}-${endNumber}${options.hasNext ? " | older records available" : ""}`
+        : `Page ${options.pageNumber} | no matching records`,
+      options.color,
+      "muted",
+    ),
+    renderTerminalStyledText(options.filters, options.color, "muted"),
+    ...(options.notes.length
+      ? [
+          renderTerminalSectionHeading("Audit notice", options.color),
+          ...options.notes.map((note) => renderTerminalStyledText(`! ${note}`, options.color, "warning")),
+        ]
+      : []),
+    "",
+  ];
+  if (windowRows.length > 0) {
+    if (windowRows.length < options.rows.length) {
+      lines.push(renderTerminalStyledText(
+        `Showing ${startNumber + windowStart}-${startNumber + windowStart + windowRows.length - 1} on this page`,
+        options.color,
+        "muted",
+      ));
+    }
+    windowRows.forEach((row, visibleIndex) => {
+      const rowIndex = windowStart + visibleIndex;
+      const rowLines = row.trimEnd().split("\n");
+      const marker = rowIndex === selectedIndex
+        ? renderTerminalStyledText(">", options.color, "success")
+        : " ";
+      lines.push(`${marker} ${rowLines[0] ?? ""}`);
+      lines.push(...rowLines.slice(1).map((line) => `  ${line}`));
+      if (visibleIndex < windowRows.length - 1) {
+        lines.push(auditBrowserSeparator(options.color, output.columns));
+      }
+    });
+  } else {
+    lines.push(...options.emptyLines.map((line) => renderTerminalStyledText(line, options.color, "warning")));
   }
+  lines.push("");
+  if (notice) lines.push(renderTerminalStyledText(notice, options.color, "warning"));
+  if (numberBuffer) {
+    lines.push(renderTerminalStyledText(`Open record ${numberBuffer}_ (Enter to open; Esc to clear)`, options.color, "identifier"));
+  }
+  lines.push(renderTerminalStyledText(
+    "Up/Down Select   Enter Open   N/B Page   / Search   F Filters   ? Help   Esc Quit",
+    options.color,
+    "identifier",
+  ));
+  return lines;
+}
+
+
+type AuditRecordBrowserOptions = {
+  summary: () => string;
+  details: () => string;
+  query: () => string;
+  plan: () => string;
+  color: boolean;
+  input?: ReadStream;
+  output?: WriteStream;
+};
+
+
+async function browseAuditRecord(options: AuditRecordBrowserOptions): Promise<boolean> {
+  const input = options.input ?? process.stdin;
+  const output = options.output ?? process.stdout;
+  return withRawTerminalScreen(input, output, async (nextKey, render) => {
+    let mode: "summary" | "details" | "query" | "plan" = "summary";
+    let scrollOffset = 0;
+    while (true) {
+      const width = Math.max(36, Math.min(terminalContentWidth(output.columns), 116));
+      const content = options[mode]().trimEnd().split("\n")
+        .flatMap((line) => wrapStyledTerminalLine(line, width));
+      const viewportRows = Math.max(5, (output.rows ?? 28) - 4);
+      const maxOffset = Math.max(0, content.length - viewportRows);
+      scrollOffset = Math.min(scrollOffset, maxOffset);
+      const visible = content.slice(scrollOffset, scrollOffset + viewportRows);
+      render([
+        ...visible,
+        ...(content.length > viewportRows
+          ? [renderTerminalStyledText(
+              `Lines ${scrollOffset + 1}-${scrollOffset + visible.length} of ${content.length}`,
+              options.color,
+              "muted",
+            )]
+          : []),
+        "",
+        renderTerminalStyledText(
+          "S Summary   D Details   Q Reconstructed query   P Plan   Up/Down Scroll   Esc Back   X Quit",
+          options.color,
+          "identifier",
+        ),
+      ]);
+      const key = await nextKey();
+      const sequence = (key.sequence ?? "").toLowerCase();
+      const name = (key.name ?? "").toLowerCase();
+      if (isTerminalExitKey(key) || name === "x" || sequence === "x") return true;
+      if (isEscapeKey(key) || name === "b" || sequence === "b") return false;
+      if (name === "s" || sequence === "s") {
+        mode = "summary";
+        scrollOffset = 0;
+      } else if (name === "d" || sequence === "d") {
+        mode = "details";
+        scrollOffset = 0;
+      } else if (name === "q" || sequence === "q") {
+        mode = "query";
+        scrollOffset = 0;
+      } else if (name === "p" || sequence === "p") {
+        mode = "plan";
+        scrollOffset = 0;
+      } else if (name === "up") scrollOffset = Math.max(0, scrollOffset - 1);
+      else if (name === "down") scrollOffset = Math.min(maxOffset, scrollOffset + 1);
+      else if (name === "pageup") scrollOffset = Math.max(0, scrollOffset - viewportRows);
+      else if (name === "pagedown") scrollOffset = Math.min(maxOffset, scrollOffset + viewportRows);
+      else if (name === "home") scrollOffset = 0;
+      else if (name === "end") scrollOffset = maxOffset;
+    }
+  });
+}
+
+
+export function normalizeAuditBrowserSearch(input: string): {
+  term?: string;
+  notice?: string;
+  error?: string;
+} {
+  const trimmed = input.trim().replace(/^\/+/, "").trim();
+  if (!trimmed) return { term: "", notice: "Search cleared." };
+  const placeholder = trimmed.match(/^text(?:\s+(.+))?$/i);
+  if (!placeholder) return { term: trimmed };
+  const corrected = placeholder[1]?.trim();
+  if (!corrected) {
+    return {
+      error: "'text' is a placeholder, not the search command. Press /, then type the words to find.",
+    };
+  }
+  return {
+    term: corrected,
+    notice: `Interpreted ${JSON.stringify(input.trim())} as search ${JSON.stringify(corrected)}.`,
+  };
+}
+
+
+export function auditBrowserSearchScope(kind: "evidence" | "query-audit"): string {
+  return kind === "evidence"
+    ? "plan identifiers and redacted metadata used for the English description, evidence ID, resource/source IDs, capability, and query fingerprint"
+    : "plan identifiers and redacted metadata used for the English description, audit/evidence IDs, resource/source IDs, capability, and query fingerprint";
+}
+
+
+export function auditBrowserEmptyLines(
+  kind: "evidence" | "query-audit",
+  args: string[],
+): string[] {
+  const search = optionalArg(args, "--search");
+  const label = kind === "evidence" ? "released-result evidence" : "query-audit records";
+  if (!search) return [`No ${label} match the current filters.`];
+  return [
+    `No ${label} matched search ${JSON.stringify(search)}.`,
+    `Searched fields: ${auditBrowserSearchScope(kind)}.`,
+    "Other active filters also apply. Press F to inspect or change them.",
+  ];
+}
+
+
+function isEnterKey(key: TerminalKeypress): boolean {
+  return key.name === "return" || key.name === "enter" || key.sequence === "\r" || key.sequence === "\n";
+}
+
+
+function isEscapeKey(key: TerminalKeypress): boolean {
+  return key.name === "escape" || key.sequence === "\u001b";
+}
+
+
+function isTerminalExitKey(key: TerminalKeypress): boolean {
+  return key.ctrl === true && (key.name === "c" || key.name === "d");
 }
 
 
 function queryAuditBrowserHelp(color: boolean): string {
   return [
     renderTerminalSectionHeading("Browser commands", color),
-    "  #1-#50                 open a row from this page",
-    "  <audit ID>             open an exact durable audit ID",
+    "  Up/Down + Enter        select and open a record; Esc returns",
+    "  Type a record number  open its stable number across pages",
     "  N / B                  next or previous page",
     "  page <n> / size <5-50> change the page",
-    "  /text or search <text> search reviewed-plan metadata",
+    "  / then type text       search redacted audit metadata",
     "  resource, tenant, principal, outcome, since, to, and jump set live filters",
     "  outcome accepts ok, refused, failed, empty, fully_suppressed, or incomplete_comparison",
     "  clear                  remove live audit filters",
+    `  Search checks ${auditBrowserSearchScope("query-audit")}.`,
   ].join("\n");
 }
 
 
-function auditBrowserSeparator(color: boolean): string {
-  const width = Math.min(96, Math.max(32, (process.stdout.columns ?? 80) - 4));
-  return `${renderTerminalStyledText(`  ${"-".repeat(width)}`, color, "muted")}\n`;
+function auditBrowserSeparator(color: boolean, columns: number | undefined): string {
+  const width = Math.min(96, Math.max(32, (columns ?? 80) - 6));
+  return renderTerminalStyledText("-".repeat(width), color, "muted");
 }
 
 

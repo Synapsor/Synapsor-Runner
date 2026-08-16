@@ -153,9 +153,14 @@ tenant/principal claims, SQL, parameters, credentials, or source rows.
 
 `evidence browse` keeps a bounded audit session open instead of printing the
 entire result set. It supports pages, timestamp jumps, metadata search, and live
-scope/resource/outcome/time filters. A selected record starts with a compact,
-plan-derived English description; use its D, Q, and P commands for authority
-facts, the privacy-safe reconstructed query, and the normalized plan. The
+scope/resource/outcome/time filters. Up/Down moves the current selection, Enter
+opens it, Esc returns, and `/` opens a dedicated search prompt. Record numbers
+remain continuous across pages. Search covers redacted plan metadata, record and
+resource/source IDs, capability, and query fingerprint; an empty search result
+states both the term and the fields searched. A selected record starts with a
+compact, plan-derived English description; use its D, Q, and P commands for
+authority facts, the privacy-safe reconstructed query, and the normalized plan,
+with Up/Down scrolling for long sections. The
 description is reconstructed from persisted reviewed-plan metadata, not from a
 stored model conversation. Successful shared-store reads are quiet by default;
 use `--debug` only when the structured snapshot event is needed.

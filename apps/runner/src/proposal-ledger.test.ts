@@ -5,8 +5,10 @@ import fs from "node:fs/promises";
 import crypto from "node:crypto";
 import os from "node:os";
 import path from "node:path";
+import { PassThrough } from "node:stream";
+import type { ReadStream, WriteStream } from "node:tty";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { activitySearch, evidenceBrowserCommand, evidenceBrowserFilterSummary, evidenceList, evidenceShow, queryAuditList, reusableRecordedFreshness } from "./proposal-ledger.js";
+import { activitySearch, auditBrowserEmptyLines, auditBrowserSearchScope, evidenceBrowserCommand, evidenceBrowserFilterSummary, evidenceList, evidenceShow, normalizeAuditBrowserSearch, queryAuditList, reusableRecordedFreshness, selectAuditBrowserPage } from "./proposal-ledger.js";
 
 
 const proposalHash = canonicalJsonDigest({ proposal: "freshness-reuse" });
@@ -393,5 +395,156 @@ describe("proposal approval freshness reuse", () => {
     expect(evidenceBrowserCommand(initial, 10, "outcome refused")).toBeUndefined();
     expect(evidenceBrowserCommand(initial, 10, "outcome refused", true)?.args)
       .toEqual(expect.arrayContaining(["--outcome", "refused"]));
+    expect(evidenceBrowserCommand(initial, 10, "/text borrowed")?.args)
+      .toEqual(expect.arrayContaining(["--search", "borrowed"]));
+    expect(evidenceBrowserCommand(initial, 10, "/text")).toBeUndefined();
+    expect(normalizeAuditBrowserSearch("text borrowed")).toEqual({
+      term: "borrowed",
+      notice: 'Interpreted "text borrowed" as search "borrowed".',
+    });
+    expect(normalizeAuditBrowserSearch("text").error).toMatch(/placeholder/);
+    expect(auditBrowserSearchScope("evidence")).toMatch(/evidence ID.*query fingerprint/);
+    expect(auditBrowserEmptyLines("evidence", ["--search", "borrowed"])).toEqual([
+      'No released-result evidence matched search "borrowed".',
+      expect.stringMatching(/^Searched fields: .*English description.*evidence ID.*query fingerprint\.$/),
+      "Other active filters also apply. Press F to inspect or change them.",
+    ]);
+  });
+
+  it("uses arrow keys, stable cross-page numbers, and raw-key browser controls", async () => {
+    const terminal = fakeTerminal(100, 28);
+    const selected = selectAuditBrowserPage({
+      title: "Evidence browser",
+      pageNumber: 2,
+      pageSize: 10,
+      hasNext: false,
+      hasPrevious: true,
+      selectedIndex: 0,
+      rows: [
+        "11  OK  Loans grouped by year borrowed at\n    ev_explore_11",
+        "12  OK  Members grouped by membership tier\n    ev_explore_12",
+      ],
+      filters: "Filters: all released evidence",
+      notes: [],
+      emptyLines: [],
+      helpLines: ["BROWSER COMMANDS", "Search checks redacted metadata."],
+      color: false,
+      input: terminal.input,
+      output: terminal.output,
+    });
+    await emitKey(terminal.input, { name: "down", sequence: "\u001b[B" });
+    await emitKey(terminal.input, { name: "return", sequence: "\r" });
+    await expect(selected).resolves.toEqual({ kind: "open", index: 1, selectedIndex: 1 });
+    expect(terminal.input.isRaw).toBe(false);
+    const rendered = stripAnsi(terminal.output.read()?.toString() ?? "");
+    expect(rendered).toContain("Page 2 | records 11-12");
+    expect(rendered).toContain("12  OK  Members grouped by membership tier");
+    expect(rendered).toContain("Up/Down Select");
+    expect(rendered).toContain("/ Search");
+
+    const searchTerminal = fakeTerminal();
+    const search = selectAuditBrowserPage({
+      title: "Evidence browser",
+      pageNumber: 1,
+      pageSize: 10,
+      hasNext: false,
+      hasPrevious: false,
+      selectedIndex: 0,
+      rows: [],
+      filters: 'Filters: search "borrowed"',
+      notes: [],
+      emptyLines: auditBrowserEmptyLines("evidence", ["--search", "borrowed"]),
+      helpLines: ["BROWSER COMMANDS"],
+      color: false,
+      input: searchTerminal.input,
+      output: searchTerminal.output,
+    });
+    await emitKey(searchTerminal.input, { sequence: "/" });
+    await expect(search).resolves.toEqual({ kind: "search", selectedIndex: 0 });
+    const empty = stripAnsi(searchTerminal.output.read()?.toString() ?? "");
+    expect(empty).toContain('No released-result evidence matched search "borrowed".');
+    expect(empty).toContain("Searched fields:");
+
+    const numberTerminal = fakeTerminal();
+    const absolute = selectAuditBrowserPage({
+      title: "Evidence browser",
+      pageNumber: 1,
+      pageSize: 10,
+      hasNext: true,
+      hasPrevious: false,
+      selectedIndex: 0,
+      rows: [" 1  OK  First reviewed query"],
+      filters: "Filters: all released evidence",
+      notes: [],
+      emptyLines: [],
+      helpLines: ["BROWSER COMMANDS"],
+      color: false,
+      input: numberTerminal.input,
+      output: numberTerminal.output,
+    });
+    await emitKey(numberTerminal.input, { sequence: "1" });
+    await emitKey(numberTerminal.input, { sequence: "2" });
+    await emitKey(numberTerminal.input, { name: "return", sequence: "\r" });
+    await expect(absolute).resolves.toEqual({ kind: "absolute", number: 12, selectedIndex: 0 });
+
+    const boundaryTerminal = fakeTerminal();
+    const atEnd = selectAuditBrowserPage({
+      title: "Evidence browser",
+      pageNumber: 2,
+      pageSize: 10,
+      hasNext: false,
+      hasPrevious: true,
+      selectedIndex: 0,
+      rows: ["11  OK  Oldest reviewed query"],
+      filters: "Filters: all released evidence",
+      notes: [],
+      emptyLines: [],
+      helpLines: ["BROWSER COMMANDS"],
+      color: false,
+      input: boundaryTerminal.input,
+      output: boundaryTerminal.output,
+    });
+    await emitKey(boundaryTerminal.input, { sequence: "n", name: "n" });
+    await emitKey(boundaryTerminal.input, { sequence: "\u001b", name: "escape" });
+    await expect(atEnd).resolves.toEqual({ kind: "quit", selectedIndex: 0 });
+    expect(stripAnsi(boundaryTerminal.output.read()?.toString() ?? ""))
+      .toContain("No older record matches the current filters.");
   });
 });
+
+
+function fakeTerminal(columns = 100, rows = 32): {
+  input: ReadStream & { isRaw: boolean };
+  output: WriteStream & PassThrough;
+} {
+  const input = new PassThrough() as PassThrough & {
+    isTTY: boolean;
+    isRaw: boolean;
+    setRawMode(value: boolean): void;
+  };
+  input.isTTY = true;
+  input.isRaw = false;
+  input.setRawMode = (value: boolean) => {
+    input.isRaw = value;
+  };
+  const output = new PassThrough() as WriteStream & PassThrough;
+  Object.assign(output, { isTTY: true, columns, rows });
+  return {
+    input: input as unknown as ReadStream & { isRaw: boolean },
+    output,
+  };
+}
+
+
+function stripAnsi(value: string): string {
+  return value.replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, "");
+}
+
+
+async function emitKey(
+  input: ReadStream,
+  key: { name?: string; sequence: string; ctrl?: boolean },
+): Promise<void> {
+  input.emit("keypress", key.sequence, key);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+}
