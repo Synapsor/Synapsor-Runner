@@ -1664,6 +1664,8 @@ describe("Auto Boundary compiler", () => {
       column("medical_waiver_notes", "text"),
       column("patient_id", "uuid", { immutable: true }),
       column("full_name", "text"),
+      column("licence_number", "text"),
+      column("badge_number", "text"),
       column("display_name", "text"),
       column("trainer_comments", "text"),
     );
@@ -1674,6 +1676,8 @@ describe("Auto Boundary compiler", () => {
       "medical_waiver_notes",
       "patient_id",
       "full_name",
+      "licence_number",
+      "badge_number",
       "display_name",
       "trainer_comments",
     );
@@ -1691,6 +1695,8 @@ describe("Auto Boundary compiler", () => {
       "medical_waiver_notes",
       "patient_id",
       "full_name",
+      "licence_number",
+      "badge_number",
       "display_name",
       "trainer_comments",
     ];
@@ -1713,6 +1719,10 @@ describe("Auto Boundary compiler", () => {
       .toMatchObject({ state: "high_confidence_sensitive", reason_codes: ["medical_or_health_information"] });
     expect(result.review.resources[0]!.fields.find((field) => field.name === "full_name")?.sensitivity)
       .toMatchObject({ state: "high_confidence_sensitive", reason_codes: ["person_name"] });
+    expect(result.review.resources[0]!.fields.find((field) => field.name === "licence_number")?.sensitivity)
+      .toMatchObject({ state: "high_confidence_sensitive", reason_codes: ["government_identifier"] });
+    expect(result.review.resources[0]!.fields.find((field) => field.name === "badge_number")?.sensitivity)
+      .toMatchObject({ state: "high_confidence_sensitive", reason_codes: ["institutional_identifier"] });
     expect(result.review.resources[0]!.fields.find((field) => field.name === "display_name")?.sensitivity)
       .toMatchObject({ state: "unresolved_free_text", reason_codes: ["ambiguous_display_name"] });
     expect(result.review.resources[0]!.fields.find((field) => field.name === "trainer_comments")?.sensitivity.state)

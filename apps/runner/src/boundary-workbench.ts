@@ -2166,6 +2166,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         ["credential_or_secret","credential or secret"],
         ["payment_or_bank_detail","payment data"],
         ["government_identifier","government identifier"],
+        ["institutional_identifier","institutional identifier"],
         ["birth_information","birth information"],
         ["medical_or_health_information","health information"],
         ["direct_contact_or_address","identifies a person"],

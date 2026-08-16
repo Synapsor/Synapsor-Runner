@@ -63,6 +63,12 @@ for the Synapsor Cloud CLI.
   than widening it. Bounded enums and structured scalar foreign keys are no
   longer described as free text solely because a name contains `note`; the
   review UI marks genuinely unresolved fields as **Needs review**.
+- New drafts conservatively keep out common government and institutional
+  identifiers such as `licence_number`, `license_no`, passport and
+  national-insurance identifiers, and `badge_number`. This metadata-only rule
+  does not inspect source values and does not blanket-classify ordinary order,
+  invoice, or tracking references as sensitive; reviewers remain responsible
+  for opaque names the source schema cannot explain.
 - Rescan output now distinguishes preserved reviewed authority from internal
   confirmation-record storage. It reports retained tables, reviewed paths, and
   field policies, and presents changed multi-hop relationships as readable table

@@ -26,6 +26,14 @@ describe("shared deterministic sensitivity classifier", () => {
     ["health_plan_member_id", "openapi", "medical_or_health_information"],
     ["password_hash", "database", "credential_or_secret"],
     ["bank_account_number", "database", "payment_or_bank_detail"],
+    ["licence_number", "database", "government_identifier"],
+    ["licenseNo", "prisma", "government_identifier"],
+    ["driving_licence_ref", "drizzle", "government_identifier"],
+    ["passport_id", "openapi", "government_identifier"],
+    ["national_insurance_number", "database", "government_identifier"],
+    ["nin", "database", "government_identifier"],
+    ["badge_number", "database", "institutional_identifier"],
+    ["employeeBadgeId", "prisma", "institutional_identifier"],
     ["dateOfBirth", "prisma", "birth_information"],
     ["full_name", "database", "person_name"],
     ["firstName", "prisma", "person_name"],
@@ -90,6 +98,11 @@ describe("shared deterministic sensitivity classifier", () => {
     ["product_name", "text"],
     ["category_name", "text"],
     ["organization_name", "text"],
+    ["order_number", "text"],
+    ["invoice_no", "text"],
+    ["tracking_ref", "text"],
+    ["software_license_name", "text"],
+    ["badge_color", "text"],
   ])("does not over-classify ordinary field %s", (name, dataType) => {
     expect(classifySensitivity({ name, dataType, source: "database" }).state)
       .toBe("structurally_low_risk");

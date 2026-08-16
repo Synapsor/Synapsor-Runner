@@ -34,6 +34,12 @@
   or structured scalar foreign key is not mislabeled as unconstrained free text
   merely because its identifier contains `note`, while genuine text, unknown,
   unstructured, and high-confidence sensitive fields remain fail-closed.
+- Expands the metadata-only sensitive-identifier defaults for common government
+  and institutional names, including British and American driving-licence
+  spellings, passport and national-insurance identifiers, and badge numbers.
+  These fields now start kept out instead of receiving row authority. Ordinary
+  business references such as order, invoice, and tracking numbers remain
+  reviewable; Runner still does not sample source values to classify a field.
 - Makes rescan reconciliation reporting reflect preserved authority rather than
   only stored confirmation records. Legacy revisions now report retained tables,
   reviewed paths, and field policies accurately, while new and removed multi-hop
