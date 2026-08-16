@@ -1,34 +1,84 @@
 import readline from "node:readline";
 import type { ReadStream, WriteStream } from "node:tty";
-import type {
-  BoundaryResourceReviewSummary,
-  BoundaryResourceReviewView,
+import {
+  reviewedBoundaryFieldTier,
+  type BoundaryResourceReviewSummary,
+  type BoundaryResourceReviewView,
+  type ReviewedBoundaryFieldTier,
 } from "./boundary-review-mutation.js";
-import { readTerminalTextWithEscape } from "./terminal-prompt.js";
+import {
+  SHARED_REFERENCE_ACKNOWLEDGEMENT,
+  type DerivedScopePath,
+} from "./auto-boundary.js";
+import {
+  readTerminalActivationConfirmation,
+  readTerminalTextWithEscape,
+} from "./terminal-prompt.js";
 import {
   padTerminalLine,
   terminalContentWidth,
 } from "./terminal-layout.js";
+import {
+  formatDerivedScopeJoinColumns,
+  formatDerivedScopePath,
+  formatRelationshipJoinColumns,
+  formatRelationshipPath,
+} from "./derived-scope-display.js";
+import { blockedTenantScopeGuidance } from "./boundary-scope-guidance.js";
+import { shellQuote } from "./cli-format.js";
+import {
+  boundaryMapOperationLegend,
+  renderBoundaryMapFieldMatrix,
+  renderBoundaryMapTable,
+  type BoundaryMapFieldRow,
+} from "./boundary-map-presentation.js";
 
-export type BoundaryFieldTier = "visible" | "withheld_from_model" | "kept_out";
+export type BoundaryFieldTier = ReviewedBoundaryFieldTier;
 export type BoundaryFieldTierEditResult =
   | Record<string, BoundaryFieldTier>
+  | {
+      action: "enum";
+      field: string;
+      tiers: Record<string, BoundaryFieldTier>;
+    }
+  | {
+      action: "principal";
+      tiers: Record<string, BoundaryFieldTier>;
+    }
+  | {
+      action: "metadata";
+      field: string;
+      tiers: Record<string, BoundaryFieldTier>;
+    }
+  | {
+      action: "restore_operations";
+      field: string;
+      tiers: Record<string, BoundaryFieldTier>;
+    }
+  | `enum:${string}`
   | "back"
   | "privacy"
   | undefined;
 
+export type BoundaryFieldEnumEditResult = string[] | "back" | undefined;
+
 export type BoundaryBlockedResolution =
-  | {
-      row_identity: string;
-      tenant_key: string;
-    }
+  | ({ row_identity: string } & (
+      | { tenant_key: string; tenant_scope_path?: never }
+      | { tenant_key?: never; tenant_scope_path: string }
+      | {
+        tenant_key?: never;
+        tenant_scope_path?: never;
+        shared_reference_scope: typeof SHARED_REFERENCE_ACKNOWLEDGEMENT;
+      }
+    ))
   | "back"
   | undefined;
 
 export type BoundaryResourceSelection =
   | {
       resource_id: string;
-      action: "add" | "review" | "remove" | "signoff" | "privacy";
+      action: "add" | "review" | "remove" | "signoff" | "privacy" | "analytics" | "metadata";
     }
   | {
       action: "create" | "rename" | "confirm" | "limits" | "privacy_all";
@@ -51,7 +101,15 @@ export type BoundaryReviewOverview = {
     matches_active_digest: boolean;
     table_count: number;
     outstanding_decisions: number;
+    policy_review_required?: boolean;
   }>;
+};
+
+export type BoundaryAccessNotice = {
+  tone: "danger" | "warning" | "success";
+  title: string;
+  lines: string[];
+  footer?: string;
 };
 
 export type BoundaryReviewInteractiveSession = {
@@ -63,17 +121,26 @@ export type BoundaryReviewInteractiveSession = {
       startingBoundaryName?: string;
       startAtBoundaryList?: boolean;
       initialResourceId?: string;
+      notice?: BoundaryAccessNotice;
     },
   ): Promise<BoundaryResourceSelection | undefined>;
   editFieldTiers(
     view: BoundaryResourceReviewView,
-    options?: { focusedAccess?: boolean },
+    options?: {
+      focusedAccess?: boolean;
+      initialTiers?: Record<string, BoundaryFieldTier>;
+    },
   ): Promise<BoundaryFieldTierEditResult>;
+  editFieldEnumValues?(
+    view: BoundaryResourceReviewView,
+    field: string,
+  ): Promise<BoundaryFieldEnumEditResult>;
   resolveBlockedResource?(
     view: BoundaryResourceReviewView,
   ): Promise<BoundaryBlockedResolution>;
   promptText(prompt: string): Promise<string | undefined>;
   confirm(prompt: string, options?: { defaultValue?: boolean }): Promise<boolean | undefined>;
+  confirmActivation?(prompt: string): Promise<boolean | undefined>;
 };
 
 type Keypress = {
@@ -85,15 +152,51 @@ type Keypress = {
 type ResourcePickerView = "boundary" | "related" | "all";
 
 type BoundaryRelationshipConnection = {
+  kind: "relationship" | "derived_tenant_scope" | "derived_principal_scope";
   source_resource: string;
   target_resource: string;
   relationship_id: string;
   path_depth: number;
+  path_links?: BoundaryResourceReviewSummary["relationships"][number]["path_links"];
+  derived_scope?: DerivedScopePath;
 };
 
 const tierOrder: BoundaryFieldTier[] = ["visible", "withheld_from_model", "kept_out"];
 
 type TerminalTheme = ReturnType<typeof terminalTheme>;
+
+function databaseCompatibilityLine(
+  compatibility: BoundaryResourceReviewView["database_server_compatibility"],
+  theme: TerminalTheme,
+): string | undefined {
+  if (!compatibility) return undefined;
+  const product = compatibility.engine === "postgres" ? "PostgreSQL" : "MySQL";
+  const detectedVersion = safeTerminalText(compatibility.detected_version);
+  const version = detectedVersion.toLowerCase().startsWith(product.toLowerCase())
+    ? detectedVersion
+    : `${product} ${detectedVersion}`;
+  const releaseLine = compatibility.authority?.version_line
+    ? `; reviewed release line ${safeTerminalText(compatibility.authority.version_line)}`
+    : "";
+  if (compatibility.tier === "full") {
+    return theme.success(`Reviewed database grammar: ${version} uses the full grammar${releaseLine}.`);
+  }
+  if (compatibility.tier === "compatible_limited") {
+    const limitations = [
+      ...(compatibility.authority?.features.schema_check_constraints === false
+        ? ["Text grouping/filtering requires a bounded native ENUM."]
+        : []),
+      ...(compatibility.authority?.features.automatic_numeric_bands === false
+        ? ["Automatic numeric bands are unavailable."]
+        : []),
+    ];
+    return theme.warning(
+      `Reviewed database grammar: ${version} uses the supported limited tier${releaseLine}. `
+      + limitations.join(" "),
+    );
+  }
+  return theme.danger(`Reviewed database grammar: ${version} is outside the supported release lines.`);
+}
 
 export function createBoundaryReviewInteractiveSession(
   input: ReadStream = process.stdin,
@@ -107,6 +210,7 @@ export function createBoundaryReviewInteractiveSession(
     chooseResource: (resources, overview, options) =>
       chooseResource(resources, overview, options, input, output),
     editFieldTiers: (view, options) => editFieldTiers(view, options, input, output),
+    editFieldEnumValues: (view, field) => editFieldEnumValues(view, field, input, output),
     resolveBlockedResource: (view) => resolveBlockedResource(view, input, output),
     promptText: (prompt) => readTerminalTextWithEscape(
       formatTextPromptWithBack(prompt, theme),
@@ -125,6 +229,11 @@ export function createBoundaryReviewInteractiveSession(
       if (!answer) return defaultValue;
       return answer.toLowerCase() === "y" || answer.toLowerCase() === "yes";
     },
+    confirmActivation: (prompt) => readTerminalActivationConfirmation(
+      theme.bold(prompt),
+      input,
+      output,
+    ),
   };
 }
 
@@ -134,25 +243,64 @@ async function resolveBlockedResource(
   output: WriteStream,
 ): Promise<BoundaryBlockedResolution> {
   const rowCandidates = uniqueCandidates(view.row_identity.selected, view.row_identity.candidates);
-  const tenantCandidates = uniqueCandidates(view.tenant_key.selected, view.tenant_key.candidates);
+  const tenantOptions = [
+    ...uniqueCandidates(view.tenant_key.selected, view.tenant_key.candidates).map((value) => ({
+      kind: "direct" as const,
+      value,
+      label: `${value} (direct column)`,
+      selected: view.tenant_key.selected === value,
+    })),
+    ...(view.derived_tenant_scope?.candidates ?? []).map((scope) => ({
+      kind: "derived" as const,
+      value: scope.path_id,
+      label: `${formatDerivedScopePath(scope)} (mandatory relationship path)`,
+      selected: view.derived_tenant_scope?.selected?.path_id === scope.path_id,
+      scope,
+    })),
+    ...(view.shared_reference_scope?.eligible ? [{
+      kind: "shared_reference" as const,
+      value: SHARED_REFERENCE_ACKNOWLEDGEMENT,
+      label: "Shared reference - same reviewed rows for every tenant",
+      selected: Boolean(view.shared_reference_scope.selected),
+    }] : []),
+  ];
   const theme = terminalTheme(output.isTTY && !("NO_COLOR" in process.env));
+  const scopeGuidance = tenantOptions.length === 0
+    ? blockedTenantScopeGuidance(view)
+    : undefined;
   let selectedDecision = view.row_identity.selected ? 1 : 0;
   let rowIndex = Math.max(0, rowCandidates.indexOf(view.row_identity.selected ?? rowCandidates[0] ?? ""));
-  let tenantIndex = Math.max(0, tenantCandidates.indexOf(view.tenant_key.selected ?? tenantCandidates[0] ?? ""));
+  let tenantIndex = Math.max(0, tenantOptions.findIndex((option) => option.selected));
 
   return withRawKeys(input, output, async (nextKey, render) => {
     while (true) {
       const rowValue = rowCandidates[rowIndex];
-      const tenantValue = tenantCandidates[tenantIndex];
-      const resolvable = Boolean(rowValue && tenantValue);
-      const selectedInference = selectedDecision === 0 ? view.row_identity : view.tenant_key;
-      const selectedValue = selectedDecision === 0 ? rowValue : tenantValue;
-      const evidence = selectedInference.alternatives_considered
-        .find((candidate) => candidate.value === selectedValue)?.evidence[0]
-        ?? selectedInference.evidence.find((item) => item.detail.includes(String(selectedValue)))?.detail;
+      const tenantOption = tenantOptions[tenantIndex];
+      const derivedDepth = tenantOption?.kind === "derived"
+        ? tenantOption.scope.proof.links.length
+        : 0;
+      const reviewedDerivedDepth = view.reviewed_budgets?.max_derived_scope_hops
+        ?? view.reviewed_budgets?.max_relationship_hops
+        ?? 2;
+      const depthAllowed = derivedDepth === 0 || derivedDepth <= reviewedDerivedDepth;
+      const resolvable = Boolean(rowValue && tenantOption && depthAllowed);
+      const selectedValue = selectedDecision === 0 ? rowValue : tenantOption?.value;
+      const evidence = selectedDecision === 0
+        ? view.row_identity.alternatives_considered
+          .find((candidate) => candidate.value === selectedValue)?.evidence[0]
+          ?? view.row_identity.evidence.find((item) => item.detail.includes(String(selectedValue)))?.detail
+        : tenantOption?.kind === "derived"
+          ? "database foreign key is non-null and points many-to-one to a unique key on the scoped ancestor"
+          : tenantOption?.kind === "shared_reference"
+            ? "human confirmation is required because Runner will apply no tenant predicate to this table"
+            : view.tenant_key.alternatives_considered
+            .find((candidate) => candidate.value === selectedValue)?.evidence[0]
+            ?? view.tenant_key.evidence.find((item) => item.detail.includes(String(selectedValue)))?.detail;
       render([
         theme.title(`RESOLVE TABLE ACCESS - ${safeTerminalText(view.resource_id)}`),
-        "Runner needs one database-backed record ID and one tenant-isolation column.",
+        "Runner needs one database-backed record ID and one reviewed row-scope choice.",
+        theme.dim("Choose a direct tenant column, a proven path, or Shared reference."),
+        theme.dim("Shared reference means every tenant receives the same reviewed rows."),
         theme.dim("These choices stay outside model arguments and do not activate access."),
         "",
         resolutionRow(
@@ -167,9 +315,9 @@ async function resolveBlockedResource(
           theme,
           selectedDecision === 1,
           "Tenant isolation",
-          tenantValue,
-          tenantCandidates.length,
-          view.tenant_key.selected === tenantValue,
+          tenantOption?.label,
+          tenantOptions.length,
+          tenantOption?.selected === true,
         ),
         "",
         ...(selectedValue
@@ -179,6 +327,14 @@ async function resolveBlockedResource(
               ? "No single-column primary or unique key was proven by the database."
               : "No tenant-isolation candidate was found in the inspected structure.",
           )]),
+        ...(tenantOption?.kind === "derived" && selectedDecision === 1
+          ? derivedScopeCostAdvisoryLines(
+              view,
+              tenantOption.scope,
+              reviewedDerivedDepth,
+              theme,
+            )
+          : []),
         ...(resolvable
           ? [
               "",
@@ -187,7 +343,19 @@ async function resolveBlockedResource(
             ]
           : [
               "",
-              theme.warning("This table cannot be added until the missing database structure is available."),
+              theme.warning(scopeGuidance
+                ? "This table is unavailable for the reviewed reasons below."
+                : "This table cannot be added until the missing database structure is available."),
+              ...(scopeGuidance
+                ? [
+                    "",
+                    theme.bold("Why tenant isolation is unavailable"),
+                    ...scopeGuidance.why.map((line) => `  - ${safeTerminalText(line)}`),
+                    "",
+                    theme.bold("What makes this table addable"),
+                    ...scopeGuidance.remediation.map((line) => `  - ${safeTerminalText(line)}`),
+                  ]
+                : []),
               `${theme.key("B/Esc")} Back   ${theme.key("Q")} Quit`,
             ]),
       ]);
@@ -202,16 +370,58 @@ async function resolveBlockedResource(
       if (direction !== 0) {
         if (selectedDecision === 0 && rowCandidates.length) {
           rowIndex = (rowIndex + direction + rowCandidates.length) % rowCandidates.length;
-        } else if (selectedDecision === 1 && tenantCandidates.length) {
-          tenantIndex = (tenantIndex + direction + tenantCandidates.length) % tenantCandidates.length;
+        } else if (selectedDecision === 1 && tenantOptions.length) {
+          tenantIndex = (tenantIndex + direction + tenantOptions.length) % tenantOptions.length;
         }
         continue;
       }
-      if ((key.name === "return" || key.name === "enter") && rowValue && tenantValue) {
-        return { row_identity: rowValue, tenant_key: tenantValue };
+      if ((key.name === "return" || key.name === "enter") && rowValue && tenantOption) {
+        if (tenantOption.kind === "direct") {
+          return { row_identity: rowValue, tenant_key: tenantOption.value };
+        }
+        if (tenantOption.kind === "derived") {
+          return { row_identity: rowValue, tenant_scope_path: tenantOption.value };
+        }
+        return {
+          row_identity: rowValue,
+          shared_reference_scope: SHARED_REFERENCE_ACKNOWLEDGEMENT,
+        };
       }
     }
   });
+}
+
+function derivedScopeCostAdvisoryLines(
+  view: BoundaryResourceReviewView,
+  scope: DerivedScopePath,
+  reviewedDepth: number,
+  theme: TerminalTheme,
+): string[] {
+  const depth = scope.proof.links.length;
+  const rows = view.approximate_row_count;
+  const rowHops = rows === undefined ? undefined : rows * depth;
+  const pressure = depth >= 3 || (rowHops !== undefined && rowHops >= 500_000);
+  return [
+    "",
+    (pressure ? theme.warning : theme.dim)(
+      `Cost advisory: ${depth}-hop mandatory scope path; reviewed statement timeout ${(view.reviewed_budgets?.statement_timeout_ms ?? 3000).toLocaleString("en-US")} ms.`,
+    ),
+    ...(rows === undefined
+      ? [theme.dim("Catalog row volume is unavailable; doctor can attest indexes but cannot estimate structural volume.")]
+      : [theme.dim(
+          `Catalog estimate: about ${rows.toLocaleString("en-US")} total root rows (${rowHops!.toLocaleString("en-US")} row-hops before selectivity). This is not a tenant count or latency prediction.`,
+        )]),
+    ...(depth > reviewedDepth
+      ? [theme.danger(
+          `This path is not selectable yet. In /access press L and raise Derived-scope depth to ${depth}, then return here.`,
+        )]
+      : []),
+    ...(pressure
+      ? [theme.warning(
+          "Use doctor to verify every path index. For high-volume leaves, a direct tenant column is usually faster; measured query time appears in /details.",
+        )]
+      : []),
+  ];
 }
 
 function uniqueCandidates(selected: string | undefined, candidates: string[]): string[] {
@@ -240,6 +450,7 @@ async function chooseResource(
     startingBoundaryName?: string;
     startAtBoundaryList?: boolean;
     initialResourceId?: string;
+    notice?: BoundaryAccessNotice;
   } | undefined,
   input: ReadStream,
   output: WriteStream,
@@ -249,6 +460,7 @@ async function chooseResource(
   let selected = 0;
   let selectedBoundary = 0;
   let showMap = false;
+  let showMapDetails = false;
   let showReviewItems = false;
   const focusedAccess = options?.initialView === "access";
   const startingBoundaryName = options?.startingBoundaryName;
@@ -268,9 +480,10 @@ async function chooseResource(
         const end = start + visible.length;
         const below = resources.length - end;
         const highlighted = resources[selected]!;
-        const eligible = resources.filter((resource) =>
-          resource.status === "draft_read" || resource.inline_resolution_available === true).length;
-        const unavailable = resources.length - eligible;
+        const eligible = resources.filter(firstTableIsStartable).length;
+        const sequencedAfterStart = resources.filter((resource) =>
+          resource.first_table_startable === false).length;
+        const unavailable = resources.length - eligible - sequencedAfterStart;
         render([
           theme.title(`CHOOSE FIRST TABLE - ${safeTerminalText(startingBoundaryName)}`),
           "A new boundary starts with the table you choose. Nothing is copied from another boundary.",
@@ -278,7 +491,11 @@ async function chooseResource(
           "",
           ...visible.map((resource, index) => {
             const absolute = start + index;
-            const details = resource.status === "draft_read"
+            const details = resource.first_table_startable === false
+              ? resource.first_table_scope_kind === "shared_reference"
+                ? `ADD AFTER SCOPED TABLE · ${resource.first_table_guidance ?? "review Shared reference inside the new boundary"}`
+                : `START FROM ANCESTOR · ${resource.first_table_guidance ?? "add its scoped ancestor first"}`
+              : resource.status === "draft_read"
               ? `${resource.model_visible_fields} model · ` +
                 `${resource.runner_output_only_fields} Runner-only · ${resource.kept_out_fields} kept out`
               : resource.inline_resolution_available
@@ -287,12 +504,13 @@ async function chooseResource(
             const line = `${absolute === selected ? ">" : " "} ${safeTerminalText(resource.resource_id)}  ` +
               `[${safeTerminalText(details)}]`;
             if (absolute === selected) return theme.focus(line);
-            return resource.status === "draft_read" || resource.inline_resolution_available
+            return firstTableIsStartable(resource)
               ? line
               : theme.dim(line);
           }),
           theme.dim(
-            `Inspected tables: ${resources.length} total · ${eligible} eligible · ${unavailable} unavailable.`,
+            `Inspected tables: ${resources.length} total · ${eligible} can start · ` +
+            `${sequencedAfterStart} add after required scope · ${unavailable} unavailable.`,
           ),
           ...(below > 0 || start > 0
             ? [theme.dim(
@@ -318,9 +536,25 @@ async function chooseResource(
           continue;
         }
         if (key.name === "return" || key.name === "enter") {
-          if (highlighted.status !== "draft_read" && !highlighted.inline_resolution_available) {
+          if (!firstTableIsStartable(highlighted)) {
+            if (highlighted.first_table_startable === false) {
+              startingTableNotice = highlighted.first_table_scope_kind === "shared_reference"
+                ? `${safeTerminalText(highlighted.resource_id)} cannot be the first table in this authoring flow. ` +
+                  `${safeTerminalText(highlighted.first_table_guidance ?? "Start with a tenant-scoped table, then add it.")}. ` +
+                  "The no-per-tenant-rows acknowledgement is recorded separately for every boundary."
+                : `${safeTerminalText(highlighted.resource_id)} cannot be the first table. ` +
+                  `${safeTerminalText(highlighted.first_table_guidance ?? "Add its directly scoped ancestor first.")}. ` +
+                  `Required scope is derived through ${safeTerminalText(
+                    highlighted.first_table_scope_label ?? "a mandatory reviewed relationship path",
+                  )}.`;
+              continue;
+            }
             startingTableNotice = `${safeTerminalText(highlighted.resource_id)} cannot start a boundary: ` +
-              safeTerminalText(highlighted.blockers[0] ?? "structural review is required first.");
+              safeTerminalText(
+                highlighted.scope_resolution_guidance?.why[0]
+                  ?? highlighted.blockers[0]
+                  ?? "structural review is required first.",
+              );
             continue;
           }
           return { resource_id: highlighted.resource_id, action: "add" };
@@ -387,6 +621,7 @@ async function chooseResource(
         if (key.name === "m") {
           showReviewItems = false;
           showMap = true;
+          showMapDetails = false;
           mapOffset = Math.max(0, resources.indexOf(highlighted) - 2);
           continue;
         }
@@ -400,13 +635,20 @@ async function chooseResource(
         continue;
       }
       if (showMap) {
-        const mapLines = boundaryOverviewMapLines(resources, theme);
+        const mapLines = boundaryOverviewMapLines(
+          resources,
+          theme,
+          "synapsor-runner",
+          showMapDetails,
+          Math.max(36, Math.min(terminalContentWidth(output.columns), 116)),
+        );
         const pageSize = 15;
         mapOffset = Math.min(mapOffset, Math.max(0, mapLines.length - pageSize));
         render([
           theme.title("WHOLE BOUNDARY MAP"),
           boundaryOverviewSummary(resources),
-          `${theme.key("Up/Down")} Scroll   ${theme.key("B/Esc")} Back   ${theme.key("Q")} Quit`,
+          `${theme.key("Up/Down")} Scroll   ${theme.key("D")} ${showMapDetails ? "Hide" : "Show"} path IDs   ` +
+            `${theme.key("B/Esc")} Back   ${theme.key("Q")} Quit`,
           "",
           ...mapLines.slice(mapOffset, mapOffset + pageSize),
           "",
@@ -419,6 +661,11 @@ async function chooseResource(
         const key = await nextKey();
         if (key.name === "m" || isBackKey(key) || key.name === "return" || key.name === "enter") {
           showMap = false;
+          continue;
+        }
+        if (key.name === "d") {
+          showMapDetails = !showMapDetails;
+          mapOffset = 0;
           continue;
         }
         if (isCancel(key)) return undefined;
@@ -449,12 +696,19 @@ async function chooseResource(
         selectedBoundary = Math.min(selectedBoundary, boundaryEntries.length - 1);
         const highlightedBoundary = boundaryEntries[selectedBoundary]!;
         const selectedBoundaryHasPendingChange = highlightedBoundary.selected
-          && (!highlightedBoundary.active || !highlightedBoundary.matches_active_digest);
+          && (highlightedBoundary.policy_review_required
+            || !highlightedBoundary.active
+            || !highlightedBoundary.matches_active_digest);
+        const boundaryListCompatibility = databaseCompatibilityLine(
+          resources[0]?.database_server_compatibility,
+          theme,
+        );
         if (focusedAccess && !activeResources.length && boundaryEntries.length === 1) {
           render([
             theme.title("YOUR DATA BOUNDARY"),
             "A boundary is the reviewed tables, columns, relationships, and limits",
             "that your AI cannot exceed.",
+            ...(boundaryListCompatibility ? [boundaryListCompatibility] : []),
             "",
             theme.bold(firstRunBoundaryRow("NAME", "STATUS", "TABLES", "AI ACCESS")),
             theme.focus(firstRunBoundaryRow(
@@ -465,21 +719,21 @@ async function chooseResource(
             )),
             "",
             theme.bold(
-              `${theme.key("Enter")} Review once, activate, and choose how to ask`,
+              `${theme.key("Enter/C")} Review + activate`,
             ),
             ...packTerminalActions([
               `${theme.key("E")} Edit access`,
               `${theme.key("A")} New boundary`,
               `${theme.key("P")} Privacy for all tables`,
-              `${theme.key("L")} Ranked limit`,
+              `${theme.key("L")} Limits`,
               `${theme.key("M")} Map`,
               `${theme.key("N")} Rename`,
               `${theme.key("Q")} Quit`,
             ], terminalContentWidth(output.columns)),
             "",
             theme.dim(
-              "After one exact confirmation, choose OpenAI, Anthropic, a local model, " +
-              "or an existing MCP client.",
+              "Activation returns here so you can keep editing. Press Q when finished " +
+              "to choose how to ask.",
             ),
             theme.dim("The draft grants no AI access until you confirm it."),
           ]);
@@ -495,6 +749,7 @@ async function chooseResource(
           }
           if (key.name === "m") {
             showMap = true;
+            showMapDetails = false;
             mapOffset = 0;
             continue;
           }
@@ -508,7 +763,9 @@ async function chooseResource(
         const rows = boundaryEntries.map((entry, index) => {
           const isCurrent = entry.selected;
           const outstanding = isCurrent
-            ? (reviewLeft === "Complete" ? 0 : entry.outstanding_decisions)
+            ? (reviewLeft === "Complete"
+              ? (entry.policy_review_required ? 1 : 0)
+              : entry.outstanding_decisions)
             : entry.outstanding_decisions;
           const status = entry.active
             ? (entry.matches_active_digest ? "ACTIVE" : "ACTIVE + DRAFT EDITS")
@@ -528,14 +785,22 @@ async function chooseResource(
           theme.title("BOUNDARIES"),
           "Each boundary is a saved set of reviewed tables, fields, relationships, and limits.",
           theme.dim("One boundary is selected for editing; only an explicitly activated boundary grants Explore access."),
+          ...(boundaryListCompatibility ? [boundaryListCompatibility] : []),
           "",
           theme.bold(savedBoundaryRow("", "NAME", "STATUS", "TABLES", "AUTHORITY")),
           ...rows,
           ...(selectedBoundaryHasPendingChange
             ? [
               "",
-              theme.warning("1 PENDING BOUNDARY CHANGE IS NOT ACTIVE"),
-              theme.bold(`${theme.key("C")} reviews and activates the exact disabled update.`),
+              theme.warning(highlightedBoundary.policy_review_required
+                ? "LEGACY BOUNDARY POLICY NEEDS REVIEW"
+                : "1 PENDING BOUNDARY CHANGE IS NOT ACTIVE"),
+              ...(highlightedBoundary.policy_review_required
+                ? [
+                  "Runner preserved this boundary's exact revision and did not assign the old project-wide settings to it.",
+                  theme.bold("Open this boundary and save a reviewed setting, or Rescan, to isolate its policy before activation."),
+                ]
+                : [theme.bold(`${theme.key("C")} reviews and activates the exact disabled update.`)]),
             ]
             : []),
           "",
@@ -547,11 +812,11 @@ async function chooseResource(
             `${theme.key("C")} ${focusedAccess ? "Review + activate" : "Complete review"}`,
             `${theme.key("A")} New boundary`,
             `${theme.key("P")} Privacy for all tables`,
-            `${theme.key("L")} Ranked limit`,
+            `${theme.key("L")} Limits`,
             `${theme.key("M")} Map`,
             `${theme.key("N")} Rename`,
             `${theme.key("X")} Delete`,
-            ...(highlightedBoundary.active ? [`${theme.key("D")} Deactivate`] : []),
+            ...(highlightedBoundary.active ? [`${theme.key("D")} Deactivate active boundary`] : []),
             `${theme.key("Q")} Quit`,
           ], terminalContentWidth(output.columns)),
           theme.dim("New boundaries start with a table you choose, then open its column access for review."),
@@ -575,6 +840,7 @@ async function chooseResource(
         }
         if (key.name === "m") {
           showMap = true;
+          showMapDetails = false;
           mapOffset = 0;
           continue;
         }
@@ -640,6 +906,7 @@ async function chooseResource(
         }
         if (key.name === "m") {
           showMap = true;
+          showMapDetails = false;
           mapOffset = 0;
           continue;
         }
@@ -677,6 +944,10 @@ async function chooseResource(
         : reviewLeft === "Complete"
           ? theme.success("REVIEWED - NOT ACTIVE")
         : theme.warning("DRAFT - NO ACCESS");
+      const selectedCompatibility = databaseCompatibilityLine(
+        highlighted.database_server_compatibility,
+        theme,
+      );
       const displayedReviewLeft = focusedAccess && reviewLeft !== "Complete"
         ? "FINAL REVIEW PENDING"
         : safeTerminalText(reviewLeft);
@@ -688,12 +959,18 @@ async function chooseResource(
           ? [`${theme.key("S")} Sign off table`]
           : []),
         ...(resourceView === "boundary"
-          ? [`${theme.key("R")} Remove`]
+          ? [`${theme.key("R")} Remove from draft`]
           : []),
         ...(focusedAccess && resourceView === "boundary"
           ? [`${theme.key("P")} Privacy (minimum group ${
             highlighted.minimum_cohort_size ?? 5
           }${highlighted.minimum_cohort_overridden ? ", owner override" : ""})`]
+          : []),
+        ...(focusedAccess && resourceView === "boundary" && highlighted.included
+          ? [`${theme.key("G")} Reviewed metrics and numeric bands`]
+          : []),
+        ...(focusedAccess && resourceView === "boundary" && highlighted.included
+          ? [`${theme.key("I")} Table label and description`]
           : []),
       ];
       const boundaryActions = [
@@ -707,7 +984,7 @@ async function chooseResource(
             : "Related tables only"}`]),
         `${theme.key("M")} Map`,
         `${theme.key("N")} Rename`,
-        `${theme.key("L")} Ranked limits`,
+        `${theme.key("L")} Limits`,
         `${theme.key("C")} ${focusedAccess ? "Review + activate" : "Complete review"}`,
         `${theme.key("Q")} Quit`,
       ];
@@ -719,6 +996,7 @@ async function chooseResource(
         ),
         `${candidateStatus}  ${includedCount} ` +
           `${plural(includedCount, "table", "tables")}  ${displayedReviewLeft}`,
+        ...(selectedCompatibility ? [selectedCompatibility] : []),
         ...(candidateHasPendingChange
           ? [
             theme.warning("1 PENDING BOUNDARY CHANGE IS NOT ACTIVE"),
@@ -789,6 +1067,48 @@ async function chooseResource(
         ...(resourceView === "related"
           ? relationshipConnectionDetail(highlighted, boundaryResources, theme)
           : []),
+        ...(highlighted.scope_resolution_guidance
+          ? [
+              "",
+              theme.danger("Why this table is unavailable"),
+              ...highlighted.scope_resolution_guidance.why.map((line) =>
+                `  - ${safeTerminalText(line)}`),
+              theme.bold("What makes it addable"),
+              ...highlighted.scope_resolution_guidance.remediation.map((line) =>
+                `  - ${safeTerminalText(line)}`),
+            ]
+          : highlighted.status !== "draft_read"
+            && highlighted.derived_tenant_scope?.candidates.length
+            ? [
+                "",
+                theme.success("Proven tenant scope is available"),
+                ...highlighted.derived_tenant_scope.candidates.slice(0, 3).flatMap((scope) => {
+                  const depth = derivedScopeDepth(scope);
+                  const reviewedMaximum = highlighted.reviewed_max_derived_scope_hops ?? 2;
+                  const joinColumns = formatDerivedScopeJoinColumns(scope);
+                  return [
+                    `  ${theme.success(`Tenant scope available (${depth} ${plural(depth, "hop", "hops")})`)}`,
+                    `    ${safeTerminalText(formatDerivedScopePath(scope))}`,
+                    ...(joinColumns
+                      ? [`    via columns: ${safeTerminalText(joinColumns)}`]
+                      : []),
+                    `    ${theme.dim(`path ID: ${safeTerminalText(scope.path_id)}`)}`,
+                    ...(depth > reviewedMaximum
+                      ? [theme.warning(
+                          `    needs max_derived_scope_hops ${depth} (currently ${reviewedMaximum})`,
+                        )]
+                      : []),
+                  ];
+                }),
+                theme.dim("Press Enter to review the exact path; no authority changes until activation."),
+              ]
+            : []),
+        ...(options?.notice
+          ? [
+              "",
+              ...formatBoundaryAccessNotice(theme, options.notice),
+            ]
+          : []),
         "",
         theme.bold("SELECTED TABLE"),
         ...packTerminalActions(selectedTableActions, actionWidth),
@@ -809,6 +1129,7 @@ async function chooseResource(
       if (isCancel(key)) return undefined;
       if (key.name === "m") {
         showMap = true;
+        showMapDetails = false;
         mapOffset = Math.max(0, selected - 2);
         continue;
       }
@@ -819,12 +1140,15 @@ async function chooseResource(
         showReviewItems = true;
         continue;
       }
+      if (key.name === "g" && focusedAccess && resourceView === "boundary" && highlighted.included) {
+        return { resource_id: highlighted.resource_id, action: "analytics" };
+      }
+      if (key.name === "i" && focusedAccess && resourceView === "boundary" && highlighted.included) {
+        return { resource_id: highlighted.resource_id, action: "metadata" };
+      }
       if (key.name === "n") return { action: "rename" };
       if (key.name === "l") return { action: "limits" };
       if (key.name === "c") return { action: "confirm" };
-      if (key.name === "d" && resources.some((resource) => resource.active)) {
-        return { action: "disable", boundary_name: resources[0]!.candidate_boundary_name };
-      }
       if (key.name === "a" && resourceView === "boundary") {
         resourceView = "related";
         selected = 0;
@@ -866,7 +1190,10 @@ async function chooseResource(
 
 async function editFieldTiers(
   view: BoundaryResourceReviewView,
-  options: { focusedAccess?: boolean } | undefined,
+  options: {
+    focusedAccess?: boolean;
+    initialTiers?: Record<string, BoundaryFieldTier>;
+  } | undefined,
   input: ReadStream,
   output: WriteStream,
 ): Promise<BoundaryFieldTierEditResult> {
@@ -880,23 +1207,37 @@ async function editFieldTiers(
   if (!fields.length) throw new Error(`${view.resource_id} has no inspected columns.`);
   const tiers = Object.fromEntries(fields.map((field) => [
     field.name,
-    currentFieldTier(view, field.name),
+    options?.initialTiers?.[field.name] ?? currentFieldTier(view, field.name),
   ])) as Record<string, BoundaryFieldTier>;
   const theme = terminalTheme(output.isTTY && !("NO_COLOR" in process.env));
   let selected = 0;
   let showMap = false;
-  return withRawKeys(input, output, async (nextKey, render) => {
+  let showMapDetails = false;
+  return withRawKeys<BoundaryFieldTierEditResult>(input, output, async (nextKey, render) => {
     while (true) {
       if (showMap) {
+        const width = Math.max(36, Math.min(terminalContentWidth(output.columns), 116));
         render([
-          ...boundaryResourceMapLines(view, tiers, theme),
+          ...boundaryResourceMapLines(
+            view,
+            tiers,
+            theme,
+            "synapsor-runner",
+            width,
+            showMapDetails,
+          ),
           "",
-          `${theme.key("B/Esc")} Back to columns   ${theme.key("Q")} Quit`,
+          `${theme.key("D")} ${showMapDetails ? "Hide" : "Show"} exact details   ` +
+            `${theme.key("B/Esc")} Back to columns   ${theme.key("Q")} Quit`,
         ]);
         const key = await nextKey();
         if (key.name === "backspace" || (key.name === "b" && key.sequence === "b")) return "back";
         if (key.name === "m" || isBackKey(key) || key.name === "return" || key.name === "enter") {
           showMap = false;
+          continue;
+        }
+        if (key.name === "d") {
+          showMapDetails = !showMapDetails;
           continue;
         }
         if (isCancel(key)) return undefined;
@@ -905,8 +1246,15 @@ async function editFieldTiers(
       const start = boundedWindowStart(selected, fields.length, 12);
       const visible = fields.slice(start, start + 12);
       const highlighted = fields[selected]!;
+      const enumValues = reviewableEnumValues(view, highlighted);
+      const reviewedEnumValues = enumValues
+        ? currentReviewedEnumValues(view, highlighted, enumValues)
+        : undefined;
+      const operationRepairAvailable = (view.operation_repair_fields ?? []).includes(highlighted.name)
+        && tiers[highlighted.name] !== "kept_out";
       const tableWidth = Math.max(36, Math.min(terminalContentWidth(output.columns), 116));
       const accessLayout = fieldAccessLayout(tableWidth);
+      const reviewCompatibility = databaseCompatibilityLine(view.database_server_compatibility, theme);
       render([
         theme.title(`REVIEW COLUMNS - ${safeTerminalText(view.resource_id)}`),
         `${theme.key("Up/Down")} Navigate   ${theme.key("Space")} Change access   ` +
@@ -917,6 +1265,20 @@ async function editFieldTiers(
         `${theme.key("P")} Privacy threshold: minimum group ${
           (view.candidate ?? view.generated_candidate)!.minimum_cohort_size
         } (${(view.candidate ?? view.generated_candidate)!.minimum_cohort_size === 1 ? "suppression off" : "small groups withheld"})`,
+        `${theme.key("O")} User/owner row limit: ${
+          (view.candidate ?? view.generated_candidate)!.principal_key
+            ?? ((view.candidate ?? view.generated_candidate)!.principal_scope
+              ? formatDerivedScopePath((view.candidate ?? view.generated_candidate)!.principal_scope!)
+              : "not configured")
+        }`,
+        ...(reviewCompatibility ? [reviewCompatibility] : []),
+        ...(enumValues
+          ? [`${theme.key("E")} Edit allowed values for selected column: ${reviewedEnumValues!.length} of ${enumValues.length}`]
+          : []),
+        ...(operationRepairAvailable
+          ? [`${theme.key("S")} Restore the current inspected filter/sort/group/measure suggestions for this column`]
+          : []),
+        `${theme.key("I")} Edit the selected column's reviewed label and description`,
         "Space cycles: MODEL + RUNNER -> RUNNER ONLY -> KEPT OUT",
         "",
         theme.bold(fieldAccessRow("COLUMN", "TYPE", "ACCESS", "REVIEW NOTE", accessLayout)),
@@ -944,6 +1306,11 @@ async function editFieldTiers(
         isTrustedScopeField(view, highlighted.name)
           ? theme.scope(trustedScopeTierConsequence(tiers[highlighted.name]!))
           : styleTierConsequence(theme, tiers[highlighted.name]!),
+        ...(operationRepairAvailable
+          ? [theme.warning(
+              "Operation repair available: this usable field has no analytical grants, but the current inspected draft has safe suggestions.",
+            )]
+          : []),
         theme.dim(
           options?.focusedAccess
             ? "Enter stages these choices in the disabled boundary. Final activation is one separate confirmation."
@@ -955,9 +1322,32 @@ async function editFieldTiers(
       if (isCancel(key)) return undefined;
       if (key.name === "m") {
         showMap = true;
+        showMapDetails = false;
         continue;
       }
       if (key.name === "p") return "privacy";
+      if (key.name === "o") return { action: "principal", tiers: { ...tiers } };
+      if (key.name === "i") {
+        return {
+          action: "metadata",
+          field: highlighted.name,
+          tiers: { ...tiers },
+        };
+      }
+      if (key.name === "s" && operationRepairAvailable) {
+        return {
+          action: "restore_operations",
+          field: highlighted.name,
+          tiers: { ...tiers },
+        };
+      }
+      if (key.name === "e" && enumValues) {
+        return {
+          action: "enum",
+          field: highlighted.name,
+          tiers: { ...tiers },
+        };
+      }
       if (key.name === "up") selected = (selected - 1 + fields.length) % fields.length;
       if (key.name === "down") selected = (selected + 1) % fields.length;
       if (key.name === "space" || key.name === "right") {
@@ -974,12 +1364,89 @@ async function editFieldTiers(
   });
 }
 
+async function editFieldEnumValues(
+  view: BoundaryResourceReviewView,
+  fieldName: string,
+  input: ReadStream,
+  output: WriteStream,
+): Promise<BoundaryFieldEnumEditResult> {
+  const field = view.fields.find((candidate) => candidate.name === fieldName);
+  const schemaValues = field ? reviewableEnumValues(view, field) : undefined;
+  if (!field || !schemaValues) {
+    throw new Error(`${view.resource_id}.${fieldName} has no reviewed database-declared value list.`);
+  }
+  const selectedValues = new Set(currentReviewedEnumValues(view, field, schemaValues));
+  const theme = terminalTheme(output.isTTY && !("NO_COLOR" in process.env));
+  let selected = 0;
+  return withRawKeys(input, output, async (nextKey, render) => {
+    while (true) {
+      const start = boundedWindowStart(selected, schemaValues.length, 12);
+      const visible = schemaValues.slice(start, start + 12);
+      render([
+        theme.title(`REVIEW ALLOWED VALUES - ${safeTerminalText(view.resource_id)}.${safeTerminalText(fieldName)}`),
+        "Runner learned this complete list from database schema metadata. No source rows were sampled.",
+        "The AI may filter or group only by checked values. Removed values are refused even if guessed.",
+        "Selecting none disables filtering and grouping for this column; it does not enable free-text access.",
+        "",
+        `${theme.key("Up/Down")} Navigate   ${theme.key("Space")} Toggle value   ` +
+          `${theme.key("A")} Keep all   ${theme.key("N")} Keep none`,
+        `${theme.key("Enter")} Save allowed values and return to columns   ` +
+          `${theme.key("B/Esc")} Back without saving   ${theme.key("Q")} Quit`,
+        "",
+        ...visible.map((value, index) => {
+          const absolute = start + index;
+          const line = `${absolute === selected ? ">" : " "} ` +
+            `[${selectedValues.has(value) ? "x" : " "}] ${safeTerminalText(value)}`;
+          return absolute === selected ? theme.focus(line) : line;
+        }),
+        "",
+        theme.bold(`${selectedValues.size} of ${schemaValues.length} values kept`),
+      ]);
+      const key = await nextKey();
+      if (isBackToResources(key)) return "back";
+      if (isCancel(key)) return undefined;
+      if (key.name === "up") selected = (selected - 1 + schemaValues.length) % schemaValues.length;
+      if (key.name === "down") selected = (selected + 1) % schemaValues.length;
+      if (key.name === "space") {
+        const value = schemaValues[selected]!;
+        if (selectedValues.has(value)) selectedValues.delete(value);
+        else selectedValues.add(value);
+      }
+      if (key.name === "a") schemaValues.forEach((value) => selectedValues.add(value));
+      if (key.name === "n") selectedValues.clear();
+      if (key.name === "return" || key.name === "enter") {
+        return schemaValues.filter((value) => selectedValues.has(value));
+      }
+    }
+  });
+}
+
+function reviewableEnumValues(
+  view: BoundaryResourceReviewView,
+  field: BoundaryResourceReviewView["fields"][number],
+): string[] | undefined {
+  const candidate = view.candidate ?? view.generated_candidate;
+  if (!candidate || !field.enum_values?.length) return undefined;
+  const generatedEnum = Object.hasOwn(candidate.field_enums, field.name);
+  if (!generatedEnum && !field.enum_review_override) return undefined;
+  return [...field.enum_values];
+}
+
+function currentReviewedEnumValues(
+  view: BoundaryResourceReviewView,
+  field: BoundaryResourceReviewView["fields"][number],
+  schemaValues: string[],
+): string[] {
+  const candidate = view.candidate ?? view.generated_candidate;
+  if (Object.hasOwn(candidate?.field_enums ?? {}, field.name)) {
+    return [...(candidate?.field_enums[field.name] ?? [])];
+  }
+  return field.enum_review_override ? [] : [...schemaValues];
+}
+
 function currentFieldTier(view: BoundaryResourceReviewView, field: string): BoundaryFieldTier {
   const candidate = view.candidate ?? view.generated_candidate;
-  if (candidate?.kept_out_fields.includes(field)) return "kept_out";
-  if (candidate?.model_withheld_fields?.includes(field)) return "withheld_from_model";
-  if (candidate?.selectable_fields.includes(field)) return "visible";
-  return "kept_out";
+  return reviewedBoundaryFieldTier(candidate, field);
 }
 
 function cycleTier(current: BoundaryFieldTier, direction: 1 | -1): BoundaryFieldTier {
@@ -995,10 +1462,10 @@ function tierLabel(tier: BoundaryFieldTier): string {
 
 function tierConsequence(tier: BoundaryFieldTier): string {
   if (tier === "visible") {
-    return "Model + Runner: reviewed values appear locally and may be sent to the configured model.";
+    return "Model + Runner: reviewed values appear locally and may be sent to the configured model; re-including a kept-out field restores its current inspected operation suggestions.";
   }
   if (tier === "withheld_from_model") {
-    return "Raw values: Runner only. Raw values stay local or become response-only tokens; reviewed derived results remain usable.";
+    return "Raw values: Runner only. Raw values stay local or become response-only tokens; re-including a kept-out field restores its current inspected operation suggestions.";
   }
   return "Kept out: the field cannot be selected, filtered, sorted, grouped, joined, or aggregated.";
 }
@@ -1015,17 +1482,27 @@ function trustedScopeTierConsequence(tier: BoundaryFieldTier): string {
 
 export function formatBoundaryResourceMap(
   view: BoundaryResourceReviewView,
-  options: { color?: boolean } = {},
+  options: {
+    color?: boolean;
+    commandName?: string;
+    columns?: number;
+    details?: boolean;
+  } = {},
 ): string {
   const tiers = Object.fromEntries(view.fields.map((field) => [
     field.name,
     currentFieldTier(view, field.name),
   ])) as Record<string, BoundaryFieldTier>;
-  return `${boundaryResourceMapLines(
+  const width = Math.max(36, Math.min(terminalContentWidth(options.columns), 116));
+  const lines = boundaryResourceMapLines(
     view,
     tiers,
     terminalTheme(options.color === true && !("NO_COLOR" in process.env)),
-  ).join("\n")}\n`;
+    options.commandName ?? "synapsor-runner",
+    width,
+    options.details === true,
+  );
+  return `${lines.join("\n")}\n`;
 }
 
 export function formatBoundaryOverviewMap(
@@ -1034,11 +1511,13 @@ export function formatBoundaryOverviewMap(
     color?: boolean;
     exhaustive?: boolean;
     commandName?: string;
+    details?: boolean;
+    columns?: number;
   } = {},
 ): string {
   const theme = terminalTheme(options.color === true && !("NO_COLOR" in process.env));
   if (!options.exhaustive) {
-    return [
+    const lines = [
       theme.title("BOUNDARY OVERVIEW"),
       ...boundaryOverviewFirstRunLines(
         resources,
@@ -1046,95 +1525,394 @@ export function formatBoundaryOverviewMap(
         options.commandName ?? "synapsor-runner",
       ),
       "",
-    ].join("\n");
+    ];
+    return lines.join("\n");
   }
-  return [
+  const lines = [
     theme.title("WHOLE BOUNDARY MAP (ALL TABLES)"),
     theme.dim("Complete inspected catalog. Use boundary review --map for the concise overview."),
     boundaryOverviewSummary(resources),
     "",
-    ...boundaryOverviewMapLines(resources, theme),
+    ...boundaryOverviewMapLines(
+      resources,
+      theme,
+      options.commandName ?? "synapsor-runner",
+      options.details === true,
+      Math.max(36, Math.min(terminalContentWidth(options.columns), 116)),
+    ),
+    ...(options.details ? [] : [
+      "",
+      theme.dim("Canonical path IDs are hidden in the scan view. Rerun with --details for scripted review."),
+    ]),
     "",
-  ].join("\n");
+  ];
+  return lines.join("\n");
 }
 
 function boundaryResourceMapLines(
   view: BoundaryResourceReviewView,
   tiers: Record<string, BoundaryFieldTier>,
   theme: TerminalTheme,
+  commandName = "synapsor-runner",
+  width = 96,
+  details = false,
 ): string[] {
   const candidate = view.candidate ?? view.generated_candidate;
   if (!candidate) {
+    const scopeGuidance = blockedTenantScopeGuidance(view);
+    const derivedScopeLines = availableDerivedTenantScopeLines(view, theme, commandName);
+    const selectedIdentity = view.row_identity.selected;
+    const identityCandidate = view.row_identity.candidates[0];
+    const blocker = (
+      view.blockers.join("; ") || "record identity or trusted scope is unresolved"
+    ).replace(/[.]+$/, "");
     return [
       theme.title(`TABLE ACCESS MAP - ${safeTerminalText(view.resource_id)}`),
-      theme.warning("Blocked: record identity or trusted scope is unresolved."),
+      theme.warning(`Blocked: ${safeTerminalText(blocker)}.`),
+      "",
+      theme.bold("What Runner already proved"),
+      selectedIdentity
+        ? `  Record identity: ${theme.success(safeTerminalText(selectedIdentity))} ` +
+          `(${safeTerminalText(view.row_identity.confidence)} confidence)`
+        : identityCandidate
+          ? `  Record identity candidate: ${theme.warning(safeTerminalText(identityCandidate))} ` +
+            `(${safeTerminalText(view.row_identity.confidence)} confidence; human review required)`
+          : `  Record identity: ${theme.danger("unresolved")}`,
+      ...view.row_identity.evidence.slice(0, 3).map((evidence) =>
+        `    evidence: ${safeTerminalText(`${evidence.source}: ${evidence.detail}`)}`),
+      `  Direct tenant scope: ${view.tenant_key.selected
+        ? theme.success(safeTerminalText(view.tenant_key.selected))
+        : view.tenant_key.candidates.length
+          ? theme.warning(`${view.tenant_key.candidates.length} candidate(s); human review required`)
+          : theme.warning("unavailable")}`,
+      ...(view.tenant_key.blocked_reason
+        ? [`    why: ${safeTerminalText(view.tenant_key.blocked_reason)}`]
+        : []),
+      ...blockedRelationshipProofLines(view, theme),
+      ...(scopeGuidance ? [] : sharedReferenceProofLines(view, theme)),
+      ...derivedScopeLines,
+      ...(scopeGuidance
+        ? [
+            "",
+            theme.bold("Why tenant isolation is unavailable"),
+            ...scopeGuidance.why.map((line) => `  - ${safeTerminalText(line)}`),
+            "",
+            theme.bold("What makes this table addable"),
+            ...scopeGuidance.remediation.map((line) => `  - ${safeTerminalText(line)}`),
+          ]
+        : []),
     ];
   }
   const hasStagedChanges = view.fields.some(
     (field) => currentFieldTier(view, field.name) !== tiers[field.name],
   );
-  const groupedFields = new Map<BoundaryFieldTier, string[]>(tierOrder.map((tier) => [tier, []]));
-  for (const field of [...view.fields].sort((left, right) => left.name.localeCompare(right.name))) {
-    groupedFields.get(tiers[field.name] ?? "kept_out")!.push(field.name);
-  }
   const lines = [
     theme.title(`TABLE ACCESS MAP - ${safeTerminalText(view.resource_id)}`),
     theme.dim(hasStagedChanges
       ? "Preview includes unsaved access choices. This view cannot save or activate authority."
       : "Current disabled review candidate. This view cannot save or activate authority."),
     "",
-    theme.bold(safeTerminalText(view.resource_id)),
-    `|-- Record identity: ${safeTerminalText(candidate.primary_key)}`,
-    `|-- Trusted tenant scope: ${safeTerminalText(candidate.tenant_key)} (bound outside model arguments)`,
-    `|-- Trusted principal scope: ${candidate.principal_key
-      ? `${safeTerminalText(candidate.principal_key)} (bound outside model arguments)`
-      : "not configured"}`,
-    ...mapTierLines(view, candidate, "visible", groupedFields.get("visible")!, theme),
-    ...mapTierLines(
-      view,
-      candidate,
-      "withheld_from_model",
-      groupedFields.get("withheld_from_model")!,
-      theme,
+    theme.bold(`${safeTerminalText(view.resource_id)}  in reviewed boundary`),
+    ...boundaryResourceScopeLines(candidate),
+    "",
+    theme.bold("FIELD AUTHORITY"),
+    ...renderBoundaryMapFieldMatrix(
+      boundaryResourceFieldRows(view, candidate, tiers),
+      { width, indent: "  " },
     ),
-    ...mapTierLines(view, candidate, "kept_out", groupedFields.get("kept_out")!, theme),
-    ...mapRelationshipLines(candidate, theme),
-    `\`-- Aggregate guard: minimum group size ${candidate.minimum_cohort_size}; small groups are suppressed`,
+    "",
+    ...boundaryMapOperationLegend().map((line) => theme.dim(line)),
+    ...(details ? mapFieldOperationDetailLines(view, candidate, tiers, theme) : []),
+    ...operationRepairLines(view, tiers, theme, commandName),
+    ...mapRelationshipLines(candidate, theme, details),
+    ...(!details && mapHasExactDetails(candidate)
+      ? ["", theme.dim("Exact filter/time vocabularies and canonical path IDs: rerun with --details or use --json.")]
+      : []),
   ];
   return lines;
 }
 
-function mapTierLines(
+function operationRepairLines(
   view: BoundaryResourceReviewView,
-  candidate: NonNullable<BoundaryResourceReviewView["candidate"]>,
-  tier: BoundaryFieldTier,
-  fields: string[],
+  tiers: Record<string, BoundaryFieldTier>,
+  theme: TerminalTheme,
+  commandName: string,
+): string[] {
+  const generated = view.generated_candidate;
+  const fields = (view.operation_repair_fields ?? [])
+    .filter((field) => tiers[field] !== "kept_out");
+  if (!generated || !fields.length) return [];
+  return [
+    "",
+    theme.warning("OPERATION REPAIR AVAILABLE"),
+    ...fields.flatMap((field) => {
+      const tier = tiers[field] ?? currentFieldTier(view, field);
+      const flag = tier === "withheld_from_model" ? "--withhold-from-model" : "--allow-reviewed-field";
+      const command = [
+        commandName,
+        "boundary review resource",
+        shellQuote(view.resource_id),
+        flag,
+        shellQuote(field),
+        "--apply",
+        "--actor \"$USER\"",
+        "--reason",
+        shellQuote(`Restore the current inspected analytical operations for ${view.resource_id}.${field}.`),
+      ].join(" ");
+      return [
+        `  ${safeTerminalText(field)} is usable but has no filter, sort, group, or measure grant.`,
+        `    current suggestions: ${boundaryFieldOperations(generated, field)}`,
+        "    repair here: press S while this column is selected",
+        `    scripted repair: ${safeTerminalText(command)}`,
+      ];
+    }),
+  ];
+}
+
+function blockedRelationshipProofLines(
+  view: BoundaryResourceReviewView,
   theme: TerminalTheme,
 ): string[] {
-  const heading = tier === "visible"
-    ? "Model + Runner fields"
-    : tier === "withheld_from_model"
-      ? "Runner-output-only fields"
-      : "Kept-out fields";
-  const consequence = tier === "visible"
-    ? "real values may reach the model"
-    : tier === "withheld_from_model"
-      ? "raw values stay local or tokenized; reviewed derived results remain usable"
-      : "unavailable to every read operation";
-  const lines = [`|-- ${styleTier(theme, tier, heading)} (${consequence})`];
-  if (!fields.length) return [...lines, "|   `-- (none)"];
-  fields.forEach((field, index) => {
-    const branch = index === fields.length - 1 ? "`--" : "|--";
-    const operations = tier === "kept_out"
-      ? "no operations"
-      : boundaryFieldOperations(candidate, field);
-    const sourceField = view.fields.find((item) => item.name === field);
-    const risk = sourceField ? riskBadge(view, sourceField) : "";
-    lines.push(
-      `|   ${branch} ${safeTerminalText(field)}: ${operations}${risk ? ` ${risk}` : ""}`,
-    );
-  });
-  return lines;
+  if (!view.relationships.length) {
+    return [`  Relationships: ${theme.dim("none found")}`];
+  }
+  return [
+    `  Relationships: ${view.relationships.length}`,
+    ...view.relationships.flatMap((relationship) => {
+      const target = `${relationship.referenced_resource}.${relationship.referenced_columns.join(",")}`;
+      const uniqueness = relationship.target_uniqueness
+        ? `${relationship.target_uniqueness.kind.replaceAll("_", " ")} ` +
+          `${relationship.target_uniqueness.name}(` +
+          `${relationship.target_uniqueness.columns.join(",")})`
+        : "unique target";
+      const proof = relationship.cardinality_proven
+        ? `${relationship.nullable ? "nullable" : "NOT NULL"}; many-to-one proven; target ${uniqueness}`
+        : `${relationship.nullable ? "nullable" : "NOT NULL"}; cardinality not proven`;
+      return [
+        `    ${theme.relationship(safeTerminalText(relationship.name))}: ` +
+          `${safeTerminalText(relationship.columns.join(","))} -> ${safeTerminalText(target)}`,
+        `      ${relationship.cardinality_proven && !relationship.nullable
+          ? theme.success(safeTerminalText(proof))
+          : theme.warning(safeTerminalText(proof))}`,
+      ];
+    }),
+  ];
+}
+
+function sharedReferenceProofLines(
+  view: BoundaryResourceReviewView,
+  theme: TerminalTheme,
+): string[] {
+  if (view.shared_reference_scope?.eligible) {
+    return [`  Shared reference: ${theme.success("eligible for explicit human review")}`];
+  }
+  if (!view.shared_reference_scope?.blockers.length) return [];
+  return [
+    `  Shared reference: ${theme.warning("unavailable")}`,
+    ...view.shared_reference_scope.blockers.map((blocker) =>
+      `    why: ${safeTerminalText(blocker)}`),
+  ];
+}
+
+function availableDerivedTenantScopeLines(
+  view: BoundaryResourceReviewView,
+  theme: TerminalTheme,
+  commandName: string,
+): string[] {
+  const paths = [...(view.derived_tenant_scope?.candidates ?? [])].sort((left, right) =>
+    derivedScopeDepth(left) - derivedScopeDepth(right) || left.path_id.localeCompare(right.path_id));
+  if (!paths.length) return [];
+  const reviewedMaximum = view.reviewed_budgets?.max_derived_scope_hops
+    ?? view.reviewed_budgets?.max_relationship_hops
+    ?? 2;
+  return [
+    "",
+    theme.bold("Available tenant-scope paths"),
+    ...paths.flatMap((scope) => {
+      const depth = derivedScopeDepth(scope);
+      const joinColumns = formatDerivedScopeJoinColumns(scope);
+      const principalScope = view.derived_principal_scope?.candidates.find((candidate) =>
+        candidate.path_id === scope.path_id);
+      const command = derivedTenantScopeReviewCommand({
+        commandName,
+        resourceId: view.resource_id,
+        rowIdentity: view.row_identity.selected,
+        scope,
+        ...(principalScope ? { principalScopePath: principalScope.path_id } : {}),
+        ...(depth > reviewedMaximum ? { requiredMaximum: depth } : {}),
+      });
+      return [
+        `  ${theme.success(`Tenant scope available (${depth} ${plural(depth, "hop", "hops")})`)}`,
+        `    ${safeTerminalText(formatDerivedScopePath(scope))}`,
+        ...(joinColumns
+          ? [`    via columns: ${safeTerminalText(joinColumns)}`]
+          : []),
+        `    ${theme.dim(`path ID: ${safeTerminalText(scope.path_id)}`)}`,
+        `    review order: add scoped ancestors first, then this table.`,
+        ...(depth > reviewedMaximum
+          ? [theme.warning(
+              `    needs max_derived_scope_hops ${depth} (currently ${reviewedMaximum}); ` +
+              `the command below raises only this reviewed limit.`,
+            )]
+          : []),
+        ...(principalScope
+          ? [`    principal scope is also proven through this exact path.`]
+          : []),
+        `    review: ${safeTerminalText(command)}`,
+      ];
+    }),
+  ];
+}
+
+function derivedTenantScopeReviewCommand(input: {
+  commandName: string;
+  resourceId: string;
+  rowIdentity?: string;
+  scope: DerivedScopePath;
+  principalScopePath?: string;
+  requiredMaximum?: number;
+}): string {
+  return [
+    input.commandName,
+    "boundary review resource",
+    shellQuote(input.resourceId),
+    "--include",
+    ...(input.rowIdentity ? ["--row-identity", shellQuote(input.rowIdentity)] : []),
+    "--tenant-scope-path",
+    shellQuote(input.scope.path_id),
+    ...(input.principalScopePath
+      ? ["--principal-scope-path", shellQuote(input.principalScopePath)]
+      : []),
+    ...(input.requiredMaximum
+      ? ["--max-derived-scope-hops", String(input.requiredMaximum)]
+      : []),
+    "--apply",
+    "--actor \"$USER\"",
+    "--reason",
+    shellQuote(
+      `Rows inherit trusted scope through mandatory path ${input.scope.path_id} to ` +
+      `${input.scope.ancestor_resource}.`,
+    ),
+  ].join(" ");
+}
+
+function derivedScopeDepth(scope: DerivedScopePath): number {
+  return scope.proof.links.length;
+}
+
+function firstTableIsStartable(resource: BoundaryResourceReviewSummary): boolean {
+  if (resource.first_table_startable === false) return false;
+  return resource.status === "draft_read" || resource.inline_resolution_available === true;
+}
+
+function boundaryResourceScopeLines(
+  candidate: NonNullable<BoundaryResourceReviewView["candidate"]>,
+): string[] {
+  return [
+    `  ${"record identity".padEnd(18)}${safeTerminalText(candidate.primary_key)}`,
+    `  ${"tenant scope".padEnd(18)}${candidate.tenant_key
+      ? `${safeTerminalText(candidate.tenant_key)} (direct; trusted runtime value)`
+      : candidate.tenant_scope
+        ? `${safeTerminalText(formatDerivedScopePath(candidate.tenant_scope))} ` +
+          `(${candidate.tenant_scope.proof.links.length} ` +
+          `${plural(candidate.tenant_scope.proof.links.length, "hop", "hops")}, mandatory)`
+        : "shared reference (no tenant predicate)"}`,
+    `  ${"principal scope".padEnd(18)}${candidate.principal_key
+      ? `${safeTerminalText(candidate.principal_key)} (direct; trusted runtime value)`
+      : candidate.principal_scope
+        ? `${safeTerminalText(formatDerivedScopePath(candidate.principal_scope))} ` +
+          `(${candidate.principal_scope.proof.links.length} ` +
+          `${plural(candidate.principal_scope.proof.links.length, "hop", "hops")}, mandatory)`
+        : "not configured"}`,
+    `  ${"cohort guard".padEnd(18)}minimum group size ${candidate.minimum_cohort_size}; smaller groups are suppressed`,
+  ];
+}
+
+function boundaryResourceFieldRows(
+  view: BoundaryResourceReviewView,
+  candidate: NonNullable<BoundaryResourceReviewView["candidate"]>,
+  tiers: Record<string, BoundaryFieldTier>,
+): BoundaryMapFieldRow[] {
+  return [...view.fields]
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .map((field) => {
+      const tier = tiers[field.name] ?? "kept_out";
+      const restoresSuggestions = tier !== "kept_out"
+        && currentFieldTier(view, field.name) === "kept_out";
+      const authority = restoresSuggestions ? (view.generated_candidate ?? candidate) : candidate;
+      const unavailable = tier === "kept_out";
+      const notes = boundaryMapFieldNotes(view, field, restoresSuggestions);
+      return {
+        field: safeTerminalText(field.name),
+        data_type: safeTerminalText(field.data_type ?? candidate.field_types[field.name] ?? "reviewed"),
+        access: tier === "visible" ? "MODEL" : tier === "withheld_from_model" ? "RUNNER" : "KEPT",
+        operations: {
+          return_value: !unavailable && authority.selectable_fields.includes(field.name),
+          filter: !unavailable && (authority.filterable_fields[field.name]?.length ?? 0) > 0,
+          sort: !unavailable && authority.sortable_fields.includes(field.name),
+          group: !unavailable && (
+            authority.groupable_fields.includes(field.name)
+            || (authority.numeric_bands ?? []).some((band) => band.field === field.name)
+            || (authority.auto_bands ?? []).some((policy) => policy.field === field.name)
+          ),
+          measure: !unavailable && authority.aggregate_measures.includes(field.name),
+          presence: !unavailable && (authority.presence_measure_fields ?? []).includes(field.name),
+          distinct: !unavailable && authority.count_distinct_fields.includes(field.name),
+          time: !unavailable && (authority.time_bucket_fields[field.name]?.length ?? 0) > 0,
+        },
+        ...(notes.length ? { note: notes.join("; ") } : {}),
+      };
+    });
+}
+
+function boundaryMapFieldNotes(
+  view: BoundaryResourceReviewView,
+  field: BoundaryResourceReviewView["fields"][number],
+  restoresSuggestions: boolean,
+): string[] {
+  const notes: string[] = [];
+  if (isTrustedScopeField(view, field.name)) notes.push("trusted scope");
+  else if (field.primary_key) notes.push("record ID");
+  if (field.sensitivity.state === "high_confidence_sensitive") notes.push("sensitive");
+  else if (field.sensitivity.state === "unresolved_free_text") notes.push("needs review");
+  if (restoresSuggestions) notes.push("restores on save");
+  if ((view.operation_repair_fields ?? []).includes(field.name)) notes.push("repair available");
+  return notes;
+}
+
+function mapFieldOperationDetailLines(
+  view: BoundaryResourceReviewView,
+  candidate: NonNullable<BoundaryResourceReviewView["candidate"]>,
+  tiers: Record<string, BoundaryFieldTier>,
+  theme: TerminalTheme,
+): string[] {
+  const details = [...view.fields]
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .flatMap((field) => {
+      const tier = tiers[field.name] ?? "kept_out";
+      if (tier === "kept_out") return [];
+      const restoresSuggestions = currentFieldTier(view, field.name) === "kept_out";
+      const authority = restoresSuggestions ? (view.generated_candidate ?? candidate) : candidate;
+      const values: string[] = [];
+      const filters = authority.filterable_fields[field.name];
+      if (filters?.length) values.push(`filter: ${filters.join(", ")}`);
+      const functions = authority.aggregate_measure_functions?.[field.name];
+      if (functions?.length) values.push(`measure: ${functions.join(", ")}`);
+      const buckets = authority.time_bucket_fields[field.name];
+      if (buckets?.length) values.push(`time: ${buckets.join(", ")}`);
+      const fixedBands = (authority.numeric_bands ?? [])
+        .filter((band) => band.field === field.name)
+        .map((band) => band.name);
+      if (fixedBands.length) values.push(`fixed bands: ${fixedBands.join(", ")}`);
+      const autoBands = (authority.auto_bands ?? [])
+        .filter((policy) => policy.field === field.name)
+        .map((policy) => `${policy.methods.join("/")} ${policy.min_buckets}-${policy.max_buckets}`);
+      if (autoBands.length) values.push(`auto bands: ${autoBands.join(", ")}`);
+      return values.length ? [`  ${safeTerminalText(field.name)}  ${safeTerminalText(values.join(" | "))}`] : [];
+    });
+  return details.length
+    ? ["", theme.bold("EXACT OPERATION DETAILS"), ...details]
+    : [];
 }
 
 function boundaryFieldOperations(
@@ -1148,6 +1926,7 @@ function boundaryFieldOperations(
   if (candidate.sortable_fields.includes(field)) operations.push("sort");
   if (candidate.groupable_fields.includes(field)) operations.push("group");
   if (candidate.aggregate_measures.includes(field)) operations.push("aggregate measure");
+  if (candidate.presence_measure_fields?.includes(field)) operations.push("presence measures");
   if (candidate.count_distinct_fields.includes(field)) operations.push("count distinct");
   const buckets = candidate.time_bucket_fields[field];
   if (buckets?.length) operations.push(`time(${buckets.join("/")})`);
@@ -1157,33 +1936,80 @@ function boundaryFieldOperations(
 function mapRelationshipLines(
   candidate: NonNullable<BoundaryResourceReviewView["candidate"]>,
   theme: TerminalTheme,
+  details: boolean,
 ): string[] {
-  const lines = [`|-- ${theme.relationship("Reviewed relationships")}`];
-  if (!candidate.relationships.length) return [...lines, "|   `-- (none)"];
+  const pathIds = mapPathIdEntries(candidate);
+  if (!candidate.relationships.length && (!details || !pathIds.length)) return [];
+  const lines = candidate.relationships.length
+    ? ["", theme.relationship("RELATIONSHIPS")]
+    : [];
   candidate.relationships.forEach((relationship, index) => {
-    const branch = index === candidate.relationships.length - 1 ? "`--" : "|--";
+    const display = {
+      source_resource: candidate.id,
+      target_resource: relationship.target_resource,
+      links: relationship.proof?.links,
+    };
+    const depth = relationship.path_depth ?? 1;
+    const joinColumns = formatRelationshipJoinColumns(display)
+      ?? relationship.local_columns.join(", ");
     lines.push(
-      `|   ${branch} ${safeTerminalText(relationship.local_columns.join(","))} -> ` +
-      `${safeTerminalText(relationship.target_resource)}.` +
-      `${safeTerminalText(relationship.target_columns.join(","))} ` +
-      `[many-to-one, max fan-out 1, path ${relationship.path_depth ?? 1}]`,
+      `  R${index + 1}  ${depth} ${plural(depth, "hop", "hops")}  ` +
+      `${safeTerminalText(formatRelationshipPath(display))}` +
+      `${joinColumns ? `  via ${safeTerminalText(joinColumns)}` : ""}`,
     );
   });
+  if (details && pathIds.length) {
+    lines.push("", theme.dim("PATH IDS (SCRIPTED REVIEW)"));
+    lines.push(...pathIds.map((entry) => `  ${entry.labels.join("/")}  ${safeTerminalText(entry.id)}`));
+  }
   return lines;
+}
+
+function mapPathIdEntries(
+  candidate: NonNullable<BoundaryResourceReviewView["candidate"]>,
+): Array<{ id: string; labels: string[] }> {
+  const entries = new Map<string, string[]>();
+  const add = (id: string | undefined, label: string) => {
+    if (!id) return;
+    const labels = entries.get(id) ?? [];
+    labels.push(label);
+    entries.set(id, labels);
+  };
+  add(candidate.tenant_scope?.path_id, "T");
+  add(candidate.principal_scope?.path_id, "P");
+  candidate.relationships.forEach((relationship, index) => add(relationship.id, `R${index + 1}`));
+  return [...entries].map(([id, labels]) => ({ id, labels }));
+}
+
+function mapHasExactDetails(
+  candidate: NonNullable<BoundaryResourceReviewView["candidate"]>,
+): boolean {
+  return Object.values(candidate.filterable_fields).some((operators) => operators.length > 0)
+    || Object.values(candidate.time_bucket_fields).some((buckets) => buckets.length > 0)
+    || Object.values(candidate.aggregate_measure_functions ?? {}).some((functions) => functions.length > 0)
+    || (candidate.numeric_bands?.length ?? 0) > 0
+    || (candidate.auto_bands?.length ?? 0) > 0
+    || mapPathIdEntries(candidate).length > 0;
 }
 
 function boundaryOverviewSummary(resources: BoundaryResourceReviewSummary[]): string {
   const included = resources.filter((resource) => resource.included).length;
   const active = resources.filter((resource) => resource.active).length;
   const blocked = resources.filter((resource) => resource.status !== "draft_read").length;
-  const includedRelationships = resources.reduce(
-    (total, resource) =>
-      total + resource.relationships.filter((relationship) => relationship.state !== "available").length,
-    0,
-  );
+  const reviewedPaths = new Set<string>();
+  for (const resource of resources) {
+    for (const relationship of resource.relationships) {
+      if (relationship.state !== "available") {
+        reviewedPaths.add(`${resource.resource_id}\u0000${relationship.relationship_id}`);
+      }
+    }
+    for (const entry of selectedDerivedScopeEntries(resource)) {
+      reviewedPaths.add(`${resource.resource_id}\u0000${entry.scope.path_id}`);
+    }
+  }
   const name = resources[0]?.candidate_boundary_name ?? "reviewed_staging";
   return `Next boundary "${safeTerminalText(name)}": ${included}/${resources.length} tables | ` +
-    `active ${active} | reviewed paths ${includedRelationships} | blocked ${blocked}`;
+    `active ${active} | reviewed paths ${reviewedPaths.size} | blocked ${blocked}`;
 }
 
 function boundaryOverviewFirstRunLines(
@@ -1296,19 +2122,53 @@ function candidateResourceOverviewLines(
   const relationships = resource.relationships.filter(
     (relationship) => relationship.state !== "available",
   );
+  const scopeEntries = selectedDerivedScopeEntries(resource);
+  const scopePathIds = new Set(scopeEntries.map((entry) => entry.scope.path_id));
+  const relationshipByPath = new Map(relationships.map((relationship) => [
+    relationship.relationship_id,
+    relationship,
+  ]));
   const lines = [
     `  ${safeTerminalText(resource.resource_id)} [${theme.warning(state)}; ${review}]`,
     `    Fields: ${resource.model_visible_fields} model | ` +
       `${resource.runner_output_only_fields} raw Runner-only | ${resource.kept_out_fields} kept out`,
+    ...((resource.operation_repair_fields?.length ?? 0) > 0
+      ? [theme.warning(
+          `    Operation repair available: ${resource.operation_repair_fields!.join(", ")}`,
+        )]
+      : []),
   ];
-  for (const relationship of relationships.slice(0, 3)) {
+  for (const entry of scopeEntries.slice(0, 3)) {
+    const relationship = relationshipByPath.get(entry.scope.path_id);
+    const depth = derivedScopeDepth(entry.scope);
+    const role = entry.roles.join(" + ");
     lines.push(
-      `    -> ${safeTerminalText(relationship.target_resource)} ` +
-      `(many-to-one, depth ${relationship.path_depth})`,
+      `    ${theme.relationship(
+        `${role}${relationship ? " + analysis relationship" : ""}: ` +
+        `${safeTerminalText(formatDerivedScopePath(entry.scope))} ` +
+        `(${depth} ${plural(depth, "hop", "hops")})`,
+      )}`,
     );
+    const joinColumns = formatDerivedScopeJoinColumns(entry.scope);
+    if (joinColumns) lines.push(theme.dim(`      via columns: ${safeTerminalText(joinColumns)}`));
   }
-  if (relationships.length > 3) {
-    lines.push(theme.dim(`    +${relationships.length - 3} more reviewed paths`));
+  const remainingRelationships = relationships.filter(
+    (relationship) => !scopePathIds.has(relationship.relationship_id),
+  );
+  const remainingSlots = Math.max(0, 3 - scopeEntries.length);
+  for (const relationship of remainingRelationships.slice(0, remainingSlots)) {
+    const display = summaryRelationshipDisplay(resource.resource_id, relationship);
+    const joinColumns = formatRelationshipJoinColumns(display);
+    lines.push(
+      `    ${theme.relationship(safeTerminalText(formatRelationshipPath(display)))} ` +
+      `(${relationship.path_depth} ${plural(relationship.path_depth, "hop", "hops")})`,
+    );
+    if (joinColumns) lines.push(theme.dim(`      via columns: ${safeTerminalText(joinColumns)}`));
+  }
+  const renderedPaths = Math.min(3, scopeEntries.length + remainingRelationships.length);
+  const totalPaths = scopeEntries.length + remainingRelationships.length;
+  if (totalPaths > renderedPaths) {
+    lines.push(theme.dim(`    +${totalPaths - renderedPaths} more reviewed paths`));
   }
   return lines;
 }
@@ -1318,9 +2178,23 @@ function resourceNamePreview(
   theme: TerminalTheme,
   limit: number,
 ): string[] {
-  const lines = resources.slice(0, limit).map(
-    (resource) => `  ${safeTerminalText(resource.resource_id)}`,
-  );
+  const lines = resources.slice(0, limit).flatMap((resource) => [
+    `  ${safeTerminalText(resource.resource_id)}`,
+    ...(resource.scope_resolution_guidance
+      ? [theme.dim(
+          `    Why: ${safeTerminalText(
+            resource.scope_resolution_guidance.why[0]
+              ?? "trusted tenant scope is unresolved",
+          )}`,
+        )]
+      : resource.derived_tenant_scope?.candidates.length
+        ? [theme.dim(
+            `    Available tenant path: ${safeTerminalText(
+              formatDerivedScopePath(resource.derived_tenant_scope.candidates[0]!),
+            )}`,
+          )]
+        : []),
+  ]);
   if (resources.length > limit) {
     lines.push(theme.dim(`  +${resources.length - limit} more`));
   }
@@ -1333,27 +2207,37 @@ function availableRelationshipSuggestionLines(
   limit: number,
 ): string[] {
   const suggestions = resources
-    .map((resource) => ({
-      resource,
-      relationships: resource.relationships.filter(
-        (relationship) => relationship.state === "available",
+    .flatMap((resource) => resource.relationships
+      .filter((relationship) => relationship.state === "available")
+      .map((relationship) => ({ resource, relationship })));
+  const lines = suggestions.slice(0, limit).flatMap(({ resource, relationship }) => {
+    const display = summaryRelationshipDisplay(resource.resource_id, relationship);
+    const joinColumns = formatRelationshipJoinColumns(display);
+    return [
+      theme.relationship(
+        `  ${safeTerminalText(formatRelationshipPath(display))} ` +
+        `(${relationship.path_depth} ${plural(relationship.path_depth, "hop", "hops")})`,
       ),
-    }))
-    .filter(({ relationships }) => relationships.length > 0);
-  const lines = suggestions.slice(0, limit).map(({ resource, relationships }) => {
-    const targets = relationships
-      .slice(0, 4)
-      .map((relationship) => safeTerminalText(relationship.target_resource))
-      .join(", ");
-    const remainder = relationships.length > 4 ? `, +${relationships.length - 4} more` : "";
-    return theme.relationship(
-      `  ${safeTerminalText(resource.resource_id)} -> ${targets}${remainder}`,
-    );
+      ...(joinColumns
+        ? [theme.dim(`    via columns: ${safeTerminalText(joinColumns)}`)]
+        : []),
+    ];
   });
   if (suggestions.length > limit) {
-    lines.push(theme.dim(`  +${suggestions.length - limit} more tables with proven paths`));
+    lines.push(theme.dim(`  +${suggestions.length - limit} more proven paths`));
   }
   return lines;
+}
+
+function summaryRelationshipDisplay(
+  sourceResource: string,
+  relationship: BoundaryResourceReviewSummary["relationships"][number],
+) {
+  return {
+    source_resource: sourceResource,
+    target_resource: relationship.target_resource,
+    links: relationship.path_links,
+  };
 }
 
 function resourcesForPickerView(
@@ -1387,28 +2271,99 @@ function boundaryRelationshipConnections(
   for (const relationship of candidate.relationships) {
     if (!boundaryIds.has(relationship.target_resource)) continue;
     connections.push({
+      kind: "relationship",
       source_resource: candidate.resource_id,
       target_resource: relationship.target_resource,
       relationship_id: relationship.relationship_id,
       path_depth: relationship.path_depth,
+      path_links: relationship.path_links,
     });
   }
   for (const boundaryResource of boundaryResources) {
     for (const relationship of boundaryResource.relationships) {
       if (relationship.target_resource !== candidate.resource_id) continue;
       connections.push({
+        kind: "relationship",
         source_resource: boundaryResource.resource_id,
         target_resource: candidate.resource_id,
         relationship_id: relationship.relationship_id,
         path_depth: relationship.path_depth,
+        path_links: relationship.path_links,
       });
     }
   }
+  connections.push(...boundaryDerivedScopeConnections(candidate, boundaryResources));
   return connections.sort((left, right) =>
     left.path_depth - right.path_depth
+      || connectionKindOrder(left.kind) - connectionKindOrder(right.kind)
       || left.source_resource.localeCompare(right.source_resource)
       || left.target_resource.localeCompare(right.target_resource)
       || left.relationship_id.localeCompare(right.relationship_id));
+}
+
+function boundaryDerivedScopeConnections(
+  candidate: BoundaryResourceReviewSummary,
+  boundaryResources: BoundaryResourceReviewSummary[],
+): BoundaryRelationshipConnection[] {
+  const boundaryIds = new Set(boundaryResources.map((resource) => resource.resource_id));
+  const inferences = [
+    ...derivedScopePaths(candidate.derived_tenant_scope).map((scope) => ({
+      kind: "derived_tenant_scope" as const,
+      scope,
+    })),
+    ...derivedScopePaths(candidate.derived_principal_scope).map((scope) => ({
+      kind: "derived_principal_scope" as const,
+      scope,
+    })),
+  ];
+  return inferences.flatMap(({ kind, scope }) => {
+    const links = scope.proof?.links ?? [];
+    let expectedSource = candidate.resource_id;
+    const visited = new Set([candidate.resource_id]);
+    for (const link of links) {
+      if (link.source_resource !== expectedSource
+        || visited.has(link.target_resource)
+        || !boundaryIds.has(link.target_resource)
+        || link.nullable
+        || link.cardinality !== "many_to_one"
+        || link.max_fan_out !== 1
+        || link.source_columns.length < 1
+        || link.source_columns.length !== link.target_columns.length
+        || link.target_uniqueness.columns.length !== link.target_columns.length
+        || link.target_uniqueness.columns.some(
+          (field, index) => field !== link.target_columns[index],
+        )) return [];
+      expectedSource = link.target_resource;
+      visited.add(link.target_resource);
+    }
+    if (links.length < 1
+      || expectedSource !== scope.ancestor_resource
+      || !boundaryIds.has(scope.ancestor_resource)) return [];
+    return [{
+      kind,
+      source_resource: candidate.resource_id,
+      target_resource: scope.ancestor_resource,
+      relationship_id: scope.path_id,
+      path_depth: links.length,
+      derived_scope: scope,
+    }];
+  });
+}
+
+function derivedScopePaths(
+  inference: BoundaryResourceReviewSummary["derived_tenant_scope"],
+): DerivedScopePath[] {
+  if (!inference) return [];
+  const paths = [
+    ...(inference.selected ? [inference.selected] : []),
+    ...inference.candidates,
+  ];
+  return paths.filter((scope, index) =>
+    paths.findIndex((candidate) => candidate.path_id === scope.path_id) === index);
+}
+
+function connectionKindOrder(kind: BoundaryRelationshipConnection["kind"]): number {
+  return kind === "derived_tenant_scope" ? 0 : kind === "derived_principal_scope" ? 1 : 2;
 }
 
 function bestBoundaryRelationshipConnection(
@@ -1435,14 +2390,44 @@ function relationshipConnectionDetail(
 ): string[] {
   const connection = bestBoundaryRelationshipConnection(candidate, boundaryResources);
   if (!connection) return [];
+  if (connection.derived_scope) {
+    const scopeLabel = connection.kind === "derived_principal_scope"
+      ? "Derived principal scope"
+      : "Derived tenant scope";
+    const joinColumns = formatDerivedScopeJoinColumns(connection.derived_scope);
+    return [
+      theme.relationship(
+        `${scopeLabel} (${connection.path_depth} ` +
+        `${plural(connection.path_depth, "hop", "hops")})`,
+      ),
+      `  ${safeTerminalText(formatDerivedScopePath(connection.derived_scope))}`,
+      ...(joinColumns
+        ? [`  via columns: ${safeTerminalText(joinColumns)}`]
+        : []),
+      theme.dim(
+        `  path ID: ${safeTerminalText(connection.relationship_id)}; continuous non-null ` +
+        `many-to-one catalog proof. Human review is still required before use.`,
+      ),
+    ];
+  }
+  const display = {
+    source_resource: connection.source_resource,
+    target_resource: connection.target_resource,
+    links: connection.path_links,
+  };
+  const joinColumns = formatRelationshipJoinColumns(display);
   return [
     theme.relationship(
-      `Proven path: ${safeTerminalText(connection.source_resource)} -> ` +
-      `${safeTerminalText(connection.target_resource)}`,
+      `Proven relationship (${connection.path_depth} ` +
+      `${plural(connection.path_depth, "hop", "hops")})`,
     ),
+    `  ${safeTerminalText(formatRelationshipPath(display))}`,
+    ...(joinColumns
+      ? [`  via columns: ${safeTerminalText(joinColumns)}`]
+      : []),
     theme.dim(
-      `${safeTerminalText(connection.relationship_id)}; inspected many-to-one path; ` +
-      `depth ${connection.path_depth}. Human review is still required before use.`,
+      `  path ID: ${safeTerminalText(connection.relationship_id)}; inspected many-to-one proof. ` +
+      `Human review is still required before use.`,
     ),
   ];
 }
@@ -1563,46 +2548,304 @@ function fitTerminalCell(value: string, width: number): string {
 function boundaryOverviewMapLines(
   resources: BoundaryResourceReviewSummary[],
   theme: TerminalTheme,
+  commandName = "synapsor-runner",
+  details = false,
+  width = 116,
 ): string[] {
   if (!resources.length) return [theme.warning("(no inspected tables or views)")];
-  return resources.flatMap((resource) => {
-    const status = resource.status !== "draft_read"
-      ? theme.danger("BLOCKED")
-      : resource.active && resource.included
-        ? theme.success("ACTIVE + NEXT BOUNDARY")
-        : resource.active
-          ? theme.success("ACTIVE")
-          : resource.included
-            ? theme.warning("IN NEXT BOUNDARY")
-            : theme.dim("NOT INCLUDED");
-    const lines = [
-      `${safeTerminalText(resource.resource_id)} [${status}]`,
-      `  fields: ${resource.model_visible_fields} model | ` +
-      `${resource.runner_output_only_fields} raw Runner-only | ${resource.kept_out_fields} kept out`,
-    ];
-    if (resource.status !== "draft_read") {
-      lines.push(`  \`-- ${theme.danger(safeTerminalText(resource.blockers[0] ?? "review blocked"))}`);
-      return lines;
-    }
-    if (!resource.relationships.length) {
-      lines.push(`  \`-- ${theme.dim("no proven relationship candidate")}`);
-      return lines;
-    }
-    resource.relationships.forEach((relationship, index) => {
-      const branch = index === resource.relationships.length - 1 ? "`--" : "|--";
-      const state = relationship.state === "active"
-        ? theme.success("ACTIVE")
-        : relationship.state === "included"
-          ? theme.warning("IN NEXT BOUNDARY")
-          : theme.dim("AVAILABLE");
-      lines.push(`  ${branch} path ${safeTerminalText(relationship.relationship_id)} [${state}]`);
-      lines.push(
-        `      -> ${safeTerminalText(relationship.target_resource)} ` +
-        `(many-to-one, depth ${relationship.path_depth})`,
-      );
-    });
-    return lines;
+  const tableRows = resources.map((resource) => boundaryOverviewTableRow(
+    resource,
+    commandName,
+    details,
+  ));
+  const normalizedWidth = Math.max(36, Math.min(width, 116));
+  const lines = normalizedWidth >= 96
+    ? renderWideBoundaryOverviewTable(tableRows, normalizedWidth)
+    : normalizedWidth >= 64
+      ? renderMediumBoundaryOverviewTable(tableRows, normalizedWidth)
+      : renderNarrowBoundaryOverviewTable(tableRows, normalizedWidth);
+  return lines.map((line) => styleBoundaryOverviewTableLine(line, theme));
+}
+
+type BoundaryOverviewTableRow = {
+  resource: string;
+  status: string;
+  fields: string[];
+  review: string[];
+};
+
+function boundaryOverviewTableRow(
+  resource: BoundaryResourceReviewSummary,
+  commandName: string,
+  details: boolean,
+): BoundaryOverviewTableRow {
+  const fields = [
+    `Model + Runner: ${resource.model_visible_fields}`,
+    `Runner only: ${resource.runner_output_only_fields}`,
+    `Kept out: ${resource.kept_out_fields}`,
+  ];
+  if ((resource.operation_repair_fields?.length ?? 0) > 0) {
+    fields.push(
+      `Repair: restore operations for ${resource.operation_repair_fields!.join(", ")}`,
+    );
+  }
+  const review: string[] = [];
+  if (resource.status === "draft_read") {
+    review.push(...reviewedRelationshipTableLines(resource, details));
+  } else {
+    review.push(...blockedBoundaryTableLines(resource));
+    review.push(...availableDerivedTenantScopeTableLines(resource, commandName, details));
+  }
+  if (!review.length) review.push("No reviewed relationship paths");
+  return {
+    resource: safeTerminalText(resource.resource_id),
+    status: boundaryOverviewStatus(resource),
+    fields: fields.map(safeTerminalText),
+    review: review.map(safeTerminalText),
+  };
+}
+
+function boundaryOverviewStatus(resource: BoundaryResourceReviewSummary): string {
+  if (resource.status !== "draft_read") return "BLOCKED";
+  if (resource.active && resource.included) return "ACTIVE + NEXT";
+  if (resource.active) return "ACTIVE";
+  if (resource.included) return "IN NEXT";
+  return "NOT INCLUDED";
+}
+
+function reviewedRelationshipTableLines(
+  resource: BoundaryResourceReviewSummary,
+  details: boolean,
+): string[] {
+  const lines: string[] = [];
+  const scopeEntries = selectedDerivedScopeEntries(resource);
+  const scopePathIds = new Set(scopeEntries.map((entry) => entry.scope.path_id));
+  const relationshipByPath = new Map(resource.relationships.map((relationship) => [
+    relationship.relationship_id,
+    relationship,
+  ]));
+  const pathIds: Array<{ label: string; id: string }> = [];
+  scopeEntries.forEach((entry, index) => {
+    const relationship = relationshipByPath.get(entry.scope.path_id);
+    const depth = derivedScopeDepth(entry.scope);
+    const label = `S${index + 1}`;
+    const state = relationship ? plainRelationshipStateLabel(relationship) : undefined;
+    lines.push(
+      `${label}: ${entry.roles.join(" + ")}${relationship ? " + analysis relationship" : ""}` +
+      ` (${depth} ${plural(depth, "hop", "hops")})${state ? ` [${state}]` : ""}`,
+      `Path: ${formatDerivedScopePath(entry.scope)}`,
+    );
+    const joinColumns = formatDerivedScopeJoinColumns(entry.scope);
+    if (joinColumns) lines.push(`Via columns: ${joinColumns}`);
+    pathIds.push({ label, id: entry.scope.path_id });
   });
+  const remainingRelationships = resource.relationships.filter(
+    (relationship) => !scopePathIds.has(relationship.relationship_id),
+  );
+  remainingRelationships.forEach((relationship, index) => {
+    const display = summaryRelationshipDisplay(resource.resource_id, relationship);
+    const label = `R${index + 1}`;
+    lines.push(
+      `${label}: analysis relationship (${relationship.path_depth} ` +
+      `${plural(relationship.path_depth, "hop", "hops")}) ` +
+      `[${plainRelationshipStateLabel(relationship)}]`,
+      `Path: ${formatRelationshipPath(display)}`,
+    );
+    const joinColumns = formatRelationshipJoinColumns(display);
+    if (joinColumns) lines.push(`Via columns: ${joinColumns}`);
+    pathIds.push({ label, id: relationship.relationship_id });
+  });
+  if (details && pathIds.length) {
+    lines.push(...pathIds.map((entry) => `Path ID ${entry.label}: ${entry.id}`));
+  }
+  return lines;
+}
+
+function blockedBoundaryTableLines(
+  resource: BoundaryResourceReviewSummary,
+): string[] {
+  const lines: string[] = [];
+  const blockers = resource.blockers.length ? resource.blockers : ["review blocked"];
+  for (const blocker of blockers) {
+    const normalized = compactMapReferenceText(resource.resource_id, blocker);
+    const tenantScope = /^trusted tenant scope is unresolved(?:;\s*(.+))?\.?$/iu.exec(normalized);
+    if (tenantScope) {
+      lines.push("Tenant scope: UNRESOLVED");
+      if (tenantScope[1]) {
+        lines.push(`Review: ${tenantScope[1].replace(/^review\s+/iu, "")}`);
+      }
+      continue;
+    }
+    lines.push(`Blocked: ${normalized}`);
+  }
+
+  for (const reason of resource.scope_resolution_guidance?.why ?? []) {
+    const presentation = blockedScopeReasonPresentation(reason);
+    lines.push(
+      `${titleCaseMapLabel(presentation.label)}: ` +
+      compactMapReferenceText(resource.resource_id, presentation.message),
+    );
+  }
+  for (const [index, remediation] of (
+    resource.scope_resolution_guidance?.remediation.slice(0, 2) ?? []
+  ).entries()) {
+    lines.push(
+      `Next ${index + 1}: ${compactMapReferenceText(resource.resource_id, remediation)}`,
+    );
+  }
+  return lines;
+}
+
+function blockedScopeReasonPresentation(value: string): { label: string; message: string } {
+  const match = /^(Direct tenant scope|Derived tenant scope|Shared reference) unavailable:\s*(.+)$/iu.exec(
+    value.trim(),
+  );
+  if (!match) return { label: "why", message: value };
+  const labels: Record<string, string> = {
+    "direct tenant scope": "direct",
+    "derived tenant scope": "derived",
+    "shared reference": "shared",
+  };
+  return {
+    label: labels[match[1]!.toLowerCase()] ?? "why",
+    message: match[2]!,
+  };
+}
+
+function titleCaseMapLabel(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function compactMapReferenceText(resourceId: string, value: string): string {
+  const schemaSeparator = resourceId.indexOf(".");
+  const schemaPrefix = schemaSeparator > 0 ? `${resourceId.slice(0, schemaSeparator)}.` : undefined;
+  const compact = schemaPrefix ? value.split(schemaPrefix).join("") : value;
+  return compact.trim().replace(/[.]+$/u, "");
+}
+
+function availableDerivedTenantScopeTableLines(
+  resource: BoundaryResourceReviewSummary,
+  commandName: string,
+  details = false,
+): string[] {
+  const paths = [...(resource.derived_tenant_scope?.candidates ?? [])].sort((left, right) =>
+    derivedScopeDepth(left) - derivedScopeDepth(right) || left.path_id.localeCompare(right.path_id));
+  if (!paths.length) return [];
+  const reviewedMaximum = resource.reviewed_max_derived_scope_hops ?? 2;
+  const lines = paths.slice(0, 3).flatMap((scope, index) => {
+    const depth = derivedScopeDepth(scope);
+    const joinColumns = formatDerivedScopeJoinColumns(scope);
+    return [
+      `Available tenant scope: ${depth} ${plural(depth, "hop", "hops")}`,
+      `Path: ${formatDerivedScopePath(scope)}`,
+      ...(joinColumns
+        ? [`Via columns: ${joinColumns}`]
+        : []),
+      ...(details
+        ? [`Path ID A${index + 1}: ${scope.path_id}`]
+        : []),
+      ...(depth > reviewedMaximum
+        ? [`Needs: max_derived_scope_hops ${depth} (currently ${reviewedMaximum})`]
+        : []),
+    ];
+  });
+  if (paths.length > 3) {
+    lines.push(`${paths.length - 3} more proven paths are available`);
+  }
+  lines.push(
+    `Next: ${commandName} boundary review resource ` +
+    `${shellQuote(resource.resource_id)} --map shows the exact review command`,
+  );
+  return lines;
+}
+
+function renderWideBoundaryOverviewTable(
+  rows: BoundaryOverviewTableRow[],
+  width: number,
+): string[] {
+  const contentWidth = width - 13;
+  const resourceWidth = Math.min(24, Math.max(18, Math.floor(contentWidth * 0.22)));
+  const statusWidth = Math.min(20, Math.max(15, Math.floor(contentWidth * 0.18)));
+  const fieldsWidth = Math.min(20, Math.max(18, Math.floor(contentWidth * 0.19)));
+  const reviewWidth = contentWidth - resourceWidth - statusWidth - fieldsWidth;
+  return renderBoundaryMapTable(
+    ["Table", "Boundary status", "Field access", "Scope and relationships"],
+    rows.map((row) => [
+      row.resource,
+      row.status,
+      row.fields.join("\n"),
+      row.review.join("\n"),
+    ]),
+    { widths: [resourceWidth, statusWidth, fieldsWidth, reviewWidth] },
+  );
+}
+
+function renderMediumBoundaryOverviewTable(
+  rows: BoundaryOverviewTableRow[],
+  width: number,
+): string[] {
+  const contentWidth = width - 10;
+  const resourceWidth = Math.min(23, Math.max(15, Math.floor(contentWidth * 0.28)));
+  const statusWidth = Math.min(18, Math.max(14, Math.floor(contentWidth * 0.2)));
+  const reviewWidth = contentWidth - resourceWidth - statusWidth;
+  return renderBoundaryMapTable(
+    ["Table", "Status", "Reviewed boundary details"],
+    rows.map((row) => [
+      row.resource,
+      row.status,
+      [...row.fields, ...row.review].join("\n"),
+    ]),
+    { widths: [resourceWidth, statusWidth, reviewWidth] },
+  );
+}
+
+function renderNarrowBoundaryOverviewTable(
+  rows: BoundaryOverviewTableRow[],
+  width: number,
+): string[] {
+  const contentWidth = width - 7;
+  const resourceWidth = Math.min(18, Math.max(12, Math.floor(contentWidth * 0.38)));
+  const detailWidth = contentWidth - resourceWidth;
+  return renderBoundaryMapTable(
+    ["Table", "Reviewed boundary details"],
+    rows.map((row) => [
+      row.resource,
+      [`Status: ${row.status}`, ...row.fields, ...row.review].join("\n"),
+    ]),
+    { widths: [resourceWidth, detailWidth] },
+  );
+}
+
+function styleBoundaryOverviewTableLine(line: string, theme: TerminalTheme): string {
+  if (line.startsWith("+")) return theme.dim(line);
+  let styled = line.replace(
+    /(ACTIVE \+ NEXT BOUNDARY|ACTIVE \+ NEXT|IN NEXT BOUNDARY|IN NEXT|NOT INCLUDED|BLOCKED|ACTIVE)/gu,
+    (status) => status === "BLOCKED"
+      ? theme.danger(status)
+      : status === "NOT INCLUDED"
+        ? theme.dim(status)
+        : status === "IN NEXT BOUNDARY" || status === "IN NEXT"
+          ? theme.warning(status)
+          : theme.success(status),
+  );
+  styled = styled.replace(/UNRESOLVED/gu, (value) => theme.danger(value));
+  styled = styled.replace(
+    /(Table|Boundary status|Status|Field access|Scope and relationships|Reviewed boundary details)/gu,
+    (header) => theme.bold(header),
+  );
+  styled = styled.replace(
+    /(Review|Next(?: \d+)?|Needs|Repair):/gu,
+    (label) => theme.warning(label),
+  );
+  return styled;
+}
+
+function plainRelationshipStateLabel(
+  relationship: BoundaryResourceReviewSummary["relationships"][number],
+): string {
+  if (relationship.state === "active") return "ACTIVE";
+  if (relationship.state === "included") return "IN NEXT BOUNDARY";
+  return "AVAILABLE";
 }
 
 function riskBadge(
@@ -1612,8 +2855,43 @@ function riskBadge(
   if (isTrustedScopeField(view, field.name)) return "[trusted scope fixed; output tier reviewed]";
   if (field.primary_key) return "[record ID]";
   if (field.sensitivity.state === "high_confidence_sensitive") return "[sensitive]";
-  if (field.sensitivity.state === "unresolved_free_text") return "[free text]";
+  if (field.sensitivity.state === "unresolved_free_text") return "[needs review]";
   return "[low structural risk]";
+}
+
+function relationshipStateLabel(
+  relationship: BoundaryResourceReviewSummary["relationships"][number],
+  theme: TerminalTheme,
+): string {
+  return relationship.state === "active"
+    ? theme.success("ACTIVE")
+    : relationship.state === "included"
+      ? theme.warning("IN NEXT BOUNDARY")
+      : theme.dim("AVAILABLE");
+}
+
+function selectedDerivedScopeEntries(
+  resource: BoundaryResourceReviewSummary,
+): Array<{ scope: DerivedScopePath; roles: string[] }> {
+  const entries = [
+    ...(resource.derived_tenant_scope?.selected
+      ? [{ scope: resource.derived_tenant_scope.selected, role: "tenant scope" }]
+      : []),
+    ...(resource.derived_principal_scope?.selected
+      ? [{ scope: resource.derived_principal_scope.selected, role: "principal scope" }]
+      : []),
+  ];
+  const grouped = new Map<string, { scope: DerivedScopePath; roles: string[] }>();
+  for (const entry of entries) {
+    const key = `${entry.scope.path_id}\u0000${entry.scope.ancestor_column}`;
+    const current = grouped.get(key);
+    if (current) current.roles.push(entry.role);
+    else grouped.set(key, { scope: entry.scope, roles: [entry.role] });
+  }
+  return [...grouped.values()].sort((left, right) =>
+    derivedScopeDepth(left.scope) - derivedScopeDepth(right.scope)
+      || left.scope.path_id.localeCompare(right.scope.path_id)
+      || left.roles.join("+").localeCompare(right.roles.join("+")));
 }
 
 function resourceState(
@@ -1633,6 +2911,12 @@ function resourceState(
     };
   }
   if (resource.active && resource.included) {
+    if (resource.operation_repair_fields?.length) {
+      return {
+        text: "[active + reviewed; operation repair available]",
+        style: theme.warning,
+      };
+    }
     return resource.risk_count
       ? {
         text: "[active + updated sign-off needed]",
@@ -1641,6 +2925,12 @@ function resourceState(
       : { text: "[active + reviewed]", style: theme.success };
   }
   if (!resource.included) return { text: "[available]", style: theme.dim };
+  if (resource.operation_repair_fields?.length) {
+    return {
+      text: "[reviewed; operation repair available]",
+      style: theme.warning,
+    };
+  }
   if (resource.risk_count) {
     return {
       text: "[table sign-off needed]",
@@ -1734,6 +3024,27 @@ function styleTierConsequence(theme: TerminalTheme, tier: BoundaryFieldTier): st
   return styleTier(theme, tier, tierConsequence(tier));
 }
 
+function noticeStyle(
+  theme: TerminalTheme,
+  tone: BoundaryAccessNotice["tone"],
+): (value: string) => string {
+  if (tone === "danger") return theme.danger;
+  if (tone === "warning") return theme.warning;
+  return theme.success;
+}
+
+function formatBoundaryAccessNotice(
+  theme: TerminalTheme,
+  notice: BoundaryAccessNotice,
+): string[] {
+  const style = noticeStyle(theme, notice.tone);
+  return [
+    style(safeTerminalText(notice.title)),
+    ...notice.lines.map((line) => style(safeTerminalText(line))),
+    ...(notice.footer ? [theme.warning(safeTerminalText(notice.footer))] : []),
+  ];
+}
+
 export function terminalTheme(color: boolean) {
   const style = (codes: string) => (value: string) =>
     color ? `\u001b[${codes}m${value}\u001b[0m` : value;
@@ -1797,6 +3108,7 @@ function boundedWindowStart(selected: number, length: number, size: number): num
 
 function isCancel(key: Keypress): boolean {
   return (key.ctrl === true && key.name === "c")
+    || (key.ctrl === true && key.name === "d")
     || isEscapeKey(key)
     || (key.name === "q" && key.sequence === "q");
 }
@@ -1830,13 +3142,22 @@ async function withRawKeys<T>(
   let renderedLines = 0;
   const queuedKeys: Keypress[] = [];
   const keyWaiters: Array<(key: Keypress) => void> = [];
+  let terminalClosed = false;
+  const closedKey: Keypress = { name: "escape", sequence: "\u001b" };
   const keyHandler = (_text: string, key: Keypress) => {
     const waiter = keyWaiters.shift();
     if (waiter) waiter(key);
     else queuedKeys.push(key);
   };
+  const closeHandler = () => {
+    terminalClosed = true;
+    for (const waiter of keyWaiters.splice(0)) waiter(closedKey);
+  };
   readline.emitKeypressEvents(input);
   input.on("keypress", keyHandler);
+  input.once("end", closeHandler);
+  input.once("close", closeHandler);
+  input.once("error", closeHandler);
   input.setRawMode(true);
   input.resume();
   output.write("\u001b[?25l");
@@ -1854,12 +3175,16 @@ async function withRawKeys<T>(
   const nextKey = () => {
     const queued = queuedKeys.shift();
     if (queued) return Promise.resolve(queued);
+    if (terminalClosed) return Promise.resolve(closedKey);
     return new Promise<Keypress>((resolve) => keyWaiters.push(resolve));
   };
   try {
     return await operation(nextKey, render);
   } finally {
     input.off("keypress", keyHandler);
+    input.off("end", closeHandler);
+    input.off("close", closeHandler);
+    input.off("error", closeHandler);
     if (renderedLines) output.write(`\u001b[${renderedLines}F\u001b[0J`);
     output.write("\u001b[?25h");
     input.setRawMode(wasRaw);
@@ -1881,6 +3206,11 @@ function wrapTerminalLine(value: string, width: number): string[] {
   const lines: string[] = [];
   let current: typeof tokens = [];
   let visible = 0;
+  const continuationIndent = styledContinuationIndent(safe, width);
+  const continuationPrefix = Array.from({ length: continuationIndent }, () => ({
+    raw: " ",
+    visible: true,
+  }));
   for (const token of tokens) {
     current.push(token);
     if (token.visible) visible += 1;
@@ -1891,12 +3221,23 @@ function wrapTerminalLine(value: string, width: number): string[] {
       ? wordBreak
       : styledTokenIndexAfterVisibleWidth(current, width);
     const head = current.slice(0, splitAt);
-    current = current.slice(splitAt + (wordBreak >= 0 ? 1 : 0));
+    current = [
+      ...continuationPrefix,
+      ...current.slice(splitAt + (wordBreak >= 0 ? 1 : 0)),
+    ];
     lines.push(head.map((item) => item.raw).join("").trimEnd());
     visible = current.filter((item) => item.visible).length;
   }
   lines.push(current.map((item) => item.raw).join("").trimEnd());
   return lines;
+}
+
+function styledContinuationIndent(value: string, width: number): number {
+  const plain = value.replace(/\u001b\[[0-9;]*m/g, "");
+  const leading = plain.match(/^ */u)?.[0].length ?? 0;
+  const labeledColumn = plain.slice(leading).match(/^\S.{0,18}? {2,}/u);
+  const desired = labeledColumn ? leading + labeledColumn[0].length : leading;
+  return Math.min(desired, Math.max(0, Math.floor(width / 3)));
 }
 
 function findStyledWordBreak(

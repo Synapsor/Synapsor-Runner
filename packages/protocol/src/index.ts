@@ -9,6 +9,11 @@ export {
   type PrivacyBudgetLimits,
   type PrivacyBudgetSnapshot,
 } from "./privacy-boundary.js";
+export {
+  applyReviewedAggregateTransforms,
+  type ReviewedAggregateTransform,
+  type ReviewedAggregateTransformOperation,
+} from "./reviewed-aggregate-transform.js";
 
 type CanonicalJson = null | boolean | number | string | CanonicalJson[] | { [key: string]: CanonicalJson };
 

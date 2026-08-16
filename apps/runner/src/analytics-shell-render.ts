@@ -12,7 +12,7 @@ import type {
 } from "./scoped-explore.js";
 import { cliPrivacyReviewInstructions } from "./privacy-review-guidance.js";
 import {
-  renderTerminalJson,
+  renderTerminalJsonFrame,
   safeTerminalCellText,
   safeTerminalText,
 } from "./terminal-syntax.js";
@@ -147,10 +147,10 @@ export function renderAnalyticsTurn(
       ? "Structured values rendered by Runner. Model prose cannot replace or alter them."
       : refusedSourceExecuted
         ? "Runner executed a read-only query, then discarded its result because the reviewed privacy boundary blocked its release."
-        : "No data query ran because Runner rejected the attempted plans before source execution.",
+        : "No attempted Explore plan reached source execution because Runner rejected it first.",
   );
   for (const analysis of successfulData) {
-    lines.push(...renderAnalysis(analysis, width));
+    lines.push(...renderAnalysis(analysis, width, options.ansi === true));
   }
   if (refused.length > 0) {
     if (options.includeAttempts) {
@@ -158,7 +158,7 @@ export function renderAnalyticsTurn(
     } else if (successfulData.length === 0) {
       const latest = refused[refused.length - 1]!;
       lines.push(
-        ...renderAnalysis(latest, width),
+        ...renderAnalysis(latest, width, options.ansi === true),
         ...(refused.length > 1
           ? [
               "",
@@ -372,8 +372,11 @@ export function renderRefusedAttempts(
         safeTerminalText(message),
         ...(analysis.arguments
           ? [
-              "Typed tool request:",
-              renderTerminalJson(analysis.arguments, ansi),
+              renderTerminalJsonFrame(analysis.arguments, {
+                title: "Typed tool request",
+                color: ansi,
+                columns: 100,
+              }),
             ]
           : []),
         `Source query executed: ${sourceExecution}`,
@@ -394,6 +397,7 @@ function refusedSourceQueryExecuted(analysis: AnalyticsAnalysis): boolean {
 export function renderAnalysis(
   analysis: AnalyticsAnalysis,
   width = 100,
+  ansi = false,
 ): string[] {
   if (analysis.status === "refused" || analysis.result.ok === false) {
     const message = stringValue(analysis.result.message)
@@ -415,7 +419,7 @@ export function renderAnalysis(
   const lines = ["", safeTerminalText(analysisDisplayTitle(analysis))];
   const minimumCohort = minimumCohortSize(analysis.result);
   if (rows.length > 0) {
-    lines.push("", ...renderTable(rows, width, analysis));
+    lines.push("", ...renderTable(rows, width, analysis, ansi));
   } else {
     const status = stringValue(record(analysis.result.outcome).status)
       ?? stringValue(record(record(analysis.result.outcome).result).suppression?.toString())
@@ -423,6 +427,12 @@ export function renderAnalysis(
     lines.push(status === "fully_suppressed"
       ? `No aggregate value can be shown under the reviewed minimum group size${minimumCohort === undefined ? "" : ` of ${minimumCohort}`}.`
       : "No reviewed rows or groups were returned.");
+  }
+  const reviewedValueNotices = reviewedValueControlNotices(analysis.result);
+  if (reviewedValueNotices.length) lines.push("", ...reviewedValueNotices);
+  const budgetWarnings = operatorBudgetWarnings(analysis.result);
+  if (budgetWarnings.length) {
+    lines.push("", ...budgetWarnings.map((warning) => styledNotice(warning, ansi)));
   }
   const suppressed = suppressedGroupCount(analysis.result);
   if (suppressed > 0) {
@@ -437,6 +447,43 @@ export function renderAnalysis(
     );
   }
   return lines;
+}
+
+function operatorBudgetWarnings(result: Record<string, unknown>): string[] {
+  const operatorBudget = record(result.operator_budget);
+  return ["trusted_scope", "tenant"].flatMap((scope) => {
+    const warnings = record(operatorBudget[scope]).warnings;
+    return Array.isArray(warnings)
+      ? warnings.filter((warning): warning is string => typeof warning === "string")
+        .map(safeTerminalText)
+      : [];
+  });
+}
+
+function reviewedValueControlNotices(result: Record<string, unknown>): string[] {
+  const privacy = record(result.privacy);
+  const controls = record(privacy.reviewed_value_controls);
+  const bucketed = Array.isArray(controls.bucketed_fields)
+    ? records(controls.bucketed_fields)
+    : [];
+  const excluded = Array.isArray(controls.excluded_fields)
+    ? records(controls.excluded_fields)
+    : [];
+  return [
+    ...bucketed.map((item) => {
+      const resource = stringValue(item.resource) ?? "the reviewed table";
+      const field = stringValue(item.field) ?? "categorical field";
+      const token = stringValue(item.bucket_token);
+      return item.bucket_returned === true && token
+        ? `Reviewed value control: ${resource}.${field} contains an opaque ${token} group for source values outside the reviewed value list. Their labels were not exposed.`
+        : `Reviewed value control: ${resource}.${field} contained source values outside the reviewed value list. Runner combined them before privacy and result limits; their labels were not exposed.`;
+    }),
+    ...excluded.map((item) => {
+      const resource = stringValue(item.resource) ?? "the reviewed table";
+      const field = stringValue(item.field) ?? "categorical field";
+      return `Reviewed value control: this result is limited to reviewed values for ${resource}.${field}. Rows with other values, if any, were excluded.`;
+    }),
+  ].map(safeTerminalText);
 }
 
 function minimumCohortRecoveryPath(analysis: AnalyticsAnalysis): string {
@@ -457,7 +504,9 @@ function minimumCohortQuestionShapeHint(
   if (analysis.plan?.kind !== "aggregate" || analysis.plan.dimensions?.length !== 1) {
     return undefined;
   }
-  const field = analysis.plan.dimensions[0]!.field;
+  const dimension = analysis.plan.dimensions[0]!;
+  if ("numeric_band" in dimension) return undefined;
+  const field = dimension.field;
   if (!/(^id$|_id$|(^|_)name$)/i.test(field)) return undefined;
   const label = businessLabel(field).toLowerCase();
   return `This question groups records into one row per ${label}; any entity with fewer than ${minimumCohort ?? "the reviewed minimum"} records is withheld. Try a coarser reviewed grouping, or review this table's minimum group size.`;
@@ -467,6 +516,7 @@ export function renderTable(
   rows: Array<Record<string, unknown>>,
   requestedWidth = 100,
   analysis?: AnalyticsAnalysis,
+  ansi = false,
 ): string[] {
   const columns = unique(rows.flatMap((row) => Object.keys(row)));
   if (columns.length === 0) return ["(empty result)"];
@@ -479,18 +529,17 @@ export function renderTable(
     column,
     safeTerminalCellText(formatResultScalar(row[column], column, analysis)),
   ])));
+  const numeric = columns.map((column) => {
+    const values = rows.map((row) => row[column]).filter((value) => value !== null && value !== undefined);
+    return values.length > 0 && values.every((value) =>
+      typeof value === "number" || typeof value === "bigint");
+  });
   if (width < 48 || columns.length > 8) {
-    return safeRows.flatMap((row, index) => [
-      ...(index === 0 ? [] : [""]),
-      ...columns.map((column) => `${safeTerminalText(labels[column] ?? column)}: ${row[column]}`),
-    ]);
+    return renderCompactResultRows(safeRows, columns, labels, numeric, width, ansi);
   }
-  const available = width - (columns.length - 1) * 3;
+  const available = width - (columns.length * 3 + 1);
   if (available < columns.length * 8) {
-    return safeRows.flatMap((row, index) => [
-      ...(index === 0 ? [] : [""]),
-      ...columns.map((column) => `${safeTerminalText(labels[column] ?? column)}: ${row[column]}`),
-    ]);
+    return renderCompactResultRows(safeRows, columns, labels, numeric, width, ansi);
   }
   const maxColumnWidth = Math.max(8, Math.min(32, Math.floor(available / columns.length)));
   const widths = columns.map((column) => Math.min(
@@ -500,25 +549,138 @@ export function renderTable(
       ...safeRows.map((row) => displayWidth(row[column] ?? "")),
     ),
   ));
-  const numeric = columns.map((column) => {
-    const values = rows.map((row) => row[column]).filter((value) => value !== null && value !== undefined);
-    return values.length > 0 && values.every((value) =>
-      typeof value === "number" || typeof value === "bigint");
-  });
-  const line = (values: string[]) => values
-    .map((value, index) => {
+  const line = (values: string[], heading = false) => {
+    const cells = values.map((value, index) => {
       const fitted = truncate(value, widths[index]!);
-      return numeric[index]
+      const padded = numeric[index]
         ? fitted.padStart(widths[index]!)
         : pad(fitted, widths[index]!);
-    })
-    .join("   ")
-    .trimEnd();
+      return resultCellStyle(padded, heading, numeric[index] === true, ansi);
+    });
+    const edge = resultStyle("|", "2", ansi);
+    return `${edge} ${cells.join(` ${edge} `)} ${edge}`;
+  };
+  const borderValue = `+${widths.map((columnWidth) => "-".repeat(columnWidth + 2)).join("+")}+`;
+  const border = resultStyle(borderValue, "2", ansi);
   return [
-    line(columns.map((column) => safeTerminalText(labels[column] ?? column))),
-    line(widths.map((columnWidth) => "-".repeat(columnWidth))),
+    border,
+    line(columns.map((column) => safeTerminalText(labels[column] ?? column)), true),
+    border,
     ...safeRows.map((row) => line(columns.map((column) => row[column] ?? ""))),
+    border,
   ];
+}
+
+function renderCompactResultRows(
+  rows: Array<Record<string, string>>,
+  columns: string[],
+  labels: Record<string, string>,
+  numeric: boolean[],
+  width: number,
+  ansi: boolean,
+): string[] {
+  const safeLabels = columns.map((column) => safeTerminalText(labels[column] ?? column));
+  const naturalWidth = Math.max(
+    24,
+    ...rows.flatMap((row) => columns.map((column, index) =>
+      displayWidth(`${safeLabels[index]}: ${row[column] ?? ""}`) + 4)),
+  );
+  const frameWidth = Math.max(24, Math.min(width, naturalWidth));
+  const innerWidth = frameWidth - 4;
+  const border = resultStyle(`+${"-".repeat(frameWidth - 2)}+`, "2", ansi);
+  const edge = resultStyle("|", "2", ansi);
+  const framed = (rendered: string, visibleWidth: number) =>
+    `${edge} ${rendered}${" ".repeat(Math.max(0, innerWidth - visibleWidth))} ${edge}`;
+  const output: string[] = [border];
+  rows.forEach((row, rowIndex) => {
+    if (rows.length > 1) {
+      const rowLabel = `Row ${rowIndex + 1}`;
+      output.push(framed(resultStyle(rowLabel, "1;36", ansi), rowLabel.length));
+    }
+    columns.forEach((column, columnIndex) => {
+      const label = safeLabels[columnIndex]!;
+      const value = row[column] ?? "";
+      for (const item of compactResultFactLines(
+        label,
+        value,
+        numeric[columnIndex] === true,
+        innerWidth,
+        ansi,
+      )) {
+        output.push(framed(item.rendered, displayWidth(item.plain)));
+      }
+    });
+    if (rowIndex < rows.length - 1) output.push(border);
+  });
+  output.push(border);
+  return output;
+}
+
+function compactResultFactLines(
+  label: string,
+  value: string,
+  numeric: boolean,
+  width: number,
+  ansi: boolean,
+): Array<{ plain: string; rendered: string }> {
+  const prefix = `${label}: `;
+  if (displayWidth(`${prefix}${value}`) <= width) {
+    return [{
+      plain: `${prefix}${value}`,
+      rendered: `${resultStyle(`${label}:`, "1;36", ansi)} ${resultCellStyle(value, false, numeric, ansi)}`,
+    }];
+  }
+  const firstWidth = Math.max(1, width - displayWidth(prefix));
+  const first = takeDisplayCharacters(value, firstWidth);
+  const remaining = value.slice(first.length);
+  const continuationWidth = Math.max(1, width - 2);
+  return [
+    {
+      plain: `${prefix}${first}`,
+      rendered: `${resultStyle(`${label}:`, "1;36", ansi)} ${resultCellStyle(first, false, numeric, ansi)}`,
+    },
+    ...chunkDisplayCharacters(remaining, continuationWidth).map((chunk) => ({
+      plain: `  ${chunk}`,
+      rendered: `  ${resultCellStyle(chunk, false, numeric, ansi)}`,
+    })),
+  ];
+}
+
+function chunkDisplayCharacters(value: string, width: number): string[] {
+  const output: string[] = [];
+  let remaining = value;
+  while (remaining) {
+    const chunk = takeDisplayCharacters(remaining, width);
+    output.push(chunk);
+    remaining = remaining.slice(chunk.length);
+  }
+  return output;
+}
+
+function takeDisplayCharacters(value: string, width: number): string {
+  let visibleWidth = 0;
+  let end = 0;
+  for (const match of value.matchAll(/\\u[0-9a-f]{4}|[\s\S]/giu)) {
+    const token = match[0];
+    const tokenWidth = displayWidth(token);
+    if (visibleWidth + tokenWidth > width) break;
+    visibleWidth += tokenWidth;
+    end = (match.index ?? end) + token.length;
+  }
+  return value.slice(0, end);
+}
+
+function resultCellStyle(
+  value: string,
+  heading: boolean,
+  numeric: boolean,
+  ansi: boolean,
+): string {
+  return resultStyle(value, heading ? "1;36" : numeric ? "1;33" : "36", ansi);
+}
+
+function resultStyle(value: string, codes: string, ansi: boolean): string {
+  return ansi ? `\u001b[${codes}m${value}\u001b[0m` : value;
 }
 
 function analysisDisplayTitle(analysis: AnalyticsAnalysis): string {
@@ -526,7 +688,12 @@ function analysisDisplayTitle(analysis: AnalyticsAnalysis): string {
   if (!plan) return analysis.description;
   const resource = businessLabel(plan.resource.split(".").at(-1) ?? plan.resource);
   if (plan.kind === "rows") return `${resource} rows`;
-  const dimensions = (plan.dimensions ?? []).map((dimension) => businessLabel(dimension.field));
+  const dimensions = (plan.dimensions ?? []).map((dimension) =>
+    businessLabel("numeric_band" in dimension
+      ? typeof dimension.numeric_band === "string"
+        ? dimension.numeric_band
+        : `${dimension.numeric_band.field} ${dimension.numeric_band.method} band`
+      : dimension.field));
   const time = plan.time_bucket?.bucket;
   const groups = [...dimensions, ...(time ? [time] : [])];
   return groups.length ? `${resource} by ${naturalList(groups)}` : `${resource} summary`;

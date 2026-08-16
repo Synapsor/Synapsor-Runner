@@ -1,5 +1,5 @@
 import {
-  afterEach,
+  beforeEach,
   describe,
   expect,
   it,
@@ -13,9 +13,11 @@ const mocks = vi.hoisted(() => ({
   postgresQuery: vi.fn(),
   postgresRelease: vi.fn(),
   postgresEnd: vi.fn(),
+  postgresConnect: vi.fn(),
   mysqlQuery: vi.fn(),
   mysqlExecute: vi.fn(),
   mysqlEnd: vi.fn(),
+  mysqlCreateConnection: vi.fn(),
 }));
 
 vi.mock("@synapsor-runner/postgres", async (importOriginal) => {
@@ -23,10 +25,7 @@ vi.mock("@synapsor-runner/postgres", async (importOriginal) => {
   return {
     ...original,
     createPostgresPool: () => ({
-      connect: async () => ({
-        query: mocks.postgresQuery,
-        release: mocks.postgresRelease,
-      }),
+      connect: mocks.postgresConnect,
       end: mocks.postgresEnd,
     }),
   };
@@ -34,11 +33,7 @@ vi.mock("@synapsor-runner/postgres", async (importOriginal) => {
 
 vi.mock("mysql2/promise", () => ({
   default: {
-    createConnection: async () => ({
-      query: mocks.mysqlQuery,
-      execute: mocks.mysqlExecute,
-      end: mocks.mysqlEnd,
-    }),
+    createConnection: mocks.mysqlCreateConnection,
     createPool: vi.fn(),
   },
 }));
@@ -49,8 +44,19 @@ import {
 } from "./source-runtime.js";
 
 describe("generated analytical reporting timezone", () => {
-  afterEach(() => {
+  beforeEach(() => {
     vi.clearAllMocks();
+    mocks.postgresConnect.mockResolvedValue({
+      query: mocks.postgresQuery,
+      release: mocks.postgresRelease,
+    });
+    mocks.postgresEnd.mockResolvedValue(undefined);
+    mocks.mysqlCreateConnection.mockResolvedValue({
+      query: mocks.mysqlQuery,
+      execute: mocks.mysqlExecute,
+      end: mocks.mysqlEnd,
+    });
+    mocks.mysqlEnd.mockResolvedValue(undefined);
   });
 
   it("sets PostgreSQL UTC inside the same read-only transaction", async () => {
@@ -80,6 +86,51 @@ describe("generated analytical reporting timezone", () => {
       "START TRANSACTION READ ONLY",
       "COMMIT",
     ]);
+    expect(mocks.mysqlEnd).toHaveBeenCalledOnce();
+  });
+
+  it("closes a PostgreSQL pool when its initial connection fails", async () => {
+    mocks.postgresConnect.mockRejectedValueOnce(new Error("database unavailable"));
+
+    await expect(readPostgresRow(readerInput("postgres")))
+      .rejects.toThrow("database unavailable");
+    expect(mocks.postgresRelease).not.toHaveBeenCalled();
+    expect(mocks.postgresEnd).toHaveBeenCalledOnce();
+  });
+
+  it("preserves a PostgreSQL query error when pool cleanup also fails", async () => {
+    mocks.postgresQuery.mockImplementation(async (sql: string) => {
+      if (/^SELECT /i.test(sql)) throw new Error("source query failed");
+      return { rows: [], rowCount: null };
+    });
+    mocks.postgresEnd.mockRejectedValueOnce(new Error("pool cleanup failed"));
+
+    await expect(readPostgresRow(readerInput("postgres")))
+      .rejects.toThrow("source query failed");
+    expect(mocks.postgresRelease).toHaveBeenCalledOnce();
+    expect(mocks.postgresEnd).toHaveBeenCalledOnce();
+  });
+
+  it("ends the PostgreSQL pool when client release throws", async () => {
+    mocks.postgresQuery.mockImplementation(async (sql: string) => {
+      if (/^SELECT /i.test(sql)) return { rows: [{ id: "MEM-1", status: "active" }], rowCount: 1 };
+      return { rows: [], rowCount: null };
+    });
+    mocks.postgresRelease.mockImplementationOnce(() => { throw new Error("release failed"); });
+
+    await expect(readPostgresRow(readerInput("postgres")))
+      .rejects.toThrow("release failed");
+    expect(mocks.postgresRelease).toHaveBeenCalledOnce();
+    expect(mocks.postgresEnd).toHaveBeenCalledOnce();
+  });
+
+  it("preserves a MySQL query error when connection cleanup also fails", async () => {
+    mocks.mysqlQuery.mockResolvedValue([[], []]);
+    mocks.mysqlExecute.mockRejectedValueOnce(new Error("source query failed"));
+    mocks.mysqlEnd.mockRejectedValueOnce(new Error("connection cleanup failed"));
+
+    await expect(readMysqlRow(readerInput("mysql")))
+      .rejects.toThrow("source query failed");
     expect(mocks.mysqlEnd).toHaveBeenCalledOnce();
   });
 });

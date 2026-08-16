@@ -30,8 +30,14 @@ import {
   isRecord,
 } from "./safe-values.js";
 
-export const SUPPORTED_GENERATED_AUTHORITY_COMPILER_VERSIONS = new Set(["1.6.0", "1.6.3", "1.6.4", "1.6.6"]);
-export const SUPPORTED_GENERATED_AUTHORITY_SPEC_VERSIONS = new Set(["1.5.0", "1.5.1", "1.6.0", "1.7.0", "1.8.0"]);
+export const SUPPORTED_GENERATED_AUTHORITY_COMPILER_VERSIONS = new Set([
+  "1.6.0",
+  "1.6.3",
+  "1.6.4",
+  "1.6.6",
+  "1.7.0",
+]);
+export const SUPPORTED_GENERATED_AUTHORITY_SPEC_VERSIONS = new Set(["1.5.0", "1.5.1", "1.6.0", "1.7.0", "1.8.0", "1.9.0"]);
 
 /**
  * Generated protected reads remain executable only while the exact reviewed
@@ -230,7 +236,7 @@ export function generatedAuthorityDependenciesValid(
       || typeof dependency.relationship_id !== "string"
       || !Array.isArray(dependency.links)
       || dependency.links.length < 1
-      || dependency.links.length > 2
+      || dependency.links.length > 3
       || !digest.test(dependency.proof_digest)
       || canonicalJsonDigest(dependency.links) !== dependency.proof_digest) {
       return false;

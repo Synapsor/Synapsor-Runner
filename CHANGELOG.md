@@ -1,6 +1,226 @@
 # Changelog
 
-## 1.6.7 (prepared, not published)
+## 1.7.0 (prepared, not published)
+
+### Production Scoped Explore Over Secured HTTP
+
+- Adds an explicit read-only production Explore deployment over MCP Streamable
+  HTTP. It serves only `app.describe_data` and `app.explore_data`; SQL,
+  credentials, Protect, activation, approval, apply, and configuration remain
+  outside the model-facing surface.
+- Requires separately generated and reviewed production boundaries with trusted
+  identity taken only from verified asymmetric JWT claims. Direct and derived
+  tenant scope remains mandatory for tenant-owned rows; a human may separately
+  review an exact tenant-independent table as a shared reference with no tenant
+  predicate. Reviewed principal scope and per-principal privacy accounting remain
+  enforced in both cases.
+- Adds durable shared-Postgres privacy accounting with atomic principal and
+  tenant reservations, rolling query/extraction/differencing limits, rate
+  limits, and tenant-level complementary-release protection. Concurrent calls
+  cannot both consume the final allowance.
+- Makes differencing usage auditable without mistaking a principal-wide ledger
+  sum for one resource's allowance. Result metadata, CLI, Workbench, warnings,
+  and refusals now name the current root-resource pool, and regression coverage
+  proves the pool survives token/session renewal and shared-store reattachment.
+- Reconciles rescans against each immutable boundary's own reviewed policy
+  instead of destructively rebuilding or sharing resource overrides. Unchanged
+  field, enum, path, shared-reference, metadata, metric, and limit decisions
+  survive; changed schema, role, or trusted-context inputs fail closed for
+  focused re-review without mutating overlapping boundaries.
+- Advances generated boundary authority to compiler version `1.7.0`. Existing
+  `1.6.6` boundaries fail closed until the reconciling rescan creates a disabled
+  replacement revision; unchanged curated policy is preserved and activation
+  remains explicit. Sensitivity review is now type-aware: a bounded native enum
+  or structured scalar foreign key is not mislabeled as unconstrained free text
+  merely because its identifier contains `note`, while genuine text, unknown,
+  unstructured, and high-confidence sensitive fields remain fail-closed.
+- Expands the metadata-only sensitive-identifier defaults for common government
+  and institutional names, including British and American driving-licence
+  spellings, passport and national-insurance identifiers, and badge numbers.
+  These fields now start kept out instead of receiving row authority. Ordinary
+  business references such as order, invoice, and tracking numbers remain
+  reviewable; Runner still does not sample source values to classify a field.
+- Makes rescan reconciliation reporting reflect preserved authority rather than
+  only stored confirmation records. Legacy revisions now report retained tables,
+  reviewed paths, and field policies accurately, while new and removed multi-hop
+  relationships use readable table and join-column chains before the exact path ID
+  in both the CLI and Workbench.
+- Makes CLI and Workbench access summaries partition every inspected field by its
+  effective reviewed policy, so a low-risk field retained as kept out by an owner
+  decision is no longer omitted from the kept-out count.
+- Replaces prose-heavy table access maps with a responsive field-operation
+  matrix and gives boundary-wide maps one human-readable relationship-chain
+  format across `boundary review --map`, `/access`, active catalog exports, and
+  Workbench. Empty tiers disappear;
+  exact filter/time vocabularies and canonical path IDs remain available through
+  `--details`, the interactive `D` toggle, JSON, or expandable Workbench details.
+- Fails startup closed without explicit opt-in, read-only mode, secured shared
+  HTTP, required OAuth scope, exact JWT issuer/audience/claims, shared HMAC
+  material, shared accounting, and current exact-digest production authority.
+- Proves PostgreSQL and MySQL source execution through the official MCP client,
+  including scope isolation, suppression, concurrency, source immutability,
+  `doctor`, the public CLI entrypoint, and a clean packed installation.
+- Proves a real Ollama `qwen2.5:7b` agent against both local Explore and the
+  RS256/JWT-bound production HTTP MCP surface. Loopback model discovery,
+  compact catalog guidance, strict benign argument normalization, intent-checked
+  JSON-plan recovery, and Runner-owned fallback results improve small-model DX
+  without widening the two-tool grammar or trusted scope.
+- Extends deterministic Ask intent checks to official OpenAI and Anthropic
+  adapters. Explicit unavailable-entity or grouping substitutions are refused
+  before `app.explore_data`, consume no Explore query/differencing budget, and
+  cannot be narrated as the requested answer. Canonical field IDs match in
+  underscore, hyphenated, and readable forms; reviewer labels match exactly;
+  and a bare trailing term can identify exactly one reviewed grouping field on
+  the named resource, such as `shipments by mode` for `carrier_mode`. If the
+  term also matches `delivery_mode`, Runner refuses before execution and names
+  both choices instead of guessing. Adds bounded CLI/Workbench Ask
+  token settings, including an in-session `/limits` update that preserves
+  conversation context; these client-side spend/context controls remain outside
+  reviewed database and privacy authority.
+- Live cross-engine Ask evaluation now gives models exact, compact examples for
+  enum filters, ranked aggregates, and relative-period comparisons. Common
+  malformed keys still fail strict validation, but the refusal names the exact
+  `where`/`op`, `top_n`, or `comparison`/`compare_to` shape needed to retry;
+  Runner does not silently reinterpret an unknown plan.
+- Workbench's Runner-verified plan sentence no longer prints `undefined` as an
+  aggregate group limit when a model correctly omits optional `top_n`; the
+  reviewed default remains enforced by Runner and the UI simply omits the
+  inapplicable phrase.
+- Ask can recover a missing relationship qualifier when exactly one reviewed
+  path exposes the requested grouping field: Runner refuses the first malformed
+  plan before source execution and returns the exact corrected dimension. It
+  lists competing paths instead of guessing when the field is reachable more
+  than once. Count-only categorical child tables now receive the same reviewed
+  composed-path candidates through the hard depth-three bound.
+- Saving a CLI or Workbench boundary edit now updates the selected
+  `boundary-library.json` revision in the same commit. Activating that exact
+  revision therefore no longer leaves Ask showing a false pending-change banner.
+  Derived principal paths are also documented and rendered in CLI previews.
+- Refuses ambiguous SQL-null filter literals with missing-data guidance, omits
+  undated records from sequential metrics, restores MySQL session timezone
+  before pooled reuse, and gives each Workbench relationship a separate
+  labeled graph lane.
+- Adds bounded reviewer-authored labels and descriptions as metadata-only model
+  guidance, plus reviewed automatic quantile/equal-width numeric bands whose
+  scoped edges are Runner-computed and never model-authored or exposed raw.
+- Makes shape caps and statement timeout reviewed CLI/Workbench controls with
+  product hard ceilings. Relationship and derived-scope depth remain two by
+  default and can be raised independently only through an explicit reviewed
+  opt-in to the absolute hard cap of three, with cost advisories intact.
+- Qualifies that independence on live PostgreSQL and MySQL: a three-link
+  model-facing analysis relationship is refused at the default analysis depth
+  of two, returns exact results after only `max_analysis_relationship_hops` is
+  reviewed as three, and remains capped below four while
+  `max_derived_scope_hops` stays two.
+- Reads production evidence and query audits from the shared PostgreSQL control
+  store in CLI and Workbench, including for MySQL application sources, without
+  persisting result values or revealing raw trusted scope. Generates secret-free
+  Streamable HTTP setup for Claude Code, Cursor, and VS Code using environment
+  token references and the exact two-tool surface.
+- Makes that audit trail operationally searchable: CLI and Workbench accept
+  plaintext-or-keyed tenant/principal filters plus resource, boundary digest,
+  outcome, and time range; `query-audit` includes pre-execution refusals while
+  `evidence` remains released-result proof. Adds interactive browsing, bounded
+  JSON listing, live NDJSON follow mode, complete evidence detail, and distinct
+  command/not-found errors that are never mislabeled as control-store failures.
+  Browser sessions now page, search, and change filters in place, lead with a
+  compact plain-English description reconstructed from the reviewed plan, and
+  expand authority facts, reconstructed SQL, or raw normalized metadata only on
+  request. Workbench history pages the same shared records, and routine
+  successful shared-ledger reads no longer emit a structured log line unless
+  operator diagnostics are enabled. Terminal browsing now follows the same
+  Up/Down, Enter, Esc, and `/` interaction model as boundary review, keeps
+  record numbers stable across pages, explains zero-result search scope, and
+  scrolls expanded evidence sections in place. A visible `C` action clears all
+  filters, and a dedicated terminal screen keeps list/search/detail transitions
+  from appending duplicate output to scrollback. Browser footers, prompts, help,
+  and empty results now distinguish free-text persisted-plan/identifier search
+  from structured scope/resource/outcome/time filters. Non-interactive list
+  searches now use the same term, searched-field, and question-retention
+  explanation when their text view is empty; automation JSON remains stable.
+- Attributes pre-execution Explore refusals to their boundary-validated
+  resource and records the attempted reviewed field and operation as metadata,
+  so CLI and Workbench resource filters can find refusals without persisting
+  rejected values, request text, or client-invented identifiers.
+- Makes plaintext production audit identity filters fail closed when their
+  configured HMAC key is unavailable, distinguishes legacy unattributable
+  principal records from a verified empty match, and renders grouped,
+  outcome-colored evidence with a privacy-safe reconstructed reviewed query in
+  both CLI and Workbench. New audit metadata records whether Runner attached a
+  direct/derived scope predicate or intentionally omitted one for reviewed
+  shared-reference/single-organization scope; no values or raw SQL are added.
+- Keeps whole-organization databases simple through explicit boundary-wide
+  single-organization review, while mixed databases can add only individually
+  acknowledged shared-reference tables. Neither posture is inferred, and field
+  visibility, cohort suppression, budgets, schema locks, and read-only checks
+  remain unchanged.
+- Leaves local/staging Explore, protected named capabilities, and existing
+  boundary digests unchanged. Spec/DSL `1.9.0` add only the reviewed fixed
+  aggregate operations and post-suppression transforms; they do not admit
+  model-authored SQL or expressions.
+- Keeps repeated shared-reference review previews digest-stable by separating
+  reviewer provenance from database evidence, and makes signed headless
+  activation confirm the exact post-review candidate decision set.
+- Clarifies when a table is absent because the reviewed read role cannot see it,
+  and gives an exact reviewed-limit remedy when a valid three-hop scope path is
+  attempted under the default two-hop authority.
+- Keeps source-checkout diagnostics usable when the ignored local Runner bundle
+  is stale: help/version, `config validate`, metadata-only `inspect`, and
+  `boundary status` run with an explicit warning, while authoring, activation,
+  serving, and reviewed execution remain blocked until the bundle is rebuilt.
+- Makes `production_explore.enabled` select the locked Streamable HTTP two-tool
+  surface directly, while retaining `--production-explore` as an explicit
+  generated launch marker. Enabled production configs now refuse incompatible
+  transports instead of silently serving no tools, and `tools list` recognizes
+  active local/production Explore-only projects without a false failure.
+- Applies the same deterministic selection to local stdio Explore. Active
+  read-only development/staging projects with no named capabilities now expose
+  exactly `app.describe_data` and `app.explore_data` even through older
+  config/store-shaped launch entries; new client configs and managed installs
+  emit the explicit authoring command, and inactive projects refuse instead of
+  producing a zero-tool server.
+- Preserves explicit MySQL tenant/principal binding evidence through every
+  CLI and Workbench review mutation, so the policy-neutral baseline and
+  production generation lock cannot be reset during review. Production config
+  scaffolding now carries reviewed bindings and requires an explicit tenant
+  column for multi-tenant MySQL instead of producing an unusable setup.
+- Activates independently reviewed saved boundaries against their own immutable
+  review state and generation-lock snapshot instead of whichever boundary owns
+  the project-global draft. CLI and Workbench can now add a second boundary
+  without weakening shared schema, role, source, or trusted-context checks.
+- Preserves exact configured tenant/principal binding candidates in the
+  policy-neutral authoring baseline used to create additional MySQL boundaries.
+  Only inspected non-null scalar columns named by explicit configuration become
+  review candidates; implicit names, nullable or unsafe columns, and policy from
+  another boundary remain excluded. A real production HTTP regression activates
+  two overlapping MySQL boundaries, requires an exact selector, and routes both.
+- Applies that policy-neutral MySQL baseline consistently through standalone
+  `boundary draft`, guided CLI/Workbench startup, Workbench review reset, and
+  reconciliation. A no-change rescan repairs an older empty private authoring
+  baseline without changing the reviewed draft, overrides, active authority, or
+  source database. Source checkouts also refuse to launch an unpublished
+  `runner.mjs` bundle older than their TypeScript source, preventing stale local
+  builds from masquerading as verification of current code. The Workbench now
+  renders that same reconciliation report shape, distinguishes a private
+  baseline repair from a reviewable authority change, and keeps its exact
+  preview confirmation stable immediately after a review reset.
+- Versions source-database grammar authority instead of assuming the newest
+  engine. PostgreSQL 13-18 and MySQL 8.x expose the complete reviewed Explore
+  grammar; MySQL 5.7 uses a supported limited tier with automatic bands and
+  unreliable `CHECK`-derived vocabularies omitted in CLI, Workbench, locks, and
+  MCP discovery. Below-floor PostgreSQL/MySQL and MariaDB fail before review or
+  execution. Future unverified majors also fail instead of inheriting authority
+  accidentally. Every draft, generation lock, and activated boundary records
+  the exact detected version, resolved tier, and stable grammar authority;
+  PostgreSQL major or MySQL 5.7/8.x changes fail closed until reconciling rescan
+  and re-activation. The release matrix runs PostgreSQL 12 refusal, PostgreSQL
+  13-18, MySQL 5.7/8.0/8.4, local MCP, and JWT-authenticated production HTTP.
+
+Prepared package versions: `@synapsor/runner@1.7.0` and the optional
+`synapsor-runner@1.7.0` command alias, plus `@synapsor/spec@1.9.0` and
+`@synapsor/dsl@1.9.0`. No package is published by this change.
+
+## 1.6.7 (published 2026-08-04)
 
 ### First-Run, Explore, And Privacy Review Corrections
 
@@ -25,9 +245,8 @@
 - Adds packed first-run and human-PTY coverage alongside the full test,
   Workbench visual, compatibility, PostgreSQL, and MySQL gates.
 
-Prepared package versions: `@synapsor/runner@1.6.7` and the optional
-`synapsor-runner@1.6.7` command alias. Spec and DSL remain at their
-already-published `1.8.0` versions. No package is published by this change.
+Published package versions: `@synapsor/runner@1.6.7` and the optional
+`synapsor-runner@1.6.7` command alias. Spec and DSL remain at `1.8.0`.
 
 ## 1.6.6 (published 2026-08-03)
 

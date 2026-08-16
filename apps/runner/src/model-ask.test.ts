@@ -4,9 +4,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AskError,
   askToolSurfaceDigest,
+  resolveAskMaxOutputTokens,
   resolveAskProviderConfiguration,
+  resolveAskSessionTokenBudget,
   secureAskJsonRequest,
   WorkbenchAskSession,
+  type AskProviderDependencies,
   type AskToolCallResult,
   type AskToolDefinition,
   type AskToolGateway,
@@ -136,6 +139,134 @@ describe("Workbench BYOM Ask", () => {
       authority_digest: authorityDigest,
       egress_acknowledged: true,
     }, { OPENAI_API_KEY: "sk-test-environment" })).toThrowError(expect.objectContaining({ code: "ASK_KEY_SOURCE_AMBIGUOUS" }));
+  });
+
+  it("uses endpoint-aware request timeout defaults and validates explicit overrides", () => {
+    const authorityDigest = askToolSurfaceDigest(tools);
+    const remote = resolveAskProviderConfiguration({
+      provider: "openai",
+      model: "gpt-5-mini",
+      api_key: "sk-test-credential",
+      authority_digest: authorityDigest,
+      egress_acknowledged: true,
+    }, {}, new Date());
+    const loopback = resolveAskProviderConfiguration({
+      provider: "openai_compatible",
+      model: "local-model",
+      base_url: "http://127.0.0.1:11434/v1",
+      authority_digest: authorityDigest,
+      egress_acknowledged: true,
+    }, {}, new Date());
+    const overridden = resolveAskProviderConfiguration({
+      provider: "openai_compatible",
+      model: "local-model",
+      base_url: "http://127.0.0.1:11434/v1",
+      request_timeout_seconds: 600,
+      authority_digest: authorityDigest,
+      egress_acknowledged: true,
+    }, {}, new Date());
+
+    expect(remote.request_timeout_seconds).toBe(30);
+    expect(loopback.request_timeout_seconds).toBe(120);
+    expect(overridden.request_timeout_seconds).toBe(600);
+    for (const request_timeout_seconds of [0, 1.5, 601, Number.NaN]) {
+      expect(() => resolveAskProviderConfiguration({
+        provider: "openai_compatible",
+        model: "local-model",
+        base_url: "http://127.0.0.1:11434/v1",
+        request_timeout_seconds,
+        authority_digest: authorityDigest,
+        egress_acknowledged: true,
+      }, {}, new Date())).toThrowError(expect.objectContaining({ code: "ASK_TIMEOUT_INVALID" }));
+    }
+  });
+
+  it("uses bounded Ask token defaults and validates operator overrides", () => {
+    const authorityDigest = askToolSurfaceDigest(tools);
+    const defaults = resolveAskProviderConfiguration({
+      provider: "openai",
+      model: "gpt-5-mini",
+      api_key: "sk-test-credential",
+      authority_digest: authorityDigest,
+      egress_acknowledged: true,
+    }, {}, new Date());
+    const overridden = resolveAskProviderConfiguration({
+      provider: "openai",
+      model: "gpt-5-mini",
+      api_key: "sk-test-credential",
+      session_token_budget: 750_000,
+      max_output_tokens: 8_192,
+      authority_digest: authorityDigest,
+      egress_acknowledged: true,
+    }, {}, new Date());
+
+    expect(defaults.session_token_budget).toBe(200_000);
+    expect(defaults.max_output_tokens).toBeUndefined();
+    expect(overridden).toMatchObject({
+      session_token_budget: 750_000,
+      max_output_tokens: 8_192,
+    });
+    for (const value of [999, 5_000_001, 1.5, Number.NaN]) {
+      expect(() => resolveAskSessionTokenBudget(value)).toThrowError(expect.objectContaining({
+        code: "ASK_SESSION_TOKEN_BUDGET_INVALID",
+      }));
+    }
+    for (const value of [255, 16_385, 1.5, Number.NaN]) {
+      expect(() => resolveAskMaxOutputTokens(value)).toThrowError(expect.objectContaining({
+        code: "ASK_MAX_OUTPUT_TOKENS_INVALID",
+      }));
+    }
+  });
+
+  it("applies one explicit output-token override to OpenAI and Anthropic calls", async () => {
+    const authorityDigest = askToolSurfaceDigest(tools);
+    for (const provider of ["openai", "anthropic"] as const) {
+      const session = new WorkbenchAskSession();
+      session.configure({
+        provider,
+        model: provider === "openai" ? "gpt-5-mini" : "claude-test",
+        api_key: "provider-session-key",
+        max_output_tokens: 2_048,
+        authority_digest: authorityDigest,
+        egress_acknowledged: true,
+      });
+      await session.run("Count reviewed records.", testGateway().gateway, {
+        requestJson: async (request) => {
+          if (provider === "openai") {
+            expect(request.body.max_completion_tokens).toBe(2_048);
+            return { status: 200, body: { choices: [{ message: { role: "assistant", content: "Ready." } }] } };
+          }
+          expect(request.body.max_tokens).toBe(2_048);
+          return { status: 200, body: { content: [{ type: "text", text: "Ready." }] } };
+        },
+      });
+    }
+  });
+
+  it("applies the configured timeout to every generic OpenAI-compatible request", async () => {
+    const authorityDigest = askToolSurfaceDigest(tools);
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai_compatible",
+      model: "local-model",
+      base_url: "http://127.0.0.1:11434/v1",
+      request_timeout_seconds: 180,
+      authority_digest: authorityDigest,
+      egress_acknowledged: true,
+    });
+    const requests: Array<Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0]> = [];
+    const requestJson = vi.fn(async (request: Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0]) => {
+      requests.push(request);
+      return {
+        status: 200,
+        body: { choices: [{ message: { role: "assistant", content: "Ready." } }] },
+      };
+    });
+
+    await session.run("Count reviewed records.", testGateway().gateway, { requestJson });
+
+    expect(requestJson).toHaveBeenCalledWith(expect.objectContaining({ timeoutMs: 180_000 }));
+    expect(requests[0]?.body).not.toHaveProperty("keep_alive");
   });
 
   it("rejects .env assignments and quoted values instead of sending malformed provider credentials", () => {
@@ -362,14 +493,14 @@ describe("Workbench BYOM Ask", () => {
       },
       model_withheld_values: true,
     };
-    let gatewayCalls = 0;
+    let exploreCalls = 0;
     const gateway: AskToolGateway = {
       mode: "authoring",
       listTools: () => authoringTools,
-      callTool: async () => {
-        gatewayCalls += 1;
-        if (gatewayCalls === 1) return catalogResult;
-        if (gatewayCalls === 2) return successfulResult;
+      callTool: async (name) => {
+        if (name === "app.describe_data") return catalogResult;
+        exploreCalls += 1;
+        if (exploreCalls === 1) return successfulResult;
         return {
           ok: false,
           error_code: "EXPLORE_PLAN_INVALID",
@@ -411,9 +542,12 @@ describe("Workbench BYOM Ask", () => {
                       arguments: JSON.stringify(requests.length === 1
                         ? { limit: 10 }
                         : {
-                          plan: requests.length === 2
-                            ? { kind: "aggregate" }
-                            : { kind: "aggregate", dimensions: [{ field: "outside_boundary" }] },
+                          plan: {
+                            kind: "aggregate",
+                            resource: "public.subscriptions",
+                            measures: [{ function: "count" }],
+                            dimensions: [{ field: "region" }],
+                          },
                         }),
                     },
                   }],
@@ -746,6 +880,1659 @@ describe("Workbench BYOM Ask", () => {
     expect(result.usage).toEqual({ input_tokens: 15, output_tokens: 8, total_tokens: 23 });
   });
 
+  it.each([
+    {
+      question: "How many patients are there by insurance tier?",
+      resource: "public.encounters",
+      resourceLabel: "Encounters",
+      dimension: { field: "attending" },
+      fields: [
+        { id: "attending", label: "Attending" },
+        { id: "encounter_type", label: "Encounter type" },
+      ],
+    },
+    {
+      question: "How many observation events are there by event type?",
+      resource: "public.encounters",
+      resourceLabel: "Encounters",
+      dimension: { field: "encounter_type" },
+      fields: [
+        { id: "attending", label: "Attending" },
+        { id: "encounter_type", label: "Encounter type" },
+      ],
+    },
+    {
+      question: "Break down observation events by encounter department.",
+      resource: "public.observations",
+      resourceLabel: "Observations",
+      dimension: {
+        field: "department",
+        relationship: "observations_encounter_id_fkey",
+      },
+      fields: [{ id: "event_type", label: "Event type" }],
+      relationships: [{
+        id: "observations_encounter_id_fkey",
+        target_resource: "public.encounters",
+        target_label: "Encounters",
+        fields: [{ id: "department", label: "Department" }],
+        groupable_fields: ["department"],
+      }],
+    },
+    {
+      question: "Break down order items by status.",
+      resource: "public.orders",
+      resourceLabel: "Orders",
+      dimension: { field: "status" },
+      fields: [{ id: "status", label: "Status" }],
+    },
+    {
+      question: "How many user sessions are there by status?",
+      resource: "public.users",
+      resourceLabel: "Users",
+      dimension: { field: "status" },
+      fields: [{ id: "status", label: "Status" }],
+    },
+    {
+      question: "Break down shipment events by status.",
+      resource: "public.shipments",
+      resourceLabel: "Shipments",
+      dimension: { field: "status" },
+      fields: [{ id: "status", label: "Status" }],
+    },
+    {
+      question: "Break down patients by sex at birth.",
+      resource: "public.encounters",
+      resourceLabel: "Encounters",
+      dimension: { field: "attending" },
+      fields: [{ id: "attending", label: "Attending" }],
+    },
+    {
+      question: "How many referral requests are there?",
+      resource: "public.encounters",
+      resourceLabel: "Encounters",
+      dimension: { field: "attending" },
+      fields: [{ id: "attending", label: "Attending" }],
+    },
+    {
+      question: "Break down event annotations by annotation kind.",
+      resource: "public.observation_events",
+      resourceLabel: "Observation events",
+      dimension: { field: "event_type" },
+      fields: [{ id: "event_type", label: "Event type" }],
+    },
+    {
+      question: "Break down event annotations by encounter department.",
+      resource: "public.observation_events",
+      resourceLabel: "Observation events",
+      dimension: {
+        field: "department",
+        relationship: "observation_events_observation_id_fkey__observations_encounter_id_fkey",
+      },
+      fields: [{ id: "event_type", label: "Event type" }],
+      relationships: [{
+        id: "observation_events_observation_id_fkey__observations_encounter_id_fkey",
+        target_resource: "public.encounters",
+        target_label: "Encounters",
+        fields: [{ id: "department", label: "Department" }],
+        groupable_fields: ["department"],
+      }],
+    },
+  ])("refuses OpenAI resource and field substitution before Explore accounting: $question", async ({
+    question,
+    resource,
+    resourceLabel,
+    dimension,
+    fields,
+    relationships,
+  }) => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const metadataCalls: Record<string, unknown>[] = [];
+    let exploreCalls = 0;
+    const focusedMetadata = {
+      ok: true,
+      catalog_view: "resource_detail",
+      metadata_only: true,
+      resources: [{
+        id: resource,
+        label: resourceLabel,
+        fields,
+        groupable_fields: fields.map((field) => field.id),
+        aggregate_measure_functions: {},
+        ...(relationships ? { relationships } : {}),
+      }],
+      source_database_changed: false,
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async (args) => {
+        metadataCalls.push(args);
+        return { ok: true, value: focusedMetadata };
+      },
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-4.1",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    const requestJson = vi.fn(async () => openAiToolCall("substituted_plan", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource,
+          measures: [{ function: "count" }],
+          dimensions: [dimension],
+          top_n: 25,
+        },
+      }));
+    const result = await session.run(question, gateway, { requestJson });
+
+    expect(result).toMatchObject({
+      answer_source: "runner",
+      answer_is_untrusted_model_output: false,
+      source_database_changed: false,
+      tool_calls: [{
+        tool: "app.explore_data",
+        status: "refused",
+        error_code: "ASK_PLAN_INTENT_MISMATCH",
+        result: {
+          source_query_executed: false,
+          explore_budget_consumed: false,
+        },
+      }],
+    });
+    expect(result.answer).toContain("did not reach source execution");
+    expect(result.answer).toContain("no Explore query or differencing budget was consumed");
+    expect(exploreCalls).toBe(0);
+    expect(calls).toEqual([]);
+    expect(metadataCalls).toEqual([{ resource }]);
+    expect(requestJson).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives OpenAI one bounded retry with the exact reviewed relationship dimension", async () => {
+    let exploreCalls = 0;
+    const relationship = "observation_events_observation_id_fkey__observations_encounter_id_fkey";
+    const focusedResource = {
+      id: "public.observation_events",
+      label: "Observation events",
+      fields: [{ id: "event_type", label: "Event type" }],
+      groupable_fields: ["event_type"],
+      relationships: [{
+        id: relationship,
+        activation: "active",
+        target_resource: "public.encounters",
+        target_label: "Encounters",
+        path_depth: 2,
+        fields: [{ id: "department", label: "Department" }],
+        groupable_fields: ["department"],
+      }],
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return {
+          ok: true,
+          value: { ok: true, data: [{ department: "cardiology", measure_0: 12 }], source_database_changed: false },
+        };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: { ok: true, resources: [focusedResource], source_database_changed: false },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-5-mini",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    let requests = 0;
+    const requestJson = vi.fn(async (
+      request: Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0],
+    ) => {
+      requests += 1;
+      if (requests === 1) {
+        return openAiToolCall("wrong_local_dimension", "app__explore_data", {
+          plan: {
+            kind: "aggregate",
+            resource: "public.observation_events",
+            measures: [{ function: "count" }],
+            dimensions: [{ field: "event_type" }],
+          },
+        });
+      }
+      if (requests === 2) {
+        expect(JSON.stringify(request.body)).toContain(relationship);
+        return openAiToolCall("corrected_relationship_dimension", "app__explore_data", {
+          plan: {
+            kind: "aggregate",
+            resource: "public.observation_events",
+            measures: [{ function: "count" }],
+            dimensions: [{ field: "department", relationship }],
+          },
+        });
+      }
+      return openAiText("Cardiology has 12 reviewed observation events.");
+    });
+
+    const result = await session.run(
+      "Break down observation events by encounter department.",
+      gateway,
+      { requestJson },
+    );
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ error_code: "ASK_PLAN_INTENT_MISMATCH", status: "refused" }),
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]);
+    expect(result.tool_calls[0]?.result).toMatchObject({
+      source_query_executed: false,
+      explore_budget_consumed: false,
+      reviewed_relationship_dimensions: [{
+        field: "department",
+        relationship,
+        target_resource: "public.encounters",
+        path_depth: 2,
+      }],
+    });
+    expect(exploreCalls).toBe(1);
+    expect(requestJson).toHaveBeenCalledTimes(3);
+  });
+
+  it("stops after one relationship repair when OpenAI repeats the mismatched plan", async () => {
+    let exploreCalls = 0;
+    const relationship = "observation_events_observation_id_fkey__observations_encounter_id_fkey";
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: {
+          ok: true,
+          resources: [{
+            id: "public.observation_events",
+            label: "Observation events",
+            fields: [{ id: "event_type", label: "Event type" }],
+            groupable_fields: ["event_type"],
+            relationships: [{
+              id: relationship,
+              activation: "active",
+              target_resource: "public.encounters",
+              target_label: "Encounters",
+              fields: [{ id: "department", label: "Department" }],
+              groupable_fields: ["department"],
+            }],
+          }],
+          source_database_changed: false,
+        },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-5-mini",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    const requestJson = vi.fn(async () => openAiToolCall("repeated_wrong_dimension", "app__explore_data", {
+      plan: {
+        kind: "aggregate",
+        resource: "public.observation_events",
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "event_type" }],
+      },
+    }));
+
+    const result = await session.run(
+      "Break down observation events by encounter department.",
+      gateway,
+      { requestJson },
+    );
+
+    expect(result.tool_calls).toHaveLength(2);
+    expect(result.tool_calls.every((call) => call.error_code === "ASK_PLAN_INTENT_MISMATCH")).toBe(true);
+    expect(result.answer_source).toBe("runner");
+    expect(result.answer).toContain(relationship);
+    expect(result.answer).toContain("No Explore query or differencing budget was consumed");
+    expect(exploreCalls).toBe(0);
+    expect(requestJson).toHaveBeenCalledTimes(2);
+  });
+
+  it("applies the same pre-execution substitution refusal to Anthropic Ask", async () => {
+    let exploreCalls = 0;
+    let metadataCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => {
+        metadataCalls += 1;
+        return {
+          ok: true,
+          value: {
+            ok: true,
+            resources: [{
+              id: "public.encounters",
+              fields: [{ id: "encounter_type", label: "Encounter type" }],
+              groupable_fields: ["encounter_type"],
+            }],
+            source_database_changed: false,
+          },
+        };
+      },
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "anthropic",
+      model: "claude-test",
+      api_key: "anthropic-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    const result = await session.run("How many observation events are there by event type?", gateway, {
+      requestJson: async () => ({
+        status: 200,
+        body: {
+          content: [{
+            type: "tool_use",
+            id: "substituted_anthropic_plan",
+            name: "app__explore_data",
+            input: {
+              plan: {
+                kind: "aggregate",
+                resource: "public.encounters",
+                measures: [{ function: "count" }],
+                dimensions: [{ field: "encounter_type" }],
+              },
+            },
+          }],
+        },
+      }),
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ error_code: "ASK_PLAN_INTENT_MISMATCH", status: "refused" }),
+    ]);
+    expect(result.answer_source).toBe("runner");
+    expect(exploreCalls).toBe(0);
+    expect(metadataCalls).toBe(1);
+  });
+
+  it("gives Anthropic one bounded retry for an exact reviewed relationship dimension", async () => {
+    let exploreCalls = 0;
+    const relationship = "observation_events_observation_id_fkey__observations_encounter_id_fkey";
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return {
+          ok: true,
+          value: { ok: true, data: [{ department: "cardiology", measure_0: 12 }], source_database_changed: false },
+        };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: {
+          ok: true,
+          resources: [{
+            id: "public.observation_events",
+            label: "Observation events",
+            fields: [{ id: "event_type", label: "Event type" }],
+            groupable_fields: ["event_type"],
+            relationships: [{
+              id: relationship,
+              activation: "active",
+              target_resource: "public.encounters",
+              target_label: "Encounters",
+              path_depth: 2,
+              fields: [{ id: "department", label: "Department" }],
+              groupable_fields: ["department"],
+            }],
+          }],
+          source_database_changed: false,
+        },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "anthropic",
+      model: "claude-test",
+      api_key: "anthropic-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    let requests = 0;
+    const result = await session.run(
+      "Break down observation events by encounter department.",
+      gateway,
+      {
+        requestJson: async (request) => {
+          requests += 1;
+          if (requests === 1) {
+            return {
+              status: 200,
+              body: {
+                content: [{
+                  type: "tool_use",
+                  id: "anthropic_wrong_local_dimension",
+                  name: "app__explore_data",
+                  input: {
+                    plan: {
+                      kind: "aggregate",
+                      resource: "public.observation_events",
+                      measures: [{ function: "count" }],
+                      dimensions: [{ field: "event_type" }],
+                    },
+                  },
+                }],
+              },
+            };
+          }
+          if (requests === 2) {
+            expect(JSON.stringify(request.body)).toContain(relationship);
+            return {
+              status: 200,
+              body: {
+                content: [{
+                  type: "tool_use",
+                  id: "anthropic_corrected_relationship_dimension",
+                  name: "app__explore_data",
+                  input: {
+                    plan: {
+                      kind: "aggregate",
+                      resource: "public.observation_events",
+                      measures: [{ function: "count" }],
+                      dimensions: [{ field: "department", relationship }],
+                    },
+                  },
+                }],
+              },
+            };
+          }
+          return {
+            status: 200,
+            body: { content: [{ type: "text", text: "Cardiology has 12 reviewed observation events." }] },
+          };
+        },
+      },
+    );
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ error_code: "ASK_PLAN_INTENT_MISMATCH", status: "refused" }),
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]);
+    expect(exploreCalls).toBe(1);
+    expect(requests).toBe(3);
+  });
+
+  it("fails closed when explicit Ask intent cannot be checked against reviewed metadata", async () => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => {
+        throw new Error("metadata lookup unavailable");
+      },
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-4.1",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    const result = await session.run("How many encounters are there by event type?", gateway, {
+      requestJson: async () => openAiToolCall("unchecked_plan", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.encounters",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "encounter_type" }],
+        },
+      }),
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ error_code: "ASK_PLAN_INTENT_MISMATCH", status: "refused" }),
+    ]);
+    expect(result.tool_calls[0]?.result.message).toContain("could not verify");
+    expect(exploreCalls).toBe(0);
+  });
+
+  it("keeps the local-model repair guard fail-closed for an unavailable entity and grouping", async () => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        if (name === "app.describe_data") {
+          return {
+            ok: true,
+            value: {
+              ok: true,
+              resources: [{
+                id: "public.encounters",
+                fields: [
+                  { id: "attending", label: "Attending" },
+                  { id: "encounter_type", label: "Encounter type" },
+                ],
+                groupable_fields: ["attending", "encounter_type"],
+                aggregate_measure_functions: {},
+              }],
+              source_database_changed: false,
+            },
+          };
+        }
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run("How many patients are there by insurance tier?", gateway, {
+      requestJson: async () => openAiToolCall("local_substituted_plan", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.encounters",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "attending" }],
+        },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      answer_source: "runner",
+      tool_calls: [{
+        tool: "app.explore_data",
+        status: "refused",
+        error_code: "LOCAL_PLAN_INTENT_MISMATCH",
+      }],
+    });
+    expect(exploreCalls).toBe(0);
+  });
+
+  it.each([
+    { question: "Break down shipments by mode.", field: "carrier_mode" },
+    { question: "How many shipments of each mode?", field: "carrier_mode" },
+    { question: "How many shipments are there per zone?", field: "warehouse_zone" },
+    { question: "Break down shipments by tier.", field: "service_level_code" },
+  ])("uses the same unambiguous reviewed suffix resolution for a local model: $question", async ({
+    question,
+    field,
+  }) => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name) => {
+        if (name === "app.describe_data") {
+          return {
+            ok: true,
+            value: {
+              ok: true,
+              resources: [{
+                id: "public.shipments",
+                label: "Shipments",
+                fields: [
+                  { id: "carrier_mode", label: "Carrier mode" },
+                  { id: "warehouse_zone", label: "Warehouse zone" },
+                  { id: "service_level_code", label: "Service tier" },
+                ],
+                groupable_fields: ["carrier_mode", "warehouse_zone", "service_level_code"],
+                aggregate_measure_functions: {},
+              }],
+              source_database_changed: false,
+            },
+          };
+        }
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    let requests = 0;
+    const result = await session.run(question, gateway, {
+      requestJson: async () => {
+        requests += 1;
+        return requests === 1
+          ? openAiToolCall("local_shipment_suffix", "app__explore_data", {
+            plan: {
+              kind: "aggregate",
+              resource: "public.shipments",
+              measures: [{ function: "count" }],
+              dimensions: [{ field }],
+            },
+          })
+          : openAiText("The reviewed result is available.");
+      },
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]);
+    expect(exploreCalls).toBe(1);
+  });
+
+  it("uses a unique reviewed measure to anchor an unqualified suffix for a local model", async () => {
+    let exploreCalls = 0;
+    const shipments = {
+      id: "public.shipments",
+      label: "Shipments",
+      fields: [
+        { id: "carrier_mode", label: "Carrier mode" },
+        { id: "transit_hours", label: "Transit hours" },
+      ],
+      groupable_fields: ["carrier_mode"],
+      aggregate_measure_functions: { transit_hours: ["avg"] },
+    };
+    const deliveries = {
+      id: "public.deliveries",
+      label: "Deliveries",
+      fields: [{ id: "delivery_cost_cents", label: "Delivery cost" }],
+      groupable_fields: [],
+      aggregate_measure_functions: { delivery_cost_cents: ["avg"] },
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        if (name === "app.describe_data") {
+          return {
+            ok: true,
+            value: {
+              ok: true,
+              resources: args?.resource === "public.shipments" ? [shipments] : [shipments, deliveries],
+              next_cursor: null,
+              source_database_changed: false,
+            },
+          };
+        }
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    let requests = 0;
+    const result = await session.run("What is the average transit time in hours by mode?", gateway, {
+      requestJson: async () => {
+        requests += 1;
+        return requests === 1
+          ? openAiToolCall("local_unique_measure_anchor", "app__explore_data", {
+            plan: {
+              kind: "aggregate",
+              resource: "public.shipments",
+              measures: [{ function: "avg", field: "transit_hours" }],
+              dimensions: [{ field: "carrier_mode" }],
+            },
+          })
+          : openAiText("The reviewed result is available.");
+      },
+    });
+
+    expect(result.tool_calls.at(-1)).toEqual(
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    );
+    expect(exploreCalls).toBe(1);
+  });
+
+  it("keeps an ambiguous local-model suffix fail-closed and names the reviewed choices", async () => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name) => {
+        if (name === "app.describe_data") {
+          return {
+            ok: true,
+            value: {
+              ok: true,
+              resources: [{
+                id: "public.shipments",
+                label: "Shipments",
+                fields: [
+                  { id: "carrier_mode", label: "Carrier mode" },
+                  { id: "delivery_mode", label: "Delivery mode" },
+                ],
+                groupable_fields: ["carrier_mode", "delivery_mode"],
+                aggregate_measure_functions: {},
+              }],
+              source_database_changed: false,
+            },
+          };
+        }
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run("Break down shipments by mode.", gateway, {
+      requestJson: async () => openAiToolCall("local_ambiguous_shipment_suffix", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.shipments",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "carrier_mode" }],
+        },
+      }),
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ error_code: "LOCAL_PLAN_INTENT_MISMATCH", status: "refused" }),
+    ]);
+    expect(result.tool_calls[0]?.result.message).toContain("carrier_mode");
+    expect(result.tool_calls[0]?.result.message).toContain("delivery_mode");
+    expect(exploreCalls).toBe(0);
+  });
+
+  it("accepts reviewed resource and field labels as intentional Ask semantics", async () => {
+    const calls: string[] = [];
+    let metadataCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name) => {
+        calls.push(name);
+        return {
+          ok: true,
+          value: { ok: true, data: [{ c7: "visit", measure_0: 12 }], source_database_changed: false },
+        };
+      },
+      describeOperatorMetadata: async () => {
+        metadataCalls += 1;
+        return {
+          ok: true,
+          value: {
+            ok: true,
+            resources: [{
+              id: "legacy.t_0031",
+              label: "Clinical encounters",
+              fields: [{ id: "c7", label: "Event type" }],
+              groupable_fields: ["c7"],
+            }],
+            source_database_changed: false,
+          },
+        };
+      },
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-4.1",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    let request = 0;
+    const result = await session.run("How many clinical encounters are there by event type?", gateway, {
+      requestJson: async () => {
+        request += 1;
+        return request === 1
+          ? openAiToolCall("labeled_plan", "app__explore_data", {
+            plan: {
+              kind: "aggregate",
+              resource: "legacy.t_0031",
+              measures: [{ function: "count" }],
+              dimensions: [{ field: "c7" }],
+            },
+          })
+          : openAiText("The reviewed result contains 12 clinical encounters.");
+      },
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]);
+    expect(calls).toEqual(["app.explore_data"]);
+    expect(metadataCalls).toBe(1);
+  });
+
+  it.each([
+    {
+      question: "Break down encounters by type.",
+      fieldLabel: "Encounter type",
+    },
+    {
+      question: "Break down encounters by encounter type.",
+      fieldLabel: "Encounter type",
+    },
+    {
+      question: "Break down encounters by encounter_type.",
+      fieldLabel: "Encounter type",
+    },
+    {
+      question: "Break down encounters by encounter-type.",
+      fieldLabel: "Encounter type",
+    },
+    {
+      question: "Break down public.encounters by encounter_type.",
+      fieldLabel: "Encounter type",
+    },
+    {
+      question: "How many encounters of each type?",
+      fieldLabel: "Encounter type",
+    },
+    {
+      question: "Show encounters grouped by visit type.",
+      fieldLabel: "Visit type",
+    },
+  ])("accepts canonical, readable, resource-qualified, and reviewed-label field intent: $question", async ({
+    question,
+    fieldLabel,
+  }) => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: {
+          ok: true,
+          resources: [{
+            id: "public.encounters",
+            label: "Encounters",
+            fields: [{ id: "encounter_type", label: fieldLabel }],
+            groupable_fields: ["encounter_type"],
+          }],
+          source_database_changed: false,
+        },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-4.1",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    let requests = 0;
+    const result = await session.run(question, gateway, {
+      requestJson: async () => {
+        requests += 1;
+        return requests === 1
+          ? openAiToolCall("intentional_encounter_type", "app__explore_data", {
+            plan: {
+              kind: "aggregate",
+              resource: "public.encounters",
+              measures: [{ function: "count" }],
+              dimensions: [{ field: "encounter_type" }],
+            },
+          })
+          : openAiText("The reviewed result is available.");
+      },
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]);
+    expect(exploreCalls).toBe(1);
+  });
+
+  it("does not treat an unrelated modifier as a resource-qualified field shorthand", async () => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: {
+          ok: true,
+          resources: [{
+            id: "public.encounters",
+            label: "Encounters",
+            fields: [{ id: "encounter_type", label: "Encounter type" }],
+            groupable_fields: ["encounter_type"],
+          }],
+          source_database_changed: false,
+        },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-4.1",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    const result = await session.run("Break down encounters by insurance type.", gateway, {
+      requestJson: async () => openAiToolCall("unrelated_type_modifier", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.encounters",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "encounter_type" }],
+        },
+      }),
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ error_code: "ASK_PLAN_INTENT_MISMATCH", status: "refused" }),
+    ]);
+    expect(exploreCalls).toBe(0);
+  });
+
+  it.each([
+    {
+      question: "Break down shipments by mode.",
+      field: "carrier_mode",
+    },
+    {
+      question: "How many shipments of each mode?",
+      field: "carrier_mode",
+    },
+    {
+      question: "Shipments per zone.",
+      field: "warehouse_zone",
+    },
+    {
+      question: "Break down shipments by band.",
+      field: "priority_band",
+    },
+    {
+      question: "Break down shipments by tier.",
+      field: "service_level_code",
+      labels: { service_level_code: "Service tier" },
+    },
+  ])("accepts one unambiguous reviewed trailing field or label term: $question", async ({
+    question,
+    field,
+    labels,
+  }) => {
+    let exploreCalls = 0;
+    const fields = [
+      { id: "carrier_mode", label: "Carrier mode" },
+      { id: "warehouse_zone", label: "Warehouse zone" },
+      { id: "priority_band", label: "Priority band" },
+      { id: "service_level_code", label: labels?.service_level_code ?? "Service level code" },
+    ];
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: {
+          ok: true,
+          resources: [{
+            id: "public.shipments",
+            label: "Shipments",
+            fields,
+            groupable_fields: fields.map((candidate) => candidate.id),
+          }],
+          source_database_changed: false,
+        },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-4.1",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    let requests = 0;
+    const result = await session.run(question, gateway, {
+      requestJson: async () => {
+        requests += 1;
+        return requests === 1
+          ? openAiToolCall("unambiguous_shipment_suffix", "app__explore_data", {
+            plan: {
+              kind: "aggregate",
+              resource: "public.shipments",
+              measures: [{ function: "count" }],
+              dimensions: [{ field }],
+            },
+          })
+          : openAiText("The reviewed result is available.");
+      },
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]);
+    expect(exploreCalls).toBe(1);
+  });
+
+  it("refuses an ambiguous reviewed trailing field term and names every candidate", async () => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: {
+          ok: true,
+          resources: [{
+            id: "public.shipments",
+            label: "Shipments",
+            fields: [
+              { id: "carrier_mode", label: "Carrier mode" },
+              { id: "delivery_mode", label: "Delivery mode" },
+            ],
+            groupable_fields: ["carrier_mode", "delivery_mode"],
+          }],
+          source_database_changed: false,
+        },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-4.1",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    const result = await session.run("Break down shipments by mode.", gateway, {
+      requestJson: async () => openAiToolCall("ambiguous_shipment_suffix", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.shipments",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "carrier_mode" }],
+        },
+      }),
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ error_code: "ASK_PLAN_INTENT_MISMATCH", status: "refused" }),
+    ]);
+    expect(result.tool_calls[0]?.result.message).toContain("carrier_mode");
+    expect(result.tool_calls[0]?.result.message).toContain("delivery_mode");
+    expect(result.tool_calls[0]?.result.message).toContain("ambiguous");
+    expect(exploreCalls).toBe(0);
+  });
+
+  it("accepts an exact reviewed field ID that disambiguates duplicate suffixes", async () => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: {
+          ok: true,
+          resources: [{
+            id: "public.shipments",
+            label: "Shipments",
+            fields: [
+              { id: "carrier_mode", label: "Carrier mode" },
+              { id: "delivery_mode", label: "Delivery mode" },
+            ],
+            groupable_fields: ["carrier_mode", "delivery_mode"],
+          }],
+          source_database_changed: false,
+        },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-4.1",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    let requests = 0;
+    const result = await session.run("Break down shipments by carrier_mode.", gateway, {
+      requestJson: async () => {
+        requests += 1;
+        return requests === 1
+          ? openAiToolCall("exact_shipment_mode", "app__explore_data", {
+            plan: {
+              kind: "aggregate",
+              resource: "public.shipments",
+              measures: [{ function: "count" }],
+              dimensions: [{ field: "carrier_mode" }],
+            },
+          })
+          : openAiText("The reviewed result is available.");
+      },
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]);
+    expect(exploreCalls).toBe(1);
+  });
+
+  it("does not resolve a bare suffix unless the question names the reviewed resource", async () => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: {
+          ok: true,
+          resources: [{
+            id: "public.shipments",
+            label: "Shipments",
+            fields: [{ id: "carrier_mode", label: "Carrier mode" }],
+            groupable_fields: ["carrier_mode"],
+          }],
+          source_database_changed: false,
+        },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-4.1",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    const result = await session.run("Break down the reviewed records by mode.", gateway, {
+      requestJson: async () => openAiToolCall("unnamed_resource_suffix", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.shipments",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "carrier_mode" }],
+        },
+      }),
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ error_code: "ASK_PLAN_INTENT_MISMATCH", status: "refused" }),
+    ]);
+    expect(exploreCalls).toBe(0);
+  });
+
+  it("accepts an unqualified suffix when another reviewed measure uniquely anchors the resource", async () => {
+    let exploreCalls = 0;
+    const shipments = {
+      id: "public.shipments",
+      label: "Shipments",
+      fields: [
+        { id: "carrier_mode", label: "Carrier mode" },
+        { id: "transit_hours", label: "Transit hours" },
+      ],
+      groupable_fields: ["carrier_mode"],
+      aggregate_measure_functions: { transit_hours: ["avg"] },
+    };
+    const deliveries = {
+      id: "public.deliveries",
+      label: "Deliveries",
+      fields: [{ id: "delivery_cost_cents", label: "Delivery cost" }],
+      groupable_fields: [],
+      aggregate_measure_functions: { delivery_cost_cents: ["avg"] },
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name) => {
+        if (name === "app.describe_data") {
+          return {
+            ok: true,
+            value: {
+              ok: true,
+              resources: [shipments, deliveries],
+              next_cursor: null,
+              source_database_changed: false,
+            },
+          };
+        }
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: { ok: true, resources: [shipments], source_database_changed: false },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-4.1",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    let requests = 0;
+    const result = await session.run("What is the average transit time in hours by mode?", gateway, {
+      requestJson: async () => {
+        requests += 1;
+        if (requests === 1) return openAiToolCall("list_anchor_catalog", "app__describe_data", {});
+        if (requests === 2) {
+          return openAiToolCall("unique_measure_anchor", "app__explore_data", {
+            plan: {
+              kind: "aggregate",
+              resource: "public.shipments",
+              measures: [{ function: "avg", field: "transit_hours" }],
+              dimensions: [{ field: "carrier_mode" }],
+            },
+          });
+        }
+        return openAiText("The reviewed result is available.");
+      },
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ tool: "app.describe_data", status: "ok" }),
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]);
+    expect(exploreCalls).toBe(1);
+  });
+
+  it("keeps an unqualified suffix fail-closed when its measure anchor spans resources", async () => {
+    let exploreCalls = 0;
+    const resources = ["public.shipments", "public.delivery_runs"].map((id) => ({
+      id,
+      fields: [
+        { id: "carrier_mode", label: "Carrier mode" },
+        { id: "transit_hours", label: "Transit hours" },
+      ],
+      groupable_fields: ["carrier_mode"],
+      aggregate_measure_functions: { transit_hours: ["avg"] },
+    }));
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name) => {
+        if (name === "app.describe_data") {
+          return {
+            ok: true,
+            value: { ok: true, resources, next_cursor: null, source_database_changed: false },
+          };
+        }
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: { ok: true, resources: [resources[0]], source_database_changed: false },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-4.1",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    let requests = 0;
+    const result = await session.run("What is the average transit time in hours by mode?", gateway, {
+      requestJson: async () => {
+        requests += 1;
+        return requests === 1
+          ? openAiToolCall("list_ambiguous_anchor_catalog", "app__describe_data", {})
+          : openAiToolCall("ambiguous_measure_anchor", "app__explore_data", {
+            plan: {
+              kind: "aggregate",
+              resource: "public.shipments",
+              measures: [{ function: "avg", field: "transit_hours" }],
+              dimensions: [{ field: "carrier_mode" }],
+            },
+          });
+      },
+    });
+
+    expect(result.tool_calls.at(-1)).toEqual(
+      expect.objectContaining({ error_code: "ASK_PLAN_INTENT_MISMATCH", status: "refused" }),
+    );
+    expect(exploreCalls).toBe(0);
+  });
+
+  it("defers a malformed comparison dimension to strict Explore validation before intent matching", async () => {
+    let exploreCalls = 0;
+    const shipments = {
+      id: "public.shipments",
+      label: "Shipments",
+      fields: [
+        { id: "warehouse_zone", label: "Warehouse zone" },
+        { id: "shipped_at", label: "Shipped at" },
+      ],
+      groupable_fields: ["warehouse_zone"],
+      time_bucket_fields: { shipped_at: ["month"] },
+      relative_time_window_fields: ["shipped_at"],
+      aggregate_measure_functions: {},
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name) => {
+        if (name === "app.describe_data") {
+          return {
+            ok: true,
+            value: {
+              ok: true,
+              resources: [shipments],
+              next_cursor: null,
+              source_database_changed: false,
+            },
+          };
+        }
+        exploreCalls += 1;
+        return {
+          ok: false,
+          error_code: "EXPLORE_PLAN_INVALID",
+          value: {
+            ok: false,
+            error_code: "EXPLORE_PLAN_INVALID",
+            message: "Use plan.comparison and plan.time_bucket as sibling keys.",
+            source_database_changed: false,
+          },
+        };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: { ok: true, resources: [shipments], source_database_changed: false },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-4.1",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    let requests = 0;
+    const result = await session.run(
+      "Compare this month with the preceding period: how many shipments by warehouse zone per month?",
+      gateway,
+      {
+        requestJson: async () => {
+          requests += 1;
+          if (requests === 1) return openAiToolCall("comparison_catalog", "app__describe_data", {});
+          if (requests === 2) {
+            return openAiToolCall("malformed_comparison", "app__explore_data", {
+              plan: {
+                kind: "aggregate",
+                resource: "public.shipments",
+                measures: [{ function: "count" }],
+                dimensions: [
+                  { field: "warehouse_zone" },
+                  { field: "shipped_at", time_bucket: "month" },
+                ],
+                time_window: {
+                  field: "shipped_at",
+                  window: "this_month",
+                  compare_to: "preceding_period",
+                },
+              },
+            });
+          }
+          return openAiText("Runner refused the malformed plan.");
+        },
+      },
+    );
+
+    expect(result.tool_calls.at(-1)).toEqual(
+      expect.objectContaining({ error_code: "EXPLORE_PLAN_INVALID", status: "refused" }),
+    );
+    expect(result.tool_calls.at(-1)?.error_code).not.toBe("ASK_PLAN_INTENT_MISMATCH");
+    expect(exploreCalls).toBe(1);
+  });
+
+  it("refuses when a unique reviewed suffix names a different field than the proposed plan", async () => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: {
+          ok: true,
+          resources: [{
+            id: "public.shipments",
+            label: "Shipments",
+            fields: [
+              { id: "carrier_mode", label: "Carrier mode" },
+              { id: "warehouse_zone", label: "Warehouse zone" },
+            ],
+            groupable_fields: ["carrier_mode", "warehouse_zone"],
+          }],
+          source_database_changed: false,
+        },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-4.1",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    const result = await session.run("Break down shipments by zone.", gateway, {
+      requestJson: async () => openAiToolCall("wrong_shipment_suffix", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.shipments",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "carrier_mode" }],
+        },
+      }),
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ error_code: "ASK_PLAN_INTENT_MISMATCH", status: "refused" }),
+    ]);
+    expect(result.tool_calls[0]?.result.message).toContain("warehouse_zone");
+    expect(result.tool_calls[0]?.result.message).toContain("carrier_mode");
+    expect(exploreCalls).toBe(0);
+  });
+
+  it.each([
+    {
+      question: "How many patients are there by insurance tier?",
+      resource: {
+        id: "public.encounters",
+        label: "Encounters",
+        fields: [{ id: "patient_id", label: "Patient" }],
+        count_distinct_fields: ["patient_id"],
+        relationships: [{
+          id: "encounters_patient_id_fkey",
+          target_resource: "public.patients",
+          target_label: "Patients",
+          fields: [{ id: "insurance_tier", label: "Insurance tier" }],
+          groupable_fields: ["insurance_tier"],
+        }],
+      },
+      plan: {
+        kind: "aggregate",
+        resource: "public.encounters",
+        measures: [{ function: "count_distinct", field: "patient_id" }],
+        dimensions: [{ field: "insurance_tier", relationship: "encounters_patient_id_fkey" }],
+      },
+    },
+    {
+      question: "What is revenue per order?",
+      resource: {
+        id: "public.orders",
+        label: "Orders",
+        derived_measures: [{ name: "revenue_per_order", label: "Revenue per order" }],
+      },
+      plan: {
+        kind: "aggregate",
+        resource: "public.orders",
+        measures: [{ derived_measure: "revenue_per_order" }],
+      },
+    },
+    {
+      question: "Break down revenue by channel.",
+      resource: {
+        id: "public.orders",
+        label: "Orders",
+        fields: [
+          { id: "amount_cents", label: "Revenue" },
+          { id: "channel", label: "Channel" },
+        ],
+        groupable_fields: ["channel"],
+        aggregate_measure_functions: { amount_cents: ["sum"] },
+      },
+      plan: {
+        kind: "aggregate",
+        resource: "public.orders",
+        measures: [{ function: "sum", field: "amount_cents" }],
+        dimensions: [{ field: "channel" }],
+      },
+    },
+  ])("allows an intentional official-provider plan for: $question", async ({ question, resource, plan }) => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: { ok: true, resources: [resource], source_database_changed: false },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-4.1",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    let requests = 0;
+    const result = await session.run(question, gateway, {
+      requestJson: async () => {
+        requests += 1;
+        return requests === 1
+          ? openAiToolCall("intentional_plan", "app__explore_data", { plan })
+          : openAiText("The reviewed result is available.");
+      },
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]);
+    expect(exploreCalls).toBe(1);
+  });
+
+  it("refuses an unsolicited dimension even when the question has no grouping preposition", async () => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: {
+          ok: true,
+          resources: [{
+            id: "public.encounters",
+            fields: [{ id: "attending", label: "Attending" }],
+            groupable_fields: ["attending"],
+          }],
+          source_database_changed: false,
+        },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-4.1",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    const result = await session.run("How many encounters are there?", gateway, {
+      requestJson: async () => openAiToolCall("unsolicited_dimension", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.encounters",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "attending" }],
+        },
+      }),
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ error_code: "ASK_PLAN_INTENT_MISMATCH", status: "refused" }),
+    ]);
+    expect(exploreCalls).toBe(0);
+  });
+
   it("reserves one no-tools Anthropic pass after an empty post-tool answer", async () => {
     const gateway = testGateway();
     const authorityDigest = askToolSurfaceDigest(tools);
@@ -803,6 +2590,1934 @@ describe("Workbench BYOM Ask", () => {
     });
     expect(gateway.calls).toHaveLength(0);
     expect(gateway.closed).toBe(1);
+  });
+
+  it("replaces an unreviewed cents-to-currency claim with a Runner-owned unit notice", async () => {
+    const gateway = testGateway(tools, {
+      ok: true,
+      value: {
+        ok: true,
+        data: [{ measure_0: 1234 }],
+        source_database_changed: false,
+      },
+    });
+    let request = 0;
+    const session = configuredSession(askToolSurfaceDigest(tools));
+    const result = await session.run("What is total revenue?", gateway.gateway, {
+      requestJson: async () => {
+        request += 1;
+        return request === 1
+          ? openAiToolCall("sum_cents", "app__explore_data", {
+            plan: {
+              kind: "aggregate",
+              resource: "public.invoices",
+              measures: [{ function: "sum", field: "amount_cents" }],
+            },
+          })
+          : openAiText("Total revenue is $1,234.");
+      },
+    });
+
+    expect(result).toMatchObject({
+      answer_source: "runner",
+      answer_is_untrusted_model_output: false,
+    });
+    expect(result.answer).toContain("values in cents");
+    expect(result.answer).not.toContain("$1,234");
+  });
+
+  it("corrects a model that treats catalog metadata as a data answer, then executes Explore", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        return name === "app.describe_data"
+          ? {
+            ok: true,
+            value: {
+              ok: true,
+              catalog_view: args.resource ? "resource_detail" : "resource_index",
+              metadata_only: true,
+              contains_source_values: false,
+              resources: [{
+                id: "public.invoices",
+                groupable_fields: ["status"],
+                aggregate_measure_functions: { amount_cents: ["sum", "avg"] },
+                valid_plan_example: {
+                  kind: "aggregate",
+                  resource: "public.invoices",
+                  measures: [{ function: "sum", field: "amount_cents" }],
+                  dimensions: [{ field: "status" }],
+                },
+              }],
+              source_database_changed: false,
+            },
+          }
+          : {
+            ok: true,
+            value: {
+              ok: true,
+              data: [{ status: "paid", measure_0: 42 }],
+              source_database_changed: false,
+            },
+          };
+      },
+      close: async () => undefined,
+    };
+    const requests: Array<Record<string, unknown>> = [];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run("What is the total invoice amount by status?", gateway, {
+      requestJson: async (request) => {
+        requests.push(structuredClone(request.body));
+        if (requests.length === 1) {
+          return openAiToolCall("describe_catalog", "app__describe_data", {});
+        }
+        if (requests.length === 2) {
+          return openAiText("Invoices can be grouped by status.");
+        }
+        if (requests.length === 3) {
+          return openAiText(JSON.stringify({
+            plan: {
+              kind: "aggregate",
+              resource: "public.invoices",
+              measures: [{ function: "sum", field: "amount_cents" }],
+              dimensions: [{ field: "status" }],
+            },
+          }));
+        }
+        return openAiText("Paid invoices have a reviewed total of 42 cents.");
+      },
+    });
+
+    expect(result).toMatchObject({
+      answer_source: "runner",
+      answer_is_untrusted_model_output: false,
+      tool_calls: [
+        { tool: "app.describe_data", status: "ok" },
+        { tool: "app.describe_data", status: "ok" },
+        { tool: "app.explore_data", status: "ok" },
+      ],
+    });
+    expect(result.answer).toContain("intent-checked reviewed plan");
+    expect(requests).toHaveLength(3);
+    expect(JSON.stringify(requests[2])).toContain("valid_plan_example");
+    expect(requests[2]?.response_format).toEqual({ type: "json_object" });
+    expect(requests[2]?.temperature).toBe(0);
+    expect(requests[2]).not.toHaveProperty("tools");
+    expect(calls).toEqual([
+      { name: "app.describe_data", args: {} },
+      { name: "app.describe_data", args: { resource: "public.invoices" } },
+      {
+        name: "app.explore_data",
+        args: {
+          plan: {
+            kind: "aggregate",
+            resource: "public.invoices",
+            measures: [{ function: "sum", field: "amount_cents" }],
+            dimensions: [{ field: "status" }],
+          },
+        },
+      },
+    ]);
+  });
+
+  it("recovers an empty first response from a local model through the reviewed catalog", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        return name === "app.describe_data"
+          ? {
+            ok: true,
+            value: {
+              ok: true,
+              resources: [{
+                id: "public.churn_events",
+                groupable_fields: ["reason_category"],
+                aggregate_measure_functions: {},
+                valid_plan_example: {
+                  kind: "aggregate",
+                  resource: "public.churn_events",
+                  measures: [{ function: "count" }],
+                  dimensions: [{ field: "reason_category" }],
+                },
+              }],
+              source_database_changed: false,
+            },
+          }
+          : {
+            ok: true,
+            value: {
+              ok: true,
+              data: [{ reason_category: "price", count: 12 }],
+              source_database_changed: false,
+            },
+          };
+      },
+      close: async () => undefined,
+    };
+    const responses = [
+      openAiText(""),
+      openAiText(JSON.stringify({
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "reason_category" }],
+        },
+      })),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run("How many churn events are there by reason category?", gateway, {
+      requestJson: async () => responses.shift()!,
+    });
+
+    expect(result).toMatchObject({
+      answer_source: "runner",
+      answer_is_untrusted_model_output: false,
+      tool_calls: [
+        { tool: "app.describe_data", status: "ok" },
+        { tool: "app.describe_data", status: "ok" },
+        { tool: "app.explore_data", status: "ok" },
+      ],
+    });
+    expect(calls).toEqual([
+      { name: "app.describe_data", args: { limit: 10 } },
+      { name: "app.describe_data", args: { resource: "public.churn_events" } },
+      {
+        name: "app.explore_data",
+        args: {
+          plan: {
+            kind: "aggregate",
+            resource: "public.churn_events",
+            measures: [{ function: "count" }],
+            dimensions: [{ field: "reason_category" }],
+          },
+        },
+      },
+    ]);
+  });
+
+  it("refuses a semantically wrong direct local-model plan before source execution and accepts its correction", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        return name === "app.describe_data"
+          ? {
+            ok: true,
+            value: {
+              ok: true,
+              resources: [{
+                id: "public.churn_events",
+                groupable_fields: ["reason_category"],
+                aggregate_measure_functions: { monthly_revenue_cents: ["sum", "avg"] },
+                field_enums: { reason_category: ["price", "support"] },
+                valid_plan_example: {
+                  kind: "aggregate",
+                  resource: "public.churn_events",
+                  measures: [{ function: "count" }],
+                  dimensions: [{ field: "reason_category" }],
+                },
+              }],
+              source_database_changed: false,
+            },
+          }
+          : {
+            ok: true,
+            value: {
+              ok: true,
+              data: [{ reason_category: "price", count: 12 }],
+              source_database_changed: false,
+            },
+          };
+      },
+      close: async () => undefined,
+    };
+    const responses = [
+      openAiToolCall("catalog", "app__describe_data", { resource: null }),
+      openAiToolCall("wrong", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "sum", field: "monthly_revenue_cents" }],
+          dimensions: [{ field: "reason_category" }],
+        },
+      }),
+      openAiText(JSON.stringify({
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "reason_category" }],
+        },
+      })),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run("How many churn events are there by reason category?", gateway, {
+      requestJson: async () => responses.shift()!,
+    });
+
+    expect(result.tool_calls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ tool: "app.explore_data", status: "refused", error_code: "LOCAL_PLAN_INTENT_MISMATCH" }),
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]));
+    expect(calls.filter((call) => call.name === "app.explore_data")).toEqual([{
+      name: "app.explore_data",
+      args: {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "reason_category" }],
+        },
+      },
+    }]);
+  });
+
+  it("repairs a local-model count into the exact reviewed population-dispersion plan", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const resource = {
+      id: "public.churn_events",
+      groupable_fields: ["reason_category"],
+      aggregate_measure_functions: {
+        monthly_revenue_cents: ["sum", "avg", "stddev_samp", "stddev_pop", "var_samp", "var_pop"],
+      },
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        if (name === "app.describe_data") {
+          return { ok: true, value: { ok: true, resources: [resource], source_database_changed: false } };
+        }
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const responses = [
+      openAiToolCall("catalog", "app__describe_data", {}),
+      openAiToolCall("wrong_count", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "reason_category" }],
+        },
+      }),
+      openAiText("{}"),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run(
+      "What is the population standard deviation of monthly revenue cents by churn reason?",
+      gateway,
+      { requestJson: async () => responses.shift()! },
+    );
+
+    expect(result.tool_calls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ error_code: "LOCAL_PLAN_INTENT_MISMATCH", status: "refused" }),
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]));
+    expect(calls.filter((call) => call.name === "app.explore_data")).toEqual([{
+      name: "app.explore_data",
+      args: {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "stddev_pop", field: "monthly_revenue_cents" }],
+          dimensions: [{ field: "reason_category" }],
+        },
+      },
+    }]);
+  });
+
+  it("repairs a local-model scalar count into the exact reviewed fixed numeric band", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const resource = {
+      id: "public.churn_events",
+      groupable_fields: ["reason_category"],
+      aggregate_measure_functions: { monthly_revenue_cents: ["sum", "avg"] },
+      numeric_bands: [{
+        name: "monthly_revenue_band",
+        label: "Monthly revenue band",
+        field: "monthly_revenue_cents",
+      }],
+      auto_bands: [{
+        field: "monthly_revenue_cents",
+        methods: ["quantile", "equal_width"],
+        min_buckets: 2,
+        max_buckets: 8,
+      }],
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        if (name === "app.describe_data") {
+          return { ok: true, value: { ok: true, resources: [resource], source_database_changed: false } };
+        }
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const responses = [
+      openAiToolCall("catalog", "app__describe_data", {}),
+      openAiToolCall("missing_band", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "count" }],
+        },
+      }),
+      openAiText("{}"),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run(
+      "How many churn events fall in each reviewed monthly revenue band?",
+      gateway,
+      { requestJson: async () => responses.shift()! },
+    );
+
+    expect(result.tool_calls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ error_code: "LOCAL_PLAN_INTENT_MISMATCH", status: "refused" }),
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]));
+    expect(calls.filter((call) => call.name === "app.explore_data")).toEqual([{
+      name: "app.explore_data",
+      args: {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "count" }],
+          dimensions: [{ numeric_band: "monthly_revenue_band" }],
+        },
+      },
+    }]);
+  });
+
+  it("repairs a local-model fixed band into the exact reviewed automatic-band policy", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const resource = {
+      id: "public.churn_events",
+      groupable_fields: [],
+      aggregate_measure_functions: { monthly_revenue_cents: ["sum", "avg"] },
+      numeric_bands: [{
+        name: "monthly_revenue_band",
+        label: "Monthly revenue band",
+        field: "monthly_revenue_cents",
+      }],
+      auto_bands: [{
+        field: "monthly_revenue_cents",
+        methods: ["quantile", "equal_width"],
+        min_buckets: 2,
+        max_buckets: 8,
+      }],
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        if (name === "app.describe_data") {
+          return { ok: true, value: { ok: true, resources: [resource], source_database_changed: false } };
+        }
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const responses = [
+      openAiToolCall("catalog", "app__describe_data", {}),
+      openAiToolCall("wrong_fixed_band", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "count" }],
+          dimensions: [{ numeric_band: "monthly_revenue_band" }],
+        },
+      }),
+      openAiText("{}"),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run(
+      "How many churn events fall into five quantile buckets of monthly revenue?",
+      gateway,
+      { requestJson: async () => responses.shift()! },
+    );
+
+    expect(result.tool_calls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ error_code: "LOCAL_PLAN_INTENT_MISMATCH", status: "refused" }),
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]));
+    expect(calls.filter((call) => call.name === "app.explore_data")).toEqual([{
+      name: "app.explore_data",
+      args: {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "count" }],
+          dimensions: [{
+            numeric_band: {
+              field: "monthly_revenue_cents",
+              method: "quantile",
+              buckets: 5,
+            },
+          }],
+        },
+      },
+    }]);
+  });
+
+  it("refuses generic numeric buckets when fixed and automatic policies are both plausible", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const resource = {
+      id: "public.churn_events",
+      groupable_fields: [],
+      aggregate_measure_functions: { monthly_revenue_cents: ["sum", "avg"] },
+      numeric_bands: [{
+        name: "monthly_revenue_band",
+        label: "Monthly revenue band",
+        field: "monthly_revenue_cents",
+      }],
+      auto_bands: [{
+        field: "monthly_revenue_cents",
+        methods: ["quantile"],
+        min_buckets: 2,
+        max_buckets: 8,
+      }],
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        return { ok: true, value: { ok: true, resources: [resource], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const responses = [
+      openAiToolCall("catalog", "app__describe_data", {}),
+      openAiToolCall("guessed_fixed_band", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "count" }],
+          dimensions: [{ numeric_band: "monthly_revenue_band" }],
+        },
+      }),
+      openAiText("{}"),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run(
+      "How many churn events are in monthly revenue buckets?",
+      gateway,
+      { requestJson: async () => responses.shift()! },
+    );
+
+    expect(result.answer_source).toBe("runner");
+    expect(result.answer).toContain("did not match the question");
+    expect(calls.some((call) => call.name === "app.explore_data")).toBe(false);
+  });
+
+  it("repairs a local-model base aggregate into the exact reviewed running-total plan", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const resource = {
+      id: "public.churn_events",
+      groupable_fields: ["reason_category"],
+      aggregate_measure_functions: { monthly_revenue_cents: ["sum", "avg"] },
+      time_bucket_fields: { churned_at: ["week", "month"] },
+      derived_measures: [{
+        name: "revenue_running_total",
+        label: "Revenue running total",
+        shape: "running_total",
+      }],
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        if (name === "app.describe_data") {
+          return { ok: true, value: { ok: true, resources: [resource], source_database_changed: false } };
+        }
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const responses = [
+      openAiToolCall("catalog", "app__describe_data", {}),
+      openAiToolCall("wrong_measure", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "sum", field: "monthly_revenue_cents" }],
+          dimensions: [{ field: "reason_category" }],
+        },
+      }),
+      openAiText("{}"),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run(
+      "Show the reviewed running revenue total by week and churn reason.",
+      gateway,
+      { requestJson: async () => responses.shift()! },
+    );
+
+    expect(result.tool_calls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ error_code: "LOCAL_PLAN_INTENT_MISMATCH", status: "refused" }),
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]));
+    expect(calls.filter((call) => call.name === "app.explore_data")).toEqual([{
+      name: "app.explore_data",
+      args: {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ derived_measure: "revenue_running_total" }],
+          dimensions: [{ field: "reason_category" }],
+          time_bucket: { field: "churned_at", bucket: "week" },
+        },
+      },
+    }]);
+  });
+
+  it.each([
+    {
+      question: "How many scoped order items are there by their order category?",
+      resource: {
+        id: "public.scoped_order_items",
+        groupable_fields: [],
+        aggregate_measure_functions: {},
+        relationships: [{
+          id: "scoped_order_items_order_id_fkey",
+          target_resource: "public.scoped_orders",
+          target_label: "Orders",
+          groupable_fields: ["category"],
+        }],
+      },
+      expectedDimension: { field: "category", relationship: "scoped_order_items_order_id_fkey" },
+    },
+    {
+      question: "How many shared products are there by product category?",
+      resource: {
+        id: "public.shared_product_catalog",
+        label: "Shared product catalog",
+        groupable_fields: ["category"],
+        aggregate_measure_functions: {},
+        relationships: [],
+      },
+      expectedDimension: { field: "category" },
+    },
+  ])("corrects a conflicting local-model resource for: $question", async ({ question, resource, expectedDimension }) => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const wrongResource = {
+      id: "public.churn_events",
+      groupable_fields: ["reason_category"],
+      aggregate_measure_functions: {},
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        if (name === "app.describe_data") {
+          const focused = typeof args.resource === "string"
+            ? [args.resource === resource.id ? resource : wrongResource]
+            : [wrongResource, resource];
+          return { ok: true, value: { ok: true, resources: focused, source_database_changed: false } };
+        }
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const responses = [
+      openAiToolCall("catalog", "app__describe_data", {}),
+      openAiToolCall("wrong_resource", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "reason_category" }],
+        },
+      }),
+      openAiText("{}"),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run(question, gateway, {
+      requestJson: async () => responses.shift()!,
+    });
+
+    expect(result.tool_calls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ error_code: "LOCAL_PLAN_INTENT_MISMATCH", status: "refused" }),
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]));
+    expect(calls.filter((call) => call.name === "app.explore_data")).toEqual([{
+      name: "app.explore_data",
+      args: {
+        plan: {
+          kind: "aggregate",
+          resource: resource.id,
+          measures: [{ function: "count" }],
+          dimensions: [expectedDimension],
+        },
+      },
+    }]);
+  });
+
+  it("uses a named relationship target as grouping context instead of the base resource", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const workOrders = {
+      id: "public.work_orders",
+      groupable_fields: ["priority"],
+      aggregate_measure_functions: { downtime_minutes: ["sum", "avg"] },
+      time_bucket_fields: { opened_at: ["week", "month"], completed_at: ["week", "month"] },
+      relationships: [{
+        id: "work_orders_inverter_model_id_fkey",
+        activation: "active",
+        target_resource: "public.inverter_models",
+        groupable_fields: ["manufacturer", "model_name", "panel_position"],
+      }, {
+        id: "work_orders_site_id_fkey",
+        activation: "active",
+        target_resource: "public.solar_sites",
+        groupable_fields: ["name", "site_group", "accounting_period"],
+      }],
+    };
+    const inverterModels = {
+      id: "public.inverter_models",
+      groupable_fields: ["manufacturer", "model_name", "panel_position"],
+      aggregate_measure_functions: {},
+      time_bucket_fields: {},
+      relationships: [],
+    };
+    const unrelated = {
+      id: "public.churn_events",
+      groupable_fields: ["reason_category"],
+      aggregate_measure_functions: {},
+      time_bucket_fields: {},
+      relationships: [],
+    };
+    const solarSites = {
+      id: "public.solar_sites",
+      groupable_fields: ["name", "site_group", "accounting_period"],
+      aggregate_measure_functions: {},
+      time_bucket_fields: {},
+      relationships: [],
+    };
+    const resources = [inverterModels, solarSites, unrelated, workOrders];
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        if (name === "app.describe_data") {
+          const focused = typeof args.resource === "string"
+            ? resources.filter((resource) => resource.id === args.resource)
+            : resources.map((resource) => ({
+              ...resource,
+              relationships: Array.isArray(resource.relationships)
+                ? resource.relationships.map((relationship) => ({
+                  id: relationship.id,
+                  activation: relationship.activation,
+                  target_resource: relationship.target_resource,
+                }))
+                : [],
+            }));
+          return { ok: true, value: { ok: true, resources: focused, source_database_changed: false } };
+        }
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const exactPlan = {
+      kind: "aggregate",
+      resource: "public.work_orders",
+      measures: [{ function: "sum", field: "downtime_minutes" }],
+      dimensions: [{
+        field: "model_name",
+        relationship: "work_orders_inverter_model_id_fkey",
+      }],
+      time_bucket: { field: "opened_at", bucket: "week" },
+    };
+    const responses = [
+      openAiToolCall("catalog", "app__describe_data", {}),
+      openAiToolCall("unrelated", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "reason_category" }],
+        },
+      }),
+      openAiText(JSON.stringify({ plan: exactPlan })),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run(
+      "How did total work order downtime change weekly for each inverter model name using opened at?",
+      gateway,
+      { requestJson: async () => responses.shift()! },
+    );
+
+    expect(result.tool_calls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ error_code: "LOCAL_PLAN_INTENT_MISMATCH", status: "refused" }),
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]));
+    expect(calls.filter((call) => call.name === "app.explore_data")).toEqual([{
+      name: "app.explore_data",
+      args: { plan: exactPlan },
+    }]);
+  });
+
+  it("accepts multiple explicitly named relationship dimensions without weakening ambiguity checks", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const careFacts = {
+      id: "public.care_episode_facts",
+      aggregate_measure_functions: { avoided_readmission_cost_cents: ["sum", "avg"] },
+      time_bucket_fields: { discharged_at: ["week"] },
+      relationships: [{
+        id: "care_episode_facts_unit_id_fkey",
+        activation: "active",
+        target_resource: "public.care_units",
+        target_label: "Care units",
+        groupable_fields: ["name", "service_line"],
+      }, {
+        id: "care_episode_facts_discharge_reason_id_fkey",
+        activation: "active",
+        target_resource: "public.discharge_reasons",
+        target_label: "Discharge reasons",
+        groupable_fields: ["name", "reason_category"],
+      }],
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        if (name === "app.describe_data") {
+          return { ok: true, value: { ok: true, resources: [careFacts], source_database_changed: false } };
+        }
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const exactPlan = {
+      kind: "aggregate",
+      resource: "public.care_episode_facts",
+      measures: [{ function: "sum", field: "avoided_readmission_cost_cents" }],
+      dimensions: [{
+        field: "name",
+        relationship: "care_episode_facts_unit_id_fkey",
+      }, {
+        field: "name",
+        relationship: "care_episode_facts_discharge_reason_id_fkey",
+      }],
+      time_bucket: { field: "discharged_at", bucket: "week" },
+    };
+    const responses = [
+      openAiToolCall("catalog", "app__describe_data", {}),
+      openAiToolCall("aggregate", "app__explore_data", { plan: exactPlan }),
+      openAiText("The reviewed care analysis is complete."),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run(
+      "How did total avoided readmission cost change by week grouped by care unit name and discharge reason name?",
+      gateway,
+      { requestJson: async () => responses.shift()! },
+    );
+
+    expect(result.tool_calls).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ error_code: "LOCAL_PLAN_INTENT_MISMATCH" }),
+    ]));
+    expect(calls.filter((call) => call.name === "app.explore_data")).toEqual([{
+      name: "app.explore_data",
+      args: { plan: exactPlan },
+    }]);
+  });
+
+  it("uses the reviewed name field when grouping by named relationship entities", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const careFacts = {
+      id: "public.care_episode_facts",
+      aggregate_measure_functions: { avoided_readmission_cost_cents: ["sum", "avg"] },
+      time_bucket_fields: { discharged_at: ["week"] },
+      relationships: [{
+        id: "care_episode_facts_unit_id_fkey",
+        activation: "active",
+        target_resource: "public.care_units",
+        target_label: "Care units",
+        groupable_fields: ["name", "service_line"],
+      }, {
+        id: "care_episode_facts_discharge_reason_id_fkey",
+        activation: "active",
+        target_resource: "public.discharge_reasons",
+        target_label: "Discharge reasons",
+        groupable_fields: ["name", "reason_category"],
+      }],
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        if (name === "app.describe_data") {
+          return { ok: true, value: { ok: true, resources: [careFacts], source_database_changed: false } };
+        }
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const exactPlan = {
+      kind: "aggregate",
+      resource: "public.care_episode_facts",
+      measures: [{ function: "sum", field: "avoided_readmission_cost_cents" }],
+      dimensions: [{
+        field: "name",
+        relationship: "care_episode_facts_unit_id_fkey",
+      }, {
+        field: "name",
+        relationship: "care_episode_facts_discharge_reason_id_fkey",
+      }],
+      time_bucket: { field: "discharged_at", bucket: "week" },
+    };
+    const responses = [
+      openAiToolCall("catalog", "app__describe_data", {}),
+      openAiToolCall("aggregate", "app__explore_data", { plan: exactPlan }),
+      openAiText("The reviewed care analysis is complete."),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run(
+      "How did total avoided readmission cost change by week across care units and discharge reasons?",
+      gateway,
+      { requestJson: async () => responses.shift()! },
+    );
+
+    expect(result.tool_calls).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ error_code: "LOCAL_PLAN_INTENT_MISMATCH" }),
+    ]));
+    expect(calls.filter((call) => call.name === "app.explore_data")).toEqual([{
+      name: "app.explore_data",
+      args: { plan: exactPlan },
+    }]);
+  });
+
+  it("matches natural plurals and distinct focused-resource counts", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const salesFacts = {
+      id: "public.sales_line_facts",
+      primary_key: "id",
+      groupable_fields: ["channel"],
+      count_distinct_fields: ["id", "store_id", "region_id"],
+      aggregate_measure_functions: { net_revenue_cents: ["sum", "avg"] },
+      time_bucket_fields: { sold_at: ["week"] },
+      relationships: [{
+        id: "sales_line_facts_order_id_fkey",
+        activation: "active",
+        target_resource: "public.orders",
+        groupable_fields: ["channel", "status"],
+      }, {
+        id: "sales_line_facts_store_id_fkey",
+        activation: "active",
+        target_resource: "public.stores",
+        groupable_fields: ["channel", "name"],
+      }],
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        if (name === "app.describe_data") {
+          return { ok: true, value: { ok: true, resources: [salesFacts], source_database_changed: false } };
+        }
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const exactPlan = {
+      kind: "aggregate",
+      resource: "public.sales_line_facts",
+      measures: [{ function: "count_distinct", field: "id" }],
+      dimensions: [{ field: "channel" }],
+      order_by: { kind: "measure", index: 0, direction: "desc" },
+      top_n: 10,
+    };
+    const responses = [
+      openAiToolCall("catalog", "app__describe_data", {}),
+      openAiToolCall("aggregate", "app__explore_data", { plan: exactPlan }),
+      openAiText("The reviewed distinct-sales analysis is complete."),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run(
+      "Which reviewed channels had the most distinct sales?",
+      gateway,
+      { requestJson: async () => responses.shift()! },
+    );
+
+    expect(result.tool_calls).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ error_code: "LOCAL_PLAN_INTENT_MISMATCH" }),
+    ]));
+    expect(calls.filter((call) => call.name === "app.explore_data")).toEqual([{
+      name: "app.explore_data",
+      args: { plan: exactPlan },
+    }]);
+
+    const explicitIdentifierPlan = {
+      ...exactPlan,
+      measures: [{ function: "count_distinct", field: "store_id" }],
+      dimensions: [{ field: "channel", relationship: "sales_line_facts_store_id_fkey" }],
+    };
+    const explicitResponses = [
+      openAiToolCall("catalog_explicit", "app__describe_data", {}),
+      openAiToolCall("aggregate_explicit", "app__explore_data", { plan: explicitIdentifierPlan }),
+      openAiText("The reviewed distinct-store analysis is complete."),
+    ];
+    const explicitResult = await configuredSession(askToolSurfaceDigest(authoringTools)).run(
+      "Which reviewed channels had the most unique stores?",
+      gateway,
+      { requestJson: async () => explicitResponses.shift()! },
+    );
+    expect(explicitResult.tool_calls).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ error_code: "LOCAL_PLAN_INTENT_MISMATCH" }),
+    ]));
+    expect(calls.filter((call) => call.name === "app.explore_data").at(-1)).toEqual({
+      name: "app.explore_data",
+      args: { plan: explicitIdentifierPlan },
+    });
+
+    const ambiguousResponses = [
+      openAiToolCall("catalog_ambiguous", "app__describe_data", {}),
+      openAiToolCall("aggregate_ambiguous", "app__explore_data", { plan: explicitIdentifierPlan }),
+    ];
+    const ambiguousResult = await configuredSession(askToolSurfaceDigest(authoringTools)).run(
+      "Which reviewed channels had the most unique stores and regions?",
+      gateway,
+      { requestJson: async () => ambiguousResponses.shift()! },
+    );
+    expect(ambiguousResult.answer_source).toBe("runner");
+    expect(ambiguousResult.tool_calls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ error_code: "LOCAL_PLAN_INTENT_MISMATCH" }),
+    ]));
+    expect(calls.filter((call) => call.name === "app.explore_data")).toHaveLength(2);
+  });
+
+  it("validates two explicitly requested analyses against separate clauses", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const salesFacts = {
+      id: "public.sales_line_facts",
+      aggregate_measure_functions: { net_revenue_cents: ["sum", "avg"] },
+      groupable_fields: [],
+      relationships: [{
+        id: "sales_line_facts_store_id_fkey",
+        activation: "active",
+        target_resource: "public.stores",
+        target_label: "Stores",
+        groupable_fields: ["name", "channel"],
+      }],
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        if (name === "app.describe_data") {
+          return { ok: true, value: { ok: true, resources: [salesFacts], source_database_changed: false } };
+        }
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const averageByStore = {
+      kind: "aggregate",
+      resource: "public.sales_line_facts",
+      measures: [{ function: "avg", field: "net_revenue_cents" }],
+      dimensions: [{ field: "name", relationship: "sales_line_facts_store_id_fkey" }],
+      order_by: { kind: "measure", index: 0, direction: "desc" },
+      top_n: 10,
+    };
+    const totalRevenue = {
+      kind: "aggregate",
+      resource: "public.sales_line_facts",
+      measures: [{ function: "sum", field: "net_revenue_cents" }],
+    };
+    const responses = [
+      openAiToolCall("catalog", "app__describe_data", {}),
+      {
+        status: 200,
+        body: {
+          choices: [{
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                {
+                  id: "average_by_store",
+                  type: "function",
+                  function: { name: "app__explore_data", arguments: JSON.stringify({ plan: averageByStore }) },
+                },
+                {
+                  id: "total_revenue",
+                  type: "function",
+                  function: { name: "app__explore_data", arguments: JSON.stringify({ plan: totalRevenue }) },
+                },
+              ],
+            },
+          }],
+        },
+      },
+      openAiText("Both reviewed analyses are complete."),
+    ];
+    const result = await configuredSession(askToolSurfaceDigest(authoringTools)).run(
+      "Run two reviewed analyses: average net revenue by store name and total net revenue.",
+      gateway,
+      { requestJson: async () => responses.shift()! },
+    );
+
+    expect(result.tool_calls).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ error_code: "LOCAL_PLAN_INTENT_MISMATCH" }),
+    ]));
+    expect(calls.filter((call) => call.name === "app.explore_data")).toEqual([
+      { name: "app.explore_data", args: { plan: averageByStore } },
+      { name: "app.explore_data", args: { plan: totalRevenue } },
+    ]);
+
+    const duplicateResponses = [
+      openAiToolCall("catalog_duplicate", "app__describe_data", {}),
+      {
+        status: 200,
+        body: {
+          choices: [{
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                {
+                  id: "average_first",
+                  type: "function",
+                  function: { name: "app__explore_data", arguments: JSON.stringify({ plan: averageByStore }) },
+                },
+                {
+                  id: "average_duplicate",
+                  type: "function",
+                  function: { name: "app__explore_data", arguments: JSON.stringify({ plan: averageByStore }) },
+                },
+              ],
+            },
+          }],
+        },
+      },
+    ];
+    const duplicateResult = await configuredSession(askToolSurfaceDigest(authoringTools)).run(
+      "Run two reviewed analyses: average net revenue by store name and total net revenue.",
+      gateway,
+      { requestJson: async () => duplicateResponses.shift()! },
+    );
+    expect(duplicateResult.answer_source).toBe("runner");
+    expect(duplicateResult.tool_calls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ error_code: "LOCAL_PLAN_INTENT_MISMATCH" }),
+    ]));
+    expect(calls.filter((call) => call.name === "app.explore_data")).toHaveLength(3);
+  });
+
+  it("refuses an ambiguous relationship/time question with actionable reviewed choices", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const workOrders = {
+      id: "public.work_orders",
+      aggregate_measure_functions: { downtime_minutes: ["sum", "avg"] },
+      time_bucket_fields: { opened_at: ["week"], completed_at: ["week"] },
+      relationships: [{
+        id: "work_orders_inverter_model_id_fkey",
+        activation: "active",
+        target_resource: "public.inverter_models",
+        groupable_fields: ["manufacturer", "model_name", "panel_position"],
+      }],
+    };
+    const inverterModels = {
+      id: "public.inverter_models",
+      label: "Inverter models",
+      groupable_fields: ["manufacturer", "model_name", "panel_position"],
+      aggregate_measure_functions: {},
+      time_bucket_fields: {},
+      relationships: [],
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        if (name !== "app.describe_data") {
+          return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+        }
+        const resources = typeof args.resource === "string"
+          ? [workOrders, inverterModels].filter((resource) => resource.id === args.resource)
+          : [
+            { ...inverterModels },
+            {
+              ...workOrders,
+              relationships: [{
+                id: "work_orders_inverter_model_id_fkey",
+                activation: "active",
+                target_resource: "public.inverter_models",
+              }],
+            },
+          ];
+        return { ok: true, value: { ok: true, resources, source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const ambiguousPlan = {
+      kind: "aggregate",
+      resource: "public.work_orders",
+      measures: [{ function: "sum", field: "downtime_minutes" }],
+      dimensions: [{ field: "model_name", relationship: "work_orders_inverter_model_id_fkey" }],
+      time_bucket: { field: "opened_at", bucket: "week" },
+    };
+    const responses = [
+      openAiToolCall("catalog", "app__describe_data", {}),
+      openAiToolCall("ambiguous", "app__explore_data", { plan: ambiguousPlan }),
+      openAiText("{}"),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run(
+      "How did total downtime change by week across reviewed inverter models?",
+      gateway,
+      { requestJson: async () => responses.shift()! },
+    );
+
+    const refusal = result.tool_calls.find((call) => call.error_code === "LOCAL_PLAN_INTENT_MISMATCH");
+    expect(refusal?.status).toBe("refused");
+    expect(refusal?.result.message).toContain("Grouping through public.inverter_models is ambiguous");
+    expect(refusal?.result.message).toContain("manufacturer, model_name, panel_position");
+    expect(refusal?.result.message).toContain("Time bucket week is ambiguous");
+    expect(refusal?.result.message).toContain("opened_at, completed_at");
+    expect(calls.filter((call) => call.name === "app.explore_data")).toHaveLength(0);
+  });
+
+  it("refuses an ambiguous unqualified dispersion request without source execution", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const resource = {
+      id: "public.churn_events",
+      groupable_fields: ["reason_category"],
+      aggregate_measure_functions: {
+        monthly_revenue_cents: ["stddev_samp", "stddev_pop"],
+      },
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        return { ok: true, value: { ok: true, resources: [resource], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const responses = [
+      openAiToolCall("catalog", "app__describe_data", {}),
+      openAiToolCall("ambiguous", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "stddev_pop", field: "monthly_revenue_cents" }],
+          dimensions: [{ field: "reason_category" }],
+        },
+      }),
+      openAiText("{}"),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run(
+      "What is the standard deviation of monthly revenue cents by churn reason?",
+      gateway,
+      { requestJson: async () => responses.shift()! },
+    );
+
+    expect(result.answer_source).toBe("runner");
+    expect(result.answer).toContain("did not match the question");
+    expect(calls.some((call) => call.name === "app.explore_data")).toBe(false);
+  });
+
+  it("refuses an unsolicited grouping on a scalar local-model total before source execution", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        return name === "app.describe_data"
+          ? {
+            ok: true,
+            value: {
+              ok: true,
+              resources: [{
+                id: "public.churn_events",
+                groupable_fields: ["reason_category"],
+                aggregate_measure_functions: { monthly_revenue_cents: ["sum", "avg"] },
+              }],
+              source_database_changed: false,
+            },
+          }
+          : {
+            ok: true,
+            value: {
+              ok: true,
+              data: [{ sum_monthly_revenue_cents: 42 }],
+              source_database_changed: false,
+            },
+          };
+      },
+      close: async () => undefined,
+    };
+    const responses = [
+      openAiToolCall("catalog", "app__describe_data", {}),
+      openAiToolCall("grouped", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "sum", field: "monthly_revenue_cents" }],
+          dimensions: [{ field: "reason_category" }],
+        },
+      }),
+      openAiText(JSON.stringify({
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "sum", field: "monthly_revenue_cents" }],
+        },
+      })),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run("What is the total monthly revenue in cents?", gateway, {
+      requestJson: async () => responses.shift()!,
+    });
+
+    expect(result.tool_calls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ tool: "app.explore_data", status: "refused", error_code: "LOCAL_PLAN_INTENT_MISMATCH" }),
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]));
+    expect(calls.filter((call) => call.name === "app.explore_data")).toEqual([{
+      name: "app.explore_data",
+      args: {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "sum", field: "monthly_revenue_cents" }],
+        },
+      },
+    }]);
+  });
+
+  it("distinguishes a monthly measure name from a requested month time bucket", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        return name === "app.describe_data"
+          ? {
+            ok: true,
+            value: {
+              ok: true,
+              resources: [{
+                id: "public.churn_events",
+                groupable_fields: ["reason_category"],
+                aggregate_measure_functions: { monthly_revenue_cents: ["sum", "avg"] },
+                time_bucket_fields: { churned_at: ["week", "month"] },
+              }],
+              source_database_changed: false,
+            },
+          }
+          : {
+            ok: true,
+            value: { ok: true, data: [{ reason_category: "price", sum_monthly_revenue_cents: 42 }], source_database_changed: false },
+          };
+      },
+      close: async () => undefined,
+    };
+    const responses = [
+      openAiToolCall("wrong", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "reason_category" }],
+        },
+      }),
+      openAiText(JSON.stringify({
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "sum", field: "monthly_revenue_cents" }],
+          dimensions: [{ field: "reason_category" }],
+        },
+      })),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run("What is the total monthly revenue in cents by churn reason category?", gateway, {
+      requestJson: async () => responses.shift()!,
+    });
+
+    expect(result.tool_calls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ tool: "app.explore_data", status: "refused", error_code: "LOCAL_PLAN_INTENT_MISMATCH" }),
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]));
+    expect(calls.filter((call) => call.name === "app.explore_data")).toEqual([{
+      name: "app.explore_data",
+      args: {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "sum", field: "monthly_revenue_cents" }],
+          dimensions: [{ field: "reason_category" }],
+        },
+      },
+    }]);
+  });
+
+  it("requires the reviewed time grain and order named by a local-model question", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        return name === "app.describe_data"
+          ? {
+            ok: true,
+            value: {
+              ok: true,
+              resources: [{
+                id: "public.churn_events",
+                groupable_fields: ["reason_category"],
+                aggregate_measure_functions: {},
+                time_bucket_fields: { churned_at: ["day", "week", "month"] },
+              }],
+              source_database_changed: false,
+            },
+          }
+          : {
+            ok: true,
+            value: { ok: true, data: [{ time_bucket: "2026-08-03T00:00:00Z", count: 12 }], source_database_changed: false },
+          };
+      },
+      close: async () => undefined,
+    };
+    const responses = [
+      openAiText("Weekly counts are available."),
+      openAiText("{}"),
+      openAiText("{}"),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run("Show weekly churn event counts, oldest week first.", gateway, {
+      requestJson: async () => responses.shift()!,
+    });
+
+    expect(result).toMatchObject({
+      answer_source: "runner",
+      tool_calls: [
+        { tool: "app.describe_data", status: "ok" },
+        { tool: "app.describe_data", status: "ok" },
+        { tool: "app.explore_data", status: "ok" },
+      ],
+    });
+    expect(calls.at(-1)).toEqual({
+      name: "app.explore_data",
+      args: {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "count" }],
+          time_bucket: { field: "churned_at", bucket: "week" },
+          order_by: { kind: "time_bucket", direction: "asc" },
+        },
+      },
+    });
+  });
+
+  it("requires a reviewed relative window when a local-model question names one", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        return name === "app.describe_data"
+          ? {
+            ok: true,
+            value: {
+              ok: true,
+              resources: [{
+                id: "public.churn_events",
+                groupable_fields: ["reason_category"],
+                aggregate_measure_functions: { monthly_revenue_cents: ["sum", "avg"] },
+                relative_time_window_fields: ["churned_at"],
+                valid_plan_example: {
+                  kind: "aggregate",
+                  resource: "public.churn_events",
+                  measures: [{ function: "count" }],
+                  dimensions: [{ field: "reason_category" }],
+                },
+              }],
+              source_database_changed: false,
+            },
+          }
+          : {
+            ok: true,
+            value: {
+              ok: true,
+              data: [{ reason_category: "price", count: 12 }],
+              source_database_changed: false,
+            },
+          };
+      },
+      close: async () => undefined,
+    };
+    const responses = [
+      openAiToolCall("catalog", "app__describe_data", {}),
+      openAiToolCall("missing_window", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "reason_category" }],
+        },
+      }),
+      openAiText(JSON.stringify({
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "reason_category" }],
+          time_window: { field: "churned_at", window: "last_30_days" },
+        },
+      })),
+    ];
+    const requests: Array<Record<string, unknown>> = [];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run(
+      "How many churn events were there in the last 30 days by reason category?",
+      gateway,
+      {
+        requestJson: async (request) => {
+          requests.push(structuredClone(request.body));
+          return responses.shift()!;
+        },
+      },
+    );
+
+    expect(result.tool_calls).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        tool: "app.explore_data",
+        status: "refused",
+        error_code: "LOCAL_PLAN_INTENT_MISMATCH",
+      }),
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]));
+    expect(calls.filter((call) => call.name === "app.explore_data")).toEqual([{
+      name: "app.explore_data",
+      args: {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "reason_category" }],
+          time_window: { field: "churned_at", window: "last_30_days" },
+        },
+      },
+    }]);
+    expect(JSON.stringify(requests[0])).toContain("Runner owns UTC calendar arithmetic");
+    expect(JSON.stringify(requests[0])).toContain("do not calculate them");
+  });
+
+  it("recovers a malformed direct relative-window call through an internal reviewed catalog lookup", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const resource = {
+      id: "public.churn_events",
+      groupable_fields: ["reason_category"],
+      aggregate_measure_functions: {},
+      relative_time_window_fields: ["churned_at"],
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        if (name === "app.describe_data") {
+          return { ok: true, value: { ok: true, resources: [resource], source_database_changed: false } };
+        }
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const responses = [
+      openAiToolCall("malformed_direct", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "churn_event",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "reason_category" }],
+          time_window: "last_30_days",
+        },
+      }),
+      openAiText("{}"),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run(
+      "How many churn events were there in the last 30 days by reason category?",
+      gateway,
+      { requestJson: async () => responses.shift()! },
+    );
+
+    expect(result.tool_calls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ error_code: "LOCAL_PLAN_INTENT_MISMATCH", status: "refused" }),
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]));
+    expect(calls).toEqual([
+      { name: "app.describe_data", args: { limit: 10 } },
+      { name: "app.describe_data", args: { resource: "public.churn_events" } },
+      {
+        name: "app.explore_data",
+        args: {
+          plan: {
+            kind: "aggregate",
+            resource: "public.churn_events",
+            measures: [{ function: "count" }],
+            dimensions: [{ field: "reason_category" }],
+            time_window: { field: "churned_at", window: "last_30_days" },
+          },
+        },
+      },
+    ]);
+  });
+
+  it("recovers one exact row plan with its reviewed relative window", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        return name === "app.describe_data"
+          ? {
+            ok: true,
+            value: {
+              ok: true,
+              catalog_view: args.resource ? "resource_detail" : "resource_index",
+              resources: [{
+                id: "public.churn_events",
+                fields: [{ id: "reason_category" }, { id: "churned_at" }],
+                selectable_fields: ["reason_category", "churned_at"],
+                groupable_fields: ["reason_category"],
+                aggregate_measure_functions: {},
+                relative_time_window_fields: ["churned_at"],
+              }],
+              source_database_changed: false,
+            },
+          }
+          : {
+            ok: true,
+            value: {
+              ok: true,
+              data: [{ reason_category: "price" }],
+              source_database_changed: false,
+            },
+          };
+      },
+      close: async () => undefined,
+    };
+    const responses = [
+      openAiText("I can list those records."),
+      openAiText("{}"),
+      openAiText("{}"),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run(
+      "List all churn event records from the last 30 days with reason category.",
+      gateway,
+      { requestJson: async () => responses.shift()! },
+    );
+
+    expect(result.answer_source).toBe("runner");
+    expect(calls.filter((call) => call.name === "app.explore_data")).toEqual([{
+      name: "app.explore_data",
+      args: {
+        plan: {
+          kind: "rows",
+          resource: "public.churn_events",
+          select: ["reason_category"],
+          time_window: { field: "churned_at", window: "last_30_days" },
+        },
+      },
+    }]);
+  });
+
+  it("does not guess one numeric field when a local-model question names several", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        return {
+          ok: true,
+          value: {
+            ok: true,
+            resources: [{
+              id: "public.churn_events",
+              aggregate_measure_functions: {
+                monthly_revenue_cents: ["sum", "avg"],
+                lost_revenue_cents: ["sum", "avg"],
+              },
+              groupable_fields: [],
+            }],
+            source_database_changed: false,
+          },
+        };
+      },
+      close: async () => undefined,
+    };
+    const responses = [
+      openAiToolCall("ambiguous", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "sum", field: "monthly_revenue_cents" }],
+        },
+      }),
+      openAiText("{}"),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run(
+      "What is the total monthly revenue and lost revenue for churn events?",
+      gateway,
+      { requestJson: async () => responses.shift()! },
+    );
+
+    expect(result.answer_source).toBe("runner");
+    expect(result.answer).toContain("did not match the question");
+    expect(result.tool_calls).toContainEqual(expect.objectContaining({
+      tool: "app.explore_data",
+      status: "refused",
+      error_code: "LOCAL_PLAN_INTENT_MISMATCH",
+    }));
+    expect(calls.some((call) => call.name === "app.explore_data")).toBe(false);
+  });
+
+  it("executes one exact reviewed relationship plan for a corrected local model", async () => {
+    const relationship = "invoices_order_id_fkey__orders_customer_id_fkey";
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        if (name === "app.describe_data") {
+          return {
+            ok: true,
+            value: {
+              ok: true,
+              catalog_view: args.resource ? "resource_detail" : "resource_index",
+              metadata_only: true,
+              resources: [{
+                id: "public.invoices",
+                boundary_name: "reviewed_staging",
+                aggregate_measure_functions: { amount_cents: ["sum", "avg"] },
+                groupable_fields: ["status"],
+                relationships: [{
+                  id: relationship,
+                  target_resource: "public.customers",
+                  groupable_fields: ["plan"],
+                }],
+              }],
+              source_database_changed: false,
+            },
+          };
+        }
+        return {
+          ok: true,
+          value: {
+            ok: true,
+            data: [
+              { plan: "free", sum_amount_cents: 6_803_016 },
+              { plan: "pro", sum_amount_cents: 7_128_972 },
+            ],
+            source_database_changed: false,
+          },
+        };
+      },
+      close: async () => undefined,
+    };
+    let request = 0;
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run("What is the total invoice amount by customer plan?", gateway, {
+      requestJson: async () => {
+        request += 1;
+        if (request === 1) return openAiToolCall("describe_relationship", "app__describe_data", {});
+        if (request === 2) return openAiText("Invoices can use reviewed customer metadata.");
+        return openAiText(JSON.stringify({
+          boundary: "reviewed_staging",
+          plan: {
+            kind: "aggregate",
+            resource: "public.invoices",
+            measures: [{ function: "sum", field: "amount_cents" }],
+            dimensions: [{ field: "plan", relationship }],
+          },
+        }));
+      },
+    });
+
+    expect(request).toBe(3);
+    expect(result).toMatchObject({
+      answer_source: "runner",
+      answer_is_untrusted_model_output: false,
+      tool_calls: [
+        { tool: "app.describe_data", status: "ok" },
+        { tool: "app.describe_data", status: "ok" },
+        {
+          tool: "app.explore_data",
+          status: "ok",
+          arguments: {
+            boundary: "reviewed_staging",
+            plan: {
+              kind: "aggregate",
+              resource: "public.invoices",
+              measures: [{ function: "sum", field: "amount_cents" }],
+              dimensions: [{ field: "plan", relationship }],
+            },
+          },
+        },
+      ],
+    });
+    expect(calls.map((call) => call.name)).toEqual([
+      "app.describe_data",
+      "app.describe_data",
+      "app.explore_data",
+    ]);
+  });
+
+  it("runs no data query when a local row request names no model-visible field", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        return {
+          ok: true,
+          value: {
+            ok: true,
+            catalog_view: args.resource ? "resource_detail" : "resource_index",
+            metadata_only: true,
+            resources: [{
+              id: "public.customers",
+              boundary_name: "reviewed_staging",
+              selectable_fields: ["plan", "region"],
+              model_withheld_fields: ["billing_email"],
+            }],
+            source_database_changed: false,
+          },
+        };
+      },
+      close: async () => undefined,
+    };
+    let request = 0;
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run("Show every customer's billing email.", gateway, {
+      requestJson: async () => {
+        request += 1;
+        return request === 1
+          ? openAiToolCall("describe_customers", "app__describe_data", {})
+          : openAiText("Customer metadata is available.");
+      },
+    });
+
+    expect(request).toBe(2);
+    expect(result).toMatchObject({
+      answer_source: "runner",
+      answer_is_untrusted_model_output: false,
+      tool_calls: [
+        { tool: "app.describe_data", status: "ok" },
+        { tool: "app.describe_data", status: "ok" },
+      ],
+    });
+    expect(result.answer).toContain("did not match the question");
+    expect(calls.map((call) => call.name)).toEqual([
+      "app.describe_data",
+      "app.describe_data",
+    ]);
+  });
+
+  it("returns a Runner-owned no-query outcome when focused metadata cannot identify the measure", async () => {
+    const gateway = testGateway(authoringTools, {
+      ok: true,
+      value: {
+        ok: true,
+        catalog_view: "resource_index",
+        metadata_only: true,
+        resources: [{ id: "public.invoices" }],
+        source_database_changed: false,
+      },
+    });
+    let request = 0;
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run("What is the total invoice amount?", gateway.gateway, {
+      requestJson: async () => {
+        request += 1;
+        if (request === 1) return openAiToolCall("describe_only", "app__describe_data", {});
+        return openAiText("The catalog says invoice amounts are available.");
+      },
+    });
+
+    expect(request).toBe(2);
+    expect(result).toMatchObject({
+      answer_source: "runner",
+      answer_is_untrusted_model_output: false,
+      tool_calls: [
+        { tool: "app.describe_data", status: "ok" },
+        { tool: "app.describe_data", status: "ok" },
+      ],
+    });
+    expect(result.answer).toContain("did not match the question");
+    expect(result.answer).toContain("No source query ran");
+    expect(gateway.calls.map((call) => call.name)).toEqual([
+      "app.describe_data",
+      "app.describe_data",
+    ]);
+  });
+
+  it("allows a catalog question to finish after describe_data without forcing a data query", async () => {
+    const gateway = testGateway(authoringTools, {
+      ok: true,
+      value: {
+        ok: true,
+        catalog_view: "resource_index",
+        metadata_only: true,
+        resources: [{ id: "public.invoices" }],
+        source_database_changed: false,
+      },
+    });
+    let request = 0;
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run("Which tables are available to Ask?", gateway.gateway, {
+      requestJson: async () => {
+        request += 1;
+        return request === 1
+          ? openAiToolCall("describe_for_catalog", "app__describe_data", {})
+          : openAiText("The reviewed catalog contains public.invoices.");
+      },
+    });
+
+    expect(request).toBe(2);
+    expect(result).toMatchObject({
+      answer_source: "model",
+      tool_calls: [{ tool: "app.describe_data", status: "ok" }],
+    });
+    expect(gateway.calls.map((call) => call.name)).toEqual(["app.describe_data"]);
   });
 
   it("returns a Runner-authored boundary explanation when OpenAI exhausts refused plans without final prose", async () => {
@@ -911,6 +4626,8 @@ describe("Workbench BYOM Ask", () => {
     expect(result.answer).toContain("EXPLORE_RESOURCE_FORBIDDEN");
     expect(result.answer).not.toContain("tenant");
     expect(calls).toEqual([
+      { name: "app.describe_data", args: { limit: 10 } },
+      { name: "app.describe_data", args: { resource: "public.members" } },
       {
         name: "app.explore_data",
         args: {
@@ -1512,17 +5229,60 @@ describe("Workbench BYOM Ask", () => {
     await expect(runBudgetedTurn(testGateway().gateway)).resolves.toMatchObject({ ok: true });
     await expect(runBudgetedTurn(testGateway().gateway)).rejects.toMatchObject({
       code: "ASK_SESSION_TOKEN_BUDGET_EXCEEDED",
-      message: expect.stringContaining("/clear"),
+      message: expect.stringContaining("/limits --session-tokens"),
     });
+    expect(budgeted.status()).toMatchObject({
+      history_turns: 1,
+      token_usage: {
+        reported_tokens: 220_000,
+        session_token_budget: 200_000,
+        remaining_reported_tokens: 0,
+      },
+    });
+    const raised = budgeted.updateTokenLimits({
+      session_token_budget: 400_000,
+      max_output_tokens: 2_048,
+    });
+    expect(raised).toMatchObject({
+      history_turns: 1,
+      configuration: {
+        session_token_budget: 400_000,
+        max_output_tokens: 2_048,
+      },
+      token_usage: {
+        reported_tokens: 220_000,
+        remaining_reported_tokens: 180_000,
+      },
+    });
+    await expect(runBudgetedTurn(testGateway().gateway)).resolves.toMatchObject({ ok: true });
+    expect(budgeted.status()).toMatchObject({
+      history_turns: 2,
+      token_usage: {
+        reported_tokens: 330_000,
+        session_token_budget: 400_000,
+        remaining_reported_tokens: 70_000,
+      },
+    });
+    expect(() => budgeted.updateTokenLimits({ session_token_budget: 300_000 }))
+      .toThrowError(expect.objectContaining({ code: "ASK_SESSION_TOKEN_BUDGET_BELOW_USAGE" }));
+    const automatic = budgeted.updateTokenLimits({ max_output_tokens: null });
+    expect(automatic.configuration?.max_output_tokens).toBeUndefined();
+    expect(automatic.history_turns).toBe(2);
   });
 
-  it("times out and refuses an oversized provider HTTP response without exposing response contents", async () => {
-    const hanging = createServer(() => undefined);
-    servers.push(hanging);
-    await new Promise<void>((resolve) => hanging.listen(0, "127.0.0.1", resolve));
-    const hangingPort = (hanging.address() as AddressInfo).port;
+  it("enforces a wall-clock timeout and refuses an oversized response without exposing provider contents", async () => {
+    const trickling = createServer((_request, response) => {
+      response.statusCode = 200;
+      response.setHeader("content-type", "application/json");
+      response.write("{");
+      const interval = setInterval(() => response.write(" "), 100);
+      response.on("close", () => clearInterval(interval));
+    });
+    servers.push(trickling);
+    await new Promise<void>((resolve) => trickling.listen(0, "127.0.0.1", resolve));
+    const tricklingPort = (trickling.address() as AddressInfo).port;
     await expect(secureAskJsonRequest({
-      endpoint: new URL(`http://127.0.0.1:${hangingPort}/v1/chat/completions`),
+      endpoint: new URL(`http://127.0.0.1:${tricklingPort}/v1/chat/completions`),
       scope: "custom_loopback",
       headers: { authorization: "Bearer timeout-canary" },
       body: { model: "local", messages: [] },
@@ -1562,6 +5322,36 @@ function configuredSession(authorityDigest: `sha256:${string}`): WorkbenchAskSes
     egress_acknowledged: true,
   });
   return session;
+}
+
+function openAiToolCall(
+  id: string,
+  name: string,
+  args: Record<string, unknown>,
+): { status: number; body: Record<string, unknown> } {
+  return {
+    status: 200,
+    body: {
+      choices: [{
+        message: {
+          role: "assistant",
+          content: null,
+          tool_calls: [{
+            id,
+            type: "function",
+            function: { name, arguments: JSON.stringify(args) },
+          }],
+        },
+      }],
+    },
+  };
+}
+
+function openAiText(content: string): { status: number; body: Record<string, unknown> } {
+  return {
+    status: 200,
+    body: { choices: [{ message: { role: "assistant", content } }] },
+  };
 }
 
 function testGateway(

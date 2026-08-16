@@ -28,6 +28,14 @@ corepack pnpm typecheck
 corepack pnpm test:smoke
 ```
 
+The source-checkout launcher executes an ignored local bundle under
+`apps/runner/dist`. `corepack pnpm test` rebuilds and verifies that bundle as its
+final gate, and package `prepack` rebuilds it before publication. If TypeScript
+source changes after either gate, run `corepack pnpm build:runner-package`
+before exercising authoring, activation, serving, or reviewed execution. A
+stale bundle deliberately leaves only help/version, `config validate`,
+metadata-only `inspect`, and `boundary status` available for diagnosis.
+
 Keep logs and fixtures free of secrets and customer data.
 
 ## Safety Boundary Checklist

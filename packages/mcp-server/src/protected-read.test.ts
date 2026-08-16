@@ -107,7 +107,7 @@ describe("protected named reads", () => {
     expect(full.data.groups[0]?.region).toContain("ignore-all-instructions");
   });
 
-  it("compiles a reviewed star and depth-two path with scope on every relation", () => {
+  it("compiles a reviewed star and depth-three path with scope on every relation", () => {
     const capability = aggregateConfig().capabilities?.[0];
     if (!capability?.protected_read?.aggregate) throw new Error("protected aggregate fixture is incomplete");
     delete capability.protected_read.relationship;
@@ -155,6 +155,17 @@ describe("protected named reads", () => {
             max_fan_out: 1,
             unmatched_rows: "keep_null",
           },
+          {
+            schema: "public",
+            table: "departments",
+            primary_key: "id",
+            tenant_key: "tenant_id",
+            local_key: "department_id",
+            target_key: "id",
+            cardinality: "many_to_one",
+            max_fan_out: 1,
+            unmatched_rows: "keep_null",
+          },
         ],
       },
       {
@@ -191,6 +202,7 @@ describe("protected named reads", () => {
       expect(query.sql).toContain("LEFT JOIN");
       expect(query.sql).toContain(`${placeholderStyle === "$" ? "\"public\".\"products\"" : "`public`.`products`"} r2_1`);
       expect(query.sql).toContain(`${placeholderStyle === "$" ? "\"public\".\"categories\"" : "`public`.`categories`"} r2_2`);
+      expect(query.sql).toContain(`${placeholderStyle === "$" ? "\"public\".\"departments\"" : "`public`.`departments`"} r2_3`);
       expect(query.sql).toContain(`${placeholderStyle === "$" ? "\"public\".\"regions\"" : "`public`.`regions`"} r3_1`);
       expect(query.sql).toContain("GROUP BY");
       expect(query.sql).not.toMatch(/CROSS JOIN|SELECT\s+\*/i);
@@ -198,6 +210,7 @@ describe("protected named reads", () => {
         "tenant-acme",
         "tenant-acme",
         "manager-1",
+        "tenant-acme",
         "tenant-acme",
         "tenant-acme",
         "tenant-acme",
@@ -209,8 +222,237 @@ describe("protected named reads", () => {
       { schema: "public", table: "stores", principalScoped: false },
       { schema: "public", table: "products", principalScoped: true },
       { schema: "public", table: "categories", principalScoped: false },
+      { schema: "public", table: "departments", principalScoped: false },
       { schema: "public", table: "regions", principalScoped: false },
     ]);
+  });
+
+  it("compiles protected dispersion and missing-data measures portably", () => {
+    const capability = aggregateConfig().capabilities?.[0];
+    if (!capability?.protected_read?.aggregate) throw new Error("protected aggregate fixture is incomplete");
+    capability.protected_read.aggregate.measures = [
+      { name: "spread", function: "stddev_pop", field: "monthly_revenue_cents" },
+      { name: "missing", function: "null_count", field: "monthly_revenue_cents" },
+      { name: "completion", function: "completion_rate", field: "monthly_revenue_cents" },
+    ];
+    delete capability.protected_read.aggregate.comparison;
+    delete capability.protected_read.aggregate.order_by;
+    for (const placeholderStyle of ["$", "?"] as const) {
+      const query = buildProtectedReadQuery(capability, placeholderStyle, {}, {
+        tenant_id: "tenant-acme",
+        principal: "principal-1",
+        provenance: "environment",
+      });
+      const field = placeholderStyle === "$"
+        ? 't0."monthly_revenue_cents"'
+        : "t0.`monthly_revenue_cents`";
+      expect(query.sql).toContain(`STDDEV_POP(${field})`);
+      expect(query.sql).toContain(`COUNT(*) - COUNT(${field})`);
+      expect(query.sql).toContain(`100.0 * COUNT(${field}) / NULLIF(COUNT(*), 0)`);
+      expect(query.sql).toContain(`COUNT(${field})`);
+    }
+  });
+
+  it("compiles a fixed protected time window on root and reviewed relationship fields", () => {
+    const capability = aggregateConfig().capabilities?.[0];
+    if (!capability?.protected_read?.aggregate) throw new Error("protected aggregate fixture is incomplete");
+    delete capability.protected_read.aggregate.comparison;
+    delete capability.protected_read.aggregate.order_by;
+    capability.args = {};
+    capability.protected_read.time_window = {
+      field: "churned_at",
+      start: "2026-06-01T00:00:00.000Z",
+      end: "2026-07-01T00:00:00.000Z",
+    };
+    const context = {
+      tenant_id: "tenant-acme",
+      principal: "principal-1",
+      provenance: "environment" as const,
+    };
+
+    for (const placeholderStyle of ["$", "?"] as const) {
+      const rootQuery = buildProtectedReadQuery(capability, placeholderStyle, {}, context);
+      const rootField = placeholderStyle === "$" ? 't0."churned_at"' : "t0.`churned_at`";
+      expect(rootQuery.sql).toContain(`${rootField} >=`);
+      expect(rootQuery.sql).toContain(`${rootField} <`);
+      expect(rootQuery.values).toEqual([
+        "tenant-acme",
+        "principal-1",
+        "2026-06-01T00:00:00.000Z",
+        "2026-07-01T00:00:00.000Z",
+        "churned",
+      ]);
+    }
+
+    capability.protected_read.relationships = [{
+      name: "store",
+      links: [{
+        schema: "public",
+        table: "stores",
+        primary_key: "id",
+        tenant_key: "tenant_id",
+        local_key: "store_id",
+        target_key: "id",
+        cardinality: "many_to_one",
+        max_fan_out: 1,
+        unmatched_rows: "exclude",
+      }],
+    }];
+    capability.protected_read.time_window = {
+      field: "opened_at",
+      relationship: "store",
+      start: "2026-06-01T00:00:00.000Z",
+      end: "2026-07-01T00:00:00.000Z",
+    };
+    for (const placeholderStyle of ["$", "?"] as const) {
+      const relatedQuery = buildProtectedReadQuery(capability, placeholderStyle, {}, context);
+      const relatedField = placeholderStyle === "$" ? 'r1_1."opened_at"' : "r1_1.`opened_at`";
+      expect(relatedQuery.sql).toContain(`${relatedField} >=`);
+      expect(relatedQuery.sql).toContain(`${relatedField} <`);
+    }
+  });
+
+  it("compiles a fixed reviewed derived measure portably with contributor evidence", () => {
+    const capability = aggregateConfig().capabilities?.[0];
+    if (!capability?.protected_read?.aggregate) throw new Error("protected aggregate fixture is incomplete");
+    capability.protected_read.aggregate.measures = [{
+      name: "revenue_per_customer",
+      function: "reviewed_derived",
+      derived: {
+        shape: "per_unit_average",
+        numerator: { function: "sum", field: "monthly_revenue_cents" },
+        denominator: { function: "count_distinct", field: "customer_id" },
+        null_policy: "null_on_zero_or_null_denominator",
+      },
+    }];
+    delete capability.protected_read.aggregate.comparison;
+    delete capability.protected_read.aggregate.order_by;
+    for (const placeholderStyle of ["$", "?"] as const) {
+      const query = buildProtectedReadQuery(capability, placeholderStyle, {}, {
+        tenant_id: "tenant-acme",
+        principal: "principal-1",
+        provenance: "environment",
+      });
+      const revenue = placeholderStyle === "$"
+        ? 't0."monthly_revenue_cents"'
+        : "t0.`monthly_revenue_cents`";
+      const customer = placeholderStyle === "$" ? 't0."customer_id"' : "t0.`customer_id`";
+      expect(query.sql).toContain(`SUM(${revenue}) / COUNT(DISTINCT ${customer})`);
+      expect(query.sql).toContain(`LEAST(COUNT(*), COUNT(${revenue}), COUNT(${customer}))`);
+    }
+  });
+
+  it("computes fixed running totals only after suppression on both SQL dialects", async () => {
+    const capability = aggregateConfig().capabilities?.[0];
+    const protectedRead = capability?.protected_read;
+    const aggregate = protectedRead?.aggregate;
+    if (!capability || !protectedRead || !aggregate) throw new Error("protected aggregate fixture is incomplete");
+    aggregate.measures = [{
+      name: "running_churn",
+      function: "reviewed_derived",
+      derived: { shape: "running_total", base_measure: { function: "count" } },
+    }];
+    aggregate.dimensions = [{ name: "region", field: "region" }];
+    aggregate.time_bucket = { name: "churn_week", field: "churned_at", bucket: "week" };
+    aggregate.order_by = { kind: "time_bucket", direction: "asc" };
+    aggregate.top_n = 10;
+    delete aggregate.comparison;
+    protectedRead.limits.max_ranked_groups = 100;
+    const context = {
+      tenant_id: "tenant-acme",
+      principal: "principal-acme",
+      provenance: "environment" as const,
+    };
+    for (const style of ["$", "?"] as const) {
+      const query = buildProtectedReadQuery(capability, style, {}, context);
+      expect(query.sql).toContain(`COUNT(*) AS ${style === "$" ? '"running_churn"' : "`running_churn`"}`);
+      expect(query.sql).toContain("LIMIT 101");
+      expect(query.sql).not.toMatch(/\bOVER\s*\(|RUNNING_TOTAL/i);
+    }
+
+    const store = new ProposalStore(":memory:");
+    try {
+      const budgetReservation = await enforceProtectedReadBudget(
+        store,
+        capability,
+        context,
+        {},
+        "post-suppression-running-total",
+      );
+      const result = await recordProtectedRead({
+        capability,
+        sourceName: capability.source,
+        context,
+        current: {
+          row: {},
+          rows: [
+            { region: "north", churn_week: "2026-07-06", running_churn: 10, __measure_cohort_0: 10, __cohort_size: 10 },
+            { region: "north", churn_week: "2026-07-13", running_churn: 100, __measure_cohort_0: 2, __cohort_size: 2 },
+            { region: "north", churn_week: "2026-07-20", running_churn: 20, __measure_cohort_0: 20, __cohort_size: 20 },
+            { region: "south", churn_week: "2026-07-06", running_churn: 5, __measure_cohort_0: 5, __cohort_size: 5 },
+          ],
+          rowCount: 4,
+        },
+        store,
+        mode: "read_only",
+        privacySessionId: "post-suppression-running-total",
+        args: {},
+        budgetReservation,
+      });
+      expect(result).toMatchObject({
+        data: {
+          groups: expect.arrayContaining([
+            { region: "north", churn_week: "2026-07-06", running_churn: 10 },
+            { region: "north", churn_week: "2026-07-20", running_churn: 30 },
+            { region: "south", churn_week: "2026-07-06", running_churn: 5 },
+          ]),
+          suppression: { suppressed_groups: 1 },
+        },
+      });
+      expect(JSON.stringify(result)).not.toContain("2026-07-13");
+    } finally {
+      store.close();
+    }
+  });
+
+  it("compiles a frozen reviewed numeric band with bound edges and labels on both engines", () => {
+    const capability = aggregateConfig().capabilities?.[0];
+    if (!capability?.protected_read?.aggregate) throw new Error("protected aggregate fixture is incomplete");
+    capability.protected_read.aggregate.dimensions = [{
+      name: "balance_band",
+      field: "monthly_revenue_cents",
+      numeric_band: {
+        edges: [1_000, 5_000],
+        bucket_labels: ["under 10", "10 to 49", "50 or more"],
+      },
+    }];
+    delete capability.protected_read.aggregate.time_bucket;
+    delete capability.protected_read.aggregate.comparison;
+    delete capability.protected_read.aggregate.order_by;
+
+    for (const placeholderStyle of ["$", "?"] as const) {
+      const query = buildProtectedReadQuery(capability, placeholderStyle, {}, {
+        tenant_id: "tenant-acme",
+        principal: "principal-1",
+        provenance: "environment",
+      });
+      const field = placeholderStyle === "$"
+        ? 't0."monthly_revenue_cents"'
+        : "t0.`monthly_revenue_cents`";
+      expect(query.sql).toContain(`CASE WHEN ${field} IS NULL THEN NULL`);
+      expect(query.sql).toContain(`WHEN ${field} < ${placeholderStyle === "$" ? "$1" : "?"} THEN ${placeholderStyle === "$" ? "$2" : "?"}`);
+      expect(query.sql).toContain("GROUP BY 1");
+      expect(query.values).toEqual([
+        1_000,
+        "under 10",
+        5_000,
+        "10 to 49",
+        "50 or more",
+        "tenant-acme",
+        "principal-1",
+        "churned",
+      ]);
+    }
   });
 
   it("keeps RLS principal preflight requirements relation-specific", () => {

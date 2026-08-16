@@ -155,6 +155,33 @@ describe("@synapsor/spec validation", () => {
       .toContain("INVALID_PROTECTED_MINIMUM_GROUP_SIZE");
   });
 
+  it("accepts reviewed dispersion and missing-data measures with a fixed dispersion floor", () => {
+    for (const fn of ["stddev_samp", "stddev_pop", "var_samp", "var_pop"] as const) {
+      const contract = protectedAggregateContract();
+      contract.capabilities[0].protected_read.aggregate.measures = [{
+        name: "spread",
+        function: fn,
+        field: "balance_cents",
+      }];
+      delete contract.capabilities[0].protected_read.aggregate.order_by;
+      expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+      contract.capabilities[0].protected_read.aggregate.minimum_group_size = 4;
+      expect(validateContract(contract).errors.map((error) => error.code))
+        .toContain("PROTECTED_DISPERSION_COHORT_TOO_SMALL");
+    }
+
+    for (const fn of ["null_count", "non_null_count", "completion_rate"] as const) {
+      const contract = protectedAggregateContract();
+      contract.capabilities[0].protected_read.aggregate.measures = [{
+        name: "completeness",
+        function: fn,
+        field: "balance_cents",
+      }];
+      delete contract.capabilities[0].protected_read.aggregate.order_by;
+      expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+    }
+  });
+
   it("accepts a digest-bound protected PM aggregate with reviewed dimensions and bounded arguments", () => {
     const contract = protectedAggregateContract();
 
@@ -221,6 +248,146 @@ describe("@synapsor/spec validation", () => {
     invalidLimit.capabilities[0].protected_read.limits.max_ranked_groups = 49;
     expect(validateContract(invalidLimit).errors.map((error) => error.code))
       .toContain("INVALID_PROTECTED_RANKED_GROUP_LIMIT");
+  });
+
+  it("accepts only canonical fixed protected time windows", () => {
+    const contract = protectedAggregateContract();
+    contract.capabilities[0].protected_read.time_window = {
+      field: "churned_at",
+      start: "2026-06-01T00:00:00.000Z",
+      end: "2026-07-01T00:00:00.000Z",
+    };
+    expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+    expect(normalizeContract(contract).capabilities[0]?.protected_read?.time_window).toEqual({
+      field: "churned_at",
+      start: "2026-06-01T00:00:00.000Z",
+      end: "2026-07-01T00:00:00.000Z",
+    });
+
+    const dynamic = structuredClone(contract);
+    dynamic.capabilities[0].protected_read.time_window.start = { from_arg: "period_start" };
+    expect(validateContract(dynamic).errors.map((error) => error.code))
+      .toContain("INVALID_PROTECTED_TIME_WINDOW");
+
+    const nonCanonical = structuredClone(contract);
+    nonCanonical.capabilities[0].protected_read.time_window.start = "2026-06-01T00:00:00Z";
+    expect(validateContract(nonCanonical).errors.map((error) => error.code))
+      .toContain("INVALID_PROTECTED_TIME_WINDOW");
+
+    const reversed = structuredClone(contract);
+    reversed.capabilities[0].protected_read.time_window.end = "2026-05-01T00:00:00.000Z";
+    expect(validateContract(reversed).errors.map((error) => error.code))
+      .toContain("INVALID_PROTECTED_TIME_WINDOW");
+
+    const unknown = structuredClone(contract);
+    unknown.capabilities[0].protected_read.time_window.offset = "P1M";
+    expect(validateContract(unknown).errors.map((error) => error.code))
+      .toContain("UNKNOWN_CORE_FIELD");
+
+    const conflicting = structuredClone(contract);
+    conflicting.capabilities[0].protected_read.aggregate.comparison = {
+      field: "churned_at",
+      ranges: [
+        { start: { fixed: "2026-05-01T00:00:00.000Z" }, end: { fixed: "2026-06-01T00:00:00.000Z" } },
+        { start: { fixed: "2026-06-01T00:00:00.000Z" }, end: { fixed: "2026-07-01T00:00:00.000Z" } },
+      ],
+    };
+    expect(validateContract(conflicting).errors.map((error) => error.code))
+      .toContain("PROTECTED_TIME_SELECTION_CONFLICT");
+  });
+
+  it("accepts only fixed contributor-safe reviewed derived measures", () => {
+    const contract = protectedAggregateContract();
+    contract.capabilities[0].protected_read.aggregate.measures = [{
+      name: "revenue_per_customer",
+      function: "reviewed_derived",
+      derived: {
+        shape: "per_unit_average",
+        numerator: { function: "sum", field: "balance_cents" },
+        denominator: { function: "count_distinct", field: "customer_id" },
+        null_policy: "null_on_zero_or_null_denominator",
+      },
+    }];
+    delete contract.capabilities[0].protected_read.aggregate.order_by;
+    expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+
+    const formula = structuredClone(contract);
+    formula.capabilities[0].protected_read.aggregate.measures[0].derived.formula = "SUM(balance_cents) / COUNT(DISTINCT customer_id)";
+    expect(validateContract(formula).errors.map((error) => error.code)).toContain("UNKNOWN_CORE_FIELD");
+
+    const lowCohort = structuredClone(contract);
+    lowCohort.capabilities[0].protected_read.aggregate.minimum_group_size = 1;
+    expect(validateContract(lowCohort).errors.map((error) => error.code)).toContain("PROTECTED_DISPERSION_COHORT_TOO_SMALL");
+  });
+
+  it("accepts only fixed post-suppression calculations with a compatible reviewed grain", () => {
+    const running = protectedAggregateContract();
+    running.capabilities[0].protected_read.aggregate.measures = [{
+      name: "running_churn",
+      function: "reviewed_derived",
+      derived: {
+        shape: "running_total",
+        base_measure: { function: "count" },
+      },
+    }];
+    running.capabilities[0].protected_read.aggregate.order_by = {
+      kind: "time_bucket",
+      direction: "asc",
+    };
+    running.capabilities[0].protected_read.limits.max_ranked_groups = 500;
+    expect(validateContract(running)).toMatchObject({ ok: true, errors: [] });
+
+    const missingTime = structuredClone(running);
+    delete missingTime.capabilities[0].protected_read.aggregate.time_bucket;
+    expect(validateContract(missingTime).errors.map((error) => error.code))
+      .toContain("PROTECTED_TRANSFORM_TIME_BUCKET_REQUIRED");
+
+    const rank = structuredClone(running);
+    rank.capabilities[0].protected_read.aggregate.measures[0].derived = {
+      shape: "rank",
+      base_measure: { function: "count" },
+      direction: "desc",
+    };
+    delete rank.capabilities[0].protected_read.aggregate.time_bucket;
+    rank.capabilities[0].protected_read.aggregate.order_by = {
+      kind: "measure",
+      measure: "running_churn",
+      direction: "asc",
+    };
+    expect(validateContract(rank)).toMatchObject({ ok: true, errors: [] });
+
+    const noDimension = structuredClone(rank);
+    delete noDimension.capabilities[0].protected_read.aggregate.dimensions;
+    expect(validateContract(noDimension).errors.map((error) => error.code))
+      .toContain("PROTECTED_TRANSFORM_DIMENSION_REQUIRED");
+
+    const modelFormula = structuredClone(running);
+    modelFormula.capabilities[0].protected_read.aggregate.measures[0].derived.formula = "running_sum(balance_cents)";
+    expect(validateContract(modelFormula).errors.map((error) => error.code))
+      .toContain("UNKNOWN_CORE_FIELD");
+  });
+
+  it("accepts only complete bounded numeric-band dimensions", () => {
+    const contract = protectedAggregateContract();
+    contract.capabilities[0].protected_read.aggregate.dimensions = [{
+      name: "balance_band",
+      field: "balance_cents",
+      numeric_band: {
+        edges: [1_000, 5_000],
+        bucket_labels: ["under 10", "10 to 49", "50 or more"],
+      },
+    }];
+    expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+
+    const unordered = structuredClone(contract);
+    unordered.capabilities[0].protected_read.aggregate.dimensions[0].numeric_band.edges = [5_000, 1_000];
+    expect(validateContract(unordered).errors.map((error) => error.code))
+      .toContain("INVALID_PROTECTED_NUMERIC_BAND_EDGES");
+
+    const partial = structuredClone(contract);
+    partial.capabilities[0].protected_read.aggregate.dimensions[0].numeric_band.bucket_labels = ["under 10"];
+    expect(validateContract(partial).errors.map((error) => error.code))
+      .toContain("INVALID_PROTECTED_NUMERIC_BAND_LABELS");
   });
 
   it("accepts additive reviewed star paths without rewriting the legacy relationship form", () => {

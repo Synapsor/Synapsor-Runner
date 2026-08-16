@@ -1,6 +1,9 @@
 import { evaluateProposalFreshness, resolveSupervisedWorkerEligibility, validateFreshnessAuthorityAgainstCurrentConfig, type ProposalFreshnessEvaluation, type RuntimeConfig } from "@synapsor-runner/mcp-server";
 import {
   ProposalStore,
+  type EvidenceSearchFilters,
+  type QueryAuditSearchFilters,
+  type StoredEvidenceBundle,
   type StoredProposal,
   type WorkerQueueItem
 } from "@synapsor-runner/proposal-store";
@@ -8,18 +11,1182 @@ import { parseFreshnessAuthority } from "@synapsor-runner/protocol";
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import type { ReadStream, WriteStream } from "node:tty";
 import { activityFromEvidence, activityFromProposal, activityFromQueryAudit, activityFromReceipt, formatActivityItem, formatActivityNext, formatEventLine, localEventWebhookPayload, postLocalEventWebhook, redactWebhookUrl } from "./activity-formatting.js";
 import { cliCommandName } from "./cli-command-meta.js";
-import { safeErrorMessage, showDetails, storeOptionSuffix, stringField } from "./cli-format.js";
+import { isRecord, safeErrorMessage, showDetails, storeOptionSuffix, stringField } from "./cli-format.js";
 import { operationalLog } from "./cli-logging.js";
-import { assertKnownOptions, envValue, exportFormat, limitFromArgs, optionalArg, optionalPositiveIntegerArg, outputArg, positional } from "./cli-options.js";
+import { assertKnownOptions, envValue, exportFormat, limitFromArgs, optionalArg, optionalPositiveIntegerArg, outputArg, positional, positiveIntOption, runtimeStoreBridgeFlag, waitFor } from "./cli-options.js";
 import { confirmDangerousAction, localStorePath, openLocalStore, operatorIdentityForDecision, optionalRuntimeConfig, requireLocalProposal, resolveProposalIdFromStore, runnerConfigPath } from "./cli-project.js";
 import { activitySearchAllowedOptions, eventFiltersFromArgs, eventTailAllowedOptions, eventWebhookAllowedOptions, evidenceFiltersFromActivityArgs, evidenceFiltersFromArgs, evidenceListAllowedOptions, exportAllowedOptions, proposalFiltersFromActivityArgs, proposalFiltersFromArgs, proposalFiltersFromReplayArgs, proposalListAllowedOptions, queryAuditFiltersFromActivityArgs, queryAuditFiltersFromArgs, queryAuditListAllowedOptions, receiptFiltersFromActivityArgs, receiptFiltersFromArgs, receiptListAllowedOptions, replayExportAllowedOptions, replayListAllowedOptions, replayShowAllowedOptions, resolveReplayProposalId, showAllowedOptions } from "./ledger-options.js";
+import { resolveExploreLedgerFilters } from "./ledger-search.js";
 import { TrustedOperatorInvocation } from "./operator-authority.js";
-import { formatEvidenceDetail, formatEvidenceFirstLook, formatEvidenceMarkdown, formatEvidenceSummary, formatProposalDebug, formatProposalDetail, formatProposalEventDetail, formatProposalFirstLook, formatProposalSummary, formatQueryAuditDetail, formatQueryAuditFirstLook, formatQueryAuditSummary, formatReceiptDetail, formatReceiptFirstLook, formatReceiptSummary, formatReplayDebug, formatReplayDetail, formatReplayFirstLook, formatReplayMarkdown, formatReplaySummary } from "./proposal-formatting.js";
+import { formatEvidenceBrowserFacts, formatEvidenceBrowserPlan, formatEvidenceBrowserQuery, formatEvidenceBrowserRow, formatEvidenceBrowserSummary, formatEvidenceDetail, formatEvidenceFirstLook, formatEvidenceMarkdown, formatEvidenceSummary, formatProposalDebug, formatProposalDetail, formatProposalEventDetail, formatProposalFirstLook, formatProposalSummary, formatQueryAuditBrowserFacts, formatQueryAuditBrowserPlan, formatQueryAuditBrowserQuery, formatQueryAuditBrowserRow, formatQueryAuditBrowserSummary, formatQueryAuditDetail, formatQueryAuditFirstLook, formatQueryAuditSummary, formatReceiptDetail, formatReceiptFirstLook, formatReceiptSummary, formatReplayDebug, formatReplayDetail, formatReplayFirstLook, formatReplayMarkdown, formatReplaySummary } from "./proposal-formatting.js";
+import { sharedPostgresLedgerMirrorOptions } from "./shared-ledger-domain.js";
 import { argsWithRuntimeStoreBridge, assertLocalGovernanceMutationAllowed, assertNoRuntimeStoreForLocalMutation, maybeSharedPostgresRuntimeStoreRead, runtimeStoreBridgeRequired, sharedPostgresLedgerMirrorRequested, withoutSharedPostgresLedgerMirror, withSharedPostgresLedgerMirror, withSharedPostgresRuntimeStoreBridge } from "./store-shared.js";
 import { findProposalCapability } from "./writeback-execution.js";
-import { terminalSyntaxColorEnabled } from "./terminal-syntax.js";
+import { terminalContentWidth, wrapStyledTerminalLine } from "./terminal-layout.js";
+import { renderTerminalSectionHeading, renderTerminalStyledText, safeTerminalText, terminalSyntaxColorEnabled } from "./terminal-syntax.js";
+import { readTerminalTextWithEscape, withAlternateTerminalScreen, withRawTerminalScreen, type TerminalKeypress } from "./terminal-prompt.js";
+
+type LedgerReadSource =
+  | { kind: "local_sqlite"; path: string }
+  | { kind: "shared_postgres"; schema: string; url_env: string };
+
+
+async function ledgerReadSource(args: string[]): Promise<LedgerReadSource> {
+  if (args.includes(runtimeStoreBridgeFlag)) {
+    const config = await optionalRuntimeConfig(runnerConfigPath(args));
+    const shared = sharedPostgresLedgerMirrorOptions(args, config);
+    return { kind: "shared_postgres", schema: shared.schema, url_env: shared.urlEnv };
+  }
+  const storePath = localStorePath(args);
+  return { kind: "local_sqlite", path: storePath === ":memory:" ? storePath : path.resolve(storePath) };
+}
+
+
+function ledgerReadSourceLine(source: LedgerReadSource): string {
+  return source.kind === "shared_postgres"
+    ? `Ledger: shared PostgreSQL schema ${source.schema} (URL from ${source.url_env}; read-only)\n`
+    : `Ledger: local SQLite ${source.path}\n`;
+}
+
+
+function alternateLedgerSelection(source: LedgerReadSource): string {
+  return source.kind === "shared_postgres"
+    ? "Use a development config without storage.shared_postgres.mode=runtime_store plus --store <path> to inspect local SQLite."
+    : "Use --config <production-config> to inspect its configured shared PostgreSQL runtime store.";
+}
+
+
+function emptyLedgerMessage(label: string, source: LedgerReadSource): string {
+  return `No ${label} matched this view in the consulted ledger.\n${alternateLedgerSelection(source)}\n`;
+}
+
+
+function emptyAuditListMessage(
+  kind: "evidence" | "query-audit",
+  args: string[],
+  source: LedgerReadSource,
+): string {
+  const search = optionalArg(args, "--search");
+  if (!search) {
+    return emptyLedgerMessage(
+      kind === "evidence" ? "evidence bundles" : "query audit records",
+      source,
+    );
+  }
+  const label = kind === "evidence" ? "evidence bundles" : "query audit records";
+  return [
+    `No ${label} matched search ${JSON.stringify(search)} in the consulted ledger.`,
+    `Searched fields: ${auditBrowserSearchScope(kind)}.`,
+    "Original question text is not stored, so it was not searched.",
+    "Other command-line filters also apply; adjust them and rerun the command if needed.",
+    alternateLedgerSelection(source),
+    "",
+  ].join("\n");
+}
+
+
+function writeLedgerNotices(notes: string[], color: boolean): void {
+  if (notes.length === 0) return;
+  process.stdout.write(`${renderTerminalSectionHeading("Audit notice", color)}\n`);
+  for (const note of notes) {
+    const sentences = safeTerminalText(note).split(/(?<=\.)\s+/);
+    sentences.forEach((sentence, index) => {
+      process.stdout.write(`  ${renderTerminalStyledText(index === 0 ? `! ${sentence}` : `  ${sentence}`, color, "warning")}\n`);
+    });
+  }
+  process.stdout.write("\n");
+}
+
+
+type EvidenceListResult = {
+  ledgerSource: LedgerReadSource;
+  notes: string[];
+  rows: StoredEvidenceBundle[];
+};
+
+type QueryAuditListResult = {
+  ledgerSource: LedgerReadSource;
+  notes: string[];
+  rows: Record<string, unknown>[];
+};
+
+
+function principalEmptyResultNotes(
+  args: string[],
+  label: string,
+  rows: Array<{ principal?: unknown }>,
+  otherwiseMatching: Array<{ principal?: unknown }>,
+): string[] {
+  if (!optionalArg(args, "--principal") || rows.length > 0) return [];
+  if (otherwiseMatching.length === 0) {
+    return [`No ${label} records matched the non-principal filters, so there was no candidate activity to attribute to the requested principal.`];
+  }
+  if (otherwiseMatching.some((row) => typeof row.principal !== "string" || row.principal.length === 0)) {
+    return [
+      `No keyed principal record matched. At least one otherwise-matching legacy ${label} record only states whether principal scope was bound and cannot be attributed retroactively; this empty result does not rule out older activity by that principal.`,
+    ];
+  }
+  return [`The principal filter was applied successfully. Otherwise-matching ${label} records exist, but none match that principal fingerprint.`];
+}
+
+
+function evidenceFiltersWithoutPrincipal(filters: EvidenceSearchFilters): EvidenceSearchFilters {
+  const { principal: _principal, principals: _principals, ...rest } = filters;
+  return { ...rest, limit: 200, offset: 0 };
+}
+
+
+function queryAuditFiltersWithoutPrincipal(filters: QueryAuditSearchFilters): QueryAuditSearchFilters {
+  const { principal: _principal, principals: _principals, ...rest } = filters;
+  return { ...rest, limit: 200, offset: 0 };
+}
+
+
+async function readEvidenceList(
+  args: string[],
+  page: { limit?: number; offset?: number } = {},
+): Promise<EvidenceListResult> {
+  const resolved = await resolveExploreLedgerFilters(args, evidenceFiltersFromArgs(args));
+  const filters = { ...resolved.filters, ...page };
+  if (resolved.filters.outcome === "refused" || resolved.filters.outcome === "failed") {
+    throw new Error(
+      `Evidence bundles exist only for released results. Use ${cliCommandName()} query-audit list --outcome ${resolved.filters.outcome} to inspect ${resolved.filters.outcome} Explore attempts.`,
+    );
+  }
+  const bridged = await maybeSharedPostgresRuntimeStoreRead(
+    args,
+    "evidence list",
+    (bridgeStorePath) => readEvidenceList(argsWithRuntimeStoreBridge(args, bridgeStorePath), page),
+  );
+  if (bridged !== undefined) return bridged;
+  const ledgerSource = await ledgerReadSource(args);
+  const store = await openLocalStore(args);
+  try {
+    const rows = store.listEvidenceBundles(filters);
+    const otherwiseMatching = (page.offset ?? 0) === 0 && optionalArg(args, "--principal") && rows.length === 0
+      ? store.listEvidenceBundles(evidenceFiltersWithoutPrincipal(filters))
+      : [];
+    return {
+      ledgerSource,
+      notes: [
+        ...resolved.notes,
+        ...((page.offset ?? 0) === 0 ? principalEmptyResultNotes(args, "evidence", rows, otherwiseMatching) : []),
+      ],
+      rows,
+    };
+  } finally {
+    store.close();
+  }
+}
+
+
+async function readQueryAuditList(
+  args: string[],
+  page: { limit?: number; offset?: number } = {},
+): Promise<QueryAuditListResult> {
+  const resolved = await resolveExploreLedgerFilters(args, queryAuditFiltersFromArgs(args));
+  const filters = { ...resolved.filters, ...page };
+  const bridged = await maybeSharedPostgresRuntimeStoreRead(
+    args,
+    "query-audit list",
+    (bridgeStorePath) => readQueryAuditList(argsWithRuntimeStoreBridge(args, bridgeStorePath), page),
+  );
+  if (bridged !== undefined) return bridged;
+  const ledgerSource = await ledgerReadSource(args);
+  const store = await openLocalStore(args);
+  try {
+    const rows = store.listQueryAudit(filters);
+    const otherwiseMatching = (page.offset ?? 0) === 0 && optionalArg(args, "--principal") && rows.length === 0
+      ? store.listQueryAudit(queryAuditFiltersWithoutPrincipal(filters))
+      : [];
+    return {
+      ledgerSource,
+      notes: [
+        ...resolved.notes,
+        ...((page.offset ?? 0) === 0 ? principalEmptyResultNotes(args, "query-audit", rows, otherwiseMatching) : []),
+      ],
+      rows,
+    };
+  } finally {
+    store.close();
+  }
+}
+
+
+function writeEvidenceList(result: EvidenceListResult, json: boolean, args: string[]): void {
+  if (json) {
+    process.stdout.write(`${JSON.stringify({ ledger_source: result.ledgerSource, notices: result.notes, evidence: result.rows }, null, 2)}\n`);
+    return;
+  }
+  const color = terminalSyntaxColorEnabled();
+  process.stdout.write(ledgerReadSourceLine(result.ledgerSource));
+  process.stdout.write(auditDescriptionNotice(color));
+  writeLedgerNotices(result.notes, color);
+  if (result.rows.length === 0) process.stdout.write(emptyAuditListMessage("evidence", args, result.ledgerSource));
+  else for (const bundle of result.rows) process.stdout.write(formatEvidenceSummary(bundle, color));
+}
+
+
+function writeQueryAuditList(
+  result: QueryAuditListResult,
+  json: boolean,
+  details: boolean,
+  storeSuffix: string,
+  args: string[],
+): void {
+  if (json) {
+    process.stdout.write(`${JSON.stringify({ ledger_source: result.ledgerSource, notices: result.notes, query_audit: result.rows }, null, 2)}\n`);
+    return;
+  }
+  const color = terminalSyntaxColorEnabled();
+  process.stdout.write(ledgerReadSourceLine(result.ledgerSource));
+  process.stdout.write(auditDescriptionNotice(color));
+  writeLedgerNotices(result.notes, color);
+  if (result.rows.length === 0) process.stdout.write(emptyAuditListMessage("query-audit", args, result.ledgerSource));
+  else for (const row of result.rows) process.stdout.write(formatQueryAuditSummary(row, details, storeSuffix, color));
+}
+
+
+function assertLedgerListModes(args: string[], command: string): void {
+  if (args.includes("--interactive") && args.includes("--follow")) {
+    throw new Error(`${command} accepts either --interactive or --follow, not both`);
+  }
+  if (args.includes("--interactive") && args.includes("--json")) {
+    throw new Error(`${command} --interactive uses the terminal view and cannot be combined with --json`);
+  }
+}
+
+
+async function followEvidence(args: string[]): Promise<number> {
+  const intervalMs = positiveIntOption(args, "--interval-ms", 2_000, 250, 60_000);
+  const readArgs = args.includes("--limit") ? args : [...args, "--limit", "200"];
+  const seen = new Set<string>();
+  let first = true;
+  while (true) {
+    const result = await readEvidenceList(readArgs);
+    if (first && !args.includes("--json")) {
+      process.stdout.write(ledgerReadSourceLine(result.ledgerSource));
+      process.stdout.write(auditDescriptionNotice(terminalSyntaxColorEnabled()));
+      for (const note of result.notes) process.stdout.write(`Note: ${note}\n`);
+      process.stdout.write(`Following released Explore evidence every ${intervalMs} ms. Press Ctrl+C to stop.\n`);
+    }
+    const fresh = result.rows.filter((row) => !seen.has(row.evidence_bundle_id)).reverse();
+    for (const row of fresh) {
+      seen.add(row.evidence_bundle_id);
+      if (args.includes("--json")) {
+        process.stdout.write(`${JSON.stringify({ ledger_source: result.ledgerSource, evidence: row })}\n`);
+      } else process.stdout.write(formatEvidenceSummary(row, terminalSyntaxColorEnabled()));
+    }
+    first = false;
+    await waitFor(intervalMs);
+  }
+}
+
+
+async function followQueryAudit(args: string[]): Promise<number> {
+  const intervalMs = positiveIntOption(args, "--interval-ms", 2_000, 250, 60_000);
+  const readArgs = args.includes("--limit") ? args : [...args, "--limit", "200"];
+  const seen = new Set<number>();
+  let first = true;
+  while (true) {
+    const result = await readQueryAuditList(readArgs);
+    if (first && !args.includes("--json")) {
+      process.stdout.write(ledgerReadSourceLine(result.ledgerSource));
+      process.stdout.write(auditDescriptionNotice(terminalSyntaxColorEnabled()));
+      for (const note of result.notes) process.stdout.write(`Note: ${note}\n`);
+      process.stdout.write(`Following Explore query audit every ${intervalMs} ms. Press Ctrl+C to stop.\n`);
+    }
+    const fresh = result.rows.filter((row) => {
+      const auditId = Number(row.audit_id);
+      return Number.isSafeInteger(auditId) && !seen.has(auditId);
+    }).reverse();
+    for (const row of fresh) {
+      const auditId = Number(row.audit_id);
+      seen.add(auditId);
+      if (args.includes("--json")) {
+        process.stdout.write(`${JSON.stringify({ ledger_source: result.ledgerSource, query_audit: row })}\n`);
+      } else process.stdout.write(formatQueryAuditSummary(row, showDetails(args), storeOptionSuffix(args), terminalSyntaxColorEnabled()));
+    }
+    first = false;
+    await waitFor(intervalMs);
+  }
+}
+
+
+async function browseEvidence(args: string[]): Promise<number> {
+  assertInteractiveTerminal("evidence browse");
+  const bridged = await maybeSharedPostgresRuntimeStoreRead(
+    args,
+    "evidence browse",
+    (bridgeStorePath) => browseEvidence(argsWithRuntimeStoreBridge(args, bridgeStorePath)),
+  );
+  if (bridged !== undefined) return bridged;
+
+  const color = terminalSyntaxColorEnabled();
+  const explicitLimit = optionalArg(args, "--limit");
+  let pageSize = explicitLimit ? Math.min(limitFromArgs(args), 50) : 10;
+  let pageNumber = 1;
+  let selectedIndex = 0;
+  let browserNotice: string | undefined;
+  let filterArgs = withoutCliOptions(args, ["--interactive", "--limit"]);
+  let result = await readEvidenceList(filterArgs, { limit: pageSize + 1, offset: 0 });
+
+  return withAlternateTerminalScreen(process.stdout, async () => {
+    while (true) {
+    const visible = result.rows.slice(0, pageSize);
+    const hasNext = result.rows.length > pageSize;
+    selectedIndex = Math.min(selectedIndex, Math.max(visible.length - 1, 0));
+    const action = await selectAuditBrowserPage({
+      title: "Evidence browser",
+      context: [
+        ledgerReadSourceLine(result.ledgerSource).trim(),
+        auditDescriptionText,
+      ],
+      pageNumber,
+      pageSize,
+      hasNext,
+      hasPrevious: pageNumber > 1,
+      selectedIndex,
+      rows: visible.map((row, index) =>
+        formatEvidenceBrowserRow(row, ((pageNumber - 1) * pageSize) + index + 1, color)),
+      filters: evidenceBrowserFilterSummary(filterArgs),
+      hasActiveFilters: auditBrowserHasActiveFilters(filterArgs),
+      notes: result.notes,
+      emptyLines: auditBrowserEmptyLines("evidence", filterArgs),
+      helpLines: evidenceBrowserHelp(color).split("\n"),
+      notice: browserNotice,
+      color,
+    });
+    browserNotice = undefined;
+    selectedIndex = action.selectedIndex;
+    if (action.kind === "quit") return 0;
+    if (action.kind === "open") {
+      const selected = visible[action.index];
+      if (selected && await browseOneEvidence(selected, color)) return 0;
+      continue;
+    }
+    if (action.kind === "clear") {
+      filterArgs = evidenceBrowserCommand(filterArgs, pageSize, "clear")!.args;
+      pageNumber = 1;
+      selectedIndex = 0;
+      result = await readEvidenceList(filterArgs, { limit: pageSize + 1, offset: 0 });
+      browserNotice = "All evidence filters were cleared.";
+      continue;
+    }
+    if (action.kind === "next") {
+      pageNumber += 1;
+      selectedIndex = 0;
+      result = await readEvidenceList(filterArgs, {
+        limit: pageSize + 1,
+        offset: (pageNumber - 1) * pageSize,
+      });
+      continue;
+    }
+    if (action.kind === "previous") {
+      pageNumber -= 1;
+      result = await readEvidenceList(filterArgs, {
+        limit: pageSize + 1,
+        offset: (pageNumber - 1) * pageSize,
+      });
+      selectedIndex = Math.max(0, Math.min(pageSize, result.rows.length) - 1);
+      continue;
+    }
+    if (action.kind === "absolute") {
+      const targetPage = Math.ceil(action.number / pageSize);
+      const targetIndex = (action.number - 1) % pageSize;
+      const targetResult = await readEvidenceList(filterArgs, {
+        limit: pageSize + 1,
+        offset: (targetPage - 1) * pageSize,
+      });
+      const selected = targetResult.rows.slice(0, pageSize)[targetIndex];
+      if (!selected) {
+        browserNotice = `Record ${action.number} is outside the current evidence result set.`;
+        continue;
+      }
+      pageNumber = targetPage;
+      selectedIndex = targetIndex;
+      result = targetResult;
+      if (await browseOneEvidence(selected, color)) return 0;
+      continue;
+    }
+    const answer = await readTerminalTextWithEscape(
+      action.kind === "search"
+        ? "Text search across persisted plan metadata and audit IDs: "
+        : `Structured filter (${auditBrowserStructuredFilterScope()}; Esc to return): `,
+      process.stdin,
+      process.stdout,
+    );
+    if (answer === undefined) continue;
+    const search = action.kind === "search" ? normalizeAuditBrowserSearch(answer) : undefined;
+    if (search?.error) {
+      browserNotice = search.error;
+      continue;
+    }
+    const normalized = action.kind === "search" ? `/${search?.term ?? ""}` : answer.trim();
+    const update = evidenceBrowserCommand(filterArgs, pageSize, normalized);
+    if (!update) {
+      browserNotice = `Unknown browser command: ${normalized || "(empty)"}. Press ? for help.`;
+      continue;
+    }
+    const previousArgs = filterArgs;
+    const previousPageSize = pageSize;
+    const previousPageNumber = pageNumber;
+    filterArgs = update.args;
+    pageSize = update.pageSize;
+    pageNumber = update.pageNumber;
+    selectedIndex = 0;
+    try {
+      result = await readEvidenceList(filterArgs, {
+        limit: pageSize + 1,
+        offset: (pageNumber - 1) * pageSize,
+      });
+      browserNotice = search?.notice;
+    } catch (error) {
+      filterArgs = previousArgs;
+      pageSize = previousPageSize;
+      pageNumber = previousPageNumber;
+      browserNotice = safeErrorMessage(error);
+      result = await readEvidenceList(filterArgs, {
+        limit: pageSize + 1,
+        offset: (pageNumber - 1) * pageSize,
+      });
+    }
+  }
+  });
+}
+
+
+async function browseOneEvidence(evidence: StoredEvidenceBundle, color: boolean): Promise<boolean> {
+  return browseAuditRecord({
+    summary: () => formatEvidenceBrowserSummary(evidence, color),
+    details: () => formatEvidenceBrowserFacts(evidence, color),
+    query: () => formatEvidenceBrowserQuery(evidence, color),
+    plan: () => formatEvidenceBrowserPlan(evidence, color),
+    color,
+  });
+}
+
+
+export function evidenceBrowserCommand(
+  args: string[],
+  pageSize: number,
+  input: string,
+  includeRefusals = false,
+): { args: string[]; pageSize: number; pageNumber: number } | undefined {
+  if (input.startsWith("/")) {
+    const search = normalizeAuditBrowserSearch(input);
+    if (search.error) return undefined;
+    return {
+      args: replaceCliOption(args, "--search", search.term || undefined),
+      pageSize,
+      pageNumber: 1,
+    };
+  }
+  const splitAt = input.search(/\s/);
+  const command = (splitAt < 0 ? input : input.slice(0, splitAt)).toLowerCase();
+  const value = splitAt < 0 ? "" : input.slice(splitAt).trim();
+  const clearValue = !value || ["all", "any", "clear", "none"].includes(value.toLowerCase());
+  if (command === "clear") {
+    return {
+      args: withoutCliOptions(args, [
+        "--tenant", "--principal", "--resource", "--table", "--capability", "--boundary",
+        "--outcome", "--status", "--from", "--since", "--to", "--search",
+      ]),
+      pageSize,
+      pageNumber: 1,
+    };
+  }
+  if (command === "page") {
+    const target = Number(value);
+    return Number.isSafeInteger(target) && target > 0
+      ? { args, pageSize, pageNumber: target }
+      : undefined;
+  }
+  if (command === "size") {
+    const size = Number(value);
+    return Number.isSafeInteger(size) && size >= 5 && size <= 50
+      ? { args, pageSize: size, pageNumber: 1 }
+      : undefined;
+  }
+  const option = {
+    tenant: "--tenant",
+    principal: "--principal",
+    resource: "--resource",
+    capability: "--capability",
+    boundary: "--boundary",
+    since: "--since",
+    from: "--from",
+    to: "--to",
+    jump: "--to",
+    search: "--search",
+  }[command];
+  if (option) {
+    let updated = args;
+    if (command === "resource") updated = withoutCliOptions(updated, ["--table"]);
+    if (command === "since") updated = withoutCliOptions(updated, ["--from"]);
+    if (command === "from") updated = withoutCliOptions(updated, ["--since"]);
+    return { args: replaceCliOption(updated, option, clearValue ? undefined : value), pageSize, pageNumber: 1 };
+  }
+  if (command === "outcome") {
+    let updated = withoutCliOptions(args, ["--outcome", "--status"]);
+    if (clearValue) return { args: updated, pageSize, pageNumber: 1 };
+    const outcome = value.toLowerCase();
+    if (outcome === "ok" || outcome === "released") updated = replaceCliOption(updated, "--outcome", "ok");
+    else if (includeRefusals && (outcome === "refused" || outcome === "failed")) {
+      updated = replaceCliOption(updated, "--outcome", outcome);
+    }
+    else if (["empty", "fully_suppressed", "incomplete_comparison"].includes(outcome)) {
+      updated = replaceCliOption(updated, "--status", outcome);
+    } else return undefined;
+    return { args: updated, pageSize, pageNumber: 1 };
+  }
+  return undefined;
+}
+
+
+export function evidenceBrowserFilterSummary(
+  args: string[],
+  emptyLabel = "all released evidence",
+): string {
+  const values = [
+    optionalArg(args, "--tenant") ? "tenant applied" : undefined,
+    optionalArg(args, "--principal") ? "principal applied" : undefined,
+    (optionalArg(args, "--resource") ?? optionalArg(args, "--table"))
+      ? `resource ${optionalArg(args, "--resource") ?? optionalArg(args, "--table")}`
+      : undefined,
+    optionalArg(args, "--capability") ? `capability ${optionalArg(args, "--capability")}` : undefined,
+    optionalArg(args, "--outcome") ? `outcome ${optionalArg(args, "--outcome")}` : undefined,
+    optionalArg(args, "--status") ? `outcome ${optionalArg(args, "--status")}` : undefined,
+    optionalArg(args, "--since") ? `since ${optionalArg(args, "--since")}` : undefined,
+    optionalArg(args, "--from") ? `from ${optionalArg(args, "--from")}` : undefined,
+    optionalArg(args, "--to") ? `to ${optionalArg(args, "--to")}` : undefined,
+    optionalArg(args, "--search") ? `search ${JSON.stringify(optionalArg(args, "--search"))}` : undefined,
+  ].filter((value): value is string => Boolean(value));
+  return values.length ? `Filters: ${values.join(" | ")}` : `Filters: ${emptyLabel}`;
+}
+
+
+export function evidenceBrowserHelp(color: boolean): string {
+  const lines = [
+    renderTerminalSectionHeading("Browser commands", color),
+    "  Up/Down + Enter         select and open a record; Esc returns",
+    "  Type a record number   open its stable number across pages",
+    "  N / B                  next or previous page",
+    "  page <n>                jump to a page",
+    "  size <5-50>             change records per page",
+    "  / Text search           search persisted plan fields and audit identifiers",
+    `    Searches ${auditBrowserSearchScope("evidence")}.`,
+    "    Original question text is not stored and therefore is not searchable.",
+    `  F Structured filters    narrow by ${auditBrowserStructuredFilterScope()}`,
+    "    Private scope values are never echoed.",
+    "  C                       clear all active filters and return to page 1",
+    "  resource <schema.table> narrow to a resource",
+    "  tenant <id>             narrow by tenant (value is never echoed)",
+    "  principal <id>          narrow by principal (value is never echoed)",
+    "  outcome <value>         ok, empty, fully_suppressed, or incomplete_comparison",
+    "  since <24h|ISO>         set the lower time bound",
+    "  to <ISO> / jump <ISO>   set the upper time bound",
+    "  clear                   remove live audit filters",
+    "  Add 'all' after one filter command to clear only that filter.",
+    "  Refused/failed attempts have no evidence bundle; inspect query-audit browse.",
+  ];
+  return lines.join("\n");
+}
+
+
+function replaceCliOption(args: string[], option: string, value: string | undefined): string[] {
+  return [
+    ...withoutCliOptions(args, [option]),
+    ...(value ? [option, value] : []),
+  ];
+}
+
+
+function withoutCliOptions(args: string[], options: string[]): string[] {
+  const values = new Set(options);
+  const result: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const value = args[index]!;
+    const exact = values.has(value);
+    const assigned = [...values].some((option) => value.startsWith(`${option}=`));
+    if (exact) {
+      if (value !== "--interactive" && index + 1 < args.length && !args[index + 1]!.startsWith("--")) index += 1;
+      continue;
+    }
+    if (!assigned) result.push(value);
+  }
+  return result;
+}
+
+
+async function browseQueryAudit(args: string[]): Promise<number> {
+  assertInteractiveTerminal("query-audit browse");
+  const bridged = await maybeSharedPostgresRuntimeStoreRead(
+    args,
+    "query-audit browse",
+    (bridgeStorePath) => browseQueryAudit(argsWithRuntimeStoreBridge(args, bridgeStorePath)),
+  );
+  if (bridged !== undefined) return bridged;
+
+  const color = terminalSyntaxColorEnabled();
+  const explicitLimit = optionalArg(args, "--limit");
+  let pageSize = explicitLimit ? Math.min(limitFromArgs(args), 50) : 10;
+  let pageNumber = 1;
+  let selectedIndex = 0;
+  let browserNotice: string | undefined;
+  let filterArgs = withoutCliOptions(args, ["--interactive", "--limit"]);
+  let result = await readQueryAuditList(filterArgs, { limit: pageSize + 1, offset: 0 });
+
+  return withAlternateTerminalScreen(process.stdout, async () => {
+    while (true) {
+    const visible = result.rows.slice(0, pageSize);
+    const hasNext = result.rows.length > pageSize;
+    selectedIndex = Math.min(selectedIndex, Math.max(visible.length - 1, 0));
+    const action = await selectAuditBrowserPage({
+      title: "Query audit browser",
+      context: [
+        ledgerReadSourceLine(result.ledgerSource).trim(),
+        auditDescriptionText,
+      ],
+      pageNumber,
+      pageSize,
+      hasNext,
+      hasPrevious: pageNumber > 1,
+      selectedIndex,
+      rows: visible.map((row, index) =>
+        formatQueryAuditBrowserRow(row, ((pageNumber - 1) * pageSize) + index + 1, color)),
+      filters: evidenceBrowserFilterSummary(filterArgs, "all query-audit records"),
+      hasActiveFilters: auditBrowserHasActiveFilters(filterArgs),
+      notes: result.notes,
+      emptyLines: auditBrowserEmptyLines("query-audit", filterArgs),
+      helpLines: queryAuditBrowserHelp(color).split("\n"),
+      notice: browserNotice,
+      color,
+    });
+    browserNotice = undefined;
+    selectedIndex = action.selectedIndex;
+    if (action.kind === "quit") return 0;
+    if (action.kind === "open") {
+      const selected = visible[action.index];
+      if (selected && await browseOneQueryAudit(selected, color)) return 0;
+      continue;
+    }
+    if (action.kind === "clear") {
+      filterArgs = evidenceBrowserCommand(filterArgs, pageSize, "clear", true)!.args;
+      pageNumber = 1;
+      selectedIndex = 0;
+      result = await readQueryAuditList(filterArgs, { limit: pageSize + 1, offset: 0 });
+      browserNotice = "All query-audit filters were cleared.";
+      continue;
+    }
+    if (action.kind === "next") {
+      pageNumber += 1;
+      selectedIndex = 0;
+      result = await readQueryAuditList(filterArgs, { limit: pageSize + 1, offset: (pageNumber - 1) * pageSize });
+      continue;
+    }
+    if (action.kind === "previous") {
+      pageNumber -= 1;
+      result = await readQueryAuditList(filterArgs, { limit: pageSize + 1, offset: (pageNumber - 1) * pageSize });
+      selectedIndex = Math.max(0, Math.min(pageSize, result.rows.length) - 1);
+      continue;
+    }
+    if (action.kind === "absolute") {
+      const targetPage = Math.ceil(action.number / pageSize);
+      const targetIndex = (action.number - 1) % pageSize;
+      const targetResult = await readQueryAuditList(filterArgs, {
+        limit: pageSize + 1,
+        offset: (targetPage - 1) * pageSize,
+      });
+      const selected = targetResult.rows.slice(0, pageSize)[targetIndex];
+      if (!selected) {
+        browserNotice = `Record ${action.number} is outside the current query-audit result set.`;
+        continue;
+      }
+      pageNumber = targetPage;
+      selectedIndex = targetIndex;
+      result = targetResult;
+      if (await browseOneQueryAudit(selected, color)) return 0;
+      continue;
+    }
+    const answer = await readTerminalTextWithEscape(
+      action.kind === "search"
+        ? "Text search across persisted plan metadata and audit IDs: "
+        : `Structured filter (${auditBrowserStructuredFilterScope()}; Esc to return): `,
+      process.stdin,
+      process.stdout,
+    );
+    if (answer === undefined) continue;
+    const search = action.kind === "search" ? normalizeAuditBrowserSearch(answer) : undefined;
+    if (search?.error) {
+      browserNotice = search.error;
+      continue;
+    }
+    const normalized = action.kind === "search" ? `/${search?.term ?? ""}` : answer.trim();
+    const update = evidenceBrowserCommand(filterArgs, pageSize, normalized, true);
+    if (!update) {
+      browserNotice = `Unknown browser command: ${normalized || "(empty)"}. Press ? for help.`;
+      continue;
+    }
+    const previousArgs = filterArgs;
+    const previousPageSize = pageSize;
+    const previousPageNumber = pageNumber;
+    filterArgs = update.args;
+    pageSize = update.pageSize;
+    pageNumber = update.pageNumber;
+    selectedIndex = 0;
+    try {
+      result = await readQueryAuditList(filterArgs, {
+        limit: pageSize + 1,
+        offset: (pageNumber - 1) * pageSize,
+      });
+      browserNotice = search?.notice;
+    } catch (error) {
+      filterArgs = previousArgs;
+      pageSize = previousPageSize;
+      pageNumber = previousPageNumber;
+      browserNotice = safeErrorMessage(error);
+      result = await readQueryAuditList(filterArgs, {
+        limit: pageSize + 1,
+        offset: (pageNumber - 1) * pageSize,
+      });
+    }
+  }
+  });
+}
+
+
+async function browseOneQueryAudit(row: Record<string, unknown>, color: boolean): Promise<boolean> {
+  return browseAuditRecord({
+    summary: () => formatQueryAuditBrowserSummary(row, color),
+    details: () => formatQueryAuditBrowserFacts(row, color),
+    query: () => formatQueryAuditBrowserQuery(row, color),
+    plan: () => formatQueryAuditBrowserPlan(row, color),
+    color,
+  });
+}
+
+
+export type AuditBrowserPageAction =
+  | { kind: "open"; selectedIndex: number; index: number }
+  | { kind: "absolute"; selectedIndex: number; number: number }
+  | { kind: "next" | "previous" | "search" | "filter" | "clear" | "quit"; selectedIndex: number };
+
+
+type AuditBrowserPageOptions = {
+  title: string;
+  context?: string[];
+  pageNumber: number;
+  pageSize: number;
+  hasNext: boolean;
+  hasPrevious: boolean;
+  selectedIndex: number;
+  rows: string[];
+  filters: string;
+  hasActiveFilters: boolean;
+  notes: string[];
+  emptyLines: string[];
+  helpLines: string[];
+  notice?: string;
+  color: boolean;
+  input?: ReadStream;
+  output?: WriteStream;
+};
+
+
+export async function selectAuditBrowserPage(
+  options: AuditBrowserPageOptions,
+): Promise<AuditBrowserPageAction> {
+  const input = options.input ?? process.stdin;
+  const output = options.output ?? process.stdout;
+  output.write("\u001b[H\u001b[2J");
+  return withRawTerminalScreen(input, output, async (nextKey, render) => {
+    let selectedIndex = Math.min(options.selectedIndex, Math.max(options.rows.length - 1, 0));
+    let numberBuffer = "";
+    let notice = options.notice;
+    let helpVisible = false;
+    while (true) {
+      render(helpVisible
+        ? [
+            ...options.helpLines,
+            "",
+            renderTerminalStyledText("Esc Back   Q Quit", options.color, "identifier"),
+          ]
+        : auditBrowserPageLines(options, selectedIndex, numberBuffer, notice, output));
+      const key = await nextKey();
+      const sequence = (key.sequence ?? "").toLowerCase();
+      const name = (key.name ?? "").toLowerCase();
+      if (helpVisible) {
+        if (isEscapeKey(key) || sequence === "?" || name === "b" || sequence === "b") {
+          helpVisible = false;
+          notice = undefined;
+        } else if (name === "q" || sequence === "q" || isTerminalExitKey(key)) {
+          return { kind: "quit", selectedIndex };
+        }
+        continue;
+      }
+      if (isTerminalExitKey(key) || name === "q" || sequence === "q") {
+        return { kind: "quit", selectedIndex };
+      }
+      if (isEscapeKey(key)) {
+        if (numberBuffer) {
+          numberBuffer = "";
+          notice = "Record-number entry cleared.";
+          continue;
+        }
+        return { kind: "quit", selectedIndex };
+      }
+      if (/^\d$/.test(sequence)) {
+        numberBuffer = `${numberBuffer}${sequence}`.slice(0, 9);
+        notice = undefined;
+        continue;
+      }
+      if (name === "backspace") {
+        numberBuffer = numberBuffer.slice(0, -1);
+        continue;
+      }
+      if (isEnterKey(key)) {
+        if (numberBuffer) {
+          const number = Number(numberBuffer);
+          if (Number.isSafeInteger(number) && number > 0) {
+            return { kind: "absolute", number, selectedIndex };
+          }
+          notice = "Record numbers begin at 1.";
+          numberBuffer = "";
+          continue;
+        }
+        if (options.rows.length > 0) {
+          return { kind: "open", index: selectedIndex, selectedIndex };
+        }
+        notice = "No record is available to open in this view.";
+        continue;
+      }
+      if (name === "up") {
+        numberBuffer = "";
+        notice = undefined;
+        if (selectedIndex > 0) selectedIndex -= 1;
+        else if (options.hasPrevious) return { kind: "previous", selectedIndex };
+        else notice = "Already at the newest matching record.";
+        continue;
+      }
+      if (name === "down") {
+        numberBuffer = "";
+        notice = undefined;
+        if (selectedIndex < options.rows.length - 1) selectedIndex += 1;
+        else if (options.hasNext) return { kind: "next", selectedIndex };
+        else notice = "Already at the oldest matching record.";
+        continue;
+      }
+      if (name === "home") {
+        selectedIndex = 0;
+        numberBuffer = "";
+        notice = undefined;
+        continue;
+      }
+      if (name === "end") {
+        selectedIndex = Math.max(options.rows.length - 1, 0);
+        numberBuffer = "";
+        notice = undefined;
+        continue;
+      }
+      if (name === "n" || sequence === "n" || name === "pagedown") {
+        if (options.hasNext) return { kind: "next", selectedIndex };
+        notice = "No older record matches the current filters.";
+        continue;
+      }
+      if (name === "b" || sequence === "b" || name === "pageup") {
+        if (options.hasPrevious) return { kind: "previous", selectedIndex };
+        notice = "Already on the newest page.";
+        continue;
+      }
+      if (name === "c" || sequence === "c") {
+        if (options.hasActiveFilters) return { kind: "clear", selectedIndex };
+        notice = "No audit filter is active.";
+        continue;
+      }
+      if (sequence === "/") return { kind: "search", selectedIndex };
+      if (name === "f" || sequence === "f") return { kind: "filter", selectedIndex };
+      if (sequence === "?") {
+        helpVisible = true;
+        numberBuffer = "";
+      }
+    }
+  });
+}
+
+
+function auditBrowserPageLines(
+  options: AuditBrowserPageOptions,
+  selectedIndex: number,
+  numberBuffer: string,
+  notice: string | undefined,
+  output: WriteStream,
+): string[] {
+  const startNumber = ((options.pageNumber - 1) * options.pageSize) + 1;
+  const endNumber = startNumber + Math.max(0, options.rows.length - 1);
+  const terminalRows = Math.max(18, output.rows ?? 30);
+  const reservedRows = 10 + (options.context?.length ?? 0) + options.notes.length + options.emptyLines.length;
+  const visibleCount = Math.max(
+    1,
+    Math.min(options.rows.length, Math.floor(Math.max(3, terminalRows - reservedRows) / 3)),
+  );
+  const windowStart = options.rows.length <= visibleCount
+    ? 0
+    : Math.min(
+        Math.max(0, selectedIndex - Math.floor(visibleCount / 2)),
+        options.rows.length - visibleCount,
+      );
+  const windowRows = options.rows.slice(windowStart, windowStart + visibleCount);
+  const lines = [
+    renderTerminalSectionHeading(options.title, options.color),
+    ...(options.context ?? []).map((line) => renderTerminalStyledText(line, options.color, "muted")),
+    renderTerminalStyledText(
+      options.rows.length
+        ? `Page ${options.pageNumber} | records ${startNumber}-${endNumber}${options.hasNext ? " | older records available" : ""}`
+        : `Page ${options.pageNumber} | no matching records`,
+      options.color,
+      "muted",
+    ),
+    renderTerminalStyledText(
+      `${options.filters}${options.hasActiveFilters ? " | C clears all" : ""}`,
+      options.color,
+      "muted",
+    ),
+    ...(options.notes.length
+      ? [
+          renderTerminalSectionHeading("Audit notice", options.color),
+          ...options.notes.map((note) => renderTerminalStyledText(`! ${note}`, options.color, "warning")),
+        ]
+      : []),
+    "",
+  ];
+  if (windowRows.length > 0) {
+    if (windowRows.length < options.rows.length) {
+      lines.push(renderTerminalStyledText(
+        `Showing ${startNumber + windowStart}-${startNumber + windowStart + windowRows.length - 1} on this page`,
+        options.color,
+        "muted",
+      ));
+    }
+    windowRows.forEach((row, visibleIndex) => {
+      const rowIndex = windowStart + visibleIndex;
+      const rowLines = row.trimEnd().split("\n");
+      const marker = rowIndex === selectedIndex
+        ? renderTerminalStyledText(">", options.color, "success")
+        : " ";
+      lines.push(`${marker} ${rowLines[0] ?? ""}`);
+      lines.push(...rowLines.slice(1).map((line) => `  ${line}`));
+      if (visibleIndex < windowRows.length - 1) {
+        lines.push(auditBrowserSeparator(options.color, output.columns));
+      }
+    });
+  } else {
+    lines.push(...options.emptyLines.map((line) => renderTerminalStyledText(line, options.color, "warning")));
+  }
+  lines.push("");
+  if (notice) lines.push(renderTerminalStyledText(notice, options.color, "warning"));
+  if (numberBuffer) {
+    lines.push(renderTerminalStyledText(`Open record ${numberBuffer}_ (Enter to open; Esc to clear)`, options.color, "identifier"));
+  }
+  lines.push(renderTerminalStyledText(
+    "Up/Down Select   Enter Open   N/B Page",
+    options.color,
+    "identifier",
+  ));
+  lines.push(renderTerminalStyledText(
+    `/ Text search   F Structured filters   ${options.hasActiveFilters ? "C Clear filters   " : ""}? Help   Esc Quit`,
+    options.color,
+    "identifier",
+  ));
+  return lines;
+}
+
+
+type AuditRecordBrowserOptions = {
+  summary: () => string;
+  details: () => string;
+  query: () => string;
+  plan: () => string;
+  color: boolean;
+  input?: ReadStream;
+  output?: WriteStream;
+};
+
+
+async function browseAuditRecord(options: AuditRecordBrowserOptions): Promise<boolean> {
+  const input = options.input ?? process.stdin;
+  const output = options.output ?? process.stdout;
+  output.write("\u001b[H\u001b[2J");
+  return withRawTerminalScreen(input, output, async (nextKey, render) => {
+    let mode: "summary" | "details" | "query" | "plan" = "summary";
+    let scrollOffset = 0;
+    while (true) {
+      const width = Math.max(36, Math.min(terminalContentWidth(output.columns), 116));
+      const content = options[mode]().trimEnd().split("\n")
+        .flatMap((line) => wrapStyledTerminalLine(line, width));
+      const viewportRows = Math.max(5, (output.rows ?? 28) - 4);
+      const maxOffset = Math.max(0, content.length - viewportRows);
+      scrollOffset = Math.min(scrollOffset, maxOffset);
+      const visible = content.slice(scrollOffset, scrollOffset + viewportRows);
+      render([
+        ...visible,
+        ...(content.length > viewportRows
+          ? [renderTerminalStyledText(
+              `Lines ${scrollOffset + 1}-${scrollOffset + visible.length} of ${content.length}`,
+              options.color,
+              "muted",
+            )]
+          : []),
+        "",
+        renderTerminalStyledText(
+          "S Summary   D Details   Q Reconstructed query   P Plan   Up/Down Scroll   Esc Back   X Quit",
+          options.color,
+          "identifier",
+        ),
+      ]);
+      const key = await nextKey();
+      const sequence = (key.sequence ?? "").toLowerCase();
+      const name = (key.name ?? "").toLowerCase();
+      if (isTerminalExitKey(key) || name === "x" || sequence === "x") return true;
+      if (isEscapeKey(key) || name === "b" || sequence === "b") return false;
+      if (name === "s" || sequence === "s") {
+        mode = "summary";
+        scrollOffset = 0;
+      } else if (name === "d" || sequence === "d") {
+        mode = "details";
+        scrollOffset = 0;
+      } else if (name === "q" || sequence === "q") {
+        mode = "query";
+        scrollOffset = 0;
+      } else if (name === "p" || sequence === "p") {
+        mode = "plan";
+        scrollOffset = 0;
+      } else if (name === "up") scrollOffset = Math.max(0, scrollOffset - 1);
+      else if (name === "down") scrollOffset = Math.min(maxOffset, scrollOffset + 1);
+      else if (name === "pageup") scrollOffset = Math.max(0, scrollOffset - viewportRows);
+      else if (name === "pagedown") scrollOffset = Math.min(maxOffset, scrollOffset + viewportRows);
+      else if (name === "home") scrollOffset = 0;
+      else if (name === "end") scrollOffset = maxOffset;
+    }
+  });
+}
+
+
+export function normalizeAuditBrowserSearch(input: string): {
+  term?: string;
+  notice?: string;
+  error?: string;
+} {
+  const trimmed = input.trim().replace(/^\/+/, "").trim();
+  if (!trimmed) return { term: "", notice: "Search cleared." };
+  const placeholder = trimmed.match(/^text(?:\s+(.+))?$/i);
+  if (!placeholder) return { term: trimmed };
+  const corrected = placeholder[1]?.trim();
+  if (!corrected) {
+    return {
+      error: "'text' is a placeholder, not the search command. Press /, then type the words to find.",
+    };
+  }
+  return {
+    term: corrected,
+    notice: `Interpreted ${JSON.stringify(input.trim())} as search ${JSON.stringify(corrected)}.`,
+  };
+}
+
+
+export function auditBrowserSearchScope(kind: "evidence" | "query-audit"): string {
+  return kind === "evidence"
+    ? "persisted plan fields used to render the English description, evidence ID, resource/source IDs, capability, and query fingerprint"
+    : "persisted plan fields used to render the English description, audit/evidence IDs, resource/source IDs, capability, and query fingerprint";
+}
+
+
+export function auditBrowserStructuredFilterScope(): string {
+  return "tenant, principal, resource, capability, boundary, outcome, or time";
+}
+
+
+export function auditBrowserHasActiveFilters(args: string[]): boolean {
+  return [
+    "--tenant", "--principal", "--resource", "--table", "--capability", "--boundary",
+    "--outcome", "--status", "--from", "--since", "--to", "--search",
+  ].some((option) => optionalArg(args, option) !== undefined);
+}
+
+
+export function auditBrowserEmptyLines(
+  kind: "evidence" | "query-audit",
+  args: string[],
+): string[] {
+  const search = optionalArg(args, "--search");
+  const label = kind === "evidence" ? "released-result evidence" : "query-audit records";
+  if (!search) return [`No ${label} match the current filters.`];
+  return [
+    `No ${label} matched search ${JSON.stringify(search)}.`,
+    `Searched fields: ${auditBrowserSearchScope(kind)}.`,
+    "Original question text is not stored, so it was not searched.",
+    "Other active filters also apply. Press F to inspect or change them.",
+  ];
+}
+
+
+function isEnterKey(key: TerminalKeypress): boolean {
+  return key.name === "return" || key.name === "enter" || key.sequence === "\r" || key.sequence === "\n";
+}
+
+
+function isEscapeKey(key: TerminalKeypress): boolean {
+  return key.name === "escape" || key.sequence === "\u001b";
+}
+
+
+function isTerminalExitKey(key: TerminalKeypress): boolean {
+  return key.ctrl === true && (key.name === "c" || key.name === "d");
+}
+
+
+export function queryAuditBrowserHelp(color: boolean): string {
+  return [
+    renderTerminalSectionHeading("Browser commands", color),
+    "  Up/Down + Enter        select and open a record; Esc returns",
+    "  Type a record number  open its stable number across pages",
+    "  N / B                  next or previous page",
+    "  page <n> / size <5-50> change the page",
+    "  / Text search          search persisted plan fields and audit identifiers",
+    `    Searches ${auditBrowserSearchScope("query-audit")}.`,
+    "    Original question text is not stored and therefore is not searchable.",
+    `  F Structured filters   narrow by ${auditBrowserStructuredFilterScope()}`,
+    "    Private scope values are never echoed.",
+    "  C                      clear all active filters and return to page 1",
+    "  resource, tenant, principal, outcome, since, to, and jump set live filters",
+    "  outcome accepts ok, refused, failed, empty, fully_suppressed, or incomplete_comparison",
+    "  clear                  remove live audit filters",
+  ].join("\n");
+}
+
+
+function auditBrowserSeparator(color: boolean, columns: number | undefined): string {
+  const width = Math.min(96, Math.max(32, (columns ?? 80) - 6));
+  return renderTerminalStyledText("-".repeat(width), color, "muted");
+}
+
+
+const auditDescriptionText = "Descriptions summarize persisted reviewed plans; original question text is not stored.";
+
+
+function auditDescriptionNotice(color: boolean): string {
+  return `${renderTerminalStyledText(auditDescriptionText, color, "muted")}\n`;
+}
+
+
+function assertInteractiveTerminal(command: string): void {
+  if (!process.stdin.isTTY || !process.stdout.isTTY || typeof process.stdin.setRawMode !== "function") {
+    throw new Error(`${command} requires a real terminal. Use list --json for scripts and automation.`);
+  }
+}
 
 
 export async function proposalsList(args: string[]): Promise<number> {
@@ -491,23 +1658,13 @@ export async function proposalsWritebackJob(args: string[]): Promise<number> {
 
 
 export async function evidenceList(args: string[]): Promise<number> {
-  const bridged = await maybeSharedPostgresRuntimeStoreRead(args, "evidence list", (bridgeStorePath) => evidenceList(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
-  if (bridged !== undefined) return bridged;
   assertKnownOptions(args, evidenceListAllowedOptions, "evidence list");
-  const store = await openLocalStore(args);
-  try {
-    const rows = store.listEvidenceBundles(evidenceFiltersFromArgs(args));
-    if (args.includes("--json")) {
-      process.stdout.write(`${JSON.stringify({ evidence: rows }, null, 2)}\n`);
-    } else if (rows.length === 0) {
-      process.stdout.write("No evidence bundles found.\n");
-    } else {
-      for (const bundle of rows) process.stdout.write(formatEvidenceSummary(bundle));
-    }
-    return 0;
-  } finally {
-    store.close();
-  }
+  assertLedgerListModes(args, "evidence list");
+  if (args.includes("--follow")) return followEvidence(args);
+  if (args.includes("--interactive")) return browseEvidence(args);
+  const result = await readEvidenceList(args);
+  writeEvidenceList(result, args.includes("--json"), args);
+  return 0;
 }
 
 
@@ -517,13 +1674,22 @@ export async function evidenceShow(args: string[]): Promise<number> {
   assertKnownOptions(args, showAllowedOptions, "evidence show");
   const evidenceId = positional(args, 0);
   if (!evidenceId) throw new Error("evidence show requires <evidence_bundle_id>");
+  const ledgerSource = await ledgerReadSource(args);
   const store = await openLocalStore(args);
   try {
     const evidence = store.getEvidenceBundle(evidenceId);
-    if (!evidence) throw new Error(`evidence bundle not found: ${evidenceId}`);
-    if (args.includes("--json")) process.stdout.write(`${JSON.stringify(evidence, null, 2)}\n`);
-    else if (showDetails(args)) process.stdout.write(formatEvidenceDetail(evidence));
-    else process.stdout.write(formatEvidenceFirstLook(evidence, storeOptionSuffix(args)));
+    if (!evidence) {
+      const guidance = /^\d+$/.test(evidenceId)
+        ? ` ${evidenceId} looks like a query-audit ID; try ${cliCommandName()} query-audit show ${evidenceId} --details${storeOptionSuffix(args)}.`
+        : "";
+      throw new Error(`evidence bundle not found: ${evidenceId}.${guidance}`);
+    }
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ ...evidence, ledger_source: ledgerSource }, null, 2)}\n`);
+    else {
+      process.stdout.write(ledgerReadSourceLine(ledgerSource));
+      if (showDetails(args)) process.stdout.write(formatEvidenceDetail(evidence, terminalSyntaxColorEnabled()));
+      else process.stdout.write(formatEvidenceFirstLook(evidence, storeOptionSuffix(args)));
+    }
     return 0;
   } finally {
     store.close();
@@ -540,13 +1706,20 @@ export async function evidenceExport(args: string[]): Promise<number> {
   const output = outputArg(args);
   if (!output) throw new Error("evidence export requires --output <path>");
   const format = exportFormat(args);
+  const ledgerSource = await ledgerReadSource(args);
   const store = await openLocalStore(args);
   try {
     const evidence = store.getEvidenceBundle(evidenceId);
-    if (!evidence) throw new Error(`evidence bundle not found: ${evidenceId}`);
+    if (!evidence) {
+      const guidance = /^\d+$/.test(evidenceId)
+        ? ` ${evidenceId} looks like a query-audit ID; try ${cliCommandName()} query-audit show ${evidenceId} --details${storeOptionSuffix(args)}.`
+        : "";
+      throw new Error(`evidence bundle not found: ${evidenceId}.${guidance}`);
+    }
     const text = format === "json" ? `${JSON.stringify(evidence, null, 2)}\n` : formatEvidenceMarkdown(evidence);
     await fs.mkdir(path.dirname(path.resolve(output)), { recursive: true });
     await fs.writeFile(output, text, "utf8");
+    process.stdout.write(ledgerReadSourceLine(ledgerSource));
     process.stdout.write(`exported ${evidence.evidence_bundle_id} to ${output}\n`);
     return 0;
   } finally {
@@ -556,19 +1729,13 @@ export async function evidenceExport(args: string[]): Promise<number> {
 
 
 export async function queryAuditList(args: string[]): Promise<number> {
-  const bridged = await maybeSharedPostgresRuntimeStoreRead(args, "query-audit list", (bridgeStorePath) => queryAuditList(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
-  if (bridged !== undefined) return bridged;
   assertKnownOptions(args, queryAuditListAllowedOptions, "query-audit list");
-  const store = await openLocalStore(args);
-  try {
-    const rows = store.listQueryAudit(queryAuditFiltersFromArgs(args));
-    if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ query_audit: rows }, null, 2)}\n`);
-    else if (rows.length === 0) process.stdout.write("No query audit records found.\n");
-    else for (const row of rows) process.stdout.write(formatQueryAuditSummary(row, showDetails(args), storeOptionSuffix(args)));
-    return 0;
-  } finally {
-    store.close();
-  }
+  assertLedgerListModes(args, "query-audit list");
+  if (args.includes("--follow")) return followQueryAudit(args);
+  if (args.includes("--interactive")) return browseQueryAudit(args);
+  const result = await readQueryAuditList(args);
+  writeQueryAuditList(result, args.includes("--json"), showDetails(args), storeOptionSuffix(args), args);
+  return 0;
 }
 
 
@@ -578,14 +1745,18 @@ export async function queryAuditShow(args: string[]): Promise<number> {
   assertKnownOptions(args, showAllowedOptions, "query-audit show");
   const auditId = Number(positional(args, 0));
   if (!Number.isInteger(auditId) || auditId <= 0) throw new Error("query-audit show requires <audit_id>");
+  const ledgerSource = await ledgerReadSource(args);
   const store = await openLocalStore(args);
   try {
     const row = store.getQueryAudit(auditId);
     if (!row) throw new Error(`query audit record not found: ${auditId}`);
-    if (args.includes("--json")) process.stdout.write(`${JSON.stringify(row, null, 2)}\n`);
-    else process.stdout.write(showDetails(args)
-      ? formatQueryAuditDetail(row, terminalSyntaxColorEnabled())
-      : formatQueryAuditFirstLook(row, storeOptionSuffix(args)));
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ ...row, ledger_source: ledgerSource }, null, 2)}\n`);
+    else {
+      process.stdout.write(ledgerReadSourceLine(ledgerSource));
+      process.stdout.write(showDetails(args)
+        ? formatQueryAuditDetail(row, terminalSyntaxColorEnabled())
+        : formatQueryAuditFirstLook(row, storeOptionSuffix(args)));
+    }
     return 0;
   } finally {
     store.close();
@@ -602,12 +1773,14 @@ export async function queryAuditExport(args: string[]): Promise<number> {
   const output = outputArg(args);
   if (!output) throw new Error("query-audit export requires --output <path>");
   const format = exportFormat(args, ["json"]);
+  const ledgerSource = await ledgerReadSource(args);
   const store = await openLocalStore(args);
   try {
     const row = store.getQueryAudit(auditId);
     if (!row) throw new Error(`query audit record not found: ${auditId}`);
     await fs.mkdir(path.dirname(path.resolve(output)), { recursive: true });
     await fs.writeFile(output, `${JSON.stringify(row, null, 2)}\n`, "utf8");
+    process.stdout.write(ledgerReadSourceLine(ledgerSource));
     process.stdout.write(`exported query audit ${auditId} to ${output}\n`);
     return 0;
   } finally {
@@ -620,12 +1793,16 @@ export async function receiptsList(args: string[]): Promise<number> {
   const bridged = await maybeSharedPostgresRuntimeStoreRead(args, "receipts list", (bridgeStorePath) => receiptsList(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
   if (bridged !== undefined) return bridged;
   assertKnownOptions(args, receiptListAllowedOptions, "receipts list");
+  const ledgerSource = await ledgerReadSource(args);
   const store = await openLocalStore(args);
   try {
     const rows = store.listReceipts(receiptFiltersFromArgs(args));
-    if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ receipts: rows }, null, 2)}\n`);
-    else if (rows.length === 0) process.stdout.write("No writeback receipts found.\n");
-    else for (const receipt of rows) process.stdout.write(formatReceiptSummary(receipt));
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ ledger_source: ledgerSource, receipts: rows }, null, 2)}\n`);
+    else {
+      process.stdout.write(ledgerReadSourceLine(ledgerSource));
+      if (rows.length === 0) process.stdout.write(emptyLedgerMessage("writeback receipts", ledgerSource));
+      else for (const receipt of rows) process.stdout.write(formatReceiptSummary(receipt));
+    }
     return 0;
   } finally {
     store.close();
@@ -639,12 +1816,16 @@ export async function receiptsShow(args: string[]): Promise<number> {
   assertKnownOptions(args, showAllowedOptions, "receipts show");
   const receiptId = Number(positional(args, 0));
   if (!Number.isInteger(receiptId) || receiptId <= 0) throw new Error("receipts show requires <receipt_id>");
+  const ledgerSource = await ledgerReadSource(args);
   const store = await openLocalStore(args);
   try {
     const receipt = store.getReceipt(receiptId);
     if (!receipt) throw new Error(`writeback receipt not found: ${receiptId}`);
-    if (args.includes("--json")) process.stdout.write(`${JSON.stringify(receipt, null, 2)}\n`);
-    else process.stdout.write(showDetails(args) ? formatReceiptDetail(receipt) : formatReceiptFirstLook(receipt, storeOptionSuffix(args)));
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ ...receipt, ledger_source: ledgerSource }, null, 2)}\n`);
+    else {
+      process.stdout.write(ledgerReadSourceLine(ledgerSource));
+      process.stdout.write(showDetails(args) ? formatReceiptDetail(receipt) : formatReceiptFirstLook(receipt, storeOptionSuffix(args)));
+    }
     return 0;
   } finally {
     store.close();
@@ -656,6 +1837,7 @@ export async function replayList(args: string[]): Promise<number> {
   const bridged = await maybeSharedPostgresRuntimeStoreRead(args, "replay list", (bridgeStorePath) => replayList(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
   if (bridged !== undefined) return bridged;
   assertKnownOptions(args, replayListAllowedOptions, "replay list");
+  const ledgerSource = await ledgerReadSource(args);
   const store = await openLocalStore(args);
   try {
     const filters = proposalFiltersFromReplayArgs(args, store);
@@ -671,9 +1853,12 @@ export async function replayList(args: string[]): Promise<number> {
       business_object: proposal.business_object,
       object_id: proposal.object_id,
     }));
-    if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ replays: rows }, null, 2)}\n`);
-    else if (rows.length === 0) process.stdout.write("No replay records found.\n");
-    else for (const row of rows) process.stdout.write(formatReplaySummary(row));
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ ledger_source: ledgerSource, replays: rows }, null, 2)}\n`);
+    else {
+      process.stdout.write(ledgerReadSourceLine(ledgerSource));
+      if (rows.length === 0) process.stdout.write(emptyLedgerMessage("replay records", ledgerSource));
+      else for (const row of rows) process.stdout.write(formatReplaySummary(row));
+    }
     return 0;
   } finally {
     store.close();
@@ -685,16 +1870,19 @@ export async function replayShow(args: string[]): Promise<number> {
   const bridged = await maybeSharedPostgresRuntimeStoreRead(args, "replay show", (bridgeStorePath) => replayShow(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
   if (bridged !== undefined) return bridged;
   assertKnownOptions(args, replayShowAllowedOptions, "replay show");
+  const ledgerSource = await ledgerReadSource(args);
   const store = await openLocalStore(args);
   try {
     const resolvedProposalId = resolveReplayProposalId(args, store);
     const replayRecord = store.replay(resolvedProposalId);
     if (args.includes("--json")) {
-      process.stdout.write(`${JSON.stringify(replayRecord, null, 2)}\n`);
+      process.stdout.write(`${JSON.stringify({ ...replayRecord, ledger_source: ledgerSource }, null, 2)}\n`);
     } else if (showDetails(args)) {
+      process.stdout.write(ledgerReadSourceLine(ledgerSource));
       process.stdout.write(formatReplayDetail(replayRecord));
       if (args.includes("--debug")) process.stdout.write(formatReplayDebug(replayRecord, optionalArg(args, "--store")));
     } else {
+      process.stdout.write(ledgerReadSourceLine(ledgerSource));
       process.stdout.write(formatReplayFirstLook(replayRecord, storeOptionSuffix(args)));
     }
     return 0;
@@ -711,6 +1899,7 @@ export async function replayExport(args: string[]): Promise<number> {
   const output = outputArg(args);
   if (!output) throw new Error("replay export requires --output <path>");
   const format = exportFormat(args);
+  const ledgerSource = await ledgerReadSource(args);
   const store = await openLocalStore(args);
   try {
     const resolvedProposalId = resolveReplayProposalId(args, store);
@@ -718,6 +1907,7 @@ export async function replayExport(args: string[]): Promise<number> {
     const text = format === "json" ? `${JSON.stringify(replayRecord, null, 2)}\n` : formatReplayMarkdown(replayRecord);
     await fs.mkdir(path.dirname(path.resolve(output)), { recursive: true });
     await fs.writeFile(output, text, "utf8");
+    process.stdout.write(ledgerReadSourceLine(ledgerSource));
     process.stdout.write(`exported ${replayRecord.replay_id} to ${output}\n`);
     return 0;
   } finally {
@@ -730,16 +1920,24 @@ export async function activitySearch(args: string[]): Promise<number> {
   const bridged = await maybeSharedPostgresRuntimeStoreRead(args, "activity search", (bridgeStorePath) => activitySearch(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
   if (bridged !== undefined) return bridged;
   assertKnownOptions(args, activitySearchAllowedOptions, "activity search");
+  const ledgerSource = await ledgerReadSource(args);
   const store = await openLocalStore(args);
   try {
     const proposalFilters = proposalFiltersFromActivityArgs(args, store);
-    const evidenceFilters = evidenceFiltersFromActivityArgs(args, store);
-    const queryAuditFilters = queryAuditFiltersFromActivityArgs(args, store);
+    const resolvedEvidence = await resolveExploreLedgerFilters(
+      args,
+      evidenceFiltersFromActivityArgs(args, store),
+    );
+    const resolvedQueryAudit = await resolveExploreLedgerFilters(
+      args,
+      queryAuditFiltersFromActivityArgs(args, store),
+    );
     const receiptFilters = receiptFiltersFromActivityArgs(args, store);
-    const proposals = store.listProposals(proposalFilters);
-    const evidenceRows = store.listEvidenceBundles(evidenceFilters);
-    const queryAuditRows = store.listQueryAudit(queryAuditFilters);
-    const receiptsRows = store.listReceipts(receiptFilters);
+    const exploreOnly = args.includes("--boundary") || args.includes("--outcome");
+    const proposals = exploreOnly ? [] : store.listProposals(proposalFilters);
+    const evidenceRows = store.listEvidenceBundles(resolvedEvidence.filters);
+    const queryAuditRows = store.listQueryAudit(resolvedQueryAudit.filters);
+    const receiptsRows = exploreOnly ? [] : store.listReceipts(receiptFilters);
     const proposalIds = new Set(proposals.map((proposal) => proposal.proposal_id));
     const evidenceIds = new Set(evidenceRows.map((evidence) => evidence.evidence_bundle_id));
     const results: Record<string, unknown>[] = proposals.map((proposal) => activityFromProposal(proposal));
@@ -761,12 +1959,21 @@ export async function activitySearch(args: string[]): Promise<number> {
     const sorted = results
       .sort((left, right) => String(right.created_at ?? "").localeCompare(String(left.created_at ?? "")))
       .slice(0, limitFromArgs(args));
+    const notes = [...new Set([...resolvedEvidence.notes, ...resolvedQueryAudit.notes])];
     if (args.includes("--json")) {
-      process.stdout.write(`${JSON.stringify({ interactions: sorted }, null, 2)}\n`);
+      process.stdout.write(`${JSON.stringify({
+        ledger_source: ledgerSource,
+        notices: notes,
+        interactions: sorted,
+      }, null, 2)}\n`);
     } else if (sorted.length === 0) {
-      process.stdout.write("No local interactions found.\n");
+      process.stdout.write(ledgerReadSourceLine(ledgerSource));
+      for (const note of notes) process.stdout.write(`Note: ${note}\n`);
+      process.stdout.write(emptyLedgerMessage("interactions", ledgerSource));
     } else {
-      process.stdout.write(`Found ${sorted.length} local interaction${sorted.length === 1 ? "" : "s"}\n\n`);
+      process.stdout.write(ledgerReadSourceLine(ledgerSource));
+      for (const note of notes) process.stdout.write(`Note: ${note}\n`);
+      process.stdout.write(`Found ${sorted.length} interaction${sorted.length === 1 ? "" : "s"}\n\n`);
       sorted.forEach((item, index) => process.stdout.write(formatActivityItem(item, index + 1, showDetails(args))));
       process.stdout.write(formatActivityNext(sorted, storeOptionSuffix(args)));
     }

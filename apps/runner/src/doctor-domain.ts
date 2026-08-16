@@ -2,10 +2,12 @@ import { assertApprovalPolicyResolvable, assertProposalWritebackResolvable, capa
 import { createPostgresPool } from "@synapsor-runner/postgres";
 import {
   assessDirectWritePrerequisites,
-  inspectDatabase
+  inspectDatabase,
+  type SchemaInspection,
 } from "@synapsor-runner/schema-inspector";
 import process from "node:process";
 import { cliCommandName } from "./cli-command-meta.js";
+import { withPreservedCleanup } from "./resource-lifecycle.js";
 import { envValue } from "./cli-options.js";
 import { RunnerCapabilityConfig } from "./cli-runtime.js";
 import { sharedPostgresLedgerMirrorOptions, sharedPostgresLedgerTableCounts } from "./shared-ledger-domain.js";
@@ -52,13 +54,18 @@ export function trustedContextsForDoctor(config: RuntimeConfig): TrustedContextD
 }
 
 
-export function envPresenceCheck(envName: string, message: string): DoctorCheck {
+export function envPresenceCheck(
+  envName: string,
+  message: string,
+  setup: "pending" | "required" = "required",
+): DoctorCheck {
   const value = envValue(process.env, envName);
   return {
     name: `env:${envName}`,
     ok: Boolean(value),
     level: value ? "pass" : "fail",
     message: value ? `${envName} is set.` : message,
+    ...(!value ? { setup } : {}),
   };
 }
 
@@ -215,7 +222,7 @@ export async function sharedPostgresLedgerDoctorChecks(config: RuntimeConfig): P
   }
 
   const pool = createPostgresPool(databaseUrl);
-  try {
+  await withPreservedCleanup(async () => {
     const counts = await sharedPostgresLedgerTableCounts(pool, mirror.schema);
     const missing = Object.entries(counts)
       .filter(([, count]) => count === null)
@@ -235,16 +242,14 @@ export async function sharedPostgresLedgerDoctorChecks(config: RuntimeConfig): P
         message: `Shared Postgres ledger schema ${mirror.schema} is initialized (${Object.entries(counts).map(([table, count]) => `${table}=${count}`).join(", ")}).`,
       });
     }
-  } catch (error) {
+  }, async () => { await pool.end(); }).catch((error) => {
     checks.push({
       name: "shared-postgres-ledger:migration",
       ok: false,
       level: "fail",
       message: `Could not inspect shared Postgres ledger schema ${mirror.schema} using ${mirror.urlEnv}: ${error instanceof Error ? error.message : String(error)}`,
     });
-  } finally {
-    await pool.end();
-  }
+  });
   return checks;
 }
 
@@ -306,10 +311,15 @@ export async function inspectConfiguredSource(input: {
   sourceName: string;
   source: NonNullable<RuntimeConfig["sources"]>[string];
   checks: DoctorCheck[];
-}): Promise<void> {
-  if (!envValue(process.env, input.source.read_url_env)) return;
+  additionalSchemas?: string[];
+}): Promise<SchemaInspection[]> {
+  if (!envValue(process.env, input.source.read_url_env)) return [];
   const capabilities = (input.config.capabilities ?? []).filter((capability) => capability.source === input.sourceName);
-  const schemas = Array.from(new Set(capabilities.map((capability) => capability.target.schema)));
+  const schemas = Array.from(new Set([
+    ...capabilities.map((capability) => capability.target.schema),
+    ...(input.additionalSchemas ?? []),
+  ]));
+  const inspections: SchemaInspection[] = [];
   for (const schema of schemas.length ? schemas : [undefined]) {
     try {
       const inspection = await inspectDatabase({
@@ -317,6 +327,7 @@ export async function inspectConfiguredSource(input: {
         databaseUrlEnv: input.source.read_url_env,
         schema,
       });
+      inspections.push(inspection);
       input.checks.push({
         name: `source:${input.sourceName}:read-connectivity${schema ? `:${schema}` : ""}`,
         ok: true,
@@ -403,6 +414,7 @@ export async function inspectConfiguredSource(input: {
       });
     }
   }
+  return inspections;
 }
 
 
@@ -451,7 +463,47 @@ export function formatLocalDoctorReport(report: LocalDoctorReport): string {
     for (const tool of report.tools) lines.push(`  - ${tool}`);
   }
   for (const check of report.checks) {
-    const prefix = check.level === "pass" ? "✓" : check.level === "warn" ? "!" : "x";
+    const prefix = check.advisory === "note"
+      ? "i"
+      : check.level === "pass" ? "✓" : check.level === "warn" ? "!" : "x";
+    lines.push(`${prefix} ${check.message}`);
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+
+export function localDoctorSetupStatus(report: LocalDoctorReport): "ready" | "incomplete" | "failed" {
+  const failedChecks = report.checks.filter((check) => check.level === "fail");
+  if (failedChecks.some((check) => check.setup !== "pending")) return "failed";
+  return failedChecks.length > 0 ? "incomplete" : "ready";
+}
+
+
+export function formatLocalDoctorSetupReport(report: LocalDoctorReport): string {
+  const status = localDoctorSetupStatus(report);
+  const pendingEnvironment = [...new Set(report.checks
+    .filter((check) => check.level === "fail" && check.name.startsWith("env:") && check.setup === "pending")
+    .map((check) => check.name.slice("env:".length)))]
+    .sort();
+  const lines = [
+    `Synapsor Runner setup: ${status}`,
+    `Config: ${report.config_path}`,
+  ];
+  if (status === "incomplete") {
+    lines.push(`Next: set ${pendingEnvironment.join(" and ")} from .env.example, then rerun ${cliCommandName()} doctor --config ${report.config_path}.`);
+  } else if (status === "failed") {
+    lines.push(`Fix the configuration errors below, then rerun ${cliCommandName()} doctor --config ${report.config_path}.`);
+  } else {
+    lines.push("The generated setup and required environment bindings are ready.");
+  }
+  for (const check of report.checks) {
+    if (check.level === "fail" && check.name.startsWith("env:") && check.setup === "pending") {
+      lines.push(`- ${check.name.slice("env:".length)} is not set yet.`);
+      continue;
+    }
+    const prefix = check.advisory === "note"
+      ? "i"
+      : check.level === "pass" ? "✓" : check.level === "warn" ? "!" : "x";
     lines.push(`${prefix} ${check.message}`);
   }
   return `${lines.join("\n")}\n`;
@@ -510,7 +562,7 @@ export function formatLocalDoctorMarkdown(report: LocalDoctorReport): string {
     "",
     "## Checks",
     "",
-    ...report.checks.map((check) => `- ${check.level.toUpperCase()} ${check.name}: ${check.message}`),
+    ...report.checks.map((check) => `- ${check.advisory === "note" ? "NOTE" : check.level.toUpperCase()} ${check.name}: ${check.message}`),
     "",
     "## Redaction Note",
     "",
@@ -525,6 +577,8 @@ export type DoctorCheck = {
   ok: boolean;
   level: "pass" | "warn" | "fail";
   message: string;
+  advisory?: "warning" | "note";
+  setup?: "pending" | "required";
 };
 
 

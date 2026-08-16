@@ -5,16 +5,23 @@ import type {
   ExplorationBoundaryDraft,
   GenerationLock,
 } from "./auto-boundary.js";
+import { withPreservedCleanup } from "./resource-lifecycle.js";
 
 type ExploreBoundary = ExplorationBoundaryDraft | ActivatedExplorationBoundary;
 
 export type ExploreTrustedScope = {
   tenant: string;
   principal: string;
-  tenant_source: "environment" | "postgres_role_setting";
+  tenant_source: "environment" | "postgres_role_setting" | "verified_http_claim" | "reviewed_organization";
   tenant_binding: string;
-  principal_source: "environment" | "not_required";
+  principal_source: "environment" | "verified_http_claim" | "not_required";
   principal_binding?: string;
+};
+
+export type ExploreHttpSessionContext = {
+  tenant_id?: string;
+  principal: string;
+  provenance: "http_claims";
 };
 
 export class ExploreTrustedScopeError extends Error {
@@ -37,10 +44,45 @@ export async function resolveExploreTrustedScope(input: {
   lock: GenerationLock;
   inspection: SchemaInspection;
   env: NodeJS.ProcessEnv;
+  sessionContext?: ExploreHttpSessionContext;
   readPostgresRoleSetting?: ReadPostgresRoleSetting;
 }): Promise<ExploreTrustedScope> {
+  if (input.boundary.trusted_context.provider === "http_claims") {
+    if (input.boundary.deployment_profile !== "production") {
+      throw new ExploreTrustedScopeError("Verified HTTP claim bindings are only valid for a reviewed production Explore boundary.");
+    }
+    const reviewedOrganization = input.boundary.organization_scope?.organization_id;
+    const tenant = reviewedOrganization ?? normalizedScopeValue(input.sessionContext?.tenant_id);
+    const principal = normalizedScopeValue(input.sessionContext?.principal);
+    if (input.sessionContext?.provenance !== "http_claims" || !tenant || !principal) {
+      throw new ExploreTrustedScopeError(
+        reviewedOrganization
+          ? "Single-organization production Explore requires a verified principal on every HTTP session."
+          : "Production Explore requires a verified tenant and principal on every HTTP session.",
+        [
+          ...(input.boundary.trusted_context.tenant_claim ? [input.boundary.trusted_context.tenant_claim] : []),
+          input.boundary.trusted_context.principal_claim,
+        ],
+      );
+    }
+    if (reviewedOrganization
+      && input.sessionContext?.tenant_id
+      && input.sessionContext.tenant_id !== reviewedOrganization) {
+      throw new ExploreTrustedScopeError("The HTTP session tenant does not match the exact reviewed single-organization identity.");
+    }
+    return {
+      tenant,
+      principal,
+      tenant_source: reviewedOrganization ? "reviewed_organization" : "verified_http_claim",
+      tenant_binding: reviewedOrganization
+        ? `fixed organization ${reviewedOrganization}`
+        : input.boundary.trusted_context.tenant_claim!,
+      principal_source: "verified_http_claim",
+      principal_binding: input.boundary.trusted_context.principal_claim,
+    };
+  }
   const principalRequired = input.boundary.pack.resources.some((resource) =>
-    typeof resource.principal_key === "string" && resource.principal_key.length > 0);
+    Boolean(resource.principal_key || resource.principal_scope));
   const configuredTenant = input.env[input.boundary.trusted_context.tenant_env]?.trim();
   const configuredPrincipal = input.env[input.boundary.trusted_context.principal_env]?.trim();
   if (principalRequired && !configuredPrincipal) {
@@ -48,6 +90,16 @@ export async function resolveExploreTrustedScope(input: {
       `Scoped Explore requires trusted ${input.boundary.trusted_context.principal_env} outside model arguments.`,
       [input.boundary.trusted_context.principal_env],
     );
+  }
+  if (input.boundary.organization_scope) {
+    return {
+      tenant: input.boundary.organization_scope.organization_id,
+      principal: configuredPrincipal ?? "",
+      tenant_source: "reviewed_organization",
+      tenant_binding: `fixed organization ${input.boundary.organization_scope.organization_id}`,
+      principal_source: principalRequired ? "environment" : "not_required",
+      ...(principalRequired ? { principal_binding: input.boundary.trusted_context.principal_env } : {}),
+    };
   }
   if (configuredTenant) {
     return {
@@ -113,7 +165,15 @@ function assertRoleBoundTenantAuthority(
   }
   const tables = new Map(inspection.tables.map((table) => [`${table.schema}.${table.name}`, table]));
   for (const resource of boundary.pack.resources) {
-    const table = tables.get(resource.id);
+    if (resource.shared_reference_scope) continue;
+    const scopeOwner = resource.tenant_key
+      ? resource
+      : resource.tenant_scope
+        ? boundary.pack.resources.find((candidate) =>
+          candidate.id === resource.tenant_scope!.ancestor_resource
+          && candidate.tenant_key === resource.tenant_scope!.ancestor_column)
+        : undefined;
+    const table = scopeOwner ? tables.get(scopeOwner.id) : undefined;
     if (resource.rls_session?.tenant_setting !== setting
       || table?.row_level_security !== true
       || table.role_posture?.row_security_effective_for_current_role !== true) {
@@ -134,27 +194,28 @@ async function readPostgresRoleSetting(input: {
     connectionTimeoutMillis: 3000,
     idleTimeoutMillis: 1000,
   });
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN READ ONLY");
-    await client.query("SET LOCAL statement_timeout = 3000");
-    const result = await client.query<{ current_user: string; setting_value: string | null }>(
-      "SELECT current_user::text AS current_user, current_setting($1, true)::text AS setting_value",
-      [input.setting],
-    );
-    await client.query("ROLLBACK");
-    const row = result.rows[0];
-    return {
-      currentUser: row?.current_user ?? "",
-      value: row?.setting_value ?? undefined,
-    };
-  } catch (error) {
-    await client.query("ROLLBACK").catch(() => undefined);
-    throw error;
-  } finally {
-    client.release();
-    await pool.end();
-  }
+  return withPreservedCleanup(async () => {
+    const client = await pool.connect();
+    return withPreservedCleanup(async () => {
+      try {
+        await client.query("BEGIN READ ONLY");
+        await client.query("SET LOCAL statement_timeout = 3000");
+        const result = await client.query<{ current_user: string; setting_value: string | null }>(
+          "SELECT current_user::text AS current_user, current_setting($1, true)::text AS setting_value",
+          [input.setting],
+        );
+        await client.query("ROLLBACK");
+        const row = result.rows[0];
+        return {
+          currentUser: row?.current_user ?? "",
+          value: row?.setting_value ?? undefined,
+        };
+      } catch (error) {
+        await client.query("ROLLBACK").catch(() => undefined);
+        throw error;
+      }
+    }, async () => { client.release(); });
+  }, async () => { await pool.end(); });
 }
 
 function normalizedScopeValue(value: string | undefined): string | undefined {

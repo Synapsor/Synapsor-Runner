@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
   EXPLORATION_BOUNDARY_VERSION,
   type ExplorationBoundaryDraft,
@@ -266,6 +267,34 @@ describe("recommended Workbench starter pack", () => {
       .toBe("not required for this reviewed table");
   });
 
+  it("keeps direct ancestors with a derived tenant and principal starter resource", () => {
+    const events = resource("events", { principal: true, groups: [] });
+    const items = resource("event_items", {
+      measures: ["units"],
+      groups: [],
+      relationships: [relationship("event_items_event_id_fkey", "events")],
+    });
+    items.field_types.event_id = "integer";
+    if (!items.selectable_fields.includes("event_id")) items.selectable_fields.push("event_id");
+    items.filterable_fields.event_id = ["eq"];
+    if (!items.sortable_fields.includes("event_id")) items.sortable_fields.push("event_id");
+    delete items.tenant_key;
+    items.tenant_scope = derivedScope("tenant_id");
+    items.principal_scope = derivedScope("assigned_staff_id");
+
+    const candidate = instantWorkbenchCandidate(boundary([items, events]));
+
+    expect(candidate.pack.resources.map((item) => item.id)).toEqual([
+      "public.events",
+      "public.event_items",
+    ]);
+    expect(candidate.pack.resources.find((item) => item.id === "public.event_items"))
+      .toMatchObject({
+        tenant_scope: { ancestor_resource: "public.events" },
+        principal_scope: { ancestor_resource: "public.events" },
+      });
+  });
+
   it("does not duplicate monetary words in a generated starter question", () => {
     const candidate = instantWorkbenchCandidate(boundary([
       resource("payments", { measures: ["amount_cents"] }),
@@ -427,6 +456,35 @@ function depthTwoRelationship(
         link(sourceTable, bridgeTable, `${sourceTable}_${bridgeTable}_fkey`),
         link(bridgeTable, targetTable, `${bridgeTable}_${targetTable}_fkey`),
       ],
+    },
+  };
+}
+
+function derivedScope(ancestorColumn: string) {
+  const links = [{
+    constraint_name: "event_items_event_id_fkey",
+    source_resource: "public.event_items",
+    target_resource: "public.events",
+    source_columns: ["event_id"],
+    target_columns: ["id"],
+    target_uniqueness: {
+      kind: "primary_key" as const,
+      name: "events_pkey",
+      columns: ["id"],
+    },
+    nullable: false,
+    cardinality: "many_to_one" as const,
+    max_fan_out: 1 as const,
+  }];
+  return {
+    mode: "derived" as const,
+    path_id: "event_items_event_id_fkey",
+    ancestor_resource: "public.events",
+    ancestor_column: ancestorColumn,
+    proof: {
+      source: "database_catalog" as const,
+      links,
+      digest: canonicalJsonDigest(links),
     },
   };
 }

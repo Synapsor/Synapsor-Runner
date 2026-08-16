@@ -11,13 +11,20 @@ export function usage(args: string[] = []): void {
 
 Safe MCP tools for Postgres/MySQL-backed agent actions.
 
+New here?
+  No database needed: ${cmd} try
+  Connect your database: ${cmd} start --from-env DATABASE_URL
+
+\`start\` is the interactive guided first run. \`onboard db\` is the explicit,
+scriptable one-command artifact generator for CI and established automation.
+
 Usage:
   ${cmd} <command>
 
 Commands:
   try          Run an isolated proof, or ask/explore/call active project tools
   inspect      Inspect a Postgres/MySQL schema
-  start        Start guided own-database setup, or no-arg legacy worker polling
+  start        Interactive guided first run, or no-arg legacy worker polling
   action       Validate/watch disabled TypeScript Safe Action drafts
   up           Bring up local review mode guidance/server
   init         Generate a Synapsor capability contract
@@ -30,7 +37,7 @@ Commands:
   dsl          Compile SQL-like Synapsor authoring DSL to contract JSON
   language-server  Start the Synapsor contract LSP over stdio
   cloud        Register runner metadata or dry-run contract push to Cloud
-  onboard      One-command own-database setup
+  onboard      Scriptable one-command own-database artifact setup
   smoke        Test generated tool calls before wiring an MCP client
   tools        List model-facing MCP tools and aliases
   writeback    Print direct SQL writeback receipt DDL, grants, and checks
@@ -59,7 +66,7 @@ Commands:
 
 Examples:
   ${cmd} try --prove --yes --no-open
-  ${cmd} try ask --provider openai [--model <model>] [--verbose]
+  ${cmd} try ask --provider openai [--model <model>] [--verbose] [--session-token-budget 200000]
   ${cmd} start --from-env DATABASE_URL
   ${cmd} start --from-env DATABASE_URL --cli
   ${cmd} start --action refund_order --description "Propose one reviewed order refund"
@@ -106,11 +113,16 @@ Global options:
   ${cmd} try explore
   ${cmd} try explore --suggested
   ${cmd} try explore --resource public.check_ins --count-distinct member_id --group-by outcome --time-bucket checked_in_at:week
+  ${cmd} try explore --resource public.orders --count --group-by channel --time-window created_at:previous_month
+  ${cmd} try explore --resource public.orders --sum total_cents --group-by channel --time-bucket created_at:month --compare-window created_at:previous_month --compare-to preceding_period
   ${cmd} try explore --resource public.orders --sum total_cents --group-by channel --time-bucket created_at:week --compare created_at --period 2026-06-01T00:00:00Z..2026-06-08T00:00:00Z --vs-period 2026-06-08T00:00:00Z..2026-06-15T00:00:00Z
+  ${cmd} try explore --resource public.orders --measure stddev_samp:total_cents --group-by channel
+  ${cmd} try explore --resource public.orders --measure derived:average_order_value --time-bucket created_at:quarter
+  ${cmd} try explore --resource public.orders --sum total_cents --group-band order_value_band
   ${cmd} try explore --plan '{"kind":"aggregate",...}'
-  ${cmd} try ask --provider openai [--model <model>]
-  ${cmd} try ask --provider anthropic [--model <model>]
-  ${cmd} try ask --provider openai-compatible --model <model> --base-url http://127.0.0.1:11434/v1
+  ${cmd} try ask --provider openai [--model <model>] [--timeout 30] [--session-token-budget 200000] [--max-output-tokens 4096]
+  ${cmd} try ask --provider anthropic [--model <model>] [--timeout 30]
+  ${cmd} try ask --provider openai-compatible --model <model> --base-url http://127.0.0.1:11434/v1 [--timeout 120]
   ${cmd} try ask "Which reviewed regions changed most by week?" --provider openai
   ${cmd} try protect --last --name analytics.protected_analysis
   ${cmd} try protect --from A2 --name analytics.protected_analysis
@@ -124,7 +136,13 @@ Choose the intended path:
     reviewed project boundary. OpenAI defaults to gpt-5-mini and Anthropic
     defaults to Claude Sonnet; --model overrides either choice. A loopback
     OpenAI-compatible provider still requires an explicit model. This command
-    does not open the demo UI.
+    does not open the demo UI. --timeout is the whole-number timeout in seconds
+    for each provider call (1-600). Remote providers default to 30 seconds;
+    loopback OpenAI-compatible endpoints default to 120 seconds.
+    --session-token-budget sets the cumulative provider-reported session ceiling
+    from 1,000 through 5,000,000 (default 200,000). --max-output-tokens sets one
+    256-16,384 override for every provider call. In the shell, /limits changes
+    either token setting without clearing conversation context.
 
 Run the complete Synapsor commit-boundary proof without Docker, a database,
 signup, API key, MCP client, or LLM call. A deterministic simulated agent uses
@@ -164,14 +182,43 @@ analysis. Explicit --from A2 remains available. Every Protect result is public
 DSL, canonical JSON, and tests for a disabled named capability; it never
 activates the result.
 	`,
-    config: `Usage:
+	    config: `Usage:
   ${cmd} config init [--output ./synapsor.runner.json] [--engine postgres|mysql] [--read-url-env DATABASE_URL]
+  ${cmd} config init --production-explore --engine postgres|mysql --tenant-claim tenant_id --principal-claim sub [--tenant-binding tenant_id] [--principal-binding rep] [--verify-bindings] --issuer https://identity.example --audience https://runner.example/mcp --accounting-namespace acme.analytics.production [--project-root .]
+  ${cmd} config init --production-explore --engine postgres|mysql --single-tenant-organization-id internal-finance --principal-claim sub --issuer https://identity.example --audience https://runner.example/mcp --accounting-namespace internal.finance.production
   ${cmd} config validate --config ./synapsor.runner.json
   ${cmd} config migrate --config ./synapsor.runner.json --out ./synapsor.runner.migrated.json
 
 Initialize or validate local Runner wiring before tools preview, doctor, smoke,
 or MCP serve. config init creates a valid read-only zero-authority shell using
 environment-variable references and refuses to overwrite an existing file.
+With --production-explore it emits the complete zero-authority shared-Postgres,
+JWT/JWKS, secured HTTP, OAuth, budget, source-pool, and session-cap skeleton.
+It reuses source, claim, and reviewed column bindings from a production boundary
+draft when one exists; issuer, audience, and accounting namespace remain
+explicit operator inputs. Without a reviewed draft, --engine postgres|mysql is
+required and is never inferred by reading a credential value. Multi-tenant setup requires
+--tenant-claim and --principal-claim; multi-tenant MySQL also requires
+--tenant-binding because MySQL has no PostgreSQL RLS metadata from which Runner
+can prove a tenant column. --principal-binding is optional and enables reviewed
+per-principal row scope when that non-null column exists. Single-organization setup requires
+--single-tenant-organization-id and --principal-claim. Optional overrides are
+--source, --read-url-env, --tenant-binding, --principal-binding,
+--oauth-scope, --control-url-env,
+--jwks-url-env, --hmac-key-env, and --http-channel trusted_tls_proxy|direct_tls.
+When a direct binding is configured and the named source environment variable is
+set, init reads schema metadata only and warns if the column is missing, nullable,
+or otherwise ineligible. --verify-bindings makes an unavailable source or invalid
+binding fail before the config is written. With no source value, ordinary offline
+generation skips this check silently; explicit --verify-bindings requires the value.
+Adding a binding after an older draft prints the exact reconciling boundary
+rescan command; review and activate that disabled revision before preflight.
+The generated file references DATABASE_URL, SYNAPSOR_CONTROL_DATABASE_URL,
+SYNAPSOR_SESSION_JWKS_URL, and SYNAPSOR_EXPLORE_BUDGET_HMAC_KEY by default.
+Binding verification may read the source URL only to connect; no secret value is
+written. Set those values, run doctor, then serve
+with --transport streamable-http --production-explore. No database URL, JWT,
+HMAC key, or other secret value is written.
 Contract paths are resolved relative to the config file. SQLite store paths are
 resolved by the Runner process working directory.
 `,
@@ -299,9 +346,15 @@ Options:
   --tls-ca-env <ENV> --require-client-cert
 `,
     start: `Usage:
+  # Recommended interactive first run
   ${cmd} start --from-env DATABASE_URL [--schema public]
-  ${cmd} start --from-env DATABASE_URL --cli [--schema public] [--verbose]
-  ${cmd} start --from-env DATABASE_URL --table invoices [--mode read_only|shadow|review]
+  ${cmd} start --from-env DATABASE_URL --cli [--schema public] [--verbose] [--timeout 120] [--session-token-budget 200000] [--max-output-tokens 4096]
+  ${cmd} start --from-env DATABASE_URL --rescan
+  ${cmd} start --from-env DATABASE_URL --cli --single-tenant --organization-id internal-finance
+
+  # Canonical non-interactive read-only setup
+  ${cmd} start --from-env DATABASE_URL --table public.invoices --mode read_only --tenant-key tenant_id --yes --no-open
+
   ${cmd} start --from-env DATABASE_URL --answers ./answers.json --yes
   ${cmd} start --action refund_order --description "Propose one reviewed order refund" [--based-on billing.inspect_order]
   ${cmd} start --from-env DATABASE_URL --mode review --writeback http_handler --handler-url-env APP_WRITEBACK_URL [--handler-signing-secret-env APP_WRITEBACK_SIGNING_SECRET]
@@ -317,6 +370,12 @@ development authoring profile once; Workbench does not ask for a second
 development/staging declaration. Explicit production, unknown, remote, and
 established manual profiles retain their existing fail-closed behavior.
 
+For a database that genuinely contains one organization and no tenant columns
+or row-level tenant policies, add \`--single-tenant --organization-id <stable-id>\`.
+This is an explicit digest-bound owner decision: Runner applies no tenant row
+predicate, still applies reviewed principal scope when present, and refuses the
+mode if inspection finds evidence that the source is actually multi-tenant.
+
 Add \`--cli\` to keep the complete interactive journey in the terminal. Runner
 drafts or resumes the boundary and, for a fresh conservative candidate, asks
 for one default-yes human Quick Start gesture. That gesture records review,
@@ -325,16 +384,35 @@ one-table, zero-relationship local digest. The same screen displays the
 selected provider and exact model. Enter accepts that default without adding a
 step; M chooses OpenAI, Anthropic, a loopback OpenAI-compatible model, an
 existing MCP client, or Later; E opens detailed multi-table/column review.
+For the terminal model handoff, \`--timeout <seconds>\` sets the per-provider-call
+timeout from 1 through 600 seconds. Without an override, hosted and remote
+providers use 30 seconds while a loopback OpenAI-compatible model uses 120.
+The same terminal handoff accepts \`--session-token-budget <tokens>\` and
+\`--max-output-tokens <tokens>\`; Workbench exposes parallel Ask-limit fields.
+These bound the local model client and provider spend/context only. They do not
+change reviewed database authority or Explore privacy/differencing budgets.
 Submitting the first question confirms the displayed provider/model/origin
 egress review. In the Analytics shell, \`/access\` opens the terminal boundary
 editor and \`/access-workbench\` opens its visual counterpart. \`--no-open\`
 retains its established behavior: initialize or resume
 without opening a browser or starting an interactive review.
 
-Established --table, --answers, onboard db, --mode, noninteractive, JSON, and
-CI routes retain the guided one-object behavior and never unexpectedly prompt
-or open a browser. A valid config/boundary handshake does not count as a real
-own-data read.
+Running the same Start command in an existing guided project resumes its pinned
+review and does not inspect the database again. Add \`--rescan\` when you
+deliberately want Runner to inspect the current schema and role posture for any
+single-organization or multi-tenant project. A rescan creates a disabled update;
+the previous exact boundary remains active until you review and activate the
+new revision. On an existing reviewed project, \`--force\` also uses guarded
+reconciliation and does not discard curated review; prefer \`--rescan\` because it
+states the intent clearly.
+
+In a terminal, selectors such as --table seed the interactive wizard instead
+of disabling its prompts. For CI, provide --table, --mode, and either
+--tenant-key or --single-tenant-dev together; Runner reports every missing
+decision in one error. Add --force only after reviewing existing generated
+files. --answers remains the stable file-driven automation path. These routes
+never unexpectedly open a browser, and a valid config/boundary handshake does
+not count as a real own-data read.
 
 With no flags, start the legacy cloud-linked writeback polling worker from the
 worker environment config. Prefer \`${cmd} runner start\` for that worker path
@@ -344,17 +422,27 @@ the local reviewed contract and proposal before writeback.
 `,
     boundary: `Usage:
   ${cmd} boundary draft --from-env DATABASE_URL [--schema public] [--project-root .] [--json]
+  ${cmd} boundary draft --from-env DATABASE_URL --single-tenant --organization-id internal-finance [--project-root .]
+  ${cmd} boundary draft --from-env DATABASE_URL --profile production --tenant-claim tenant_id --principal-claim sub [--project-root .]
+  ${cmd} boundary draft --from-env DATABASE_URL --profile production --single-tenant --organization-id internal-finance --principal-claim sub [--project-root .]
+  ${cmd} boundary rescan [--from-env DATABASE_URL] [--project-root .] [--json]
   ${cmd} boundary review [--project-root .] [--output boundary-review.json] [--json]
   ${cmd} boundary review --access [--project-root .]  # focused table/column/path editor
-  ${cmd} boundary review --map [--all] [--project-root .]
+  ${cmd} boundary review --map [--project-root .]
+  ${cmd} boundary review --map --all [--details] [--project-root .]
   ${cmd} boundary review --confirm [--project-root .] [--actor reviewer@example.com]
   ${cmd} boundary rename reviewed_sales --to sales_analytics --actor reviewer@example.com --reason "Use the team-facing boundary name"
   ${cmd} boundary delete old_draft --yes [--project-root .]
-  ${cmd} boundary review resource public.orders [--project-root .] [--map|--json]
+  ${cmd} boundary review resource public.orders [--project-root .] [--map [--details]|--json]
   ${cmd} boundary review resource public.orders --include --tenant-key tenant_id --no-principal --visible-fields id,status --actor reviewer@example.com --reason "Reviewed tenant-scoped order access"
+  ${cmd} boundary review resource public.order_items --include --tenant-scope-path order_items_order_id_fkey --principal-scope-path order_items_order_id_fkey --actor reviewer@example.com --reason "Order items inherit tenant and principal scope through their required order"
+  ${cmd} boundary review resource public.product_catalog --include --shared-reference --acknowledge-table-has-no-per-tenant-rows --actor owner@example.com --reason "Every tenant receives the same reviewed catalog rows"
   ${cmd} boundary review resource public.orders --withhold-from-model customer_segment --actor reviewer@example.com --reason "Use this grouping locally without sending segment values to the model"
+  ${cmd} boundary review resource public.orders --label "Orders" --description "Customer purchases recorded at checkout" --field-label total_cents="Order total" --field-description total_cents="Gross amount in cents" --actor reviewer@example.com --reason "Document legacy database identifiers"
   ${cmd} boundary review resource public.orders --minimum-cohort 3 --actor owner@example.com --reason "Reviewed owner decision for this staging dataset"
   ${cmd} boundary review resource public.orders --max-ranked-groups 200 --actor reviewer@example.com --reason "Reviewed bounded ranking across this known customer population"
+  ${cmd} boundary review resource public.orders --max-groups 200 --max-top-n 50 --statement-timeout-ms 8000 --actor reviewer@example.com --reason "Reviewed larger bounded reports and source deadline"
+  ${cmd} boundary review resource public.events --max-derived-scope-hops 3 --max-analysis-relationship-hops 3 --relationships events_items_fkey__items_orders_fkey__orders_customers_fkey --actor reviewer@example.com --reason "Reviewed exact three-hop normalized path and cost"
   ${cmd} boundary review --apply-decisions boundary-decisions.json [--project-root .] [--json]
   ${cmd} boundary review --apply-decisions boundary-decisions.json --apply --confirm "APPLY REVIEW sha256:..." --config ./synapsor/synapsor.runner.json --identity reviewer --identity-key ./reviewer.pem --required-role boundary_reviewer
   ${cmd} boundary activate [--project-root .]
@@ -368,10 +456,17 @@ the local reviewed contract and proposal before writeback.
 Draft the whole deterministic application boundary without opening a browser,
 inspect/export its disabled review state, and compare the generation lock with
 the current schema and exact database role/grant/RLS posture. Interactive review
-from a fresh directory also prepares the validated local Runner config, SQLite
+uses development/staging by default. Production Explore requires a separate
+production draft whose tenant and principal claim names match the verified JWT
+session contract; claim values never enter the draft or model arguments.
+From a fresh directory it also prepares the validated local Runner config, SQLite
 ledger, and MCP snippets needed by the eventual Ask handoff; it writes
 environment-variable names but no credential values. An established config is
-never replaced. The review groups the exact digest-bound decisions into one
+never replaced. On an existing reviewed project, both \`boundary rescan\` and
+\`boundary draft\` use the same reconciliation path: unchanged decisions and
+manually included tables are preserved, only affected authority is invalidated,
+and no reconciled draft is activated automatically. \`--force\` never discards
+curated review state. The review groups the exact digest-bound decisions into one
 sign-off per table plus one
 boundary-wide sign-off. Stable decision IDs remain available in JSON for audit
 and automation. After final sign-off, the interactive flow shows the complete
@@ -383,6 +478,19 @@ enters the existing \`try ask\` analytics shell immediately; it does not create
 another authority path. Existing MCP client setup and Later leave the reviewed
 boundary active without starting a provider. JSON and headless routes never
 show this menu or launch Ask.
+
+Choose the boundary workflow by intent:
+  boundary rescan
+    Inspects the current schema and database-role posture, reconciles every saved
+    boundary, and prints a change report. It does not open review or activate.
+  boundary review --access
+    Opens the focused table, column, relationship, and scope-path editor without
+    inspecting again. This is the same editor as /access inside the Ask shell.
+  start --from-env DATABASE_URL --cli --rescan
+    Combines inspection, reconciliation, interactive review, activation, and the
+    local Ask handoff. After a standalone boundary rescan, omit --rescan when
+    starting this guided flow so the database is not inspected twice.
+
 Headless automation still requires the complete digest and a verified signed
 operator decision.
 
@@ -433,7 +541,9 @@ Run \`${cmd} boundary review --access\`, press E from \`start --cli\`, or use
 table and column tier in one screen. Routine choices save directly to the
 selected disabled boundary while current active boundaries remain available. Then C
 shows one complete boundary summary and one default-yes activation confirmation
-before returning to Ask. The provider/model/key remain in memory; authority
+before returning to the same access editor. Continue configuring that boundary or
+another boundary, then press Q or Escape when finished to return to Ask. The
+provider/model/key remain in memory; authority
 changes clear conversation state and renew the egress decision. Sensitive-field widening still requires
 a reviewer and reason. A nullable reviewed path asks explicitly whether
 unmatched counted rows remain under an empty group or are excluded; there is no
@@ -453,6 +563,8 @@ To change aggregate privacy for one table in the focused editor:
 5. At \`Review and activate this boundary change now? [Y/n]\`, press Enter to
    review and activate it. If you choose No or Escape, return to the boundary
    screen later and press C (**Review + activate**).
+6. The access editor stays open after activation. Continue reviewing settings,
+   or press Q/Escape when finished to return to Ask.
 
 Press P while the boundary itself is highlighted to set one minimum group size
 for every included table atomically. The same save and activation steps apply.
@@ -493,7 +605,8 @@ recorded human reason and a new exact boundary fingerprint.
 Press V, W, or K to choose one directly. The footer follows standard terminal
 navigation: Up/Down navigates, Enter continues to review, Esc returns to the
 table list, B is an equivalent visible back action, M opens the selected table's
-access map, and Q quits without saving. Enter with unchanged column access
+access map, S repairs current inspected analytical suggestions when a legacy
+usable field has none, and Q quits without saving. Enter with unchanged column access
 continues to one plain-language table sign-off. A changed access tier still
 uses a validated preview in this advanced route; its disabled-draft save prompt
 uses \`[Y/n]\`, so Enter saves immediately and \`n\` discards it. The focused
@@ -501,7 +614,10 @@ uses \`[Y/n]\`, so Enter saves immediately and \`n\` discards it. The focused
 low-risk edits because its one final exact-boundary confirmation records the
 human decision. Neither route lets the model edit or activate authority or
 requires rerunning a generated resource command. Use the resource-level
-\`--map\` to print the table map without entering the picker. Both maps are
+\`--map\` to print the table map without entering the picker. The default map is
+a compact operation matrix with human-readable relationship chains. Add
+\`--details\` (or press D in the interactive map) for exact filter/time
+vocabularies and canonical path IDs used by scripted review. Both maps are
 inspection-only. Activation remains a separate exact-digest decision under the
 focused one-confirmation presentation.
 
@@ -513,12 +629,18 @@ asks for one confirmation; automation must bind the exact active digest with
 
 Resource decision flags:
   --include | --exclude
+  --label <text> | --description <text>
+  --field-label <column>=<text> | --field-description <column>=<text>  (repeatable)
   --row-identity <column>
   --tenant-key <column>
-  --principal-key <column> | --no-principal
+  --tenant-scope-path <path-id>
+  --shared-reference --acknowledge-table-has-no-per-tenant-rows
+  --principal-key <column> | --principal-scope-path <path-id> | --no-principal
   --keep-out <column,...>
   --withhold-from-model <column,...>
   --allow-reviewed-field <column,...>
+    Also repairs a legacy model-visible field that has zero analytical grants by
+    restoring only its current inspected, server-compatible suggestions.
   --visible-fields <column,...>
   --filter-fields <column,...>
   --sort-fields <column,...>
@@ -527,7 +649,17 @@ Resource decision flags:
   --count-distinct-fields <column,...>
   --time-fields <column,...>
   --minimum-cohort <1-5>
-  --max-ranked-groups <max-groups..generated-maximum>
+  --max-ranked-groups <max-groups..10000>
+  --max-rows <1-100>
+  --max-groups <max-top-n..500>
+  --max-top-n <1..min(max-groups,100)>
+  --max-measures <1-5>
+  --max-dimensions <1-4>
+  --max-response-cells <1-4000>
+  --max-response-bytes <1024-1048576>
+  --statement-timeout-ms <100-30000>
+  --max-derived-scope-hops <1-3>
+  --max-analysis-relationship-hops <1-3>
   --relationships <relationship-id,...>
   --nullable-relationship <relationship-id> --unmatched-rows <exclude|keep_null>
   --actor <human> --reason <review-reason>
@@ -538,6 +670,11 @@ fields or relationships. It previews a semantic diff and saves disabled review
 state; it never activates authority. A versioned decision file can apply several
 resource decisions atomically, but the file is not authority: application still
 requires an exact digest gesture or a verified signed-key/OIDC operator proof.
+Reviewed labels (64 characters) and descriptions (280 characters) are bounded
+metadata for people and AI clients. They never grant access and are never valid
+plan identifiers; plans continue to use exact table and column IDs. Use \`-\` as
+the value of a metadata flag to clear that value. In \`/access\`, press I on a
+table or selected column to edit the same metadata in the focused editor.
 Auto Boundary keeps the minimum group size at 5 by default. An owner may lower it
 to 1-4 only through --minimum-cohort with a recorded actor and reason. A value
 of 1 disables small-group suppression and can identify individuals; Protect and
@@ -546,10 +683,20 @@ protected-capability activation require separate explicit re-confirmation.
 Ranked top/bottom and two-period mover questions return at most the reviewed
 top-N (25 by default). --max-ranked-groups separately narrows how many
 candidate groups Runner may validate before small-group suppression and ranking.
-New boundaries default to 500; a human may only keep or narrow that generated
-ceiling. Runner refuses an incomplete candidate population, suppresses small
+New boundaries default to 500; a human may review a value through 10000.
+Runner refuses an incomplete candidate population, suppresses small
 groups, and only then ranks the remaining groups. The setting is digest-bound
 and operator-owned, and no MCP tool or model plan can set it.
+
+Result-shape and execution controls are also reviewer-owned and digest-bound.
+New boundaries retain conservative defaults (50 rows/groups, top 25, three
+measures/dimensions, 500 cells, 64 KiB, and a 3-second statement timeout), while
+the flags above and Workbench's Result shape, timeout, and path depth panel may
+widen them only to Runner's hard ceilings. Tenant/principal derived scope and
+analysis paths default to two proven many-to-one hops and may be raised only to
+three. Raising a depth does not approve a path: every exact path and every table
+in it still requires review. None of these controls changes minimum cohorts,
+rolling extracted-cell accounting, or differencing protection.
 
 Headless activation is accepted only with an exact exported review bundle,
 exact digest confirmation, a short-lived nonce-bound decision, and a configured
@@ -558,7 +705,9 @@ an actor string are never sufficient. Workbench and CLI converge on the same
 activation checks. After activation, --authoring installs exactly
 app.describe_data and app.explore_data in the selected Cursor, Claude Code, or
 VS Code project. Scoped
-Explore remains local stdio only and is absent from production and remote HTTP.
+Explore remains local by default. Serving it over remote HTTP requires the
+separate production_explore profile, secured Streamable HTTP, verified JWT
+tenant/principal context, and the production budget and rate-limit prerequisites.
 `,
     action: `Usage:
   ${cmd} action validate ./synapsor/actions/billing.propose_refund_order.ts [--config ./synapsor.runner.json]
@@ -586,7 +735,7 @@ Inspect schema metadata without mutating the database or printing credentials.
   ${cmd} init --wizard --from-env DATABASE_URL [--mode read_only|review|shadow] [--out synapsor.runner.json]
   ${cmd} init --engine postgres --url-env DATABASE_URL --mode review --table public.invoices --operation update
   ${cmd} init --inspection-json schema.json --table invoices --mode review --operation update --patch late_fee_cents=fixed:0,waiver_reason=arg:reason
-  ${cmd} init --inspection-json schema.json --table account_credits --mode review --operation insert --dedup-columns request_id --receipt-mode runner_ledger --patch amount_cents=arg:amount_cents
+  ${cmd} init --inspection-json schema.json --table account_credits --mode review --operation insert --dedup request_id=proposal_id,tenant_id=trusted_tenant --receipt-mode runner_ledger --patch amount_cents=arg:amount_cents
   ${cmd} init --inspection-json schema.json --table sessions --mode review --operation delete
   ${cmd} init --answers answers.json --yes
   ${cmd} init --inspection-json schema.json --table invoices --mode review --writeback http_handler --handler-url-env APP_WRITEBACK_URL --emit-handler [--handler-signing-secret-env APP_WRITEBACK_SIGNING_SECRET]
@@ -619,6 +768,9 @@ Drizzle input is parsed as a bounded TypeScript AST and is never imported or run
   ${cmd} mcp serve-streamable-http --config ./synapsor.runner.json --store ./.synapsor/local.db --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN
   ${cmd} mcp serve-http --config ./synapsor.runner.json --store ./.synapsor/local.db --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN
   ${cmd} mcp config --absolute-paths --config ./synapsor.runner.json --store ./.synapsor/local.db
+  ${cmd} mcp client-config --client claude-code --transport streamable-http --config ./synapsor.runner.json
+  ${cmd} mcp client-config --client cursor --transport streamable-http --config ./synapsor.runner.json
+  ${cmd} mcp client-config --client vscode --transport streamable-http --config ./synapsor.runner.json
   ${cmd} mcp client-config --client openai-agents --config ./synapsor.runner.json --store ./.synapsor/local.db
   ${cmd} mcp install <cursor|claude-code|vscode> --project --authoring [--project-root .] [--dry-run]
   ${cmd} mcp install <cursor|claude-code|vscode> --project [--dry-run] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
@@ -643,9 +795,13 @@ existing file, records explicit ownership, and never writes database URLs,
 credentials, trusted identity, approval, apply, revert, or policy authority.
 --authoring installs the active local development/staging Scoped Explore
 boundary with exactly app.describe_data and app.explore_data. It validates the
-current generation lock and database role before installation and never uses a
-runtime config. Re-run without --authoring after Protect activates a production
-named capability.
+current generation lock and database role before installation. When the
+reviewed config is read-only, has no named capabilities, and has an active local
+boundary, Runner selects this mode automatically even if --authoring is omitted.
+New managed entries still include --authoring so their intent is visible. An
+inactive Explore-only project refuses installation instead of writing a
+zero-tool entry. Re-run after Protect activates a named capability to install
+that narrower runtime surface.
 `,
     "mcp status": `Usage:
   ${cmd} mcp status <cursor|claude-code|vscode> --project [--project-root .] [--check-launch] [--timeout-ms 10000] [--json]
@@ -676,10 +832,26 @@ This command never prints database URLs or write credentials.
   ${cmd} mcp serve --config ./synapsor.runner.json --store ./.synapsor/local.db [--transport stdio] [--read-only] [--local] [--alias-mode canonical|openai|both] [--result-format v1|v2]
   ${cmd} mcp serve --authoring --project-root .
   ${cmd} mcp serve --transport streamable-http --config ./synapsor.runner.json --store ./.synapsor/local.db --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN [--result-format v2]
+  ${cmd} mcp serve --transport streamable-http --production-explore --config ./synapsor.runner.json --host 0.0.0.0 --trusted-tls-proxy
 
 Start the stdio MCP server for local MCP clients such as Claude Desktop, Cursor, or local agent tools. Startup logs stay off stdout so the MCP protocol remains clean.
 Stdio is the recommended local-desktop path: it opens no HTTP listener and therefore needs no HTTP token, TLS, OAuth flow, or MCP HTTP session.
-The explicit --authoring route exposes only app.describe_data and app.explore_data after a local human activates the current development/staging boundary. It refuses HTTP, production/unknown profiles, stale generation locks, and credentials that are not demonstrably SELECT-only and non-owner.
+An active read-only development/staging boundary with no named capabilities selects local Explore automatically, including for older generated --config/--store commands. New client configs include --authoring --project-root explicitly so the intended surface remains obvious. Both routes expose only app.describe_data and app.explore_data after local human activation. They refuse HTTP, production/unknown profiles, stale generation locks, and credentials that are not demonstrably SELECT-only and non-owner. A local Explore-only config with no active boundary refuses startup instead of serving zero tools.
+An enabled production_explore config selects the same two read-only tools over
+Streamable HTTP automatically. --production-explore remains the recommended
+explicit launch marker and is included in generated Runner launch commands.
+Using an enabled production config over stdio or the legacy HTTP bridge refuses
+startup instead of silently serving a different or empty tool surface.
+The production Explore route
+from separately reviewed production boundaries. It requires asymmetric JWT
+tenant/principal claims, the configured OAuth scope, direct TLS or a trusted
+TLS proxy, and atomic shared-Postgres per-principal plus tenant privacy
+accounting. Static tokens, no-auth, cleartext break glass, Protect, approval,
+apply, configuration, credentials, and SQL are unavailable on this surface.
+Production Explore also fixes the public names to app.describe_data and
+app.explore_data and fixes the reviewed result envelope. It rejects
+--alias-mode, --tool-name-style, --openai-tool-aliases, and --result-format
+instead of silently ignoring them.
 For Streamable HTTP, Bearer may present either an operator-provisioned opaque endpoint token or an identity-provider-issued signed JWT. Runner never issues or refreshes these credentials.
 Use --alias-mode openai, or --openai-tool-aliases, for clients that reject dotted tool names. Use --alias-mode both to expose canonical and alias names.
 Use --result-format v2 to return one stable ok/summary/data/proposal/error envelope from every tool call.
@@ -689,8 +861,12 @@ Use --result-format v2 to return one stable ok/summary/data/proposal/error envel
   ${cmd} mcp serve-streamable-http --config ./synapsor.runner.json --store ./.synapsor/local.db [--host 127.0.0.1] [--port 8766] [--auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN] [--alias-mode canonical|openai|both] [--result-format v1|v2]
   ${cmd} mcp serve-streamable-http --config ./synapsor.runner.json --host 0.0.0.0 --trusted-tls-proxy --auth-token-env SYNAPSOR_RUNNER_HTTP_TOKEN
   ${cmd} mcp serve-streamable-http --config ./synapsor.runner.json --store ./.synapsor/local.db --tls-cert-env SYNAPSOR_TLS_CERT_PEM --tls-key-env SYNAPSOR_TLS_KEY_PEM --tls-ca-env SYNAPSOR_TLS_CA_PEM --require-client-cert
+  ${cmd} mcp serve-streamable-http --production-explore --config ./synapsor.runner.json --host 0.0.0.0 --trusted-tls-proxy
 
 Start the spec-compatible MCP Streamable HTTP endpoint for clients and SDKs that support HTTP MCP.
+With production_explore.enabled (and equivalently the explicit
+--production-explore marker), tool names and the reviewed result envelope are
+fixed. Presentation alias and result-format flags are rejected explicitly.
 HTTP Bearer is the credential presentation scheme. It carries either an opaque
 single-service endpoint token or a signed per-session JWT; Bearer does not make
 the credential a JWT. Runner never issues either credential. An operator creates
@@ -715,6 +891,9 @@ Security:
   - mTLS supplements Bearer authentication; it does not replace tenant/principal claims unless your deployment is explicitly single-tenant.
   - CORS is disabled by default. --cors-origin accepts one exact origin, never a wildcard.
   - Shared deployments require http_claims, signed session_auth, exact issuer/audience, and RFC 9728 oauth_resource metadata in Runner config.
+  - Production Explore additionally requires an active production boundary,
+    a mandatory principal claim, one shared HMAC key, and shared Postgres
+    atomic privacy accounting. Run doctor before serving.
   - Diagnose the exact posture with: ${cmd} doctor --config ./synapsor.runner.json --transport streamable-http --host 127.0.0.1
 `,
     "mcp serve-http": `Usage:
@@ -735,21 +914,32 @@ Security:
   - Use --dev-no-auth only for loopback development. Exact optional CORS: --cors-origin http://localhost:3000
 `,
     "mcp config": `Usage:
-  ${cmd} mcp config [claude-desktop|cursor|generic|vscode|openai-agents] [--absolute-paths] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
+  ${cmd} mcp config [claude-desktop|claude-code|cursor|generic|vscode|openai-agents] [--absolute-paths] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
+  ${cmd} mcp client-config --client <claude-code|cursor|vscode> --transport streamable-http [--client-access-token-env SYNAPSOR_MCP_ACCESS_TOKEN] [--config ./synapsor.runner.json]
   ${cmd} mcp client-config --client openai-agents [--transport streamable-http] [--port 8766] [--alias-mode openai] [--client-access-token-env SYNAPSOR_MCP_ACCESS_TOKEN] [--include-instructions] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
 
 Print MCP client configuration that references the local runner command and credential environment names, never database URLs or credential values. Defaults to claude-desktop.
+Claude Code, Cursor, and VS Code output supports native Streamable HTTP configuration. The generated header reads a short-lived bearer token from one environment variable; no token value is written.
 OpenAI Agents SDK output uses Streamable HTTP and OpenAI-safe aliases by default.
 `,
     "mcp client-config": `Usage:
   ${cmd} mcp client-config --client claude-desktop [--absolute-paths] [--include-instructions] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
-  ${cmd} mcp client-config --client cursor [--absolute-paths] [--include-instructions] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
+  ${cmd} mcp client-config --client <claude-code|cursor|vscode> --transport streamable-http [--client-access-token-env SYNAPSOR_MCP_ACCESS_TOKEN] [--config ./synapsor.runner.json]
+  ${cmd} mcp client-config --client cursor [--transport stdio] [--absolute-paths] [--include-instructions] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
   ${cmd} mcp client-config --client openai-agents [--transport streamable-http] [--port 8766] [--alias-mode openai] [--client-access-token-env SYNAPSOR_MCP_ACCESS_TOKEN] [--include-instructions] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
 
 Print MCP client configuration that references the local runner command, auth metadata, and environment-variable names, not database URLs or credential values.
+For an active local Explore-only project, Runner emits the exact local stdio
+--authoring --project-root command and Explore-specific model instructions.
+If no reviewed local boundary is active, generation refuses with the activation
+remedy instead of emitting a zero-tool server command.
 Opaque endpoint tokens are generated and provisioned by the operator. Signed JWT access tokens are issued by the configured identity provider. Runner verifies them but does not issue or refresh them.
+For production HTTP, the endpoint comes from http_security.oauth_resource.resource. Claude Code uses \${TOKEN}; Cursor and VS Code use \${env:TOKEN}. Set the named variable in the client process, then reload the client.
+Claude Desktop remains stdio-only; use --client claude-code for Claude over Streamable HTTP.
 OpenAI Agents SDK output uses Streamable HTTP and OpenAI-safe aliases by default.
-Use --include-instructions to include the recommended propose-first agent prompt.
+Use --include-instructions to include instructions matched to the selected
+surface: reviewed Explore instructions for Explore, or propose-first
+instructions for named capabilities.
 `,
     smoke: `Usage:
   ${cmd} smoke call [capability-name] [--sample] [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
@@ -803,17 +993,26 @@ Templates:
 The template receives an approved proposal writeback request and must return an applied/conflict/failed receipt. Re-check tenant, principal, idempotency, row/version guards, and business policy before mutating state.
 `,
     onboard: `Usage:
-  ${cmd} onboard db --from-env DATABASE_URL [--schema public] [--mode read_only|shadow|review]
-  ${cmd} onboard db --from-env DATABASE_URL --table invoices --mode review --operation update --patch late_fee_cents=fixed:0 --write-url-env SYNAPSOR_DATABASE_WRITE_URL --yes
-  ${cmd} onboard db --from-env DATABASE_URL --table account_credits --mode review --operation insert --dedup-columns request_id --receipt-mode runner_ledger --patch amount_cents=arg:amount_cents --write-url-env SYNAPSOR_DATABASE_WRITE_URL --yes
-  ${cmd} onboard db --from-env DATABASE_URL --table invoices --mode review --writeback http_handler --handler-url-env APP_WRITEBACK_URL --emit-handler --yes
+  # Interactive artifact setup
+  ${cmd} onboard db --from-env DATABASE_URL [--schema public]
+
+  # Canonical non-interactive read-only setup
+  ${cmd} onboard db --from-env DATABASE_URL --table public.invoices --mode read_only --tenant-key tenant_id --yes --no-open
+
+  ${cmd} onboard db --from-env DATABASE_URL --table public.invoices --mode review --operation update --tenant-key tenant_id --conflict-column updated_at --patch late_fee_cents=fixed:0 --write-url-env SYNAPSOR_DATABASE_WRITE_URL --yes --no-open
+  ${cmd} onboard db --from-env DATABASE_URL --table public.account_credits --mode review --operation insert --tenant-key tenant_id --dedup request_id=proposal_id,tenant_id=trusted_tenant --receipt-mode runner_ledger --patch amount_cents=arg:amount_cents --write-url-env SYNAPSOR_DATABASE_WRITE_URL --yes --no-open
+  ${cmd} onboard db --from-env DATABASE_URL --table public.invoices --mode review --operation update --tenant-key tenant_id --conflict-column updated_at --patch late_fee_cents=fixed:0 --writeback http_handler --handler-url-env APP_WRITEBACK_URL --emit-handler --yes --no-open
   ${cmd} onboard db --answers answers.json --yes
 
 Guided own-database setup: inspect schema, choose one object, create trusted
 context, choose read-only/shadow/review mode, select guarded single-row
 INSERT/UPDATE/DELETE or an app-owned handler, select receipt authority, generate
 semantic tools, validate config, and run a tool-boundary smoke check.
-Use --yes/--non-interactive with explicit flags, or --answers, when CI or an LLM agent must run without prompts.
+In a terminal, Runner prompts for mode and trusted tenant scope. For CI, pass
+--table, --mode, and either --tenant-key or --single-tenant-dev together; write
+modes also require their reviewed patch and --yes. Missing automation decisions
+are reported together. Use --answers for a stable file-driven run, and add
+--force only after reviewing existing generated files.
 `,
     propose: `Usage:
   ${cmd} propose <capability-name> --sample [--config ./synapsor.runner.json] [--store ./.synapsor/local.db]
@@ -861,6 +1060,8 @@ security guarantee.
 `,
     doctor: `Usage:
   ${cmd} doctor --config synapsor.runner.json
+  ${cmd} doctor --config synapsor.runner.json --transport streamable-http --preflight --trusted-tls-proxy
+  ${cmd} doctor --config synapsor.runner.json --setup
   ${cmd} doctor --config synapsor.runner.json --json
   ${cmd} doctor --config synapsor.runner.json --check-handlers
   ${cmd} doctor --config synapsor.runner.json --check-writeback
@@ -873,6 +1074,14 @@ security guarantee.
   ${cmd} doctor --first-run
 
 Validate local config, environment bindings, semantic tool boundary, source metadata when reachable, handler signing/reachability, operation-specific direct SQL writeback readiness, receipt authority, and local store stats. Reports are redacted; do not paste secrets into issues.
+Use --preflight with a production_explore config before a boundary is active to
+report identity, HTTP/TLS, shared-Postgres migration, source, and boundary
+prerequisites together. Missing items remain failed checks, but the command
+finishes the full checklist and never creates or activates authority.
+Use --setup immediately after onboarding. Deferred trusted-context and writer
+bindings are shown as setup incomplete next steps. A missing primary read
+credential, required HTTP session-auth key, or invalid configuration reports
+setup failed. Normal doctor remains strict.
 With --transport streamable-http/http, doctor also reports bind scope, channel protection, auth/identity mode, issuer/audience/resource, key readiness, static-token strength/rotation, exact Origin/Host policy, request/session limits, rate-limit scope, and remediation without printing credential values.
 Use --check-writeback to verify the configured receipt mode. source_db/precreated uses rollback-only probes and never runs CREATE; source_db/auto_migrate verifies the fixed migration; runner_ledger verifies its durable intent store and requires no source receipt table.
 Use --check-rls only on a disposable or explicitly approved live PostgreSQL target to run read-only cross-tenant/principal and pooled-context canaries for sources configured with database_scope.mode=postgres_rls.
@@ -914,21 +1123,45 @@ the source changed, and the next safe command. --details prints the linked
 causal timeline; --json emits the versioned synapsor.lifecycle-view.v1 document.
 `,
     evidence: `Usage:
-	  ${cmd} evidence list [--tenant acme] [--capability billing.inspect_invoice] [--object invoice:INV-3001]
+	  ${cmd} evidence list [--tenant acme] [--principal analyst@example.org] [--resource public.orders]
+	    [--boundary sha256:...] [--outcome ok] [--search <text>] [--since 24h|<ISO>] [--to <ISO>] [--limit 20] [--json]
+	  ${cmd} evidence browse [the same filters]
+	  ${cmd} evidence list --follow [the same filters] [--interval-ms 2000] [--json]
 	  ${cmd} evidence show ev_...
 	  ${cmd} evidence show ev_... --details
 	  ${cmd} evidence export ev_... --format json --output evidence.json
   ${cmd} evidence export ev_... --format markdown --output evidence.md
 
-Inspect captured local evidence bundles and query-audit links without rerunning external DB reads.
+Inspect released-result evidence without rerunning source reads. Refused and failed
+attempts have query-audit records but no evidence bundle; use query-audit list.
+Tenant and principal filters accept a plaintext identity or an existing keyed:<HMAC>
+fingerprint. Plaintext values are HMACed locally and are never printed or persisted.
+With a production runtime_store config, these commands read the shared PostgreSQL
+control ledger read-only. browse opens a paged audit session with live search and
+filters: Up/Down selects, Enter opens, Esc returns, and / opens a text-search
+prompt. C clears every active filter and returns to the newest page. The browser
+uses an in-place terminal screen, so paging, search, and detail navigation do not
+append duplicate lists to scrollback. Stable record numbers continue across pages. Search checks redacted plan
+metadata, resource/source/capability and record IDs, and query fingerprints.
+Selected records separate compact, authority, reconstructed-query, and raw-plan
+views. --follow emits NDJSON when combined with --json. Routine shared-store
+reads are quiet; add --debug for the operational snapshot event.
 `,
     "query-audit": `Usage:
-	  ${cmd} query-audit list [--evidence ev_...] [--source app_postgres] [--table invoices]
+	  ${cmd} query-audit list [--tenant acme] [--principal analyst@example.org] [--resource public.orders]
+	    [--boundary sha256:...] [--outcome ok|refused|failed] [--search <text>] [--since 24h|<ISO>] [--to <ISO>]
+	    [--evidence ev_...] [--source app_postgres] [--limit 20] [--json]
+	  ${cmd} query-audit browse [the same filters]
+	  ${cmd} query-audit list --follow [the same filters] [--interval-ms 2000] [--json]
 	  ${cmd} query-audit show <audit_id>
 	  ${cmd} query-audit show <audit_id> --details
 	  ${cmd} query-audit export <audit_id> --format json --output audit.json
 
-Inspect local query fingerprints, table names, row counts, and redacted-parameter metadata.
+Inspect every recorded Explore attempt, including refusals before source execution,
+released results, privacy refusals after execution, and source failures. Metadata
+includes the exact boundary digest, normalized keyed plan, result fingerprint where
+one exists, suppression/cell/timing facts, and persistence guarantees. Result values,
+raw SQL, and raw trusted-scope values are not stored.
 `,
     receipts: `Usage:
 	  ${cmd} receipts list [--proposal wrp_...] [--status applied]
@@ -994,8 +1227,12 @@ never exposed as a model-facing MCP tool.
 	  ${cmd} activity search --tenant acme --object invoice:INV-3001
 	  ${cmd} activity search --tenant acme --object invoice:INV-3001 --details
 	  ${cmd} activity search --capability billing.propose_late_fee_waiver --from 2026-06-01 --to 2026-06-23
+	  ${cmd} activity search --principal analyst@example.org --resource public.orders --outcome refused --since 24h
 
-Search the local SQLite evidence/replay ledger across proposals, evidence, query audit, receipts, and replay records.
+Search across proposals, evidence, query audit, and receipts. A production
+runtime_store config selects the shared PostgreSQL control ledger read-only;
+otherwise this reads local SQLite. Plaintext Explore tenant/principal filters
+use the same local HMAC lookup as evidence and query-audit.
 `,
     events: `Usage:
   ${cmd} events tail --store ./.synapsor/local.db

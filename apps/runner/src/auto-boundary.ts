@@ -1,13 +1,19 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
+import { Buffer } from "node:buffer";
 import { compileAgentDsl, formatAgentDsl } from "@synapsor/dsl";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
+  assertDatabaseGrammarFeature,
+  assertSupportedDatabaseServerVersion,
+  databaseServerCompatibility,
   rolePostureFingerprint,
   schemaFingerprintForInspection,
   classifySensitivity,
   type SchemaInspection,
+  type DatabaseServerAuthority,
+  type DatabaseServerCompatibility,
   type SensitivityClassification,
   type TableInfo,
 } from "@synapsor-runner/schema-inspector";
@@ -26,24 +32,132 @@ import {
 import type {
   BoundaryReviewProgressArtifact,
 } from "./boundary-review-progress-types.js";
+import { formatDerivedScopePath } from "./derived-scope-display.js";
 
 export const AUTO_BOUNDARY_VERSION = "synapsor.auto-boundary.v1";
 export const GENERATION_LOCK_VERSION = "synapsor.generation-lock.v1";
 export const AUTHORITY_DEPENDENCIES_VERSION = "synapsor.authority-dependencies.v1";
+export const CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION =
+  "synapsor.configured-trusted-context-authority.v1";
 export const EXPLORATION_BOUNDARY_VERSION = "synapsor.exploration-boundary.v1";
 export const AUTO_BOUNDARY_OVERRIDES_VERSION = "synapsor.auto-boundary-overrides.v1";
 export const ACTIVE_EXPLORATION_BOUNDARY_SET_VERSION = "synapsor.active-exploration-boundaries.v1";
-export const AUTO_BOUNDARY_COMPILER_VERSION = "1.6.6";
-export const AUTO_BOUNDARY_SPEC_VERSION = "1.8.0";
+export const AUTO_BOUNDARY_COMPILER_VERSION = "1.7.0";
+export const AUTO_BOUNDARY_SPEC_VERSION = "1.9.0";
+export const SUPPORTED_AUTO_BOUNDARY_SPEC_VERSIONS = new Set(["1.8.0", AUTO_BOUNDARY_SPEC_VERSION]);
+export const SHARED_REFERENCE_ACKNOWLEDGEMENT = "table_has_no_per_tenant_rows";
 export const DEFAULT_GENERATED_DIR = "synapsor/generated";
 export const MAX_ACTIVE_EXPLORATION_BOUNDARIES = 8;
 const EXPLORATION_LOCK_SNAPSHOT_DIR = "exploration-locks";
 const ACTIVE_EXPLORATION_BOUNDARY_SET_FILE = "exploration-boundaries.active.json";
+const ACTIVE_EXPLORATION_BOUNDARY_LOCK_FILE = "exploration-boundaries.active.lock";
+const ACTIVE_EXPLORATION_BOUNDARY_LOCK_TIMEOUT_MS = 5_000;
+const ACTIVE_EXPLORATION_BOUNDARY_STALE_LOCK_MS = 30_000;
+const AUTO_BOUNDARY_POLICY_BASELINE_FILE = "auto-boundary-policy-baseline.json";
+const AUTO_BOUNDARY_POLICY_BASELINE_VERSION = "synapsor.auto-boundary-policy-baseline.v1";
+
+export const EXPLORATION_TIME_BUCKETS = [
+  "hour",
+  "day",
+  "week",
+  "month",
+  "quarter",
+  "year",
+  "day_of_week",
+] as const;
+export type ExplorationTimeBucket = typeof EXPLORATION_TIME_BUCKETS[number];
+export const EXPLORATION_NUMERIC_AGGREGATE_FUNCTIONS = [
+  "sum",
+  "avg",
+  "stddev_samp",
+  "stddev_pop",
+  "var_samp",
+  "var_pop",
+] as const;
+export type ExplorationNumericAggregateFunction =
+  typeof EXPLORATION_NUMERIC_AGGREGATE_FUNCTIONS[number];
+export const EXPLORATION_PRESENCE_MEASURE_FUNCTIONS = [
+  "null_count",
+  "non_null_count",
+  "completion_rate",
+] as const;
+export type ExplorationDerivedBaseMeasure =
+  | { function: "count" }
+  | {
+    function: "count_distinct" | "sum" | "avg";
+    field: string;
+    relationship?: string;
+  };
+export const EXPLORATION_POST_AGGREGATE_OPERATIONS = [
+  "running_total",
+  "rank",
+  "lag_absolute_change",
+  "lag_percentage_change",
+  "moving_average",
+  "share_of_released_total",
+] as const;
+export type ExplorationPostAggregateOperation =
+  typeof EXPLORATION_POST_AGGREGATE_OPERATIONS[number];
+export type ExplorationRatioDerivedMeasure = {
+  name: string;
+  label: string;
+  shape: "ratio" | "percentage" | "per_unit_average";
+  numerator: ExplorationDerivedBaseMeasure;
+  denominator: ExplorationDerivedBaseMeasure;
+  null_policy: "null_on_zero_or_null_denominator";
+};
+export type ExplorationPostAggregateMeasure = {
+  name: string;
+  label: string;
+  shape: ExplorationPostAggregateOperation;
+  base_measure: ExplorationDerivedBaseMeasure;
+  direction?: "asc" | "desc";
+  window_size?: number;
+};
+export type ExplorationChildCountDerivedMeasure = {
+  name: string;
+  label: string;
+  shape: "child_count_total" | "child_count_average";
+  child_resource: string;
+  relationship: string;
+};
+export type ExplorationDerivedMeasure =
+  | ExplorationRatioDerivedMeasure
+  | ExplorationPostAggregateMeasure
+  | ExplorationChildCountDerivedMeasure;
+export type ExplorationNumericBand = {
+  name: string;
+  label: string;
+  field: string;
+  relationship?: string;
+  edges: number[];
+  bucket_labels: string[];
+};
+export const EXPLORATION_AUTO_BAND_METHODS = ["quantile", "equal_width"] as const;
+export type ExplorationAutoBandMethod = typeof EXPLORATION_AUTO_BAND_METHODS[number];
+export const EXPLORATION_AUTO_BAND_LABEL_STYLES = ["ordinal", "rounded"] as const;
+export type ExplorationAutoBandLabelStyle = typeof EXPLORATION_AUTO_BAND_LABEL_STYLES[number];
+export const MIN_AUTO_BAND_BUCKETS = 2;
+export const MAX_AUTO_BAND_BUCKETS = 16;
+export type ExplorationAutoBandPolicy = {
+  field: string;
+  methods: ExplorationAutoBandMethod[];
+  min_buckets: number;
+  max_buckets: number;
+  min_bucket_width?: number;
+  label_style: ExplorationAutoBandLabelStyle;
+  label_round_to?: number;
+};
 
 const MAX_STATIC_INPUT_BYTES = 2 * 1024 * 1024;
 const MAX_DIRECT_RELATIONSHIP_CANDIDATES_PER_RESOURCE = 4;
-const MAX_DEPTH_TWO_RELATIONSHIP_CANDIDATES_PER_RESOURCE = 3;
-const DEFAULT_BUDGETS: ExplorationBudgets = {
+const MAX_COMPOSED_RELATIONSHIP_CANDIDATES_PER_DEPTH = 3;
+/**
+ * Limits applied to a newly-created reviewed candidate. Generated drafts carry
+ * the larger reviewer ceilings below so an owner can widen shape/throughput
+ * deliberately without weakening disclosure controls.
+ */
+export const DEFAULT_REVIEWED_EXPLORATION_BUDGETS: ExplorationBudgets = {
   max_rows: 50,
   max_groups: 50,
   max_ranked_groups: 500,
@@ -52,16 +166,37 @@ const DEFAULT_BUDGETS: ExplorationBudgets = {
   max_dimensions: 3,
   max_time_ranges: 2,
   max_relationship_hops: 2,
+  max_derived_scope_hops: 2,
+  max_analysis_relationship_hops: 2,
   max_response_cells: 500,
   max_response_bytes: 64 * 1024,
   statement_timeout_ms: 3000,
   max_complexity: 24,
-  max_queries_per_session: 40,
+  // Volume controls are intentionally separate from disclosure controls. A
+  // product-scale default supports multi-step agents while the extraction and
+  // differencing pools below retain their tighter privacy defaults.
+  max_queries_per_session: 1000,
   max_extracted_cells_per_session: 4000,
   // One finite all-shape pool supports the reviewed ten-plan adoption path
   // without restoring the old per-family differencing reset.
   max_differencing_queries: 16,
-  rate_limit_per_minute: 20,
+  rate_limit_per_minute: 120,
+};
+
+/** Hard, generated ceilings for explicit owner review. */
+export const EXPLORATION_BUDGET_REVIEW_CEILINGS: ExplorationBudgets = {
+  ...DEFAULT_REVIEWED_EXPLORATION_BUDGETS,
+  max_rows: 100,
+  max_groups: 500,
+  max_ranked_groups: 10_000,
+  max_top_n: 100,
+  max_measures: 5,
+  max_dimensions: 4,
+  max_derived_scope_hops: 3,
+  max_analysis_relationship_hops: 3,
+  max_response_cells: 4_000,
+  max_response_bytes: 1_048_576,
+  statement_timeout_ms: 30_000,
 };
 
 export type InferenceConfidence = "high" | "medium" | "low";
@@ -90,7 +225,7 @@ export type ExplorationRelationship = {
   counted_entity: string;
   cardinality: "many_to_one";
   max_fan_out: 1;
-  path_depth?: 1 | 2;
+  path_depth?: 1 | 2 | 3;
   proof?: {
     source: "database_catalog";
     links: RelationshipLinkProof[];
@@ -98,6 +233,40 @@ export type ExplorationRelationship = {
   };
   nullable?: boolean;
   unmatched_rows?: "exclude" | "keep_null" | "review_required";
+};
+
+export type DerivedScopePath = {
+  mode: "derived";
+  path_id: string;
+  ancestor_resource: string;
+  ancestor_column: string;
+  proof: {
+    source: "database_catalog";
+    links: RelationshipLinkProof[];
+    digest: `sha256:${string}`;
+  };
+};
+
+export type DerivedScopeInference = {
+  candidates: DerivedScopePath[];
+  selected?: DerivedScopePath;
+  confirmation_required: true;
+  safety_consequence: string;
+  blocked_reason?: string;
+};
+
+export type SharedReferenceScope = {
+  mode: "shared_reference";
+  acknowledgement: typeof SHARED_REFERENCE_ACKNOWLEDGEMENT;
+};
+
+export type SharedReferenceScopeInference = {
+  eligible: boolean;
+  selected?: SharedReferenceScope;
+  confirmation_required: true;
+  safety_consequence: string;
+  blockers: string[];
+  review_override?: ReviewedValueDecision;
 };
 
 export type BoundaryInference<T> = {
@@ -119,6 +288,7 @@ export type BoundaryInference<T> = {
 export type AutoBoundaryField = {
   name: string;
   data_type: string;
+  enum_values?: string[];
   nullable: boolean;
   primary_key: boolean;
   sensitive_suggestion: boolean;
@@ -129,6 +299,8 @@ export type AutoBoundaryField = {
   groupable_suggestion: boolean;
   time_bucket_suggestion: boolean;
   evidence: string[];
+  enum_review_override?: ReviewedEnumValuesDecision;
+  metadata_review_override?: ReviewedMetadataDecision;
   review_override?: {
     exposure: "keep_out" | "withhold_from_model" | "allow_reviewed_use";
     actor: string;
@@ -142,9 +314,17 @@ export type AutoBoundaryResource = {
   schema: string;
   table: string;
   type: "table" | "view";
+  /** Approximate catalog statistic for operator advice only; never authority. */
+  approximate_row_count?: number;
   primary_key: BoundaryInference<string>;
   tenant_key: BoundaryInference<string>;
   principal_key: BoundaryInference<string>;
+  /** Present only when a catalog-proven scope path is available. */
+  derived_tenant_scope?: DerivedScopeInference;
+  /** Human-reviewed option for a table whose rows are identical for every tenant. */
+  shared_reference_scope?: SharedReferenceScopeInference;
+  /** Present only when a catalog-proven principal path is available. */
+  derived_principal_scope?: DerivedScopeInference;
   fields: AutoBoundaryField[];
   relationships: Array<{
     name: string;
@@ -172,6 +352,7 @@ export type AutoBoundaryResource = {
     verified: boolean;
   };
   minimum_cohort_override?: ReviewedMinimumCohortDecision;
+  metadata_review_override?: ReviewedMetadataDecision;
   status: "draft_read" | "blocked_scope" | "blocked_identifier" | "blocked_role";
   blockers: string[];
 };
@@ -214,7 +395,12 @@ export type ExplorationBudgets = {
   max_measures: number;
   max_dimensions: number;
   max_time_ranges: 2;
+  /** Legacy shared depth authority retained for pre-1.7 boundary digests. */
   max_relationship_hops: 1 | 2;
+  /** Optional so activated pre-1.7 artifacts retain their exact canonical bytes. */
+  max_derived_scope_hops?: 1 | 2 | 3;
+  /** Optional so activated pre-1.7 artifacts retain their exact canonical bytes. */
+  max_analysis_relationship_hops?: 1 | 2 | 3;
   max_response_cells: number;
   max_response_bytes: number;
   statement_timeout_ms: number;
@@ -225,33 +411,104 @@ export type ExplorationBudgets = {
   rate_limit_per_minute: number;
 };
 
+export function reviewedDerivedScopeHopLimit(budgets: ExplorationBudgets): 1 | 2 | 3 {
+  return budgets.max_derived_scope_hops ?? budgets.max_relationship_hops;
+}
+
+export function reviewedAnalysisRelationshipHopLimit(
+  budgets: ExplorationBudgets,
+): 1 | 2 | 3 {
+  return budgets.max_analysis_relationship_hops ?? budgets.max_relationship_hops;
+}
+
+const OWNER_REVIEWABLE_EXPLORATION_BUDGETS = new Set<keyof ExplorationBudgets>([
+  "max_rows",
+  "max_groups",
+  "max_ranked_groups",
+  "max_top_n",
+  "max_measures",
+  "max_dimensions",
+  "max_derived_scope_hops",
+  "max_analysis_relationship_hops",
+  "max_response_cells",
+  "max_response_bytes",
+  "statement_timeout_ms",
+  "max_queries_per_session",
+  "rate_limit_per_minute",
+]);
+
+export function ownerReviewableExplorationBudgetCeiling(
+  key: keyof ExplorationBudgets,
+): number | undefined {
+  return OWNER_REVIEWABLE_EXPLORATION_BUDGETS.has(key)
+    ? Number(EXPLORATION_BUDGET_REVIEW_CEILINGS[key])
+    : undefined;
+}
+
+export type SingleOrganizationScope = {
+  mode: "single_organization";
+  organization_id: string;
+  acknowledgement: "all_rows_belong_to_one_organization";
+};
+
+export type ConfiguredTrustedContextAuthority = {
+  schema_version: typeof CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION;
+  provider: "environment" | "http_claims";
+  tenant_binding?: string;
+  principal_binding?: string;
+  tenant_env?: string;
+  principal_env?: string;
+  tenant_claim?: string;
+  principal_claim?: string;
+};
+
 export type ExplorationBoundaryDraft = {
   schema_version: typeof EXPLORATION_BOUNDARY_VERSION;
   activation: "disabled_unreviewed";
-  deployment_profile: "development" | "staging";
+  deployment_profile: "development" | "staging" | "production";
   source: string;
   compiler_version: string;
   spec_version: string;
+  /** Exact server version observed when this boundary authority was generated. */
+  database_server_version?: string;
+  /** Stable supported grammar tier resolved from the detected server release. */
+  database_server_tier?: "full" | "compatible_limited";
+  /** Release-line capability profile that constrains reviewable grammar. */
+  database_server_authority?: DatabaseServerAuthority;
   /**
    * New generated boundaries bind one reporting timezone into their reviewed
    * authority. It remains optional solely so pre-1.6.6 active-boundary
    * artifacts retain their exact canonical digest.
    */
   reporting_timezone?: "UTC";
-  trusted_context: {
-    provider: "environment";
-    tenant_env: string;
-    principal_env: string;
-    /**
-     * Additive first-run fallback for PostgreSQL credentials whose reviewed
-     * RLS policies use one stable session setting. The value is resolved from
-     * the authenticated database session and is never stored in this object.
-     */
-    database_role_tenant?: {
-      engine: "postgres";
-      setting: string;
+  /**
+   * Explicit owner-reviewed authority for a source that contains exactly one
+   * organization. Absent means the existing per-resource tenant requirement.
+   */
+  organization_scope?: SingleOrganizationScope;
+  trusted_context:
+    | {
+      provider: "environment";
+      tenant_env: string;
+      principal_env: string;
+      /**
+       * Additive first-run fallback for PostgreSQL credentials whose reviewed
+       * RLS policies use one stable session setting. The value is resolved from
+       * the authenticated database session and is never stored in this object.
+       */
+      database_role_tenant?: {
+        engine: "postgres";
+        setting: string;
+      };
+    }
+    | {
+      provider: "http_claims";
+      tenant_claim?: string;
+      principal_claim: string;
+      tenant_env?: never;
+      principal_env?: never;
+      database_role_tenant?: never;
     };
-  };
   generation_lock_fingerprint: `sha256:${string}`;
   role_posture_fingerprint: `sha256:${string}`;
   pack: {
@@ -260,9 +517,19 @@ export type ExplorationBoundaryDraft = {
       id: string;
       schema: string;
       table: string;
+      /** Human-reviewed semantic metadata. It never changes plan authority. */
+      label?: string;
+      description?: string;
+      field_metadata?: Record<string, {
+        label?: string;
+        description?: string;
+      }>;
       primary_key: string;
-      tenant_key: string;
+      tenant_key?: string;
+      tenant_scope?: DerivedScopePath;
+      shared_reference_scope?: SharedReferenceScope;
       principal_key?: string;
+      principal_scope?: DerivedScopePath;
       field_types: Record<string, string>;
       field_enums: Record<string, string[]>;
       selectable_fields: string[];
@@ -270,8 +537,18 @@ export type ExplorationBoundaryDraft = {
       sortable_fields: string[];
       groupable_fields: string[];
       aggregate_measures: string[];
+      /** Absent on legacy boundaries, where aggregate measures mean sum/avg only. */
+      aggregate_measure_functions?: Record<string, ExplorationNumericAggregateFunction[]>;
+      /** Model-visible fields whose missingness may be released only as suppressed aggregates. */
+      presence_measure_fields?: string[];
+      /** Fixed reviewed cross-measure definitions; plans may select only by name. */
+      derived_measures?: ExplorationDerivedMeasure[];
+      /** Fixed reviewed numeric buckets; plans select one by name and cannot choose edges. */
+      numeric_bands?: ExplorationNumericBand[];
+      /** Reviewed adaptive grouping policy; plans choose only method and bounded count. */
+      auto_bands?: ExplorationAutoBandPolicy[];
       count_distinct_fields: string[];
-      time_bucket_fields: Record<string, Array<"day" | "week" | "month">>;
+      time_bucket_fields: Record<string, ExplorationTimeBucket[]>;
       kept_out_fields: string[];
       /**
        * Optional so boundaries created before this egress tier retain their
@@ -326,6 +603,12 @@ export type GenerationLock = {
   compiler_version: string;
   spec_version: string;
   engine: SchemaInspection["engine"];
+  /** Exact source server version observed when this lock was generated. */
+  database_server_version?: string;
+  /** Stable supported grammar tier resolved from the detected server release. */
+  database_server_tier?: "full" | "compatible_limited";
+  /** Binds reviewed grammar availability to one database release line. */
+  database_server_authority?: DatabaseServerAuthority;
   source_env: string;
   inspected_schema?: string;
   schema_fingerprint: `sha256:${string}`;
@@ -339,6 +622,20 @@ export type GenerationLock = {
    * optional only so published locks retain their exact digest.
    */
   reporting_timezone?: "UTC";
+  /** Binds the explicit single-organization posture into live drift checks. */
+  organization_scope?: SingleOrganizationScope;
+  /**
+   * Binds non-secret config inputs that determine where trusted tenant and
+   * principal values come from and which reviewed columns they constrain.
+   * Optional only so legacy generation locks retain their exact digest.
+   */
+  trusted_context_authority?: ConfiguredTrustedContextAuthority;
+  trusted_context_fingerprint?: `sha256:${string}`;
+  /**
+   * Records whether explicit config bindings participated in scope inference.
+   * Optional only for generation locks written before this posture was recorded.
+   */
+  configured_trusted_context_used_for_inference?: boolean;
   /**
    * Additive dependency records for authority generated by newer Runner
    * versions. Legacy locks omit this field and retain whole-schema drift
@@ -347,6 +644,40 @@ export type GenerationLock = {
   authority_dependencies?: GenerationAuthorityDependencies;
 };
 
+/**
+ * Render the capability authority captured by a lock. Re-resolving the exact
+ * version with newer Runner rules would misstate what the reviewer activated.
+ */
+export function databaseServerCompatibilityForLock(
+  lock: Pick<GenerationLock,
+    "engine" | "database_server_version" | "database_server_tier" | "database_server_authority">,
+): DatabaseServerCompatibility | undefined {
+  if (!lock.database_server_version) return undefined;
+  const detected = databaseServerCompatibility({
+    engine: lock.engine,
+    server_version: lock.database_server_version,
+  });
+  const authority = lock.database_server_authority ?? detected.authority;
+  const tier = lock.database_server_tier ?? detected.tier;
+  const limitations = authority
+    ? [
+        ...(authority.features.automatic_numeric_bands === false
+          ? ["Automatic numeric bands are unavailable on this reviewed database capability profile."]
+          : []),
+        ...(authority.features.schema_check_constraints === false
+          ? ["CHECK constraints cannot provide reviewed categorical vocabulary on this database capability profile."]
+          : []),
+      ]
+    : detected.limitations;
+  return {
+    ...detected,
+    supported: tier !== "unsupported",
+    tier,
+    ...(authority ? { authority: structuredClone(authority) } : {}),
+    limitations,
+  };
+}
+
 export type GenerationAuthorityDependencies = {
   schema_version: typeof AUTHORITY_DEPENDENCIES_VERSION;
   credential_posture_fingerprint: `sha256:${string}`;
@@ -354,6 +685,7 @@ export type GenerationAuthorityDependencies = {
     schema: string;
     table: string;
     fields: string[];
+    shared_reference_scope?: SharedReferenceScope;
     fingerprint: `sha256:${string}`;
   }>;
   relationships: Record<string, {
@@ -364,7 +696,7 @@ export type GenerationAuthorityDependencies = {
   }>;
 };
 
-export type AutoBoundaryBuild = {
+type AutoBoundaryBuildCore = {
   graph: AutoBoundaryEvidenceGraph;
   dsl: string;
   contract: SynapsorContract;
@@ -397,13 +729,53 @@ export type AutoBoundaryBuild = {
   };
 };
 
+export type AutoBoundaryBuild = AutoBoundaryBuildCore & {
+  /** Policy-neutral candidate over the same inspected schema and role facts. */
+  policy_baseline: {
+    schema_version: typeof AUTO_BOUNDARY_POLICY_BASELINE_VERSION;
+    boundary: ExplorationBoundaryDraft;
+    lock: GenerationLock;
+  };
+};
+
+export type BuildAutoBoundaryInput = {
+  inspection: SchemaInspection;
+  project: ProjectDetectionSummary;
+  parsedEvidence?: ParsedSchema[];
+  existingContracts?: SynapsorContract[];
+  sourceEnv: string;
+  sourceName?: string;
+  inspectedSchema?: string;
+  overrides?: AutoBoundaryReviewOverrides;
+  deploymentProfile?: "development" | "staging" | "production";
+  httpClaims?: {
+    tenantClaim?: string;
+    principalClaim: string;
+  };
+  singleOrganization?: {
+    organizationId: string;
+  };
+  configuredTrustedContext?: ConfiguredTrustedContextAuthority;
+  /** Preserve reviewed trust authority while retaining the inference posture of an existing draft. */
+  useConfiguredTrustedContextForInference?: boolean;
+};
+
 export type AutoBoundaryReviewOverrides = {
   schema_version: typeof AUTO_BOUNDARY_OVERRIDES_VERSION;
   resources: Record<string, {
     row_identity?: ReviewedValueDecision;
     tenant_key?: ReviewedValueDecision;
+    tenant_scope_path?: ReviewedValueDecision;
+    shared_reference_scope?: ReviewedValueDecision;
     principal_key?: Omit<ReviewedValueDecision, "value"> & { value: string | null };
+    principal_scope_path?: Omit<ReviewedValueDecision, "value"> & { value: string | null };
     minimum_cohort?: ReviewedMinimumCohortDecision;
+    field_enums?: Record<string, ReviewedEnumValuesDecision>;
+    derived_measures?: Record<string, ReviewedDerivedMeasureDecision>;
+    numeric_bands?: Record<string, ReviewedNumericBandDecision>;
+    auto_bands?: Record<string, ReviewedAutoBandDecision>;
+    metadata?: ReviewedMetadataDecision;
+    field_metadata?: Record<string, ReviewedMetadataDecision>;
     fields?: Record<string, {
       exposure: "keep_out" | "withhold_from_model" | "allow_reviewed_use";
       actor: string;
@@ -422,6 +794,42 @@ export type ReviewedValueDecision = {
 
 export type ReviewedMinimumCohortDecision = {
   value: number;
+  actor: string;
+  reason: string;
+  decided_at: string;
+};
+
+export type ReviewedEnumValuesDecision = {
+  values: string[];
+  actor: string;
+  reason: string;
+  decided_at: string;
+};
+
+export type ReviewedDerivedMeasureDecision = {
+  definition: ExplorationDerivedMeasure;
+  actor: string;
+  reason: string;
+  decided_at: string;
+};
+
+export type ReviewedNumericBandDecision = {
+  definition: ExplorationNumericBand;
+  actor: string;
+  reason: string;
+  decided_at: string;
+};
+
+export type ReviewedAutoBandDecision = {
+  definition: ExplorationAutoBandPolicy;
+  actor: string;
+  reason: string;
+  decided_at: string;
+};
+
+export type ReviewedMetadataDecision = {
+  label?: string;
+  description?: string;
   actor: string;
   reason: string;
   decided_at: string;
@@ -476,24 +884,18 @@ export async function loadStructuredProjectEvidence(
   return { parsed, existingContracts, warnings };
 }
 
-export async function loadAutoBoundaryReviewOverrides(projectRoot: string): Promise<AutoBoundaryReviewOverrides> {
-  const filePath = path.join(path.resolve(projectRoot), ".synapsor/review-overrides.json");
-  if (!await exists(filePath)) return emptyReviewOverrides();
-  const stat = await fs.lstat(filePath);
-  if (!stat.isFile() || stat.isSymbolicLink()) {
-    throw new Error("Auto Boundary review overrides must be a regular project-local file.");
-  }
-  if (stat.size > MAX_STATIC_INPUT_BYTES) {
-    throw new Error(`Auto Boundary review overrides exceed ${MAX_STATIC_INPUT_BYTES} bytes.`);
-  }
-  return normalizeReviewOverrides(JSON.parse(await fs.readFile(filePath, "utf8")) as unknown);
-}
-
 export function pruneAutoBoundaryReviewOverrides(
   inspection: SchemaInspection,
   input: AutoBoundaryReviewOverrides,
+  context: {
+    project?: ProjectDetectionSummary;
+    parsedEvidence?: ParsedSchema[];
+    existingContracts?: SynapsorContract[];
+    configuredTrustedContext?: ConfiguredTrustedContextAuthority;
+  } = {},
 ): { overrides: AutoBoundaryReviewOverrides; removed: string[] } {
-  const current = normalizeReviewOverrides(input);
+  const current = normalizeAutoBoundaryReviewOverrides(input);
+  const serverAuthority = databaseServerCompatibility(inspection).authority;
   const tables = new Map(inspection.tables.map((table) => [`${table.schema}.${table.name}`, table]));
   const resources: AutoBoundaryReviewOverrides["resources"] = {};
   const removed: string[] = [];
@@ -510,6 +912,7 @@ export function pruneAutoBoundaryReviewOverrides(
       ...table.indexes.filter((index) => index.unique === true && index.columns?.length === 1).map((index) => index.columns![0]!),
     ]);
     const retained: AutoBoundaryReviewOverrides["resources"][string] = {};
+    if (decision.metadata) retained.metadata = decision.metadata;
     if (decision.row_identity) {
       if (provenIdentifiers.has(decision.row_identity.value)) retained.row_identity = decision.row_identity;
       else removed.push(`${resourceId}: reviewed row identity ${decision.row_identity.value} is no longer source-proven`);
@@ -518,6 +921,8 @@ export function pruneAutoBoundaryReviewOverrides(
       if (columns.has(decision.tenant_key.value)) retained.tenant_key = decision.tenant_key;
       else removed.push(`${resourceId}: reviewed tenant key ${decision.tenant_key.value} no longer exists`);
     }
+    if (decision.tenant_scope_path) retained.tenant_scope_path = decision.tenant_scope_path;
+    if (decision.shared_reference_scope) retained.shared_reference_scope = decision.shared_reference_scope;
     if (decision.principal_key) {
       if (decision.principal_key.value === null || columns.has(decision.principal_key.value)) {
         retained.principal_key = decision.principal_key;
@@ -525,7 +930,120 @@ export function pruneAutoBoundaryReviewOverrides(
         removed.push(`${resourceId}: reviewed principal key ${decision.principal_key.value} no longer exists`);
       }
     }
+    if (decision.principal_scope_path) retained.principal_scope_path = decision.principal_scope_path;
     if (decision.minimum_cohort) retained.minimum_cohort = decision.minimum_cohort;
+    const derivedMeasures: NonNullable<
+      AutoBoundaryReviewOverrides["resources"][string]["derived_measures"]
+    > = {};
+    for (const [name, derivedDecision] of Object.entries(decision.derived_measures ?? {})) {
+      const definition = derivedDecision.definition;
+      if ("child_resource" in definition) {
+        const child = tables.get(definition.child_resource);
+        if (!child) {
+          removed.push(
+            `${resourceId}.${name}: reviewed child-count resource ${definition.child_resource} no longer exists`,
+          );
+          continue;
+        }
+        const relationship = child.foreign_keys.find((foreignKey) =>
+          foreignKey.name === definition.relationship
+          && `${foreignKey.referenced_schema}.${foreignKey.referenced_table}` === resourceId);
+        if (!relationship) {
+          removed.push(
+            `${resourceId}.${name}: reviewed child-count relationship ${definition.relationship} no longer exists`,
+          );
+          continue;
+        }
+        const sourceColumnsAreNonNull = relationship.columns.length > 0
+          && relationship.columns.every((field) =>
+            child.columns.find((column) => column.name === field)?.nullable === false);
+        const targetUniqueness = relationshipTargetUniqueness(table, relationship.referenced_columns);
+        if (!sourceColumnsAreNonNull || !targetUniqueness) {
+          removed.push(
+            `${resourceId}.${name}: reviewed child-count relationship ${definition.relationship} is no longer a non-null many-to-one path to a unique parent key`,
+          );
+          continue;
+        }
+        derivedMeasures[name] = derivedDecision;
+        continue;
+      }
+      const operands = "base_measure" in definition
+        ? [definition.base_measure]
+        : [definition.numerator, definition.denominator];
+      const missingLocalField = operands.find((operand) =>
+        "field" in operand && !operand.relationship && !columns.has(operand.field));
+      if (missingLocalField && "field" in missingLocalField) {
+        removed.push(`${resourceId}.${name}: reviewed derived measure field ${missingLocalField.field} no longer exists`);
+        continue;
+      }
+      derivedMeasures[name] = derivedDecision;
+    }
+    if (Object.keys(derivedMeasures).length) retained.derived_measures = derivedMeasures;
+    const numericBands: NonNullable<
+      AutoBoundaryReviewOverrides["resources"][string]["numeric_bands"]
+    > = {};
+    for (const [name, bandDecision] of Object.entries(decision.numeric_bands ?? {})) {
+      if (!bandDecision.definition.relationship && !columns.has(bandDecision.definition.field)) {
+        removed.push(`${resourceId}.${name}: reviewed numeric-band field ${bandDecision.definition.field} no longer exists`);
+        continue;
+      }
+      numericBands[name] = bandDecision;
+    }
+    if (Object.keys(numericBands).length) retained.numeric_bands = numericBands;
+    const autoBands: NonNullable<
+      AutoBoundaryReviewOverrides["resources"][string]["auto_bands"]
+    > = {};
+    for (const [field, autoBandDecision] of Object.entries(decision.auto_bands ?? {})) {
+      if (serverAuthority?.features.automatic_numeric_bands === false) {
+        removed.push(
+          `${resourceId}.${field}: reviewed automatic numeric bands are unavailable on ${inspection.server_version}`,
+        );
+        continue;
+      }
+      if (!columns.has(field)) {
+        removed.push(`${resourceId}.${field}: reviewed auto-band field no longer exists`);
+        continue;
+      }
+      autoBands[field] = autoBandDecision;
+    }
+    if (Object.keys(autoBands).length) retained.auto_bands = autoBands;
+    const fieldMetadata: NonNullable<
+      AutoBoundaryReviewOverrides["resources"][string]["field_metadata"]
+    > = {};
+    for (const [fieldName, metadata] of Object.entries(decision.field_metadata ?? {})) {
+      if (!columns.has(fieldName)) {
+        removed.push(`${resourceId}.${fieldName}: reviewed label or description was removed because the field no longer exists`);
+        continue;
+      }
+      fieldMetadata[fieldName] = metadata;
+    }
+    if (Object.keys(fieldMetadata).length) retained.field_metadata = fieldMetadata;
+    const fieldEnums: NonNullable<
+      AutoBoundaryReviewOverrides["resources"][string]["field_enums"]
+    > = {};
+    for (const [fieldName, enumDecision] of Object.entries(decision.field_enums ?? {})) {
+      const column = columns.get(fieldName);
+      if (!column) {
+        removed.push(`${resourceId}.${fieldName}: reviewed categorical field no longer exists`);
+        continue;
+      }
+      const declared = new Set(column.enum_values ?? []);
+      const retainedValues = enumDecision.values.filter((value) => declared.has(value));
+      if (!declared.size && enumDecision.values.length) {
+        removed.push(
+          `${resourceId}.${fieldName}: the schema-declared vocabulary is no longer provable; filtering and grouping remain disabled`,
+        );
+      } else if (retainedValues.length !== enumDecision.values.length) {
+        removed.push(
+          `${resourceId}.${fieldName}: values no longer declared by the database were removed from the reviewed vocabulary`,
+        );
+      }
+      fieldEnums[fieldName] = {
+        ...enumDecision,
+        values: retainedValues,
+      };
+    }
+    if (Object.keys(fieldEnums).length) retained.field_enums = fieldEnums;
     const fields: NonNullable<AutoBoundaryReviewOverrides["resources"][string]["fields"]> = {};
     for (const [fieldName, fieldDecision] of Object.entries(decision.fields ?? {})) {
       const column = columns.get(fieldName);
@@ -542,8 +1060,64 @@ export function pruneAutoBoundaryReviewOverrides(
     if (Object.keys(fields).length) retained.fields = fields;
     if (Object.keys(retained).length) resources[resourceId] = retained;
   }
+  const preliminary = normalizeAutoBoundaryReviewOverrides({
+    schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+    resources,
+  });
+  if (Object.values(preliminary.resources).some((resource) =>
+    resource.tenant_scope_path
+    || resource.principal_scope_path
+    || resource.shared_reference_scope)) {
+    const parsedEvidence = context.parsedEvidence ?? [];
+    const staticObjects = parsedEvidence.flatMap((evidence) =>
+      evidence.objects.map((object) => ({ format: evidence.format, object })));
+    const graph = buildEvidenceGraph(
+      inspection,
+      context.project ?? {
+        root: "",
+        frameworks: [],
+        schema_inputs: [],
+        database_env_names: [],
+      },
+      staticObjects,
+      context.existingContracts ?? [],
+      context.configuredTrustedContext,
+    );
+    applyReviewOverrides(graph, preliminary);
+    inferDerivedScopeCandidates(graph);
+    const reviewedResources = new Map(graph.resources.map((resource) => [resource.id, resource]));
+    for (const [resourceId, decision] of Object.entries(resources)) {
+      const reviewed = reviewedResources.get(resourceId);
+      if (decision.tenant_scope_path
+        && !reviewed?.derived_tenant_scope?.candidates.some((candidate) =>
+          candidate.path_id === decision.tenant_scope_path!.value)) {
+        removed.push(
+          `${resourceId}: reviewed derived tenant path ${decision.tenant_scope_path.value} is no longer non-null, catalog-proven, unique, and connected to direct tenant scope`,
+        );
+        delete decision.tenant_scope_path;
+      }
+      if (decision.principal_scope_path?.value
+        && !reviewed?.derived_principal_scope?.candidates.some((candidate) =>
+          candidate.path_id === decision.principal_scope_path!.value)) {
+        removed.push(
+          `${resourceId}: reviewed derived principal path ${decision.principal_scope_path.value} is no longer non-null, catalog-proven, unique, and connected to direct principal scope`,
+        );
+        delete decision.principal_scope_path;
+      }
+      if (decision.shared_reference_scope && reviewed) {
+        const eligibility = sharedReferenceScopeInference(reviewed, reviewedResources);
+        if (!eligibility.eligible) {
+          removed.push(
+            `${resourceId}: reviewed shared-reference scope is no longer safe (${eligibility.blockers.join("; ")})`,
+          );
+          delete decision.shared_reference_scope;
+        }
+      }
+      if (Object.keys(decision).length === 0) delete resources[resourceId];
+    }
+  }
   return {
-    overrides: normalizeReviewOverrides({
+    overrides: normalizeAutoBoundaryReviewOverrides({
       schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
       resources,
     }),
@@ -551,23 +1125,140 @@ export function pruneAutoBoundaryReviewOverrides(
   };
 }
 
-export function buildAutoBoundary(input: {
-  inspection: SchemaInspection;
-  project: ProjectDetectionSummary;
-  parsedEvidence?: ParsedSchema[];
-  existingContracts?: SynapsorContract[];
-  sourceEnv: string;
-  sourceName?: string;
-  inspectedSchema?: string;
-  overrides?: AutoBoundaryReviewOverrides;
-}): AutoBoundaryBuild {
+export function buildAutoBoundary(input: BuildAutoBoundaryInput): AutoBoundaryBuild {
+  const compatibility = assertSupportedDatabaseServerVersion(input.inspection);
+  if (!compatibility.authority) {
+    throw new Error("The compatible database server did not produce a grammar authority profile.");
+  }
+  if (!compatibility.authority.features.automatic_numeric_bands
+    && Object.values(input.overrides?.resources ?? {}).some((resource) =>
+      Object.keys(resource.auto_bands ?? {}).length > 0)) {
+    assertDatabaseGrammarFeature(
+      compatibility.authority,
+      "automatic_numeric_bands",
+    );
+  }
+  const build = buildAutoBoundaryOnce(input);
+  const hasPolicy = Object.keys(build.overrides.resources).length > 0;
+  const baseline = hasPolicy
+    ? buildAutoBoundaryOnce({ ...input, overrides: emptyReviewOverrides() })
+    : build;
+  return {
+    ...build,
+    policy_baseline: {
+      schema_version: AUTO_BOUNDARY_POLICY_BASELINE_VERSION,
+      boundary: baseline.exploration_boundary,
+      lock: baseline.lock,
+    },
+  };
+}
+
+function configuredTrustedContextForBuild(
+  input: BuildAutoBoundaryInput,
+  organizationScope: SingleOrganizationScope | undefined,
+): ConfiguredTrustedContextAuthority {
+  const deploymentProfile = input.deploymentProfile ?? "staging";
+  const fallback: ConfiguredTrustedContextAuthority = deploymentProfile === "production"
+    ? {
+        schema_version: CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION,
+        provider: "http_claims",
+        ...(input.httpClaims?.tenantClaim ? { tenant_claim: input.httpClaims.tenantClaim } : {}),
+        ...(input.httpClaims?.principalClaim
+          ? { principal_claim: input.httpClaims.principalClaim }
+          : {}),
+      }
+    : {
+        schema_version: CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION,
+        provider: "environment",
+        ...(organizationScope ? {} : { tenant_binding: "tenant_id" }),
+        tenant_env: "SYNAPSOR_TENANT_ID",
+        principal_env: "SYNAPSOR_PRINCIPAL",
+      };
+  const configured = structuredClone(input.configuredTrustedContext ?? fallback);
+  if (configured.schema_version !== CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION) {
+    throw new Error(
+      `Configured trusted-context authority must use ${CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION}.`,
+    );
+  }
+  if (deploymentProfile === "production" && configured.provider !== "http_claims") {
+    throw new Error("Production Explore requires trusted_context.provider=http_claims.");
+  }
+  if (deploymentProfile !== "production" && configured.provider !== "environment") {
+    throw new Error("Local development and staging Explore require trusted_context.provider=environment.");
+  }
+  if (configured.provider === "http_claims") {
+    if (!configured.principal_claim?.trim()) {
+      throw new Error(organizationScope
+        ? "Single-organization production Explore boundary generation requires an explicit principal HTTP claim name."
+        : "Production Explore boundary generation requires explicit tenant and principal HTTP claim names.");
+    }
+    if (!organizationScope && !configured.tenant_claim?.trim()) {
+      throw new Error("Multi-tenant production Explore requires an explicit trusted tenant HTTP claim name.");
+    }
+    if (organizationScope && configured.tenant_claim) {
+      throw new Error(
+        "Single-organization production Explore uses its reviewed organization id and must not configure a tenant HTTP claim.",
+      );
+    }
+    if (input.httpClaims
+      && (input.httpClaims.tenantClaim !== configured.tenant_claim
+        || input.httpClaims.principalClaim !== configured.principal_claim)) {
+      throw new Error(
+        "Production Explore HTTP claim flags must match the authoritative session-auth claim names in Runner config.",
+      );
+    }
+  } else {
+    configured.tenant_env = configured.tenant_env?.trim() || "SYNAPSOR_TENANT_ID";
+    configured.principal_env = configured.principal_env?.trim() || "SYNAPSOR_PRINCIPAL";
+  }
+  for (const key of [
+    "tenant_binding",
+    "principal_binding",
+    "tenant_env",
+    "principal_env",
+    "tenant_claim",
+    "principal_claim",
+  ] as const) {
+    if (configured[key] !== undefined) {
+      const value = configured[key]!.trim();
+      if (!value) delete configured[key];
+      else configured[key] = value;
+    }
+  }
+  return configured;
+}
+
+function buildAutoBoundaryOnce(input: BuildAutoBoundaryInput): AutoBoundaryBuildCore {
+  const serverCompatibility = assertSupportedDatabaseServerVersion(input.inspection);
+  if (!serverCompatibility.authority || serverCompatibility.tier === "unsupported") {
+    throw new Error("The compatible database server did not produce a grammar authority profile.");
+  }
   const parsedEvidence = input.parsedEvidence ?? [];
   const existingContracts = input.existingContracts ?? [];
-  const overrides = normalizeReviewOverrides(input.overrides);
+  const overrides = normalizeAutoBoundaryReviewOverrides(input.overrides);
   const sourceName = input.sourceName ?? (input.inspection.engine === "postgres" ? "local_postgres" : "local_mysql");
+  const organizationScope = input.singleOrganization
+    ? singleOrganizationScope(input.singleOrganization.organizationId)
+    : undefined;
+  const configuredTrustedContext = configuredTrustedContextForBuild(input, organizationScope);
+  const configuredTrustedContextUsedForInference = Boolean(input.configuredTrustedContext)
+    && input.useConfiguredTrustedContextForInference !== false;
   const staticObjects = parsedEvidence.flatMap((evidence) => evidence.objects.map((object) => ({ format: evidence.format, object })));
-  const graph = buildEvidenceGraph(input.inspection, input.project, staticObjects, existingContracts);
+  const graph = buildEvidenceGraph(
+    input.inspection,
+    input.project,
+    staticObjects,
+    existingContracts,
+    configuredTrustedContextUsedForInference
+      ? configuredTrustedContext
+      : undefined,
+  );
+  if (organizationScope) assertSingleOrganizationInspectionSafe(input.inspection, graph);
   applyReviewOverrides(graph, overrides);
+  if (organizationScope) assertSingleOrganizationInspectionSafe(input.inspection, graph);
+  inferDerivedScopeCandidates(graph);
+  applyDerivedScopeReviewOverrides(graph, overrides, Boolean(organizationScope));
+  graph.resources.forEach((resource) => refreshResourceStatus(resource, Boolean(organizationScope)));
   const dsl = emitDraftDsl(graph, sourceName);
   const contract = compileAgentDsl(dsl);
   const contractDigest = canonicalJsonDigest(contract);
@@ -584,6 +1275,9 @@ export function buildAutoBoundary(input: {
     compiler_version: AUTO_BOUNDARY_COMPILER_VERSION,
     spec_version: AUTO_BOUNDARY_SPEC_VERSION,
     engine: input.inspection.engine,
+    database_server_version: input.inspection.server_version,
+    database_server_tier: serverCompatibility.tier,
+    database_server_authority: serverCompatibility.authority,
     source_env: input.sourceEnv,
     ...(input.inspectedSchema ? { inspected_schema: input.inspectedSchema } : {}),
     schema_fingerprint: schemaFingerprint,
@@ -591,10 +1285,31 @@ export function buildAutoBoundary(input: {
     evidence_fingerprint: evidenceFingerprint,
     generated_contract_digest: contractDigest,
     reviewed_overrides_digest: overridesDigest,
-    protected_authority: graph.resources.filter((resource) => resource.status === "draft_read").map((resource) => resource.id),
+    protected_authority: graph.resources
+      .filter((resource) => resource.status === "draft_read" && Boolean(resource.tenant_key.selected))
+      .map((resource) => resource.id),
     reporting_timezone: "UTC",
+    ...(organizationScope ? { organization_scope: organizationScope } : {}),
+    trusted_context_authority: configuredTrustedContext,
+    trusted_context_fingerprint: canonicalJsonDigest(configuredTrustedContext),
+    configured_trusted_context_used_for_inference: configuredTrustedContextUsedForInference,
   };
-  const provisionalBoundary = buildExplorationBoundaryDraft(graph, sourceName, canonicalJsonDigest(baseLock));
+  const provisionalBoundary = buildExplorationBoundaryDraft(
+    graph,
+    sourceName,
+    canonicalJsonDigest(baseLock),
+    {
+      deploymentProfile: input.deploymentProfile ?? "staging",
+      configuredTrustedContext,
+      databaseServerVersion: input.inspection.server_version,
+      databaseServerTier: serverCompatibility.tier,
+      databaseServerAuthority: serverCompatibility.authority,
+      ...(organizationScope ? { organizationScope } : {}),
+    },
+  );
+  applyReviewedDerivedMeasureOverrides(provisionalBoundary, overrides);
+  applyReviewedNumericBandOverrides(provisionalBoundary, overrides);
+  applyReviewedAutoBandOverrides(provisionalBoundary, overrides);
   const lock: GenerationLock = {
     ...baseLock,
     authority_dependencies: buildGenerationAuthorityDependencies(input.inspection, provisionalBoundary),
@@ -631,7 +1346,7 @@ export function buildAutoBoundary(input: {
     lock,
     exploration_boundary: explorationBoundary,
     review,
-    tests: generatedContractTests(graph, contractDigest),
+    tests: generatedContractTests(graph, contractDigest, Boolean(organizationScope)),
   };
 }
 
@@ -646,8 +1361,61 @@ function reviewOverrideAuthority(overrides: AutoBoundaryReviewOverrides): Record
           {
             ...(resource.row_identity ? { row_identity: resource.row_identity.value } : {}),
             ...(resource.tenant_key ? { tenant_key: resource.tenant_key.value } : {}),
+            ...(resource.tenant_scope_path
+              ? { tenant_scope_path: resource.tenant_scope_path.value }
+              : {}),
+            ...(resource.shared_reference_scope
+              ? { shared_reference_scope: resource.shared_reference_scope.value }
+              : {}),
             ...(resource.principal_key ? { principal_key: resource.principal_key.value } : {}),
+            ...(resource.principal_scope_path
+              ? { principal_scope_path: resource.principal_scope_path.value }
+              : {}),
             ...(resource.minimum_cohort ? { minimum_cohort: resource.minimum_cohort.value } : {}),
+            ...(resource.derived_measures ? {
+              derived_measures: Object.fromEntries(
+                Object.entries(resource.derived_measures)
+                  .sort(([left], [right]) => left.localeCompare(right))
+                  .map(([name, decision]) => [name, decision.definition]),
+              ),
+            } : {}),
+            ...(resource.numeric_bands ? {
+              numeric_bands: Object.fromEntries(
+                Object.entries(resource.numeric_bands)
+                  .sort(([left], [right]) => left.localeCompare(right))
+                  .map(([name, decision]) => [name, decision.definition]),
+              ),
+            } : {}),
+            ...(resource.auto_bands ? {
+              auto_bands: Object.fromEntries(
+                Object.entries(resource.auto_bands)
+                  .sort(([left], [right]) => left.localeCompare(right))
+                  .map(([field, decision]) => [field, decision.definition]),
+              ),
+            } : {}),
+            ...(resource.metadata ? {
+              metadata: {
+                ...(resource.metadata.label ? { label: resource.metadata.label } : {}),
+                ...(resource.metadata.description ? { description: resource.metadata.description } : {}),
+              },
+            } : {}),
+            ...(resource.field_metadata ? {
+              field_metadata: Object.fromEntries(
+                Object.entries(resource.field_metadata)
+                  .sort(([left], [right]) => left.localeCompare(right))
+                  .map(([field, decision]) => [field, {
+                    ...(decision.label ? { label: decision.label } : {}),
+                    ...(decision.description ? { description: decision.description } : {}),
+                  }]),
+              ),
+            } : {}),
+            ...(resource.field_enums ? {
+              field_enums: Object.fromEntries(
+                Object.entries(resource.field_enums)
+                  .sort(([left], [right]) => left.localeCompare(right))
+                  .map(([field, decision]) => [field, decision.values]),
+              ),
+            } : {}),
             ...(resource.fields ? {
               fields: Object.fromEntries(
                 Object.entries(resource.fields)
@@ -662,8 +1430,29 @@ function reviewOverrideAuthority(overrides: AutoBoundaryReviewOverrides): Record
 }
 
 function generationEvidenceAuthority(resources: AutoBoundaryResource[]): unknown[] {
-  return resources.map((resource) => ({
+  return resources.map(({
+    approximate_row_count: _approximateRowCount,
+    shared_reference_scope: sharedReferenceScope,
+    ...resource
+  }) => ({
     ...resource,
+    ...(sharedReferenceScope
+      ? {
+        shared_reference_scope: sharedReferenceEvidenceAuthority(sharedReferenceScope),
+      }
+      : {}),
+    ...(resource.metadata_review_override
+      ? {
+        metadata_review_override: {
+          ...(resource.metadata_review_override.label
+            ? { label: resource.metadata_review_override.label }
+            : {}),
+          ...(resource.metadata_review_override.description
+            ? { description: resource.metadata_review_override.description }
+            : {}),
+        },
+      }
+      : {}),
     ...(resource.minimum_cohort_override
       ? {
         minimum_cohort_override: {
@@ -673,11 +1462,33 @@ function generationEvidenceAuthority(resources: AutoBoundaryResource[]): unknown
       : {}),
     fields: resource.fields.map((field) => ({
       ...field,
+      ...(field.enum_review_override
+        ? { enum_review_override: { values: field.enum_review_override.values } }
+        : {}),
+      ...(field.metadata_review_override
+        ? {
+          metadata_review_override: {
+            ...(field.metadata_review_override.label
+              ? { label: field.metadata_review_override.label }
+              : {}),
+            ...(field.metadata_review_override.description
+              ? { description: field.metadata_review_override.description }
+              : {}),
+          },
+        }
+        : {}),
       ...(field.review_override
         ? { review_override: { exposure: field.review_override.exposure } }
         : {}),
     })),
   }));
+}
+
+function sharedReferenceEvidenceAuthority(
+  scope: SharedReferenceScopeInference,
+): Omit<SharedReferenceScopeInference, "review_override"> {
+  const { review_override: _reviewOverride, ...authority } = scope;
+  return authority;
 }
 
 export async function writeAutoBoundaryArtifacts(input: {
@@ -687,7 +1498,11 @@ export async function writeAutoBoundaryArtifacts(input: {
   force?: boolean;
   preserveReviewProgress?: boolean;
   preserveActiveBoundary?: boolean;
-  reviewProgress?: BoundaryReviewProgressArtifact<ExplorationBoundaryDraft>;
+  reviewProgress?: BoundaryReviewProgressArtifact<
+    ExplorationBoundaryDraft,
+    AutoBoundaryReviewOverrides
+  >;
+  additionalPrivateStateFiles?: Record<string, string>;
 }): Promise<AutoBoundaryWriteResult> {
   const projectRoot = path.resolve(input.projectRoot);
   const outputRoot = await assertSafeManagedOutputPath(
@@ -748,6 +1563,11 @@ export async function writeAutoBoundaryArtifacts(input: {
     }), "utf8");
     await fs.mkdir(stagedState, { recursive: true, mode: 0o700 });
     await writePrivateStagedFile(stagedState, "generation-lock.json", json(input.build.lock));
+    await writePrivateStagedFile(
+      stagedState,
+      AUTO_BOUNDARY_POLICY_BASELINE_FILE,
+      json(input.build.policy_baseline),
+    );
     await writePrivateStagedFile(stagedState, "review-report.json", json(input.build.review));
     await writePrivateStagedFile(stagedState, "review-overrides.json", json(input.build.overrides));
     if (input.reviewProgress) {
@@ -757,6 +1577,32 @@ export async function writeAutoBoundaryArtifacts(input: {
         json(input.reviewProgress),
       );
     }
+    const reservedStateFiles = new Set([
+      "generation-lock.json",
+      AUTO_BOUNDARY_POLICY_BASELINE_FILE,
+      "review-report.json",
+      "review-overrides.json",
+      "boundary-review-progress.json",
+      "exploration-boundary.active.json",
+      ACTIVE_EXPLORATION_BOUNDARY_SET_FILE,
+    ]);
+    const additionalStateFiles = Object.keys(input.additionalPrivateStateFiles ?? {}).sort();
+    for (const file of additionalStateFiles) {
+      if (file !== path.basename(file) || reservedStateFiles.has(file)) {
+        throw new Error(`Additional managed state file ${file} is not allowed.`);
+      }
+      await writePrivateStagedFile(stagedState, file, input.additionalPrivateStateFiles![file]!);
+    }
+    await persistGenerationLockSnapshot(
+      projectRoot,
+      input.build.exploration_boundary.generation_lock_fingerprint,
+      input.build.lock,
+    );
+    await persistGenerationLockSnapshot(
+      projectRoot,
+      input.build.policy_baseline.boundary.generation_lock_fingerprint,
+      input.build.policy_baseline.lock,
+    );
     await commitManagedAutoBoundaryWrite({
       outputRoot,
       stagedOutput: temporary,
@@ -766,9 +1612,11 @@ export async function writeAutoBoundaryArtifacts(input: {
       existingOutput: existing,
       installStateFiles: [
         "generation-lock.json",
+        AUTO_BOUNDARY_POLICY_BASELINE_FILE,
         "review-report.json",
         "review-overrides.json",
         ...(input.reviewProgress ? ["boundary-review-progress.json"] : []),
+        ...additionalStateFiles,
       ],
       removeStateFiles: existing
         ? [
@@ -786,8 +1634,10 @@ export async function writeAutoBoundaryArtifacts(input: {
       files: [
         ...files.map((file) => path.join(outputRoot, file)),
         path.join(stateDir, "generation-lock.json"),
+        path.join(stateDir, AUTO_BOUNDARY_POLICY_BASELINE_FILE),
         path.join(stateDir, "review-report.json"),
         path.join(stateDir, "review-overrides.json"),
+        ...additionalStateFiles.map((file) => path.join(stateDir, file)),
       ],
       contract_digest: input.build.contract_digest,
       schema_fingerprint: input.build.lock.schema_fingerprint,
@@ -813,11 +1663,29 @@ export function compareGenerationLock(
 } {
   const schemaFingerprint = schemaFingerprintForInspection(inspection);
   const roleFingerprint = rolePostureFingerprint(inspection);
+  const currentServerCompatibility = databaseServerCompatibility(inspection);
+  const currentServerAuthority = currentServerCompatibility.authority;
+  const reviewedServerAuthority = lock.database_server_authority;
+  const serverAuthorityMissing = !lock.database_server_version
+    || !lock.database_server_tier
+    || !reviewedServerAuthority;
+  const serverAuthorityChanged = !serverAuthorityMissing
+    && (canonicalJsonDigest(currentServerAuthority ?? null)
+      !== canonicalJsonDigest(reviewedServerAuthority)
+      || currentServerCompatibility.tier !== lock.database_server_tier);
+  const serverAuthorityChanges = serverAuthorityMissing
+    ? ["database server capability authority is not recorded"]
+    : serverAuthorityChanged
+      ? [
+        `database server release line changed from ${reviewedServerAuthority.engine} ${reviewedServerAuthority.version_line} to ${currentServerAuthority ? `${currentServerAuthority.engine} ${currentServerAuthority.version_line}` : inspection.server_version}`,
+      ]
+      : [];
   const changes = [
+    ...serverAuthorityChanges,
     ...(schemaFingerprint !== lock.schema_fingerprint ? ["schema metadata changed"] : []),
     ...(roleFingerprint !== lock.role_posture_fingerprint ? ["database role, grants, ownership, or RLS posture changed"] : []),
     ...(lock.compiler_version !== AUTO_BOUNDARY_COMPILER_VERSION ? ["Auto Boundary compiler version changed"] : []),
-    ...(lock.spec_version !== AUTO_BOUNDARY_SPEC_VERSION ? ["canonical Spec version changed"] : []),
+    ...(!SUPPORTED_AUTO_BOUNDARY_SPEC_VERSIONS.has(lock.spec_version) ? ["canonical Spec version is unsupported"] : []),
   ];
   return {
     current: changes.length === 0,
@@ -825,6 +1693,22 @@ export function compareGenerationLock(
     current_role_posture_fingerprint: roleFingerprint,
     changes,
   };
+}
+
+export function generationLockRemediationCommand(
+  lock: Pick<GenerationLock, "source_env">,
+): string {
+  return `synapsor-runner boundary rescan --from-env ${lock.source_env}`;
+}
+
+export function generationLockRemediation(
+  lock: Pick<GenerationLock, "source_env">,
+): string {
+  return [
+    "The reviewed boundary must be reconciled against the current database posture.",
+    `Run from the project directory: ${generationLockRemediationCommand(lock)}`,
+    "Runner preserves unchanged review decisions, invalidates only affected authority, and never activates the reconciled draft automatically.",
+  ].join("\n");
 }
 
 export function credentialPostureFingerprintForAuthority(
@@ -855,7 +1739,10 @@ export function resourceAuthorityDependencyFingerprint(
     candidate.schema === dependency.schema && candidate.name === dependency.table);
   if (!table) return undefined;
   const columns = new Map(table.columns.map((column) => [column.name, column]));
-  const selectedColumns = dependency.fields.map((name) => {
+  const dependencyFieldNames = dependency.shared_reference_scope
+    ? table.columns.map((column) => column.name).sort()
+    : dependency.fields;
+  const selectedColumns = dependencyFieldNames.map((name) => {
     const column = columns.get(name);
     if (!column) return undefined;
     return {
@@ -874,6 +1761,21 @@ export function resourceAuthorityDependencyFingerprint(
     schema: table.schema,
     table: table.name,
     type: table.type,
+    ...(dependency.shared_reference_scope
+      ? {
+        shared_reference_scope: dependency.shared_reference_scope,
+        tenant_column_candidates: [...table.suggestions.tenant_columns].sort(),
+        foreign_keys: [...table.foreign_keys]
+          .map((foreignKey) => ({
+            name: foreignKey.name,
+            columns: [...foreignKey.columns],
+            referenced_schema: foreignKey.referenced_schema,
+            referenced_table: foreignKey.referenced_table,
+            referenced_columns: [...foreignKey.referenced_columns],
+          }))
+          .sort((left, right) => left.name.localeCompare(right.name)),
+      }
+      : {}),
     primary_key: [...table.primary_key],
     columns: selectedColumns,
     row_level_security: table.row_level_security ?? "unknown",
@@ -946,18 +1848,21 @@ function buildGenerationAuthorityDependencies(
   boundary: ExplorationBoundaryDraft,
 ): GenerationAuthorityDependencies {
   const resources = Object.fromEntries(boundary.pack.resources.map((resource) => {
-    const fields = authorityDependencyFields(resource);
+    const fields = authorityDependencyFields(resource, boundary.pack.resources);
     const descriptor = {
       schema: resource.schema,
       table: resource.table,
       fields,
+      ...(resource.shared_reference_scope
+        ? { shared_reference_scope: structuredClone(resource.shared_reference_scope) }
+        : {}),
     };
     const fingerprint = resourceAuthorityDependencyFingerprint(descriptor, inspection);
     if (!fingerprint) throw new Error(`Cannot fingerprint generated authority for missing resource ${resource.id}.`);
     return [resource.id, { ...descriptor, fingerprint }];
   }));
-  const relationships = Object.fromEntries(boundary.pack.resources.flatMap((resource) =>
-    resource.relationships.map((relationship) => {
+  const relationships = Object.fromEntries(boundary.pack.resources.flatMap((resource) => [
+    ...resource.relationships.map((relationship) => {
       if (!relationship.proof || relationship.proof.source !== "database_catalog") {
         throw new Error(`Generated relationship ${resource.id}.${relationship.id} lacks database-catalog proof.`);
       }
@@ -968,7 +1873,22 @@ function buildGenerationAuthorityDependencies(
         links: structuredClone(relationship.proof.links),
         proof_digest: relationship.proof.digest,
       }];
-    })));
+    }),
+    ...([[
+      "tenant" as const,
+      resource.tenant_scope,
+    ], [
+      "principal" as const,
+      resource.principal_scope,
+    ]] as const).flatMap(([kind, scope]) => scope
+      ? [[derivedScopeDependencyKey(resource.id, kind), {
+        root_resource: resource.id,
+        relationship_id: `scope:${kind}:${scope.path_id}`,
+        links: structuredClone(scope.proof.links),
+        proof_digest: scope.proof.digest,
+      }] as const]
+      : []),
+  ]));
   return {
     schema_version: AUTHORITY_DEPENDENCIES_VERSION,
     credential_posture_fingerprint: credentialPostureFingerprintForAuthority(inspection),
@@ -979,6 +1899,7 @@ function buildGenerationAuthorityDependencies(
 
 function authorityDependencyFields(
   resource: ExplorationBoundaryDraft["pack"]["resources"][number],
+  resources: ExplorationBoundaryDraft["pack"]["resources"],
 ): string[] {
   const fields = new Set([
     resource.primary_key,
@@ -998,11 +1919,32 @@ function authorityDependencyFields(
       if (link.target_resource === resource.id) link.target_columns.forEach((field) => fields.add(field));
     }
   }
+  for (const scopedResource of resources) {
+    for (const scope of [scopedResource.tenant_scope, scopedResource.principal_scope]) {
+      if (!scope) continue;
+      for (const link of scope.proof.links) {
+        if (link.source_resource === resource.id) {
+          link.source_columns.forEach((field) => fields.add(field));
+        }
+        if (link.target_resource === resource.id) {
+          link.target_columns.forEach((field) => fields.add(field));
+        }
+      }
+      if (scope.ancestor_resource === resource.id) fields.add(scope.ancestor_column);
+    }
+  }
   return [...fields].sort();
 }
 
 export function relationshipDependencyKey(rootResource: string, relationshipId: string): string {
   return `${rootResource}::${relationshipId}`;
+}
+
+export function derivedScopeDependencyKey(
+  resourceId: string,
+  kind: "tenant" | "principal",
+): string {
+  return `${resourceId}::scope:${kind}`;
 }
 
 function sameOrderedStrings(left: string[], right: string[]): boolean {
@@ -1012,6 +1954,8 @@ function sameOrderedStrings(left: string[], right: string[]): boolean {
 export async function activateExplorationBoundary(input: {
   projectRoot: string;
   candidate: ExplorationBoundaryDraft;
+  reviewDraft?: ExplorationBoundaryDraft;
+  generationLock?: GenerationLock;
   expectedDigest: string;
   actor: string;
   confirmation: string;
@@ -1032,8 +1976,10 @@ export async function activateExplorationBoundary(input: {
   const projectRoot = path.resolve(input.projectRoot);
   const draftPath = path.join(projectRoot, DEFAULT_GENERATED_DIR, "exploration-boundary.draft.json");
   const lockPath = path.join(projectRoot, ".synapsor/generation-lock.json");
-  const draft = JSON.parse(await fs.readFile(draftPath, "utf8")) as ExplorationBoundaryDraft;
-  const lock = JSON.parse(await fs.readFile(lockPath, "utf8")) as GenerationLock;
+  const draft = input.reviewDraft
+    ?? JSON.parse(await fs.readFile(draftPath, "utf8")) as ExplorationBoundaryDraft;
+  const lock = input.generationLock
+    ?? JSON.parse(await fs.readFile(lockPath, "utf8")) as GenerationLock;
   const reviewed = reviewExplorationBoundaryCandidate(draft, input.candidate);
   const candidate = reviewed.candidate;
   assertGenerationLockFingerprint(lock, candidate.generation_lock_fingerprint);
@@ -1068,7 +2014,17 @@ export async function activateExplorationBoundary(input: {
     source: candidate.source,
     compiler_version: candidate.compiler_version,
     spec_version: candidate.spec_version,
+    ...(candidate.database_server_version
+      ? { database_server_version: candidate.database_server_version }
+      : {}),
+    ...(candidate.database_server_tier
+      ? { database_server_tier: candidate.database_server_tier }
+      : {}),
+    ...(candidate.database_server_authority
+      ? { database_server_authority: structuredClone(candidate.database_server_authority) }
+      : {}),
     ...(candidate.reporting_timezone ? { reporting_timezone: candidate.reporting_timezone } : {}),
+    ...(candidate.organization_scope ? { organization_scope: candidate.organization_scope } : {}),
     trusted_context: candidate.trusted_context,
     generation_lock_fingerprint: candidate.generation_lock_fingerprint,
     role_posture_fingerprint: candidate.role_posture_fingerprint,
@@ -1106,27 +2062,126 @@ export function assertCurrentExplorationBoundaryAuthority(input: {
   inspection: SchemaInspection;
   candidate: ExplorationBoundaryDraft;
 }): void {
+  const compatibility = assertSupportedDatabaseServerVersion(input.inspection);
+  if (!input.lock.database_server_version
+    || !input.lock.database_server_tier
+    || !input.lock.database_server_authority) {
+    throw new Error([
+      "Generation lock is stale: database server capability authority is not recorded.",
+      generationLockRemediation(input.lock),
+    ].join("\n"));
+  }
+  if (input.candidate.database_server_version !== input.lock.database_server_version
+    || input.candidate.database_server_tier !== input.lock.database_server_tier
+    || canonicalJsonDigest(input.candidate.database_server_authority ?? null)
+      !== canonicalJsonDigest(input.lock.database_server_authority)) {
+    throw new Error(
+      "The reviewed boundary and generation lock disagree on database server capability authority.",
+    );
+  }
   const comparison = compareGenerationLock(input.lock, input.inspection);
   if (!comparison.current) {
-    throw new Error(`Generation lock is stale: ${comparison.changes.join("; ")}.`);
+    throw new Error([
+      `Generation lock is stale: ${comparison.changes.join("; ")}.`,
+      generationLockRemediation(input.lock),
+    ].join("\n"));
+  }
+  if (input.candidate.pack.resources.some((resource) => resource.auto_bands?.length)) {
+    assertDatabaseGrammarFeature(
+      compatibility.authority ?? input.inspection,
+      "automatic_numeric_bands",
+    );
   }
   assertExploreRolePosture(input.inspection, input.candidate);
+  if (input.candidate.organization_scope) {
+    assertSingleOrganizationInspectionSafe(input.inspection);
+  }
 }
 
 export function explorationBoundaryCandidateDigest(candidate: ExplorationBoundaryDraft): `sha256:${string}` {
-  return canonicalJsonDigest(boundaryAuthority(candidate));
+  return canonicalJsonDigest(boundaryAuthority(normalizeDependentAggregateAuthority(candidate)));
 }
 
 export function reviewExplorationBoundaryCandidate(
   draft: ExplorationBoundaryDraft,
   candidate: ExplorationBoundaryDraft,
 ): { digest: `sha256:${string}`; candidate: ExplorationBoundaryDraft } {
-  assertBoundaryCandidateNarrowsDraft(draft, candidate);
+  const coherentCandidate = normalizeDependentAggregateAuthority(candidate);
+  assertBoundaryCandidateNarrowsDraft(draft, coherentCandidate);
   const normalized = {
-    ...candidate,
-    unresolved_decisions: requiredReviewDecisionsForCandidate(draft, candidate),
+    ...coherentCandidate,
+    unresolved_decisions: requiredReviewDecisionsForCandidate(draft, coherentCandidate),
   };
   return { digest: explorationBoundaryCandidateDigest(normalized), candidate: normalized };
+}
+
+function normalizeDependentAggregateAuthority(
+  candidate: ExplorationBoundaryDraft,
+): ExplorationBoundaryDraft {
+  const normalized = structuredClone(candidate);
+  const relationshipDepth = reviewedAnalysisRelationshipHopLimit(normalized.budgets);
+  for (const resource of normalized.pack.resources) {
+    resource.relationships = resource.relationships.filter(
+      (relationship) => (relationship.path_depth ?? 1) <= relationshipDepth,
+    );
+  }
+  for (const resource of normalized.pack.resources) {
+    if (resource.aggregate_measure_functions) {
+      const aggregateFields = new Set(resource.aggregate_measures);
+      resource.aggregate_measure_functions = Object.fromEntries(
+        Object.entries(resource.aggregate_measure_functions)
+          .filter(([field]) => aggregateFields.has(field)),
+      );
+    }
+    if (resource.presence_measure_fields) {
+      const selectable = new Set(resource.selectable_fields);
+      const unavailable = new Set([
+        ...resource.kept_out_fields,
+        ...(resource.model_withheld_fields ?? []),
+        ...(resource.tenant_key ? [resource.tenant_key] : []),
+        ...(resource.principal_key ? [resource.principal_key] : []),
+      ]);
+      resource.presence_measure_fields = resource.presence_measure_fields.filter(
+        (field) => selectable.has(field) && !unavailable.has(field),
+      );
+    }
+  }
+  for (const resource of normalized.pack.resources) {
+    if (resource.derived_measures) {
+      resource.derived_measures = resource.derived_measures.filter((definition) => {
+        try {
+          assertReviewedDerivedMeasureForBoundary(normalized, resource.id, definition);
+          return true;
+        } catch {
+          return false;
+        }
+      });
+      if (!resource.derived_measures.length) delete resource.derived_measures;
+    }
+    if (resource.numeric_bands) {
+      resource.numeric_bands = resource.numeric_bands.filter((definition) => {
+        try {
+          assertReviewedNumericBandForBoundary(normalized, resource.id, definition);
+          return true;
+        } catch {
+          return false;
+        }
+      });
+      if (!resource.numeric_bands.length) delete resource.numeric_bands;
+    }
+    if (resource.auto_bands) {
+      resource.auto_bands = resource.auto_bands.filter((definition) => {
+        try {
+          assertReviewedAutoBandForBoundary(normalized, resource.id, definition);
+          return true;
+        } catch {
+          return false;
+        }
+      });
+      if (!resource.auto_bands.length) delete resource.auto_bands;
+    }
+  }
+  return normalized;
 }
 
 export async function loadActivatedExplorationBoundary(
@@ -1186,6 +2241,14 @@ export async function deactivateExplorationBoundary(
   name?: string,
 ): Promise<{ disabled: string[]; remaining: ActivatedExplorationBoundary[] }> {
   const projectRoot = path.resolve(projectRootInput);
+  return withActiveExplorationBoundaryLock(projectRoot, async () =>
+    deactivateExplorationBoundaryUnlocked(projectRoot, name));
+}
+
+async function deactivateExplorationBoundaryUnlocked(
+  projectRoot: string,
+  name?: string,
+): Promise<{ disabled: string[]; remaining: ActivatedExplorationBoundary[] }> {
   let active: ActivatedExplorationBoundary[];
   try {
     active = await loadActivatedExplorationBoundaries(projectRoot);
@@ -1200,23 +2263,34 @@ export async function deactivateExplorationBoundary(
   const remaining = name
     ? active.filter((boundary) => boundary.pack.name !== name)
     : [];
+  const legacyPath = path.join(projectRoot, ".synapsor/exploration-boundary.active.json");
+  const legacySnapshot = await captureOptionalPrivateFile(legacyPath);
   if (remaining.length === 0) {
-    await Promise.all([
-      fs.rm(path.join(projectRoot, ".synapsor/exploration-boundary.active.json"), { force: true }),
-      fs.rm(path.join(projectRoot, ".synapsor", ACTIVE_EXPLORATION_BOUNDARY_SET_FILE), { force: true }),
-    ]);
+    await fs.rm(legacyPath, { force: true });
+    try {
+      await fs.rm(
+        path.join(projectRoot, ".synapsor", ACTIVE_EXPLORATION_BOUNDARY_SET_FILE),
+        { force: true },
+      );
+    } catch (error) {
+      await restoreOptionalPrivateFile(legacyPath, legacySnapshot);
+      throw error;
+    }
   } else {
     const selected = remaining.at(-1)!;
-    await persistActivatedExplorationBoundarySet(projectRoot, {
+    const set: ActiveExplorationBoundarySet = {
       schema_version: ACTIVE_EXPLORATION_BOUNDARY_SET_VERSION,
       selected_name: selected.pack.name,
       boundaries: remaining,
       updated_at: new Date().toISOString(),
-    });
-    await writePrivateJsonAtomic(
-      path.join(projectRoot, ".synapsor/exploration-boundary.active.json"),
-      selected,
-    );
+    };
+    await writePrivateJsonAtomic(legacyPath, selected);
+    try {
+      await persistActivatedExplorationBoundarySet(projectRoot, set);
+    } catch (error) {
+      await restoreOptionalPrivateFile(legacyPath, legacySnapshot);
+      throw error;
+    }
   }
   return { disabled: disabled.map((boundary) => boundary.pack.name), remaining };
 }
@@ -1239,20 +2313,27 @@ function validateActivatedExplorationBoundary(
   if (active.reporting_timezone !== undefined && active.reporting_timezone !== "UTC") {
     throw new Error("Activated exploration boundary has an unsupported reporting timezone.");
   }
-  const authority = {
-    schema_version: active.schema_version,
-    activation: "reviewed",
-    deployment_profile: active.deployment_profile,
-    source: active.source,
-    compiler_version: active.compiler_version,
-    spec_version: active.spec_version,
-    ...(active.reporting_timezone ? { reporting_timezone: active.reporting_timezone } : {}),
-    trusted_context: active.trusted_context,
-    generation_lock_fingerprint: active.generation_lock_fingerprint,
-    role_posture_fingerprint: active.role_posture_fingerprint,
-    pack: active.pack,
-    budgets: active.budgets,
-  };
+  if (active.organization_scope) {
+    const normalized = singleOrganizationScope(active.organization_scope.organization_id);
+    if (JSON.stringify(normalized) !== JSON.stringify(active.organization_scope)) {
+      throw new Error("Activated exploration boundary has an invalid single-organization scope declaration.");
+    }
+  }
+  const resources = new Map(active.pack.resources.map((resource) => [resource.id, resource]));
+  for (const resource of active.pack.resources) {
+    assertReviewedResourceScope(
+      resource,
+      resources,
+      Boolean(active.organization_scope),
+      reviewedDerivedScopeHopLimit(active.budgets),
+    );
+  }
+  const {
+    activation: _activation,
+    unresolved_decisions: _unresolved,
+    ...activeAuthority
+  } = active as ActivatedExplorationBoundary & { unresolved_decisions?: unknown };
+  const authority = { ...activeAuthority, activation: "reviewed" };
   if (canonicalJsonDigest(authority) !== active.activation.digest) {
     throw new Error("Activated exploration boundary digest does not match its authority.");
   }
@@ -1292,6 +2373,16 @@ async function writeActivatedExplorationBoundarySet(
   active: ActivatedExplorationBoundary,
   mode: "replace" | "add",
 ): Promise<void> {
+  await withActiveExplorationBoundaryLock(projectRoot, async () => {
+    await writeActivatedExplorationBoundarySetUnlocked(projectRoot, active, mode);
+  });
+}
+
+async function writeActivatedExplorationBoundarySetUnlocked(
+  projectRoot: string,
+  active: ActivatedExplorationBoundary,
+  mode: "replace" | "add",
+): Promise<void> {
   let boundaries: ActivatedExplorationBoundary[] = [];
   if (mode === "add") {
     try {
@@ -1312,13 +2403,15 @@ async function writeActivatedExplorationBoundarySet(
   if (sources.size !== 1 || profiles.size !== 1) {
     throw new Error("Active Explore boundaries must use the same reviewed source and deployment profile.");
   }
-  const trustedContexts = new Set(boundaries.map((boundary) => canonicalJsonDigest({
-    tenant_env: boundary.trusted_context.tenant_env,
-    principal_env: boundary.trusted_context.principal_env,
-    database_role_tenant: boundary.trusted_context.database_role_tenant ?? null,
-  })));
+  const trustedContexts = new Set(boundaries.map((boundary) =>
+    canonicalJsonDigest(boundary.trusted_context)));
   if (trustedContexts.size !== 1) {
     throw new Error("Active Explore boundaries must use the same reviewed trusted-context bindings.");
+  }
+  const organizationScopes = new Set(boundaries.map((boundary) =>
+    canonicalJsonDigest(boundary.organization_scope ?? null)));
+  if (organizationScopes.size !== 1) {
+    throw new Error("Active Explore boundaries must use the same reviewed organization-scope posture.");
   }
   const set: ActiveExplorationBoundarySet = {
     schema_version: ACTIVE_EXPLORATION_BOUNDARY_SET_VERSION,
@@ -1327,11 +2420,15 @@ async function writeActivatedExplorationBoundarySet(
     updated_at: new Date().toISOString(),
   };
   activatedExplorationBoundarySetDigest(boundaries);
-  await persistActivatedExplorationBoundarySet(projectRoot, set);
-  await writePrivateJsonAtomic(
-    path.join(projectRoot, ".synapsor/exploration-boundary.active.json"),
-    active,
-  );
+  const legacyPath = path.join(projectRoot, ".synapsor/exploration-boundary.active.json");
+  const legacySnapshot = await captureOptionalPrivateFile(legacyPath);
+  await writePrivateJsonAtomic(legacyPath, active);
+  try {
+    await persistActivatedExplorationBoundarySet(projectRoot, set);
+  } catch (error) {
+    await restoreOptionalPrivateFile(legacyPath, legacySnapshot);
+    throw error;
+  }
 }
 
 async function persistActivatedExplorationBoundarySet(
@@ -1354,6 +2451,87 @@ async function writePrivateJsonAtomic(filePath: string, value: unknown): Promise
   } catch (error) {
     await fs.rm(temporary, { force: true }).catch(() => undefined);
     throw error;
+  }
+}
+
+type OptionalPrivateFileSnapshot =
+  | { exists: false }
+  | { exists: true; contents: string };
+
+async function captureOptionalPrivateFile(filePath: string): Promise<OptionalPrivateFileSnapshot> {
+  try {
+    return { exists: true, contents: await fs.readFile(filePath, "utf8") };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { exists: false };
+    throw error;
+  }
+}
+
+async function restoreOptionalPrivateFile(
+  filePath: string,
+  snapshot: OptionalPrivateFileSnapshot,
+): Promise<void> {
+  if (!snapshot.exists) {
+    await fs.rm(filePath, { force: true });
+    return;
+  }
+  await writePrivateTextAtomic(filePath, snapshot.contents);
+}
+
+async function writePrivateTextAtomic(filePath: string, contents: string): Promise<void> {
+  await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
+  const temporary = `${filePath}.${process.pid}.${cryptoRandomSuffix()}.tmp`;
+  try {
+    await fs.writeFile(temporary, contents, { encoding: "utf8", mode: 0o600, flag: "wx" });
+    await fs.rename(temporary, filePath);
+    await fs.chmod(filePath, 0o600);
+  } catch (error) {
+    await fs.rm(temporary, { force: true }).catch(() => undefined);
+    throw error;
+  }
+}
+
+async function withActiveExplorationBoundaryLock<T>(
+  projectRoot: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const stateRoot = path.join(projectRoot, ".synapsor");
+  const lockPath = path.join(stateRoot, ACTIVE_EXPLORATION_BOUNDARY_LOCK_FILE);
+  await fs.mkdir(stateRoot, { recursive: true, mode: 0o700 });
+  const deadline = Date.now() + ACTIVE_EXPLORATION_BOUNDARY_LOCK_TIMEOUT_MS;
+  let handle: Awaited<ReturnType<typeof fs.open>> | undefined;
+  while (!handle) {
+    try {
+      const candidate = await fs.open(lockPath, "wx", 0o600);
+      try {
+        await candidate.writeFile(JSON.stringify({
+          pid: process.pid,
+          created_at: new Date().toISOString(),
+        }));
+        handle = candidate;
+      } catch (error) {
+        await candidate.close().catch(() => undefined);
+        await fs.rm(lockPath, { force: true }).catch(() => undefined);
+        throw error;
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      const stat = await fs.stat(lockPath).catch(() => undefined);
+      if (stat && Date.now() - stat.mtimeMs > ACTIVE_EXPLORATION_BOUNDARY_STALE_LOCK_MS) {
+        await fs.rm(lockPath, { force: true }).catch(() => undefined);
+        continue;
+      }
+      if (Date.now() >= deadline) {
+        throw new Error("Another boundary activation is still updating the active authority. Retry the operation.");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+  try {
+    return await operation();
+  } finally {
+    await handle.close().catch(() => undefined);
+    await fs.rm(lockPath, { force: true }).catch(() => undefined);
   }
 }
 
@@ -1385,6 +2563,94 @@ export async function loadGenerationLockForActivatedBoundary(
   return current;
 }
 
+export async function loadGenerationLockSnapshot(
+  projectRootInput: string,
+  fingerprint: `sha256:${string}`,
+): Promise<GenerationLock> {
+  const projectRoot = path.resolve(projectRootInput);
+  const snapshot = JSON.parse(
+    await fs.readFile(generationLockSnapshotPath(projectRoot, fingerprint), "utf8"),
+  ) as GenerationLock;
+  assertGenerationLockFingerprint(snapshot, fingerprint);
+  return snapshot;
+}
+
+export async function loadAutoBoundaryPolicyBaseline(
+  projectRootInput: string,
+): Promise<AutoBoundaryBuild["policy_baseline"]> {
+  const projectRoot = path.resolve(projectRootInput);
+  const value = JSON.parse(await fs.readFile(
+    path.join(projectRoot, ".synapsor", AUTO_BOUNDARY_POLICY_BASELINE_FILE),
+    "utf8",
+  )) as unknown;
+  if (!isRecord(value)
+    || value.schema_version !== AUTO_BOUNDARY_POLICY_BASELINE_VERSION
+    || !isRecord(value.boundary)
+    || !isRecord(value.lock)
+    || value.boundary.activation !== "disabled_unreviewed"
+    || typeof value.boundary.generation_lock_fingerprint !== "string") {
+    throw new Error("Saved policy-neutral Auto Boundary baseline is invalid; Rescan before creating another boundary.");
+  }
+  const baseline = value as unknown as AutoBoundaryBuild["policy_baseline"];
+  assertGenerationLockFingerprint(
+    baseline.lock,
+    baseline.boundary.generation_lock_fingerprint,
+  );
+  if (baseline.lock.reviewed_overrides_digest
+    !== canonicalJsonDigest(reviewOverrideAuthority(emptyReviewOverrides()))) {
+    throw new Error("Saved Auto Boundary baseline contains human policy; Rescan before creating another boundary.");
+  }
+  return baseline;
+}
+
+export async function persistAutoBoundaryPolicyBaseline(
+  projectRootInput: string,
+  baseline: AutoBoundaryBuild["policy_baseline"],
+): Promise<void> {
+  if (baseline.schema_version !== AUTO_BOUNDARY_POLICY_BASELINE_VERSION
+    || baseline.boundary.activation !== "disabled_unreviewed") {
+    throw new Error("Refusing to persist an invalid policy-neutral Auto Boundary baseline.");
+  }
+  assertGenerationLockFingerprint(
+    baseline.lock,
+    baseline.boundary.generation_lock_fingerprint,
+  );
+  if (baseline.lock.reviewed_overrides_digest
+    !== canonicalJsonDigest(reviewOverrideAuthority(emptyReviewOverrides()))) {
+    throw new Error("Refusing to persist human policy in the Auto Boundary baseline.");
+  }
+  const projectRoot = path.resolve(projectRootInput);
+  await persistGenerationLockSnapshot(
+    projectRoot,
+    baseline.boundary.generation_lock_fingerprint,
+    baseline.lock,
+  );
+  await writePrivateJsonAtomic(
+    path.join(projectRoot, ".synapsor", AUTO_BOUNDARY_POLICY_BASELINE_FILE),
+    baseline,
+  );
+}
+
+export function generationLockSharedFactsDigest(
+  lock: GenerationLock,
+): `sha256:${string}` {
+  return canonicalJsonDigest({
+    schema_version: "synapsor.boundary-shared-generation-facts.v1",
+    compiler_version: lock.compiler_version,
+    spec_version: lock.spec_version,
+    engine: lock.engine,
+    source_env: lock.source_env,
+    inspected_schema: lock.inspected_schema ?? null,
+    schema_fingerprint: lock.schema_fingerprint,
+    role_posture_fingerprint: lock.role_posture_fingerprint,
+    reporting_timezone: lock.reporting_timezone ?? null,
+    database_server_tier: lock.database_server_tier ?? null,
+    database_server_authority: lock.database_server_authority ?? null,
+    organization_scope: lock.organization_scope ?? null,
+    trusted_context_fingerprint: lock.trusted_context_fingerprint ?? null,
+  });
+}
+
 function generationLockSnapshotPath(
   projectRoot: string,
   fingerprint: `sha256:${string}`,
@@ -1405,7 +2671,7 @@ function assertGenerationLockFingerprint(
   }
 }
 
-async function persistGenerationLockSnapshot(
+export async function persistGenerationLockSnapshot(
   projectRoot: string,
   fingerprint: `sha256:${string}`,
   lock: GenerationLock,
@@ -1440,7 +2706,38 @@ export function emptyReviewOverrides(): AutoBoundaryReviewOverrides {
   };
 }
 
-function normalizeReviewOverrides(input: unknown): AutoBoundaryReviewOverrides {
+export function seedConfiguredPrincipalBindingReview(input: {
+  inspection: SchemaInspection;
+  principalBinding: string | undefined;
+  overrides?: AutoBoundaryReviewOverrides;
+  actor?: string;
+  decidedAt: string;
+}): AutoBoundaryReviewOverrides {
+  const overrides = structuredClone(normalizeAutoBoundaryReviewOverrides(input.overrides));
+  const principalBinding = input.principalBinding?.trim();
+  if (!principalBinding) return overrides;
+  const actor = input.actor?.trim() || "runner-config";
+  for (const table of input.inspection.tables) {
+    const column = table.columns.find((candidate) =>
+      candidate.name === principalBinding
+      && candidate.nullable === false
+      && candidate.suggestions.large_or_binary !== true);
+    if (!column) continue;
+    const resourceId = `${table.schema}.${table.name}`;
+    const review = overrides.resources[resourceId] ?? {};
+    if (review.principal_key !== undefined || review.principal_scope_path !== undefined) continue;
+    review.principal_key = {
+      value: column.name,
+      actor,
+      reason: `Runner config principal_binding explicitly names inspected non-null column ${column.name}; exact boundary activation is still required.`,
+      decided_at: input.decidedAt,
+    };
+    overrides.resources[resourceId] = review;
+  }
+  return normalizeAutoBoundaryReviewOverrides(overrides);
+}
+
+export function normalizeAutoBoundaryReviewOverrides(input: unknown): AutoBoundaryReviewOverrides {
   if (input === undefined) return emptyReviewOverrides();
   if (!isRecord(input)) throw new Error("Auto Boundary review overrides must be a JSON object.");
   assertOnlyKeys(input, ["schema_version", "resources"], "Auto Boundary review overrides");
@@ -1456,24 +2753,158 @@ function normalizeReviewOverrides(input: unknown): AutoBoundaryReviewOverrides {
     if (!isRecord(rawResource)) throw new Error(`Review overrides for ${resourceId} must be an object.`);
     assertOnlyKeys(
       rawResource,
-      ["row_identity", "tenant_key", "principal_key", "minimum_cohort", "fields"],
+      [
+        "row_identity",
+        "tenant_key",
+        "tenant_scope_path",
+        "shared_reference_scope",
+        "principal_key",
+        "principal_scope_path",
+        "minimum_cohort",
+        "field_enums",
+        "derived_measures",
+        "numeric_bands",
+        "auto_bands",
+        "metadata",
+        "field_metadata",
+        "fields",
+      ],
       `${resourceId} review overrides`,
     );
     const resource: AutoBoundaryReviewOverrides["resources"][string] = {};
+    if (rawResource.metadata !== undefined) {
+      resource.metadata = normalizeReviewedMetadataDecision(
+        rawResource.metadata,
+        `${resourceId} metadata`,
+      );
+    }
     if (rawResource.row_identity !== undefined) {
       resource.row_identity = normalizeReviewedValueDecision(rawResource.row_identity, `${resourceId} row identity`, false) as ReviewedValueDecision;
     }
     if (rawResource.tenant_key !== undefined) {
       resource.tenant_key = normalizeReviewedValueDecision(rawResource.tenant_key, `${resourceId} tenant key`, false) as ReviewedValueDecision;
     }
+    if (rawResource.tenant_scope_path !== undefined) {
+      resource.tenant_scope_path = normalizeReviewedValueDecision(
+        rawResource.tenant_scope_path,
+        `${resourceId} derived tenant scope path`,
+        false,
+      ) as ReviewedValueDecision;
+    }
+    if (rawResource.shared_reference_scope !== undefined) {
+      resource.shared_reference_scope = normalizeReviewedValueDecision(
+        rawResource.shared_reference_scope,
+        `${resourceId} shared-reference scope`,
+        false,
+      ) as ReviewedValueDecision;
+      if (resource.shared_reference_scope.value !== SHARED_REFERENCE_ACKNOWLEDGEMENT) {
+        throw new Error(
+          `${resourceId} shared-reference scope must acknowledge ${SHARED_REFERENCE_ACKNOWLEDGEMENT}.`,
+        );
+      }
+    }
     if (rawResource.principal_key !== undefined) {
       resource.principal_key = normalizeReviewedValueDecision(rawResource.principal_key, `${resourceId} principal key`, true);
+    }
+    if (rawResource.principal_scope_path !== undefined) {
+      resource.principal_scope_path = normalizeReviewedValueDecision(
+        rawResource.principal_scope_path,
+        `${resourceId} derived principal scope path`,
+        true,
+      );
     }
     if (rawResource.minimum_cohort !== undefined) {
       resource.minimum_cohort = normalizeReviewedMinimumCohortDecision(
         rawResource.minimum_cohort,
         `${resourceId} minimum cohort`,
       );
+    }
+    if (rawResource.field_enums !== undefined) {
+      if (!isRecord(rawResource.field_enums)) {
+        throw new Error(`${resourceId} enum review overrides must be an object.`);
+      }
+      const fieldEnums: NonNullable<AutoBoundaryReviewOverrides["resources"][string]["field_enums"]> = {};
+      for (const fieldName of Object.keys(rawResource.field_enums).sort()) {
+        assertSafeMapKey(fieldName, "reviewed enum field");
+        fieldEnums[fieldName] = normalizeReviewedEnumValuesDecision(
+          rawResource.field_enums[fieldName],
+          `${resourceId}.${fieldName} reviewed enum`,
+        );
+      }
+      resource.field_enums = fieldEnums;
+    }
+    if (rawResource.derived_measures !== undefined) {
+      if (!isRecord(rawResource.derived_measures)) {
+        throw new Error(`${resourceId} derived-measure review overrides must be an object.`);
+      }
+      const derivedMeasures: NonNullable<
+        AutoBoundaryReviewOverrides["resources"][string]["derived_measures"]
+      > = {};
+      for (const name of Object.keys(rawResource.derived_measures).sort()) {
+        assertSafeMapKey(name, "reviewed derived measure");
+        derivedMeasures[name] = normalizeReviewedDerivedMeasureDecision(
+          rawResource.derived_measures[name],
+          `${resourceId}.${name} reviewed derived measure`,
+        );
+        if (derivedMeasures[name]!.definition.name !== name) {
+          throw new Error(`${resourceId}.${name} reviewed derived-measure key must match its definition name.`);
+        }
+      }
+      resource.derived_measures = derivedMeasures;
+    }
+    if (rawResource.numeric_bands !== undefined) {
+      if (!isRecord(rawResource.numeric_bands)) {
+        throw new Error(`${resourceId} numeric-band review overrides must be an object.`);
+      }
+      const numericBands: NonNullable<
+        AutoBoundaryReviewOverrides["resources"][string]["numeric_bands"]
+      > = {};
+      for (const name of Object.keys(rawResource.numeric_bands).sort()) {
+        assertSafeMapKey(name, "reviewed numeric band");
+        numericBands[name] = normalizeReviewedNumericBandDecision(
+          rawResource.numeric_bands[name],
+          `${resourceId}.${name} reviewed numeric band`,
+        );
+        if (numericBands[name]!.definition.name !== name) {
+          throw new Error(`${resourceId}.${name} reviewed numeric-band key must match its definition name.`);
+        }
+      }
+      resource.numeric_bands = numericBands;
+    }
+    if (rawResource.auto_bands !== undefined) {
+      if (!isRecord(rawResource.auto_bands)) {
+        throw new Error(`${resourceId} auto-band review overrides must be an object.`);
+      }
+      const autoBands: NonNullable<
+        AutoBoundaryReviewOverrides["resources"][string]["auto_bands"]
+      > = {};
+      for (const field of Object.keys(rawResource.auto_bands).sort()) {
+        assertSafeMapKey(field, "reviewed auto-band field");
+        autoBands[field] = normalizeReviewedAutoBandDecision(
+          rawResource.auto_bands[field],
+          `${resourceId}.${field} reviewed auto band`,
+        );
+        if (autoBands[field]!.definition.field !== field) {
+          throw new Error(`${resourceId}.${field} reviewed auto-band key must match its definition field.`);
+        }
+      }
+      resource.auto_bands = autoBands;
+    }
+    if (rawResource.field_metadata !== undefined) {
+      if (!isRecord(rawResource.field_metadata)) {
+        throw new Error(`${resourceId} field metadata review overrides must be an object.`);
+      }
+      const fieldMetadata: NonNullable<
+        AutoBoundaryReviewOverrides["resources"][string]["field_metadata"]
+      > = {};
+      for (const fieldName of Object.keys(rawResource.field_metadata).sort()) {
+        assertSafeMapKey(fieldName, "reviewed metadata field");
+        fieldMetadata[fieldName] = normalizeReviewedMetadataDecision(
+          rawResource.field_metadata[fieldName],
+          `${resourceId}.${fieldName} metadata`,
+        );
+      }
+      resource.field_metadata = fieldMetadata;
     }
     if (rawResource.fields !== undefined) {
       if (!isRecord(rawResource.fields)) throw new Error(`${resourceId} field review overrides must be an object.`);
@@ -1542,6 +2973,344 @@ function normalizeReviewedMinimumCohortDecision(
   };
 }
 
+function normalizeReviewedEnumValuesDecision(
+  value: unknown,
+  label: string,
+): ReviewedEnumValuesDecision {
+  if (!isRecord(value)) throw new Error(`${label} decision must be an object.`);
+  assertOnlyKeys(value, ["values", "actor", "reason", "decided_at"], `${label} decision`);
+  if (!Array.isArray(value.values)
+    || value.values.length > 64
+    || value.values.some((item) => typeof item !== "string" || [...item].length > 64)
+    || new Set(value.values).size !== value.values.length) {
+    throw new Error(`${label} values must contain at most 64 unique strings of at most 64 characters each.`);
+  }
+  if (Buffer.byteLength(JSON.stringify(value.values), "utf8") > 2_048) {
+    throw new Error(`${label} values exceed the 2048-byte reviewed vocabulary limit.`);
+  }
+  return {
+    values: value.values.map(String),
+    actor: reviewedText(value.actor, `${label} actor`, 128),
+    reason: reviewedText(value.reason, `${label} reason`, 500),
+    decided_at: reviewedTimestamp(value.decided_at, `${label} decided_at`),
+  };
+}
+
+function normalizeReviewedDerivedMeasureDecision(
+  value: unknown,
+  label: string,
+): ReviewedDerivedMeasureDecision {
+  if (!isRecord(value)) throw new Error(`${label} decision must be an object.`);
+  assertOnlyKeys(value, ["definition", "actor", "reason", "decided_at"], `${label} decision`);
+  return {
+    definition: normalizeExplorationDerivedMeasure(value.definition, `${label} definition`),
+    actor: reviewedText(value.actor, `${label} actor`, 128),
+    reason: reviewedText(value.reason, `${label} reason`, 500),
+    decided_at: reviewedTimestamp(value.decided_at, `${label} decided_at`),
+  };
+}
+
+function normalizeReviewedNumericBandDecision(
+  value: unknown,
+  label: string,
+): ReviewedNumericBandDecision {
+  if (!isRecord(value)) throw new Error(`${label} decision must be an object.`);
+  assertOnlyKeys(value, ["definition", "actor", "reason", "decided_at"], `${label} decision`);
+  return {
+    definition: normalizeExplorationNumericBand(value.definition, `${label} definition`),
+    actor: reviewedText(value.actor, `${label} actor`, 128),
+    reason: reviewedText(value.reason, `${label} reason`, 500),
+    decided_at: reviewedTimestamp(value.decided_at, `${label} decided_at`),
+  };
+}
+
+function normalizeReviewedAutoBandDecision(
+  value: unknown,
+  label: string,
+): ReviewedAutoBandDecision {
+  if (!isRecord(value)) throw new Error(`${label} decision must be an object.`);
+  assertOnlyKeys(value, ["definition", "actor", "reason", "decided_at"], `${label} decision`);
+  return {
+    definition: normalizeExplorationAutoBandPolicy(value.definition, `${label} definition`),
+    actor: reviewedText(value.actor, `${label} actor`, 128),
+    reason: reviewedText(value.reason, `${label} reason`, 500),
+    decided_at: reviewedTimestamp(value.decided_at, `${label} decided_at`),
+  };
+}
+
+function normalizeReviewedMetadataDecision(
+  input: unknown,
+  label: string,
+): ReviewedMetadataDecision {
+  if (!isRecord(input)) throw new Error(`${label} review decision must be an object.`);
+  assertOnlyKeys(input, ["label", "description", "actor", "reason", "decided_at"], `${label} review decision`);
+  const reviewedLabel = input.label === undefined
+    ? undefined
+    : reviewedText(input.label, `${label} label`, 64);
+  const reviewedDescription = input.description === undefined
+    ? undefined
+    : reviewedText(input.description, `${label} description`, 280);
+  if (!reviewedLabel && !reviewedDescription) {
+    throw new Error(`${label} review decision requires a label or description.`);
+  }
+  return {
+    ...(reviewedLabel ? { label: reviewedLabel } : {}),
+    ...(reviewedDescription ? { description: reviewedDescription } : {}),
+    actor: reviewedText(input.actor, `${label} actor`, 128),
+    reason: reviewedText(input.reason, `${label} reason`, 500),
+    decided_at: reviewedTimestamp(input.decided_at, `${label} decided_at`),
+  };
+}
+
+export function normalizeExplorationNumericBand(
+  value: unknown,
+  label: string,
+): ExplorationNumericBand {
+  if (!isRecord(value)) throw new Error(`${label} must be an object.`);
+  assertOnlyKeys(value, ["name", "label", "field", "relationship", "edges", "bucket_labels"], label);
+  const name = reviewedText(value.name, `${label} name`, 64);
+  if (!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name)) {
+    throw new Error(`${label} name must be a safe identifier of at most 64 characters.`);
+  }
+  if (!Array.isArray(value.edges) || value.edges.length < 1 || value.edges.length > 16
+    || value.edges.some((edge) => typeof edge !== "number" || !Number.isFinite(edge))) {
+    throw new Error(`${label} requires 1 through 16 finite numeric edges.`);
+  }
+  const edges = value.edges.map(Number);
+  if (edges.some((edge, index) => index > 0 && edge <= edges[index - 1]!)) {
+    throw new Error(`${label} edges must be strictly increasing and unique.`);
+  }
+  if (!Array.isArray(value.bucket_labels)
+    || value.bucket_labels.length !== edges.length + 1
+    || value.bucket_labels.some((item) => typeof item !== "string" || !item.trim() || [...item].length > 64)
+    || new Set(value.bucket_labels).size !== value.bucket_labels.length
+    || Buffer.byteLength(JSON.stringify(value.bucket_labels), "utf8") > 2_048) {
+    throw new Error(`${label} requires one unique label per bucket, each at most 64 characters and 2048 bytes total.`);
+  }
+  return {
+    name,
+    label: reviewedText(value.label, `${label} label`, 120),
+    field: reviewedText(value.field, `${label} field`, 256),
+    ...(value.relationship === undefined
+      ? {}
+      : { relationship: reviewedText(value.relationship, `${label} relationship`, 256) }),
+    edges,
+    bucket_labels: value.bucket_labels.map((item) => item.trim()),
+  };
+}
+
+export function normalizeExplorationAutoBandPolicy(
+  value: unknown,
+  label: string,
+): ExplorationAutoBandPolicy {
+  if (!isRecord(value)) throw new Error(`${label} must be an object.`);
+  assertOnlyKeys(
+    value,
+    ["field", "methods", "min_buckets", "max_buckets", "min_bucket_width", "label_style", "label_round_to"],
+    label,
+  );
+  if (!Array.isArray(value.methods)
+    || value.methods.length < 1
+    || value.methods.length > EXPLORATION_AUTO_BAND_METHODS.length
+    || value.methods.some((method) => !EXPLORATION_AUTO_BAND_METHODS.includes(method as ExplorationAutoBandMethod))) {
+    throw new Error(`${label} methods must contain quantile and/or equal_width.`);
+  }
+  const selectedMethods = new Set(value.methods as ExplorationAutoBandMethod[]);
+  const methods = EXPLORATION_AUTO_BAND_METHODS.filter((method) => selectedMethods.has(method));
+  if (methods.length !== value.methods.length) throw new Error(`${label} methods cannot contain duplicates.`);
+  const minBuckets = Number(value.min_buckets);
+  const maxBuckets = Number(value.max_buckets);
+  if (!Number.isSafeInteger(minBuckets)
+    || !Number.isSafeInteger(maxBuckets)
+    || minBuckets < MIN_AUTO_BAND_BUCKETS
+    || maxBuckets > MAX_AUTO_BAND_BUCKETS
+    || minBuckets > maxBuckets) {
+    throw new Error(
+      `${label} bucket range must be whole numbers from ${MIN_AUTO_BAND_BUCKETS} through ${MAX_AUTO_BAND_BUCKETS}.`,
+    );
+  }
+  const labelStyle = value.label_style;
+  if (!EXPLORATION_AUTO_BAND_LABEL_STYLES.includes(labelStyle as ExplorationAutoBandLabelStyle)) {
+    throw new Error(`${label} label_style must be ordinal or rounded.`);
+  }
+  const minBucketWidth = value.min_bucket_width === undefined
+    ? undefined
+    : Number(value.min_bucket_width);
+  if (methods.includes("equal_width")
+    && (minBucketWidth === undefined || !Number.isFinite(minBucketWidth) || minBucketWidth <= 0)) {
+    throw new Error(`${label} requires a positive min_bucket_width when equal_width is enabled.`);
+  }
+  if (!methods.includes("equal_width") && minBucketWidth !== undefined) {
+    throw new Error(`${label} min_bucket_width is available only for equal_width.`);
+  }
+  const labelRoundTo = value.label_round_to === undefined
+    ? undefined
+    : Number(value.label_round_to);
+  if (labelStyle === "rounded"
+    && (labelRoundTo === undefined || !Number.isFinite(labelRoundTo) || labelRoundTo <= 0)) {
+    throw new Error(`${label} requires a positive label_round_to for rounded labels.`);
+  }
+  if (labelStyle !== "rounded" && labelRoundTo !== undefined) {
+    throw new Error(`${label} label_round_to is available only for rounded labels.`);
+  }
+  return {
+    field: reviewedText(value.field, `${label} field`, 256),
+    methods,
+    min_buckets: minBuckets,
+    max_buckets: maxBuckets,
+    ...(minBucketWidth === undefined ? {} : { min_bucket_width: minBucketWidth }),
+    label_style: labelStyle as ExplorationAutoBandLabelStyle,
+    ...(labelRoundTo === undefined ? {} : { label_round_to: labelRoundTo }),
+  };
+}
+
+export function normalizeExplorationDerivedMeasure(
+  value: unknown,
+  label: string,
+): ExplorationDerivedMeasure {
+  if (!isRecord(value)) throw new Error(`${label} must be an object.`);
+  const name = reviewedText(value.name, `${label} name`, 64);
+  if (!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name)) {
+    throw new Error(`${label} name must be a safe identifier of at most 64 characters.`);
+  }
+  const reviewedLabel = reviewedText(value.label, `${label} label`, 120);
+  if (value.shape === "ratio" || value.shape === "percentage" || value.shape === "per_unit_average") {
+    assertOnlyKeys(
+      value,
+      ["name", "label", "shape", "numerator", "denominator", "null_policy"],
+      label,
+    );
+    if (value.null_policy !== "null_on_zero_or_null_denominator") {
+      throw new Error(`${label} must use null_on_zero_or_null_denominator.`);
+    }
+    return {
+      name,
+      label: reviewedLabel,
+      shape: value.shape,
+      numerator: normalizeExplorationDerivedBaseMeasure(value.numerator, `${label} numerator`),
+      denominator: normalizeExplorationDerivedBaseMeasure(value.denominator, `${label} denominator`),
+      null_policy: "null_on_zero_or_null_denominator",
+    };
+  }
+  if (value.shape === "child_count_total" || value.shape === "child_count_average") {
+    assertOnlyKeys(value, ["name", "label", "shape", "child_resource", "relationship"], label);
+    return {
+      name,
+      label: reviewedLabel,
+      shape: value.shape,
+      child_resource: reviewedText(value.child_resource, `${label} child_resource`, 256),
+      relationship: reviewedText(value.relationship, `${label} relationship`, 256),
+    };
+  }
+  if (!EXPLORATION_POST_AGGREGATE_OPERATIONS.includes(
+    value.shape as ExplorationPostAggregateOperation,
+  )) {
+    throw new Error(
+      `${label} shape must be a fixed reviewed ratio, percentage, per-unit average, or post-suppression transform.`,
+    );
+  }
+  assertOnlyKeys(value, ["name", "label", "shape", "base_measure", "direction", "window_size"], label);
+  const shape = value.shape as ExplorationPostAggregateOperation;
+  if (shape === "rank") {
+    if (value.direction !== "asc" && value.direction !== "desc") {
+      throw new Error(`${label} rank requires direction asc or desc.`);
+    }
+  } else if (value.direction !== undefined) {
+    throw new Error(`${label} direction is available only for a reviewed rank.`);
+  }
+  if (shape === "moving_average") {
+    if (!Number.isSafeInteger(value.window_size)
+      || Number(value.window_size) < 2
+      || Number(value.window_size) > 12) {
+      throw new Error(`${label} moving_average requires a fixed window_size from 2 through 12.`);
+    }
+  } else if (value.window_size !== undefined) {
+    throw new Error(`${label} window_size is available only for a reviewed moving average.`);
+  }
+  return {
+    name,
+    label: reviewedLabel,
+    shape,
+    base_measure: normalizeExplorationDerivedBaseMeasure(value.base_measure, `${label} base_measure`),
+    ...(shape === "rank" ? { direction: value.direction as "asc" | "desc" } : {}),
+    ...(shape === "moving_average" ? { window_size: Number(value.window_size) } : {}),
+  };
+}
+
+function normalizeExplorationDerivedBaseMeasure(
+  value: unknown,
+  label: string,
+): ExplorationDerivedBaseMeasure {
+  if (!isRecord(value)) throw new Error(`${label} must be an object.`);
+  if (value.function === "count") {
+    assertOnlyKeys(value, ["function"], label);
+    return { function: "count" };
+  }
+  assertOnlyKeys(value, ["function", "field", "relationship"], label);
+  if (value.function !== "count_distinct" && value.function !== "sum" && value.function !== "avg") {
+    throw new Error(`${label} function must be count, count_distinct, sum, or avg.`);
+  }
+  return {
+    function: value.function,
+    field: reviewedText(value.field, `${label} field`, 256),
+    ...(value.relationship === undefined
+      ? {}
+      : { relationship: reviewedText(value.relationship, `${label} relationship`, 256) }),
+  };
+}
+
+function applyReviewedDerivedMeasureOverrides(
+  boundary: ExplorationBoundaryDraft,
+  overrides: AutoBoundaryReviewOverrides,
+): void {
+  const resources = new Map(boundary.pack.resources.map((resource) => [resource.id, resource]));
+  for (const [resourceId, review] of Object.entries(overrides.resources)) {
+    if (!review.derived_measures) continue;
+    const resource = resources.get(resourceId);
+    if (!resource) throw new Error(`Derived-measure review override references unavailable resource ${resourceId}.`);
+    resource.derived_measures = Object.values(review.derived_measures)
+      .map((decision) => structuredClone(decision.definition))
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }
+  for (const resource of boundary.pack.resources) {
+    assertReviewedDerivedMeasures(resource, boundary.pack.resources, Boolean(boundary.organization_scope));
+  }
+}
+
+function applyReviewedNumericBandOverrides(
+  boundary: ExplorationBoundaryDraft,
+  overrides: AutoBoundaryReviewOverrides,
+): void {
+  const resources = new Map(boundary.pack.resources.map((resource) => [resource.id, resource]));
+  for (const [resourceId, review] of Object.entries(overrides.resources)) {
+    if (!review.numeric_bands) continue;
+    const resource = resources.get(resourceId);
+    if (!resource) throw new Error(`Numeric-band review override references unavailable resource ${resourceId}.`);
+    resource.numeric_bands = Object.values(review.numeric_bands)
+      .map((decision) => structuredClone(decision.definition))
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }
+  for (const resource of boundary.pack.resources) {
+    assertReviewedNumericBands(resource, boundary.pack.resources);
+  }
+}
+
+function applyReviewedAutoBandOverrides(
+  boundary: ExplorationBoundaryDraft,
+  overrides: AutoBoundaryReviewOverrides,
+): void {
+  const resources = new Map(boundary.pack.resources.map((resource) => [resource.id, resource]));
+  for (const [resourceId, review] of Object.entries(overrides.resources)) {
+    if (!review.auto_bands) continue;
+    const resource = resources.get(resourceId);
+    if (!resource) throw new Error(`Auto-band review override references unavailable resource ${resourceId}.`);
+    resource.auto_bands = Object.values(review.auto_bands)
+      .map((decision) => structuredClone(decision.definition))
+      .sort((left, right) => left.field.localeCompare(right.field));
+  }
+  for (const resource of boundary.pack.resources) assertReviewedAutoBands(resource);
+}
+
 function applyReviewOverrides(
   graph: AutoBoundaryEvidenceGraph,
   overrides: AutoBoundaryReviewOverrides,
@@ -1551,6 +3320,15 @@ function applyReviewOverrides(
     const resource = resources.get(resourceId);
     if (!resource) throw new Error(`Review override references unknown resource ${resourceId}.`);
     const columns = new Set(resource.fields.map((field) => field.name));
+
+    if (override.metadata) {
+      resource.metadata_review_override = structuredClone(override.metadata);
+    }
+    for (const [fieldName, metadata] of Object.entries(override.field_metadata ?? {})) {
+      const field = resource.fields.find((candidate) => candidate.name === fieldName);
+      if (!field) throw new Error(`Metadata review override references unknown field ${resourceId}.${fieldName}.`);
+      field.metadata_review_override = structuredClone(metadata);
+    }
 
     if (override.row_identity) {
       if (!resource.primary_key.candidates.includes(override.row_identity.value)) {
@@ -1600,6 +3378,25 @@ function applyReviewOverrides(
       resource.minimum_cohort_override = { ...override.minimum_cohort };
     }
 
+    for (const [fieldName, enumOverride] of Object.entries(override.field_enums ?? {})) {
+      const field = resource.fields.find((candidate) => candidate.name === fieldName);
+      if (!field) throw new Error(`Enum review override references unknown field ${resourceId}.${fieldName}.`);
+      if (!field.enum_values?.length && enumOverride.values.length) {
+        throw new Error(`${resourceId}.${fieldName} has no bounded schema-declared value set to review.`);
+      }
+      if (field.enum_values?.length) {
+        assertSubset(
+          enumOverride.values,
+          field.enum_values,
+          `${resourceId}.${fieldName} reviewed enum values`,
+        );
+      }
+      field.enum_review_override = structuredClone(enumOverride);
+      field.evidence.push(
+        `human enum review override: ${enumOverride.values.length} of ${field.enum_values?.length ?? 0} schema values retained`,
+      );
+    }
+
     for (const [fieldName, fieldOverride] of Object.entries(override.fields ?? {})) {
       const field = resource.fields.find((candidate) => candidate.name === fieldName);
       if (!field) throw new Error(`Review override references unknown field ${resourceId}.${fieldName}.`);
@@ -1616,7 +3413,9 @@ function applyReviewOverrides(
         || fieldOverride.exposure === "withhold_from_model";
       field.sensitive_suggestion = !allow;
       field.raw_visible_suggestion = allow;
-      field.aggregate_measure_suggestion = allow && isNumericType(field.data_type);
+      field.aggregate_measure_suggestion = allow
+        && isNumericType(field.data_type)
+        && isAnalyticalNumericMeasureName(field.name);
       field.count_distinct_suggestion = allow;
       field.groupable_suggestion = allow
         && !field.primary_key
@@ -1626,6 +3425,214 @@ function applyReviewOverrides(
     }
     refreshResourceStatus(resource);
   }
+}
+
+function inferDerivedScopeCandidates(graph: AutoBoundaryEvidenceGraph): void {
+  const byId = new Map(graph.resources.map((resource) => [resource.id, resource]));
+  for (const resource of graph.resources) {
+    if (!resource.tenant_key.selected) {
+      const candidates = derivedScopeCandidates(resource, byId, "tenant");
+      if (candidates.length) {
+        resource.derived_tenant_scope = {
+          candidates,
+          confirmation_required: true,
+          safety_consequence: "Every read will be constrained through this mandatory proven path to the trusted tenant ancestor.",
+          blocked_reason: candidates.length === 1
+            ? "A human must review the single proven relationship-carried tenant path before this table becomes available."
+            : "Several proven tenant paths exist; a human must choose exactly one before this table becomes available.",
+        };
+      }
+    }
+    if (!resource.principal_key.selected) {
+      const candidates = derivedScopeCandidates(resource, byId, "principal");
+      if (candidates.length) {
+        resource.derived_principal_scope = {
+          candidates,
+          confirmation_required: true,
+          safety_consequence: "When selected, every read will also be constrained through this mandatory proven path to the trusted principal ancestor.",
+          blocked_reason: candidates.length === 1
+            ? "A human may review the single proven relationship-carried principal path."
+            : "Several proven principal paths exist; a human must choose one to add principal scope.",
+        };
+      }
+    }
+  }
+}
+
+function derivedScopeCandidates(
+  root: AutoBoundaryResource,
+  resources: Map<string, AutoBoundaryResource>,
+  kind: "tenant" | "principal",
+): DerivedScopePath[] {
+  const candidates: DerivedScopePath[] = [];
+  const visit = (
+    current: AutoBoundaryResource,
+    links: RelationshipLinkProof[],
+    visited: Set<string>,
+  ): void => {
+    if (links.length >= (EXPLORATION_BUDGET_REVIEW_CEILINGS.max_derived_scope_hops ?? 2)) return;
+    for (const relationship of current.relationships) {
+      if (!relationship.cardinality_proven
+        || relationship.nullable
+        || !relationship.target_uniqueness
+        || relationship.columns.length < 1
+        || relationship.columns.length !== relationship.referenced_columns.length) continue;
+      const target = resources.get(relationship.referenced_resource);
+      if (!target || visited.has(target.id) || target.id === root.id) continue;
+      const link: RelationshipLinkProof = {
+        constraint_name: relationship.name,
+        source_resource: current.id,
+        target_resource: target.id,
+        source_columns: [...relationship.columns],
+        target_columns: [...relationship.referenced_columns],
+        target_uniqueness: structuredClone(relationship.target_uniqueness),
+        nullable: false,
+        cardinality: "many_to_one",
+        max_fan_out: 1,
+      };
+      const nextLinks = [...links, link];
+      const ancestorColumn = kind === "tenant"
+        ? target.tenant_key.selected
+        : target.principal_key.selected;
+      if (ancestorColumn) {
+        const pathId = nextLinks.map((item) => item.constraint_name).join("__");
+        candidates.push({
+          mode: "derived",
+          path_id: pathId,
+          ancestor_resource: target.id,
+          ancestor_column: ancestorColumn,
+          proof: {
+            source: "database_catalog",
+            links: nextLinks,
+            digest: canonicalJsonDigest(nextLinks),
+          },
+        });
+        continue;
+      }
+      visit(target, nextLinks, new Set([...visited, target.id]));
+    }
+  };
+  visit(root, [], new Set([root.id]));
+  return [...new Map(candidates.map((candidate) => [
+    `${candidate.path_id}:${candidate.ancestor_resource}:${candidate.ancestor_column}`,
+    candidate,
+  ])).values()].sort((left, right) =>
+    left.path_id.localeCompare(right.path_id)
+    || left.ancestor_resource.localeCompare(right.ancestor_resource)
+    || left.ancestor_column.localeCompare(right.ancestor_column));
+}
+
+function applyDerivedScopeReviewOverrides(
+  graph: AutoBoundaryEvidenceGraph,
+  overrides: AutoBoundaryReviewOverrides,
+  singleOrganization = false,
+): void {
+  const resources = new Map(graph.resources.map((resource) => [resource.id, resource]));
+  for (const resource of graph.resources) {
+    if (!singleOrganization
+      && !resource.tenant_key.selected
+      && !resource.derived_tenant_scope?.selected) {
+      resource.shared_reference_scope = sharedReferenceScopeInference(resource, resources);
+    } else {
+      delete resource.shared_reference_scope;
+    }
+  }
+  for (const [resourceId, override] of Object.entries(overrides.resources)) {
+    const resource = resources.get(resourceId);
+    if (!resource) continue;
+    const reviewedTenantModes = [
+      override.tenant_key,
+      override.tenant_scope_path,
+      override.shared_reference_scope,
+    ].filter(Boolean).length;
+    if (reviewedTenantModes > 1) {
+      throw new Error(
+        `${resourceId} must review exactly one of a direct tenant key, a derived tenant path, or shared-reference scope.`,
+      );
+    }
+    if (override.principal_key?.value && override.principal_scope_path?.value) {
+      throw new Error(`${resourceId} cannot review both a direct principal key and a derived principal scope path.`);
+    }
+    if (override.tenant_scope_path) {
+      const selected = resource.derived_tenant_scope?.candidates.find((candidate) =>
+        candidate.path_id === override.tenant_scope_path!.value);
+      if (!selected) {
+        throw new Error(
+          `${resourceId} derived tenant scope path ${override.tenant_scope_path.value} is not a current non-null, catalog-proven many-to-one path to a direct tenant scope.`,
+        );
+      }
+      resource.derived_tenant_scope!.selected = structuredClone(selected);
+      delete resource.derived_tenant_scope!.blocked_reason;
+    }
+    if (override.shared_reference_scope) {
+      if (singleOrganization) {
+        throw new Error(
+          `${resourceId} cannot declare shared-reference scope inside a single-organization boundary.`,
+        );
+      }
+      const inference = resource.shared_reference_scope
+        ?? sharedReferenceScopeInference(resource, resources);
+      if (!inference.eligible) {
+        throw new Error(
+          `${resourceId} cannot be reviewed as a shared reference: ${inference.blockers.join("; ")}.`,
+        );
+      }
+      inference.selected = {
+        mode: "shared_reference",
+        acknowledgement: SHARED_REFERENCE_ACKNOWLEDGEMENT,
+      };
+      inference.review_override = structuredClone(override.shared_reference_scope);
+      resource.shared_reference_scope = inference;
+    }
+    if (override.principal_scope_path?.value) {
+      const selected = resource.derived_principal_scope?.candidates.find((candidate) =>
+        candidate.path_id === override.principal_scope_path!.value);
+      if (!selected) {
+        throw new Error(
+          `${resourceId} derived principal scope path ${override.principal_scope_path.value} is not a current non-null, catalog-proven many-to-one path to a direct principal scope.`,
+        );
+      }
+      resource.derived_principal_scope!.selected = structuredClone(selected);
+      delete resource.derived_principal_scope!.blocked_reason;
+    }
+  }
+}
+
+function sharedReferenceScopeInference(
+  resource: AutoBoundaryResource,
+  resources: Map<string, AutoBoundaryResource>,
+): SharedReferenceScopeInference {
+  const blockers = new Set<string>();
+  if (resource.tenant_key.selected || resource.tenant_key.candidates.length > 0) {
+    blockers.add("the inspected table has tenant-scope column evidence");
+  }
+  if ((resource.derived_tenant_scope?.candidates.length ?? 0) > 0) {
+    blockers.add("the inspected table has a proven path to tenant-scoped rows");
+  }
+  if (resource.rls.enabled === true
+    || resource.rls.enabled === "unknown"
+    || resource.rls.policy_names.length > 0) {
+    blockers.add("row-level tenant posture is present or could not be proven absent");
+  }
+  for (const relationship of resource.relationships) {
+    const target = resources.get(relationship.referenced_resource);
+    if (!target) continue;
+    if (target.tenant_key.selected
+      || target.tenant_key.candidates.length > 0
+      || target.derived_tenant_scope?.selected
+      || (target.derived_tenant_scope?.candidates.length ?? 0) > 0) {
+      blockers.add(
+        `relationship ${relationship.name} reaches tenant-scoped resource ${target.id}`,
+      );
+    }
+  }
+  return {
+    eligible: blockers.size === 0,
+    confirmation_required: true,
+    safety_consequence:
+      "Runner will apply no tenant predicate to this table; every tenant may receive the same reviewed rows, while field, cohort, and budget controls remain enforced.",
+    blockers: [...blockers].sort(),
+  };
 }
 
 function markReviewedInference(
@@ -1642,16 +3649,72 @@ function markReviewedInference(
   delete target.blocked_reason;
 }
 
-function refreshResourceStatus(resource: AutoBoundaryResource): void {
+function refreshResourceStatus(resource: AutoBoundaryResource, singleOrganization = false): void {
+  const hasTenantScope = Boolean(
+    resource.tenant_key.selected
+    || resource.derived_tenant_scope?.selected
+    || resource.shared_reference_scope?.selected,
+  );
+  const tenantResolved = singleOrganization ? !hasTenantScope : hasTenantScope;
   resource.blockers = [
     ...(!resource.primary_key.selected ? ["source-proven single-column primary or unique row identifier is unresolved"] : []),
-    ...(!resource.tenant_key.selected ? ["trusted tenant scope is unresolved"] : []),
+    ...(!tenantResolved ? [singleOrganization
+      ? "single-organization resources must not declare direct, derived, or shared-reference tenant scope"
+      : resource.shared_reference_scope?.eligible
+        ? "trusted tenant scope is unresolved; review Shared reference only if this table has no per-tenant rows"
+        : "trusted tenant scope is unresolved"] : []),
   ];
   resource.status = !resource.primary_key.selected
     ? "blocked_identifier"
-    : !resource.tenant_key.selected
+    : !tenantResolved
       ? "blocked_scope"
       : "draft_read";
+}
+
+function singleOrganizationScope(organizationId: string): SingleOrganizationScope {
+  const normalized = organizationId.trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(normalized)) {
+    throw new Error("Single-organization Explore requires an organization id of 1-128 letters, numbers, dots, colons, underscores, or dashes.");
+  }
+  return {
+    mode: "single_organization",
+    organization_id: normalized,
+    acknowledgement: "all_rows_belong_to_one_organization",
+  };
+}
+
+export function assertSingleOrganizationInspectionSafe(
+  inspection: SchemaInspection,
+  graph?: AutoBoundaryEvidenceGraph,
+): void {
+  const evidence = new Set<string>(inspection.global_tenant_isolation_evidence ?? []);
+  for (const table of inspection.tables) {
+    const resource = `${table.schema}.${table.name}`;
+    for (const column of table.suggestions.tenant_columns) {
+      evidence.add(`${resource}.${column} is a tenant-scope candidate`);
+    }
+    for (const column of table.columns.filter((item) => item.suggestions.tenant)) {
+      evidence.add(`${resource}.${column.name} is marked as tenant scope`);
+    }
+    if (table.row_level_security === true || (table.row_level_security_policies?.length ?? 0) > 0) {
+      evidence.add(`${resource} has row-level security metadata`);
+    }
+  }
+  for (const resource of graph?.resources ?? []) {
+    for (const candidate of resource.tenant_key.candidates) {
+      evidence.add(`${resource.id}.${candidate} is a generated tenant-scope candidate`);
+    }
+    if (resource.tenant_key.selected) {
+      evidence.add(`${resource.id}.${resource.tenant_key.selected} is selected as tenant scope`);
+    }
+  }
+  if (evidence.size > 0) {
+    throw new Error([
+      "Single-organization Explore was refused because the inspected source contains tenant-isolation evidence.",
+      ...[...evidence].sort().map((item) => `- ${item}`),
+      "Use the normal multi-tenant boundary so Runner keeps injecting trusted tenant scope. No boundary was generated or activated.",
+    ].join("\n"));
+  }
 }
 
 function reviewDecisionEvidence(
@@ -1708,6 +3771,7 @@ function buildEvidenceGraph(
   project: ProjectDetectionSummary,
   staticObjects: Array<{ format: SchemaCandidateFormat; object: CandidateObject }>,
   existingContracts: SynapsorContract[],
+  configuredTrustedContext?: ConfiguredTrustedContextAuthority,
 ): AutoBoundaryEvidenceGraph {
   const staticByTable = new Map<string, Array<{ format: SchemaCandidateFormat; object: CandidateObject }>>();
   for (const item of staticObjects) {
@@ -1722,6 +3786,7 @@ function buildEvidenceGraph(
       inspection,
       staticByTable.get(`${table.schema}.${table.name}`.toLowerCase()) ?? [],
       existingScopeEvidence(table, existingContracts),
+      configuredTrustedContext,
     ))
     .sort((left, right) => left.id.localeCompare(right.id));
   const structuredActions = [
@@ -1777,17 +3842,52 @@ function assertBoundaryCandidateNarrowsDraft(
 ): void {
   if (candidate.schema_version !== draft.schema_version) throw new Error("Exploration boundary schema version cannot change during review.");
   if (candidate.activation !== "disabled_unreviewed") throw new Error("A reviewed candidate must still be disabled before activation.");
-  if (candidate.deployment_profile !== "development" && candidate.deployment_profile !== "staging") {
-    throw new Error("Scoped Explore activation is limited to an explicit development or staging profile.");
+  if (draft.deployment_profile === "production" && candidate.deployment_profile !== "production") {
+    throw new Error("A production boundary cannot be downgraded during review.");
+  }
+  if (draft.deployment_profile !== "production" && candidate.deployment_profile === "production") {
+    throw new Error("A local authoring draft cannot be promoted to production during review; generate a separate production draft.");
+  }
+  if (candidate.deployment_profile !== "development"
+    && candidate.deployment_profile !== "staging"
+    && candidate.deployment_profile !== "production") {
+    throw new Error("Scoped Explore activation requires an explicit development, staging, or production profile.");
+  }
+  if (candidate.deployment_profile === "production" && candidate.trusted_context.provider !== "http_claims") {
+    throw new Error("Production Scoped Explore requires reviewed tenant and principal HTTP claim bindings.");
+  }
+  if (candidate.deployment_profile !== "production" && candidate.trusted_context.provider !== "environment") {
+    throw new Error("Development and staging Scoped Explore require local trusted context bindings.");
   }
   if (!/^[a-z][a-z0-9_.-]{0,63}$/.test(candidate.pack.name)) {
     throw new Error("The reviewed authoring pack name must be a stable lower-case identifier.");
   }
-  for (const immutable of ["source", "compiler_version", "spec_version", "generation_lock_fingerprint", "role_posture_fingerprint"] as const) {
+  for (const immutable of [
+    "source",
+    "compiler_version",
+    "spec_version",
+    "database_server_version",
+    "database_server_tier",
+    "generation_lock_fingerprint",
+    "role_posture_fingerprint",
+  ] as const) {
     if (candidate[immutable] !== draft[immutable]) throw new Error(`${immutable} cannot change during boundary review.`);
+  }
+  if (canonicalJsonDigest(candidate.database_server_authority ?? null)
+    !== canonicalJsonDigest(draft.database_server_authority ?? null)) {
+    throw new Error("database_server_authority cannot change during boundary review.");
   }
   if (candidate.reporting_timezone !== draft.reporting_timezone) {
     throw new Error("reporting_timezone cannot change during boundary review.");
+  }
+  if (JSON.stringify(candidate.organization_scope ?? null) !== JSON.stringify(draft.organization_scope ?? null)) {
+    throw new Error("organization_scope cannot change during boundary review.");
+  }
+  if (candidate.organization_scope) singleOrganizationScope(candidate.organization_scope.organization_id);
+  if (candidate.organization_scope
+    && (candidate.organization_scope.mode !== "single_organization"
+      || candidate.organization_scope.acknowledgement !== "all_rows_belong_to_one_organization")) {
+    throw new Error("Single-organization scope must retain its exact reviewed mode and acknowledgement.");
   }
   if (candidate.reporting_timezone !== undefined && candidate.reporting_timezone !== "UTC") {
     throw new Error("Generated Scoped Explore boundaries currently support only the reviewed UTC reporting timezone.");
@@ -1807,15 +3907,88 @@ function assertBoundaryCandidateNarrowsDraft(
     for (const field of ["schema", "table", "primary_key", "tenant_key", "principal_key"] as const) {
       if (resource[field] !== original[field]) throw new Error(`${resource.id} ${field} cannot change during review.`);
     }
+    if (JSON.stringify(resource.tenant_scope ?? null) !== JSON.stringify(original.tenant_scope ?? null)
+      || JSON.stringify(resource.shared_reference_scope ?? null)
+        !== JSON.stringify(original.shared_reference_scope ?? null)
+      || JSON.stringify(resource.principal_scope ?? null) !== JSON.stringify(original.principal_scope ?? null)) {
+      throw new Error(`${resource.id} trusted scope cannot change during boundary review.`);
+    }
+    assertReviewedResourceScope(
+      resource,
+      candidateResources,
+      Boolean(candidate.organization_scope),
+      reviewedDerivedScopeHopLimit(candidate.budgets),
+    );
     if (JSON.stringify(resource.field_types) !== JSON.stringify(original.field_types)
-      || JSON.stringify(resource.field_enums) !== JSON.stringify(original.field_enums)
       || JSON.stringify(resource.rls_session ?? null) !== JSON.stringify(original.rls_session ?? null)) {
-      throw new Error(`${resource.id} field types, enums, and RLS session bindings cannot change during review.`);
+      throw new Error(`${resource.id} field types and RLS session bindings cannot change during review.`);
+    }
+    if (JSON.stringify({
+      label: resource.label,
+      description: resource.description,
+      field_metadata: resource.field_metadata,
+    }) !== JSON.stringify({
+      label: original.label,
+      description: original.description,
+      field_metadata: original.field_metadata,
+    })) {
+      throw new Error(`${resource.id} reviewed labels and descriptions must be changed through the reviewed metadata editor.`);
+    }
+    assertSubset(
+      Object.keys(resource.field_enums),
+      Object.keys(original.field_enums),
+      `${resource.id} reviewed enum fields`,
+    );
+    for (const [field, values] of Object.entries(resource.field_enums)) {
+      assertSubset(values, original.field_enums[field] ?? [], `${resource.id}.${field} reviewed enum values`);
+    }
+    for (const field of Object.keys(original.field_enums)) {
+      if (!Object.hasOwn(resource.field_enums, field)
+        && (Object.hasOwn(resource.filterable_fields, field)
+          || resource.groupable_fields.includes(field))) {
+        throw new Error(
+          `${resource.id}.${field} cannot disable its reviewed value allowlist while retaining filter or group authority.`,
+        );
+      }
     }
     assertSubset(resource.selectable_fields, original.selectable_fields, `${resource.id} selectable fields`);
     assertSubset(resource.sortable_fields, original.sortable_fields, `${resource.id} sortable fields`);
     assertSubset(resource.groupable_fields, original.groupable_fields, `${resource.id} groupable fields`);
     assertSubset(resource.aggregate_measures, original.aggregate_measures, `${resource.id} aggregate measures`);
+    if (resource.aggregate_measure_functions) {
+      assertSubset(
+        Object.keys(resource.aggregate_measure_functions),
+        resource.aggregate_measures,
+        `${resource.id} aggregate-function fields with reviewed aggregate access`,
+      );
+      assertSubset(
+        Object.keys(resource.aggregate_measure_functions),
+        Object.keys(original.aggregate_measure_functions ?? {}),
+        `${resource.id} aggregate-function fields`,
+      );
+      for (const [field, functions] of Object.entries(resource.aggregate_measure_functions)) {
+        assertSubset(
+          functions,
+          original.aggregate_measure_functions?.[field] ?? [],
+          `${resource.id}.${field} aggregate functions`,
+        );
+      }
+    }
+    if (resource.presence_measure_fields) {
+      assertSubset(
+        resource.presence_measure_fields,
+        original.presence_measure_fields ?? [],
+        `${resource.id} missing-data measure fields`,
+      );
+      assertSubset(
+        resource.presence_measure_fields,
+        resource.selectable_fields.filter((field) => !(resource.model_withheld_fields ?? []).includes(field)),
+        `${resource.id} model-visible missing-data measure fields`,
+      );
+    }
+    assertReviewedDerivedMeasures(resource, candidate.pack.resources, Boolean(candidate.organization_scope));
+    assertReviewedNumericBands(resource, candidate.pack.resources);
+    assertReviewedAutoBands(resource);
     assertSubset(resource.count_distinct_fields, original.count_distinct_fields, `${resource.id} count-distinct fields`);
     assertSubset(original.kept_out_fields, resource.kept_out_fields, `${resource.id} generated kept-out fields`);
     assertSubset(resource.kept_out_fields, Object.keys(original.field_types), `${resource.id} kept-out fields`);
@@ -1843,7 +4016,7 @@ function assertBoundaryCandidateNarrowsDraft(
       if (!expected || !relationshipMatchesReviewedDraft(expected, relationship)) {
         throw new Error(`${resource.id} cannot add or alter relationship ${relationship.id}.`);
       }
-      if ((relationship.path_depth ?? 1) > candidate.budgets.max_relationship_hops) {
+      if ((relationship.path_depth ?? 1) > reviewedAnalysisRelationshipHopLimit(candidate.budgets)) {
         throw new Error(`${resource.id} relationship ${relationship.id} exceeds the reviewed path-depth bound.`);
       }
       const links = relationship.proof?.links ?? [{
@@ -1861,7 +4034,9 @@ function assertBoundaryCandidateNarrowsDraft(
         cardinality: "many_to_one" as const,
         max_fan_out: 1 as const,
       }];
-      if (links.length !== (relationship.path_depth ?? 1) || links.length < 1 || links.length > 2) {
+      if (links.length !== (relationship.path_depth ?? 1)
+        || links.length < 1
+        || links.length > reviewedAnalysisRelationshipHopLimit(candidate.budgets)) {
         throw new Error(`${resource.id} relationship ${relationship.id} has invalid structural path proof.`);
       }
       for (const link of links) {
@@ -1901,6 +4076,345 @@ function assertBoundaryCandidateNarrowsDraft(
   }
 }
 
+function assertReviewedDerivedMeasures(
+  resource: ExplorationBoundaryDraft["pack"]["resources"][number],
+  resources: ExplorationBoundaryDraft["pack"]["resources"],
+  singleOrganization: boolean,
+): void {
+  const definitions = resource.derived_measures ?? [];
+  if (definitions.length > 16) throw new Error(`${resource.id} may review at most 16 named derived measures.`);
+  const names = new Set<string>();
+  for (const definition of definitions) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(definition.name) || names.has(definition.name)) {
+      throw new Error(`${resource.id} derived-measure names must be unique safe identifiers.`);
+    }
+    names.add(definition.name);
+    if (!definition.label.trim() || definition.label.length > 120
+      || /[\u0000-\u001f\u007f]/.test(definition.label)) {
+      throw new Error(`${resource.id}.${definition.name} requires a bounded plain-language label.`);
+    }
+    if ("base_measure" in definition) {
+      if (!EXPLORATION_POST_AGGREGATE_OPERATIONS.includes(definition.shape)) {
+        throw new Error(`${resource.id}.${definition.name} has an unsupported post-suppression transform.`);
+      }
+      assertDerivedBaseMeasure(resource, definition.name, definition.base_measure, resources);
+      if (definition.shape === "rank" && definition.direction !== "asc" && definition.direction !== "desc") {
+        throw new Error(`${resource.id}.${definition.name} rank requires a fixed direction.`);
+      }
+      if (definition.shape === "moving_average"
+        && (!Number.isSafeInteger(definition.window_size)
+          || definition.window_size! < 2
+          || definition.window_size! > 12)) {
+        throw new Error(`${resource.id}.${definition.name} moving average requires a fixed 2-12 group window.`);
+      }
+    } else if ("child_resource" in definition) {
+      resolveReviewedChildCountLink(resource.id, definition, resources, singleOrganization);
+    } else {
+      if (definition.null_policy !== "null_on_zero_or_null_denominator") {
+        throw new Error(`${resource.id}.${definition.name} has an unsupported fixed derived-measure null policy.`);
+      }
+      const numeratorRelationship = derivedBaseMeasureRelationship(definition.numerator);
+      const denominatorRelationship = derivedBaseMeasureRelationship(definition.denominator);
+      if (numeratorRelationship !== denominatorRelationship) {
+        throw new Error(`${resource.id}.${definition.name} operands must use the same reviewed relationship path.`);
+      }
+      assertDerivedBaseMeasure(resource, definition.name, definition.numerator, resources);
+      assertDerivedBaseMeasure(resource, definition.name, definition.denominator, resources);
+      if (definition.shape === "per_unit_average"
+        && (definition.numerator.function !== "sum"
+          || !["count", "count_distinct"].includes(definition.denominator.function))) {
+        throw new Error(`${resource.id}.${definition.name} per_unit_average requires SUM divided by COUNT or COUNT DISTINCT.`);
+      }
+    }
+  }
+}
+
+export function resolveReviewedChildCountLink(
+  rootResourceId: string,
+  definition: ExplorationChildCountDerivedMeasure,
+  resources: ExplorationBoundaryDraft["pack"]["resources"],
+  singleOrganization = false,
+): {
+  child: ExplorationBoundaryDraft["pack"]["resources"][number];
+  link: RelationshipLinkProof;
+} {
+  const root = resources.find((resource) => resource.id === rootResourceId);
+  const child = resources.find((resource) => resource.id === definition.child_resource);
+  if (!root) throw new Error(`${rootResourceId}.${definition.name} root is not in this boundary.`);
+  if (!child || child.id === root.id) {
+    throw new Error(`${root.id}.${definition.name} requires a different reviewed child resource.`);
+  }
+  if (!singleOrganization
+    && (child.shared_reference_scope || (!child.tenant_key && !child.tenant_scope))) {
+    throw new Error(
+      `${root.id}.${definition.name} child ${child.id} must have independently reviewed tenant scope.`,
+    );
+  }
+  const proofs: Array<{
+    id: string;
+    source: "database_catalog";
+    links: RelationshipLinkProof[];
+    digest: `sha256:${string}`;
+  }> = [];
+  for (const relationship of child.relationships) {
+    if (relationship.id !== definition.relationship || (relationship.path_depth ?? 1) !== 1
+      || !relationship.proof) continue;
+    proofs.push({ id: relationship.id, ...relationship.proof });
+  }
+  for (const scope of [child.tenant_scope, child.principal_scope]) {
+    if (scope?.path_id !== definition.relationship || scope.proof.links.length !== 1) continue;
+    proofs.push({ id: scope.path_id, ...scope.proof });
+  }
+  const uniqueProofs = [...new Map(proofs.map((proof) => [
+    canonicalJsonDigest({ id: proof.id, links: proof.links }),
+    proof,
+  ])).values()];
+  if (uniqueProofs.length !== 1) {
+    throw new Error(
+      `${root.id}.${definition.name} requires one active catalog-proven child relationship ${definition.relationship}.`,
+    );
+  }
+  const proof = uniqueProofs[0]!;
+  const link = proof.links[0];
+  if (proof.source !== "database_catalog"
+    || proof.links.length !== 1
+    || canonicalJsonDigest(proof.links) !== proof.digest
+    || !link
+    || link.constraint_name !== definition.relationship
+    || link.source_resource !== child.id
+    || link.target_resource !== root.id
+    || link.nullable
+    || link.cardinality !== "many_to_one"
+    || link.max_fan_out !== 1
+    || link.source_columns.length < 1
+    || link.source_columns.length !== link.target_columns.length
+    || link.target_uniqueness.columns.length !== link.target_columns.length
+    || link.target_uniqueness.columns.some((column, index) => column !== link.target_columns[index])) {
+    throw new Error(
+      `${root.id}.${definition.name} requires one continuous non-null child-to-parent relationship with a unique reviewed parent key.`,
+    );
+  }
+  return { child, link };
+}
+
+export function assertReviewedDerivedMeasureForBoundary(
+  boundary: ExplorationBoundaryDraft,
+  resourceId: string,
+  definition: ExplorationDerivedMeasure,
+): void {
+  const resource = boundary.pack.resources.find((candidate) => candidate.id === resourceId);
+  if (!resource) throw new Error(`${resourceId} is no longer in the reviewed boundary.`);
+  assertReviewedDerivedMeasures(
+    { ...resource, derived_measures: [structuredClone(definition)] },
+    boundary.pack.resources,
+    Boolean(boundary.organization_scope),
+  );
+}
+
+function assertReviewedNumericBands(
+  resource: ExplorationBoundaryDraft["pack"]["resources"][number],
+  resources: ExplorationBoundaryDraft["pack"]["resources"],
+): void {
+  const definitions = resource.numeric_bands ?? [];
+  if (definitions.length > 16) throw new Error(`${resource.id} may review at most 16 named numeric bands.`);
+  const names = new Set<string>();
+  for (const definition of definitions) {
+    const normalized = normalizeExplorationNumericBand(
+      definition,
+      `${resource.id}.${definition.name || "numeric_band"}`,
+    );
+    if (names.has(normalized.name)) {
+      throw new Error(`${resource.id} numeric-band names must be unique.`);
+    }
+    names.add(normalized.name);
+    const relationship = normalized.relationship
+      ? resource.relationships.find((candidate) => candidate.id === normalized.relationship)
+      : undefined;
+    if (normalized.relationship && !relationship) {
+      throw new Error(`${resource.id}.${normalized.name} references an unreviewed relationship ${normalized.relationship}.`);
+    }
+    const targetId = relationship?.target_resource ?? resource.id;
+    const target = resources.find((candidate) => candidate.id === targetId);
+    if (!target || !target.aggregate_measures.includes(normalized.field)) {
+      throw new Error(`${resource.id}.${normalized.name} uses an unreviewed numeric field ${targetId}.${normalized.field}.`);
+    }
+  }
+}
+
+export function assertReviewedNumericBandForBoundary(
+  boundary: ExplorationBoundaryDraft,
+  resourceId: string,
+  definition: ExplorationNumericBand,
+): void {
+  const resource = boundary.pack.resources.find((candidate) => candidate.id === resourceId);
+  if (!resource) throw new Error(`${resourceId} is no longer in the reviewed boundary.`);
+  assertReviewedNumericBands(
+    { ...resource, numeric_bands: [structuredClone(definition)] },
+    boundary.pack.resources,
+  );
+}
+
+function assertReviewedAutoBands(
+  resource: ExplorationBoundaryDraft["pack"]["resources"][number],
+): void {
+  const definitions = resource.auto_bands ?? [];
+  if (definitions.length > 16) throw new Error(`${resource.id} may review at most 16 auto-band policies.`);
+  const fields = new Set<string>();
+  for (const definition of definitions) {
+    const normalized = normalizeExplorationAutoBandPolicy(
+      definition,
+      `${resource.id}.${definition.field || "auto_band"}`,
+    );
+    if (fields.has(normalized.field)) throw new Error(`${resource.id} auto-band fields must be unique.`);
+    fields.add(normalized.field);
+    if (!resource.aggregate_measures.includes(normalized.field)) {
+      throw new Error(`${resource.id}.${normalized.field} is not a reviewed numeric aggregate field.`);
+    }
+    if ((resource.model_withheld_fields ?? []).includes(normalized.field)
+      || resource.kept_out_fields.includes(normalized.field)) {
+      throw new Error(`${resource.id}.${normalized.field} must be model-visible before it can expose adaptive band labels.`);
+    }
+  }
+}
+
+export function assertReviewedAutoBandForBoundary(
+  boundary: ExplorationBoundaryDraft,
+  resourceId: string,
+  definition: ExplorationAutoBandPolicy,
+): void {
+  const resource = boundary.pack.resources.find((candidate) => candidate.id === resourceId);
+  if (!resource) throw new Error(`${resourceId} is no longer in the reviewed boundary.`);
+  assertReviewedAutoBands({ ...resource, auto_bands: [structuredClone(definition)] });
+}
+
+function derivedBaseMeasureRelationship(
+  measure: ExplorationDerivedBaseMeasure,
+): string | undefined {
+  return "relationship" in measure ? measure.relationship : undefined;
+}
+
+function assertDerivedBaseMeasure(
+  root: ExplorationBoundaryDraft["pack"]["resources"][number],
+  name: string,
+  operand: ExplorationDerivedBaseMeasure,
+  resources: ExplorationBoundaryDraft["pack"]["resources"],
+): void {
+  if (!["count", "count_distinct", "sum", "avg"].includes(operand.function)) {
+    throw new Error(`${root.id}.${name} contains an unsupported base measure.`);
+  }
+  if (operand.function === "count") {
+    if ("field" in operand || "relationship" in operand) {
+      throw new Error(`${root.id}.${name} COUNT operand must count the reviewed root entity.`);
+    }
+    return;
+  }
+  const relationship = operand.relationship
+    ? root.relationships.find((candidate) => candidate.id === operand.relationship)
+    : undefined;
+  if (operand.relationship && !relationship) {
+    throw new Error(`${root.id}.${name} references an unreviewed relationship ${operand.relationship}.`);
+  }
+  const targetId = relationship?.target_resource ?? root.id;
+  const target = resources.find((candidate) => candidate.id === targetId);
+  if (!target) throw new Error(`${root.id}.${name} operand target ${targetId} is not in this boundary.`);
+  if (operand.function === "count_distinct") {
+    if (!target.count_distinct_fields.includes(operand.field)) {
+      throw new Error(`${root.id}.${name} uses an unreviewed count-distinct field ${target.id}.${operand.field}.`);
+    }
+    return;
+  }
+  if (!target.aggregate_measures.includes(operand.field)
+    || !(target.aggregate_measure_functions?.[operand.field] ?? ["sum", "avg"]).includes(operand.function)) {
+    throw new Error(`${root.id}.${name} uses an unreviewed ${operand.function} field ${target.id}.${operand.field}.`);
+  }
+}
+
+function assertReviewedResourceScope(
+  resource: ExplorationBoundaryDraft["pack"]["resources"][number],
+  resources: Map<string, ExplorationBoundaryDraft["pack"]["resources"][number]>,
+  singleOrganization: boolean,
+  maximumHops: 1 | 2 | 3,
+): void {
+  if (singleOrganization
+    && (resource.tenant_key || resource.tenant_scope || resource.shared_reference_scope)) {
+    throw new Error(`${resource.id} cannot declare tenant scope inside a single-organization boundary.`);
+  }
+  const tenantModes = [
+    resource.tenant_key,
+    resource.tenant_scope,
+    resource.shared_reference_scope,
+  ].filter(Boolean).length;
+  if (!singleOrganization && tenantModes !== 1) {
+    throw new Error(
+      `${resource.id} must have exactly one direct, derived, or shared-reference tenant scope.`,
+    );
+  }
+  if (resource.shared_reference_scope
+    && (resource.shared_reference_scope.mode !== "shared_reference"
+      || resource.shared_reference_scope.acknowledgement
+        !== SHARED_REFERENCE_ACKNOWLEDGEMENT)) {
+    throw new Error(`${resource.id} has malformed shared-reference scope authority.`);
+  }
+  if (resource.principal_key && resource.principal_scope) {
+    throw new Error(`${resource.id} cannot have both direct and derived principal scope.`);
+  }
+  if (resource.tenant_scope) {
+    assertDerivedScopePath(resource, resource.tenant_scope, resources, "tenant", maximumHops);
+  }
+  if (resource.principal_scope) {
+    assertDerivedScopePath(resource, resource.principal_scope, resources, "principal", maximumHops);
+  }
+}
+
+function assertDerivedScopePath(
+  resource: ExplorationBoundaryDraft["pack"]["resources"][number],
+  scope: DerivedScopePath,
+  resources: Map<string, ExplorationBoundaryDraft["pack"]["resources"][number]>,
+  kind: "tenant" | "principal",
+  maximumHops: 1 | 2 | 3,
+): void {
+  const links = scope.proof?.links ?? [];
+  if (links.length > maximumHops) {
+    throw new Error(
+      `${resource.id} derived ${kind} scope uses ${links.length} hops, but the reviewed `
+      + `max_derived_scope_hops is ${maximumHops}. Raise that reviewed limit to ${links.length} `
+      + "and activate the exact revision before adding this resource.",
+    );
+  }
+  if (scope.mode !== "derived"
+    || scope.proof.source !== "database_catalog"
+    || links.length < 1
+    || canonicalJsonDigest(links) !== scope.proof.digest
+    || scope.path_id !== links.map((link) => link.constraint_name).join("__")) {
+    throw new Error(`${resource.id} has malformed derived ${kind} scope proof.`);
+  }
+  let expectedSource = resource.id;
+  const visited = new Set([resource.id]);
+  for (const link of links) {
+    const source = resources.get(link.source_resource);
+    const target = resources.get(link.target_resource);
+    if (!source || !target
+      || link.source_resource !== expectedSource
+      || visited.has(link.target_resource)
+      || link.nullable
+      || link.cardinality !== "many_to_one"
+      || link.max_fan_out !== 1
+      || link.source_columns.length < 1
+      || link.source_columns.length !== link.target_columns.length
+      || link.target_uniqueness.columns.length !== link.target_columns.length
+      || link.target_uniqueness.columns.some((field, index) => field !== link.target_columns[index])) {
+      throw new Error(`${resource.id} derived ${kind} scope is not a continuous non-null many-to-one path inside the reviewed boundary.`);
+    }
+    expectedSource = target.id;
+    visited.add(target.id);
+  }
+  const ancestor = resources.get(scope.ancestor_resource);
+  const directColumn = kind === "tenant" ? ancestor?.tenant_key : ancestor?.principal_key;
+  if (expectedSource !== scope.ancestor_resource || directColumn !== scope.ancestor_column) {
+    throw new Error(`${resource.id} derived ${kind} scope does not terminate at the reviewed direct ${kind} column.`);
+  }
+}
+
 function relationshipMatchesReviewedDraft(
   expected: ExplorationRelationship,
   candidate: ExplorationRelationship,
@@ -1921,6 +4435,7 @@ export function requiredReviewDecisionsForCandidate(
   const retained = new Map(candidate.pack.resources.map((resource) => [resource.id, resource]));
   return draft.unresolved_decisions.filter((decision) => {
     if (decision.startsWith("deployment profile:")
+      || decision.startsWith("organization scope:")
       || decision.startsWith("trusted context:")
       || decision.startsWith("database role:")) return true;
     const separator = decision.indexOf(": ");
@@ -1961,20 +4476,39 @@ function assertExactDecisionReview(
 function assertBudgetsNarrow(draft: ExplorationBudgets, candidate: ExplorationBudgets): void {
   for (const key of Object.keys(candidate) as Array<keyof ExplorationBudgets>) {
     if (!Object.hasOwn(draft, key)) {
-      throw new Error(`Exploration budget ${key} cannot be added during review.`);
+      const ceiling = ownerReviewableExplorationBudgetCeiling(key);
+      if (ceiling === undefined) {
+        throw new Error(`Exploration budget ${key} cannot be added during review.`);
+      }
+      if (!Number.isSafeInteger(candidate[key])
+        || Number(candidate[key]) < 1
+        || Number(candidate[key]) > ceiling) {
+        throw new Error(`Exploration budget ${key} exceeds its hard reviewed ceiling ${ceiling}.`);
+      }
     }
   }
   for (const key of Object.keys(draft) as Array<keyof ExplorationBudgets>) {
     const value = candidate[key];
     const generated = draft[key];
+    const reviewedCeiling = ownerReviewableExplorationBudgetCeiling(key);
     if (!Number.isSafeInteger(value) || !Number.isSafeInteger(generated)
-      || Number(value) < 1 || Number(value) > Number(generated)) {
-      throw new Error(`Exploration budget ${key} may only stay the same or decrease.`);
+      || Number(value) < 1
+      || Number(value) > (reviewedCeiling ?? Number(generated))) {
+      throw new Error(reviewedCeiling === undefined
+        ? `Exploration budget ${key} may only stay the same or decrease.`
+        : `Exploration budget ${key} exceeds its hard reviewed ceiling ${reviewedCeiling}.`);
     }
   }
   if (candidate.max_ranked_groups !== undefined
     && candidate.max_ranked_groups < candidate.max_groups) {
     throw new Error("Exploration budget max_ranked_groups cannot be lower than max_groups.");
+  }
+  if (candidate.max_top_n > candidate.max_groups) {
+    throw new Error("Exploration budget max_top_n cannot exceed max_groups.");
+  }
+  if (reviewedDerivedScopeHopLimit(candidate) > 3
+    || reviewedAnalysisRelationshipHopLimit(candidate) > 3) {
+    throw new Error("Exploration relationship paths are hard-capped at three proven hops.");
   }
 }
 
@@ -2052,6 +4586,7 @@ type RankedScopeCandidate = {
 };
 
 const TENANT_SCOPE_NAME = /^(?:tenant|tenant_id|tenantid|organization_id|org_id|workspace_id|account_id|merchant_id|store_id|company_id|team_id|facility_id|property_id|clinic_id|project_id)$/i;
+const REVIEWABLE_TENANT_SCOPE_NAME = /^(?:tenant|tenant_id|tenantid|organization_id|org_id|workspace_id|account_id|merchant_id|store_id|company_id|team_id|facility_id|hospital_id|property_id|clinic_id|project_id)$/i;
 const PRINCIPAL_SCOPE_NAME = /^(?:principal|principal_id|user_id|owner_id|assignee_id|assigned_[a-z0-9_]+_id|agent_id|staff_id|technician_id|manager_id|trainer_id|customer_id|patient_id)$/i;
 const TENANT_RELATION_TARGET = /^(?:tenants?|organizations?|orgs?|workspaces?|merchants?|stores?|companies?|teams?|facilities?|properties?|clinics?|projects?)$/i;
 const PRINCIPAL_RELATION_TARGET = /^(?:users?|principals?|owners?|assignees?|agents?|staff|staff_members?|technicians?|managers?|trainers?)$/i;
@@ -2112,6 +4647,7 @@ function rankedScopeInference(input: {
   inspection: SchemaInspection;
   staticObjects: Array<{ format: SchemaCandidateFormat; object: CandidateObject }>;
   existing: ExistingScopeEvidence;
+  configuredBinding?: string;
 }): BoundaryInference<string> {
   const { kind, table, inspection, staticObjects, existing } = input;
   const columns = new Set(table.columns.map((column) => column.name));
@@ -2137,7 +4673,22 @@ function rankedScopeInference(input: {
     }
     candidates.set(value, current);
   };
-  const namePattern = kind === "tenant" ? TENANT_SCOPE_NAME : PRINCIPAL_SCOPE_NAME;
+  const namePattern = kind === "tenant" ? REVIEWABLE_TENANT_SCOPE_NAME : PRINCIPAL_SCOPE_NAME;
+  const configuredBinding = input.configuredBinding?.trim();
+  const configuredColumn = configuredBinding
+    ? table.columns.find((column) => column.name === configuredBinding)
+    : undefined;
+  if (configuredColumn
+    && configuredColumn.nullable === false
+    && configuredColumn.suggestions.large_or_binary !== true
+    && !isUnsafeRawType(configuredColumn.data_type)) {
+    add(
+      configuredColumn.name,
+      120,
+      `Runner config ${kind}_binding explicitly names inspected non-null column ${configuredColumn.name}; exact boundary review is still required`,
+      { strong: true, confidence: "high" },
+    );
+  }
   for (const column of table.columns) {
     if (namePattern.test(column.name)) {
       add(column.name, 5, `column name ${column.name} matches a low-confidence ${kind} convention`);
@@ -2245,7 +4796,10 @@ function evidenceSource(detail: string): BoundaryInference<string>["evidence"][n
   if (detail.startsWith("prisma ")) return "prisma";
   if (detail.startsWith("drizzle ")) return "drizzle";
   if (detail.startsWith("openapi ")) return "openapi";
-  if (detail.startsWith("existing Synapsor") || detail.includes("contract") || detail.includes("capability")) return "synapsor";
+  if (detail.startsWith("Runner config")
+    || detail.startsWith("existing Synapsor")
+    || detail.includes("contract")
+    || detail.includes("capability")) return "synapsor";
   return "database";
 }
 
@@ -2283,6 +4837,7 @@ function buildResource(
   inspection: SchemaInspection,
   staticObjects: Array<{ format: SchemaCandidateFormat; object: CandidateObject }>,
   existing: ExistingScopeEvidence,
+  configuredTrustedContext?: ConfiguredTrustedContextAuthority,
 ): AutoBoundaryResource {
   const tablesById = new Map(inspection.tables.map((candidate) => [
     `${candidate.schema}.${candidate.name}`,
@@ -2306,6 +4861,9 @@ function buildResource(
     inspection,
     staticObjects,
     existing,
+    ...(configuredTrustedContext?.tenant_binding
+      ? { configuredBinding: configuredTrustedContext.tenant_binding }
+      : {}),
   });
   const principalInference = rankedScopeInference({
     kind: "principal",
@@ -2313,6 +4871,9 @@ function buildResource(
     inspection,
     staticObjects,
     existing,
+    ...(configuredTrustedContext?.principal_binding
+      ? { configuredBinding: configuredTrustedContext.principal_binding }
+      : {}),
   });
   const tenantSelected = tenantInference.selected;
   const principalSelected = principalInference.selected;
@@ -2335,6 +4896,9 @@ function buildResource(
     schema: table.schema,
     table: table.name,
     type: table.type,
+    ...(table.approximate_row_count === undefined
+      ? {}
+      : { approximate_row_count: table.approximate_row_count }),
     primary_key: inference(primarySelected, primaryCandidates, [
       { source: "database", detail: `inspected primary key: ${table.primary_key.join(", ") || "none"}` },
       { source: "database", detail: `inspected single-column unique identifiers: ${sourceProvenUniqueIdentifiers.join(", ") || "none"}` },
@@ -2353,28 +4917,39 @@ function buildResource(
       const deterministicClassification = classifySensitivity({
         name: column.name,
         dataType: column.data_type,
+        constrainedValues: column.enum_values,
         description: column.comment,
         source: "database",
       });
-      const databaseClassification = column.suggestions.sensitivity
-        ? moreRestrictiveSensitivity(column.suggestions.sensitivity, deterministicClassification)
-        : deterministicClassification;
       const staticClassifications = staticObjects.flatMap((item) =>
         item.object.fields
           .filter((field) => field.name === column.name)
           .map((field) => field.sensitivity));
-      const sensitivity = [databaseClassification, ...staticClassifications]
+      const sensitivity = [
+        deterministicClassification,
+        ...(column.suggestions.sensitivity
+          ? [column.suggestions.sensitivity]
+          : []),
+        ...staticClassifications,
+      ]
+        .filter((classification) => !nameOnlySensitivityRefutedByStructure(
+          classification,
+          deterministicClassification,
+        ))
         .reduce(moreRestrictiveSensitivity);
       const keptOutByClassification = sensitivity.state !== "structurally_low_risk";
       return {
         name: column.name,
         data_type: column.data_type,
+        ...(column.enum_values?.length ? { enum_values: [...column.enum_values] } : {}),
         nullable: column.nullable,
         primary_key: table.primary_key.includes(column.name),
         sensitive_suggestion: keptOutByClassification,
         sensitivity,
         raw_visible_suggestion: !keptOutByClassification && !column.suggestions.large_or_binary,
-        aggregate_measure_suggestion: !keptOutByClassification && isNumericType(column.data_type),
+        aggregate_measure_suggestion: !keptOutByClassification
+          && isNumericType(column.data_type)
+          && isAnalyticalNumericMeasureName(column.name),
         count_distinct_suggestion: !keptOutByClassification
           && (table.primary_key.includes(column.name) || isReferenceIdentifierName(column.name)),
         groupable_suggestion: !keptOutByClassification
@@ -2472,7 +5047,8 @@ function emitDraftDsl(graph: AutoBoundaryEvidenceGraph, sourceName: string): str
     "END",
     "",
   ];
-  for (const resource of graph.resources.filter((candidate) => candidate.status === "draft_read")) {
+  for (const resource of graph.resources.filter((candidate) =>
+    candidate.status === "draft_read" && Boolean(candidate.tenant_key.selected))) {
     const primaryKey = resource.primary_key.selected!;
     const tenantKey = resource.tenant_key.selected!;
     const principalKey = resource.principal_key.selected;
@@ -2527,6 +5103,14 @@ function buildExplorationBoundaryDraft(
   graph: AutoBoundaryEvidenceGraph,
   sourceName: string,
   lockFingerprint: `sha256:${string}`,
+  options: {
+    deploymentProfile: "development" | "staging" | "production";
+    configuredTrustedContext: ConfiguredTrustedContextAuthority;
+    databaseServerVersion: string;
+    databaseServerTier: "full" | "compatible_limited";
+    databaseServerAuthority: DatabaseServerAuthority;
+    organizationScope?: SingleOrganizationScope;
+  },
 ): ExplorationBoundaryDraft {
   const resources = graph.resources.filter((resource) => resource.status === "draft_read").map((resource) => {
     const trustedScopeFields = new Set([resource.tenant_key.selected, resource.principal_key.selected].filter((field): field is string => Boolean(field)));
@@ -2540,13 +5124,28 @@ function buildExplorationBoundaryDraft(
       .filter((field) => field.review_override?.exposure === "withhold_from_model")
       .map((field) => field.name)
       .filter((field) => !keptOutSet.has(field));
+    const enumDisabledFields = new Set(resource.fields
+      .filter((field) => field.enum_review_override?.values.length === 0)
+      .map((field) => field.name));
+    const reviewedFieldEnums = Object.fromEntries(resource.fields
+      .flatMap((field) => {
+        const values = reviewedBoundaryEnumValues(field, keptOutSet, trustedScopeFields);
+        return values ? [[field.name, values] as const] : [];
+      }));
+    const categoricalAnalysisAvailable = (field: AutoBoundaryField): boolean =>
+      options.databaseServerAuthority.features.schema_check_constraints
+      || !field.groupable_suggestion
+      || Boolean(reviewedFieldEnums[field.name]?.length);
     const selectable = resource.fields
       .filter((field) => field.raw_visible_suggestion
         && (!trustedScopeFields.has(field.name) || trustedScopeReadableFields.has(field.name)))
       .map((field) => field.name);
     const sortable = selectable.filter((field) => !trustedScopeFields.has(field));
     const filterable = Object.fromEntries(resource.fields
-      .filter((field) => field.raw_visible_suggestion && !trustedScopeFields.has(field.name))
+      .filter((field) => field.raw_visible_suggestion
+        && !trustedScopeFields.has(field.name)
+        && !enumDisabledFields.has(field.name)
+        && categoricalAnalysisAvailable(field))
       .map((field) => [field.name, operatorsForType(field.data_type)]));
     const relationships = resource.relationships
       .filter((relationship) => {
@@ -2626,25 +5225,63 @@ function buildExplorationBoundaryDraft(
       id: resource.id,
       schema: resource.schema,
       table: resource.table,
+      ...(resource.metadata_review_override?.label
+        ? { label: resource.metadata_review_override.label }
+        : {}),
+      ...(resource.metadata_review_override?.description
+        ? { description: resource.metadata_review_override.description }
+        : {}),
+      ...(resource.fields.some((field) => field.metadata_review_override)
+        ? {
+          field_metadata: Object.fromEntries(resource.fields
+            .filter((field) => field.metadata_review_override)
+            .sort((left, right) => left.name.localeCompare(right.name))
+            .map((field) => [field.name, {
+              ...(field.metadata_review_override!.label
+                ? { label: field.metadata_review_override!.label }
+                : {}),
+              ...(field.metadata_review_override!.description
+                ? { description: field.metadata_review_override!.description }
+                : {}),
+            }])),
+        }
+        : {}),
       primary_key: resource.primary_key.selected!,
-      tenant_key: resource.tenant_key.selected!,
+      ...(!options.organizationScope
+        ? resource.tenant_key.selected
+          ? { tenant_key: resource.tenant_key.selected }
+          : resource.derived_tenant_scope?.selected
+            ? { tenant_scope: structuredClone(resource.derived_tenant_scope.selected) }
+            : {
+              shared_reference_scope: structuredClone(
+                resource.shared_reference_scope!.selected!,
+              ),
+            }
+        : {}),
       ...(resource.principal_key.selected ? { principal_key: resource.principal_key.selected } : {}),
+      ...(!resource.principal_key.selected && resource.derived_principal_scope?.selected
+        ? { principal_scope: structuredClone(resource.derived_principal_scope.selected) }
+        : {}),
       field_types: Object.fromEntries(resource.fields.map((field) => [field.name, field.data_type])),
-      field_enums: Object.fromEntries(resource.fields
-        .filter((field) => field.evidence.some((item) => item.startsWith("database enum values:")))
-        .map((field) => [
-          field.name,
-          field.evidence.find((item) => item.startsWith("database enum values:"))!.slice("database enum values:".length).trim().split(/,\s*/),
-        ])),
+      field_enums: reviewedFieldEnums,
       selectable_fields: selectable,
       filterable_fields: filterable,
       sortable_fields: sortable,
       groupable_fields: resource.fields.filter((field) => field.groupable_suggestion
         && !keptOutSet.has(field.name)
-        && !trustedScopeFields.has(field.name)).map((field) => field.name),
+        && !trustedScopeFields.has(field.name)
+        && !enumDisabledFields.has(field.name)
+        && categoricalAnalysisAvailable(field)).map((field) => field.name),
       aggregate_measures: resource.fields.filter((field) => field.aggregate_measure_suggestion
         && !keptOutSet.has(field.name)
         && !trustedScopeFields.has(field.name)).map((field) => field.name),
+      aggregate_measure_functions: Object.fromEntries(resource.fields
+        .filter((field) => field.aggregate_measure_suggestion
+          && !keptOutSet.has(field.name)
+          && !trustedScopeFields.has(field.name))
+        .map((field) => [field.name, [...EXPLORATION_NUMERIC_AGGREGATE_FUNCTIONS]])),
+      presence_measure_fields: selectable.filter((field) =>
+        !modelWithheld.includes(field) && !trustedScopeFields.has(field)),
       count_distinct_fields: resource.fields.filter((field) => field.count_distinct_suggestion
         && !keptOutSet.has(field.name)
         && !trustedScopeFields.has(field.name)).map((field) => field.name),
@@ -2652,44 +5289,60 @@ function buildExplorationBoundaryDraft(
         && !keptOutSet.has(field.name)
         && !trustedScopeFields.has(field.name)).map((field) => [
         field.name,
-        ["day", "week", "month"] as Array<"day" | "week" | "month">,
+        [...EXPLORATION_TIME_BUCKETS],
       ])),
       kept_out_fields: keptOut,
       ...(modelWithheld.length ? { model_withheld_fields: modelWithheld } : {}),
       relationships,
-      ...explorationRlsSession(resource),
+      ...explorationRlsSession(resource, graph.resources),
       minimum_cohort_size: resource.minimum_cohort_override?.value ?? 5,
       ...(resource.minimum_cohort_override ? { minimum_cohort_overridden: true as const } : {}),
       suppression_aware_totals: true as const,
     };
   });
-  addDepthTwoExplorationPaths(resources);
-  const databaseRoleTenantSetting = graph.engine === "postgres"
+  addComposedExplorationPaths(resources);
+  const databaseRoleTenantSetting = graph.engine === "postgres" && !options.organizationScope
     ? commonDatabaseRoleTenantSetting(resources)
     : undefined;
+  const configuredTrustedContext = options.configuredTrustedContext;
   const draft: ExplorationBoundaryDraft = {
     schema_version: EXPLORATION_BOUNDARY_VERSION,
     activation: "disabled_unreviewed" as const,
-    deployment_profile: "staging" as const,
+    deployment_profile: options.deploymentProfile,
     source: sourceName,
     compiler_version: AUTO_BOUNDARY_COMPILER_VERSION,
     spec_version: AUTO_BOUNDARY_SPEC_VERSION,
+    database_server_version: options.databaseServerVersion,
+    database_server_tier: options.databaseServerTier,
+    database_server_authority: structuredClone(options.databaseServerAuthority),
     reporting_timezone: "UTC",
-    trusted_context: {
-      provider: "environment" as const,
-      tenant_env: "SYNAPSOR_TENANT_ID",
-      principal_env: "SYNAPSOR_PRINCIPAL",
-      ...(databaseRoleTenantSetting ? {
-        database_role_tenant: {
-          engine: "postgres" as const,
-          setting: databaseRoleTenantSetting,
-        },
-      } : {}),
-    },
+    ...(options.organizationScope ? { organization_scope: options.organizationScope } : {}),
+    trusted_context: options.deploymentProfile === "production"
+      ? {
+        provider: "http_claims" as const,
+        ...(configuredTrustedContext.tenant_claim
+          ? { tenant_claim: configuredTrustedContext.tenant_claim }
+          : {}),
+        principal_claim: configuredTrustedContext.principal_claim!,
+      }
+      : {
+        provider: "environment" as const,
+        tenant_env: configuredTrustedContext.tenant_env!,
+        principal_env: configuredTrustedContext.principal_env!,
+        ...(databaseRoleTenantSetting ? {
+          database_role_tenant: {
+            engine: "postgres" as const,
+            setting: databaseRoleTenantSetting,
+          },
+        } : {}),
+      },
     generation_lock_fingerprint: lockFingerprint,
     role_posture_fingerprint: graph.database_role.fingerprint,
-    pack: { name: "reviewed_staging", resources },
-    budgets: { ...DEFAULT_BUDGETS },
+    pack: {
+      name: options.deploymentProfile === "production" ? "reviewed_production" : "reviewed_staging",
+      resources,
+    },
+    budgets: { ...DEFAULT_REVIEWED_EXPLORATION_BUDGETS },
     unresolved_decisions: [] as string[],
   };
   draft.unresolved_decisions = unresolvedDecisions(graph, draft);
@@ -2711,23 +5364,26 @@ function reviewedTrustedScopeReadableFields(resource: AutoBoundaryResource): Set
 function commonDatabaseRoleTenantSetting(
   resources: ExplorationBoundaryDraft["pack"]["resources"],
 ): string | undefined {
-  if (resources.length === 0) return undefined;
-  const settings = unique(resources.map((resource) => resource.rls_session?.tenant_setting)
+  const tenantScoped = resources.filter((resource) => !resource.shared_reference_scope);
+  if (tenantScoped.length === 0) return undefined;
+  const settings = unique(tenantScoped.map((resource) => resource.rls_session?.tenant_setting)
     .filter((setting): setting is string => Boolean(setting)));
   if (settings.length !== 1) return undefined;
-  return resources.every((resource) => resource.rls_session?.tenant_setting === settings[0])
+  return tenantScoped.every((resource) => resource.rls_session?.tenant_setting === settings[0])
     ? settings[0]
     : undefined;
 }
 
-function addDepthTwoExplorationPaths(
+function addComposedExplorationPaths(
   resources: ExplorationBoundaryDraft["pack"]["resources"],
 ): void {
   const byId = new Map(resources.map((resource) => [resource.id, resource]));
+  const hardDepth = EXPLORATION_BUDGET_REVIEW_CEILINGS.max_analysis_relationship_hops ?? 2;
   for (const root of resources) {
     const factShaped = root.relationships.length >= 2
       || root.aggregate_measures.some((field) => !isReferenceIdentifierName(field))
-      || Object.keys(root.time_bucket_fields).length > 0;
+      || Object.keys(root.time_bucket_fields).length > 0
+      || (root.relationships.length > 0 && root.groupable_fields.length > 0);
     if (!factShaped) continue;
     const directTargets = new Set(
       root.relationships
@@ -2735,37 +5391,44 @@ function addDepthTwoExplorationPaths(
         .map((relationship) => relationship.target_resource),
     );
     const candidates: ExplorationRelationship[] = [];
-    for (const first of root.relationships.filter((relationship) => relationship.path_depth === 1)) {
-      const intermediate = byId.get(first.target_resource);
-      if (!intermediate) continue;
-      for (const second of intermediate.relationships.filter((relationship) => relationship.path_depth === 1)) {
-        if (second.target_resource === root.id || second.target_resource === intermediate.id) continue;
-        if (directTargets.has(second.target_resource)) continue;
-        const links = [
-          ...(first.proof?.links ?? []),
-          ...(second.proof?.links ?? []),
-        ];
-        if (links.length !== 2) continue;
-        const nullable = links.some((link) => link.nullable);
-        candidates.push({
-          id: `${first.id}__${second.id}`,
-          target_resource: second.target_resource,
-          local_columns: [...first.local_columns],
-          target_columns: [...second.target_columns],
-          counted_entity: root.primary_key,
-          cardinality: "many_to_one",
-          max_fan_out: 1,
-          path_depth: 2,
-          proof: {
-            source: "database_catalog",
-            links: structuredClone(links),
-            digest: canonicalJsonDigest(links),
-          },
-          nullable,
-          unmatched_rows: nullable ? "review_required" : "exclude",
-        });
+    const visit = (
+      current: ExplorationBoundaryDraft["pack"]["resources"][number],
+      path: ExplorationRelationship[],
+      visited: Set<string>,
+    ): void => {
+      if (path.length >= hardDepth) return;
+      for (const next of current.relationships.filter((item) => item.path_depth === 1)) {
+        if (visited.has(next.target_resource)) continue;
+        const nextResource = byId.get(next.target_resource);
+        if (!nextResource) continue;
+        const nextPath = [...path, next];
+        const links = nextPath.flatMap((item) => item.proof?.links ?? []);
+        if (links.length !== nextPath.length) continue;
+        if (nextPath.length >= 2 && !directTargets.has(next.target_resource)) {
+          const first = nextPath[0]!;
+          const nullable = links.some((link) => link.nullable);
+          candidates.push({
+            id: nextPath.map((item) => item.id).join("__"),
+            target_resource: next.target_resource,
+            local_columns: [...first.local_columns],
+            target_columns: [...next.target_columns],
+            counted_entity: root.primary_key,
+            cardinality: "many_to_one",
+            max_fan_out: 1,
+            path_depth: nextPath.length as 2 | 3,
+            proof: {
+              source: "database_catalog",
+              links: structuredClone(links),
+              digest: canonicalJsonDigest(links),
+            },
+            nullable,
+            unmatched_rows: nullable ? "review_required" : "exclude",
+          });
+        }
+        visit(nextResource, nextPath, new Set([...visited, next.target_resource]));
       }
-    }
+    };
+    visit(root, [], new Set([root.id]));
     const pathsByTarget = new Map<string, ExplorationRelationship[]>();
     for (const candidate of candidates) {
       const group = pathsByTarget.get(candidate.target_resource) ?? [];
@@ -2773,8 +5436,11 @@ function addDepthTwoExplorationPaths(
       pathsByTarget.set(candidate.target_resource, group);
     }
     const unambiguous = [...pathsByTarget.values()]
-      .filter((paths) => paths.length === 1)
-      .map((paths) => paths[0]!)
+      .flatMap((paths) => {
+        const shortest = Math.min(...paths.map((path) => path.path_depth ?? 1));
+        const shortestPaths = paths.filter((path) => (path.path_depth ?? 1) === shortest);
+        return shortestPaths.length === 1 ? shortestPaths : [];
+      })
       .sort((left, right) => {
         const leftTarget = byId.get(left.target_resource);
         const rightTarget = byId.get(right.target_resource);
@@ -2783,9 +5449,12 @@ function addDepthTwoExplorationPaths(
           + Object.keys(target?.time_bucket_fields ?? {}).length * 3
           + (target?.selectable_fields.length ?? 0);
         return score(rightTarget) - score(leftTarget) || left.id.localeCompare(right.id);
-      })
-      .slice(0, MAX_DEPTH_TWO_RELATIONSHIP_CANDIDATES_PER_RESOURCE);
-    root.relationships.push(...unambiguous);
+      });
+    for (const depth of [2, 3] as const) {
+      root.relationships.push(...unambiguous
+        .filter((relationship) => relationship.path_depth === depth)
+        .slice(0, MAX_COMPOSED_RELATIONSHIP_CANDIDATES_PER_DEPTH));
+    }
     root.relationships.sort((left, right) =>
       (left.path_depth ?? 1) - (right.path_depth ?? 1) || left.id.localeCompare(right.id));
   }
@@ -2794,12 +5463,19 @@ function addDepthTwoExplorationPaths(
 function generatedContractTests(
   graph: AutoBoundaryEvidenceGraph,
   digest: `sha256:${string}`,
+  singleOrganization: boolean,
 ): AutoBoundaryBuild["tests"] {
   const cases: Array<Record<string, unknown>> = [];
   for (const resource of graph.resources.filter((candidate) => candidate.status === "draft_read")) {
     cases.push(
-      { name: `${resource.id}: trusted tenant required`, kind: "scope", expected: "deny_without_trusted_tenant" },
-      { name: `${resource.id}: model tenant override absent`, kind: "schema", expected: "tenant_not_model_argument" },
+      singleOrganization
+        ? { name: `${resource.id}: reviewed organization fixed`, kind: "scope", expected: "single_organization_boundary_bound" }
+        : resource.shared_reference_scope?.selected
+          ? { name: `${resource.id}: reviewed shared reference`, kind: "scope", expected: "shared_reference_no_tenant_predicate" }
+          : { name: `${resource.id}: trusted tenant required`, kind: "scope", expected: "deny_without_trusted_tenant" },
+      singleOrganization
+        ? { name: `${resource.id}: model organization override absent`, kind: "schema", expected: "organization_not_model_argument" }
+        : { name: `${resource.id}: model tenant override absent`, kind: "schema", expected: "tenant_not_model_argument" },
       { name: `${resource.id}: kept-out fields unavailable`, kind: "redaction", fields: resource.fields.filter((field) => field.sensitive_suggestion).map((field) => field.name) },
       { name: `${resource.id}: schema fingerprint current`, kind: "drift", expected: "generation_lock_match" },
     );
@@ -2813,27 +5489,53 @@ function generatedContractTests(
 
 function unresolvedDecisions(
   graph: AutoBoundaryEvidenceGraph,
-  boundary?: Pick<ExplorationBoundaryDraft, "pack" | "trusted_context">,
+  boundary?: Pick<ExplorationBoundaryDraft, "pack" | "trusted_context" | "deployment_profile" | "organization_scope">,
 ): string[] {
   const boundaryResources = new Map(
     (boundary?.pack.resources ?? []).map((resource) => [resource.id, resource]),
   );
   return unique([
-    "deployment profile: confirm development or staging authoring-only use",
-    boundary?.trusted_context.database_role_tenant
+    boundary?.deployment_profile === "production"
+      ? "deployment profile: confirm production Explore over secured HTTP with mandatory per-principal scope and privacy accounting"
+      : "deployment profile: confirm development or staging authoring-only use",
+    ...(boundary?.organization_scope
+      ? [`organization scope: confirm this source contains one organization (${boundary.organization_scope.organization_id}), every row belongs to it, and Explore will apply no tenant predicate`]
+      : []),
+    boundary?.trusted_context.provider === "http_claims"
+      ? boundary.organization_scope
+        ? `trusted context: confirm principal comes only from verified HTTP claim ${boundary.trusted_context.principal_claim}; organization identity is fixed by the reviewed boundary`
+        : `trusted context: confirm tenant and principal come only from verified HTTP claims ${boundary.trusted_context.tenant_claim} and ${boundary.trusted_context.principal_claim}`
+      : boundary?.trusted_context.database_role_tenant
       ? `trusted context: confirm tenant scope comes from the verified PostgreSQL credential setting ${boundary.trusted_context.database_role_tenant.setting} and principal scope remains outside model arguments`
-      : "trusted context: confirm operator-supplied tenant and principal bindings remain outside model arguments",
+      : boundary?.organization_scope
+        ? `trusted context: confirm organization identity is fixed as ${boundary.organization_scope.organization_id} and any principal binding remains outside model arguments`
+        : "trusted context: confirm operator-supplied tenant and principal bindings remain outside model arguments",
     ...(!graph.database_role.verified || !graph.database_role.read_only
       ? ["database role: use and verify a non-owner, non-superuser, non-BYPASSRLS, read-only credential before enabling Scoped Explore"]
       : []),
     ...graph.resources.flatMap((resource) => [
     ...(resource.status !== "draft_read" ? resource.blockers.map((blocker) => `${resource.id}: ${blocker}`) : []),
     ...(resource.status === "draft_read" ? [
-      `${resource.id}: confirm tenant key ${resource.tenant_key.selected}`,
-      `${resource.id}: confirm principal scope ${resource.principal_key.selected ?? "not configured"}`,
+      boundary?.organization_scope
+        ? `${resource.id}: confirm whole-organization read access with no tenant predicate`
+        : resource.tenant_key.selected
+          ? `${resource.id}: confirm tenant key ${resource.tenant_key.selected}`
+          : resource.derived_tenant_scope?.selected
+            ? `${resource.id}: confirm mandatory derived tenant scope via ${resource.derived_tenant_scope.selected.path_id} to ${resource.derived_tenant_scope.selected.ancestor_resource}.${resource.derived_tenant_scope.selected.ancestor_column}`
+            : `${resource.id}: confirm reviewed shared reference with no tenant predicate`,
+      resource.principal_key.selected
+        ? `${resource.id}: confirm principal scope ${resource.principal_key.selected}`
+        : resource.derived_principal_scope?.selected
+          ? `${resource.id}: confirm mandatory derived principal scope via ${resource.derived_principal_scope.selected.path_id} to ${resource.derived_principal_scope.selected.ancestor_resource}.${resource.derived_principal_scope.selected.ancestor_column}`
+          : `${resource.id}: confirm principal scope not configured`,
       `${resource.id}: confirm visible and kept-out fields`,
       `${resource.id}: confirm filter/sort/group/aggregate-only field permissions`,
       `${resource.id}: confirm minimum cohort and extraction/differencing budgets`,
+      ...(boundaryResources.get(resource.id)?.label
+        || boundaryResources.get(resource.id)?.description
+        || Object.keys(boundaryResources.get(resource.id)?.field_metadata ?? {}).length
+        ? [`${resource.id}: confirm reviewed labels and descriptions`]
+        : []),
       ...(boundaryResources.get(resource.id)?.relationships ?? resource.relationships
         .filter((relationship) => relationship.cardinality_proven)
         .map((relationship) => ({
@@ -2848,12 +5550,37 @@ function unresolvedDecisions(
 }
 
 function reviewMarkdown(build: AutoBoundaryBuild): string {
+  const derivedScopes = build.review.resources.flatMap((resource) => [
+    ...(resource.derived_tenant_scope?.selected
+      ? [{ resource: resource.id, kind: "tenant", scope: resource.derived_tenant_scope.selected }]
+      : []),
+    ...(resource.derived_principal_scope?.selected
+      ? [{ resource: resource.id, kind: "principal", scope: resource.derived_principal_scope.selected }]
+      : []),
+  ]);
+  const sharedReferences = build.exploration_boundary.pack.resources
+    .filter((resource) => Boolean(resource.shared_reference_scope))
+    .map((resource) => resource.id);
+  const autoBands = build.exploration_boundary.pack.resources.flatMap((resource) =>
+    (resource.auto_bands ?? []).map((policy) => ({ resource: resource.id, policy })));
+  const reviewedMetadata = build.exploration_boundary.pack.resources
+    .filter((resource) => resource.label || resource.description
+      || Object.keys(resource.field_metadata ?? {}).length)
+    .map((resource) => ({
+      resource: resource.id,
+      label: resource.label,
+      description: resource.description,
+      fields: Object.entries(resource.field_metadata ?? {})
+        .sort(([left], [right]) => left.localeCompare(right)),
+    }));
   const lines = [
     "# Auto Boundary Review",
     "",
     "Status: disabled and unreviewed. These files grant no runtime authority until a human activates the exact reviewed digest in the local Workbench.",
     "",
     `Candidate contract digest: \`${build.contract_digest}\``,
+    `Database server: \`${build.lock.engine} ${build.lock.database_server_version ?? "not recorded by this lock"}\``,
+    `Database capability tier: \`${build.lock.database_server_tier ?? "not recorded by this lock"}\``,
     `Schema fingerprint: \`${build.lock.schema_fingerprint}\``,
     `Role posture fingerprint: \`${build.lock.role_posture_fingerprint}\``,
     "",
@@ -2867,12 +5594,77 @@ function reviewMarkdown(build: AutoBoundaryBuild): string {
     "",
     "## Required Review",
     "",
-    ...build.review.unresolved_decisions.map((decision) => `- [ ] ${decision}`),
+    ...build.review.unresolved_decisions.map((decision) =>
+      `- [ ] ${humanReadableScopeDecision(decision, derivedScopes)}`),
+    ...(sharedReferences.length
+      ? [
+          "",
+          "## Reviewed Shared References",
+          "",
+          "These tables apply no tenant predicate because a human asserted that every tenant may receive the same reviewed rows. Field visibility, cohort suppression, privacy budgets, and principal scope remain enforced.",
+          "",
+          ...sharedReferences.map((resource) => `- ${resource}`),
+        ]
+      : []),
+    ...(autoBands.length
+      ? [
+          "",
+          "## Reviewed Automatic Numeric Bands",
+          "",
+          "The model may select only the reviewed method and bucket count. Runner computes boundaries from trusted scoped rows, applies cohort suppression, and never returns raw computed edges.",
+          "",
+          ...autoBands.map(({ resource, policy }) =>
+            `- ${resource}.${policy.field}: ${policy.methods.join(" or ")}; ${policy.min_buckets}-${policy.max_buckets} buckets; ${policy.label_style} labels`),
+        ]
+      : []),
+    ...(reviewedMetadata.length
+      ? [
+          "",
+          "## Reviewed Names And Descriptions",
+          "",
+          "These bounded descriptions explain exact database IDs. They grant no authority, and plans must continue to use the exact IDs shown here.",
+          "",
+          ...reviewedMetadata.flatMap((metadata) => [
+            `- ${metadata.resource}: label ${JSON.stringify(metadata.label ?? null)}; description ${JSON.stringify(metadata.description ?? null)}`,
+            ...metadata.fields.map(([field, fieldMetadata]) =>
+              `  - ${metadata.resource}.${field}: label ${JSON.stringify(fieldMetadata.label ?? null)}; description ${JSON.stringify(fieldMetadata.description ?? null)}`),
+          ]),
+        ]
+      : []),
+    ...(derivedScopes.length
+      ? [
+          "",
+          "## Advanced Scope Path IDs",
+          "",
+          "These canonical IDs are for scripted review flags. Runtime enforcement and digests use them unchanged.",
+          "",
+          ...derivedScopes.map(({ resource, kind, scope }) =>
+            `- ${resource} ${kind}: \`${scope.path_id}\` (${formatDerivedScopePath(scope)})`),
+        ]
+      : []),
     "",
     "Database, ORM, and API comments are naming evidence only. They never create read, write, approval, or activation authority.",
     "",
   ];
   return lines.join("\n");
+}
+
+function humanReadableScopeDecision(
+  decision: string,
+  scopes: Array<{
+    resource: string;
+    kind: string;
+    scope: DerivedScopePath;
+  }>,
+): string {
+  let displayed = decision;
+  for (const { scope } of scopes) {
+    displayed = displayed.replace(
+      `via ${scope.path_id} to ${scope.ancestor_resource}.${scope.ancestor_column}`,
+      `through ${formatDerivedScopePath(scope)}`,
+    );
+  }
+  return displayed;
 }
 
 function inference<T>(
@@ -2925,6 +5717,17 @@ function moreRestrictiveSensitivity(
   };
 }
 
+function nameOnlySensitivityRefutedByStructure(
+  classification: SensitivityClassification,
+  deterministic: SensitivityClassification,
+): boolean {
+  return deterministic.state === "structurally_low_risk"
+    && classification.state === "unresolved_free_text"
+    && classification.reason_codes.length > 0
+    && classification.reason_codes.every((code) =>
+      code === "unconstrained_free_text_name" || code === "ambiguous_display_name");
+}
+
 function sourceKind(detail: string): "prisma" | "drizzle" | "openapi" | "synapsor" {
   const prefix = detail.split(":", 1)[0];
   return prefix === "prisma" || prefix === "drizzle" || prefix === "openapi" ? prefix : "synapsor";
@@ -2942,18 +5745,51 @@ function isCategoricalType(type: string, enumValues?: string[]): boolean {
   return Boolean(enumValues?.length) || /char|text|enum|boolean|bool/i.test(type);
 }
 
+function reviewedBoundaryEnumValues(
+  field: AutoBoundaryField,
+  keptOutFields: Set<string>,
+  trustedScopeFields: Set<string>,
+): string[] | undefined {
+  const values = field.enum_review_override?.values ?? field.enum_values;
+  if (!values?.length
+    || values.length > 64
+    || field.primary_key
+    || isReferenceIdentifierName(field.name)
+    || field.sensitivity.state !== "structurally_low_risk"
+    || keptOutFields.has(field.name)
+    || trustedScopeFields.has(field.name)
+    || values.some((value) => [...value].length > 64)
+    || Buffer.byteLength(JSON.stringify(values), "utf8") > 2_048) {
+    return undefined;
+  }
+  return [...values];
+}
+
 function operatorsForType(type: string): Array<"eq" | "neq" | "lt" | "lte" | "gt" | "gte" | "in"> {
   if (isNumericType(type) || isTimestampType(type)) return ["eq", "neq", "lt", "lte", "gt", "gte", "in"];
   return ["eq", "neq", "in"];
 }
 
-function explorationRlsSession(resource: AutoBoundaryResource): { rls_session?: { tenant_setting?: string; principal_setting?: string } } {
-  if (resource.rls.enabled !== true) return {};
-  const tenant = resource.tenant_key.selected
-    ? settingForScopedColumn(resource.rls.using_expressions, resource.tenant_key.selected)
+function explorationRlsSession(
+  resource: AutoBoundaryResource,
+  resources: AutoBoundaryResource[],
+): { rls_session?: { tenant_setting?: string; principal_setting?: string } } {
+  const byId = new Map(resources.map((candidate) => [candidate.id, candidate]));
+  const tenantOwner = resource.tenant_key.selected
+    ? resource
+    : resource.derived_tenant_scope?.selected
+      ? byId.get(resource.derived_tenant_scope.selected.ancestor_resource)
+      : undefined;
+  const principalOwner = resource.principal_key.selected
+    ? resource
+    : resource.derived_principal_scope?.selected
+      ? byId.get(resource.derived_principal_scope.selected.ancestor_resource)
+      : undefined;
+  const tenant = tenantOwner?.tenant_key.selected && tenantOwner.rls.enabled === true
+    ? settingForScopedColumn(tenantOwner.rls.using_expressions, tenantOwner.tenant_key.selected)
     : undefined;
-  const principal = resource.principal_key.selected
-    ? settingForScopedColumn(resource.rls.using_expressions, resource.principal_key.selected)
+  const principal = principalOwner?.principal_key.selected && principalOwner.rls.enabled === true
+    ? settingForScopedColumn(principalOwner.rls.using_expressions, principalOwner.principal_key.selected)
     : undefined;
   if (!tenant && !principal) return {};
   return {
@@ -3001,6 +5837,11 @@ function humanize(value: string): string {
 
 function isReferenceIdentifierName(value: string): boolean {
   return value.toLowerCase() === "id" || /_id$/i.test(value);
+}
+
+function isAnalyticalNumericMeasureName(value: string): boolean {
+  return !isReferenceIdentifierName(value)
+    && !/(?:^|_)(?:version|revision|sequence|seq|ordinal|position|rank)(?:_|$)/i.test(value);
 }
 
 function escapeDslString(value: string): string {

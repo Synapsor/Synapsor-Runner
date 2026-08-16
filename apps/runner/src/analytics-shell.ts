@@ -1,5 +1,6 @@
 import readlineCore from "node:readline";
 import readline from "node:readline/promises";
+import fs from "node:fs/promises";
 import path from "node:path";
 import type {
   Readable,
@@ -14,8 +15,12 @@ import {
   safeTerminalText,
 } from "./analytics-shell-render.js";
 import type {
+  AskSessionTokenUsage,
+  AskTokenLimitUpdate,
   AskTurnResult,
 } from "./model-ask.js";
+import type { PendingBoundaryReviewSummary } from "./ask-authority.js";
+import { formatPreservedAuthority } from "./boundary-rescan.js";
 import type {
   AskAccessGuidance,
   ReviewedAskAccessSummary,
@@ -35,54 +40,510 @@ import {
   terminalContentWidth,
 } from "./terminal-layout.js";
 import {
+  renderTerminalFact,
+  renderTerminalCommandFrame,
   renderTerminalJson,
+  renderTerminalJsonFrame,
   renderTerminalSql,
+  renderTerminalSqlFrame,
+  renderTerminalToolName,
 } from "./terminal-syntax.js";
+import {
+  boundaryCatalogRunnerOnlyAnalysisSummary,
+  boundaryCatalogDiagramIsLarge,
+  boundaryCatalogModelFor,
+  buildBoundaryCatalogDiagramExports,
+  renderBoundaryCatalogTopologyAscii,
+  type BoundaryCatalogModel,
+} from "./boundary-catalog.js";
+import { cliCommandName } from "./cli-command-meta.js";
+import { shellQuote } from "./cli-format.js";
+import type { ResolvedRelativeTimeWindow } from "./relative-time-window.js";
 
 export { renderTerminalJson, renderTerminalSql } from "./terminal-syntax.js";
 
 const COMMANDS = [
   "/help",
   "/catalog",
+  "/history",
   "/analyses",
   "/protect",
   "/details",
   "/attempts",
   "/access",
   "/access-workbench",
+  "/refresh-access",
+  "/limits",
   "/clear",
   "/exit",
 ];
 
 const COMMAND_DESCRIPTIONS: Record<string, string> = {
   "/help": "List shell actions",
-  "/catalog": "Show what the reviewed boundaries can answer",
-  "/analyses": "List recent protectable analyses",
+  "/catalog": "Show reviewed tables, joins, and allowed analysis",
+  "/history": "Show recent requests and durable query history",
+  "/analyses": "Alias for /history",
   "/protect": "Protect the latest eligible analysis",
   "/details": "Show safe execution metadata",
   "/attempts": "Inspect refused model attempts",
   "/access": "Add or edit reviewed boundaries",
   "/access-workbench": "Open the visual access editor",
+  "/refresh-access": "Use access activated outside this shell",
+  "/limits": "Show or change this Ask session's token limits",
   "/clear": "Clear this model conversation",
   "/exit": "Close the analytics shell",
 };
 
-export function slashCommandSuggestions(line: string): string[] {
-  if (!line.startsWith("/")) return [];
+type SlashCommandSuggestion = {
+  label: string;
+  description: string;
+  completion?: string;
+};
+
+const BASE_COMMAND_SUGGESTIONS: SlashCommandSuggestion[] = COMMANDS.map((command) => ({
+  label: command,
+  description: COMMAND_DESCRIPTIONS[command] ?? "",
+  completion: command,
+}));
+
+function suggestion(
+  label: string,
+  description: string,
+  completion = label,
+): SlashCommandSuggestion {
+  return { label, description, completion };
+}
+
+function syntaxSuggestion(label: string, description: string): SlashCommandSuggestion {
+  return { label, description };
+}
+
+function startsWithToken(candidate: string, input: string): boolean {
+  return candidate.toLowerCase().startsWith(input.toLowerCase());
+}
+
+type CatalogCommandRequest =
+  | { kind: "page"; page: number }
+  | {
+      kind: "diagram";
+      boundary?: string;
+      export_requested: boolean;
+      export_path?: string;
+    };
+
+type AskLimitsCommandRequest = AskTokenLimitUpdate & {
+  changed: boolean;
+};
+
+function parseAskLimitsCommand(line: string): AskLimitsCommandRequest | { error: string } {
+  const rest = line.slice("/limits".length).trim();
+  if (!rest) return { changed: false };
+  const tokens = shellArgumentTokens(rest);
+  if (!tokens) return { error: "A quoted limits argument is not closed." };
+  const result: AskLimitsCommandRequest = { changed: false };
+  for (let index = 0; index < tokens.length; index += 1) {
+    const option = tokens[index]!;
+    const value = tokens[index + 1];
+    if (option === "--session-tokens") {
+      if (result.session_token_budget !== undefined) return { error: "--session-tokens may be supplied only once." };
+      if (!value || !/^[1-9][0-9]*$/.test(value)) return { error: "--session-tokens requires a positive whole number." };
+      result.session_token_budget = Number(value);
+      result.changed = true;
+      index += 1;
+      continue;
+    }
+    if (option === "--max-output-tokens") {
+      if (result.max_output_tokens !== undefined) return { error: "--max-output-tokens may be supplied only once." };
+      if (!value || (value !== "automatic" && !/^[1-9][0-9]*$/.test(value))) {
+        return { error: "--max-output-tokens requires a positive whole number or automatic." };
+      }
+      result.max_output_tokens = value === "automatic" ? null : Number(value);
+      result.changed = true;
+      index += 1;
+      continue;
+    }
+    return { error: `Unknown Ask limits option ${option}.` };
+  }
+  return result;
+}
+
+function renderAskTokenLimits(input: {
+  token_usage: AskSessionTokenUsage;
+  max_output_tokens?: number;
+  changed: boolean;
+  color: boolean;
+}): string {
+  const theme = terminalTheme(input.color);
+  const usage = input.token_usage;
+  return [
+    "",
+    theme.title(input.changed ? "ASK SESSION LIMITS UPDATED" : "ASK SESSION LIMITS"),
+    `  ${theme.key("Reported usage")}  ${theme.value(`${usage.reported_tokens.toLocaleString("en-US")} / ${usage.session_token_budget.toLocaleString("en-US")}`)} ${theme.dim(`(${usage.remaining_reported_tokens.toLocaleString("en-US")} remaining)`)}`,
+    `  ${theme.key("Session budget")}  ${theme.value(usage.session_token_budget.toLocaleString("en-US"))} ${theme.dim("provider-reported tokens; conversation preserved when raised")}`,
+    `  ${theme.key("Output limit")}    ${input.max_output_tokens === undefined
+      ? theme.value("Automatic") + " " + theme.dim("1,200 ordinary calls; existing provider-specific final-pass default")
+      : theme.value(input.max_output_tokens.toLocaleString("en-US")) + " " + theme.dim("tokens on every provider call")}`,
+    "",
+    theme.dim("These are client spend/context controls, not database authority or Explore privacy budgets."),
+    `${theme.dim("Change: ")}${theme.scope("/limits --session-tokens <number>")} ${theme.dim("or ")}${theme.scope("/limits --max-output-tokens <number|automatic>")}`,
+    "",
+  ].join("\n");
+}
+
+function parseCatalogCommand(line: string): CatalogCommandRequest | { error: string } {
+  const rest = line.slice("/catalog".length).trim();
+  if (!rest) return { kind: "page", page: 1 };
+  const tokens = shellArgumentTokens(rest);
+  if (!tokens) return { error: "A quoted catalog argument is not closed." };
+  if (tokens.length === 1 && /^[1-9][0-9]*$/.test(tokens[0]!)) {
+    return { kind: "page", page: Number(tokens[0]) };
+  }
+  if (tokens[0] !== "--diagram") {
+    return { error: "Expected a page number or --diagram." };
+  }
+  let boundary: string | undefined;
+  let exportRequested = false;
+  let exportPath: string | undefined;
+  for (let index = 1; index < tokens.length; index += 1) {
+    const token = tokens[index]!;
+    if (token === "--boundary") {
+      if (boundary !== undefined) return { error: "--boundary may be supplied only once." };
+      const value = tokens[index + 1];
+      if (!value || value.startsWith("--")) return { error: "--boundary requires an active boundary name." };
+      boundary = value;
+      index += 1;
+      continue;
+    }
+    if (token === "--export") {
+      if (exportRequested) return { error: "--export may be supplied only once." };
+      exportRequested = true;
+      const value = tokens[index + 1];
+      if (value && !value.startsWith("--")) {
+        exportPath = value;
+        index += 1;
+      }
+      continue;
+    }
+    return { error: `Unknown catalog diagram option ${token}.` };
+  }
+  return {
+    kind: "diagram",
+    ...(boundary ? { boundary } : {}),
+    export_requested: exportRequested,
+    ...(exportPath ? { export_path: exportPath } : {}),
+  };
+}
+
+function shellArgumentTokens(value: string): string[] | undefined {
+  const tokens: string[] = [];
+  let index = 0;
+  while (index < value.length) {
+    while (/\s/.test(value[index] ?? "")) index += 1;
+    if (index >= value.length) break;
+    const quote = value[index] === "\"" || value[index] === "'" ? value[index++] : undefined;
+    let token = "";
+    let closed = quote === undefined;
+    while (index < value.length) {
+      const character = value[index]!;
+      if (quote) {
+        if (character === quote) {
+          index += 1;
+          closed = true;
+          break;
+        }
+        if (character === "\\" && value[index + 1] === quote) {
+          token += quote;
+          index += 2;
+          continue;
+        }
+        token += character;
+        index += 1;
+        continue;
+      }
+      if (/\s/.test(character)) break;
+      token += character;
+      index += 1;
+    }
+    if (!closed) return undefined;
+    if (token) tokens.push(token);
+  }
+  return tokens;
+}
+
+function argumentCommandSuggestions(line: string): SlashCommandSuggestion[] | undefined {
   const normalized = line.toLowerCase();
-  return COMMANDS.filter((command) => command.startsWith(normalized));
+
+  if (normalized === "/history" || normalized.startsWith("/history ")) {
+    return line.slice("/history".length).trim()
+      ? []
+      : [suggestion("/history", "Show recent requests and durable query history")];
+  }
+
+  if (normalized === "/analyses" || normalized.startsWith("/analyses ")) {
+    return line.slice("/analyses".length).trim()
+      ? []
+      : [suggestion("/analyses", "Alias for /history")];
+  }
+
+  if (normalized === "/catalog" || normalized.startsWith("/catalog ")) {
+    const rawRest = line.slice("/catalog".length);
+    const rest = rawRest.trim();
+    if (!rest) {
+      return [
+        suggestion("/catalog --diagram", "Show the terminal relationship topology"),
+        suggestion("/catalog --diagram --export", "Export the sole boundary map"),
+        syntaxSuggestion(
+          "/catalog --diagram --boundary <name>",
+          "Choose one boundary when several are active",
+        ),
+        syntaxSuggestion("/catalog <page>", "Show another catalog page"),
+      ];
+    }
+    if (startsWithToken("--diagram", rest) && !rest.includes(" ") && !/\s$/.test(rawRest)) {
+      return [suggestion("/catalog --diagram", "Show the terminal relationship topology")];
+    }
+    if (startsWithToken("--export", rest) && !rest.includes(" ")) {
+      return [suggestion("/catalog --diagram --export", "Export the complete boundary map")];
+    }
+    if (startsWithToken("--boundary", rest) && !rest.includes(" ")) {
+      return [syntaxSuggestion(
+        "/catalog --diagram --boundary <name>",
+        "Type one active boundary name",
+      )];
+    }
+    if (rest.startsWith("--diagram")) {
+      const partialOption = rest.match(/^--diagram\s+(--[^\s]*)$/)?.[1]?.toLowerCase();
+      if (partialOption) {
+        return [
+          ...(startsWithToken("--export", partialOption)
+            ? [suggestion("/catalog --diagram --export", "Export the complete boundary map")]
+            : []),
+          ...(startsWithToken("--boundary", partialOption)
+            ? [syntaxSuggestion(
+                "/catalog --diagram --boundary <name>",
+                "Type one active boundary name",
+              )]
+            : []),
+        ];
+      }
+      const parsed = parseCatalogCommand(line);
+      if (!("error" in parsed) && parsed.kind === "diagram") {
+        return [
+          syntaxSuggestion(line.trimEnd(), parsed.boundary
+            ? `Show the ${parsed.boundary} reviewed boundary diagram`
+            : "Show a reviewed boundary diagram"),
+          ...(!parsed.boundary
+            ? [syntaxSuggestion(
+              "/catalog --diagram --boundary <name>",
+              "Choose one boundary when several are active",
+            )]
+            : []),
+          ...(!parsed.export_requested
+            ? [suggestion(
+              `${line.trimEnd()} --export [path]`,
+              "Export the complete terminal map as Markdown",
+              `${line.trimEnd()} --export`,
+            )]
+            : []),
+        ];
+      }
+      if ("error" in parsed
+        && (/--boundary\s+[^\s]*$/.test(rest) || /--export(?:\s+[^\s]*)?$/.test(rest))) {
+        return [syntaxSuggestion(line.trimEnd(), parsed.error)];
+      }
+    }
+    if (/^[1-9][0-9]*$/.test(rest)) {
+      return [suggestion(`/catalog ${rest}`, `Show catalog page ${rest}`)];
+    }
+    return [];
+  }
+
+  if (normalized === "/details" || normalized.startsWith("/details ")) {
+    const rest = line.slice("/details".length).trimStart();
+    const tokens = rest.split(/\s+/).filter(Boolean);
+    const trailingSpace = /\s$/.test(line);
+    if (!tokens.length) {
+      return [
+        suggestion("/details last", "Inspect the latest analysis"),
+        suggestion("/details last --sql", "Include redacted operator-only SQL"),
+        syntaxSuggestion("/details <A#>", "Inspect one analysis by reference"),
+        syntaxSuggestion("/details <A#> --sql", "Inspect one analysis and its redacted SQL"),
+      ];
+    }
+    if (tokens.length === 1) {
+      const token = tokens[0]!;
+      if (startsWithToken("last", token)) {
+        return [
+          suggestion("/details last", "Inspect the latest analysis"),
+          suggestion("/details last --sql", "Include redacted operator-only SQL"),
+        ];
+      }
+      if (startsWithToken("--sql", token)) {
+        return [suggestion("/details --sql", "Inspect the latest analysis with redacted SQL")];
+      }
+      if (/^a[0-9]*$/i.test(token)) {
+        if (!/^a[1-9][0-9]*$/i.test(token)) {
+          return [
+            syntaxSuggestion("/details <A#>", "Keep typing an analysis reference, such as A7"),
+            syntaxSuggestion("/details <A#> --sql", "Add --sql for the redacted statement"),
+          ];
+        }
+        const reference = token.toUpperCase();
+        return [
+          suggestion(`/details ${reference}`, `Inspect analysis ${reference}`),
+          suggestion(`/details ${reference} --sql`, `Inspect ${reference} with redacted SQL`),
+        ];
+      }
+      return [];
+    }
+    if (tokens.length === 2 && /^(last|a[1-9][0-9]*)$/i.test(tokens[0]!)) {
+      const reference = tokens[0]!.toLowerCase() === "last"
+        ? "last"
+        : tokens[0]!.toUpperCase();
+      const option = tokens[1]!;
+      if (startsWithToken("--sql", option)) {
+        return [suggestion(
+          `/details ${reference} --sql`,
+          reference === "last"
+            ? "Inspect the latest analysis with redacted SQL"
+            : `Inspect ${reference} with redacted SQL`,
+        )];
+      }
+    }
+    if (tokens.length === 1 && trailingSpace && /^(last|a[1-9][0-9]*)$/i.test(tokens[0]!)) {
+      const reference = tokens[0]!.toLowerCase() === "last"
+        ? "last"
+        : tokens[0]!.toUpperCase();
+      return [suggestion(
+        `/details ${reference} --sql`,
+        "Add the redacted operator-only database statement",
+      )];
+    }
+    return [];
+  }
+
+  if (normalized === "/protect" || normalized.startsWith("/protect ")) {
+    const rest = line.slice("/protect".length).trimStart();
+    const tokens = rest.split(/\s+/).filter(Boolean);
+    if (!tokens.length) {
+      return [
+        suggestion("/protect last", "Protect the latest eligible analysis"),
+        syntaxSuggestion("/protect <A#>", "Protect one analysis by reference"),
+        syntaxSuggestion("/protect <A#> as <name>", "Protect it with an explicit capability name"),
+      ];
+    }
+
+    const referenceToken = tokens[0]!;
+    const referenceIsComplete = /^(last|a[1-9][0-9]*)$/i.test(referenceToken);
+    if (tokens.length === 1) {
+      if (startsWithToken("last", referenceToken)) {
+        return [
+          suggestion("/protect last", "Protect the latest eligible analysis"),
+          syntaxSuggestion("/protect last as <name>", "Choose the capability name"),
+        ];
+      }
+      if (/^a[0-9]*$/i.test(referenceToken)) {
+        if (!referenceIsComplete) {
+          return [syntaxSuggestion(
+            "/protect <A#> as <name>",
+            "Keep typing an analysis reference, such as A7",
+          )];
+        }
+        const reference = referenceToken.toUpperCase();
+        return [
+          suggestion(`/protect ${reference}`, `Protect analysis ${reference}`),
+          syntaxSuggestion(`/protect ${reference} as <name>`, "Choose the capability name"),
+        ];
+      }
+      return [];
+    }
+
+    if (!referenceIsComplete || !startsWithToken("as", tokens[1]!)) return [];
+    const reference = referenceToken.toLowerCase() === "last"
+      ? "last"
+      : referenceToken.toUpperCase();
+    if (tokens.length === 2) {
+      return [syntaxSuggestion(
+        `/protect ${reference} as <name>`,
+        "Type a capability name, such as analytics.orders_by_region",
+      )];
+    }
+    if (tokens.length === 3 && /^[A-Za-z][A-Za-z0-9_.-]{0,127}$/.test(tokens[2]!)) {
+      const command = `/protect ${reference} as ${tokens[2]}`;
+      return [suggestion(command, `Protect ${reference} as ${tokens[2]}`)];
+    }
+    return [];
+  }
+
+  if (normalized === "/limits" || normalized.startsWith("/limits ")) {
+    const rest = line.slice("/limits".length).trimStart();
+    if (!rest) {
+      return [
+        syntaxSuggestion("/limits --session-tokens <number>", "Raise or lower the cumulative reported-token budget"),
+        syntaxSuggestion("/limits --max-output-tokens <number>", "Override every provider call's output-token limit"),
+        suggestion("/limits --max-output-tokens automatic", "Restore provider-call defaults"),
+      ];
+    }
+    const partial = rest.match(/(?:^|\s)(--[^\s]*)$/)?.[1] ?? "";
+    if (partial) {
+      return [
+        ...(startsWithToken("--session-tokens", partial)
+          ? [syntaxSuggestion("/limits --session-tokens <number>", "Choose 1,000-5,000,000 reported tokens")]
+          : []),
+        ...(startsWithToken("--max-output-tokens", partial)
+          ? [syntaxSuggestion("/limits --max-output-tokens <number>", "Choose 256-16,384 output tokens")]
+          : []),
+      ];
+    }
+    if (/--max-output-tokens\s+a[^\s]*$/i.test(rest)) {
+      return [suggestion("/limits --max-output-tokens automatic", "Restore provider-call defaults")];
+    }
+    return [];
+  }
+
+  if (normalized === "/access" || normalized.startsWith("/access ")) {
+    const rest = line.slice("/access".length).trim();
+    if (!rest || startsWithToken("workbench", rest)) {
+      return [suggestion("/access workbench", "Open the visual access editor")];
+    }
+    return [];
+  }
+
+  return undefined;
+}
+
+function slashMenuSuggestions(line: string): SlashCommandSuggestion[] {
+  if (!line.startsWith("/")) return [];
+  const argumentSuggestions = argumentCommandSuggestions(line);
+  if (argumentSuggestions !== undefined) return argumentSuggestions;
+  const normalized = line.toLowerCase();
+  const baseMatches = BASE_COMMAND_SUGGESTIONS.filter((entry) =>
+    entry.label.startsWith(normalized));
+  if (baseMatches.length !== 1 || baseMatches[0]!.label === normalized) return baseMatches;
+
+  const nested = argumentCommandSuggestions(baseMatches[0]!.label) ?? [];
+  return [...baseMatches, ...nested].filter((entry, index, entries) =>
+    entries.findIndex((candidate) => candidate.label === entry.label) === index);
+}
+
+export function slashCommandSuggestions(line: string): string[] {
+  return slashMenuSuggestions(line).map((entry) => entry.label);
 }
 
 export function renderSlashCommandMenu(line: string, color = false): string {
-  const matches = slashCommandSuggestions(line);
+  const matches = slashMenuSuggestions(line);
   if (!line.startsWith("/")) return "";
   const theme = terminalTheme(color);
   if (!matches.length) {
     return `${theme.warning("No matching action.")} ${theme.key("/help")} lists all actions.`;
   }
+  const labelWidth = Math.min(
+    38,
+    Math.max(20, ...matches.map((entry) => entry.label.length + 2)),
+  );
   return [
-    ...matches.map((command) =>
-      `${theme.key(command.padEnd(20))} ${theme.dim(COMMAND_DESCRIPTIONS[command] ?? "")}`),
+    ...matches.map((entry) =>
+      `${theme.key(entry.label.padEnd(labelWidth))} ${theme.dim(entry.description)}`),
     theme.dim("Keep typing or press Tab to complete."),
   ].join("\n");
 }
@@ -102,6 +563,7 @@ export type ShellAnalysisRecord = {
   returned_rows_or_groups?: number;
   returned_cells?: number;
   suppressed_groups?: number;
+  resolved_time_windows?: ResolvedRelativeTimeWindow[];
   minimum_cohort_override?: {
     resource: string;
     minimum_cohort_size: number;
@@ -114,6 +576,16 @@ export type ShellAnalysisRecord = {
 export type AnalyticsShellIo = {
   read(prompt: string): Promise<string | undefined>;
   readWithEscape?(prompt: string): Promise<string | undefined>;
+  choose?(input: {
+    title: string;
+    message: string;
+    initialValue?: string;
+    options: Array<{
+      value: string;
+      label: string;
+      detail?: string;
+    }>;
+  }): Promise<string | undefined>;
   write(value: string): void;
   setStatus?(value: string): void;
   clearStatus?(): void;
@@ -125,17 +597,16 @@ export type AnalyticsShellIo = {
 
 export type AnalyticsShellInput = {
   projectRoot?: string;
+  configPath?: string;
+  storePath?: string;
   providerLabel: string;
   modelLabel?: string;
   boundaryLabel?: string;
   profileLabel: string;
   reviewedDataAreas: number;
   accessSummary?: ReviewedAskAccessSummary;
-  pendingBoundaryReview?: {
-    boundary_name: string;
-    pending_changes: number;
-    previous_authority_active: boolean;
-  };
+  boundaryCatalog?: BoundaryCatalogModel;
+  pendingBoundaryReview?: PendingBoundaryReviewSummary;
   operatorLabel?: string;
   verboseAttempts?: boolean;
   io: AnalyticsShellIo;
@@ -171,6 +642,26 @@ export type AnalyticsShellInput = {
     record: ShellAnalysisRecord;
   }): Promise<OperatorCompiledExploreEvidence>;
   openAccessEditor?(): Promise<{ workbenchUrl: string }>;
+  refreshAccess?(confirm: (input: {
+    providerLabel: string;
+    modelLabel?: string;
+    boundaryLabel: string;
+  }) => Promise<boolean>): Promise<{
+    status: "unchanged" | "cancelled" | "updated";
+    boundaryLabel?: string;
+    reviewedDataAreas?: number;
+    accessSummary?: ReviewedAskAccessSummary;
+    boundaryCatalog?: BoundaryCatalogModel;
+    pendingBoundaryReview?: PendingBoundaryReviewSummary;
+  }>;
+  askTokenLimits?(): {
+    token_usage: AskSessionTokenUsage;
+    max_output_tokens?: number;
+  };
+  updateAskTokenLimits?(input: AskTokenLimitUpdate): {
+    token_usage: AskSessionTokenUsage;
+    max_output_tokens?: number;
+  };
   clearConversation(): void;
   cancel(): boolean;
 };
@@ -218,7 +709,19 @@ export async function runAnalyticsShell(
       const line = raw.trim();
       if (!line) continue;
       if (line.startsWith("/")) {
-        const action = await handleShellCommand(line, input, current, liveEvidence);
+        let action: Awaited<ReturnType<typeof handleShellCommand>>;
+        try {
+          action = await handleShellCommand(line, input, current, liveEvidence);
+        } catch (error) {
+          input.io.write([
+            "",
+            `Action could not complete: ${safeShellError(error)}`,
+            "No reviewed authority or source data was changed. This Ask session is still active.",
+            "",
+            "",
+          ].join("\n"));
+          continue;
+        }
         if (action === "exit") break;
         if (action === "access") {
           exitReason = "access";
@@ -262,7 +765,7 @@ export async function runAnalyticsShell(
           response.analyses,
           input.io.columns(),
           {
-            ansi: input.io.isTerminal?.() === true,
+            ansi: input.io.isTerminal?.() === true && !("NO_COLOR" in process.env),
             includeAttempts: input.verboseAttempts === true,
             attemptsHint: "Type /attempts to inspect.",
             accessGuidance: response.access_guidance,
@@ -290,11 +793,7 @@ export function renderAnalyticsShellBanner(input: {
   profileLabel: string;
   reviewedDataAreas: number;
   accessSummary?: ReviewedAskAccessSummary;
-  pendingBoundaryReview?: {
-    boundary_name: string;
-    pending_changes: number;
-    previous_authority_active: boolean;
-  };
+  pendingBoundaryReview?: PendingBoundaryReviewSummary;
 }, color = false): string {
   const theme = terminalTheme(color);
   const tableCount = `${input.reviewedDataAreas} ${input.reviewedDataAreas === 1 ? "table" : "tables"}`;
@@ -324,11 +823,32 @@ export function renderAnalyticsShellBanner(input: {
           `${input.pendingBoundaryReview.pending_changes} PENDING BOUNDARY ` +
           `${input.pendingBoundaryReview.pending_changes === 1 ? "CHANGE IS" : "CHANGES ARE"} NOT ACTIVE`,
         ),
-        `Boundary: ${theme.scope(safeTerminalText(input.pendingBoundaryReview.boundary_name))}`,
-        input.pendingBoundaryReview.previous_authority_active
-          ? "Ask still uses the previous exact reviewed revision."
-          : "This disabled boundary does not grant Ask access yet.",
-        `${theme.key("/access")} -> select the boundary -> ${theme.key("C")} Review + activate.`,
+        ...input.pendingBoundaryReview.changes.flatMap((change) => [
+          `Boundary: ${theme.scope(safeTerminalText(change.boundary_name))}`,
+          change.cause === "database_posture_changed"
+            ? "A rescan found a different database schema or role posture. The updated review is still disabled."
+            : change.previous_authority_active
+              ? "Reviewed access was edited, but Ask still uses the previous exact revision."
+              : "This new reviewed boundary is still disabled and grants no Ask access.",
+          ...(change.reconciliation
+            ? [
+                change.reconciliation.preserved_authority
+                  ? `Rescan preserved ${formatPreservedAuthority(change.reconciliation.preserved_authority)}; `
+                    + `${change.reconciliation.decisions_requiring_review} prior `
+                    + `${change.reconciliation.decisions_requiring_review === 1 ? "decision was" : "decisions were"} invalidated.`
+                  : `Rescan retained ${change.reconciliation.kept_decisions} exact confirmation records; `
+                    + `${change.reconciliation.decisions_requiring_review} `
+                    + `${change.reconciliation.decisions_requiring_review === 1 ? "was" : "were"} invalidated.`,
+                ...change.reconciliation.details.slice(0, 8).map((detail) =>
+                  `  - ${safeTerminalText(detail)}`),
+                ...(change.reconciliation.details.length > 8
+                  ? [`  - +${change.reconciliation.details.length - 8} more; open /access to inspect them.`]
+                  : []),
+              ]
+            : []),
+        ]),
+        `To activate: run ${theme.key("/access")}. In ${theme.key("BOUNDARY OVERVIEW")}, highlight the boundary named above and press ${theme.key("C")} (${theme.key("Review + activate")}).`,
+        "You do not need to open its tables unless you want to inspect the pending changes first.",
       ]
       : []),
     "Ask a question. /catalog shows reviewed access; /access manages boundaries; /help lists actions; Ctrl+D exits.",
@@ -357,8 +877,11 @@ export function createTerminalAnalyticsShellIo(input: {
     historySize: 100,
     removeHistoryDuplicates: true,
     completer: (line: string): [string[], string] => {
-      const matches = COMMANDS.filter((command) => command.startsWith(line));
-      return [matches.length ? matches : COMMANDS, line];
+      const matches = slashMenuSuggestions(line)
+        .flatMap((entry) => entry.completion ? [entry.completion] : []);
+      const recognizedAction = COMMANDS.some((command) =>
+        line === command || line.startsWith(`${command} `));
+      return [matches.length ? matches : recognizedAction ? [] : COMMANDS, line];
     },
   });
   rl.on("SIGINT", () => interrupt?.());
@@ -457,7 +980,7 @@ export function createTerminalAnalyticsShellIo(input: {
     }
     if (slashMenuRenderQueued) return;
     slashMenuRenderQueued = true;
-    queueMicrotask(() => {
+    setImmediate(() => {
       slashMenuRenderQueued = false;
       renderSlashMenu();
     });
@@ -465,10 +988,125 @@ export function createTerminalAnalyticsShellIo(input: {
   if (terminal) {
     readlineCore.emitKeypressEvents(readable as NodeJS.ReadStream);
     // Run before readline's own key handler. Enter must clear the transient
-    // menu while the cursor is still on the input row; ordinary keys schedule
-    // their redraw in a microtask after readline has updated rl.line.
+    // menu while the cursor is still on the input row. Deferred redraw also
+    // waits for readline to apply Tab completion before choosing subcommands.
     readable.prependListener("keypress", onKeypress);
   }
+  const choose = async (choice: Parameters<NonNullable<AnalyticsShellIo["choose"]>>[0]) => {
+    const ttyInput = readable as Readable & {
+      isRaw?: boolean;
+      setRawMode?: (enabled: boolean) => void;
+    };
+    if (!terminal || typeof ttyInput.setRawMode !== "function" || !choice.options.length) {
+      return undefined;
+    }
+    if (questionActive) throw new Error("A terminal choice cannot open while a question prompt is active.");
+
+    clearStatus();
+    let selected = Math.max(0, choice.options.findIndex((option) =>
+      option.value === choice.initialValue));
+    let renderedLines = 0;
+    const queuedKeys: Array<{ name?: string; ctrl?: boolean }> = [];
+    const keyWaiters: Array<(key: { name?: string; ctrl?: boolean }) => void> = [];
+    const keyHandler = (_text: string, key: { name?: string; ctrl?: boolean }) => {
+      const waiter = keyWaiters.shift();
+      if (waiter) waiter(key);
+      else queuedKeys.push(key);
+    };
+    const existingKeypressListeners = readable.listeners("keypress");
+    const wasRaw = ttyInput.isRaw === true;
+    const wasPaused = readable.isPaused();
+    const color = !("NO_COLOR" in process.env);
+    const theme = terminalTheme(color);
+
+    const nextKey = () => {
+      const queued = queuedKeys.shift();
+      if (queued) return Promise.resolve(queued);
+      return new Promise<{ name?: string; ctrl?: boolean }>((resolve) => keyWaiters.push(resolve));
+    };
+    const fit = (value: string, width: number) => value.length <= width
+      ? value
+      : `${value.slice(0, Math.max(1, width - 3))}...`;
+    const render = () => {
+      const width = Math.max(36, terminalContentWidth(terminalColumns()));
+      const terminalRows = (writable as NodeJS.WriteStream).rows;
+      const windowSize = Math.min(
+        choice.options.length,
+        Math.max(3, Math.min(10, (terminalRows ?? 16) - 8)),
+      );
+      const windowStart = choice.options.length <= windowSize
+        ? 0
+        : Math.min(
+          Math.max(0, selected - Math.floor(windowSize / 2)),
+          choice.options.length - windowSize,
+        );
+      const visibleOptions = choice.options.slice(windowStart, windowStart + windowSize);
+      const labelWidth = Math.min(
+        36,
+        Math.max(12, ...visibleOptions.map((option) => safeTerminalText(option.label).length)),
+      );
+      const lines = [
+        theme.title(safeTerminalText(choice.title)),
+        theme.dim(safeTerminalText(choice.message)),
+        ...(choice.options.length > windowSize
+          ? [theme.dim(
+            `Showing ${windowStart + 1}-${windowStart + visibleOptions.length} of ${choice.options.length}`,
+          )]
+          : []),
+        "",
+        ...visibleOptions.map((option, visibleIndex) => {
+          const optionIndex = windowStart + visibleIndex;
+          const marker = optionIndex === selected ? ">" : " ";
+          const label = safeTerminalText(option.label).padEnd(labelWidth);
+          const detail = option.detail ? `  ${safeTerminalText(option.detail)}` : "";
+          const line = fit(`${marker} ${label}${detail}`, width);
+          return optionIndex === selected ? theme.focus(line) : line;
+        }),
+        "",
+        `${theme.key("Up/Down")} Select   ${theme.key("Enter")} Show diagram   ${theme.key("Esc")} Cancel`,
+      ].map((line) => padTerminalLine(line));
+      if (renderedLines) writable.write(`\u001b[${renderedLines}F`);
+      const target = Math.max(renderedLines, lines.length);
+      for (let index = 0; index < target; index += 1) {
+        writable.write(`\u001b[2K${lines[index] ?? ""}\n`);
+      }
+      renderedLines = target;
+    };
+
+    readable.removeAllListeners("keypress");
+    readable.on("keypress", keyHandler);
+    ttyInput.setRawMode(true);
+    readable.resume();
+    writable.write("\u001b[?25l");
+    try {
+      while (true) {
+        render();
+        const key = await nextKey();
+        if (key.name === "up") {
+          selected = (selected - 1 + choice.options.length) % choice.options.length;
+        } else if (key.name === "down") {
+          selected = (selected + 1) % choice.options.length;
+        } else if (key.name === "home") {
+          selected = 0;
+        } else if (key.name === "end") {
+          selected = choice.options.length - 1;
+        } else if (key.name === "return" || key.name === "enter") {
+          return choice.options[selected]!.value;
+        } else if (key.name === "escape" || (key.ctrl && key.name === "c")) {
+          return undefined;
+        }
+      }
+    } finally {
+      readable.off("keypress", keyHandler);
+      if (renderedLines) writable.write(`\u001b[${renderedLines}F\u001b[0J`);
+      writable.write("\u001b[?25h");
+      ttyInput.setRawMode(wasRaw);
+      if (wasPaused) readable.pause();
+      for (const listener of existingKeypressListeners) {
+        readable.on("keypress", listener as (...args: unknown[]) => void);
+      }
+    }
+  };
   const clearStatus = () => {
     if (statusTimer) {
       clearInterval(statusTimer);
@@ -518,6 +1156,7 @@ export function createTerminalAnalyticsShellIo(input: {
   return {
     read: (prompt) => readQuestion(prompt, false),
     readWithEscape: (prompt) => readQuestion(prompt, true),
+    choose,
     write: (value) => {
       writable.write(terminal ? padTerminalBlock(value) : value);
     },
@@ -571,8 +1210,14 @@ async function handleShellCommand(
     input.io.write([
       "",
       "Actions",
-      "  /catalog [page]              Show what each reviewed table can answer",
-      "  /analyses                    List recent protectable analyses",
+      "  /catalog [page]              Show tables, reviewed joins, and available analysis",
+      "  /catalog --diagram           Choose and diagram one active boundary",
+      "  /catalog --diagram --boundary <name>",
+      "                               Select one directly for scripts or automation",
+      "  /catalog --diagram --boundary <name> --export [path]",
+      "                               Export the complete terminal map as Markdown",
+      "  /history                     Show recent requests and durable query history",
+      "  /analyses                    Alias for /history",
       "  /protect                     Protect the latest eligible analysis",
       "  /protect A2 as <name>        Protect one explicit analysis",
       "  /details [last|A2]           Show what the model requested and Runner executed",
@@ -580,6 +1225,11 @@ async function handleShellCommand(
       "  /attempts                    Show refused attempts from the latest answer",
       "  /access                      Add or edit reviewed boundaries",
       "  /access-workbench            Open the visual access editor",
+      "  /refresh-access              Use access activated in Workbench or another terminal",
+      "  /limits                      Show this Ask session's token usage and limits",
+      "  /limits --session-tokens N   Change its cumulative reported-token budget without clearing context",
+      "  /limits --max-output-tokens N|automatic",
+      "                               Override or restore provider-call output limits",
       "  /clear                       Clear this model conversation",
       "  /exit                        Close the shell",
       "  Ctrl+D                       Close the shell (Ctrl+C twice also exits)",
@@ -588,10 +1238,90 @@ async function handleShellCommand(
     return "continue";
   }
   if (line === "/catalog" || line.startsWith("/catalog ")) {
+    let catalogLine = line;
+    let catalogRequest = parseCatalogCommand(catalogLine);
+    if (!("error" in catalogRequest)
+      && catalogRequest.kind === "diagram"
+      && !catalogRequest.boundary
+      && input.boundaryCatalog
+      && input.boundaryCatalog.boundaries.length > 1
+      && input.io.isTerminal?.() === true
+      && input.io.choose) {
+      const selectedBoundary = await input.io.choose({
+        title: "CHOOSE BOUNDARY TO DIAGRAM",
+        message: "Each diagram shows one exact active reviewed authority.",
+        initialValue: input.boundaryCatalog.boundaries.some((boundary) =>
+          boundary.name === input.boundaryLabel)
+          ? input.boundaryLabel
+          : undefined,
+        options: input.boundaryCatalog.boundaries.map((boundary) => ({
+          value: boundary.name,
+          label: boundary.name,
+          detail: `${boundary.tables.length} ${boundary.tables.length === 1 ? "table" : "tables"} | ` +
+            `${boundary.physical_relationship_count} ` +
+            `${boundary.physical_relationship_count === 1 ? "join" : "joins"}`,
+        })),
+      });
+      if (!selectedBoundary) {
+        input.io.write("Diagram selection cancelled. No boundary was changed.\n\n");
+        return "continue";
+      }
+      catalogLine = `${catalogLine} --boundary ${selectedBoundary}`;
+      catalogRequest = { ...catalogRequest, boundary: selectedBoundary };
+    }
+    if (!("error" in catalogRequest)
+      && catalogRequest.kind === "diagram"
+      && catalogRequest.export_requested) {
+      input.io.write(await exportReviewedBoundaryCatalog({
+        request: catalogRequest,
+        catalog: input.boundaryCatalog,
+        projectRoot: input.projectRoot,
+        color: input.io.isTerminal?.() === true && !("NO_COLOR" in process.env),
+        columns: input.io.columns(),
+      }));
+      return "continue";
+    }
     input.io.write(renderReviewedAccessCatalog({
-      line,
+      line: catalogLine,
       boundaryLabel: input.boundaryLabel,
       summary: input.accessSummary,
+      catalog: input.boundaryCatalog,
+      color: input.io.isTerminal?.() === true && !("NO_COLOR" in process.env),
+      columns: input.io.columns(),
+    }));
+    return "continue";
+  }
+  if (line === "/limits" || line.startsWith("/limits ")) {
+    const parsed = parseAskLimitsCommand(line);
+    if ("error" in parsed) {
+      input.io.write([
+        "",
+        `Ask limits were not changed: ${safeTerminalText(parsed.error)}`,
+        "Usage: /limits [--session-tokens <number>] [--max-output-tokens <number|automatic>]",
+        "",
+        "",
+      ].join("\n"));
+      return "continue";
+    }
+    const readLimits = input.askTokenLimits;
+    const updateLimits = input.updateAskTokenLimits;
+    if (!readLimits || (parsed.changed && !updateLimits)) {
+      input.io.write("Ask token-limit controls are unavailable in this shell. Restart with `try ask --session-token-budget <number>` when needed.\n\n");
+      return "continue";
+    }
+    const limits = parsed.changed
+      ? updateLimits!({
+          ...(parsed.session_token_budget === undefined
+            ? {}
+            : { session_token_budget: parsed.session_token_budget }),
+          ...(parsed.max_output_tokens === undefined
+            ? {}
+            : { max_output_tokens: parsed.max_output_tokens }),
+        })
+      : readLimits();
+    input.io.write(renderAskTokenLimits({
+      ...limits,
+      changed: parsed.changed,
       color: input.io.isTerminal?.() === true && !("NO_COLOR" in process.env),
     }));
     return "continue";
@@ -601,8 +1331,8 @@ async function handleShellCommand(
     input.io.write("Conversation cleared. Durable evidence and protected drafts were not deleted.\n\n");
     return "continue";
   }
-  if (line === "/analyses") {
-    await showAnalyses(input, current);
+  if (line === "/history" || line === "/analyses") {
+    await showHistory(input, current);
     return "continue";
   }
   if (line === "/details" || line.startsWith("/details ")) {
@@ -644,12 +1374,69 @@ async function handleShellCommand(
       opened.workbenchUrl,
       "",
       "Changes remain disabled until a human reviews and activates the new exact fingerprint.",
+      "After activation, return here and run /refresh-access. You do not need to restart this shell.",
+      "",
+    ].join("\n"));
+    return "continue";
+  }
+  if (line === "/refresh-access") {
+    if (!input.refreshAccess) {
+      input.io.write("Access refresh is unavailable in this shell. Restart `synapsor-runner try ask` to load newly activated access.\n\n");
+      return "continue";
+    }
+    let refreshed: Awaited<ReturnType<NonNullable<AnalyticsShellInput["refreshAccess"]>>>;
+    try {
+      refreshed = await input.refreshAccess(async (change) => {
+        const answer = await (input.io.readWithEscape ?? input.io.read)([
+          "",
+          `New reviewed access is active: ${safeTerminalText(change.boundaryLabel)}`,
+          `${safeTerminalText(change.providerLabel)}${change.modelLabel ? ` / ${safeTerminalText(change.modelLabel)}` : ""} may receive model-visible data inside that exact reviewed access.`,
+          "Refreshing clears this conversation. It makes no provider request.",
+          "Use the newly activated access? [Y/n] [Esc Back]: ",
+        ].join("\n"));
+        return answer !== undefined && (answer.trim() === "" || /^y(?:es)?$/i.test(answer.trim()));
+      });
+    } catch (error) {
+      input.io.write(`${safeShellError(error)}\n\n`);
+      return "continue";
+    }
+    if (refreshed.status === "unchanged") {
+      input.io.write("Reviewed Ask access is already current.\n\n");
+      return "continue";
+    }
+    if (refreshed.status === "cancelled") {
+      input.io.write("Refresh cancelled. This shell remains bound to its previous reviewed access.\n\n");
+      return "continue";
+    }
+    if (refreshed.boundaryLabel) input.boundaryLabel = refreshed.boundaryLabel;
+    if (refreshed.reviewedDataAreas !== undefined) {
+      input.reviewedDataAreas = refreshed.reviewedDataAreas;
+    }
+    input.accessSummary = refreshed.accessSummary;
+    input.boundaryCatalog = refreshed.boundaryCatalog;
+    input.pendingBoundaryReview = refreshed.pendingBoundaryReview;
+    input.clearConversation();
+    input.io.write([
+      "Ask access updated.",
+      `This shell now uses ${safeTerminalText(input.boundaryLabel ?? "the newly activated reviewed access")}.`,
+      "Conversation context was cleared. No provider request was made.",
+      "",
       "",
     ].join("\n"));
     return "continue";
   }
   if (line === "/protect" || line.startsWith("/protect ")) {
-    await protectAnalysis(line, input, current);
+    try {
+      await protectAnalysis(line, input, current);
+    } catch (error) {
+      input.io.write([
+        "",
+        `Protect could not complete: ${safeShellError(error)}`,
+        "No capability was created or activated. This Ask session is still active.",
+        "",
+        "",
+      ].join("\n"));
+    }
     return "continue";
   }
   input.io.write("Unknown action. Type /help for the available actions.\n\n");
@@ -660,16 +1447,75 @@ export function renderReviewedAccessCatalog(input: {
   line: string;
   boundaryLabel?: string;
   summary?: ReviewedAskAccessSummary;
+  catalog?: BoundaryCatalogModel;
   color?: boolean;
   pageSize?: number;
+  columns?: number;
 }): string {
   const theme = terminalTheme(input.color === true);
   const pageSize = Math.max(1, Math.min(10, input.pageSize ?? 5));
-  const rawPage = input.line.slice("/catalog".length).trim();
-  const requestedPage = rawPage === "" ? 1 : Number(rawPage);
-  if (!Number.isSafeInteger(requestedPage) || requestedPage < 1) {
-    return `\n${theme.warning("Usage: /catalog [page]")} ${theme.dim("Page numbers start at 1.")}\n\n`;
+  const request = parseCatalogCommand(input.line);
+  if ("error" in request) {
+    return `\n${theme.warning("Usage: /catalog [page] or /catalog --diagram [--boundary <name>] [--export [path]]")} ` +
+      `${theme.dim(request.error)}\n\n`;
   }
+  if (request.kind === "diagram") {
+    if (!input.catalog?.boundaries.length) {
+      return [
+        "",
+        theme.title("ACTIVE BOUNDARY DIAGRAM"),
+        "No active reviewed boundary diagram is available.",
+        `Use ${theme.key("/access")} to review and activate a boundary first.`,
+        "",
+        "",
+      ].join("\n");
+    }
+    const selection = selectCatalogBoundary(input.catalog, request.boundary);
+    if ("error" in selection) {
+      return [
+        "",
+        theme.title("ACTIVE BOUNDARY DIAGRAM"),
+        theme.warning(selection.error),
+        ...selection.commands.map((command) => `  ${theme.key(command)}`),
+        "",
+        "",
+      ].join("\n");
+    }
+    const selectedCatalog = selection.catalog;
+    const selectedBoundary = selectedCatalog.boundaries[0]!;
+    if (boundaryCatalogDiagramIsLarge(selectedBoundary)) {
+      const command = `/catalog --diagram --boundary ${selectedBoundary.name} --export`;
+      return [
+        "",
+        theme.title("ACTIVE BOUNDARY DIAGRAM"),
+        `${theme.scope(safeTerminalText(selectedBoundary.name))} has ` +
+          `${selectedBoundary.tables.length} tables and ${selectedBoundary.physical_relationship_count} physical joins.`,
+        "The complete diagram is too large for a readable terminal view.",
+        `Export it with ${theme.key(command)}.`,
+        "",
+        "",
+      ].join("\n");
+    }
+    const width = Math.max(48, Math.min(120, input.columns ?? 96));
+    const scopedDiagramCommand = `/catalog --diagram --boundary ${selectedBoundary.name}`;
+    return [
+      "",
+      theme.title("ACTIVE BOUNDARY RELATIONSHIP DIAGRAM"),
+      theme.dim("This is the exact reviewed table and physical join topology available to Ask."),
+      "",
+      renderBoundaryCatalogTopologyAscii(selectedCatalog, { width }),
+      "",
+      `Fields and operations: ${theme.key("/catalog")}`,
+      ...(selectedBoundary.physical_relationship_count > 0
+        ? [
+            `Downloadable map: ${theme.key(`${scopedDiagramCommand} --export`)}`,
+          ]
+        : []),
+      "",
+      "",
+    ].join("\n");
+  }
+  const requestedPage = request.page;
   const resources = input.summary?.resources ?? [];
   if (!resources.length) {
     return [
@@ -689,22 +1535,57 @@ export function renderReviewedAccessCatalog(input: {
   const start = (requestedPage - 1) * pageSize;
   const visible = resources.slice(start, start + pageSize);
   const defaultBoundary = input.boundaryLabel;
+  const relationshipCount = input.catalog?.relationship_count ?? 0;
   const lines = [
     "",
     theme.title("CAN ASK NOW"),
     theme.dim(
       `${resources.length} reviewed ${resources.length === 1 ? "table" : "tables"} ` +
+      `and ${relationshipCount} reviewed ${relationshipCount === 1 ? "join path" : "join paths"} ` +
       `- page ${requestedPage} of ${pageCount}`,
     ),
+    theme.dim("Use /catalog --diagram for the complete active-boundary relationship map."),
     "",
     ...visible.flatMap((resource) => {
       const boundary = resource.boundary_name ?? defaultBoundary;
+      const catalogBoundary = input.catalog?.boundaries.find((item) =>
+        !boundary || item.name === boundary);
+      const table = catalogBoundary?.tables.find((item) => item.id === resource.id);
+      const relationships = catalogBoundary?.relationships.filter((item) =>
+        item.source_table === resource.id) ?? [];
+      const runnerOnlyAnalysis = table
+        ? boundaryCatalogRunnerOnlyAnalysisSummary(table)
+        : "";
       return [
         `${theme.key(safeTerminalText(resource.label))} ${theme.dim(`(${safeTerminalText(resource.id)})`)}`,
         ...(boundary
           ? [`  Boundary: ${theme.scope(safeTerminalText(boundary))}`]
           : []),
         `  Can answer: ${safeTerminalText(resource.capabilities.join("; "))}`,
+        ...(runnerOnlyAnalysis
+          ? [`  Runner-only analysis: ${safeTerminalText(runnerOnlyAnalysis)}`]
+          : []),
+        ...(relationships.length
+          ? relationships.flatMap((relationship) => {
+            const path = relationship.links.map((link) =>
+              `${safeTerminalText(link.source_table)}.${safeTerminalText(link.source_key)} -> ` +
+              `${safeTerminalText(link.target_table)}.${safeTerminalText(link.target_key)}`)
+              .join(" -> ");
+            return [
+              `  Join path: ${path} (${relationship.path_depth} ` +
+              `${relationship.path_depth === 1 ? "join" : "joins"}, ` +
+              `${relationship.proven ? "catalog proven" : "proof unavailable"})`,
+              ...relationship.suggested_questions.slice(0, 1).map((question) =>
+                `  Ask across path: ${theme.dim(`"${safeTerminalText(question)}"`)}`),
+            ];
+          })
+          : ["  Joins: none reviewed from this table"]),
+        ...(table?.reachable_tables.length
+          ? [`  Reachable: ${safeTerminalText(table.reachable_tables.join(", "))}`]
+          : []),
+        ...(table?.outside_boundary_relationship_count
+          ? [`  Outside boundary: ${table.outside_boundary_relationship_count} relationship not available to Ask`]
+          : []),
         ...resource.suggestions.slice(0, 2).map((suggestion) =>
           `  Try: ${theme.dim(`"${safeTerminalText(suggestion)}"`)}`),
         "",
@@ -722,28 +1603,252 @@ export function renderReviewedAccessCatalog(input: {
   return lines.join("\n");
 }
 
-async function showAnalyses(
+function selectCatalogBoundary(
+  catalog: BoundaryCatalogModel,
+  boundaryName?: string,
+): { catalog: BoundaryCatalogModel } | { error: string; commands: string[] } {
+  if (boundaryName) {
+    const boundary = catalog.boundaries.find((candidate) => candidate.name === boundaryName);
+    if (!boundary) {
+      return {
+        error: `No active reviewed boundary is named ${boundaryName}. Choose one of:`,
+        commands: catalog.boundaries.map((candidate) =>
+          `/catalog --diagram --boundary ${candidate.name}`),
+      };
+    }
+    return { catalog: boundaryCatalogModelFor(catalog, boundary) };
+  }
+  if (catalog.boundaries.length === 1) return { catalog };
+  return {
+    error: `${catalog.boundaries.length} reviewed boundaries are active. Choose which exact authority to diagram:`,
+    commands: catalog.boundaries.map((boundary) =>
+      `/catalog --diagram --boundary ${boundary.name}`),
+  };
+}
+
+async function exportReviewedBoundaryCatalog(input: {
+  request: Extract<CatalogCommandRequest, { kind: "diagram" }>;
+  catalog?: BoundaryCatalogModel;
+  projectRoot?: string;
+  color: boolean;
+  columns: number;
+}): Promise<string> {
+  const theme = terminalTheme(input.color);
+  if (!input.catalog?.boundaries.length) {
+    return [
+      "",
+      theme.title("BOUNDARY DIAGRAM EXPORT"),
+      "No active reviewed boundary diagram is available.",
+      `Use ${theme.key("/access")} to review and activate a boundary first.`,
+      "",
+      "",
+    ].join("\n");
+  }
+  const selection = selectCatalogBoundary(input.catalog, input.request.boundary);
+  if ("error" in selection) {
+    return [
+      "",
+      theme.title("BOUNDARY DIAGRAM EXPORT"),
+      theme.warning(selection.error),
+      ...selection.commands.map((command) => `  ${theme.key(`${command} --export`)}`),
+      "",
+      "",
+    ].join("\n");
+  }
+  const boundary = selection.catalog.boundaries[0]!;
+  const projectRoot = path.resolve(input.projectRoot ?? process.cwd());
+  const width = Math.max(72, Math.min(120, input.columns));
+  const diagram = buildBoundaryCatalogDiagramExports(selection.catalog, {
+    width,
+    includeMermaid: false,
+  })[0]!;
+  const outputPath = input.request.export_path
+    ? path.resolve(projectRoot, input.request.export_path)
+    : path.join(projectRoot, ".synapsor", "catalog", diagram.file_name);
+  if (!isPathInside(projectRoot, outputPath)) {
+    return [
+      "",
+      theme.title("BOUNDARY DIAGRAM EXPORT"),
+      theme.warning("Export path must stay inside this project."),
+      `Project: ${theme.value(safeTerminalText(projectRoot))}`,
+      "No file was created.",
+      "",
+      "",
+    ].join("\n");
+  }
+  await fs.mkdir(path.dirname(outputPath), { recursive: true });
+  const [realProjectRoot, realOutputDirectory] = await Promise.all([
+    fs.realpath(projectRoot),
+    fs.realpath(path.dirname(outputPath)),
+  ]);
+  if (!isPathInside(realProjectRoot, realOutputDirectory, true)) {
+    return [
+      "",
+      theme.title("BOUNDARY DIAGRAM EXPORT"),
+      theme.warning("Export directory resolves outside this project."),
+      `Project: ${theme.value(safeTerminalText(realProjectRoot))}`,
+      "No file was created.",
+      "",
+      "",
+    ].join("\n");
+  }
+  try {
+    await fs.writeFile(outputPath, diagram.markdown, { encoding: "utf8", flag: "wx" });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    return [
+      "",
+      theme.title("BOUNDARY DIAGRAM EXPORT"),
+      `The exact digest-bound export already exists: ${theme.value(safeTerminalText(outputPath))}`,
+      "No file was overwritten.",
+      "",
+      "",
+    ].join("\n");
+  }
+  return [
+    "",
+    theme.title("BOUNDARY DIAGRAM EXPORTED"),
+    `Boundary: ${theme.scope(safeTerminalText(boundary.name))}`,
+    `File: ${theme.value(safeTerminalText(outputPath))}`,
+    "Includes the readable relationship map, reviewed analysis, and question prompts.",
+    "Source database changed: no.",
+    "",
+    "",
+  ].join("\n");
+}
+
+function isPathInside(root: string, candidate: string, allowRoot = false): boolean {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  if (!relative) return allowRoot;
+  return relative !== ".."
+    && !relative.startsWith(`..${path.sep}`)
+    && !path.isAbsolute(relative);
+}
+
+async function showHistory(
   input: AnalyticsShellInput,
   current: CurrentAnalyticsAnswer | undefined,
 ): Promise<void> {
   const analyses = await input.listAnalyses();
-  if (analyses.length === 0) {
-    input.io.write("No unexpired protectable analyses are available yet.\n\n");
-    return;
-  }
   const currentReferences = new Set(current?.analyses.flatMap((analysis) =>
     analysis.reference ? [analysis.reference] : []) ?? []);
-  const exampleReference = analyses[0]!.token;
+  const projectRoot = path.resolve(input.projectRoot ?? process.cwd());
+  const configPath = path.resolve(
+    input.configPath ?? path.join(projectRoot, "synapsor/synapsor.runner.json"),
+  );
+  const storePath = path.resolve(
+    input.storePath ?? path.join(projectRoot, ".synapsor/local.db"),
+  );
+  const command = cliCommandName();
+  const ledgerSuffix = `--config ${shellQuote(configPath)} --store ${shellQuote(storePath)}`;
+  const color = input.io.isTerminal?.() === true && !("NO_COLOR" in process.env);
+  const theme = terminalTheme(color);
+  const recentLines = analyses.length === 0
+    ? [theme.dim("No unexpired analysis references are available in this shell.")]
+    : renderHistoryReferenceTable(
+        analyses.map((analysis) => ({
+          reference: analysis.token,
+          request: safeTerminalText(analysis.description),
+          status: currentReferences.has(analysis.token) ? "latest" : "available",
+        })),
+        input.io.columns(),
+        theme,
+      );
+  const commands = [
+    `${command} query-audit browse --since 24h ${ledgerSuffix}`,
+    `${command} query-audit list ${ledgerSuffix}`,
+    `${command} query-audit list --outcome refused --since 24h ${ledgerSuffix}`,
+    `${command} query-audit show <audit_id> --details ${ledgerSuffix}`,
+    `${command} evidence list ${ledgerSuffix}`,
+  ];
   input.io.write([
     "",
-    "Recent analyses",
+    theme.title("RECENT QUERY HISTORY"),
+    theme.dim("These references are available for /details and /protect while they remain eligible."),
     "",
-    ...analyses.map((analysis) =>
-      `${analysis.token.padEnd(4)} ${safeTerminalText(analysis.description)}${currentReferences.has(analysis.token) ? "  latest" : ""}`),
+    ...recentLines,
+    ...(analyses[0]
+      ? [
+          "",
+          `${theme.key("Next:")} ${theme.value(`/details ${analyses[0].token}`)} ${theme.dim("or")} ${theme.value(`/protect ${analyses[0].token}`)}`,
+        ]
+      : []),
     "",
-    `Use /protect, /protect ${exampleReference}, or /details ${exampleReference}.`,
+    theme.title("DURABLE QUERY LEDGER"),
+    theme.dim("This history survives /clear and session exit. It stores bounded audit metadata, not result values."),
+    "",
+    renderTerminalCommandFrame(commands, {
+      title: "COPY-PASTE COMMANDS",
+      metadata: [
+        "browse opens the interactive metadata viewer.",
+        "Filters: --tenant, --principal, --resource, --boundary, --outcome, --since, --to, and --limit.",
+      ],
+      color,
+      columns: input.io.columns(),
+    }),
     "",
   ].join("\n"));
+}
+
+function renderHistoryReferenceTable(
+  rows: Array<{ reference: string; request: string; status: "latest" | "available" }>,
+  requestedWidth: number,
+  theme: ReturnType<typeof terminalTheme>,
+): string[] {
+  const width = Math.max(50, Math.min(120, requestedWidth));
+  const referenceWidth = Math.max(9, ...rows.map((row) => row.reference.length));
+  const statusWidth = 9;
+  const requestWidth = Math.max(20, width - referenceWidth - statusWidth - 10);
+  const borderValue = `+${"-".repeat(referenceWidth + 2)}+${"-".repeat(requestWidth + 2)}+${"-".repeat(statusWidth + 2)}+`;
+  const border = theme.dim(borderValue);
+  const edge = theme.dim("|");
+  const line = (reference: string, request: string, status: string, heading = false) => {
+    const referenceCell = reference.padEnd(referenceWidth);
+    const requestCell = request.padEnd(requestWidth);
+    const statusCell = status.padEnd(statusWidth);
+    return `${edge} ${heading ? theme.key(referenceCell) : theme.focus(referenceCell)} ${edge} ${heading ? theme.key(requestCell) : requestCell} ${edge} ${heading ? theme.key(statusCell) : status === "latest" ? theme.success(statusCell) : theme.dim(statusCell)} ${edge}`;
+  };
+  const output = [border, line("Reference", "Request", "Status", true), border];
+  for (const row of rows) {
+    const requestLines = wrapHistoryCell(row.request, requestWidth);
+    requestLines.forEach((request, index) => {
+      output.push(line(
+        index === 0 ? row.reference : "",
+        request,
+        index === 0 ? row.status : "",
+      ));
+    });
+  }
+  output.push(border);
+  return output;
+}
+
+function wrapHistoryCell(value: string, width: number): string[] {
+  const words = value.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [""];
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    if (word.length > width) {
+      if (current) {
+        lines.push(current);
+        current = "";
+      }
+      for (let offset = 0; offset < word.length; offset += width) {
+        lines.push(word.slice(offset, offset + width));
+      }
+      continue;
+    }
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length > width) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
 }
 
 async function showDetails(
@@ -758,7 +1863,7 @@ async function showDetails(
   const analyses = await input.listAnalyses();
   const selected = resolveAnalysisReference(requested, analyses, current);
   if (!selected) {
-    input.io.write("That analysis is unavailable, expired, or ambiguous. Run /analyses.\n\n");
+    input.io.write("That analysis is unavailable, expired, or ambiguous. Run /history.\n\n");
     return;
   }
   const live = liveEvidence.get(selected.token);
@@ -772,6 +1877,7 @@ async function showDetails(
     ?? stringRecordValue(toolArguments?.boundary)
     ?? "recorded reviewed boundary";
   const color = input.io.isTerminal?.() === true && !("NO_COLOR" in process.env);
+  const theme = terminalTheme(color);
   let operatorInspection: OperatorCompiledExploreEvidence | undefined;
   let inspectionFailure: string | undefined;
   if (input.inspectAnalysis && selected.normalized_plan) {
@@ -783,60 +1889,206 @@ async function showDetails(
   }
   const modelRequest = toolArguments
     ?? { plan: redactPlanLiterals(selected.normalized_plan) };
+  const toolName = live?.analysis.tool ?? "app.explore_data";
+  const planValidated = live?.analysis.status === "refused" ? "no" : "yes";
+  const sourceQueryExecuted = live?.analysis.status === "refused" ? "no" : "yes";
+  const outcome = selected.outcome
+    ?? stringRecordValue(asRecord(liveResult?.outcome).status)
+    ?? "ok";
+  const returnedRowsOrGroups = numberRecordValue(returned.rows_or_groups)
+    ?? selected.returned_rows_or_groups
+    ?? "unknown";
+  const returnedCells = numberRecordValue(returned.cells)
+    ?? selected.returned_cells
+    ?? "unknown";
+  const returnedBytes = numberRecordValue(returned.bytes) ?? "unknown";
+  const executionDurationMs = numberRecordValue(freshness.execution_duration_ms);
+  const suppressedGroups = numberRecordValue(suppression.suppressed_groups)
+    ?? selected.suppressed_groups
+    ?? 0;
+  const operatorBudgetDetails = renderOperatorBudgetDetails(
+    asRecord(liveResult?.operator_budget),
+    color,
+  );
+  const resolvedTimeDetails = renderResolvedTimeWindowDetails(
+    liveResult?.operator_time_windows ?? selected.resolved_time_windows,
+    color,
+  );
+  const outcomeTone = /^(?:ok|success)$/i.test(outcome)
+    ? "success" as const
+    : /(?:fail|error|refus)/i.test(outcome)
+      ? "danger" as const
+      : "warning" as const;
   input.io.write([
     "",
-    `ANALYSIS ${safeTerminalText(selected.token)}`,
+    theme.title(`ANALYSIS ${safeTerminalText(selected.token)}`),
     "",
-    "QUESTION",
+    theme.bold("QUESTION"),
     live
-      ? safeTerminalText(live.question)
+      ? theme.italic(safeTerminalText(live.question))
       : "Original question unavailable. The MCP host or an earlier local session supplied this typed plan; Runner does not infer the missing conversation.",
     "",
-    "WHAT THE MODEL REQUESTED",
-    live?.analysis.tool ?? "app.explore_data",
-    renderTerminalJson(modelRequest, color),
+    theme.title("WHAT THE MODEL REQUESTED"),
+    `${theme.bold("Tool:")} ${renderTerminalToolName(toolName, color)}`,
+    renderTerminalJsonFrame(modelRequest, {
+      title: "Model request parameters",
+      color,
+      columns: input.io.columns(),
+    }),
     "",
-    "WHAT RUNNER EXECUTED",
-    `Plan validated: ${live?.analysis.status === "refused" ? "no" : "yes"}`,
-    `Boundary: ${safeTerminalText(operatorInspection?.boundary_name ?? boundaryName)}`,
-    `Boundary fingerprint: ${selected.boundary_digest}`,
-    `Trusted tenant scope: ${safeTerminalText(operatorInspection?.trusted_scope.tenant ?? "bound outside model arguments")}`,
-    `Trusted principal scope: ${safeTerminalText(operatorInspection?.trusted_scope.principal ?? "bound outside model arguments or not required")}`,
-    `Database role: ${operatorInspection ? "verified read-only before execution" : "verified by the recorded Explore execution"}`,
-    `Transaction: ${safeTerminalText(operatorInspection?.transaction ?? stringRecordValue(freshness.snapshot_consistency) ?? "single_read_only_transaction")}`,
-    "Normalized validated plan:",
-    renderTerminalJson(redactPlanLiterals(selected.normalized_plan), color),
+    theme.title("WHAT RUNNER EXECUTED"),
+    renderTerminalFact("Plan validated", planValidated, { color, tone: planValidated === "yes" ? "success" : "danger" }),
+    renderTerminalFact("Boundary", operatorInspection?.boundary_name ?? boundaryName, { color, tone: "identifier" }),
+    renderTerminalFact("Boundary fingerprint", selected.boundary_digest, { color, tone: "identifier" }),
+    renderTerminalFact("Trusted tenant scope", operatorInspection?.trusted_scope.tenant ?? "bound outside model arguments", { color, tone: "value" }),
+    renderTerminalFact("Trusted principal scope", operatorInspection?.trusted_scope.principal ?? "bound outside model arguments or not required", { color, tone: "value" }),
+    renderTerminalFact("Database role", operatorInspection ? "verified read-only before execution" : "verified by the recorded Explore execution", { color, tone: "success" }),
+    renderTerminalFact("Transaction", operatorInspection?.transaction ?? stringRecordValue(freshness.snapshot_consistency) ?? "single_read_only_transaction", { color, tone: "identifier" }),
+    ...resolvedTimeDetails,
+    renderTerminalJsonFrame(redactPlanLiterals(selected.normalized_plan), {
+      title: "Normalized validated plan",
+      color,
+      columns: input.io.columns(),
+    }),
     "",
-    "WHAT RUNNER RETURNED",
-    `Outcome: ${selected.outcome ?? stringRecordValue(asRecord(liveResult?.outcome).status) ?? "ok"}`,
-    `Source query executed: ${live?.analysis.status === "refused" ? "no" : "yes"}`,
-    "Raw source rows exposed: no",
-    `Bounded rows/groups: ${numberRecordValue(returned.rows_or_groups) ?? selected.returned_rows_or_groups ?? "unknown"}`,
-    `Returned cells: ${numberRecordValue(returned.cells) ?? selected.returned_cells ?? "unknown"}`,
-    `Returned bytes: ${numberRecordValue(returned.bytes) ?? "unknown"}`,
-    `Suppressed groups: ${numberRecordValue(suppression.suppressed_groups) ?? selected.suppressed_groups ?? 0}`,
-    `Evidence: ${selected.evidence_bundle_id ?? "unavailable"}`,
-    `Query audit: ${selected.query_audit_handle ?? "unavailable"}`,
-    `Protectable until: ${selected.expires_at}`,
-    "Source database changed: no",
-    ...(inspectionFailure ? ["", `Advanced inspection unavailable: ${safeTerminalText(inspectionFailure)}`] : []),
+    theme.title("WHAT RUNNER RETURNED"),
+    renderTerminalFact("Outcome", outcome, { color, tone: outcomeTone }),
+    renderTerminalFact("Source query executed", sourceQueryExecuted, { color, tone: sourceQueryExecuted === "yes" ? "success" : "warning" }),
+    renderTerminalFact("Raw source rows exposed", "no", { color, tone: "success" }),
+    renderTerminalFact("Bounded rows/groups", returnedRowsOrGroups, { color, tone: "value" }),
+    renderTerminalFact("Returned cells", returnedCells, { color, tone: "value" }),
+    renderTerminalFact("Returned bytes", returnedBytes, { color, tone: "value" }),
+    ...(executionDurationMs === undefined
+      ? []
+      : [renderTerminalFact("Execution time", `${executionDurationMs} ms`, { color, tone: "value" })]),
+    renderTerminalFact("Suppressed groups", suppressedGroups, { color, tone: Number(suppressedGroups) > 0 ? "warning" : "success" }),
+    renderTerminalFact("Evidence", selected.evidence_bundle_id ?? "unavailable", { color, tone: selected.evidence_bundle_id ? "identifier" : "muted" }),
+    renderTerminalFact("Query audit", selected.query_audit_handle ?? "unavailable", { color, tone: selected.query_audit_handle ? "identifier" : "muted" }),
+    renderTerminalFact("Protectable until", selected.expires_at, { color, tone: "value" }),
+    renderTerminalFact("Source database changed", "no", { color, tone: "success" }),
+    ...operatorBudgetDetails,
+    ...(inspectionFailure ? ["", renderTerminalFact("Advanced inspection unavailable", inspectionFailure, { color, tone: "warning" })] : []),
     ...(includeSql
       ? operatorInspection
         ? [
             "",
-            "COMPILED DATABASE STATEMENT",
-            "Operator diagnostic only. The model never received this SQL. Parameter values are redacted and this view is not persisted.",
-            ...operatorInspection.statements.flatMap((statement, index) => [
-              `Statement ${index + 1}${statement.period ? ` (${statement.period})` : ""} - ${operatorInspection!.engine}`,
-              renderTerminalSql(statement.statement, color),
-              `Parameter types: ${statement.parameter_types.join(", ") || "none"}`,
-              "Parameter values: redacted",
-            ]),
+            theme.title("COMPILED DATABASE STATEMENT"),
+            theme.dim("Operator diagnostic only. The model never received this SQL. Parameter values are redacted and this view is not persisted."),
+            ...operatorInspection.statements.map((statement, index) =>
+              renderTerminalSqlFrame(statement.statement, {
+                title: `Statement ${index + 1}${statement.period ? ` (${statement.period})` : ""} - ${operatorInspection!.engine}`,
+                metadata: [
+                  `Parameter types: ${statement.parameter_types.join(", ") || "none"}`,
+                  "Parameter values: redacted",
+                ],
+                color,
+                columns: input.io.columns(),
+              })),
           ]
         : ["", "Compiled SQL is unavailable because the active reviewed artifacts could not be inspected."]
       : ["", "Use /details --sql for the local operator-only parameterized statement."]),
     "",
   ].join("\n"));
+}
+
+function renderResolvedTimeWindowDetails(value: unknown, color: boolean): string[] {
+  const items = Array.isArray(value) ? value.map(asRecord).filter((item) =>
+    item.source === "reviewed_relative_time") : [];
+  if (!items.length) return [];
+  const theme = terminalTheme(color);
+  const lines = [
+    "",
+    theme.title("RESOLVED TIME - OPERATOR ONLY"),
+    theme.dim("Runner captured one instant and resolved each reviewed name as a half-open UTC range before fingerprinting and SQL compilation."),
+  ];
+  for (const item of items) {
+    const location = item.location === "comparison" ? "Comparison" : "Time window";
+    const request = item.location === "comparison"
+      ? `${stringRecordValue(item.window) ?? "unknown"} vs ${stringRecordValue(item.compare_to) ?? "unknown"}`
+      : stringRecordValue(item.window) ?? "unknown";
+    lines.push(theme.bold(location));
+    lines.push(renderTerminalFact("Reviewed request", request, { color, tone: "identifier" }));
+    lines.push(renderTerminalFact(
+      "Field",
+      `${stringRecordValue(item.field) ?? "unknown"}${stringRecordValue(item.relationship) ? ` via ${stringRecordValue(item.relationship)}` : ""}`,
+      { color, tone: "value" },
+    ));
+    lines.push(renderTerminalFact("Reporting timezone", "UTC", { color, tone: "success" }));
+    lines.push(renderTerminalFact(
+      "Resolved at",
+      stringRecordValue(item.resolved_at) ?? "unavailable",
+      { color, tone: "value" },
+    ));
+    const ranges = Array.isArray(item.ranges) ? item.ranges.map(asRecord) : [];
+    for (const range of ranges) {
+      lines.push(renderTerminalFact(
+        stringRecordValue(range.id) ?? "range",
+        `[${stringRecordValue(range.start_inclusive) ?? "?"}, ${stringRecordValue(range.end_exclusive) ?? "?"})`,
+        { color, tone: "value" },
+      ));
+    }
+  }
+  return lines;
+}
+
+function renderOperatorBudgetDetails(
+  operatorBudget: Record<string, unknown>,
+  color: boolean,
+): string[] {
+  if (operatorBudget.operator_only !== true) return [];
+  const theme = terminalTheme(color);
+  const lines = [
+    "",
+    theme.title("BUDGET STATUS - OPERATOR ONLY"),
+    theme.dim("Volume limits control throughput. Disclosure limits constrain reconstruction and remain separate."),
+  ];
+  for (const [scopeKey, scopeLabel] of [
+    ["trusted_scope", "Trusted scope"],
+    ["tenant", "Tenant-wide production ceiling"],
+  ] as const) {
+    const scope = asRecord(operatorBudget[scopeKey]);
+    if (!Object.keys(scope).length) continue;
+    const volume = asRecord(scope.volume);
+    const disclosure = asRecord(scope.disclosure);
+    lines.push(theme.bold(scopeLabel));
+    for (const [label, gauge] of [
+      ["Queries / rolling 24h", asRecord(volume.queries_rolling_24_hours)],
+      ["Requests / rolling minute", asRecord(volume.requests_rolling_minute)],
+      ["Extracted cells / rolling 24h", asRecord(disclosure.extracted_cells_rolling_24_hours)],
+      [
+        `Differencing variants for ${String(asRecord(disclosure.differencing_variants_rolling_24_hours).root_resource ?? "current root resource")} / rolling 24h`,
+        asRecord(disclosure.differencing_variants_rolling_24_hours),
+      ],
+    ] as const) {
+      const used = numberRecordValue(gauge.used);
+      const limit = numberRecordValue(gauge.limit);
+      const remaining = numberRecordValue(gauge.remaining);
+      if (used === undefined || limit === undefined || remaining === undefined) continue;
+      lines.push(renderTerminalFact(
+        label,
+        `${used}/${limit} used; ${remaining} remaining`,
+        {
+          color,
+          tone: remaining === 0 ? "danger" : used >= Math.ceil(limit * 0.8) ? "warning" : "value",
+        },
+      ));
+    }
+    const warnings = Array.isArray(scope.warnings)
+      ? scope.warnings.filter((warning): warning is string => typeof warning === "string")
+      : [];
+    lines.push(...warnings.map((warning) => theme.warning(safeTerminalText(warning))));
+  }
+  const rollingExpiry = stringRecordValue(
+    operatorBudget.rolling_24_hour_usage_expires_no_later_than,
+  );
+  if (rollingExpiry) {
+    lines.push(renderTerminalFact(
+      "Current 24h usage expires by",
+      rollingExpiry,
+      { color, tone: "value" },
+    ));
+  }
+  return lines;
 }
 
 async function protectAnalysis(
@@ -893,7 +2145,7 @@ async function protectAnalysis(
     }
   }
   if (!selected) {
-    input.io.write("No single eligible analysis was selected. Run /analyses and choose an explicit reference.\n\n");
+    input.io.write("No single eligible analysis was selected. Run /history and choose an explicit reference.\n\n");
     return;
   }
   const suggested = parsed.capabilityName ?? selected.suggested_capability;
@@ -911,9 +2163,11 @@ async function protectAnalysis(
     input.io.write("Protect cancelled. No capability was created or activated.\n\n");
     return;
   }
-  const capabilityInput = parsed.capabilityName
+  const requestedCapability = parsed.capabilityName
     ? suggested
     : capabilityAnswer.trim() || suggested;
+  const capabilityInput = await reviewedCapabilityName(input.io, requestedCapability);
+  if (!capabilityInput) return;
   let minimumCohortConfirmed: true | undefined;
   let minimumCohortActor: string | undefined;
   if (selected.minimum_cohort_override) {
@@ -937,12 +2191,24 @@ async function protectAnalysis(
     minimumCohortConfirmed = true;
     minimumCohortActor = input.operatorLabel ?? "local-developer";
   }
-  const protectedResult = await input.protect({
-    reference: selected.token,
-    capabilityName: capabilityInput,
-    ...(minimumCohortConfirmed ? { minimumCohortConfirmed } : {}),
-    ...(minimumCohortActor ? { minimumCohortActor } : {}),
-  });
+  let protectedResult: Awaited<ReturnType<AnalyticsShellInput["protect"]>>;
+  try {
+    protectedResult = await input.protect({
+      reference: selected.token,
+      capabilityName: capabilityInput,
+      ...(minimumCohortConfirmed ? { minimumCohortConfirmed } : {}),
+      ...(minimumCohortActor ? { minimumCohortActor } : {}),
+    });
+  } catch (error) {
+    input.io.write([
+      "",
+      `Protect was rejected: ${safeShellError(error)}`,
+      "No capability was created or activated. This Ask session is still active.",
+      "",
+      "",
+    ].join("\n"));
+    return;
+  }
   const actor = input.operatorLabel ?? "local-developer";
   const selectedLiveAnalysis = current?.analyses.find((analysis) => analysis.reference === selected.token);
   input.io.write([
@@ -1059,12 +2325,17 @@ function protectedPlanReviewLines(
       `${theme.dim("Maximum rows:")} ${theme.value(String(plan.limit))}`,
     ];
   }
-  const measures = plan.measures.map((measure) =>
-    measure.function === "count"
+  const measures = plan.measures.map((measure) => {
+    if ("derived_measure" in measure) {
+      return `reviewed ${safeTerminalText(measure.derived_measure)}`;
+    }
+    return measure.function === "count"
       ? "record count"
-      : `${measure.function}(${safeTerminalText(measure.field ?? "value")})`);
+      : `${measure.function}(${safeTerminalText(measure.field ?? "value")})`;
+  });
   const groups = [
-    ...(plan.dimensions ?? []).map((dimension) => safeTerminalText(dimension.field)),
+    ...(plan.dimensions ?? []).map((dimension) =>
+      safeTerminalText("numeric_band" in dimension ? `reviewed band ${dimension.numeric_band}` : dimension.field)),
     ...(plan.time_bucket
       ? [`${plan.time_bucket.bucket}(${safeTerminalText(plan.time_bucket.field)})`]
       : []),
@@ -1087,6 +2358,63 @@ export function protectedCapabilityWorkbenchUrl(
   url.searchParams.set("query_ref", analysisReference);
   url.searchParams.set("capability", capabilityName);
   return url.toString();
+}
+
+async function reviewedCapabilityName(
+  io: AnalyticsShellIo,
+  requested: string,
+): Promise<string | undefined> {
+  if (isQualifiedCapabilityName(requested)) return requested;
+  const localName = requested
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/^[^a-z_]+/, "");
+  const suggestion = localName && /^[a-z_][a-z0-9_]*$/.test(localName)
+    ? `analytics.${localName}`
+    : undefined;
+  io.write([
+    "",
+    "A protected capability name needs a namespace, such as analytics.order_by_channel.",
+    ...(suggestion ? [`Suggested name: ${suggestion}`] : []),
+    "The analysis is unchanged and nothing has been created yet.",
+    "",
+  ].join("\n"));
+  if (suggestion) {
+    const answer = await readOperatorPrompt(
+      io,
+      `Use ${suggestion}? [Y/n] [Esc Back]: `,
+    );
+    if (answer === undefined) {
+      io.write("Protect cancelled. No capability was created or activated.\n\n");
+      return undefined;
+    }
+    if (parseDefaultYes(answer)) return suggestion;
+  }
+  const replacement = await readOperatorPrompt(
+    io,
+    "Capability name (namespace.name) [Esc Back]: ",
+  );
+  if (replacement === undefined) {
+    io.write("Protect cancelled. No capability was created or activated.\n\n");
+    return undefined;
+  }
+  const normalized = replacement.trim();
+  if (!isQualifiedCapabilityName(normalized)) {
+    io.write([
+      "",
+      "That name is still invalid. Use namespace.name, for example analytics.order_by_channel.",
+      "No capability was created or activated. This Ask session is still active.",
+      "",
+      "",
+    ].join("\n"));
+    return undefined;
+  }
+  return normalized;
+}
+
+function isQualifiedCapabilityName(value: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$/.test(value);
 }
 
 function parseProtectCommand(line: string): {

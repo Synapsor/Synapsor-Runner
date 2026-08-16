@@ -74,8 +74,11 @@ export function createMcpRuntimeSharedResources(
     poolMetrics: () => databasePools?.metrics() ?? [],
     rateLimitMetrics: () => rateLimiter?.metrics() ?? [],
     close: async () => {
-      await databasePools?.close();
-      await rateLimiter?.close();
+      const results = await Promise.allSettled([
+        databasePools?.close(),
+        rateLimiter?.close(),
+      ]);
+      throwRejectedCleanup(results, "Runner shared resource shutdown failed");
     },
   };
 }
@@ -98,6 +101,7 @@ export async function preflightPostgresDatabaseScope(
     const sourceName = capability.source;
     const source = config.sources?.[sourceName];
     if (!source || source.engine !== "postgres" || source.database_scope?.mode !== "postgres_rls") continue;
+    const databaseScope = source.database_scope;
     let context = trustedContext;
     if (!context) {
       try {
@@ -124,17 +128,17 @@ export async function preflightPostgresDatabaseScope(
       connectionTimeoutMillis: source.pool?.connection_timeout_ms ?? 3000,
       idleTimeoutMillis: source.pool?.idle_timeout_ms ?? 30000,
     });
-    let client: PoolClient | undefined;
     try {
-      client = await pool.connect();
-      await assertPostgresRlsTarget(client, {
-        schema: capability.target.schema,
-        table: capability.target.table,
-        scope: {
-          tenantSetting: source.database_scope.tenant_setting,
-          principalSetting: source.database_scope.principal_setting,
-        },
-        operations: ["SELECT"],
+      await withPostgresRuntimeClient(pool, async (client) => {
+        await assertPostgresRlsTarget(client, {
+          schema: capability.target.schema,
+          table: capability.target.table,
+          scope: {
+            tenantSetting: databaseScope.tenant_setting,
+            principalSetting: databaseScope.principal_setting,
+          },
+          operations: ["SELECT"],
+        });
       });
       inspected.add(key);
     } catch {
@@ -142,9 +146,6 @@ export async function preflightPostgresDatabaseScope(
         "POSTGRES_RLS_PREREQUISITE_FAILED",
         `PostgreSQL RLS prerequisites failed for configured target ${capability.target.schema}.${capability.target.table}; Runner refused to serve hardened source ${sourceName}.`,
       );
-    } finally {
-      client?.release();
-      await pool.end();
     }
   }
 }
@@ -406,13 +407,15 @@ export class RuntimeDatabasePools {
   }
 
   async close(): Promise<void> {
-    await Promise.all([
+    const results = await Promise.allSettled([
       ...[...this.postgres.values()].map((entry) => entry.pool.end()),
       ...[...this.mysqlPools.values()].map((entry) => entry.pool.end()),
     ]);
     this.postgres.clear();
     this.mysqlPools.clear();
     this.postgresRlsPreflight.clear();
+    this.counters.clear();
+    throwRejectedCleanup(results, "Source pool shutdown failed");
   }
 
   private clearPostgresRlsPreflight(poolKey: string): void {
@@ -470,49 +473,81 @@ export async function readPostgresRow(input: Parameters<DbRowReader>[0]): Promis
   const connectionString = envValue(input.env, input.source.read_url_env);
   if (!connectionString) throw new McpRuntimeError("SOURCE_CREDENTIAL_MISSING", `${input.source.read_url_env} is not set.`);
   const pool = createPostgresPool(connectionString);
-  const client = await pool.connect();
-  try {
+  return withPostgresRuntimeClient(pool, async (client) => {
     const query = runtimeReadQuery(input.capability, "$", input.args, input.context);
-    await client.query(input.capability.protected_read || input.transaction_mode === "read_only" ? "BEGIN READ ONLY" : "BEGIN");
-    if (input.reporting_timezone === "UTC") {
-      await client.query("SET LOCAL TIME ZONE 'UTC'");
-    }
-    const timeoutMs = protectedStatementTimeout(input.capability, input.source.statement_timeout_ms);
-    if (timeoutMs) {
-      await client.query(`SET LOCAL statement_timeout = ${timeoutMs}`);
-    }
-    if (input.source.database_scope?.mode === "postgres_rls") {
-      for (const target of protectedReadTargets(input.capability)) {
-        await assertPostgresRlsTarget(client, {
-          schema: target.schema,
-          table: target.table,
-          scope: {
-            tenantSetting: input.source.database_scope.tenant_setting,
-            ...(target.principalScoped && input.source.database_scope.principal_setting
-              ? { principalSetting: input.source.database_scope.principal_setting }
-              : {}),
-          },
-          operations: ["SELECT"],
-        });
+    try {
+      await client.query(input.capability.protected_read || input.transaction_mode === "read_only" ? "BEGIN READ ONLY" : "BEGIN");
+      if (input.reporting_timezone === "UTC") {
+        await client.query("SET LOCAL TIME ZONE 'UTC'");
       }
+      const timeoutMs = protectedStatementTimeout(input.capability, input.source.statement_timeout_ms);
+      if (timeoutMs) {
+        await client.query(`SET LOCAL statement_timeout = ${timeoutMs}`);
+      }
+      if (input.source.database_scope?.mode === "postgres_rls") {
+        for (const target of protectedReadTargets(input.capability)) {
+          await assertPostgresRlsTarget(client, {
+            schema: target.schema,
+            table: target.table,
+            scope: {
+              tenantSetting: input.source.database_scope.tenant_setting,
+              ...(target.principalScoped && input.source.database_scope.principal_setting
+                ? { principalSetting: input.source.database_scope.principal_setting }
+                : {}),
+            },
+            operations: ["SELECT"],
+          });
+        }
+      }
+      await bindPostgresTrustedScope(client, input.source.database_scope, input.context);
+      const result = await client.query(query.sql, query.values);
+      await client.query("COMMIT");
+      return { row: result.rows[0] ?? {}, rows: result.rows, rowCount: result.rowCount ?? 0 };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
     }
-    await bindPostgresTrustedScope(client, input.source.database_scope, input.context);
-    const result = await client.query(query.sql, query.values);
-    await client.query("COMMIT");
-    return { row: result.rows[0] ?? {}, rows: result.rows, rowCount: result.rowCount ?? 0 };
+  });
+}
+
+async function withPostgresRuntimeClient<T>(
+  pool: { connect(): Promise<PoolClient>; end(): Promise<void> },
+  operation: (client: PoolClient) => Promise<T>,
+): Promise<T> {
+  let client: PoolClient | undefined;
+  let operationFailed = false;
+  let operationError: unknown;
+  let result: T | undefined;
+  try {
+    client = await pool.connect();
+    result = await operation(client);
   } catch (error) {
-    await client.query("ROLLBACK").catch(() => undefined);
-    throw error;
-  } finally {
-    client.release();
-    await pool.end();
+    operationFailed = true;
+    operationError = error;
   }
+
+  let cleanupError: unknown;
+  try {
+    client?.release();
+  } catch (error) {
+    cleanupError = error;
+  }
+  try {
+    await pool.end();
+  } catch (error) {
+    cleanupError ??= error;
+  }
+
+  if (operationFailed) throw operationError;
+  if (cleanupError) throw cleanupError;
+  return result as T;
 }
 
 export async function readMysqlRow(input: Parameters<DbRowReader>[0]): Promise<{ row: Record<string, unknown>; rows?: Record<string, unknown>[]; rowCount: number }> {
   const uri = envValue(input.env, input.source.read_url_env);
   if (!uri) throw new McpRuntimeError("SOURCE_CREDENTIAL_MISSING", `${input.source.read_url_env} is not set.`);
   const connection = await mysql.createConnection({ uri, dateStrings: true });
+  let operationError: unknown;
   try {
     if (input.reporting_timezone === "UTC") {
       await connection.query("SET SESSION time_zone = '+00:00'");
@@ -533,7 +568,24 @@ export async function readMysqlRow(input: Parameters<DbRowReader>[0]): Promise<{
       if (readOnlyTransaction) await connection.query("ROLLBACK").catch(() => undefined);
       throw error;
     }
+  } catch (error) {
+    operationError = error;
+    throw error;
   } finally {
-    await connection.end();
+    try {
+      await connection.end();
+    } catch (error) {
+      if (operationError === undefined) throw error;
+    }
   }
+}
+
+function throwRejectedCleanup(
+  results: PromiseSettledResult<unknown>[],
+  message: string,
+): void {
+  const failures = results
+    .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+    .map((result) => result.reason);
+  if (failures.length > 0) throw new AggregateError(failures, message);
 }

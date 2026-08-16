@@ -281,7 +281,10 @@ synapsor-runner evidence list \
   --store ./.synapsor/local.db
 
 synapsor-runner evidence show ev_123 --store ./.synapsor/local.db
-synapsor-runner query-audit list --evidence ev_123 --store ./.synapsor/local.db
+synapsor-runner query-audit list --outcome refused --resource public.orders \
+  --since 24h --store ./.synapsor/local.db
+synapsor-runner query-audit browse --since 24h --store ./.synapsor/local.db
+synapsor-runner query-audit list --follow --json --store ./.synapsor/local.db
 synapsor-runner receipts list --proposal wrp_123 --store ./.synapsor/local.db
 synapsor-runner receipts show <receipt_id> --store ./.synapsor/local.db
 ```
@@ -294,6 +297,28 @@ Read-only MCP tools record evidence bundles and query-audit rows and return an
 evidence handle. Use `evidence show`, `evidence list`, and `query-audit list`
 to inspect those captured rows and fingerprints later without rerunning the
 external database read.
+
+Explore evidence contains only released-result metadata. Query audit is the
+complete attempt history and includes pre-execution refusals, post-execution
+privacy refusals, source failures, and successful releases. Tenant/principal
+filters accept plaintext or `keyed:<HMAC>` values; Runner derives the keyed
+candidate locally and never echoes or stores the plaintext filter. Use
+`--resource`, `--boundary`, `--outcome`, `--since`, `--to`, and `--limit` to
+narrow a list, `--json` for scripts, `browse` for an interactive terminal view,
+or `--follow --json` for newline-delimited live metadata. In `browse`, use
+Up/Down and Enter like the boundary picker, Esc to return, and `/` to search
+redacted plan metadata and record/resource identifiers. `C` clears all active
+filters. The browser redraws inside a dedicated terminal screen, so paging,
+searching, and returning from a detail do not append duplicate lists to
+scrollback. Record numbers remain continuous across pages, and empty searches
+identify the term and fields that were checked.
+
+Detailed evidence and query-audit views group the fields an auditor usually
+needs first: identity/resource, authority, outcome/privacy, and execution. They
+also reconstruct a SQL-like reviewed query from the redacted normalized plan.
+It is labelled as reconstructed, never contains raw filter values, and is not
+captured or executable SQL. Interactive terminals use outcome-aware color and
+dim reference labels; `NO_COLOR` and piped output remain plain text.
 
 This is local indexed search over the runner's SQLite ledger. It is not
 external Postgres/MySQL time travel, not native branching, and not a hosted

@@ -2,9 +2,14 @@
 
 The canonical scope page is [Current Limitations](limitations.md).
 
-Current `1.6.6` scope:
+Current `1.7.0` scope:
 
 - local semantic MCP tools over Postgres/MySQL without raw SQL tools;
+- explicit source-server capability profiles: complete reviewed grammar on
+  PostgreSQL 13-18 and MySQL 8.0.16+, fail-closed limited grammar on MySQL
+  8.0.11-8.0.15 and MySQL 5.7,
+  and pre-authority refusal outside those lines, for prerelease servers, or for
+  MariaDB/unrecognized products;
 - one-command, resumable, review-by-exception onboarding from
   `DATABASE_URL` to a real safe read, bounded exploration, protected named
   tools, guided write proposals, and host-neutral MCP client setup;
@@ -13,8 +18,11 @@ Current `1.6.6` scope:
   Synapsor definitions;
 - disabled generated `.synapsor.sql`, canonical JSON, tests, review evidence,
   and generation locks; no generated authority activates itself;
-- local development/staging Scoped Explore through exactly two temporary MCP
-  tools, using typed row plans or a reviewed analytical cube. Up to eight
+- development/staging Scoped Explore and explicit production Scoped Explore over
+  secured HTTP through exactly two MCP tools, using typed row plans or a
+  reviewed analytical cube. Production requires verified JWT scope,
+  per-principal and tenant budgets, atomic shared accounting, rate limits, and
+  transport attestation. Up to eight
   independently reviewed boundaries may be active; one plan selects one
   boundary and cannot join/union across them. Activation permits repeated legal
   combinations without per-question review or Protect;
@@ -27,13 +35,17 @@ Current `1.6.6` scope:
   consent, an interactive follow-up shell or one-shot mode, quiet untrusted
   provider prose, independently rendered Runner results, hidden short analysis
   references, and operator-only `/protect`;
-- aggregate `count`, reviewed `count_distinct`, `sum`, `avg`, reviewed
-  dimensions and day/week/month buckets, typed filters, bounded top/bottom-N,
+- aggregate `count`, reviewed `count_distinct`, numeric blends and dispersion,
+  missing-data measures, named ratios, fixed numeric bands, reviewed dimensions
+  and hour-through-year/day-of-week buckets, typed filters, bounded top/bottom-N,
+  post-suppression running/rank/lag/moving-average/share operations, safe scoped
+  child counts,
   ranked high-cardinality candidate populations under a separate reviewed
   ceiling, signed absolute/percentage movers from an exact two-period
-  comparison in one read-only snapshot, and at
-  most three activated star/depth-two relationship paths, each containing one
-  or two proven many-to-one links with fan-out one;
+  comparison in one read-only snapshot, reviewed relative UTC windows resolved
+  once by Runner for rows/aggregates/comparisons, and at most three activated
+  relationship paths. Each path defaults to at most two proven many-to-one
+  links with fan-out one; an explicit reviewed limit may permit a third link;
 - demand-driven operator review for an exact inactive catalog-proven path,
   explicit nullable-link semantics, per-relation trusted scope, and fail-closed
   rejection of one-to-many, many-to-many, stale, or ambiguous paths;
@@ -42,7 +54,7 @@ Current `1.6.6` scope:
 - Protect This Query from a successful local plan to public DSL, canonical
   Spec, tests, and a disabled digest-bound named production capability.
   Protect is optional during authoring and freezes only the selected analysis;
-- semantic analytical aliases, reviewed UTC time-bucket authority, explicit
+- semantic analytical aliases, reviewed UTC time-bucket/window authority, explicit
   empty/fully-suppressed/incomplete-comparison outcomes, and durable redacted
   analysis references across refresh, tabs, and CLI processes;
 - shared MCP analytical output schemas plus a deterministic
@@ -86,12 +98,15 @@ Current `1.6.6` scope:
   Postgres review state, pools, rate limits, readiness, quorum, dead letters,
   and backup/restore/retention.
 
-Scoped Explore is an authoring-plane feature, not a production runtime feature.
-It is disabled by default, requires an explicit development/staging profile and
-a demonstrably read-only non-owner role, and is never advertised by production,
-unknown-profile, shared HTTP, remote, or non-loopback surfaces. Production uses
-only activated named capabilities, including capabilities created through
-Protect.
+Scoped Explore is disabled by default. Its ordinary authoring register requires
+an explicit development/staging profile, local stdio or loopback Workbench, and
+a demonstrably read-only non-owner role. An independent opt-in production
+register may serve exactly `app.describe_data` and `app.explore_data` over
+secured shared Streamable HTTP after a separate production boundary review. It
+requires verified JWT tenant/principal scope, per-principal plus tenant privacy
+budgets, rate limits, and atomic shared-Postgres accounting. Unknown profiles
+and ordinary remote HTTP still gain no Explore authority. Activated named
+capabilities, including Protect output, remain the narrower production choice.
 
 Stable `1.x` compatibility covers the documented `synapsor-runner` binary,
 config schema version `1`, canonical public contracts, result envelopes,
@@ -104,7 +119,8 @@ unless the feature is explicitly adopted.
 Out of scope:
 
 - raw `execute_sql`, SQL strings, model-generated SQL, or arbitrary identifiers;
-- production Scoped Explore or a general-purpose analytics/query AST;
+- production Scoped Explore outside the explicit secured two-tool HTTP
+  profile, or a general-purpose analytics/query AST;
 - production/shared/remote Ask, model-selected provider configuration,
   Synapsor-relayed model calls, persisted chat history, or a claim that every
   OpenAI-compatible server is supported;

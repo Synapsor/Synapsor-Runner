@@ -215,6 +215,46 @@ An unauthenticated MCP request receives a `401` Bearer challenge containing the
 with `insufficient_scope`. Runner does not implement a proprietary login or
 refresh-token service.
 
+### Opt-in production Scoped Explore
+
+A shared JWT deployment may explicitly serve flexible read-only Explore after
+an operator separately generates, reviews, and activates a production boundary.
+The explicit opt-in is `production_explore.enabled: true` in the reviewed
+runtime config. That setting selects the locked surface over Streamable HTTP;
+the recommended `--production-explore` flag repeats the intent visibly in the
+launch command. Either way, all production startup gates below still run.
+
+```bash
+synapsor-runner mcp serve \
+  --transport streamable-http \
+  --production-explore \
+  --host 0.0.0.0 \
+  --trusted-tls-proxy \
+  --config ./synapsor.runner.json
+```
+
+The production route exposes exactly `app.describe_data` and
+`app.explore_data`. It refuses static endpoint tokens, anonymous sessions,
+missing principals, cleartext break glass, and any activation, Protect,
+approval, apply, configuration, credential, or SQL surface. It additionally
+requires atomic shared-Postgres per-principal and tenant privacy accounting.
+Tool aliases and result-envelope overrides are intentionally unavailable on
+this fixed surface; production serve rejects their flags instead of ignoring
+them.
+An enabled production config refuses stdio and the legacy JSON-RPC HTTP bridge,
+so a missing CLI flag cannot silently produce an empty or unrelated surface.
+All production Explore sessions in one Runner process borrow one bounded source
+pool, and each verified tenant/principal pair has an independent concurrent
+session ceiling. The production defaults are 8 source connections, 4 sessions
+per principal, and a 120-second idle-session timeout; review them against the
+source database and replica count before serving traffic.
+See [Production Scoped Explore Over HTTP](production-scoped-explore-http.md)
+for the complete boundary, config, budget, and startup-attestation procedure.
+That guide also shows `mcp client-config` commands for Claude Code, Cursor, and
+VS Code. They emit each client's native Streamable HTTP shape with a bearer
+environment reference, so production tokens do not need to be pasted into MCP
+configuration files.
+
 ## Opaque Token Rotation
 
 Runner accepts one active token and, only when configured, one previous token:
@@ -324,6 +364,9 @@ Runner-owned TLS add the same TLS env-name flags used at startup. Doctor reports
 the transport, bind scope, channel, auth/identity mode, issuer/audience/resource,
 key readiness, token strength/rotation, Origin/Host policy, limits, rate-limit
 scope, and database isolation assurance without printing credential values.
+When `production_explore` is configured, doctor also validates the active
+production boundary, matching claim/source lock, shared HMAC/control store,
+hierarchical budget posture, and exact two-tool surface.
 
 ## Model-Facing Boundary
 

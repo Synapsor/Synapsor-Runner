@@ -1,8 +1,10 @@
 # Store Lifecycle
 
-Synapsor Runner keeps local evidence, query audit, proposals, receipts, replay,
-worker state, human-attention events, notification delivery state, and
-lifecycle events in a SQLite store.
+Synapsor Runner keeps development-mode evidence, query audit, proposals,
+receipts, replay, worker state, human-attention events, notification delivery
+state, and lifecycle events in a SQLite store. A configured shared PostgreSQL
+runtime store is authoritative for multi-process deployments and for production
+HTTP Explore accounting/evidence.
 
 Default path:
 
@@ -118,6 +120,110 @@ ledger. It does not create or synchronize a persistent local mirror during
 inspection. Connection failures fail safely; the command never falls back to an
 unrelated local store.
 
+Production HTTP Explore appends metadata-only evidence and query-audit events to
+the dedicated `production_explore_audit_events` table in that PostgreSQL
+control store. The application source may be PostgreSQL or MySQL; the shared
+control store is PostgreSQL in both cases. There is no shared-MySQL control
+store. The application database and control database are separate authorities.
+
+The focused `evidence`, `query-audit`, `receipts`, `replay`, and `activity`
+read commands use the same config-aware bridge. Their text and JSON output name
+whether they read local SQLite or shared PostgreSQL, including the configured
+schema but never the connection URL. An empty result says which ledger was
+consulted. Shared reads use a bounded read-only snapshot and do not block the
+live production writer with its advisory mutation lock.
+
+```bash
+synapsor-runner evidence list --principal librarian@example.org \
+  --resource public.orders --since 24h --config ./synapsor.runner.json
+synapsor-runner evidence browse --since 24h --config ./synapsor.runner.json
+synapsor-runner evidence show <evidence-id> --details \
+  --config ./synapsor.runner.json
+synapsor-runner query-audit list --outcome refused --resource public.orders \
+  --since 24h --config ./synapsor.runner.json
+synapsor-runner query-audit browse --since 24h \
+  --config ./synapsor.runner.json
+synapsor-runner query-audit show <audit-id> --details \
+  --config ./synapsor.runner.json
+```
+
+Production Explore records plans, outcome/count metadata, keyed scope
+fingerprints, and result fingerprints. It does not persist result values, raw
+tenant/principal claims, SQL, parameters, credentials, or source rows.
+
+`evidence browse` keeps a bounded audit session open instead of printing the
+entire result set. It supports pages, timestamp jumps, metadata search, and live
+scope/resource/outcome/time filters. Up/Down moves the current selection, Enter
+opens it, and Esc returns. `/` opens free-text search over persisted plan fields
+and audit identifiers. `F` opens structured tenant, principal, resource,
+capability, boundary, outcome, and time filters. Record numbers remain
+continuous across pages. `C` clears all active filters and returns to the newest
+page. The browser redraws in a dedicated terminal screen so list, search, and
+detail transitions do not append repeated output. Search covers redacted plan
+metadata, record and resource/source IDs, capability, and query fingerprint; it
+does not search original question text because that text is not stored. An empty
+search result states both the term and the fields searched. A selected record
+starts with a compact, plan-derived English description; use its D, Q, and P
+commands for authority facts, the privacy-safe reconstructed query, and the
+normalized plan, with Up/Down scrolling for long sections. The description is
+reconstructed from persisted reviewed-plan metadata, not from a
+stored model conversation. Successful shared-store reads are quiet by default;
+use `--debug` only when the structured snapshot event is needed.
+
+The non-interactive `evidence list --search <text>` and
+`query-audit list --search <text>` commands use the same search definition. A
+text-mode empty result echoes the term, names the searched persisted fields, and
+states that original question text is not stored. JSON output remains an empty
+typed result set plus any existing ledger notices.
+
+Workbench Query history presents the same reconstructed descriptions, filters,
+and paged shared-ledger records with Newer records and Older records controls.
+Use the CLI browser for a long audit investigation and `--json` for automation.
+
+For a refusal before source execution, the query-audit payload may include
+`attempted_access.resource`, `.field`, and `.operation`. Runner writes these only
+when they resolve to metadata in the activated boundary; it does not persist an
+unknown name supplied by the client. The top-level `table_name` uses that
+validated resource, so resource filters find both successful queries and
+refusals against the same reviewed table.
+
+`--tenant` and `--principal` accept either the operator-known plaintext value
+or an existing `keyed:<HMAC>` fingerprint. For plaintext input, Runner derives
+candidate fingerprints locally from the project's audit key and configured
+production HMAC key; the plaintext is not printed or persisted. Principal
+lookup applies to records created after keyed principal metadata was added.
+Older records only say whether principal scope was active, so they cannot be
+attributed to a principal retroactively.
+
+For a shared production ledger, plaintext tenant/principal lookup requires the
+configured production HMAC key. If it is unavailable, the command fails
+non-zero before returning records. It never silently ignores the tenant filter
+or turns an unresolved principal filter into an authoritative empty result.
+The `keyed:<HMAC>` form remains usable without plaintext resolution. An empty
+principal lookup explains whether no otherwise-matching records exist, current
+keyed records do not match, or legacy records cannot be attributed.
+
+Use `query-audit` when the question is "what was attempted?" It includes
+refusals before source execution, privacy refusals after execution, source
+failures, and released results. Use `evidence` when the question is "what
+metadata proves this released result?" A refusal has no evidence bundle because
+no result was released. Both list commands support `--resource`, `--boundary`,
+`--outcome`, `--since` (ISO timestamp or `24h`/`7d` style duration), `--to`,
+`--limit`, `--json`, and `--follow`. `browse` opens the same filtered records in
+an interactive terminal viewer. `--follow --json` emits newline-delimited JSON.
+`activity search` uses the same production-store selection and keyed Explore
+identity lookup when one combined lifecycle view is more useful than a focused
+record type.
+
+Detailed evidence/audit views lead with grouped operator facts and a
+reconstructed reviewed query. That SQL-like rendering is derived solely from
+the normalized redacted plan: it is not captured SQL, is not executable, and
+shows filter values only as keyed/redacted placeholders. New events also record
+the value-free scope-application kind so the view can say whether Runner applied
+a direct/derived tenant or principal predicate, or intentionally applied none
+for shared-reference/single-organization scope. Raw JSON remains available as
+reference metadata below the readable view.
+
 ## Focused inspection commands
 
 The existing commands remain useful when you need one record type:
@@ -126,8 +232,8 @@ The existing commands remain useful when you need one record type:
 | --- | --- |
 | What did the model propose? | `synapsor-runner proposals show latest --details` |
 | Is the latest proposal still fresh enough to review? | `synapsor-runner proposals check-freshness latest --config ./synapsor.runner.json` |
-| What data supported it? | `synapsor-runner evidence list --proposal <proposal-id>` then `evidence show <evidence-id> --details` |
-| What query was run? | `synapsor-runner query-audit list --proposal <proposal-id>` |
+| What data supported it? | `synapsor-runner evidence list --proposal <proposal-id> --config ./synapsor.runner.json` then `evidence show <evidence-id> --details --config ./synapsor.runner.json` |
+| What query was run? | `synapsor-runner query-audit list --proposal <proposal-id> --config ./synapsor.runner.json` |
 | Did guarded writeback apply? | `synapsor-runner receipts list --proposal <proposal-id>` |
 | What replay snapshot exists? | `synapsor-runner replay show latest --details` |
 | What happened to one object? | `synapsor-runner activity search --object invoice:INV-3001` |

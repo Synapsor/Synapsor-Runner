@@ -367,7 +367,15 @@ function managedEntry(
     type: "stdio",
     command: "npx",
     args: authoring
-      ? ["-y", resolvedPackage, "mcp", "serve", "--authoring", "--project-root", "."]
+      ? [
+        "-y",
+        resolvedPackage,
+        "mcp",
+        "serve",
+        "--authoring",
+        "--project-root",
+        path.posix.dirname(configPath),
+      ]
       : ["-y", resolvedPackage, "mcp", "serve", "--config", configPath, "--store", storePath],
   };
 }

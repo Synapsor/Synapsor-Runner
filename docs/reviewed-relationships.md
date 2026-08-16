@@ -5,8 +5,10 @@ without exposing a general join planner or SQL. The relationship is authority:
 Runner proposes it from database catalog evidence, a human reviews it, and the
 activated boundary fixes its exact path and semantics.
 
-This feature is part of local, development/staging-only Scoped Explore.
-Production receives only named capabilities created through Protect This Query.
+This feature is available in local development/staging Scoped Explore and in
+the explicit, attested production-Explore HTTP mode. Protected named
+capabilities created through Protect This Query remain the default production
+surface.
 
 ## The Safety Rule
 
@@ -16,7 +18,8 @@ provide a table name, join key, join type, relationship path, or SQL fragment.
 Runner accepts only:
 
 - one to three relationship paths in a protected capability;
-- one or two links per path;
+- one or two links per path by default, or three after an explicit reviewed
+  depth change;
 - inspected foreign-key links whose target key is unique;
 - `many_to_one` cardinality with `max_fan_out: 1`;
 - trusted tenant and, where configured, principal scope on every relation;
@@ -27,7 +30,7 @@ Runner refuses:
 - one-to-many and many-to-many paths;
 - relationships inferred only from similar column names;
 - ambiguous or unproven cardinality;
-- more than two links in one path;
+- more links than the boundary's reviewed depth, with a hard ceiling of three;
 - a plan using more than three reviewed paths;
 - a relationship whose catalog proof or generation lock is stale;
 - a related table whose trusted scope cannot be enforced;
@@ -36,6 +39,14 @@ Runner refuses:
 These limits permit reviewed star-style analysis. For example, a sales fact can
 group by an activated store path and an activated category path without
 multiplying the counted sales rows.
+
+Depth three is deliberately opt-in. `/access` -> `L Limits` and Workbench's
+**Result shape, timeout, and path depth** panel expose separate derived-scope
+and analysis-path controls. Raising one only makes an already catalog-proven
+three-link path eligible for review; it does not activate the path. Runner
+shows a cost advisory because repeated FK traversal can approach the reviewed
+statement timeout on high-volume data. A direct tenant column is normally the
+faster design for a deep leaf table.
 
 ## Why Fan-Out Matters
 
@@ -240,6 +251,7 @@ corepack pnpm test:clean-room:retail
 ```
 
 The live PostgreSQL and MySQL relationship test proves direct star paths,
-depth-two paths, both nullable-link choices, demand-driven activation, drift
-refusal, per-relation tenant/principal scope, suppression, and rejection of a
-deliberately wrong fan-out relationship.
+default depth-two paths, an independently reviewed depth-three opt-in, both
+nullable-link choices, demand-driven activation, drift refusal, per-relation
+tenant/principal scope, suppression, and rejection of a deliberately wrong
+fan-out relationship.

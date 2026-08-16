@@ -1,14 +1,27 @@
-import { createMcpRuntime, describeIsolationAssurance, preflightGeneratedAuthority, serveStdio, startHttpMcpServer, startStreamableHttpMcpServer, toolNameExposures, type RuntimeCapabilityConfig, type RuntimeConfig, type SourceIsolationAssurance, type StreamableHttpTlsOptions, type ToolNameStyle } from "@synapsor-runner/mcp-server";
+import { createMcpRuntime, describeIsolationAssurance, preflightGeneratedAuthority, serveStdio, startHttpMcpServer, startStreamableHttpMcpServer, toolNameExposures, type RuntimeCapabilityConfig, type RuntimeConfig, type SourceIsolationAssurance, type StreamableHttpSessionFactory, type StreamableHttpTlsOptions, type ToolNameStyle } from "@synapsor-runner/mcp-server";
 import {
   ProposalStore
 } from "@synapsor-runner/proposal-store";
 import fs from "node:fs/promises";
+import crypto from "node:crypto";
 import path from "node:path";
 import process from "node:process";
-import { serveScopedExploreStdio } from "./authoring-mcp.js";
+import { createScopedExploreMcpServer, serveScopedExploreStdio } from "./authoring-mcp.js";
+import {
+  loadActivatedExplorationBoundaries,
+  type ActivatedExplorationBoundary,
+  type GenerationLock,
+} from "./auto-boundary.js";
+import { createScopedExploreBoundarySetRuntime } from "./scoped-explore-boundary-set.js";
+import {
+  createScopedExploreDatabaseExecutor,
+  prepareScopedExplore,
+  type PreparedExplore,
+  type ScopedExploreExecutor,
+} from "./scoped-explore.js";
 import { cliCommandName } from "./cli-command-meta.js";
 import { fileExists } from "./cli-files.js";
-import { formatScalar, isRecord } from "./cli-format.js";
+import { formatScalar, isRecord, shellQuote } from "./cli-format.js";
 import { assertKnownOptions, envValue, firstPositional, optionalArg } from "./cli-options.js";
 import { confirmDangerousAction, defaultConfigPath, defaultStorePath, envWithDemoDefaults, optionalResolvedLocalStorePath, readRuntimeConfig, resolvedLocalStorePath, runnerConfigPath } from "./cli-project.js";
 import { LocalDoctorGovernance, trustedContextsForDoctor } from "./doctor-domain.js";
@@ -16,6 +29,85 @@ import { formatSmokeCallResult, resultFormatOption } from "./mcp-shared.js";
 import { writeStoreLease } from "./store-lease.js";
 import { sharedPostgresLedgerMirrorRequested, withoutSharedPostgresLedgerMirror, withSharedPostgresLedgerMirror } from "./store-shared.js";
 import { capabilityOperation, formatSourceReceiptMode, sourceNeedsSqlWriteback } from "./writeback-domain.js";
+
+const EXPLORE_TOOL_NAMES = ["app.describe_data", "app.explore_data"] as const;
+type ExploreSurfaceMode = "local" | "production";
+
+
+export function productionExploreServeMode(args: readonly string[], config: RuntimeConfig): boolean {
+  return args.includes("--production-explore") || config.production_explore?.enabled === true;
+}
+
+
+function isLocalExploreOnlyConfig(config: RuntimeConfig): boolean {
+  return config.production_explore?.enabled !== true
+    && config.mode === "read_only"
+    && (config.capabilities?.length ?? 0) === 0;
+}
+
+
+async function activeLocalExploreProjectRoot(
+  config: RuntimeConfig,
+  configPath: string,
+): Promise<string | undefined> {
+  if (!isLocalExploreOnlyConfig(config)) return undefined;
+  const projectRoot = path.dirname(path.resolve(configPath));
+  try {
+    const boundaries = await loadActivatedExplorationBoundaries(projectRoot);
+    return boundaries.length > 0 && boundaries.every((boundary) =>
+      boundary.activation.state === "active"
+      && (boundary.deployment_profile === "development" || boundary.deployment_profile === "staging"))
+      ? projectRoot
+      : undefined;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
+
+function assertProductionExploreTransport(
+  config: RuntimeConfig,
+  configPath: string,
+  transport: "stdio" | "http" | "streamable-http",
+): void {
+  if (config.production_explore?.enabled !== true || transport === "streamable-http") return;
+  throw new Error(
+    `Production Explore is enabled in ${configPath} and requires MCP Streamable HTTP. `
+    + `Use ${cliCommandName()} mcp serve --transport streamable-http --production-explore `
+    + `--config ${shellQuote(configPath)}.`,
+  );
+}
+
+
+function assertProductionExplorePresentation(args: readonly string[]): void {
+  const presentationFlags = [
+    "--result-format",
+    "--tool-name-style",
+    "--alias-mode",
+    "--openai-tool-aliases",
+    "--aliases",
+  ].filter((flag) => args.includes(flag));
+  if (presentationFlags.length === 0) return;
+  throw new Error(
+    `Production Explore uses fixed app.describe_data/app.explore_data tool names and one fixed reviewed result envelope. Remove ${presentationFlags.join(", ")}; presentation aliases and result-format overrides are not available on this surface.`,
+  );
+}
+
+
+function assertLocalExplorePresentation(args: readonly string[]): void {
+  const presentationFlags = [
+    "--result-format",
+    "--tool-name-style",
+    "--alias-mode",
+    "--openai-tool-aliases",
+    "--aliases",
+  ].filter((flag) => args.includes(flag));
+  if (presentationFlags.length === 0) return;
+  throw new Error(
+    `Local Explore uses fixed app.describe_data/app.explore_data tool names and one reviewed result envelope. Remove ${presentationFlags.join(", ")}; presentation aliases and result-format overrides are not available on this surface.`,
+  );
+}
 
 
 export async function mcpServe(args: string[]): Promise<number> {
@@ -30,6 +122,9 @@ export async function mcpServe(args: string[]): Promise<number> {
     });
     return 0;
   }
+  if (args.includes("--production-explore") && transport !== "streamable-http") {
+    throw new Error("Production Explore requires --transport streamable-http.");
+  }
   if (transport === "streamable-http") return mcpServeStreamableHttp(args);
   if (transport === "http" || transport === "json-rpc-http" || transport === "jsonrpc-http") return mcpServeHttp(args);
   if (transport !== "stdio") throw new Error("--transport must be stdio, streamable-http, or http");
@@ -37,6 +132,30 @@ export async function mcpServe(args: string[]): Promise<number> {
   const readOnly = args.includes("--read-only");
   const baseConfig = await readRuntimeConfig(configPath);
   const config = readOnly ? { ...baseConfig, mode: "read_only" as const } : baseConfig;
+  assertProductionExploreTransport(config, configPath, "stdio");
+  const localExploreProjectRoot = await activeLocalExploreProjectRoot(config, configPath);
+  if (localExploreProjectRoot) {
+    assertLocalExplorePresentation(args);
+    const requestedStore = optionalArg(args, "--store");
+    const reviewedStore = path.join(localExploreProjectRoot, ".synapsor/local.db");
+    if (requestedStore && path.resolve(requestedStore) !== reviewedStore) {
+      throw new Error(
+        `Local Explore uses the boundary project's reviewed ledger at ${reviewedStore}. `
+        + `Use ${cliCommandName()} mcp serve --authoring --project-root ${shellQuote(localExploreProjectRoot)}.`,
+      );
+    }
+    process.stderr.write(
+      `Active local Explore authority selected from ${configPath}; exposing exactly ${EXPLORE_TOOL_NAMES.join(" and ")}.\n`,
+    );
+    await serveScopedExploreStdio({ projectRoot: localExploreProjectRoot });
+    return 0;
+  }
+  if (isLocalExploreOnlyConfig(config)) {
+    throw new Error(
+      `No active reviewed development/staging boundary is available beside ${configPath}. `
+      + `Run ${cliCommandName()} start --cli to review and activate local Explore before connecting an MCP client.`,
+    );
+  }
   const toolNameStyle = toolNameStyleOption(args);
   const resultFormat = resultFormatOption(args);
   const storePath = optionalResolvedLocalStorePath(args);
@@ -57,15 +176,19 @@ export async function mcpServe(args: string[]): Promise<number> {
 
 
 export async function mcpServeHttp(args: string[]): Promise<number> {
+  if (args.includes("--production-explore")) {
+    throw new Error("Production Explore requires spec MCP Streamable HTTP. Use mcp serve --transport streamable-http --production-explore.");
+  }
+  const configPath = runnerConfigPath(args, defaultConfigPath);
+  const readOnly = args.includes("--read-only");
+  const baseConfig = await readRuntimeConfig(configPath);
+  const config = readOnly ? { ...baseConfig, mode: "read_only" as const } : baseConfig;
+  assertProductionExploreTransport(config, configPath, "http");
   process.stderr.write([
     "Warning: mcp serve-http is a legacy JSON-RPC bridge, not spec MCP Streamable HTTP.",
     `For OpenAI Agents SDK or standard HTTP MCP clients, use: ${cliCommandName()} mcp serve --transport streamable-http`,
     "",
   ].join("\n"));
-  const configPath = runnerConfigPath(args, defaultConfigPath);
-  const readOnly = args.includes("--read-only");
-  const baseConfig = await readRuntimeConfig(configPath);
-  const config = readOnly ? { ...baseConfig, mode: "read_only" as const } : baseConfig;
   assertReceiptTopologyForTransport(config, "http");
   const host = optionalArg(args, "--host") ?? "127.0.0.1";
   const port = Number(optionalArg(args, "--port") ?? "8765");
@@ -114,10 +237,32 @@ export async function mcpServeHttp(args: string[]): Promise<number> {
 
 
 export async function mcpServeStreamableHttp(args: string[]): Promise<number> {
+  if (args.includes("--production-explore")) assertProductionExplorePresentation(args);
   const configPath = runnerConfigPath(args, defaultConfigPath);
   const readOnly = args.includes("--read-only");
   const baseConfig = await readRuntimeConfig(configPath);
   const config = readOnly ? { ...baseConfig, mode: "read_only" as const } : baseConfig;
+  const productionExplore = productionExploreServeMode(args, config);
+  if (productionExplore) assertProductionExplorePresentation(args);
+  let productionPosture: ProductionExploreStartupReport | undefined;
+  if (productionExplore) {
+    if (args.includes("--dev-no-auth")
+      || args.includes("--unsafe-allow-cleartext-http")
+      || optionalArg(args, "--auth-token-env")
+      || optionalArg(args, "--previous-auth-token-env")) {
+      throw new Error("Production Explore forbids development no-auth, cleartext break glass, and static endpoint-token flags.");
+    }
+    productionPosture = await assertProductionExploreStartup(
+      config,
+      process.env,
+      loadActivatedExplorationBoundaries,
+      prepareScopedExplore,
+      {
+        doctorCommand: `${cliCommandName()} doctor --config ${shellQuote(configPath)} --transport streamable-http`,
+        color: terminalStatusColorEnabled(process.stderr, process.env),
+      },
+    );
+  }
   assertReceiptTopologyForTransport(config, "streamable-http");
   const toolNameStyle = toolNameStyleOption(args);
   const resultFormat = resultFormatOption(args);
@@ -146,11 +291,20 @@ export async function mcpServeStreamableHttp(args: string[]): Promise<number> {
       unsafeAllowCleartextHttp: args.includes("--unsafe-allow-cleartext-http"),
       resultFormat,
       tls,
+      accessLog: process.stderr.isTTY === true,
+      ...(productionExplore
+        ? { streamableSessionFactory: productionExploreSessionFactory(config, process.env) }
+        : {}),
     });
   } catch (error) {
     await releaseLease();
     throw error;
   }
+  const terminalColor = terminalStatusColorEnabled(process.stderr, process.env);
+  if (productionPosture) {
+    process.stderr.write(formatProductionExploreStartupReport(productionPosture, { color: terminalColor }));
+  }
+  process.stderr.write(`${formatStreamableHttpServerRunning(server.url, productionExplore, terminalColor)}\n`);
   process.stderr.write("Press Ctrl+C to stop.\n");
   await new Promise<void>((resolve) => {
     const stop = async () => {
@@ -164,6 +318,595 @@ export async function mcpServeStreamableHttp(args: string[]): Promise<number> {
     process.once("SIGTERM", stop);
   });
   return 0;
+}
+
+export type ProductionExploreStartupCheck = {
+  name: string;
+  ok: boolean;
+  level: "pass" | "warn" | "fail";
+  message: string;
+};
+
+export type ProductionExploreStartupReport = {
+  ok: boolean;
+  checks: ProductionExploreStartupCheck[];
+  active_boundaries: string[];
+  tools: ["app.describe_data", "app.explore_data"];
+};
+
+export async function inspectProductionExploreStartup(
+  config: RuntimeConfig,
+  env: NodeJS.ProcessEnv,
+  loadBoundaries: (projectRoot: string) => Promise<ActivatedExplorationBoundary[]> = loadActivatedExplorationBoundaries,
+  prepareBoundary: (input: {
+    projectRoot: string;
+    transport: "streamable_http";
+    mode: "production_http";
+    boundaryName: string;
+    env: NodeJS.ProcessEnv;
+  }) => Promise<PreparedExplore> = prepareScopedExplore,
+): Promise<ProductionExploreStartupReport> {
+  const production = config.production_explore;
+  const checks: ProductionExploreStartupCheck[] = [];
+  const add = (
+    name: string,
+    ok: boolean,
+    message: string,
+    level: ProductionExploreStartupCheck["level"] = ok ? "pass" : "fail",
+  ) => checks.push({ name, ok, level, message });
+  if (!production?.enabled) {
+    add("explicit-opt-in", false, "Production Explore is off. Set production_explore.enabled to true in the reviewed runtime configuration.");
+    return {
+      ok: false,
+      checks,
+      active_boundaries: [],
+      tools: ["app.describe_data", "app.explore_data"],
+    };
+  }
+  add("explicit-opt-in", true, "Production Explore is explicitly enabled.");
+  add(
+    "read-only-runtime",
+    config.mode === "read_only",
+    config.mode === "read_only"
+      ? "The deployment is read-only; proposal, approval, apply, and write tools are unavailable."
+      : "Production Explore requires runtime mode read_only.",
+  );
+  const rawHmacKey = envValue(env, production.budget_hmac_key_env);
+  const hmacIssue = productionExploreHmacKeyIssue(rawHmacKey);
+  const hmacReady = !hmacIssue;
+  add(
+    "shared-budget-hmac",
+    hmacReady,
+    hmacReady
+      ? `Opaque accounting uses at least 32 bytes of randomly generated key material from ${production.budget_hmac_key_env}; the value is not displayed.`
+      : `${production.budget_hmac_key_env} ${hmacIssue}`,
+  );
+  const sharedStoreReady = config.storage?.shared_postgres?.mode === "runtime_store"
+    && Boolean(envValue(env, config.storage.shared_postgres.url_env));
+  add(
+    "shared-accounting-store",
+    sharedStoreReady,
+    sharedStoreReady
+      ? `Atomic production accounting uses shared Postgres from ${config.storage!.shared_postgres!.url_env}; the URL is not displayed.`
+      : "Production Explore requires storage.shared_postgres.mode runtime_store and its configured URL environment value.",
+  );
+  const authReady = config.session_auth?.provider === "jwt_asymmetric"
+    && Boolean(config.session_auth.issuer)
+    && Boolean(config.session_auth.audience)
+    && (production.single_organization_id
+      ? !config.session_auth.tenant_claim
+      : Boolean(config.session_auth.tenant_claim))
+    && Boolean(config.session_auth.principal_claim);
+  add(
+    "verified-principal-scope",
+    authReady,
+    authReady
+      ? production.single_organization_id
+        ? `Every session requires asymmetric JWT verification and trusted ${config.session_auth!.principal_claim} principal claims; organization identity is fixed as ${production.single_organization_id}.`
+        : `Every session requires asymmetric JWT verification and trusted ${config.session_auth!.tenant_claim}/${config.session_auth!.principal_claim} claims.`
+      : "Production Explore requires asymmetric JWT verification with exact issuer, audience, principal claim, and either a tenant claim or reviewed fixed organization identity.",
+  );
+  const requiredScopes = config.http_security?.oauth_resource?.required_scopes ?? [];
+  const transportReady = config.http_security?.deployment === "shared"
+    && (config.http_security.channel === "direct_tls" || config.http_security.channel === "trusted_tls_proxy")
+    && requiredScopes.includes(production.required_oauth_scope);
+  add(
+    "secured-http-transport",
+    transportReady,
+    transportReady
+      ? `Shared Streamable HTTP requires OAuth scope ${production.required_oauth_scope} over ${config.http_security!.channel}.`
+      : "Production Explore requires shared Streamable HTTP, direct TLS or a trusted TLS proxy, and its OAuth scope in required_scopes.",
+  );
+  add(
+    "hierarchical-budgets",
+    true,
+    `Per-principal rolling budgets come from each reviewed boundary; tenant ceilings are ${production.tenant_limits.max_queries_per_rolling_24_hours} queries, ${production.tenant_limits.max_extracted_cells_per_rolling_24_hours} cells, ${production.tenant_limits.max_differencing_queries_per_rolling_24_hours} differencing variants per 24 hours, and ${production.tenant_limits.requests_per_minute} requests per minute. The per-response tenant ceiling is ${production.tenant_limits.max_response_cells_per_response === undefined ? "inherited from each boundary" : `${production.tenant_limits.max_response_cells_per_response} cells`}.`,
+  );
+  add(
+    "source-connection-ceiling",
+    true,
+    `Schema/role drift checks and reviewed queries share one process-wide source pool capped at ${production.source_max_connections ?? 8} total connections. Size this below the source database connection allowance.`,
+  );
+  add(
+    "principal-session-ceiling",
+    true,
+    `Each verified tenant/principal pair may hold at most ${production.max_sessions_per_principal ?? 4} concurrent MCP sessions; other principals have independent session capacity.`,
+  );
+  let boundaries: ActivatedExplorationBoundary[] = [];
+  const controlDatabaseSeparationFailures: string[] = [];
+  let controlDatabaseSeparationEvaluated = 0;
+  try {
+    boundaries = await loadBoundaries(production.project_root);
+  } catch (error) {
+    add("active-production-boundaries", false, `Production Explore boundaries could not be loaded: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (boundaries.length === 0 && !checks.some((check) => check.name === "active-production-boundaries")) {
+    add("active-production-boundaries", false, "Production Explore requires at least one active reviewed production boundary.");
+  }
+  if (boundaries.length > 0) {
+    const reviewedSources = new Map(boundaries.map((boundary) => [boundary.pack.name, boundary.source]));
+    const sourceNames = new Set(reviewedSources.values());
+    add(
+      "single-reviewed-source",
+      sourceNames.size === 1,
+      sourceNames.size === 1
+        ? `Every active production boundary uses reviewed source ${[...sourceNames][0]}.`
+        : `Active production boundaries must use one reviewed source, but these conflict: ${[...reviewedSources].map(([name, source]) => `${name} -> ${source}`).join(", ")}. Split them across separate Runner deployments.`,
+    );
+  }
+  for (const boundary of boundaries) {
+    if (boundary.deployment_profile !== "production") {
+      add("active-production-boundaries", false, `Boundary ${boundary.pack.name} is ${boundary.deployment_profile}, not a separately reviewed production boundary.`);
+      continue;
+    }
+    if (boundary.trusted_context.provider !== "http_claims") {
+      add("active-production-boundaries", false, `Boundary ${boundary.pack.name} does not bind tenant and principal scope to verified HTTP claims.`);
+      continue;
+    }
+    const organizationMatches = boundary.organization_scope
+      ? boundary.organization_scope.organization_id === production.single_organization_id
+        && boundary.trusted_context.tenant_claim === undefined
+      : production.single_organization_id === undefined
+        && boundary.trusted_context.tenant_claim === config.session_auth?.tenant_claim;
+    if (!organizationMatches
+      || boundary.trusted_context.principal_claim !== config.session_auth?.principal_claim) {
+      add("active-production-boundaries", false, `Boundary ${boundary.pack.name} claim bindings do not match session_auth. Regenerate and review the production boundary against this HTTP identity contract.`);
+      continue;
+    }
+    const configuredSource = config.sources?.[boundary.source];
+    if (!configuredSource) {
+      add("active-production-boundaries", false, `Boundary ${boundary.pack.name} references source ${boundary.source}, which is absent from the runtime config.`);
+      continue;
+    }
+    if (configuredSource.engine === "postgres") controlDatabaseSeparationEvaluated += 1;
+    const separationFailure = productionExploreControlDatabaseSeparationFailure({
+      sourceName: boundary.source,
+      sourceEngine: configuredSource.engine,
+      sourceUrlEnv: configuredSource.read_url_env,
+      controlUrlEnv: config.storage!.shared_postgres!.url_env,
+      env,
+    });
+    if (separationFailure) {
+      controlDatabaseSeparationFailures.push(separationFailure);
+      continue;
+    }
+    try {
+      const prepared = await prepareBoundary({
+        projectRoot: production.project_root,
+        transport: "streamable_http",
+        mode: "production_http",
+        boundaryName: boundary.pack.name,
+        env,
+      });
+      if (prepared.lock.engine !== configuredSource.engine
+        || prepared.lock.source_env !== configuredSource.read_url_env) {
+        add(
+          "active-production-boundaries",
+          false,
+          `Boundary ${boundary.pack.name} source lock does not match runtime source ${boundary.source}. The reviewed engine and read credential environment name must match exactly.`,
+        );
+      }
+      const trustedContextMismatch = productionTrustedContextAuthorityMismatch(
+        config,
+        prepared.lock,
+      );
+      if (trustedContextMismatch) {
+        add(
+          "active-production-boundaries",
+          false,
+          `Boundary ${boundary.pack.name} trusted-context authority does not match the runtime config: ${trustedContextMismatch}. Run ${cliCommandName()} boundary rescan --from-env ${prepared.lock.source_env} --project-root ${shellQuote(production.project_root)}, review the disabled revision, and activate it explicitly.`,
+        );
+      }
+    } catch (error) {
+      add(
+        "active-production-boundaries",
+        false,
+        `Boundary ${boundary.pack.name} failed current schema, read-only role, or generation-lock attestation: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+  if (boundaries.length > 0 && !checks.some((check) => check.name === "active-production-boundaries")) {
+    add(
+      "active-production-boundaries",
+      true,
+      `${boundaries.length} exact-digest production ${boundaries.length === 1 ? "boundary is" : "boundaries are"} active: ${boundaries.map((boundary) => boundary.pack.name).join(", ")}.`,
+    );
+  }
+  if (controlDatabaseSeparationFailures.length > 0) {
+    add("control-database-separation", false, controlDatabaseSeparationFailures.join(" "));
+  } else if (controlDatabaseSeparationEvaluated > 0) {
+    add(
+      "control-database-separation",
+      true,
+      "The shared privacy-accounting database is separate from every reviewed PostgreSQL source database.",
+    );
+  }
+  const budgetSizingWarnings = productionExploreTenantBudgetSizingWarnings(production, boundaries);
+  add(
+    "tenant-budget-sizing",
+    true,
+    budgetSizingWarnings.length === 0
+      ? "Tenant ceilings are not below any active boundary's per-principal budgets."
+      : `Safe but potentially disruptive configuration: ${budgetSizingWarnings.join("; ")}. Raise the tenant ceilings above expected aggregate principal usage to avoid tenant-wide throttling.`,
+    budgetSizingWarnings.length === 0 ? "pass" : "warn",
+  );
+  add(
+    "model-tool-surface",
+    true,
+    "The model receives only app.describe_data and app.explore_data; activation, approval, apply, Protect, configuration, credentials, and SQL remain unavailable.",
+  );
+  return {
+    ok: checks.every((check) => check.ok),
+    checks,
+    active_boundaries: boundaries.map((boundary) => boundary.pack.name),
+    tools: ["app.describe_data", "app.explore_data"],
+  };
+}
+
+function productionTrustedContextAuthorityMismatch(
+  config: RuntimeConfig,
+  lock: GenerationLock,
+): string | undefined {
+  const reviewed = lock.trusted_context_authority;
+  if (!reviewed) return undefined;
+  const configured = {
+    provider: config.trusted_context?.provider,
+    tenant_binding: normalizedConfigAuthorityValue(config.trusted_context?.tenant_binding),
+    principal_binding: normalizedConfigAuthorityValue(config.trusted_context?.principal_binding),
+    tenant_claim: normalizedConfigAuthorityValue(config.session_auth?.tenant_claim),
+    principal_claim: normalizedConfigAuthorityValue(config.session_auth?.principal_claim),
+  };
+  const comparisons: Array<[string, string | undefined, string | undefined]> = [
+    ["provider", reviewed.provider, configured.provider],
+    ["tenant binding", reviewed.tenant_binding, configured.tenant_binding],
+    ["principal binding", reviewed.principal_binding, configured.principal_binding],
+    ["tenant JWT claim", reviewed.tenant_claim, configured.tenant_claim],
+    ["principal JWT claim", reviewed.principal_claim, configured.principal_claim],
+  ];
+  const changed = comparisons
+    .filter(([, expected, actual]) => expected !== actual)
+    .map(([label, expected, actual]) =>
+      `${label} is ${actual ?? "unset"}, reviewed as ${expected ?? "unset"}`);
+  return changed.length ? changed.join("; ") : undefined;
+}
+
+function normalizedConfigAuthorityValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function productionExploreHmacKeyIssue(value: string | undefined): string | undefined {
+  if (!value || Buffer.byteLength(value, "utf8") < 32) {
+    return "must contain at least 32 bytes of randomly generated secret material shared by every Runner replica. A base64url key generated from 32 random bytes is about 43 characters.";
+  }
+  if (/^[a-f0-9]+$/i.test(value) && value.length < 64) {
+    return "looks like a short hexadecimal key. Use at least 64 hexadecimal characters for 32 random bytes; a 32-character hex string contains only 16 bytes.";
+  }
+  return undefined;
+}
+
+function productionExploreTenantBudgetSizingWarnings(
+  production: NonNullable<RuntimeConfig["production_explore"]>,
+  boundaries: ActivatedExplorationBoundary[],
+): string[] {
+  const warnings: string[] = [];
+  for (const boundary of boundaries) {
+    const budgets = boundary.budgets;
+    if (!budgets) continue;
+    const lower: string[] = [];
+    if (production.tenant_limits.max_queries_per_rolling_24_hours < budgets.max_queries_per_session) {
+      lower.push(`queries ${production.tenant_limits.max_queries_per_rolling_24_hours} < ${budgets.max_queries_per_session}`);
+    }
+    if (production.tenant_limits.max_extracted_cells_per_rolling_24_hours < budgets.max_extracted_cells_per_session) {
+      lower.push(`extracted cells ${production.tenant_limits.max_extracted_cells_per_rolling_24_hours} < ${budgets.max_extracted_cells_per_session}`);
+    }
+    if (production.tenant_limits.max_differencing_queries_per_rolling_24_hours < budgets.max_differencing_queries) {
+      lower.push(`differencing queries ${production.tenant_limits.max_differencing_queries_per_rolling_24_hours} < ${budgets.max_differencing_queries}`);
+    }
+    if (production.tenant_limits.requests_per_minute < budgets.rate_limit_per_minute) {
+      lower.push(`requests per minute ${production.tenant_limits.requests_per_minute} < ${budgets.rate_limit_per_minute}`);
+    }
+    if (production.tenant_limits.max_response_cells_per_response !== undefined
+      && production.tenant_limits.max_response_cells_per_response < budgets.max_response_cells) {
+      lower.push(`response cells ${production.tenant_limits.max_response_cells_per_response} < ${budgets.max_response_cells}`);
+    }
+    if (lower.length > 0) warnings.push(`${boundary.pack.name}: ${lower.join(", ")}`);
+  }
+  return warnings;
+}
+
+function productionExploreControlDatabaseSeparationFailure(input: {
+  sourceName: string;
+  sourceEngine: "postgres" | "mysql";
+  sourceUrlEnv: string;
+  controlUrlEnv: string;
+  env: NodeJS.ProcessEnv;
+}): string | undefined {
+  if (input.sourceEngine !== "postgres") return undefined;
+  if (input.sourceUrlEnv === input.controlUrlEnv) {
+    return `Source ${input.sourceName} and the shared privacy ledger use the same database URL environment variable. Configure a separate PostgreSQL control database.`;
+  }
+  const source = postgresDatabaseTarget(input.env[input.sourceUrlEnv]);
+  const control = postgresDatabaseTarget(input.env[input.controlUrlEnv]);
+  if (!source || !control) {
+    return `Runner could not attest that source ${input.sourceName} and the shared privacy ledger use separate PostgreSQL databases. Both environment values must be PostgreSQL URLs naming a database.`;
+  }
+  if (source === control) {
+    return `Source ${input.sourceName} and the shared privacy ledger resolve to the same PostgreSQL database. Configure a separate control database so Explore accounting never mutates the application source.`;
+  }
+  return undefined;
+}
+
+function postgresDatabaseTarget(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "postgres:" && parsed.protocol !== "postgresql:") return undefined;
+    const hostname = (parsed.hostname || parsed.searchParams.get("host") || "").toLowerCase();
+    const port = parsed.port || parsed.searchParams.get("port") || "5432";
+    const pathDatabase = decodeURIComponent(parsed.pathname.replace(/^\/+/, ""));
+    const database = pathDatabase || parsed.searchParams.get("dbname") || "";
+    if (!hostname || !database) return undefined;
+    return `${hostname}:${port}:${database}`;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function assertProductionExploreStartup(
+  config: RuntimeConfig,
+  env: NodeJS.ProcessEnv,
+  loadBoundaries: (projectRoot: string) => Promise<ActivatedExplorationBoundary[]> = loadActivatedExplorationBoundaries,
+  prepareBoundary: Parameters<typeof inspectProductionExploreStartup>[3] = prepareScopedExplore,
+  options: { doctorCommand?: string; color?: boolean } = {},
+): Promise<ProductionExploreStartupReport> {
+  const report = await inspectProductionExploreStartup(config, env, loadBoundaries, prepareBoundary);
+  if (!report.ok) {
+    throw new Error([
+      formatProductionExploreStartupReport(report, { color: options.color }).trimEnd(),
+      "",
+      `Production Explore did not start. Run ${options.doctorCommand ?? `${cliCommandName()} doctor --config <path-to-synapsor.runner.json> --transport streamable-http`} to inspect every prerequisite together.`,
+    ].join("\n"));
+  }
+  return report;
+}
+
+export function formatProductionExploreStartupReport(
+  report: ProductionExploreStartupReport,
+  options: { color?: boolean } = {},
+): string {
+  const color = options.color === true;
+  const lines = [
+    "",
+    terminalStatusText(
+      report.ok ? "PRODUCTION EXPLORE READY" : "PRODUCTION EXPLORE NOT READY",
+      report.ok ? "pass" : "fail",
+      color,
+    ),
+    ...report.checks.map((check) => {
+      const label = check.level === "warn" ? "WARN" : check.ok ? "OK" : "FAIL";
+      return `  ${terminalStatusText(label, check.level, color)}  ${check.message}`;
+    }),
+    "",
+  ];
+  return `${lines.join("\n")}\n`;
+}
+
+export function formatStreamableHttpServerRunning(
+  url: string,
+  productionExplore: boolean,
+  color = false,
+): string {
+  const surface = productionExplore ? "Production Explore" : "Streamable HTTP MCP";
+  return terminalStatusText(
+    `\uD83D\uDC90 Synapsor Runner ${surface} server is running and ready at ${url}`,
+    "pass",
+    color,
+  );
+}
+
+function terminalStatusColorEnabled(
+  output: { isTTY?: boolean },
+  env: NodeJS.ProcessEnv,
+): boolean {
+  return output.isTTY === true && !("NO_COLOR" in env);
+}
+
+function terminalStatusText(
+  value: string,
+  level: ProductionExploreStartupCheck["level"],
+  color: boolean,
+): string {
+  if (!color) return value;
+  const code = level === "pass" ? "1;32" : level === "warn" ? "1;33" : "1;31";
+  return `\u001b[${code}m${value}\u001b[0m`;
+}
+
+export function productionExploreSessionFactory(
+  config: RuntimeConfig,
+  env: NodeJS.ProcessEnv,
+  dependencies: {
+    loadBoundaries?: typeof loadActivatedExplorationBoundaries;
+    createExecutor?: typeof createScopedExploreDatabaseExecutor;
+    createBoundarySetRuntime?: typeof createScopedExploreBoundarySetRuntime;
+    createMcpServer?: typeof createScopedExploreMcpServer;
+  } = {},
+): StreamableHttpSessionFactory {
+  const production = config.production_explore;
+  if (!production?.enabled) throw new Error("Production Explore is not enabled.");
+  const hmacKey = Buffer.from(envValue(env, production.budget_hmac_key_env) ?? "", "utf8");
+  const tenantLimits = {
+    max_queries_per_session: production.tenant_limits.max_queries_per_rolling_24_hours,
+    max_extracted_cells_per_session: production.tenant_limits.max_extracted_cells_per_rolling_24_hours,
+    max_differencing_queries: production.tenant_limits.max_differencing_queries_per_rolling_24_hours,
+    rate_limit_per_minute: production.tenant_limits.requests_per_minute,
+    // The query runtime clamps this optional tenant ceiling to the selected
+    // boundary's per-principal response cap before reserving any budget.
+    max_response_cells: production.tenant_limits.max_response_cells_per_response ?? Number.MAX_SAFE_INTEGER,
+  };
+  let sharedExecutorLeasePromise: Promise<ProductionExploreExecutorLease> | undefined;
+  let closed = false;
+  const sharedExecutor = (): Promise<ScopedExploreExecutor> => {
+    if (!sharedExecutorLeasePromise) {
+      const bootstrap = (async () => {
+        const boundaries = await (dependencies.loadBoundaries ?? loadActivatedExplorationBoundaries)(production.project_root);
+        const sourceNames = [...new Set(boundaries.map((boundary) => boundary.source))];
+        if (sourceNames.length !== 1) {
+          throw new Error("Production Explore requires every active boundary to use one reviewed source.");
+        }
+        const source = config.sources?.[sourceNames[0]!];
+        if (!source) throw new Error(`Production Explore source ${sourceNames[0]} is absent from the runtime config.`);
+        const databaseUrl = envValue(env, source.read_url_env);
+        if (!databaseUrl) throw new Error(`${source.read_url_env} is required for production Explore.`);
+        return await acquireProductionExploreExecutor({
+          engine: source.engine,
+          databaseUrl,
+          maxConnections: production.source_max_connections ?? 8,
+          createExecutor: dependencies.createExecutor ?? createScopedExploreDatabaseExecutor,
+        });
+      })();
+      const recoverable = bootstrap.catch((error) => {
+        if (sharedExecutorLeasePromise === recoverable) sharedExecutorLeasePromise = undefined;
+        throw error;
+      });
+      sharedExecutorLeasePromise = recoverable;
+    }
+    return sharedExecutorLeasePromise.then((lease) => lease.executor);
+  };
+  const factory: StreamableHttpSessionFactory = async ({ store, trustedContext }) => {
+    if (closed) throw new Error("Production Explore session factory is closed.");
+    if (trustedContext.provenance !== "http_claims"
+      || !trustedContext.tenant_id.trim()
+      || !trustedContext.principal.trim()
+      || (production.single_organization_id !== undefined
+        && trustedContext.tenant_id !== production.single_organization_id)) {
+      throw new Error(production.single_organization_id
+        ? "Single-organization production Explore requires a verified principal and the exact reviewed organization identity for every MCP session."
+        : "Production Explore requires verified tenant and principal HTTP claims for every MCP session.");
+    }
+    const executor = await sharedExecutor();
+    const runtime = await (dependencies.createBoundarySetRuntime ?? createScopedExploreBoundarySetRuntime)({
+      projectRoot: production.project_root,
+      transport: "streamable_http",
+      mode: "production_http",
+      env,
+      store,
+      sessionContext: {
+        tenant_id: trustedContext.tenant_id,
+        principal: trustedContext.principal,
+        provenance: "http_claims",
+      },
+      productionPrivacyHmacKey: hmacKey,
+      productionAccountingNamespace: production.accounting_namespace,
+      productionTenantLimits: tenantLimits,
+      executor,
+      ...(executor.inspectDatabase ? { inspectDatabaseFn: executor.inspectDatabase } : {}),
+    });
+    const server = (dependencies.createMcpServer ?? createScopedExploreMcpServer)(runtime, { mode: "production_http" });
+    return {
+      connect: (transport) => server.connect(transport),
+      close: async () => {
+        await Promise.allSettled([server.close(), runtime.close()]);
+      },
+    };
+  };
+  factory.maxSessionsPerPrincipal = production.max_sessions_per_principal ?? 4;
+  factory.close = async () => {
+    if (closed) return;
+    closed = true;
+    const pendingLease = sharedExecutorLeasePromise;
+    sharedExecutorLeasePromise = undefined;
+    if (!pendingLease) return;
+    const lease = await pendingLease.catch(() => undefined);
+    if (!lease) return;
+    await lease.release().catch(() => {
+      process.stderr.write("Warning: the shared production Explore source pool did not close cleanly.\n");
+    });
+  };
+  return factory;
+}
+
+type ProductionExploreExecutorLease = {
+  executor: ScopedExploreExecutor;
+  release(): Promise<void>;
+};
+
+type ProductionExploreExecutorRegistryEntry = {
+  executor: Promise<ScopedExploreExecutor>;
+  maxConnections: number;
+  references: number;
+};
+
+const productionExploreExecutorRegistry = new Map<string, ProductionExploreExecutorRegistryEntry>();
+
+async function acquireProductionExploreExecutor(input: {
+  engine: "postgres" | "mysql";
+  databaseUrl: string;
+  maxConnections: number;
+  createExecutor: typeof createScopedExploreDatabaseExecutor;
+}): Promise<ProductionExploreExecutorLease> {
+  const registryKey = crypto.createHash("sha256")
+    .update(`${input.engine}\0${input.databaseUrl}`)
+    .digest("hex");
+  let entry = productionExploreExecutorRegistry.get(registryKey);
+  if (entry && entry.maxConnections !== input.maxConnections) {
+    throw new Error(
+      "Production Explore servers in one process must use the same source connection ceiling for the same database.",
+    );
+  }
+  if (!entry) {
+    entry = {
+      executor: Promise.resolve(input.createExecutor({
+        engine: input.engine,
+        databaseUrl: input.databaseUrl,
+        maxConnections: input.maxConnections,
+      })),
+      maxConnections: input.maxConnections,
+      references: 0,
+    };
+    productionExploreExecutorRegistry.set(registryKey, entry);
+  }
+  entry.references += 1;
+  let released = false;
+  try {
+    const executor = await entry.executor;
+    return {
+      executor,
+      release: async () => {
+        if (released) return;
+        released = true;
+        const current = productionExploreExecutorRegistry.get(registryKey);
+        if (!current) return;
+        current.references -= 1;
+        if (current.references > 0) return;
+        productionExploreExecutorRegistry.delete(registryKey);
+        await executor.close();
+      },
+    };
+  } catch (error) {
+    entry.references -= 1;
+    if (entry.references <= 0) productionExploreExecutorRegistry.delete(registryKey);
+    throw error;
+  }
 }
 
 
@@ -380,14 +1123,13 @@ function formatProposeResult(capabilityName: string, result: Record<string, unkn
 
 export async function mcpConfigure(args: string[]): Promise<number> {
   const client = normalizeMcpClientName(optionalArg(args, "--client"));
-  if (!client) throw new Error("mcp configure requires --client generic-stdio|claude|claude-desktop|cursor|vscode|openai-agents");
+  if (!client) throw new Error("mcp configure requires --client generic-stdio|claude|claude-desktop|claude-code|cursor|vscode|openai-agents");
   const useAbsolutePaths = args.includes("--absolute-paths");
   const rawConfigPath = runnerConfigPath(args, "./synapsor.runner.json");
   const rawStorePath = optionalArg(args, "--store") ?? "./.synapsor/local.db";
   const configPath = useAbsolutePaths ? path.resolve(rawConfigPath) : rawConfigPath;
   const storePath = useAbsolutePaths ? path.resolve(rawStorePath) : rawStorePath;
   const transport = mcpClientConfigTransport(args, client);
-  const aliasMode = mcpClientConfigAliasMode(args, client);
   const includeInstructions = args.includes("--include-instructions");
   const host = optionalArg(args, "--host") ?? "127.0.0.1";
   const port = Number(optionalArg(args, "--port") ?? "8766");
@@ -401,13 +1143,52 @@ export async function mcpConfigure(args: string[]): Promise<number> {
     process.stderr.write("Warning: relative paths are resolved by the MCP client working directory. Use --absolute-paths if the client runs from another directory.\n");
   }
   const existingConfig = await fileExists(rawConfigPath) ? await readRuntimeConfig(rawConfigPath) : undefined;
+  const productionExplore = existingConfig?.production_explore?.enabled === true;
+  const localExploreProjectRoot = existingConfig
+    ? await activeLocalExploreProjectRoot(existingConfig, rawConfigPath)
+    : undefined;
+  const localExplore = Boolean(localExploreProjectRoot);
+  if (productionExplore && transport !== "streamable-http") {
+    throw new Error(
+      "Production Explore client config requires --transport streamable-http. "
+      + "The reviewed production surface is not available over stdio.",
+    );
+  }
+  if (localExplore && transport !== "stdio") {
+    throw new Error(
+      "Local reviewed Explore client config requires --transport stdio. "
+      + "Local development/staging boundaries are never served over HTTP.",
+    );
+  }
+  if (existingConfig && isLocalExploreOnlyConfig(existingConfig) && !localExplore) {
+    throw new Error(
+      "Local Explore client config requires an active reviewed development/staging boundary. "
+      + `Run ${cliCommandName()} start --cli, review and activate access, then generate the client config again.`,
+    );
+  }
+  const exploreMode: ExploreSurfaceMode | undefined = productionExplore
+    ? "production"
+    : localExplore
+      ? "local"
+      : undefined;
+  const explicitAliasMode = optionalArg(args, "--alias-mode")
+    ?? (args.includes("--openai-tool-aliases") ? "openai" : undefined);
+  if (exploreMode && explicitAliasMode && explicitAliasMode !== "canonical") {
+    throw new Error(
+      `${exploreMode === "production" ? "Production" : "Local"} Explore client config uses fixed app.describe_data/app.explore_data names. `
+      + "Remove the alias option; aliases are not available on this surface.",
+    );
+  }
+  const aliasMode = exploreMode ? "canonical" : mcpClientConfigAliasMode(args, client);
   const claimsAuth = Boolean(existingConfig && trustedContextsForDoctor(existingConfig).some((context) => context.provider === "http_claims"));
   const authTokenEnv = optionalArg(args, "--auth-token-env")
     ?? existingConfig?.http_security?.static_token?.active_env
     ?? "SYNAPSOR_RUNNER_HTTP_TOKEN";
   const clientAccessTokenEnv = optionalArg(args, "--client-access-token-env")
     ?? (claimsAuth ? "SYNAPSOR_MCP_ACCESS_TOKEN" : authTokenEnv);
-  const snippet = mcpClientSnippet(client, configPath, storePath, {
+  assertMcpCredentialEnvironmentName(authTokenEnv, "--auth-token-env");
+  assertMcpCredentialEnvironmentName(clientAccessTokenEnv, "--client-access-token-env");
+  const snippetOptions: McpClientSnippetOptions = {
     transport,
     aliasMode,
     host,
@@ -417,9 +1198,15 @@ export async function mcpConfigure(args: string[]): Promise<number> {
     authMode: claimsAuth ? "signed-jwt" : "opaque-static",
     oauthResource: existingConfig?.http_security?.oauth_resource?.resource,
     authorizationServers: existingConfig?.http_security?.oauth_resource?.authorization_servers,
-  });
+    requiredScopes: existingConfig?.http_security?.oauth_resource?.required_scopes,
+    exploreMode,
+    localExploreProjectRoot: localExplore
+      ? (useAbsolutePaths ? localExploreProjectRoot : path.dirname(configPath))
+      : undefined,
+  };
+  const snippet = mcpClientSnippet(client, configPath, storePath, snippetOptions);
   if (includeInstructions) {
-    snippet.agent_instructions = mcpAgentInstructions(client, aliasMode);
+    snippet.agent_instructions = mcpAgentInstructions(client, aliasMode, exploreMode);
   }
   if (args.includes("--write")) {
     const destination = optionalArg(args, "--destination");
@@ -428,9 +1215,12 @@ export async function mcpConfigure(args: string[]): Promise<number> {
     process.stdout.write(`wrote MCP ${client} configuration to ${destination}\n`);
   } else {
     process.stderr.write(`Paste this ${client} MCP config into your local MCP client settings. It contains command paths and credential environment references only, not database URLs, write credentials, or token values.\n`);
-    process.stderr.write("Proposal tools advertise a display-only MCP App automatically where the host supports it; other clients retain the same text/JSON result. Approval and apply remain outside MCP.\n");
+    process.stderr.write(exploreMode
+      ? `${exploreMode === "production" ? "Production" : "Local reviewed"} Explore exposes exactly app.describe_data and app.explore_data; activation, approval, apply, Protect, credentials, and SQL remain outside MCP.\n`
+      : "Proposal tools advertise a display-only MCP App automatically where the host supports it; other clients retain the same text/JSON result. Approval and apply remain outside MCP.\n");
     process.stdout.write(`${JSON.stringify(snippet, null, 2)}\n`);
   }
+  if (transport === "streamable-http") writeMcpHttpClientGuidance(client, snippetOptions);
   return 0;
 }
 
@@ -458,7 +1248,49 @@ type McpClientSnippetOptions = {
   authMode: "opaque-static" | "signed-jwt";
   oauthResource?: string;
   authorizationServers?: string[];
+  requiredScopes?: string[];
+  exploreMode?: ExploreSurfaceMode;
+  localExploreProjectRoot?: string;
 };
+
+
+function assertMcpCredentialEnvironmentName(value: string, option: string): void {
+  if (!/^[A-Z_][A-Z0-9_]*$/.test(value)) {
+    throw new Error(`${option} must name an uppercase environment variable using A-Z, 0-9, and underscore.`);
+  }
+}
+
+
+function mcpStreamableHttpUrl(options: McpClientSnippetOptions): string {
+  return options.authMode === "signed-jwt" && options.oauthResource
+    ? options.oauthResource
+    : `http://${options.host}:${options.port}/mcp`;
+}
+
+
+function mcpBearerEnvironmentReference(client: "claude-code" | "cursor" | "vscode", environmentName: string): string {
+  return client === "claude-code"
+    ? `Bearer \${${environmentName}}`
+    : `Bearer \${env:${environmentName}}`;
+}
+
+
+function writeMcpHttpClientGuidance(client: string, options: McpClientSnippetOptions): void {
+  const url = mcpStreamableHttpUrl(options);
+  process.stderr.write(`Streamable HTTP endpoint: ${url}\n`);
+  process.stderr.write(`Authentication: ${client} reads the bearer token from environment ${options.clientAccessTokenEnv}; no token value was written.\n`);
+  if (options.authMode === "signed-jwt") {
+    process.stderr.write(`Protected resource: ${options.oauthResource ?? url}\n`);
+    process.stderr.write(`Authorization servers: ${(options.authorizationServers ?? []).join(", ") || "use the protected-resource metadata endpoint"}\n`);
+    process.stderr.write(`Required scopes: ${(options.requiredScopes ?? []).join(", ") || "use the protected-resource metadata endpoint"}\n`);
+    process.stderr.write(`Obtain a short-lived access token from the configured identity provider, expose it to the client process as ${options.clientAccessTokenEnv}, then start or reload the client. Runner verifies tokens but never issues or refreshes them.\n`);
+  } else {
+    process.stderr.write(`Start the local Runner Streamable HTTP server separately and expose the provisioned endpoint token to the client process as ${options.clientAccessTokenEnv}.\n`);
+  }
+  if (options.exploreMode === "production") {
+    process.stderr.write("Server mode: production_explore.enabled selects the locked two-tool surface automatically; generated local launch commands also include --production-explore explicitly.\n");
+  }
+}
 
 
 function mcpClientConfigTransport(args: string[], client: string): "stdio" | "streamable-http" {
@@ -480,6 +1312,15 @@ function mcpClientConfigAliasMode(args: string[], client: string): ToolNameStyle
 
 
 function serveArgsForClient(configPath: string, storePath: string, options: McpClientSnippetOptions): string[] {
+  if (options.exploreMode === "local") {
+    return [
+      "mcp",
+      "serve",
+      "--authoring",
+      "--project-root",
+      options.localExploreProjectRoot ?? ".",
+    ];
+  }
   const args = options.transport === "streamable-http"
     ? [
       "mcp",
@@ -492,6 +1333,7 @@ function serveArgsForClient(configPath: string, storePath: string, options: McpC
       options.host,
       "--port",
       String(options.port),
+      ...(options.exploreMode === "production" ? ["--production-explore"] : []),
       ...(options.authMode === "opaque-static" ? ["--auth-token-env", options.authTokenEnv] : []),
     ]
     : ["mcp", "serve", "--config", configPath, "--store", storePath];
@@ -504,18 +1346,43 @@ function mcpClientSnippet(client: string, configPath: string, storePath: string,
   const command = cliCommandName();
   const args = serveArgsForClient(configPath, storePath, options);
   if (client === "generic" || client === "generic-stdio") return { command, args };
-  if (client === "claude-desktop" || client === "cursor") {
-    if (options.transport !== "stdio") throw new Error(`${client} config output currently supports stdio. Use --transport stdio.`);
+  if (client === "claude-desktop") {
+    if (options.transport !== "stdio") throw new Error("Claude Desktop config output supports stdio. For Streamable HTTP use --client claude-code --transport streamable-http.");
     return { mcpServers: { synapsor: { command, args } } };
   }
+  if (client === "claude-code" || client === "cursor") {
+    if (options.transport === "stdio") return { mcpServers: { synapsor: { command, args } } };
+    const url = mcpStreamableHttpUrl(options);
+    return {
+      mcpServers: {
+        synapsor: {
+          ...(client === "claude-code" ? { type: "http" } : {}),
+          url,
+          headers: {
+            Authorization: mcpBearerEnvironmentReference(client, options.clientAccessTokenEnv),
+          },
+        },
+      },
+    };
+  }
   if (client === "vscode") {
-    if (options.transport !== "stdio") throw new Error("vscode config output currently supports stdio. Use --transport stdio.");
-    return { servers: { synapsor: { type: "stdio", command, args } } };
+    if (options.transport === "stdio") return { servers: { synapsor: { type: "stdio", command, args } } };
+    return {
+      servers: {
+        synapsor: {
+          type: "http",
+          url: mcpStreamableHttpUrl(options),
+          headers: {
+            Authorization: mcpBearerEnvironmentReference("vscode", options.clientAccessTokenEnv),
+          },
+        },
+      },
+    };
   }
   if (client === "openai-agents") {
     if (options.transport !== "streamable-http") throw new Error("openai-agents config output uses Streamable HTTP. Use --transport streamable-http.");
     const externalProtectedResource = options.authMode === "signed-jwt" && Boolean(options.oauthResource);
-    const url = externalProtectedResource ? options.oauthResource as string : `http://${options.host}:${options.port}/mcp`;
+    const url = mcpStreamableHttpUrl(options);
     return {
       transport: "streamable-http",
       ...(!externalProtectedResource ? { start_server: {
@@ -555,16 +1422,30 @@ function mcpClientSnippet(client: string, configPath: string, storePath: string,
         credential_value_embedded: false,
       },
       tool_names: {
-        canonical: "billing.inspect_invoice",
-        model_visible_with_alias_mode_openai: "billing__inspect_invoice",
-        alias_mode: options.aliasMode,
+        ...(options.exploreMode === "production"
+          ? {
+            canonical: [...EXPLORE_TOOL_NAMES],
+            fixed: true,
+          }
+          : {
+            canonical: "billing.inspect_invoice",
+            model_visible_with_alias_mode_openai: "billing__inspect_invoice",
+            alias_mode: options.aliasMode,
+          }),
       },
       notes: [
         externalProtectedResource
           ? "Connect to the already deployed HTTPS protected resource. Runner deployment, TLS/proxy configuration, and token issuance remain operator responsibilities."
           : "Start the local Streamable HTTP MCP server before creating the OpenAI Agents SDK server.",
-        "OpenAI-facing configs should use --alias-mode openai because OpenAI function names cannot contain dots.",
-        "Runner maps aliases back to canonical Synapsor capability names and includes the canonical name in MCP tool metadata.",
+        ...(options.exploreMode === "production"
+          ? [
+            "Production Explore exposes exactly app.describe_data and app.explore_data with fixed names and one reviewed result envelope.",
+            "The model cannot activate boundaries, alter trusted scope, send SQL, or access approval, apply, Protect, configuration, or credential tools.",
+          ]
+          : [
+            "OpenAI-facing configs should use --alias-mode openai because OpenAI function names cannot contain dots.",
+            "Runner maps aliases back to canonical Synapsor capability names and includes the canonical name in MCP tool metadata.",
+          ]),
         options.authMode === "opaque-static"
           ? `The operator generates one high-entropy endpoint token and provisions it out of band to both server env ${options.authTokenEnv} and authorized client env ${options.clientAccessTokenEnv}. Runner does not issue it.`
           : `The configured identity provider issues a signed access token for the protected resource; place the short-lived client token in ${options.clientAccessTokenEnv}. Runner verifies it and never issues or refreshes it.`,
@@ -576,7 +1457,29 @@ function mcpClientSnippet(client: string, configPath: string, storePath: string,
 }
 
 
-function mcpAgentInstructions(client: string, aliasMode: ToolNameStyle): Record<string, unknown> {
+function mcpAgentInstructions(
+  client: string,
+  aliasMode: ToolNameStyle,
+  exploreMode: ExploreSurfaceMode | undefined,
+): Record<string, unknown> {
+  if (exploreMode) {
+    return {
+      target_client: client,
+      alias_mode: "canonical",
+      recommended_system_prompt: [
+        "Use app.describe_data only to discover exact reviewed resource, field, relationship, enum, metric, band, and time-window identifiers.",
+        "Use app.explore_data for bounded values and copy exact identifiers from app.describe_data; never invent identifiers, formulas, SQL, tenant scope, or principal scope.",
+        `Each query must stay inside one active reviewed ${exploreMode === "production" ? "production" : "development/staging"} boundary. If Runner returns an actionable refusal, correct only the named plan field or ask for operator review.`,
+        "You cannot activate or widen boundaries, approve, apply, Protect, configure credentials, or execute raw SQL through this MCP surface.",
+      ].join(" "),
+      checklist: [
+        "Discover exact reviewed identifiers before exploring values.",
+        "Use only the fixed reviewed grammar and one boundary per query.",
+        "Never request or supply tenant, principal, SQL, formulas, or raw identifiers outside the catalog.",
+        "Report Runner refusals and suppression honestly; do not replace them with inferred values.",
+      ],
+    };
+  }
   const toolNameNote = aliasMode === "openai"
     ? "OpenAI-facing tool names may use aliases such as billing__inspect_invoice. Treat the canonical Synapsor capability name in tool metadata/results as the audit name."
     : "Use the model-visible Synapsor tool names exactly as listed by the MCP client.";
@@ -695,6 +1598,7 @@ export async function toolsPreview(args: string[]): Promise<number> {
   if (args.includes("--json")) {
     process.stdout.write(`${JSON.stringify({
       ok: boundary.ok,
+      surface: boundary.surface,
       config_path: boundary.configPath,
       store_path: boundary.storePath,
       alias_mode: boundary.aliasMode,
@@ -717,6 +1621,7 @@ export async function toolsPreview(args: string[]): Promise<number> {
 
 export async function inspectMcpToolBoundary(args: string[]): Promise<{
   ok: boolean;
+  surface: "capabilities" | "local_explore" | "production_explore";
   configPath: string;
   storePath: string;
   aliasMode: ToolNameStyle;
@@ -732,19 +1637,26 @@ export async function inspectMcpToolBoundary(args: string[]): Promise<{
 }> {
   const configPath = runnerConfigPath(args, "./synapsor.runner.json");
   const storePath = resolvedLocalStorePath(args);
-  const aliasMode = args.includes("--aliases") && !optionalArg(args, "--alias-mode") && !optionalArg(args, "--tool-name-style")
+  const requestedAliasMode = args.includes("--aliases") && !optionalArg(args, "--alias-mode") && !optionalArg(args, "--tool-name-style")
     ? "both"
     : toolNameStyleOption(args);
   if (!await fileExists(configPath)) {
     throw new Error(`MCP tool preview could not find ${configPath}.\n\nWhy it matters:\nThe MCP server needs a reviewed config before it can expose semantic tools.\n\nFix:\nRun ${cliCommandName()} onboard db --from-env DATABASE_URL, or pass --config <path>.`);
   }
   const parsed = await readRuntimeConfig(configPath);
+  const productionExplore = parsed.production_explore?.enabled === true;
+  const productionExploreActive = productionExplore && await hasActiveProductionExploreBoundary(parsed, configPath);
+  const localExplore = !productionExplore
+    && (parsed.capabilities?.length ?? 0) === 0
+    && await hasActiveLocalExploreBoundary(parsed, configPath);
+  const surface = productionExplore ? "production_explore" : localExplore ? "local_explore" : "capabilities";
+  const aliasMode = surface === "capabilities" ? requestedAliasMode : "canonical";
   const runtime = createMcpRuntime(parsed, { storePath });
   try {
-    const tools = runtime.listTools();
+    const tools = surface === "capabilities" ? runtime.listTools() : [];
     const autoApprovalDisabled = parsed.approvals?.disable_auto_approval === true;
-    const approvalPolicies = approvalPolicySummaries(parsed);
-    const capabilityDetails = toolPreviewCapabilityDetails(parsed);
+    const approvalPolicies = surface === "capabilities" ? approvalPolicySummaries(parsed) : [];
+    const capabilityDetails = surface === "capabilities" ? toolPreviewCapabilityDetails(parsed) : [];
     const isolation = describeIsolationAssurance(parsed);
     const cloudSync = await runtime.cloudSyncStatus();
     const governance: LocalDoctorGovernance = {
@@ -757,11 +1669,26 @@ export async function inspectMcpToolBoundary(args: string[]): Promise<{
       criteria: parsed.graduated_trust?.criteria?.length ?? 0,
       model_facing: false as const,
     };
-    const exposures = toolNameExposures(tools.map((tool) => tool.name), aliasMode);
+    const exposures = surface === "capabilities"
+      ? toolNameExposures(tools.map((tool) => tool.name), aliasMode)
+      : (localExplore || productionExploreActive)
+        ? EXPLORE_TOOL_NAMES.map((name) => ({
+          canonicalName: name,
+          exposedName: name,
+          isAlias: false,
+          style: "canonical" as const,
+        }))
+        : [];
     const names = exposures.map((item) => item.exposedName);
     const serialized = JSON.stringify(tools);
     const checks = [
-      { name: "semantic tools present", ok: names.length > 0, detail: names.join(", ") || "none" },
+      {
+        name: "model-facing tools present",
+        ok: names.length > 0,
+        detail: names.join(", ") || (productionExplore
+          ? "none; activate an exact reviewed production boundary, then rerun doctor --preflight"
+          : "none"),
+      },
       { name: "execute_sql absent", ok: !names.some((name) => /execute_sql|run_query|query_database/i.test(name)), detail: "model does not receive raw SQL tools" },
       { name: "approval tools absent", ok: !names.some((name) => /approve/i.test(name)), detail: "approval stays outside MCP" },
       { name: "policy recommendation tools absent", ok: !names.some((name) => /policy.*recommend|recommend.*policy|activate.*policy/i.test(name)), detail: "graduated-trust evaluation, review, export, and activation stay outside MCP" },
@@ -770,10 +1697,28 @@ export async function inspectMcpToolBoundary(args: string[]): Promise<{
       { name: "write credentials absent", ok: !/(password|secret|bearer|private[_-]?key|token)/i.test(serialized), detail: "MCP tools do not include write credentials" },
     ];
     const ok = checks.every((check) => check.ok);
-    return { ok, configPath, storePath, aliasMode, names, exposures, autoApprovalDisabled, approvalPolicies, capabilityDetails, isolation, governance, graduatedTrust, checks };
+    return { ok, surface, configPath, storePath, aliasMode, names, exposures, autoApprovalDisabled, approvalPolicies, capabilityDetails, isolation, governance, graduatedTrust, checks };
   } finally {
     await runtime.close();
   }
+}
+
+
+async function hasActiveProductionExploreBoundary(config: RuntimeConfig, configPath: string): Promise<boolean> {
+  const projectRoot = config.production_explore?.project_root ?? path.dirname(path.resolve(configPath));
+  try {
+    const boundaries = await loadActivatedExplorationBoundaries(projectRoot);
+    return boundaries.some((boundary) =>
+      boundary.activation.state === "active" && boundary.deployment_profile === "production");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+
+async function hasActiveLocalExploreBoundary(config: RuntimeConfig, configPath: string): Promise<boolean> {
+  return Boolean(await activeLocalExploreProjectRoot(config, configPath));
 }
 
 
@@ -793,6 +1738,7 @@ export function defaultBlockedToolSurface(): string[] {
 
 function formatToolsPreview(input: {
   ok: boolean;
+  surface: "capabilities" | "local_explore" | "production_explore";
   configPath: string;
   storePath: string;
   aliasMode: ToolNameStyle;
@@ -811,6 +1757,7 @@ function formatToolsPreview(input: {
     : ["  - (none)"];
   const lines = [
     `Synapsor tools preview: ${input.ok ? "ok" : "failed"}`,
+    `Surface: ${input.surface === "production_explore" ? "production Explore" : input.surface === "local_explore" ? "local reviewed Explore" : "reviewed capabilities"}`,
     `Config: ${input.configPath}`,
     `Store: ${input.storePath}`,
     `Alias mode: ${input.aliasMode}`,
@@ -833,8 +1780,12 @@ function formatToolsPreview(input: {
     "Exposed to MCP:",
     ...exposedLines,
     "",
-    "Reviewed capability boundary:",
-    ...formatToolPreviewCapabilityDetails(input.capabilityDetails),
+    input.surface === "capabilities" ? "Reviewed capability boundary:" : "Reviewed Explore boundary:",
+    ...(input.surface === "capabilities"
+      ? formatToolPreviewCapabilityDetails(input.capabilityDetails)
+      : [input.names.length > 0
+        ? "  - exact active boundary authority; use /catalog or app.describe_data for reviewed resources"
+        : "  - no exact active boundary; review and activate one before serving Explore"]),
     "",
     "Not exposed to MCP:",
     ...defaultBlockedToolSurface().map((name) => `  - ${name}`),
@@ -847,7 +1798,11 @@ function formatToolsPreview(input: {
   }
   lines.push("");
   lines.push("Next:");
-  lines.push(`  ${cliCommandName()} mcp serve --config ${input.configPath} --store ${input.storePath}`);
+  lines.push(input.surface === "production_explore"
+    ? `  ${cliCommandName()} mcp serve --transport streamable-http --production-explore --config ${input.configPath}`
+    : input.surface === "local_explore"
+      ? `  ${cliCommandName()} mcp serve --authoring --project-root ${shellQuote(path.dirname(path.resolve(input.configPath)))}`
+      : `  ${cliCommandName()} mcp serve --config ${input.configPath} --store ${input.storePath}`);
   return `${lines.join("\n")}\n`;
 }
 
@@ -1121,7 +2076,7 @@ async function writeMcpClientSnippet(destination: string, client: string, snippe
 
 function mergeMcpClientSnippet(client: string, existing: Record<string, unknown>, snippet: Record<string, unknown>): Record<string, unknown> {
   if (client === "generic" || client === "generic-stdio") return snippet;
-  if (client === "claude-desktop" || client === "cursor") {
+  if (client === "claude-desktop" || client === "claude-code" || client === "cursor") {
     const existingServers = isRecord(existing.mcpServers) ? existing.mcpServers : {};
     const snippetServers = isRecord(snippet.mcpServers) ? snippet.mcpServers : {};
     return { ...existing, mcpServers: { ...existingServers, ...snippetServers } };

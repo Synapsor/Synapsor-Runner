@@ -27,11 +27,160 @@ const safeRecordSchema = z.record(z.unknown());
 const fieldEgressSchema = z.record(z.object({
   model_egress: z.enum(["visible", "withheld"]),
 }).strict());
+const reviewedFieldMetadataSchema = z.object({
+  id: z.string(),
+  label: z.string().max(64).optional(),
+  description: z.string().max(280).optional(),
+}).strict();
 const modelWithheldTokenSchema = z.string().regex(/^\[withheld:[a-f0-9]{12}:[1-9][0-9]*\]$/);
 const modelEgressResultSchema = z.object({
   values_withheld: z.literal(true),
   tokenized_columns: z.array(z.string()),
   token_scope: z.literal("this_tool_response_only"),
+}).strict();
+
+const scopedExploreMeasureFunctionSchema = z.enum([
+  "count",
+  "count_distinct",
+  "sum",
+  "avg",
+  "stddev_samp",
+  "stddev_pop",
+  "var_samp",
+  "var_pop",
+  "null_count",
+  "non_null_count",
+  "completion_rate",
+  "reviewed_derived",
+]);
+const sequentialDerivedGrain =
+  "one reviewed ordered time_bucket; dimensions are optional partitions" as const;
+const groupedDerivedGrain =
+  "one or more reviewed dimensions and no time_bucket" as const;
+const scopedDerivedMeasureSchema = z.object({
+  name: z.string(),
+  label: z.string(),
+  shape: z.enum([
+    "ratio",
+    "percentage",
+    "per_unit_average",
+    "child_count_total",
+    "child_count_average",
+    "running_total",
+    "lag_absolute_change",
+    "lag_percentage_change",
+    "moving_average",
+    "rank",
+    "share_of_released_total",
+  ]),
+  effective_minimum_cohort_size: z.number().int().min(5),
+  calculation_stage: z.enum([
+    "after cohort validation",
+    "scoped child count aggregated over reviewed parent cohorts",
+    "after small-group suppression",
+  ]),
+  null_behavior: z.literal("null when the reviewed denominator is zero or null").optional(),
+  child_resource: z.string().optional(),
+  relationship: z.string().optional(),
+  parent_contributor_floor: z.literal("applied before release").optional(),
+  raw_child_rows_returned: z.literal(false).optional(),
+  required_grain: z.enum([sequentialDerivedGrain, groupedDerivedGrain]).optional(),
+  records_without_reviewed_time: z.literal("omitted").optional(),
+  suppressed_groups_included: z.literal(false).optional(),
+  fixed_window_size: z.number().int().min(2).max(12).optional(),
+  fixed_direction: z.enum(["asc", "desc"]).optional(),
+}).strict().superRefine((value, context) => {
+  const requireValue = (field: keyof typeof value, expected: unknown): void => {
+    if (value[field] !== expected) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [field],
+        message: `${String(field)} must match the reviewed derived-measure shape`,
+      });
+    }
+  };
+  if (["ratio", "percentage", "per_unit_average"].includes(value.shape)) {
+    requireValue("calculation_stage", "after cohort validation");
+    requireValue("null_behavior", "null when the reviewed denominator is zero or null");
+    return;
+  }
+  if (value.shape === "child_count_total" || value.shape === "child_count_average") {
+    requireValue("calculation_stage", "scoped child count aggregated over reviewed parent cohorts");
+    if (!value.child_resource) requireValue("child_resource", "required");
+    if (!value.relationship) requireValue("relationship", "required");
+    requireValue("parent_contributor_floor", "applied before release");
+    requireValue("raw_child_rows_returned", false);
+    return;
+  }
+  requireValue("calculation_stage", "after small-group suppression");
+  requireValue("suppressed_groups_included", false);
+  if (["running_total", "lag_absolute_change", "lag_percentage_change", "moving_average"].includes(value.shape)) {
+    requireValue("required_grain", sequentialDerivedGrain);
+    requireValue("records_without_reviewed_time", "omitted");
+    if (value.shape === "moving_average" && value.fixed_window_size === undefined) {
+      requireValue("fixed_window_size", "required");
+    }
+    return;
+  }
+  requireValue("required_grain", groupedDerivedGrain);
+  if (value.shape === "rank" && value.fixed_direction === undefined) {
+    requireValue("fixed_direction", "required");
+  }
+});
+const scopedNumericBandSchema = z.object({
+  name: z.string(),
+  label: z.string(),
+  field: z.string(),
+  relationship: z.string().nullable(),
+  edges: z.array(z.number().finite()).min(1).max(16),
+  bucket_labels: z.array(z.string()).min(2).max(17),
+}).strict();
+const scopedAutoBandSchema = z.object({
+  field: z.string(),
+  methods: z.array(z.enum(["quantile", "equal_width"])).min(1).max(2),
+  min_buckets: z.number().int().min(2).max(16),
+  max_buckets: z.number().int().min(2).max(16),
+  min_bucket_width: z.number().positive().nullable().optional(),
+  label_style: z.enum(["ordinal", "rounded"]),
+  label_round_to: z.number().positive().nullable().optional(),
+  model_selects: z.array(z.enum(["field", "method", "buckets"])).optional(),
+  raw_edges_returned: z.literal(false),
+}).strict();
+const scopedAutoBandResultSchema = z.object({
+  field: z.string(),
+  method: z.enum(["quantile", "equal_width"]),
+  requested_buckets: z.number().int().min(2).max(16),
+  effective_buckets: z.number().int().nonnegative().max(16),
+  reduced: z.boolean(),
+  label_style: z.enum(["ordinal", "rounded"]),
+  raw_edges_returned: z.literal(false),
+}).strict();
+const scopedExploreTimeBucketSchema = z.enum([
+  "hour",
+  "day",
+  "week",
+  "month",
+  "quarter",
+  "year",
+  "day_of_week",
+]);
+
+const reviewedValueControlsSchema = z.object({
+  bucketed_fields: z.array(z.object({
+    resource: z.string(),
+    field: z.string(),
+    output_field: z.string(),
+    bucket_returned: z.boolean(),
+    bucket_token: z.string()
+      .regex(/^\[outside-reviewed-values(?:-[1-9][0-9]*)?\]$/)
+      .optional(),
+  }).strict()),
+  excluded_fields: z.array(z.object({
+    resource: z.string(),
+    field: z.string(),
+    effect: z.literal("rows_outside_reviewed_values_excluded"),
+  }).strict()),
+  source_values_exposed: z.literal(false),
 }).strict();
 
 const runtimeErrorFields = {
@@ -98,7 +247,7 @@ const scopedExploreResultSchema = z.object({
       kind: z.literal("aggregate_groups"),
       time_bucket: z.object({
         field: z.string(),
-        bucket: z.enum(["day", "week", "month"]),
+        bucket: scopedExploreTimeBucketSchema,
         relationship: z.string().nullable(),
         output_alias: z.string(),
       }).strict().nullable(),
@@ -106,7 +255,7 @@ const scopedExploreResultSchema = z.object({
     z.object({
       kind: z.literal("period_comparison"),
       reviewed_time_field: z.string(),
-      reviewed_time_bucket: z.enum(["day", "week", "month"]).nullable(),
+      reviewed_time_bucket: scopedExploreTimeBucketSchema.nullable(),
       periods: z.array(z.object({
         id: z.enum(["period_1", "period_2"]),
         start_inclusive: z.string().datetime(),
@@ -116,9 +265,14 @@ const scopedExploreResultSchema = z.object({
   ]),
   measures: z.array(z.object({
     alias: z.string(),
-    function: z.enum(["count", "count_distinct", "sum", "avg"]),
+    function: scopedExploreMeasureFunctionSchema,
     field: z.string().nullable(),
     relationship: z.string().nullable(),
+    derived_measure: z.string().optional(),
+    contributor_cohort: z.enum([
+      "non-null values for this reviewed field",
+      "reviewed root rows",
+    ]),
     comparison_outputs: z.object({
       period_1: z.string(),
       period_2: z.string(),
@@ -132,6 +286,17 @@ const scopedExploreResultSchema = z.object({
     alias: z.string(),
     field: z.string(),
     relationship: z.string().nullable(),
+    numeric_band: z.string().optional(),
+    auto_band: z.object({
+      method: z.enum(["quantile", "equal_width"]),
+      requested_buckets: z.number().int().min(2).max(16),
+      reviewed_bucket_range: z.tuple([
+        z.number().int().min(2).max(16),
+        z.number().int().min(2).max(16),
+      ]),
+      label_style: z.enum(["ordinal", "rounded"]),
+      raw_edges_returned: z.literal(false),
+    }).strict().optional(),
     null_label: z.literal("Not set (database null)"),
   }).strict()),
   filters: z.array(z.object({
@@ -142,6 +307,7 @@ const scopedExploreResultSchema = z.object({
     value_count: z.number().int().positive(),
     value_returned_in_metadata: z.literal(false),
   }).strict()),
+  adaptive_numeric_bands: z.array(scopedAutoBandResultSchema).optional(),
   relationship_paths: z.array(z.object({
     id: z.string(),
     target_resource: z.string(),
@@ -162,12 +328,15 @@ const scopedExploreResultSchema = z.object({
   }).strict(),
   suppression: z.object({
     minimum_cohort_size: z.number().int().positive().nullable(),
+    effective_minimum_cohort_size: z.number().int().positive().nullable(),
+    contributor_aware: z.boolean(),
     minimum_cohort_overridden: z.literal(true).optional(),
     outcome: z.enum(["ok", "empty", "fully_suppressed", "incomplete_comparison"]),
     suppressed_groups: z.number().int().nonnegative(),
     incomplete_comparison_groups: z.number().int().nonnegative(),
     suppression_aware_totals_returned: z.literal(false),
   }).strict(),
+  reviewed_value_controls: reviewedValueControlsSchema.optional(),
   returned: z.object({
     rows_or_groups: z.number().int().nonnegative(),
     cells: z.number().int().nonnegative(),
@@ -178,6 +347,14 @@ const scopedExploreResultSchema = z.object({
     rate_window_requests: z.number().int().nonnegative(),
     extracted_cells: z.number().int().nonnegative(),
     differencing_queries: z.number().int().nonnegative().nullable(),
+    differencing_variants_for_root_resource: z.object({
+      resource: z.string().min(1),
+      used: z.number().int().nonnegative(),
+      limit: z.number().int().positive(),
+      remaining: z.number().int().nonnegative(),
+      window: z.literal("rolling_24_hours"),
+      persists_across_sessions: z.literal(true),
+    }).strict().nullable(),
   }).strict(),
   query_audit_handle: sha256Schema,
   source_database_changed: z.literal(false),
@@ -217,6 +394,11 @@ export const scopedExploreDescribeOutputSchema = z.object({
   boundary_digest: sha256Schema.optional(),
   active_boundary_set_digest: sha256Schema.optional(),
   boundary_name: z.string().optional(),
+  organization_scope: z.object({
+    mode: z.literal("single_organization"),
+    tenant_filter: z.literal("not_applicable"),
+    organization_identity: z.literal("fixed_outside_model_arguments"),
+  }).strict().optional(),
   boundaries: z.array(z.object({
     name: z.string(),
     digest: sha256Schema,
@@ -228,12 +410,43 @@ export const scopedExploreDescribeOutputSchema = z.object({
     name: z.string(),
     authority_bound: z.boolean(),
   }).strict().optional(),
+  relative_time_windows: z.object({
+    available: z.boolean(),
+    reporting_timezone: z.literal("UTC").nullable(),
+    windows: z.array(z.enum([
+      "today",
+      "yesterday",
+      "last_7_days",
+      "last_30_days",
+      "last_90_days",
+      "this_week",
+      "previous_week",
+      "this_month",
+      "previous_month",
+      "this_quarter",
+      "previous_quarter",
+      "this_year",
+      "day_to_date",
+      "week_to_date",
+      "month_to_date",
+      "quarter_to_date",
+      "year_to_date",
+    ])),
+    comparison_partners: z.array(z.enum([
+      "preceding_period",
+      "same_period_last_year",
+    ])),
+    range_semantics: z.literal("half-open [start, end)"),
+    week_starts_on: z.literal("Monday"),
+    model_supplied_date_arithmetic: z.literal(false),
+  }).strict().optional(),
   resources: z.array(z.object({
     boundary_name: z.string().optional(),
     id: z.string(),
-    label: z.string(),
+    label: z.string().max(64).optional(),
+    description: z.string().max(280).optional(),
     primary_key: z.string(),
-    field_labels: z.record(z.string()),
+    fields: z.array(reviewedFieldMetadataSchema),
     field_egress: fieldEgressSchema,
     selectable_fields: z.array(z.string()),
     filterable_fields: z.array(z.string()),
@@ -241,8 +454,15 @@ export const scopedExploreDescribeOutputSchema = z.object({
     sortable_fields: z.array(z.string()),
     groupable_fields: z.array(z.string()),
     aggregate_measures: z.array(z.string()),
+    aggregate_measure_functions: z.record(z.array(scopedExploreMeasureFunctionSchema)),
+    presence_measure_fields: z.array(z.string()),
+    presence_measure_functions: z.array(scopedExploreMeasureFunctionSchema),
+    derived_measures: z.array(scopedDerivedMeasureSchema),
+    numeric_bands: z.array(scopedNumericBandSchema),
+    auto_bands: z.array(scopedAutoBandSchema).optional(),
     count_distinct_fields: z.array(z.string()),
     time_bucket_fields: z.record(z.array(z.string())),
+    relative_time_window_fields: z.array(z.string()).optional(),
     time_coverage: z.record(z.object({
       status: z.enum(["available", "empty", "withheld_below_minimum_cohort", "unavailable"]),
       start_date: z.string().optional(),
@@ -254,10 +474,11 @@ export const scopedExploreDescribeOutputSchema = z.object({
     kept_out_field_count: z.number().int().nonnegative(),
     relationships: z.array(z.object({
       id: z.string(),
-      label: z.string(),
       activation: z.enum(["active", "review_required"]),
       operator_review_required: z.boolean(),
       target_resource: z.string(),
+      target_label: z.string().max(64).optional(),
+      target_description: z.string().max(280).optional(),
       cardinality: z.literal("many_to_one"),
       counted_entity: z.string(),
       path_depth: z.number().int().positive(),
@@ -277,14 +498,19 @@ export const scopedExploreDescribeOutputSchema = z.object({
         nullable: z.boolean(),
         cardinality: z.literal("many_to_one"),
       }).strict()),
-      field_labels: z.record(z.string()),
       field_egress: fieldEgressSchema,
+      fields: z.array(reviewedFieldMetadataSchema),
       filterable_fields: z.array(z.string()),
       filter_operators: z.record(z.array(z.string())),
       groupable_fields: z.array(z.string()),
       aggregate_measures: z.array(z.string()),
+      aggregate_measure_functions: z.record(z.array(scopedExploreMeasureFunctionSchema)),
+      presence_measure_fields: z.array(z.string()),
+      presence_measure_functions: z.array(scopedExploreMeasureFunctionSchema),
+      derived_measures: z.array(scopedDerivedMeasureSchema),
       count_distinct_fields: z.array(z.string()),
       time_bucket_fields: z.record(z.array(z.string())),
+      relative_time_window_fields: z.array(z.string()).optional(),
       field_types: z.record(z.string()),
     }).strict()),
     minimum_cohort_size: z.number().int().positive(),
@@ -294,7 +520,7 @@ export const scopedExploreDescribeOutputSchema = z.object({
     suggested_questions: z.array(z.object({
       text: z.string(),
       measure: z.object({
-        function: z.enum(["count", "count_distinct", "sum", "avg"]),
+        function: scopedExploreMeasureFunctionSchema,
         field: z.string().optional(),
         relationship: z.string().optional(),
       }).strict(),
@@ -306,7 +532,7 @@ export const scopedExploreDescribeOutputSchema = z.object({
         }).strict(),
       ]).optional(),
       time_field: z.string().optional(),
-      time_bucket: z.enum(["day", "week", "month"]).optional(),
+      time_bucket: scopedExploreTimeBucketSchema.optional(),
       relationship_review_required: z.boolean().optional(),
     }).strict()),
   }).strict()).optional(),
@@ -314,6 +540,41 @@ export const scopedExploreDescribeOutputSchema = z.object({
   raw_sql_available: z.literal(false).optional(),
   source_rows_available_before_activation: z.literal(false).optional(),
 }).strict();
+
+// MCP discovery should describe the stable envelope, not repeat the complete
+// analytics grammar. The canonical schema above remains the detailed contract;
+// app.describe_data returns the reviewed per-resource grammar on demand.
+const scopedExploreClientDescribeOutcomeSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("success") }).strict(),
+  z.object({
+    type: z.literal("refusal"),
+    code: z.string().min(1),
+    message: z.string().min(1),
+    details: safeRecordSchema.optional(),
+  }).strict(),
+]);
+
+const scopedExploreClientDescribeResourceSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().max(64).optional(),
+  description: z.string().max(280).optional(),
+  fields: z.array(reviewedFieldMetadataSchema).optional(),
+}).passthrough();
+
+export const scopedExploreDescribeToolOutputSchema = z.object({
+  ok: z.boolean(),
+  outcome: scopedExploreClientDescribeOutcomeSchema.optional(),
+  error_code: z.string().optional(),
+  message: z.string().optional(),
+  details: safeRecordSchema.optional(),
+  source_database_changed: z.literal(false).optional(),
+  resources: z.array(scopedExploreClientDescribeResourceSchema).optional(),
+  next_cursor: z.number().int().nonnegative().nullable().optional(),
+  catalog_view: z.enum(["resource_index", "resource_detail"]).optional(),
+  metadata_only: z.literal(true).optional(),
+  contains_source_values: z.literal(false).optional(),
+  next_action: z.string().optional(),
+}).passthrough();
 
 export const scopedExploreQueryOutputSchema = z.object({
   ok: z.boolean(),
@@ -341,9 +602,13 @@ export const scopedExploreQueryOutputSchema = z.object({
   }).strict().optional(),
   privacy: z.object({
     minimum_cohort_size: z.number().int().positive().nullable(),
+    effective_minimum_cohort_size: z.number().int().positive().nullable(),
+    contributor_aware_measures: z.array(z.number().int().nonnegative()),
     minimum_cohort_overridden: z.literal(true).optional(),
     suppressed_groups: z.number().int().nonnegative(),
     totals_returned: z.literal(false),
+    auto_bands: z.array(scopedAutoBandResultSchema).optional(),
+    reviewed_value_controls: reviewedValueControlsSchema.optional(),
   }).strict().optional(),
   audit: z.object({
     query_fingerprint: sha256Schema,
@@ -361,32 +626,19 @@ export const scopedExploreQueryOutputSchema = z.object({
   }).strict().optional(),
 }).strict();
 
-// MCP clients need the stable result shape during tools/list, but publishing
-// every nested evidence field duplicates metadata that is already present in
-// the top-level response and makes discovery unnecessarily large. Runtime and
-// test validation continue to use scopedExploreQueryOutputSchema above.
-const scopedExploreClientResultSchema = z.object({
-  status: z.enum(["ok", "empty", "fully_suppressed", "incomplete_comparison"]),
-  counted_entity: safeRecordSchema,
-  grain: safeRecordSchema,
-  measures: z.array(safeRecordSchema),
-  dimensions: z.array(safeRecordSchema),
-  filters: z.array(safeRecordSchema),
-  relationship_paths: z.array(safeRecordSchema),
-  reporting_timezone: safeRecordSchema,
-  freshness: safeRecordSchema,
-  suppression: safeRecordSchema,
-  returned: safeRecordSchema,
-  remaining_budgets: safeRecordSchema,
-  query_audit_handle: sha256Schema,
-  source_database_changed: z.literal(false),
-}).strict();
+const scopedExploreClientResultEnvelopeSchema = z.object({
+  query_audit_handle: sha256Schema.optional(),
+}).passthrough();
+
+const scopedExploreClientPrivacyEnvelopeSchema = z.object({
+  reviewed_value_controls: reviewedValueControlsSchema.optional(),
+}).passthrough();
 
 const scopedExploreClientOutcomeSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("success"),
     status: z.enum(["ok", "empty", "fully_suppressed", "incomplete_comparison"]),
-    result: scopedExploreClientResultSchema,
+    result: scopedExploreClientResultEnvelopeSchema,
   }).strict(),
   z.object({
     type: z.literal("refusal"),
@@ -396,9 +648,17 @@ const scopedExploreClientOutcomeSchema = z.discriminatedUnion("type", [
   }).strict(),
 ]);
 
-export const scopedExploreQueryToolOutputSchema = scopedExploreQueryOutputSchema.extend({
+export const scopedExploreQueryToolOutputSchema = z.object({
+  ok: z.boolean(),
   outcome: scopedExploreClientOutcomeSchema,
-}).strict();
+  error_code: z.string().optional(),
+  message: z.string().optional(),
+  details: safeRecordSchema.optional(),
+  source_database_changed: z.literal(false),
+  data: z.array(z.record(jsonScalarSchema)).optional(),
+  privacy: scopedExploreClientPrivacyEnvelopeSchema.optional(),
+  audit: safeRecordSchema.optional(),
+}).passthrough();
 
 export function analyticalToolOutputSchema(
   capability: RuntimeCapabilityConfig,

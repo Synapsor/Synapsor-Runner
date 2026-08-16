@@ -7,6 +7,8 @@ import {
 } from "jose";
 import { describe, expect, it } from "vitest";
 import { createJwtVerifier } from "./jwt-auth.js";
+import { verifySessionJwt } from "./http-security.js";
+import type { RuntimeConfig } from "./runtime-types.js";
 
 const now = () => Math.floor(Date.now() / 1000);
 
@@ -28,6 +30,39 @@ async function signedToken(
 }
 
 describe("JWT verification", () => {
+  it("uses the configured single-organization identity while still requiring a verified principal", async () => {
+    const { publicKey, privateKey } = await generateKeyPair("RS256", { extractable: true });
+    const verifier = createJwtVerifier({
+      provider: "jwt_asymmetric",
+      algorithms: ["RS256"],
+      public_key_env: "TEST_SINGLE_ORG_PUBLIC_KEY",
+      issuer: "https://identity.example",
+      audience: "synapsor-runner",
+    }, { TEST_SINGLE_ORG_PUBLIC_KEY: await exportSPKI(publicKey) });
+    const config = {
+      session_auth: {
+        provider: "jwt_asymmetric",
+        principal_claim: "sub",
+      },
+      production_explore: {
+        single_organization_id: "internal-finance",
+      },
+      http_security: {
+        oauth_resource: { required_scopes: [] },
+      },
+    } as unknown as RuntimeConfig;
+    const context = await verifySessionJwt(
+      config,
+      await signedToken(privateKey, "RS256", "single-org-key", { tenant_id: "request-controlled-tenant" }),
+      verifier,
+    );
+    expect(context).toEqual({
+      tenant_id: "internal-finance",
+      principal: "agent-17",
+      provenance: "http_claims",
+    });
+  });
+
   it("verifies RS256 and ES256 using public-key-only PEM material", async () => {
     for (const algorithm of ["RS256", "ES256"] as const) {
       const { publicKey, privateKey } = await generateKeyPair(algorithm, { extractable: true });

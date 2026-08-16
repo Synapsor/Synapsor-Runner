@@ -46,6 +46,7 @@ export type PostActivationAskDependencies = {
     prompt: string,
     defaultValue: string,
   ) => Promise<string | undefined>;
+  listOpenAiCompatibleModels?: (baseUrl: string) => Promise<string[]>;
   runAsk?: (
     args: string[],
     options?: { consentOnFirstQuestion?: boolean },
@@ -94,6 +95,9 @@ export async function runPostActivationAskHandoff(
     projectRoot: string;
     autoStartConfiguredProvider?: boolean;
     consentOnFirstQuestion?: boolean;
+    requestTimeoutSeconds?: number;
+    sessionTokenBudget?: number;
+    maxOutputTokens?: number;
     selection?: PostActivationAskSelection;
   },
   dependencies: PostActivationAskDependencies = {},
@@ -149,6 +153,15 @@ export async function runPostActivationAskHandoff(
       "--base-url", selection.baseUrl,
     );
   }
+  if (input.requestTimeoutSeconds !== undefined) {
+    askArgs.push("--timeout", String(input.requestTimeoutSeconds));
+  }
+  if (input.sessionTokenBudget !== undefined) {
+    askArgs.push("--session-token-budget", String(input.sessionTokenBudget));
+  }
+  if (input.maxOutputTokens !== undefined) {
+    askArgs.push("--max-output-tokens", String(input.maxOutputTokens));
+  }
 
   const routeLabel = route === "openai"
     ? "OpenAI"
@@ -163,6 +176,15 @@ export async function runPostActivationAskHandoff(
   write([
     `Starting Synapsor Analytics with ${theme.key(routeLabel)}.`,
     `Selected model: ${theme.key(selection.model)}`,
+    ...(input.requestTimeoutSeconds === undefined
+      ? []
+      : [`Model request timeout: ${theme.key(`${input.requestTimeoutSeconds} seconds`)} per provider call`]),
+    ...(input.sessionTokenBudget === undefined
+      ? []
+      : [`Ask session token budget: ${theme.key(input.sessionTokenBudget.toLocaleString("en-US"))} provider-reported tokens`]),
+    ...(input.maxOutputTokens === undefined
+      ? []
+      : [`Provider output limit: ${theme.key(input.maxOutputTokens.toLocaleString("en-US"))} tokens per call`]),
     "",
   ].join("\n"));
   const runAsk = dependencies.runAsk
@@ -197,6 +219,9 @@ export async function runPostActivationAskHandoff(
       return runPostActivationAskHandoff({
         projectRoot: input.projectRoot,
         consentOnFirstQuestion: input.consentOnFirstQuestion,
+        requestTimeoutSeconds: input.requestTimeoutSeconds,
+        sessionTokenBudget: input.sessionTokenBudget,
+        maxOutputTokens: input.maxOutputTokens,
       }, dependencies);
     }
     stderr.write([
@@ -263,7 +288,7 @@ export function formatPostActivationAskSelection(
 export async function choosePostActivationAskSelection(
   dependencies: Pick<
     PostActivationAskDependencies,
-    "chooseRoute" | "promptWithDefault" | "env"
+    "chooseRoute" | "promptWithDefault" | "listOpenAiCompatibleModels" | "env"
   > = {},
 ): Promise<PostActivationAskSelection | undefined> {
   const env = dependencies.env ?? process.env;
@@ -296,11 +321,46 @@ export async function choosePostActivationAskSelection(
         "http://127.0.0.1:11434/v1",
       );
       if (baseUrl === undefined) break;
-      const model = await prompt("Local model name", "llama3.2");
+      const detectedModels = await (dependencies.listOpenAiCompatibleModels
+        ?? discoverOpenAiCompatibleModels)(baseUrl).catch(() => []);
+      const defaultModel = detectedModels[0] ?? "llama3.2";
+      const detectedLabel = detectedModels.length
+        ? ` (detected: ${detectedModels.slice(0, 5).join(", ")}${detectedModels.length > 5 ? ", ..." : ""})`
+        : "";
+      const model = await prompt(`Local model name${detectedLabel}`, defaultModel);
       if (model === undefined) continue;
       return { route, baseUrl, model };
     }
   }
+}
+
+export async function discoverOpenAiCompatibleModels(baseUrl: string): Promise<string[]> {
+  const parsed = new URL(baseUrl);
+  const hostname = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if ((parsed.protocol !== "http:" && parsed.protocol !== "https:")
+    || !["127.0.0.1", "::1", "localhost"].includes(hostname)) {
+    return [];
+  }
+  const pathname = parsed.pathname.replace(/\/+$/, "");
+  parsed.pathname = `${pathname || "/v1"}/models`.replace(/\/{2,}/g, "/");
+  parsed.search = "";
+  parsed.hash = "";
+  const response = await fetch(parsed, {
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(2_000),
+  });
+  if (!response.ok) return [];
+  const contentLength = Number(response.headers.get("content-length") ?? 0);
+  if (Number.isFinite(contentLength) && contentLength > 65_536) return [];
+  const text = await response.text();
+  if (Buffer.byteLength(text, "utf8") > 65_536) return [];
+  const body: unknown = JSON.parse(text);
+  if (!body || typeof body !== "object" || !Array.isArray((body as { data?: unknown }).data)) return [];
+  return [...new Set((body as { data: unknown[] }).data.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const id = (item as { id?: unknown }).id;
+    return typeof id === "string" && id.trim() && id.length <= 128 ? [id.trim()] : [];
+  }))].sort((left, right) => left.localeCompare(right)).slice(0, 100);
 }
 
 export function formatMcpClientHandoff(projectRoot: string): string {

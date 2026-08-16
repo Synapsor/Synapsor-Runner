@@ -1,6 +1,8 @@
 import crypto from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { Pool } from "pg";
+import { describe, expect, it, vi } from "vitest";
 import {
+  applyPostgresJob,
   applyPostgresJobWithClient,
   bindPostgresRlsScope,
   buildPostgresDelete,
@@ -8,8 +10,10 @@ import {
   buildPostgresReconciliationRead,
   buildPostgresUpdate,
   inspectPostgresRlsTarget,
+  inspectPostgresWritebackSource,
   normalizeVersionValue,
   postgresPoolConfig,
+  postgresAdapter,
   versionValuesMatch,
   type PostgresApplyClient
 } from "./index.js";
@@ -68,6 +72,36 @@ function jobWithFreshness(expectedVersion = "eligibility-v1") {
 }
 
 describe("postgres adapter", () => {
+  it("closes pools after connection failures and never lets cleanup replace a committed result", async () => {
+    const connect = vi.spyOn(Pool.prototype, "connect");
+    const end = vi.spyOn(Pool.prototype, "end");
+    try {
+      connect.mockRejectedValue(new Error("transient connect failure"));
+      end.mockResolvedValue(undefined);
+
+      await expect(applyPostgresJob(job, config)).resolves.toMatchObject({
+        status: "failed",
+        error_code: "TRANSACTION_FAILED",
+      });
+      await expect(inspectPostgresWritebackSource(job, config.databaseUrl))
+        .rejects.toThrow("RECONCILIATION_INSPECTION_FAILED");
+      await expect(postgresAdapter.doctor(config)).rejects.toThrow("transient connect failure");
+      expect(end).toHaveBeenCalledTimes(3);
+
+      const client = Object.assign(new FakePostgresClient({
+        businessRow: { updated_at: "v1" },
+        businessUpdateRowCount: 1,
+      }), { release: vi.fn() });
+      connect.mockResolvedValue(client as never);
+      end.mockRejectedValue(new Error("pool shutdown failed"));
+      await expect(applyPostgresJob(job, config)).resolves.toMatchObject({ status: "applied" });
+      expect(client.release).toHaveBeenCalledOnce();
+    } finally {
+      connect.mockRestore();
+      end.mockRestore();
+    }
+  });
+
   it("binds PostgreSQL RLS settings as transaction-local parameter values", async () => {
     const calls: Array<{ sql: string; values?: unknown[] }> = [];
     await bindPostgresRlsScope({

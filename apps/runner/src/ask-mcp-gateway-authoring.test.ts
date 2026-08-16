@@ -7,6 +7,8 @@ const fixture = vi.hoisted(() => ({
   closes: 0,
   digest: `sha256:${"b".repeat(64)}` as const,
   errorCode: undefined as string | undefined,
+  exploredPlans: [] as unknown[],
+  autoBands: true,
 }));
 
 vi.mock("./scoped-explore.js", async (importOriginal) => {
@@ -24,20 +26,29 @@ vi.mock("./scoped-explore.js", async (importOriginal) => {
       boundary: {
         activation: { digest: fixture.digest },
         pack: {
-          resources: [{ id: "public.sessions" }],
+          resources: [{
+            id: "public.sessions",
+            ...(fixture.autoBands ? { auto_bands: [{ field: "duration_ms" }] } : {}),
+          }],
         },
       },
       session_fingerprint: `sha256:${"c".repeat(64)}`,
       describe: () => ({
         ok: true,
-        resources: [{ id: "public.sessions" }],
+        resources: [{
+          id: "public.sessions",
+          ...(fixture.autoBands ? { auto_bands: [{ field: "duration_ms" }] } : {}),
+        }],
         source_database_changed: false,
       }),
-      explore: async () => ({
-        ok: true,
-        rows: [],
-        source_database_changed: false,
-      }),
+      explore: async (plan: unknown) => {
+        fixture.exploredPlans.push(structuredClone(plan));
+        return {
+          ok: true,
+          rows: [],
+          source_database_changed: false,
+        };
+      },
       close: async () => {
         fixture.closes += 1;
       },
@@ -59,7 +70,10 @@ vi.mock("./scoped-explore-boundary-set.js", async () => ({
       activation: { digest: fixture.digest },
       pack: {
         name: "reviewed_staging",
-        resources: [{ id: "public.sessions" }],
+        resources: [{
+          id: "public.sessions",
+          ...(fixture.autoBands ? { auto_bands: [{ field: "duration_ms" }] } : {}),
+        }],
       },
     } as never;
     return {
@@ -70,14 +84,20 @@ vi.mock("./scoped-explore-boundary-set.js", async () => ({
       describe: async () => ({
         ok: true,
         outcome: { type: "success" },
-        resources: [{ id: "public.sessions" }],
+        resources: [{
+          id: "public.sessions",
+          ...(fixture.autoBands ? { auto_bands: [{ field: "duration_ms" }] } : {}),
+        }],
         source_database_changed: false,
       }),
-      explore: async () => ({
-        ok: true,
-        data: [],
-        source_database_changed: false,
-      }),
+      explore: async (plan: unknown) => {
+        fixture.exploredPlans.push(structuredClone(plan));
+        return {
+          ok: true,
+          data: [],
+          source_database_changed: false,
+        };
+      },
       projectResultForModel: ({ result }: { result: Record<string, unknown> }) => ({
         value: result,
         withheld: false,
@@ -99,6 +119,8 @@ const roots: string[] = [];
 afterEach(async () => {
   fixture.closes = 0;
   fixture.errorCode = undefined;
+  fixture.exploredPlans.length = 0;
+  fixture.autoBands = true;
   await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
 });
 
@@ -193,13 +215,151 @@ describe("Ask authoring/runtime separation", () => {
         /inspect_ticket|propose_ticket|approve|apply|commit/i,
       );
       expect(listed.find((tool) => tool.name === "app.explore_data")?.description)
-        .toContain("never concatenate them");
+        .toContain('"field":"<exact target field>","relationship":"<exact reviewed relationship id>"');
+      expect(listed.find((tool) => tool.name === "app.explore_data")?.description)
+        .toContain("instead of a similar local field");
       expect(JSON.stringify(listed.find((tool) => tool.name === "app.explore_data")?.input_schema))
         .toContain("one row per dimension/time combination");
+      expect(listed.find((tool) => tool.name === "app.explore_data")?.description)
+        .toContain('"method":"quantile","buckets":5');
+      expect(listed.find((tool) => tool.name === "app.explore_data")?.description)
+        .toContain('"time_window"');
+      const exploreSchema = JSON.stringify(listed.find((tool) => tool.name === "app.explore_data")?.input_schema);
+      expect(exploreSchema).toContain("equal_width");
+      expect(exploreSchema).not.toMatch(/"edges"|"width"|"offset"|"labels"/);
+      fixture.autoBands = false;
+      const limitedGateway = await createWorkbenchAskMcpGateway({
+        configPath,
+        storePath: ":memory:",
+        projectRoot: root,
+        env: {},
+        mode: "auto",
+      });
+      try {
+        const limitedTool = (await limitedGateway.listTools()).find(
+          (tool) => tool.name === "app.explore_data",
+        );
+        expect(limitedTool?.description).not.toMatch(/auto-band|quantile|equal_width/i);
+        expect(JSON.stringify(limitedTool?.input_schema)).not.toMatch(/quantile|equal_width/i);
+        expect(limitedTool?.description).toContain('"time_window"');
+      } finally {
+        await limitedGateway.close();
+      }
+      await expect(gateway.callTool("app.describe_data", { limit: 99 })).resolves.toMatchObject({
+        ok: false,
+        error_code: "MCP_TOOL_ARGUMENTS_INVALID",
+        value: {
+          message: expect.stringContaining("Send {} to list the compact reviewed resource index"),
+        },
+      });
+      await expect(gateway.callTool("app.explore_data", {
+        plan: { kind: "aggregate", resource: "", measures: [] },
+      })).resolves.toMatchObject({
+        ok: false,
+        error_code: "MCP_TOOL_ARGUMENTS_INVALID",
+        value: {
+          message: expect.stringContaining("Do not send empty ids"),
+        },
+      });
+      await gateway.callTool("app.explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.sessions",
+          measures: [{ function: "count" }],
+          dimensions: [{
+            numeric_band: {
+              field: "duration_ms",
+              method: "quantile",
+              buckets: "2",
+            },
+          }],
+        },
+      });
+      expect(fixture.exploredPlans.at(-1)).toMatchObject({
+        dimensions: [{
+          numeric_band: {
+            field: "duration_ms",
+            method: "quantile",
+            buckets: 2,
+          },
+        }],
+      });
+      const callsBeforeUnsafeBand = fixture.exploredPlans.length;
+      await expect(gateway.callTool("app.explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.sessions",
+          measures: [{ function: "count" }],
+          dimensions: [{
+            numeric_band: {
+              field: "duration_ms",
+              method: "quantile",
+              buckets: 2,
+              edges: [100, 200],
+            },
+          }],
+        },
+      })).resolves.toMatchObject({
+        ok: false,
+        error_code: "EXPLORE_PLAN_INVALID",
+      });
+      expect(fixture.exploredPlans).toHaveLength(callsBeforeUnsafeBand);
+
+      await gateway.callTool("app.explore_data", {
+        plan: {
+          kind: "rows",
+          resource: "public.sessions",
+          select: ["id"],
+          time_window: {
+            field: "started_at",
+            window: "previous_month",
+          },
+        },
+      });
+      expect(fixture.exploredPlans.at(-1)).toMatchObject({
+        time_window: { field: "started_at", window: "previous_month" },
+      });
+      await gateway.callTool("app.explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.sessions",
+          measures: [{ function: "count" }],
+          time_bucket: { field: "started_at", bucket: "month" },
+          comparison: {
+            field: "started_at",
+            window: "previous_month",
+            compare_to: "preceding_period",
+          },
+        },
+      });
+      expect(fixture.exploredPlans.at(-1)).toMatchObject({
+        comparison: {
+          field: "started_at",
+          window: "previous_month",
+          compare_to: "preceding_period",
+        },
+      });
+      const callsBeforeUnsafeWindow = fixture.exploredPlans.length;
+      await expect(gateway.callTool("app.explore_data", {
+        plan: {
+          kind: "rows",
+          resource: "public.sessions",
+          select: ["id"],
+          time_window: {
+            field: "started_at",
+            window: "previous_month",
+            offset: "-1 month",
+          },
+        },
+      })).resolves.toMatchObject({
+        ok: false,
+        error_code: "EXPLORE_PLAN_INVALID",
+      });
+      expect(fixture.exploredPlans).toHaveLength(callsBeforeUnsafeWindow);
     } finally {
       await gateway.close();
     }
-    expect(fixture.closes).toBe(1);
+    expect(fixture.closes).toBe(2);
   });
 
   it("refuses an explicit runtime session instead of silently switching while Explore is active", async () => {

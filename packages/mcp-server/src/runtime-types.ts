@@ -240,6 +240,27 @@ export type RuntimeNotificationsConfig = {
   sinks: RuntimeNotificationSinkConfig[];
 };
 
+export type ProductionExploreTenantLimits = {
+  max_queries_per_rolling_24_hours: number;
+  max_extracted_cells_per_rolling_24_hours: number;
+  max_differencing_queries_per_rolling_24_hours: number;
+  requests_per_minute: number;
+  max_response_cells_per_response?: number;
+};
+
+export type RuntimeProductionExploreConfig = {
+  enabled: boolean;
+  project_root: string;
+  required_oauth_scope: string;
+  budget_hmac_key_env: string;
+  accounting_namespace: string;
+  /** Fixed audit/accounting identity for an explicitly reviewed one-organization source. */
+  single_organization_id?: string;
+  tenant_limits: ProductionExploreTenantLimits;
+  source_max_connections?: number;
+  max_sessions_per_principal?: number;
+};
+
 export type RuntimeConfig = {
   version: 1;
   mode: RunnerMode;
@@ -404,6 +425,7 @@ export type RuntimeConfig = {
   };
   supervised_worker?: RuntimeSupervisedWorkerConfig;
   notifications?: RuntimeNotificationsConfig;
+  production_explore?: RuntimeProductionExploreConfig;
 };
 
 export type IsolationAssuranceMode = "application_scope" | "postgres_rls" | "tenant_bound";
@@ -574,12 +596,31 @@ export type HttpMcpServerOptions = {
   trustedTlsProxy?: boolean;
   unsafeAllowCleartextHttp?: boolean;
   env?: NodeJS.ProcessEnv;
-  log?: false | { write(chunk: string): unknown };
+  log?: false | { write(chunk: string): unknown; isTTY?: boolean };
+  accessLog?: boolean;
   resultFormat?: ResultFormat;
   readRow?: DbRowReader;
   credentialResolver?: TenantCredentialResolver;
   tls?: StreamableHttpTlsOptions;
   readinessCheck?: () => Promise<ReadinessReport>;
+  streamableSessionFactory?: StreamableHttpSessionFactory;
+};
+
+export type StreamableHttpSessionRuntime = {
+  connect(transport: StreamableHTTPServerTransport): Promise<void>;
+  close(): Promise<void>;
+};
+
+export type StreamableHttpSessionFactory = ((input: {
+  config: RuntimeConfig;
+  env: NodeJS.ProcessEnv;
+  store: ProposalRuntimeStore;
+  trustedContext: TrustedContext;
+  toolNameStyle?: ToolNameStyle;
+  resultFormat?: ResultFormat;
+}) => Promise<StreamableHttpSessionRuntime>) & {
+  maxSessionsPerPrincipal?: number;
+  close?(): Promise<void>;
 };
 
 export type ReadinessComponent = {
@@ -656,11 +697,13 @@ export type SafeToolErrorCode =
 
 export type StreamableHttpSession = {
   transport: StreamableHTTPServerTransport;
-  runtime: McpRuntime;
+  runtime: StreamableHttpSessionRuntime;
   sessionId?: string;
   authFingerprint: string;
+  principalSessionKey?: string;
   lastSeenAt: number;
   closed?: boolean;
+  closePromise?: Promise<void>;
 };
 
 export type HttpDeployment = "loopback" | "single_tenant" | "shared";

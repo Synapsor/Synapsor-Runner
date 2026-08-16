@@ -19,11 +19,21 @@ describe("shared deterministic sensitivity classifier", () => {
     ["mrn", "prisma", "medical_or_health_information"],
     ["patientName", "openapi", "medical_or_health_information"],
     ["patient_full_name", "drizzle", "medical_or_health_information"],
+    ["patient_id", "database", "medical_or_health_information"],
+    ["patientIdentifier", "openapi", "medical_or_health_information"],
     ["insurance_member_id", "database", "medical_or_health_information"],
     ["insurancePolicyNumber", "prisma", "medical_or_health_information"],
     ["health_plan_member_id", "openapi", "medical_or_health_information"],
     ["password_hash", "database", "credential_or_secret"],
     ["bank_account_number", "database", "payment_or_bank_detail"],
+    ["licence_number", "database", "government_identifier"],
+    ["licenseNo", "prisma", "government_identifier"],
+    ["driving_licence_ref", "drizzle", "government_identifier"],
+    ["passport_id", "openapi", "government_identifier"],
+    ["national_insurance_number", "database", "government_identifier"],
+    ["nin", "database", "government_identifier"],
+    ["badge_number", "database", "institutional_identifier"],
+    ["employeeBadgeId", "prisma", "institutional_identifier"],
     ["dateOfBirth", "prisma", "birth_information"],
     ["full_name", "database", "person_name"],
     ["firstName", "prisma", "person_name"],
@@ -88,9 +98,74 @@ describe("shared deterministic sensitivity classifier", () => {
     ["product_name", "text"],
     ["category_name", "text"],
     ["organization_name", "text"],
+    ["order_number", "text"],
+    ["invoice_no", "text"],
+    ["tracking_ref", "text"],
+    ["software_license_name", "text"],
+    ["badge_color", "text"],
   ])("does not over-classify ordinary field %s", (name, dataType) => {
     expect(classifySensitivity({ name, dataType, source: "database" }).state)
       .toBe("structurally_low_risk");
+  });
+
+  it.each([
+    ["event_note_id", "integer", undefined],
+    ["note_source", "enum", undefined],
+    ["note_source", "varchar", ["staff", "system", "member"]],
+    ["note_source", "USER-DEFINED", ["staff", "system", "member"]],
+  ] as const)(
+    "does not call structurally bounded field %s (%s) unconstrained free text",
+    (name, dataType, constrainedValues) => {
+      expect(classifySensitivity({
+        name,
+        dataType,
+        ...(constrainedValues ? { constrainedValues } : {}),
+        source: "database",
+      })).toMatchObject({
+        state: "structurally_low_risk",
+        reason_codes: ["no_sensitive_structural_signal"],
+      });
+    },
+  );
+
+  it("keeps note-like names unresolved when their values remain unconstrained", () => {
+    expect(classifySensitivity({
+      name: "note_source",
+      dataType: "varchar",
+      source: "database",
+    })).toMatchObject({
+      state: "unresolved_free_text",
+      reason_codes: ["unconstrained_free_text_name"],
+    });
+    expect(classifySensitivity({
+      name: "event_notes",
+      dataType: "custom_domain",
+      source: "database",
+    }).state).toBe("unresolved_free_text");
+  });
+
+  it("keeps an ambiguous display name review-gated even when its values are bounded", () => {
+    expect(classifySensitivity({
+      name: "display_name",
+      dataType: "enum",
+      constrainedValues: ["Alice", "Bob"],
+      source: "database",
+    })).toMatchObject({
+      state: "unresolved_free_text",
+      reason_codes: ["ambiguous_display_name"],
+    });
+  });
+
+  it("never lets a constrained type weaken a high-confidence sensitive name", () => {
+    expect(classifySensitivity({
+      name: "patient_id",
+      dataType: "integer",
+      constrainedValues: ["1", "2"],
+      source: "database",
+    })).toMatchObject({
+      state: "high_confidence_sensitive",
+      reason_codes: ["medical_or_health_information"],
+    });
   });
 
   it("keeps write-only OpenAPI inputs out regardless of their name", () => {

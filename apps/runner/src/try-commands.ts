@@ -7,7 +7,6 @@ import path from "node:path";
 import process from "node:process";
 import readline from "node:readline/promises";
 import { cliCommandName } from "./cli-command-meta.js";
-import type { ActivatedExplorationBoundary } from "./auto-boundary.js";
 import {
   resolveAskAccessGuidance,
   type AskAccessGuidance,
@@ -37,7 +36,10 @@ import {
   type ExplorePlan,
   type InspectDatabaseFn,
 } from "./scoped-explore.js";
-import { createScopedExploreBoundarySetRuntime } from "./scoped-explore-boundary-set.js";
+import {
+  createScopedExploreBoundarySetRuntime,
+  resolveActiveExploreTarget,
+} from "./scoped-explore-boundary-set.js";
 import { runTryExperience, type TryExperienceResult, type TryReviewContext } from "./try-experience.js";
 import { tryAsk } from "./try-ask.js";
 import { resolveReadableTryStateRoot } from "./try-state.js";
@@ -78,11 +80,14 @@ async function quickDemo(args: string[]): Promise<number> {
 
 export async function tryCommand(
   args: string[],
-  dependencies: { inspectDatabaseFn?: InspectDatabaseFn } = {},
+  dependencies: {
+    inspectDatabaseFn?: InspectDatabaseFn;
+    createScopedExploreBoundarySetRuntimeFn?: typeof createScopedExploreBoundarySetRuntime;
+  } = {},
 ): Promise<number> {
   const [subcommand, ...rest] = args;
   if (subcommand === "call") return tryOwnDataCall(rest);
-  if (subcommand === "explore") return tryScopedExplore(rest);
+  if (subcommand === "explore") return tryScopedExplore(rest, dependencies);
   if (subcommand === "ask") return tryAsk(rest);
   if (subcommand === "protect") return tryProtectLatest(rest, dependencies);
   if (optionalArg(args, "--from-env")) return tryOwnData(args);
@@ -193,7 +198,12 @@ async function tryOwnDataCall(args: string[]): Promise<number> {
 }
 
 
-async function tryScopedExplore(args: string[]): Promise<number> {
+async function tryScopedExplore(
+  args: string[],
+  dependencies: {
+    createScopedExploreBoundarySetRuntimeFn?: typeof createScopedExploreBoundarySetRuntime;
+  } = {},
+): Promise<number> {
   assertKnownOptions(
     args,
     new Set([
@@ -210,11 +220,16 @@ async function tryScopedExplore(args: string[]): Promise<number> {
       "--count-distinct",
       "--sum",
       "--avg",
+      "--measure",
       "--group-by",
+      "--group-band",
       "--time-bucket",
+      "--time-window",
       "--compare",
       "--period",
       "--vs-period",
+      "--compare-window",
+      "--compare-to",
       "--change",
       "--where",
       "--top",
@@ -223,7 +238,8 @@ async function tryScopedExplore(args: string[]): Promise<number> {
     "try explore",
   );
   const projectRoot = resolvedSynapsorProjectRoot(args);
-  const runtime = await createScopedExploreBoundarySetRuntime({
+  const runtime = await (dependencies.createScopedExploreBoundarySetRuntimeFn
+    ?? createScopedExploreBoundarySetRuntime)({
     projectRoot,
     transport: "stdio",
     env: process.env,
@@ -237,12 +253,17 @@ async function tryScopedExplore(args: string[]): Promise<number> {
       || repeatedArgs(args, "--count-distinct").length > 0
       || repeatedArgs(args, "--sum").length > 0
       || repeatedArgs(args, "--avg").length > 0
+      || repeatedArgs(args, "--measure").length > 0
       || repeatedArgs(args, "--group-by").length > 0
+      || repeatedArgs(args, "--group-band").length > 0
       || repeatedArgs(args, "--where").length > 0
       || Boolean(optionalArg(args, "--time-bucket"))
+      || Boolean(optionalArg(args, "--time-window"))
       || Boolean(optionalArg(args, "--compare"))
       || Boolean(optionalArg(args, "--period"))
       || Boolean(optionalArg(args, "--vs-period"))
+      || Boolean(optionalArg(args, "--compare-window"))
+      || Boolean(optionalArg(args, "--compare-to"))
       || Boolean(optionalArg(args, "--change"))
       || Boolean(optionalArg(args, "--top"));
     if (!inline && !inputPath && !friendly) {
@@ -269,35 +290,46 @@ async function tryScopedExplore(args: string[]): Promise<number> {
     if ((inline || inputPath) && friendly) {
       throw new Error("Use either --plan/--input or the friendly Explore flags, not both.");
     }
+    let friendlyTarget: ReturnType<typeof resolveActiveExploreTarget> | undefined;
     const parsed: unknown = inline || inputPath
       ? JSON.parse(inline ?? await fs.readFile(path.resolve(inputPath!), "utf8"))
-      : buildFriendlyAggregatePlan(selectFriendlyBoundary(
-        runtime.boundaries,
-        optionalArg(args, "--boundary"),
-        optionalArg(args, "--resource"),
-      ), {
-        resource: optionalArg(args, "--resource"),
-        suggested: args.includes("--suggested"),
-        count: args.includes("--count"),
-        countDistinct: repeatedArgs(args, "--count-distinct"),
-        sums: repeatedArgs(args, "--sum"),
-        averages: repeatedArgs(args, "--avg"),
-        groupBy: repeatedArgs(args, "--group-by"),
-        timeBucket: optionalArg(args, "--time-bucket"),
-        compareField: optionalArg(args, "--compare"),
-        period: optionalArg(args, "--period"),
-        versusPeriod: optionalArg(args, "--vs-period"),
-        ...(optionalArg(args, "--change")
-          ? { comparisonChange: comparisonChangeArg(optionalArg(args, "--change")!) }
-          : {}),
-        filters: repeatedArgs(args, "--where"),
-        ...(optionalArg(args, "--top") ? { top: Number(optionalArg(args, "--top")) } : {}),
-      });
+      : (() => {
+          friendlyTarget = resolveActiveExploreTarget(
+            runtime.boundaries,
+            optionalArg(args, "--boundary"),
+            optionalArg(args, "--resource"),
+          );
+          return buildFriendlyAggregatePlan(friendlyTarget.boundary, {
+            ...(friendlyTarget.resource ? { resource: friendlyTarget.resource.id } : {}),
+            suggested: args.includes("--suggested"),
+            count: args.includes("--count"),
+            countDistinct: repeatedArgs(args, "--count-distinct"),
+            sums: repeatedArgs(args, "--sum"),
+            averages: repeatedArgs(args, "--avg"),
+            measures: repeatedArgs(args, "--measure"),
+            groupBy: repeatedArgs(args, "--group-by"),
+            groupBands: repeatedArgs(args, "--group-band"),
+            timeBucket: optionalArg(args, "--time-bucket"),
+            timeWindow: optionalArg(args, "--time-window"),
+            compareField: optionalArg(args, "--compare"),
+            period: optionalArg(args, "--period"),
+            versusPeriod: optionalArg(args, "--vs-period"),
+            compareWindow: optionalArg(args, "--compare-window"),
+            ...(optionalArg(args, "--compare-to")
+              ? { compareTo: relativeComparisonArg(optionalArg(args, "--compare-to")!) }
+              : {}),
+            ...(optionalArg(args, "--change")
+              ? { comparisonChange: comparisonChangeArg(optionalArg(args, "--change")!) }
+              : {}),
+            filters: repeatedArgs(args, "--where"),
+            ...(optionalArg(args, "--top") ? { top: Number(optionalArg(args, "--top")) } : {}),
+          });
+        })();
     let result: Record<string, unknown>;
     try {
       result = await runtime.explore(
         parsed as ExplorePlan,
-        optionalArg(args, "--boundary"),
+        friendlyTarget?.boundary.pack.name ?? optionalArg(args, "--boundary"),
       );
     } catch (error) {
       if (!(error instanceof ScopedExploreError) || args.includes("--json")) throw error;
@@ -383,6 +415,11 @@ export function formatTryExploreRefusal(
 function comparisonChangeArg(value: string): "absolute" | "percentage" {
   if (value === "absolute" || value === "percentage") return value;
   throw new Error("--change must be absolute or percentage.");
+}
+
+function relativeComparisonArg(value: string): "preceding_period" | "same_period_last_year" {
+  if (value === "preceding_period" || value === "same_period_last_year") return value;
+  throw new Error("--compare-to must be preceding_period or same_period_last_year.");
 }
 
 
@@ -514,29 +551,6 @@ async function tryProtectLatest(
   }
   return 0;
 }
-
-function selectFriendlyBoundary(
-  boundaries: ActivatedExplorationBoundary[],
-  requestedName: string | undefined,
-  requestedResource: string | undefined,
-): ActivatedExplorationBoundary {
-  if (requestedName) {
-    const selected = boundaries.find((boundary) => boundary.pack.name === requestedName);
-    if (!selected) throw new Error(`Boundary ${requestedName} is not active.`);
-    return selected;
-  }
-  if (requestedResource) {
-    const matches = boundaries.filter((boundary) =>
-      boundary.pack.resources.some((resource) => resource.id === requestedResource));
-    if (matches.length === 1) return matches[0]!;
-    if (matches.length > 1) {
-      throw new Error(`Resource ${requestedResource} is in multiple active boundaries; add --boundary <name>.`);
-    }
-  }
-  if (boundaries.length === 1) return boundaries[0]!;
-  throw new Error("Multiple Explore boundaries are active; add --boundary <name> or choose a uniquely owned --resource.");
-}
-
 
 function resolvedSynapsorProjectRoot(args: string[]): string {
   return path.resolve(

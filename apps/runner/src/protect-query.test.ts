@@ -61,6 +61,7 @@ describe("Protect This Query", () => {
         dimension_1: "Home",
         time_bucket: "2026-07-06T00:00:00.000Z",
         measure_0: 45_000,
+        __measure_cohort_0: 8,
         __cohort_size: 8,
       }]),
       inspectDatabaseFn: async () => fixture.inspection,
@@ -126,6 +127,119 @@ describe("Protect This Query", () => {
     });
   });
 
+  it("freezes an explicitly reviewed depth-three relationship into public DSL", async () => {
+    const fixture = await activatedFixture(
+      depthThreeProtectInspection(),
+      undefined,
+      undefined,
+      (candidate) => {
+        candidate.budgets.max_analysis_relationship_hops = 3;
+      },
+    );
+    const relationship = "subscriptions_product_id_fkey__products_category_id_fkey__categories_department_id_fkey";
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([{
+        dimension_0: "Hardware",
+        measure_0: 8,
+        __cohort_size: 8,
+      }]),
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => Date.parse("2026-08-11T12:00:00.000Z"),
+    });
+    const result = await runtime.explore({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "name", relationship }],
+      top_n: 10,
+    });
+    await runtime.close();
+
+    const created = await createProtectedQueryDraft({
+      projectRoot: fixture.root,
+      token: (result.protect as { token: string }).token,
+      capabilityName: "retail.subscriptions_by_department",
+      description: "Count reviewed subscriptions by the exact three-hop department path.",
+      returnsHint: "Returns privacy-suppressed department groups.",
+      now: Date.parse("2026-08-11T12:00:01.000Z"),
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+
+    expect(created.dsl).toContain(`PROTECTED RELATIONSHIP ${relationship} LINK 1 ON product_id REFERENCES public.products.id`);
+    expect(created.dsl).toContain(`PROTECTED RELATIONSHIP ${relationship} LINK 2 ON category_id REFERENCES public.categories.id`);
+    expect(created.dsl).toContain(`PROTECTED RELATIONSHIP ${relationship} LINK 3 ON department_id REFERENCES public.departments.id`);
+    expect(created.contract.capabilities[0]?.protected_read?.relationships).toEqual([{
+      name: relationship,
+      links: [
+        expect.objectContaining({ table: "products", cardinality: "many_to_one", max_fan_out: 1 }),
+        expect.objectContaining({ table: "categories", cardinality: "many_to_one", max_fan_out: 1 }),
+        expect.objectContaining({ table: "departments", cardinality: "many_to_one", max_fan_out: 1 }),
+      ],
+    }]);
+  });
+
+  it("freezes a resolved relative window as fixed protected authority", async () => {
+    const fixture = await activatedFixture(churnInspection());
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([{
+        dimension_0: "west",
+        measure_0: 8,
+        __cohort_size: 8,
+      }]),
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => Date.parse("2026-07-22T12:00:00.000Z"),
+    });
+    const result = await runtime.explore({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "region" }],
+      time_window: { field: "churned_at", window: "previous_month" },
+      top_n: 10,
+    });
+    await runtime.close();
+
+    const token = (result.protect as { token: string }).token;
+    const [protectable] = await listProtectableQueries({
+      projectRoot: fixture.root,
+      now: Date.parse("2026-07-22T12:00:01.000Z"),
+    });
+    expect(protectable?.token).toBe(token);
+    expect(protectable?.literal_positions.map((position) => position.location)).not.toContain(
+      "time_window.start",
+    );
+    expect(protectable?.literal_positions.map((position) => position.location)).not.toContain(
+      "time_window.end",
+    );
+
+    const created = await createProtectedQueryDraft({
+      projectRoot: fixture.root,
+      token,
+      capabilityName: "analytics.previous_month_churn_by_region",
+      description: "Count reviewed churn rows from the resolved previous UTC month.",
+      returnsHint: "Returns privacy-suppressed reviewed regional counts.",
+      now: Date.parse("2026-07-22T12:00:01.000Z"),
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+
+    expect(created.dsl).toContain(
+      "PROTECTED TIME WINDOW churned_at FROM FIXED '2026-06-01T00:00:00.000Z' TO FIXED '2026-07-01T00:00:00.000Z'",
+    );
+    expect(created.dsl).not.toMatch(/PROTECTED TIME WINDOW .* ARG/i);
+    expect(created.contract.capabilities[0]?.protected_read?.time_window).toEqual({
+      field: "churned_at",
+      start: "2026-06-01T00:00:00.000Z",
+      end: "2026-07-01T00:00:00.000Z",
+    });
+    expect(created.contract.capabilities[0]?.args).toEqual({});
+  });
+
   it("freezes a ranked two-period mover with its reviewed candidate-set ceiling", async () => {
     const fixture = await activatedFixture(churnInspection());
     const runtime = await createScopedExploreRuntime({
@@ -135,8 +249,8 @@ describe("Protect This Query", () => {
       executor: {
         execute: async () => [],
         executeBatch: async ({ queries }) => queries.map((query) => query.period === "period_1"
-          ? [{ dimension_0: "west", measure_0: 100, __cohort_size: 100 }]
-          : [{ dimension_0: "west", measure_0: 125, __cohort_size: 125 }]),
+          ? [{ dimension_0: "west", measure_0: 100, __measure_cohort_0: 100, __cohort_size: 100 }]
+          : [{ dimension_0: "west", measure_0: 125, __measure_cohort_0: 125, __cohort_size: 125 }]),
         close: async () => undefined,
       },
       inspectDatabaseFn: async () => fixture.inspection,
@@ -197,6 +311,62 @@ describe("Protect This Query", () => {
     expect(created.draft.state).toBe("disabled");
   });
 
+  it("freezes a post-suppression running total without emitting model-authored formulas or SQL", async () => {
+    const fixture = await activatedFixture(churnInspection(), undefined, undefined, (candidate) => {
+      candidate.pack.resources[0]!.derived_measures = [{
+        name: "revenue_running_total",
+        label: "Revenue running total",
+        shape: "running_total",
+        base_measure: { function: "sum", field: "monthly_revenue_cents" },
+      }];
+    });
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([{
+        time_bucket: "2026-07-06T00:00:00.000Z",
+        measure_0: 45_000,
+        __measure_cohort_0: 8,
+        __cohort_size: 8,
+      }]),
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => Date.parse("2026-07-22T12:00:00.000Z"),
+    });
+    const result = await runtime.explore({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ derived_measure: "revenue_running_total" }],
+      time_bucket: { field: "churned_at", bucket: "week" },
+      order_by: { kind: "time_bucket", direction: "asc" },
+      top_n: 10,
+    });
+    await runtime.close();
+
+    const created = await createProtectedQueryDraft({
+      projectRoot: fixture.root,
+      token: (result.protect as { token: string }).token,
+      capabilityName: "analytics.revenue_running_total",
+      description: "Show the reviewed running revenue total after suppression.",
+      returnsHint: "Returns only privacy-released time groups.",
+      now: Date.parse("2026-07-22T12:00:01.000Z"),
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    expect(created.dsl).toContain(
+      "MEASURE revenue_running_total POST RUNNING_TOTAL OF SUM monthly_revenue_cents",
+    );
+    expect(created.dsl).toContain("PROTECTED LIMITS ROWS 50 GROUPS 50 RANKED GROUPS 500");
+    expect(created.dsl).not.toMatch(/\bOVER\s*\(|SELECT\s/i);
+    expect(created.contract.capabilities[0]?.protected_read?.aggregate?.measures).toEqual([{
+      name: "revenue_running_total",
+      function: "reviewed_derived",
+      derived: {
+        shape: "running_total",
+        base_measure: { function: "sum", field: "monthly_revenue_cents" },
+      },
+    }]);
+  });
+
   it("carries model-withheld output aliases into protected DSL and canonical authority", async () => {
     const fixture = await activatedFixture(churnInspection(), undefined, "region");
     const runtime = await createScopedExploreRuntime({
@@ -232,6 +402,83 @@ describe("Protect This Query", () => {
 
     expect(created.dsl).toContain("MODEL WITHHELD region");
     expect(created.contract.capabilities[0]?.model_withheld_fields).toEqual(["region"]);
+  });
+
+  it("keeps relationship-carried scope out of generated protected capabilities", async () => {
+    const fixture = await activatedDerivedProtectFixture();
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([{ quantity: 2 }]),
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => Date.parse("2026-08-05T12:00:00.000Z"),
+    });
+    const result = await runtime.explore({
+      kind: "rows",
+      resource: "public.order_items",
+      select: ["quantity"],
+      limit: 1,
+    });
+    await runtime.close();
+
+    await expect(createProtectedQueryDraft({
+      projectRoot: fixture.root,
+      token: (result.protect as { token: string }).token,
+      capabilityName: "analytics.order_item_quantity",
+      description: "Return reviewed order item quantities.",
+      returnsHint: "Returns bounded reviewed rows.",
+      now: Date.parse("2026-08-05T12:00:01.000Z"),
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+    })).rejects.toThrow(/relationship-carried tenant scope is read-only Explore authority/);
+  });
+
+  it("keeps inverse child-count authority in Explore until Protect can freeze the child scope", async () => {
+    const fixture = await activatedDerivedProtectFixture((candidate) => {
+      const orders = candidate.pack.resources.find((resource) => resource.id === "public.orders")!;
+      orders.derived_measures = [{
+        name: "order_item_count",
+        label: "Order item count",
+        shape: "child_count_total",
+        child_resource: "public.order_items",
+        relationship: "order_items_order_id_fkey",
+      }];
+    });
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([{
+        dimension_0: "west",
+        measure_0: 18,
+        __measure_cohort_0: 8,
+        __cohort_size: 8,
+      }]),
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => Date.parse("2026-08-08T12:00:00.000Z"),
+    });
+    const result = await runtime.explore({
+      kind: "aggregate",
+      resource: "public.orders",
+      measures: [{ derived_measure: "order_item_count" }],
+      dimensions: [{ field: "region" }],
+      top_n: 10,
+    });
+    await runtime.close();
+
+    await expect(createProtectedQueryDraft({
+      projectRoot: fixture.root,
+      token: (result.protect as { token: string }).token,
+      capabilityName: "analytics.order_item_count_by_region",
+      description: "Count reviewed order items by order region.",
+      returnsHint: "Returns scoped, privacy-released aggregates.",
+      now: Date.parse("2026-08-08T12:00:01.000Z"),
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+    })).rejects.toThrow(
+      /reviewed child-count metrics are available in local and production HTTP Explore, but protected capabilities do not yet freeze inverse child-scope authority/i,
+    );
   });
 
   it("requires principal RLS only on participating relations that declare principal scope", async () => {
@@ -321,6 +568,37 @@ describe("Protect This Query", () => {
       tenant_setting: "app.tenant_id",
       principal_setting: "app.principal",
     });
+
+    const derivedPrincipalBoundary = structuredClone(boundary);
+    const derivedRoot = derivedPrincipalBoundary.pack.resources[0]!;
+    delete derivedRoot.principal_key;
+    derivedRoot.principal_scope = {
+      mode: "derived",
+      path_id: "subscriptions_operator_id_fkey",
+      ancestor_resource: target.id,
+      ancestor_column: "assigned_operator_id",
+      proof: {
+        source: "database_catalog",
+        links: [{
+          constraint_name: "subscriptions_operator_id_fkey",
+          source_resource: derivedRoot.id,
+          target_resource: target.id,
+          source_columns: ["assigned_operator_id"],
+          target_columns: ["assigned_operator_id"],
+          target_uniqueness: {
+            kind: "unique_constraint",
+            name: "regions_assigned_operator_id_key",
+            columns: ["assigned_operator_id"],
+          },
+          nullable: false,
+          cardinality: "many_to_one",
+          max_fan_out: 1,
+        }],
+        digest: `sha256:${"9".repeat(64)}`,
+      },
+    };
+    expect(() => protectedDatabaseScope(contract, derivedPrincipalBoundary))
+      .toThrow(/relationship-carried principal scope is read-only Explore authority/);
 
     target.principal_key = "assigned_operator_id";
     expect(() => protectedDatabaseScope(contract, boundary)).toThrow(/principal binding is incomplete/i);
@@ -672,6 +950,42 @@ describe("Protect This Query", () => {
       prepareScopedExploreFn: async () => ({ boundary: fixture.boundary, lock, inspection: fixture.inspection }),
     })).rejects.toThrow(/changed after review/i);
 
+    const configPath = path.join(fixture.root, "synapsor.runner.json");
+    const configBefore = await fs.readFile(configPath, "utf8").catch((error) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw error;
+    });
+    await expect(activateProtectedQuery({
+      projectRoot: fixture.root,
+      capabilityName: created.draft.capability,
+      expectedDigest: created.draft.contract_digest,
+      operatorConfirmed: true,
+      actor: "reviewer@example.test",
+      env: fixture.env,
+      prepareScopedExploreFn: async () => ({ boundary: fixture.boundary, lock, inspection: fixture.inspection }),
+      testFailpoint(point) {
+        if (point === "after_explore_deactivation") {
+          throw new Error("simulated pre-commit failure");
+        }
+      },
+    })).rejects.toThrow("simulated pre-commit failure");
+    await expect(loadActivatedExplorationBoundaries(fixture.root)).resolves.toMatchObject([{
+      activation: { digest: fixture.boundary.activation.digest },
+    }]);
+    const configAfterFailure = await fs.readFile(configPath, "utf8").catch((error) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw error;
+    });
+    expect(configAfterFailure).toBe(configBefore);
+    await expect(fs.stat(path.join(
+      fixture.root,
+      "synapsor/protected/active/analytics__recent_region_reasons.contract.json",
+    ))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.stat(path.join(
+      fixture.root,
+      "synapsor/protected/active/analytics__recent_region_reasons.activation.json",
+    ))).rejects.toMatchObject({ code: "ENOENT" });
+
     const activated = await activateProtectedQuery({
       projectRoot: fixture.root,
       capabilityName: created.draft.capability,
@@ -998,6 +1312,7 @@ async function activatedFixture(
   inspection = churnInspection(),
   minimumCohort?: 1 | 2 | 3 | 4,
   modelWithheldField?: string,
+  narrow?: (candidate: ReturnType<typeof buildAutoBoundary>["exploration_boundary"]) => void,
 ): Promise<{
   root: string;
   boundary: ActivatedExplorationBoundary;
@@ -1052,6 +1367,67 @@ async function activatedFixture(
   });
   await writeAutoBoundaryArtifacts({ projectRoot: root, build });
   const candidate = structuredClone(build.exploration_boundary);
+  narrow?.(candidate);
+  const digest = explorationBoundaryCandidateDigest(candidate);
+  const boundary = await activateExplorationBoundary({
+    projectRoot: root,
+    candidate,
+    expectedDigest: digest,
+    actor: "reviewer@example.test",
+    confirmation: `ACTIVATE ${digest}`,
+    confirmedDecisions: candidate.unresolved_decisions,
+    currentInspection: inspection,
+  });
+  return {
+    root,
+    boundary,
+    inspection,
+    env: {
+      DATABASE_URL: "postgresql://unused.example.test/synapsor",
+      SYNAPSOR_TENANT_ID: "tenant-acme",
+      SYNAPSOR_PRINCIPAL: "pm-1",
+    },
+  };
+}
+
+async function activatedDerivedProtectFixture(
+  narrow?: (candidate: ReturnType<typeof buildAutoBoundary>["exploration_boundary"]) => void,
+): Promise<{
+  root: string;
+  boundary: ActivatedExplorationBoundary;
+  inspection: SchemaInspection;
+  env: NodeJS.ProcessEnv;
+}> {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-protect-derived-scope-"));
+  temporaryRoots.push(root);
+  const inspection = derivedProtectInspection();
+  const build = buildAutoBoundary({
+    inspection,
+    project: {
+      root,
+      package_manager: "pnpm",
+      frameworks: [],
+      schema_inputs: [],
+      database_env_names: ["DATABASE_URL"],
+    },
+    sourceEnv: "DATABASE_URL",
+    overrides: {
+      schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+      resources: {
+        "public.order_items": {
+          tenant_scope_path: {
+            value: "order_items_order_id_fkey",
+            actor: "owner@example.test",
+            reason: "Every item belongs to the tenant of its required order.",
+            decided_at: "2026-08-05T12:00:00.000Z",
+          },
+        },
+      },
+    },
+  });
+  await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+  const candidate = structuredClone(build.exploration_boundary);
+  narrow?.(candidate);
   const digest = explorationBoundaryCandidateDigest(candidate);
   const boundary = await activateExplorationBoundary({
     projectRoot: root,
@@ -1080,6 +1456,41 @@ function fixedExecutor(rows: Record<string, unknown>[]): ScopedExploreExecutor {
     executeBatch: async ({ queries }) => queries.map(() => structuredClone(rows)),
     close: async () => undefined,
   };
+}
+
+function derivedProtectInspection(): SchemaInspection {
+  const inspection = churnInspection();
+  const orders = structuredClone(inspection.tables[0]!);
+  orders.name = "orders";
+  orders.unique_constraints = [{ name: "orders_pkey", columns: ["id"] }];
+  orders.indexes = [{ name: "orders_pkey", columns: ["id"], unique: true }];
+
+  const orderItems = structuredClone(orders);
+  orderItems.name = "order_items";
+  orderItems.columns = orderItems.columns.filter((field) => field.name !== "tenant_id");
+  orderItems.columns.push(column("order_id", "uuid", { immutable: true }));
+  orderItems.columns.push(column("quantity", "integer"));
+  orderItems.unique_constraints = [{ name: "order_items_pkey", columns: ["id"] }];
+  orderItems.indexes = [{ name: "order_items_pkey", columns: ["id"], unique: true }];
+  orderItems.foreign_keys = [{
+    name: "order_items_order_id_fkey",
+    columns: ["order_id"],
+    referenced_schema: "public",
+    referenced_table: "orders",
+    referenced_columns: ["id"],
+    delete_rule: "RESTRICT",
+  }];
+  orderItems.row_level_security = false;
+  orderItems.row_level_security_policies = [];
+  if (!orderItems.role_posture) throw new Error("derived-scope fixture role posture is required");
+  orderItems.role_posture.row_security_forced = false;
+  orderItems.role_posture.row_security_effective_for_current_role = false;
+  orderItems.suggestions.tenant_columns = [];
+  orderItems.suggestions.default_visible_columns = orderItems.suggestions.default_visible_columns
+    .filter((field) => field !== "tenant_id")
+    .concat("order_id", "quantity");
+  inspection.tables = [orderItems, orders];
+  return inspection;
 }
 
 function churnInspection(): SchemaInspection {
@@ -1205,6 +1616,83 @@ function starProtectInspection(): SchemaInspection {
     return table;
   };
   inspection.tables.push(relatedTable("stores"), relatedTable("product_categories"));
+  return inspection;
+}
+
+function depthThreeProtectInspection(): SchemaInspection {
+  const inspection = churnInspection();
+  const root = inspection.tables[0]!;
+  root.columns.push(column("product_id", "uuid", { immutable: true }));
+  root.foreign_keys = [{
+    name: "subscriptions_product_id_fkey",
+    columns: ["product_id"],
+    referenced_schema: "public",
+    referenced_table: "products",
+    referenced_columns: ["id"],
+    delete_rule: "RESTRICT",
+  }];
+  root.suggestions.default_visible_columns.push("product_id");
+
+  const relatedTable = (
+    name: string,
+    foreignKey?: {
+      name: string;
+      column: string;
+      target: string;
+    },
+  ) => {
+    const table = structuredClone(root);
+    table.name = name;
+    table.columns = [
+      column("id", "uuid", { immutable: true }),
+      column("tenant_id", "uuid", { tenant: true, immutable: true }),
+      column("name", "text"),
+      ...(foreignKey ? [column(foreignKey.column, "uuid", { immutable: true })] : []),
+    ];
+    table.primary_key = ["id"];
+    table.unique_constraints = [{ name: `${name}_pkey`, columns: ["id"] }];
+    table.foreign_keys = foreignKey ? [{
+      name: foreignKey.name,
+      columns: [foreignKey.column],
+      referenced_schema: "public",
+      referenced_table: foreignKey.target,
+      referenced_columns: ["id"],
+      delete_rule: "RESTRICT",
+    }] : [];
+    table.indexes = [{ name: `${name}_pkey`, columns: ["id"], unique: true }];
+    table.row_level_security_policies = [{
+      name: `${name}_tenant_read`,
+      command: "SELECT" as const,
+      permissive: true,
+      roles: ["app_reader"],
+      using_expression: "(tenant_id = current_setting('app.tenant_id')::uuid)",
+    }];
+    table.suggestions = {
+      tenant_columns: ["tenant_id"],
+      conflict_columns: [],
+      sensitive_columns: [],
+      default_visible_columns: [
+        "id",
+        "tenant_id",
+        "name",
+        ...(foreignKey ? [foreignKey.column] : []),
+      ],
+    };
+    return table;
+  };
+  inspection.tables.push(
+    relatedTable("products", {
+      name: "products_category_id_fkey",
+      column: "category_id",
+      target: "categories",
+    }),
+    relatedTable("categories", {
+      name: "categories_department_id_fkey",
+      column: "department_id",
+      target: "departments",
+    }),
+    relatedTable("departments"),
+  );
   return inspection;
 }
 

@@ -9,13 +9,16 @@ import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AUTO_BOUNDARY_OVERRIDES_VERSION,
+  SHARED_REFERENCE_ACKNOWLEDGEMENT,
   activateExplorationBoundary,
   buildAutoBoundary,
   explorationBoundaryCandidateDigest,
   writeAutoBoundaryArtifacts,
   type ActivatedExplorationBoundary,
+  type ReviewedMetadataDecision,
 } from "./auto-boundary.js";
 import {
+  assertPreparedExplorePlanAuthority,
   compileExplorePlan,
   createScopedExploreRuntime,
   loadProtectedPlan,
@@ -23,10 +26,11 @@ import {
   projectScopedExploreResultForModel,
   ScopedExploreError,
   validateExplorePlan,
+  validateExploreRequest,
   type CompiledExploreQuery,
   type ScopedExploreExecutor,
 } from "./scoped-explore.js";
-import { createScopedExploreMcpServer } from "./authoring-mcp.js";
+import { createScopedExploreMcpServer, projectDescribeDataForModel } from "./authoring-mcp.js";
 import { compileOperatorExploreEvidence } from "./explore-operator-evidence.js";
 
 const temporaryRoots: string[] = [];
@@ -36,6 +40,214 @@ afterEach(async () => {
 });
 
 describe("Scoped Explore", () => {
+  it("compiles exact reviewed database identifiers that require dialect quoting", async () => {
+    const fixture = await activatedFixture(undefined, quotedIdentifierInspection());
+    const rowPlan = validateExplorePlan({
+      kind: "rows",
+      resource: "public.select",
+      select: ["total amount", "caf\u00e9_count", "quote\"field", "back`tick"],
+      where: [{ field: "total amount", op: "gte", value: 100 }],
+      order_by: [{ field: "total amount", direction: "desc" }],
+      limit: 5,
+    }, fixture.boundary);
+    const aggregatePlan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.select",
+      measures: [{ function: "sum", field: "total amount" }],
+      dimensions: [{ field: "caf\u00e9_count" }],
+      top_n: 10,
+    }, fixture.boundary);
+
+    const [postgresRows] = compileExplorePlan(rowPlan, fixture.boundary, {
+      tenant: "tenant-acme",
+      principal: "pm-1",
+    }, "postgres");
+    const [mysqlRows] = compileExplorePlan(rowPlan, fixture.boundary, {
+      tenant: "tenant-acme",
+      principal: "pm-1",
+    }, "mysql");
+    const [postgresAggregate] = compileExplorePlan(aggregatePlan, fixture.boundary, {
+      tenant: "tenant-acme",
+      principal: "pm-1",
+    }, "postgres");
+    const [mysqlAggregate] = compileExplorePlan(aggregatePlan, fixture.boundary, {
+      tenant: "tenant-acme",
+      principal: "pm-1",
+    }, "mysql");
+
+    expect(postgresRows?.sql).toContain('FROM "public"."select" t0');
+    expect(postgresRows?.sql).toContain('t0."total amount" AS "total amount"');
+    expect(postgresRows?.sql).toContain('t0."caf\u00e9_count" AS "caf\u00e9_count"');
+    expect(postgresRows?.sql).toContain('t0."quote""field" AS "quote""field"');
+    expect(postgresRows?.sql).toContain('t0."back`tick" AS "back`tick"');
+    expect(mysqlRows?.sql).toContain("FROM `public`.`select` t0");
+    expect(mysqlRows?.sql).toContain("t0.`total amount` AS `total amount`");
+    expect(mysqlRows?.sql).toContain("t0.`caf\u00e9_count` AS `caf\u00e9_count`");
+    expect(mysqlRows?.sql).toContain('t0.`quote"field` AS `quote"field`');
+    expect(mysqlRows?.sql).toContain("t0.`back``tick` AS `back``tick`");
+    expect(postgresAggregate?.sql).toContain('SUM(t0."total amount")');
+    expect(postgresAggregate?.sql).toContain('t0."caf\u00e9_count" AS "dimension_0"');
+    expect(mysqlAggregate?.sql).toContain("SUM(t0.`total amount`)");
+    expect(mysqlAggregate?.sql).toContain("t0.`caf\u00e9_count` AS `dimension_0`");
+    const tampered = structuredClone(fixture.boundary);
+    tampered.pack.resources.find((resource) => resource.id === "public.select")!.schema = "public\nunsafe";
+    expect(() => compileExplorePlan(rowPlan, tampered, {
+      tenant: "tenant-acme",
+      principal: "pm-1",
+    }, "postgres")).toThrowError(expect.objectContaining({
+      code: "EXPLORE_PLAN_INVALID",
+      message: expect.stringMatching(/bounded printable name/i),
+    }));
+
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+      executor: fixedExecutor([{
+        "total amount": 125,
+        "caf\u00e9_count": "north",
+        'quote"field': "quoted",
+        "back`tick": "ticked",
+      }]),
+    });
+    try {
+      for (const mode of ["local_authoring", "production_http"] as const) {
+        const server = createScopedExploreMcpServer(runtime, { mode });
+        const client = new Client({ name: `quoted-identifier-${mode}`, version: "1.0.0" });
+        const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+        try {
+          await server.connect(serverTransport);
+          await client.connect(clientTransport);
+          const described = await client.callTool({
+            name: "app.describe_data",
+            arguments: { resource: "public.select" },
+          });
+          expect(described.isError).not.toBe(true);
+          expect(described.structuredContent).toMatchObject({
+            resources: [{
+              id: "public.select",
+              selectable_fields: expect.arrayContaining([
+                "total amount",
+                "caf\u00e9_count",
+                'quote"field',
+                "back`tick",
+              ]),
+            }],
+          });
+          const explored = await client.callTool({
+            name: "app.explore_data",
+            arguments: { plan: rowPlan },
+          });
+          expect(explored.isError).not.toBe(true);
+          expect(explored.structuredContent).toMatchObject({
+            ok: true,
+            data: [{
+              "total amount": 125,
+              "caf\u00e9_count": "north",
+              'quote"field': "quoted",
+              "back`tick": "ticked",
+            }],
+          });
+        } finally {
+          await client.close();
+          await server.close();
+        }
+      }
+    } finally {
+      await runtime.close();
+    }
+
+    expect(() => validateExplorePlan({
+      kind: "rows",
+      resource: "Sort preferences",
+      select: ["total amount"],
+      limit: 1,
+    }, fixture.boundary)).toThrowError(expect.objectContaining({
+      code: "EXPLORE_RESOURCE_FORBIDDEN",
+    }));
+    expect(() => validateExplorePlan({
+      kind: "rows",
+      resource: "public.select",
+      select: ["Total amount"],
+      limit: 1,
+    }, fixture.boundary)).toThrowError(expect.objectContaining({
+      code: "EXPLORE_FIELD_FORBIDDEN",
+    }));
+  });
+
+  it("uses boundary-bounded defaults when a model omits row and aggregate limits", async () => {
+    const fixture = await activatedFixture();
+    const rowPlan = validateExplorePlan({
+      kind: "rows",
+      resource: "public.subscriptions",
+      select: ["region"],
+    }, fixture.boundary);
+    const aggregatePlan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "region" }],
+    }, fixture.boundary);
+
+    expect(rowPlan).toMatchObject({ kind: "rows", limit: 50 });
+    expect(aggregatePlan).toMatchObject({ kind: "aggregate", top_n: 25 });
+  });
+
+  it("freshly inspects only generation-lock resource dependencies on startup and every query", async () => {
+    const fixture = await activatedFixture();
+    const inspectionCalls: Array<Record<string, unknown>> = [];
+    const inspectDatabaseFn = vi.fn(async (options) => {
+      inspectionCalls.push(options as unknown as Record<string, unknown>);
+      return fixture.inspection;
+    });
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn,
+      executor: fixedExecutor([{
+        dimension_0: "west",
+        measure_0: 10,
+        __cohort_size: 10,
+      }]),
+    });
+    try {
+      await runtime.explore(aggregatePlan("one"));
+      expect(inspectDatabaseFn).toHaveBeenCalledTimes(2);
+      const expectedResources = fixture.boundary.pack.resources
+        .map((resource) => {
+          const [schema = "", ...tableParts] = resource.id.split(".");
+          return { schema, table: tableParts.join(".") };
+        })
+        .sort((left, right) => left.schema.localeCompare(right.schema)
+          || left.table.localeCompare(right.table));
+      for (const options of inspectionCalls) {
+        expect(options.resources).toEqual(expectedResources);
+      }
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("includes every derived-scope proof resource in dependency-scoped inspection", async () => {
+    const fixture = await activatedDerivedScopeFixture();
+    let inspectionOptions: Record<string, unknown> | undefined;
+    await prepareScopedExplore({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async (options) => {
+        inspectionOptions = options as unknown as Record<string, unknown>;
+        return fixture.inspection;
+      },
+    });
+    expect(inspectionOptions?.resources).toEqual([
+      { schema: "public", table: "order_items" },
+      { schema: "public", table: "orders" },
+    ]);
+  });
+
   it("uses database-role tenant scope without a tenant environment value and rechecks it before execution", async () => {
     const fixture = await activatedFixture();
     const env = { ...fixture.env, SYNAPSOR_TENANT_ID: undefined };
@@ -209,6 +421,973 @@ describe("Scoped Explore", () => {
     }, "postgres");
     expect(compiled?.sql).toContain('SUM(t0."monthly_revenue_cents")');
     expect(compiled?.sql).toContain('AVG(t0."monthly_revenue_cents")');
+  });
+
+  it("compiles contributor-aware dispersion on PostgreSQL and MySQL", async () => {
+    const fixture = await activatedFixture();
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [
+        { function: "stddev_samp", field: "monthly_revenue_cents" },
+        { function: "var_pop", field: "monthly_revenue_cents" },
+      ],
+      top_n: 1,
+    }, fixture.boundary);
+
+    const [postgres] = compileExplorePlan(plan, fixture.boundary, {
+      tenant: "tenant-acme",
+      principal: "pm-1",
+    }, "postgres");
+    const [mysql] = compileExplorePlan(plan, fixture.boundary, {
+      tenant: "tenant-acme",
+      principal: "pm-1",
+    }, "mysql");
+
+    expect(postgres?.sql).toContain('STDDEV_SAMP(t0."monthly_revenue_cents")');
+    expect(postgres?.sql).toContain('VAR_POP(t0."monthly_revenue_cents")');
+    expect(postgres?.sql).toContain('COUNT(t0."monthly_revenue_cents") AS "__measure_cohort_0"');
+    expect(mysql?.sql).toContain("STDDEV_SAMP(t0.`monthly_revenue_cents`)");
+    expect(mysql?.sql).toContain("VAR_POP(t0.`monthly_revenue_cents`)");
+    expect(mysql?.sql).toContain("COUNT(t0.`monthly_revenue_cents`) AS `__measure_cohort_1`");
+  });
+
+  it("compiles reviewed missing-data measures without exposing source values", async () => {
+    const fixture = await activatedFixture();
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [
+        { function: "null_count", field: "monthly_revenue_cents" },
+        { function: "non_null_count", field: "monthly_revenue_cents" },
+        { function: "completion_rate", field: "monthly_revenue_cents" },
+      ],
+      top_n: 1,
+    }, fixture.boundary);
+
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [compiled] = compileExplorePlan(plan, fixture.boundary, {
+        tenant: "tenant-acme",
+        principal: "pm-1",
+      }, engine);
+      const field = engine === "postgres"
+        ? 't0."monthly_revenue_cents"'
+        : "t0.`monthly_revenue_cents`";
+      expect(compiled?.sql).toContain(`COUNT(*) - COUNT(${field})`);
+      expect(compiled?.sql).toContain(`COUNT(${field})`);
+      expect(compiled?.sql).toContain(`100.0 * COUNT(${field}) / NULLIF(COUNT(*), 0)`);
+      expect(compiled?.params).toEqual(["tenant-acme", 51]);
+    }
+  });
+
+  it("selects a digest-bound derived measure by name and never accepts a model formula", async () => {
+    const fixture = await activatedFixture((candidate) => {
+      candidate.pack.resources[0]!.derived_measures = [{
+        name: "average_revenue_per_subscription",
+        label: "Average revenue per subscription",
+        shape: "per_unit_average",
+        numerator: { function: "sum", field: "monthly_revenue_cents" },
+        denominator: { function: "count" },
+        null_policy: "null_on_zero_or_null_denominator",
+      }];
+    });
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ derived_measure: "average_revenue_per_subscription" }],
+      top_n: 1,
+    }, fixture.boundary);
+
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [compiled] = compileExplorePlan(plan, fixture.boundary, {
+        tenant: "tenant-acme",
+        principal: "pm-1",
+      }, engine);
+      const field = engine === "postgres"
+        ? 't0."monthly_revenue_cents"'
+        : "t0.`monthly_revenue_cents`";
+      expect(compiled?.sql).toContain(`SUM(${field}) / COUNT(*)`);
+      expect(compiled?.sql).toContain(`LEAST(COUNT(*), COUNT(${field}), COUNT(*))`);
+    }
+
+    expect(() => validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{
+        derived_measure: "average_revenue_per_subscription",
+        formula: "SUM(monthly_revenue_cents) / COUNT(*)",
+      }],
+      top_n: 1,
+    }, fixture.boundary)).toThrow(/unsupported fields: formula/i);
+
+    const description = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([]),
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    try {
+      await expect(description.describe({ resource: "public.subscriptions" })).resolves.toMatchObject({
+        resources: [{
+          derived_measures: [{
+            name: "average_revenue_per_subscription",
+            shape: "per_unit_average",
+            effective_minimum_cohort_size: 5,
+          }],
+        }],
+      });
+    } finally {
+      await description.close();
+    }
+  });
+
+  it("runs reviewed running totals only over groups released after suppression", async () => {
+    const fixture = await activatedFixture((candidate) => {
+      candidate.pack.resources[0]!.derived_measures = [{
+        name: "revenue_running_total",
+        label: "Revenue running total",
+        shape: "running_total",
+        base_measure: { function: "sum", field: "monthly_revenue_cents" },
+      }];
+    });
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ derived_measure: "revenue_running_total" }],
+      dimensions: [{ field: "region" }],
+      time_bucket: { field: "churned_at", bucket: "week" },
+      order_by: { kind: "time_bucket", direction: "asc" },
+      top_n: 10,
+    }, fixture.boundary);
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [compiled] = compileExplorePlan(plan, fixture.boundary, {
+        tenant: "tenant-acme",
+        principal: "pm-1",
+      }, engine);
+      expect(compiled?.sql).toContain(engine === "postgres"
+        ? 'SUM(t0."monthly_revenue_cents") AS "measure_0"'
+        : "SUM(t0.`monthly_revenue_cents`) AS `measure_0`");
+      expect(compiled?.sql).toContain(engine === "postgres"
+        ? 't0."churned_at" IS NOT NULL'
+        : "t0.`churned_at` IS NOT NULL");
+      expect(compiled?.sql).not.toMatch(/\bOVER\s*\(|RUNNING_TOTAL/i);
+    }
+    expect(() => validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ derived_measure: "revenue_running_total" }],
+      dimensions: [{ field: "region" }],
+      top_n: 10,
+    }, fixture.boundary)).toThrow(/requires one reviewed time_bucket/i);
+
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([
+        { dimension_0: "north", time_bucket: "2026-07-06", measure_0: 10, __measure_cohort_0: 10, __cohort_size: 10 },
+        { dimension_0: "north", time_bucket: "2026-07-13", measure_0: 100, __measure_cohort_0: 2, __cohort_size: 2 },
+        { dimension_0: "north", time_bucket: "2026-07-20", measure_0: 20, __measure_cohort_0: 20, __cohort_size: 20 },
+        { dimension_0: "south", time_bucket: "2026-07-06", measure_0: 5, __measure_cohort_0: 5, __cohort_size: 5 },
+      ]),
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    try {
+      await expect(runtime.describe({ resource: "public.subscriptions" })).resolves.toMatchObject({
+        resources: [{
+          derived_measures: [{
+            name: "revenue_running_total",
+            records_without_reviewed_time: "omitted",
+          }],
+        }],
+      });
+      const result = await runtime.explore(plan);
+      expect(result.data).toEqual([
+        { region: "north", time_bucket: "2026-07-06", revenue_running_total: 10 },
+        { region: "south", time_bucket: "2026-07-06", revenue_running_total: 5 },
+        { region: "north", time_bucket: "2026-07-20", revenue_running_total: 30 },
+      ]);
+      expect(result.privacy).toMatchObject({ suppressed_groups: 1 });
+      expect(JSON.stringify(result)).not.toContain("2026-07-13");
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("counts scoped child rows through a reviewed inverse relationship without a fan-out join", async () => {
+    const fixture = await activatedDerivedScopeFixture((candidate) => {
+      const orders = candidate.pack.resources.find((resource) => resource.id === "public.orders")!;
+      orders.derived_measures = [{
+        name: "order_item_count",
+        label: "Order item count",
+        shape: "child_count_total",
+        child_resource: "public.order_items",
+        relationship: "order_items_order_id_fkey",
+      }, {
+        name: "average_items_per_order",
+        label: "Average items per order",
+        shape: "child_count_average",
+        child_resource: "public.order_items",
+        relationship: "order_items_order_id_fkey",
+      }];
+    });
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.orders",
+      measures: [
+        { derived_measure: "order_item_count" },
+        { derived_measure: "average_items_per_order" },
+      ],
+      dimensions: [{ field: "region" }],
+      top_n: 10,
+    }, fixture.boundary);
+
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [compiled] = compileExplorePlan(plan, fixture.boundary, {
+        tenant: "tenant-acme",
+        principal: "pm-1",
+      }, engine);
+      const sql = compiled!.sql;
+      expect(sql).toContain(engine === "postgres"
+        ? 'SUM((SELECT COUNT(*) FROM "public"."order_items" fc0 WHERE fc0."order_id" = t0."id"'
+        : "SUM((SELECT COUNT(*) FROM `public`.`order_items` fc0 WHERE fc0.`order_id` = t0.`id`");
+      expect(sql).toContain(engine === "postgres"
+        ? 'AVG(1.0 * (SELECT COUNT(*) FROM "public"."order_items" fc1 WHERE fc1."order_id" = t0."id"'
+        : "AVG(1.0 * (SELECT COUNT(*) FROM `public`.`order_items` fc1 WHERE fc1.`order_id` = t0.`id`");
+      expect(sql).toContain("EXISTS (SELECT 1 FROM");
+      expect(sql).not.toMatch(/JOIN\s+["`]public["`]\.["`]order_items["`]/i);
+      expect(compiled!.resources.map((resource) => resource.id).sort()).toEqual([
+        "public.order_items",
+        "public.orders",
+      ]);
+      expect(compiled!.params).toEqual([
+        "tenant-acme",
+        "tenant-acme",
+        "tenant-acme",
+        fixture.boundary.budgets.max_groups + 1,
+      ]);
+      if (engine === "mysql") {
+        expect((sql.match(/\?/g) ?? [])).toHaveLength(compiled!.params.length);
+      }
+    }
+
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([
+        { dimension_0: "north", measure_0: 18, __measure_cohort_0: 8, measure_1: 2.25, __measure_cohort_1: 8, __cohort_size: 8 },
+        { dimension_0: "private", measure_0: 3, __measure_cohort_0: 2, measure_1: 1.5, __measure_cohort_1: 2, __cohort_size: 2 },
+      ]),
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    try {
+      await expect(runtime.describe({ resource: "public.orders" })).resolves.toMatchObject({
+        resources: [{
+          derived_measures: [
+            expect.objectContaining({
+              name: "order_item_count",
+              shape: "child_count_total",
+              child_resource: "public.order_items",
+              raw_child_rows_returned: false,
+            }),
+            expect.objectContaining({
+              name: "average_items_per_order",
+              shape: "child_count_average",
+            }),
+          ],
+        }],
+      });
+      await expect(runtime.explore(plan)).resolves.toMatchObject({
+        data: [{ region: "north", order_item_count: 18, average_items_per_order: 2.25 }],
+        privacy: { suppressed_groups: 1, minimum_cohort_size: 5 },
+      });
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("counts child rows without fake tenant predicates in an explicit single-organization boundary", async () => {
+    const fixture = await activatedDerivedScopeFixture();
+    const boundary = structuredClone(fixture.boundary);
+    boundary.organization_scope = {
+      mode: "single_organization",
+      organization_id: "internal-finance",
+      acknowledgement: "all_rows_belong_to_one_organization",
+    };
+    for (const resource of boundary.pack.resources) {
+      delete resource.tenant_key;
+      delete resource.tenant_scope;
+    }
+    const orders = boundary.pack.resources.find((resource) => resource.id === "public.orders")!;
+    orders.derived_measures = [{
+      name: "order_item_count",
+      label: "Order item count",
+      shape: "child_count_total",
+      child_resource: "public.order_items",
+      relationship: "order_items_order_id_fkey",
+    }];
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: orders.id,
+      measures: [{ derived_measure: "order_item_count" }],
+      dimensions: [{ field: "region" }],
+      top_n: 10,
+    }, boundary);
+
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [compiled] = compileExplorePlan(plan, boundary, {
+        tenant: "internal-finance",
+        principal: "",
+      }, engine);
+      expect(compiled?.sql).toContain(engine === "postgres"
+        ? 'FROM "public"."order_items" fc0'
+        : "FROM `public`.`order_items` fc0");
+      expect(compiled?.sql).not.toContain("tenant_id");
+      expect(compiled?.params).not.toContain("internal-finance");
+      expect(compiled?.resources.map((resource) => resource.id).sort()).toEqual([
+        "public.order_items",
+        "public.orders",
+      ]);
+    }
+  });
+
+  it("refuses malformed, nullable, and tenant-neutral child-count authority", async () => {
+    const fixture = await activatedDerivedScopeFixture();
+    const boundary = structuredClone(fixture.boundary);
+    const orders = boundary.pack.resources.find((resource) => resource.id === "public.orders")!;
+    const child = boundary.pack.resources.find((resource) => resource.id === "public.order_items")!;
+    orders.derived_measures = [{
+      name: "order_item_count",
+      label: "Order item count",
+      shape: "child_count_total",
+      child_resource: child.id,
+      relationship: "order_items_order_id_fkey",
+    }];
+    child.tenant_scope!.proof.links[0]!.nullable = true;
+    child.tenant_scope!.proof.digest = canonicalJsonDigest(child.tenant_scope!.proof.links);
+    expect(() => validateExplorePlan({
+      kind: "aggregate",
+      resource: orders.id,
+      measures: [{ derived_measure: "order_item_count" }],
+      top_n: 1,
+    }, boundary)).toThrow(/catalog-proven child relationship|non-null child-to-parent relationship/i);
+
+    const tenantNeutral = structuredClone(fixture.boundary);
+    const neutralOrders = tenantNeutral.pack.resources.find((resource) => resource.id === "public.orders")!;
+    const neutralChild = tenantNeutral.pack.resources.find((resource) => resource.id === "public.order_items")!;
+    neutralOrders.derived_measures = [{
+      name: "order_item_count",
+      label: "Order item count",
+      shape: "child_count_total",
+      child_resource: neutralChild.id,
+      relationship: "order_items_order_id_fkey",
+    }];
+    delete neutralChild.tenant_scope;
+    neutralChild.shared_reference_scope = {
+      mode: "shared_reference",
+      acknowledgement: SHARED_REFERENCE_ACKNOWLEDGEMENT,
+    };
+    expect(() => validateExplorePlan({
+      kind: "aggregate",
+      resource: neutralOrders.id,
+      measures: [{ derived_measure: "order_item_count" }],
+      top_n: 1,
+    }, tenantNeutral)).toThrow(/independently reviewed tenant scope/i);
+  });
+
+  it("selects a reviewed numeric band by name and parameterizes its fixed definition on both engines", async () => {
+    const fixture = await activatedFixture((candidate) => {
+      candidate.pack.resources[0]!.numeric_bands = [{
+        name: "monthly_revenue_band",
+        label: "Monthly revenue band",
+        field: "monthly_revenue_cents",
+        edges: [1_000, 5_000],
+        bucket_labels: ["under 10", "10 to 49", "50 or more"],
+      }];
+    });
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ numeric_band: "monthly_revenue_band" }],
+      top_n: 10,
+    }, fixture.boundary);
+
+    const [postgres] = compileExplorePlan(plan, fixture.boundary, {
+      tenant: "tenant-acme",
+      principal: "pm-1",
+    }, "postgres");
+    expect(postgres?.sql).toContain('CASE WHEN t0."monthly_revenue_cents" IS NULL THEN NULL');
+    expect(postgres?.sql).toContain('WHEN t0."monthly_revenue_cents" < $2 THEN $3');
+    expect(postgres?.sql).toContain('WHEN t0."monthly_revenue_cents" < $4 THEN $5 ELSE $6 END AS "dimension_0"');
+    expect(postgres?.sql).toContain("GROUP BY 1");
+    expect(postgres?.params).toEqual([
+      "tenant-acme",
+      1_000,
+      "under 10",
+      5_000,
+      "10 to 49",
+      "50 or more",
+      51,
+    ]);
+
+    const [mysql] = compileExplorePlan(plan, fixture.boundary, {
+      tenant: "tenant-acme",
+      principal: "pm-1",
+    }, "mysql");
+    expect(mysql?.sql).toContain("CASE WHEN t0.`monthly_revenue_cents` IS NULL THEN NULL");
+    expect(mysql?.sql).toContain("WHEN t0.`monthly_revenue_cents` < ? THEN ?");
+    expect(mysql?.sql).toContain("GROUP BY 1");
+    expect(mysql?.params).toEqual([
+      1_000,
+      "under 10",
+      5_000,
+      "10 to 49",
+      "50 or more",
+      "tenant-acme",
+      51,
+    ]);
+
+    expect(() => validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{
+        numeric_band: "monthly_revenue_band",
+        edges: [0],
+      }],
+      top_n: 10,
+    }, fixture.boundary)).toThrow(/unsupported fields: edges/i);
+    expect(() => validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ numeric_band: "invented_band" }],
+      top_n: 10,
+    }, fixture.boundary)).toThrow(/reviewed numeric bands: monthly_revenue_band/i);
+
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([]),
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    try {
+      await expect(runtime.describe({ resource: "public.subscriptions" })).resolves.toMatchObject({
+        resources: [{
+          numeric_bands: [{
+            name: "monthly_revenue_band",
+            field: "monthly_revenue_cents",
+            relationship: null,
+            edges: [1_000, 5_000],
+            bucket_labels: ["under 10", "10 to 49", "50 or more"],
+          }],
+        }],
+      });
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("compiles one reviewed quantile auto band over scoped rows on both engines", async () => {
+    const fixture = await activatedFixture((candidate) => {
+      candidate.pack.resources[0]!.auto_bands = [{
+        field: "monthly_revenue_cents",
+        methods: ["quantile"],
+        min_buckets: 3,
+        max_buckets: 8,
+        label_style: "ordinal",
+      }];
+    });
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "avg", field: "monthly_revenue_cents" }],
+      dimensions: [{ numeric_band: {
+        field: "monthly_revenue_cents",
+        method: "quantile",
+        buckets: 5,
+      } }],
+      top_n: 10,
+    }, fixture.boundary);
+
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [compiled] = compileExplorePlan(plan, fixture.boundary, {
+        tenant: "tenant-acme",
+        principal: "pm-1",
+      }, engine);
+      expect(compiled?.sql).toContain("CUME_DIST() OVER");
+      expect(compiled?.sql).toContain("PARTITION BY CASE WHEN");
+      expect(compiled?.sql).toContain("__synapsor_auto_scope");
+      expect(compiled?.sql).toContain("__synapsor_auto_banded");
+      expect(compiled?.sql).toContain("__auto_bucket");
+      expect(compiled?.sql).toContain("COUNT(ab.");
+      expect(compiled?.sql).not.toMatch(/NTILE|PERCENTILE/i);
+      expect(compiled?.params).toContain("tenant-acme");
+    }
+  });
+
+  it("labels auto bands without releasing raw edges and enforces a cohort floor of five", async () => {
+    const fixture = await activatedFixture((candidate) => {
+      candidate.pack.resources[0]!.auto_bands = [{
+        field: "monthly_revenue_cents",
+        methods: ["quantile"],
+        min_buckets: 3,
+        max_buckets: 8,
+        label_style: "ordinal",
+      }];
+    }, churnInspection(), 1);
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+      executor: fixedExecutor([
+        { dimension_0: 1, measure_0: 100, __cohort_size: 4, __auto_effective_buckets: 5 },
+        { dimension_0: 2, measure_0: 250, __cohort_size: 5, __auto_effective_buckets: 5 },
+        { dimension_0: 5, measure_0: 900, __cohort_size: 8, __auto_effective_buckets: 5 },
+      ]),
+    });
+    try {
+      const result = await runtime.explore({
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ function: "count" }],
+        dimensions: [{ numeric_band: {
+          field: "monthly_revenue_cents",
+          method: "quantile",
+          buckets: 5,
+        } }],
+        top_n: 10,
+      }) as any;
+      expect(result.data).toEqual([
+        { monthly_revenue_cents_quantile_band: "Q2 of 5", count: 250 },
+        { monthly_revenue_cents_quantile_band: "Q5 of 5", count: 900 },
+      ]);
+      expect(result.privacy).toMatchObject({
+        effective_minimum_cohort_size: 5,
+        suppressed_groups: 1,
+        auto_bands: [{
+          field: "monthly_revenue_cents",
+          method: "quantile",
+          requested_buckets: 5,
+          effective_buckets: 3,
+          reduced: true,
+          raw_edges_returned: false,
+        }],
+      });
+      expect(JSON.stringify(result)).not.toContain("__auto_");
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("uses reviewed outward rounding for auto-band labels and reduces unsafe equal widths", async () => {
+    const fixture = await activatedFixture((candidate) => {
+      candidate.pack.resources[0]!.auto_bands = [{
+        field: "monthly_revenue_cents",
+        methods: ["equal_width"],
+        min_buckets: 2,
+        max_buckets: 10,
+        min_bucket_width: 1_000,
+        label_style: "rounded",
+        label_round_to: 1_000,
+      }];
+    });
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ numeric_band: {
+        field: "monthly_revenue_cents",
+        method: "equal_width",
+        buckets: 8,
+      } }],
+      top_n: 10,
+    }, fixture.boundary);
+    const [compiled] = compileExplorePlan(plan, fixture.boundary, {
+      tenant: "tenant-acme",
+      principal: "pm-1",
+    }, "mysql");
+    expect(compiled?.sql).toContain("GREATEST(1, FLOOR");
+    expect(compiled?.sql).toContain("__synapsor_auto_labeled");
+    expect(compiled?.sql).toContain("MIN(b.`__auto_value`) OVER");
+    expect(compiled?.params).not.toContain(1_000);
+
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+      executor: fixedExecutor([{
+        dimension_0: 1,
+        measure_0: 12,
+        __cohort_size: 12,
+        __auto_effective_buckets: 3,
+        __auto_bucket_min: 2_000,
+        __auto_bucket_max: 2_900,
+      }]),
+    });
+    try {
+      const result = await runtime.explore(plan) as any;
+      expect(result.data).toEqual([{
+        monthly_revenue_cents_equal_width_band: "1000 to 3000",
+        count: 12,
+      }]);
+      expect(result.privacy.auto_bands).toEqual([expect.objectContaining({
+        requested_buckets: 8,
+        effective_buckets: 3,
+        reduced: true,
+        label_style: "rounded",
+      })]);
+      expect(JSON.stringify(result)).not.toContain("2000");
+      expect(JSON.stringify(result)).not.toContain("2900");
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("refuses unreviewed or malformed adaptive numeric grouping before execution", async () => {
+    const fixture = await activatedFixture((candidate) => {
+      candidate.pack.resources[0]!.auto_bands = [{
+        field: "monthly_revenue_cents",
+        methods: ["quantile"],
+        min_buckets: 3,
+        max_buckets: 6,
+        label_style: "ordinal",
+      }];
+    });
+    const base = {
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      top_n: 10,
+    };
+    expect(() => validateExplorePlan({
+      ...base,
+      dimensions: [{ numeric_band: { field: "monthly_revenue_cents", method: "equal_width", buckets: 4 } }],
+    }, fixture.boundary)).toThrow(/not a reviewed auto-band method/i);
+    expect(() => validateExplorePlan({
+      ...base,
+      dimensions: [{ numeric_band: { field: "monthly_revenue_cents", method: "quantile", buckets: 7 } }],
+    }, fixture.boundary)).toThrow(/from 3 through 6/i);
+    expect(() => validateExplorePlan({
+      ...base,
+      dimensions: [{ numeric_band: {
+        field: "monthly_revenue_cents",
+        method: "quantile",
+        buckets: 4,
+        edges: [1, 2],
+      } }],
+    }, fixture.boundary)).toThrow(/unsupported fields: edges/i);
+    expect(() => validateExplorePlan({
+      ...base,
+      dimensions: [
+        { numeric_band: { field: "monthly_revenue_cents", method: "quantile", buckets: 4 } },
+        { numeric_band: { field: "monthly_revenue_cents", method: "quantile", buckets: 5 } },
+      ],
+    }, fixture.boundary)).toThrow(/at most one reviewed auto-band/i);
+    expect(() => validateExplorePlan({
+      ...base,
+      dimensions: [{ numeric_band: { field: "monthly_revenue_cents", method: "quantile", buckets: 4 } }],
+      time_bucket: { field: "churned_at", bucket: "month" },
+      comparison: {
+        field: "churned_at",
+        ranges: [
+          { start: "2026-01-01T00:00:00.000Z", end: "2026-02-01T00:00:00.000Z" },
+          { start: "2026-02-01T00:00:00.000Z", end: "2026-03-01T00:00:00.000Z" },
+        ],
+      },
+    }, fixture.boundary)).toThrow(/cannot be combined with a two-period comparison/i);
+  });
+
+  it("suppresses field aggregates by non-null contributors and keeps a fixed dispersion floor of five", async () => {
+    const fixture = await activatedFixture(undefined, churnInspection(), 4);
+    const responses = [
+      [{ measure_0: 0, __measure_cohort_0: 4, __cohort_size: 12 }],
+      [{ measure_0: 11.5, __measure_cohort_0: 1, __cohort_size: 12 }],
+      [{ measure_0: 3.25, __measure_cohort_0: 5, __cohort_size: 12 }],
+    ];
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+      executor: {
+        execute: async () => [],
+        executeBatch: async () => [responses.shift()!],
+        close: async () => undefined,
+      },
+    });
+    try {
+      const dispersionPlan = {
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ function: "stddev_pop", field: "monthly_revenue_cents" }],
+        top_n: 1,
+      };
+      const belowDispersionFloor = await runtime.explore(dispersionPlan) as any;
+      expect(belowDispersionFloor.data).toEqual([]);
+      expect(belowDispersionFloor.privacy).toMatchObject({
+        minimum_cohort_size: 4,
+        effective_minimum_cohort_size: 5,
+        suppressed_groups: 1,
+      });
+
+      const sparseAverage = await runtime.explore({
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ function: "avg", field: "monthly_revenue_cents" }],
+        top_n: 1,
+      }) as any;
+      expect(sparseAverage.data).toEqual([]);
+      expect(sparseAverage.privacy.suppressed_groups).toBe(1);
+
+      const released = await runtime.explore(dispersionPlan) as any;
+      expect(released.data).toEqual([{ stddev_pop_monthly_revenue_cents: 3.25 }]);
+      expect(released.privacy.effective_minimum_cohort_size).toBe(5);
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("compiles all reviewed calendar grains portably", async () => {
+    const fixture = await activatedFixture((candidate) => {
+      candidate.pack.resources[0]!.time_bucket_fields.churned_at = [
+        "hour", "day", "week", "month", "quarter", "year", "day_of_week",
+      ];
+    });
+    const expected = {
+      postgres: {
+        hour: "date_trunc('hour'",
+        quarter: "date_trunc('quarter'",
+        day_of_week: "EXTRACT(ISODOW FROM",
+      },
+      mysql: {
+        hour: "DATE_FORMAT(",
+        quarter: "CONCAT(YEAR(",
+        day_of_week: "WEEKDAY(",
+      },
+    } as const;
+    for (const engine of ["postgres", "mysql"] as const) {
+      for (const bucket of ["hour", "quarter", "day_of_week"] as const) {
+        const plan = validateExplorePlan({
+          kind: "aggregate",
+          resource: "public.subscriptions",
+          measures: [{ function: "count" }],
+          time_bucket: { field: "churned_at", bucket },
+          top_n: 10,
+        }, fixture.boundary);
+        const [compiled] = compileExplorePlan(plan, fixture.boundary, {
+          tenant: "tenant-acme",
+          principal: "pm-1",
+        }, engine);
+        expect(compiled?.sql).toContain(expected[engine][bucket]);
+      }
+    }
+  });
+
+  it("returns the same canonical calendar bucket labels for PostgreSQL and MySQL driver values", async () => {
+    const fixture = await activatedFixture((candidate) => {
+      candidate.pack.resources[0]!.time_bucket_fields.churned_at = [
+        "hour", "day", "week", "month", "quarter", "year", "day_of_week",
+      ];
+    });
+    const responses: Array<Record<string, unknown>> = [
+      { time_bucket: new Date("2026-07-14T09:00:00.000Z"), measure_0: 6, __cohort_size: 6 },
+      { time_bucket: "2026-07-14", measure_0: 6, __cohort_size: 6 },
+      { time_bucket: new Date("2026-07-13T00:00:00.000Z"), measure_0: 6, __cohort_size: 6 },
+      { time_bucket: "2026-07-01", measure_0: 6, __cohort_size: 6 },
+      { time_bucket: new Date("2026-07-01T00:00:00.000Z"), measure_0: 6, __cohort_size: 6 },
+      { time_bucket: "2026-Q3", measure_0: 6, __cohort_size: 6 },
+      { time_bucket: 2026, measure_0: 6, __cohort_size: 6 },
+      { time_bucket: "2", measure_0: 6, __cohort_size: 6 },
+    ];
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: {
+        execute: async () => [],
+        executeBatch: async () => [[structuredClone(responses.shift()!)]],
+        close: async () => undefined,
+      },
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    const expected = [
+      ["hour", "2026-07-14T09:00:00Z"],
+      ["day", "2026-07-14"],
+      ["week", "2026-07-13"],
+      ["month", "2026-07-01"],
+      ["quarter", "2026-Q3"],
+      ["quarter", "2026-Q3"],
+      ["year", "2026"],
+      ["day_of_week", 2],
+    ] as const;
+    try {
+      for (const [bucket, label] of expected) {
+        const result = await runtime.explore({
+          kind: "aggregate",
+          resource: "public.subscriptions",
+          measures: [{ function: "count" }],
+          time_bucket: { field: "churned_at", bucket },
+          top_n: 10,
+        });
+        expect(result.data).toEqual([{ time_bucket: label, count: 6 }]);
+      }
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("emits no tenant predicate only for an explicit single-organization boundary", async () => {
+    const fixture = await activatedFixture();
+    const boundary = structuredClone(fixture.boundary);
+    boundary.organization_scope = {
+      mode: "single_organization",
+      organization_id: "internal-finance",
+      acknowledgement: "all_rows_belong_to_one_organization",
+    };
+    for (const resource of boundary.pack.resources) {
+      delete resource.tenant_key;
+      delete resource.tenant_scope;
+    }
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      top_n: 1,
+    }, boundary);
+    const [compiled] = compileExplorePlan(plan, boundary, {
+      tenant: "internal-finance",
+      principal: "",
+    }, "postgres");
+    expect(compiled?.params).not.toContain("internal-finance");
+    expect(compiled?.sql).not.toContain('"tenant_id" =');
+    expect(compiled?.sql).not.toContain(" WHERE ");
+    expect(compiled?.sql).toMatch(/FROM "public"\."subscriptions" t0 LIMIT \$1$/);
+
+    const rowPlan = validateExplorePlan({
+      kind: "rows",
+      resource: "public.subscriptions",
+      select: ["id"],
+      limit: 1,
+    }, boundary);
+    const [compiledRows] = compileExplorePlan(rowPlan, boundary, {
+      tenant: "internal-finance",
+      principal: "",
+    }, "postgres");
+    expect(compiledRows?.sql).not.toContain(" WHERE ");
+    expect(compiledRows?.sql).toMatch(/ORDER BY t0\."id" ASC LIMIT \$1$/);
+
+    boundary.pack.resources[0]!.principal_key = "id";
+    const [principalScoped] = compileExplorePlan(plan, boundary, {
+      tenant: "internal-finance",
+      principal: "user-7",
+    }, "postgres");
+    expect(principalScoped?.sql).toContain('t0."id" = $1');
+    expect(principalScoped?.params[0]).toBe("user-7");
+
+    delete boundary.organization_scope;
+    expect(() => compileExplorePlan(plan, boundary, {
+      tenant: "internal-finance",
+      principal: "",
+    }, "postgres")).toThrow(/has no direct or derived tenant scope/i);
+  });
+
+  it("emits no tenant predicate for an exact reviewed shared-reference resource", async () => {
+    const fixture = await activatedFixture();
+    const boundary = structuredClone(fixture.boundary);
+    const resource = boundary.pack.resources[0]!;
+    delete resource.tenant_key;
+    delete resource.tenant_scope;
+    resource.shared_reference_scope = {
+      mode: "shared_reference",
+      acknowledgement: SHARED_REFERENCE_ACKNOWLEDGEMENT,
+    };
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: resource.id,
+      measures: [{ function: "count" }],
+      top_n: 1,
+    }, boundary);
+
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [compiled] = compileExplorePlan(plan, boundary, {
+        tenant: "tenant-acme",
+        principal: "",
+      }, engine);
+      expect(compiled?.params).not.toContain("tenant-acme");
+      expect(compiled?.sql).not.toContain("tenant_id");
+      expect(compiled?.sql).not.toContain(" WHERE ");
+    }
+
+    delete resource.shared_reference_scope;
+    expect(() => compileExplorePlan(plan, boundary, {
+      tenant: "tenant-acme",
+      principal: "",
+    }, "postgres")).toThrow(/no direct or derived tenant scope.*not reviewed as a shared reference/i);
+  });
+
+  it("keeps a mandatory derived principal predicate in a single-organization boundary", async () => {
+    const fixture = await activatedFixture();
+    const boundary = derivedScopeBoundary(fixture.boundary);
+    boundary.organization_scope = {
+      mode: "single_organization",
+      organization_id: "internal-finance",
+      acknowledgement: "all_rows_belong_to_one_organization",
+    };
+    const orders = boundary.pack.resources.find((resource) => resource.id === "public.orders")!;
+    const orderItems = boundary.pack.resources.find((resource) => resource.id === "public.order_items")!;
+    for (const resource of boundary.pack.resources) {
+      delete resource.tenant_key;
+      delete resource.tenant_scope;
+    }
+    orders.principal_key = "id";
+    const scopeLink = {
+      constraint_name: "order_items_order_id_fkey",
+      source_resource: "public.order_items",
+      target_resource: "public.orders",
+      source_columns: ["order_id"],
+      target_columns: ["id"],
+      target_uniqueness: {
+        kind: "primary_key" as const,
+        name: "orders_pkey",
+        columns: ["id"],
+      },
+      nullable: false,
+      cardinality: "many_to_one" as const,
+      max_fan_out: 1 as const,
+    };
+    orderItems.principal_scope = {
+      mode: "derived",
+      path_id: "order_items_order_id_fkey",
+      ancestor_resource: "public.orders",
+      ancestor_column: "id",
+      proof: {
+        source: "database_catalog",
+        links: [scopeLink],
+        digest: canonicalJsonDigest([scopeLink]),
+      },
+    };
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.order_items",
+      measures: [{ function: "count" }],
+      top_n: 1,
+    }, boundary);
+    const [compiled] = compileExplorePlan(plan, boundary, {
+      tenant: "internal-finance",
+      principal: "order-owner-7",
+    }, "postgres");
+    expect(compiled?.sql).toContain(
+      'EXISTS (SELECT 1 FROM "public"."orders" st0_principal_0 WHERE t0."order_id" = st0_principal_0."id" AND st0_principal_0."id" = $1)',
+    );
+    expect(compiled?.params).toContain("order-owner-7");
+    expect(compiled?.params).not.toContain("internal-finance");
   });
 
   it("keeps a reviewed Runner-only trusted scope value out of model egress and durable evidence", async () => {
@@ -387,6 +1566,12 @@ describe("Scoped Explore", () => {
           id: "public.subscriptions",
           kept_out_field_count: expect.any(Number),
           minimum_cohort_size: expect.any(Number),
+          valid_plan_example: {
+            kind: "aggregate",
+            resource: "public.subscriptions",
+            measures: [{ function: "count" }],
+            dimensions: [{ field: "region" }],
+          },
         }],
         raw_sql_available: false,
       });
@@ -399,13 +1584,34 @@ describe("Scoped Explore", () => {
         ok: true,
         resources: [{ id: "public.subscriptions" }],
       });
+      const describedWithNullOptionalSelectors = await client.callTool({
+        name: "app.describe_data",
+        arguments: { boundary: null, resource: null, cursor: null, limit: null },
+      });
+      expect(describedWithNullOptionalSelectors.isError).not.toBe(true);
+      expect(describedWithNullOptionalSelectors.structuredContent).toMatchObject({
+        ok: true,
+        resources: [{ id: "public.subscriptions" }],
+      });
+      const describedWithZeroDefaultLimit = await client.callTool({
+        name: "app.describe_data",
+        arguments: { limit: 0 },
+      });
+      expect(describedWithZeroDefaultLimit.isError).not.toBe(true);
+      expect(describedWithZeroDefaultLimit.structuredContent).toMatchObject({
+        ok: true,
+        resources: [{ id: "public.subscriptions" }],
+      });
       const called = await client.callTool({
         name: "app.explore_data",
         arguments: {
+          boundary: null,
           plan: {
             kind: "rows",
             resource: "public.subscriptions",
             select: ["region"],
+            where: null,
+            order_by: null,
             limit: 1,
           },
         },
@@ -430,6 +1636,7 @@ describe("Scoped Explore", () => {
       );
       resource.selectable_fields.push("billing_token");
       resource.count_distinct_fields.push("billing_token");
+      resource.filterable_fields.billing_token = ["eq"];
       resource.model_withheld_fields = ["billing_token"];
       resource.field_enums.billing_token = ["billing-token-secret", "billing-token-other"];
     });
@@ -453,12 +1660,7 @@ describe("Scoped Explore", () => {
       expect(described.structuredContent).toMatchObject({
         resources: [{
           count_distinct_fields: expect.arrayContaining(["billing_token"]),
-          field_egress: {
-            billing_token: { model_egress: "withheld" },
-          },
-          field_types: {
-            billing_token: expect.any(String),
-          },
+          model_withheld_fields: expect.arrayContaining(["billing_token"]),
         }],
       });
       expect((described.structuredContent as any).resources[0].field_enums)
@@ -481,11 +1683,195 @@ describe("Scoped Explore", () => {
         data: [{ count_distinct_billing_token: 30 }],
         source_database_changed: false,
       });
+      expect(result.structuredContent).not.toHaveProperty("operator_budget");
       expect(JSON.stringify(result)).not.toContain("billing-token-secret");
-      expect(result._meta).toBeUndefined();
+      expect(result._meta).toMatchObject({
+        "synapsor.operator_metadata_withheld": true,
+        "synapsor.local_full_result": {
+          operator_budget: {
+            operator_only: true,
+            trusted_scope: {
+              volume: {
+                queries_rolling_24_hours: { used: 1, limit: 1000, remaining: 999 },
+              },
+            },
+          },
+        },
+      });
+      expect(result._meta).not.toHaveProperty("synapsor.model_withheld_values");
+
+      const refused = await client.callTool({
+        name: "app.explore_data",
+        arguments: {
+          plan: {
+            kind: "aggregate",
+            resource: "public.subscriptions",
+            measures: [{ function: "count" }],
+            where: [{ field: "billing_token", op: "eq", value: "guessed-token" }],
+            top_n: 1,
+          },
+        },
+      });
+      expect(refused.isError).toBe(true);
+      expect(JSON.stringify(refused)).toContain("reviewed values are withheld from the model");
+      expect(JSON.stringify(refused)).not.toContain("billing-token-secret");
+      expect(JSON.stringify(refused)).not.toContain("billing-token-other");
     } finally {
       await client.close();
       await server.close();
+      await runtime.close();
+    }
+  });
+
+  it("refuses removed schema values, buckets grouped drift, and discloses row allowlist scope", async () => {
+    const inspection = churnInspection();
+    const region = inspection.tables[0]!.columns.find((field) => field.name === "region")!;
+    region.enum_values = ["north", "south"];
+    const fixture = await activatedFixture((candidate) => {
+      candidate.pack.resources[0]!.field_enums.region = ["north"];
+    }, inspection);
+    const queries: CompiledExploreQuery[] = [];
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+      executor: {
+        execute: async (query) => {
+          queries.push(structuredClone(query));
+          return [{ dimension_0: "north", measure_0: 8, __cohort_size: 8 }];
+        },
+        executeBatch: async ({ queries: batch }) => batch.map((query) => {
+          queries.push(structuredClone(query));
+          const bucketMarker = query.reviewed_value_controls?.find((control) =>
+            control.kind === "bucket_unreviewed_values")?.marker;
+          return bucketMarker
+            ? [
+              { dimension_0: "north", measure_0: 8, __cohort_size: 8 },
+              { dimension_0: bucketMarker, measure_0: 6, __cohort_size: 6 },
+            ]
+            : [{ region: "north", measure_0: 8, __cohort_size: 8 }];
+        }),
+        close: async () => undefined,
+      },
+    });
+    try {
+      const described = await runtime.describe({ resource: "public.subscriptions" });
+      expect(described).toMatchObject({
+        resources: [{ field_enums: { region: ["north"] } }],
+      });
+      queries.length = 0;
+      await expect(runtime.explore({
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "region" }],
+        where: [{ field: "region", op: "eq", value: "south" }],
+        top_n: 10,
+      })).rejects.toMatchObject({
+        code: "EXPLORE_PLAN_INVALID",
+        message: expect.stringMatching(/south.*not a reviewed value.*north.*No source query was executed/i),
+        details: expect.objectContaining({ source_query_executed: false }),
+      });
+      expect(queries).toHaveLength(0);
+
+      const grouped = await runtime.explore({
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "region" }],
+        where: [{ field: "reason_category", op: "eq", value: "free_text_still_allowed" }],
+        top_n: 10,
+      });
+      expect(grouped.data).toEqual(expect.arrayContaining([
+        { region: "north", count: 8 },
+        { region: "[outside-reviewed-values]", count: 6 },
+      ]));
+      expect(grouped.privacy).toMatchObject({
+        reviewed_value_controls: {
+          bucketed_fields: [{
+            resource: "public.subscriptions",
+            field: "region",
+            output_field: "region",
+            bucket_returned: true,
+            bucket_token: "[outside-reviewed-values]",
+          }],
+          source_values_exposed: false,
+        },
+      });
+      expect(JSON.stringify(grouped)).not.toContain("south");
+      expect(queries).toHaveLength(1);
+      expect(queries[0]!.sql).toMatch(/CASE WHEN .*region.* IN \(\$[0-9]+\).* ELSE \$[0-9]+ END AS "dimension_0"/);
+      expect(queries[0]!.sql.split(" WHERE ")[1]).not.toMatch(/region" IN/);
+      expect(queries[0]!.params).toEqual(expect.arrayContaining([
+        "free_text_still_allowed",
+        "north",
+      ]));
+
+      const mysqlGroupedPlan = validateExplorePlan({
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "region" }],
+        where: [{ field: "reason_category", op: "eq", value: "free_text_still_allowed" }],
+        top_n: 10,
+      }, fixture.boundary);
+      const [mysqlGroupedQuery] = compileExplorePlan(mysqlGroupedPlan, fixture.boundary, {
+        tenant: "tenant-acme",
+        principal: "pm-1",
+      }, "mysql");
+      expect(mysqlGroupedQuery?.sql).toMatch(/CASE WHEN .* IN \(\?\).* ELSE \? END AS `dimension_0`/);
+      expect(mysqlGroupedQuery?.params[0]).toBe("north");
+      expect(mysqlGroupedQuery?.params[1]).toMatch(/^__synapsor_unreviewed_[a-f0-9]+__$/);
+      expect(mysqlGroupedQuery?.params.indexOf("tenant-acme")).toBeGreaterThan(1);
+      expect(mysqlGroupedQuery?.params.indexOf("free_text_still_allowed")).toBeGreaterThan(1);
+
+      const rows = await runtime.explore({
+        kind: "rows",
+        resource: "public.subscriptions",
+        select: ["region"],
+        limit: 10,
+      });
+      expect(rows).toMatchObject({
+        data: [{ region: "north" }],
+        privacy: {
+          reviewed_value_controls: {
+            excluded_fields: [{
+              resource: "public.subscriptions",
+              field: "region",
+              effect: "rows_outside_reviewed_values_excluded",
+            }],
+          },
+        },
+      });
+      expect(queries.at(-1)!.sql.split(" WHERE ")[1]).toMatch(/region" IN \(\$[0-9]+\)/);
+
+      const countBoundary = structuredClone(fixture.boundary);
+      countBoundary.pack.resources[0]!.count_distinct_fields.push("region");
+      const distinctPlan = validateExplorePlan({
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ function: "count_distinct", field: "region" }],
+        top_n: 1,
+      }, countBoundary);
+      const [distinctQuery] = compileExplorePlan(distinctPlan, countBoundary, {
+        tenant: "tenant-acme",
+        principal: "pm-1",
+      }, "postgres");
+      expect(distinctQuery?.sql).toContain('COUNT(DISTINCT t0."region")');
+      expect(distinctQuery?.sql.split(" WHERE ")[1]).not.toMatch(/region" IN/);
+
+      await runtime.explore({
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ function: "count" }],
+        where: [{ field: "region", op: "neq", value: "north" }],
+        top_n: 1,
+      });
+      expect(queries.at(-1)!.sql).toMatch(/region" <> \$[0-9]+/);
+      expect(queries.at(-1)!.sql).toMatch(/region" IN \(\$[0-9]+\)/);
+      expect(queries.at(-1)!.params).toEqual(expect.arrayContaining(["north"]));
+    } finally {
       await runtime.close();
     }
   });
@@ -657,6 +2043,13 @@ describe("Scoped Explore", () => {
       where: [{ field: "tenant_id", op: "eq", value: "other-tenant" }],
       limit: 10,
     }, boundary)).toThrow(/trusted bindings/i);
+    expect(() => validateExplorePlan({
+      kind: "rows",
+      resource: "public.subscriptions",
+      select: ["region"],
+      where: [{ field: "region", op: "eq", value: null }],
+      limit: 10,
+    }, boundary)).toThrow(/Null is not a filter literal.*null_count.*non_null_count.*completion_rate/i);
 
     const plan = validateExplorePlan({
       kind: "rows",
@@ -708,7 +2101,7 @@ describe("Scoped Explore", () => {
     }
   });
 
-  it("audits pre-execution refusals without source access, evidence, or rejected input", async () => {
+  it("audits pre-execution refusals without source access, rejected values, or unknown identifiers", async () => {
     const fixture = await activatedFixture();
     const store = new ProposalStore(path.join(fixture.root, ".synapsor/local.db"));
     let executions = 0;
@@ -745,21 +2138,65 @@ describe("Scoped Explore", () => {
           operation: "select",
         },
       });
+      await expect(runtime.explore({
+        kind: "rows",
+        resource: "public.subscriptions",
+        select: ["model_invented_secret_field"],
+        limit: 1,
+      })).rejects.toMatchObject({
+        code: "EXPLORE_FIELD_FORBIDDEN",
+      });
       expect(executions).toBe(0);
       expect(store.listEvidenceBundles()).toHaveLength(0);
       const records = store.listQueryAudit();
-      expect(records).toHaveLength(1);
-      expect(records[0]?.payload).toMatchObject({
+      expect(records).toHaveLength(2);
+      const reviewedAttempt = records.find((record) =>
+        (record.payload as Record<string, unknown>).attempted_access
+        && ((record.payload as Record<string, unknown>).attempted_access as Record<string, unknown>).field === "billing_token");
+      const unknownAttempt = records.find((record) => record !== reviewedAttempt);
+      expect(reviewedAttempt).toMatchObject({
+        tenant_id: expect.stringMatching(/^keyed:[a-f0-9]{64}$/),
+        principal: expect.stringMatching(/^keyed:[a-f0-9]{64}$/),
+        capability: "app.explore_data",
+        table_name: "public.subscriptions",
+      });
+      expect(store.listQueryAudit({
+        tenants: [String(reviewedAttempt?.tenant_id)],
+        principals: [String(reviewedAttempt?.principal)],
+        table: "public.subscriptions",
+        outcome: "refused",
+        boundary: fixture.boundary.activation.digest,
+      })).toHaveLength(2);
+      expect(reviewedAttempt?.payload).toMatchObject({
         status: "refused_before_source_execution",
         refusal_stage: "validation",
         error_code: "EXPLORE_FIELD_FORBIDDEN",
+        attempted_access: {
+          resource: "public.subscriptions",
+          field: "billing_token",
+          operation: "select",
+        },
+        scope_application: {
+          tenant: { kind: "direct", predicate_applied: false, column: "tenant_id" },
+          principal: { kind: "not_configured", predicate_applied: false },
+        },
         source_execution_started: false,
         evidence_bundle_created: false,
         result_values_persisted: false,
         source_database_changed: false,
       });
+      expect(unknownAttempt).toMatchObject({
+        table_name: "public.subscriptions",
+        payload: {
+          attempted_access: {
+            resource: "public.subscriptions",
+            operation: "select",
+          },
+        },
+      });
       const persisted = JSON.stringify(records);
-      expect(persisted).not.toContain("billing_token");
+      expect(persisted).toContain("billing_token");
+      expect(persisted).not.toContain("model_invented_secret_field");
       expect(persisted).not.toContain("tenant-acme");
       expect(persisted).not.toContain("pm-1");
     } finally {
@@ -968,18 +2405,18 @@ describe("Scoped Explore", () => {
     const fixture = await activatedFixture();
     const periodRows: Record<"period_1" | "period_2", Array<Record<string, unknown>>> = {
       period_1: [
-        { dimension_0: "steady-growth", measure_0: 100, __cohort_size: 100 },
-        { dimension_0: "fast-growth", measure_0: 10, __cohort_size: 10 },
-        { dimension_0: "decline", measure_0: 100, __cohort_size: 100 },
-        { dimension_0: "new", measure_0: 0, __cohort_size: 10 },
-        { dimension_0: "private", measure_0: 1, __cohort_size: 1 },
+        { dimension_0: "steady-growth", measure_0: 100, __measure_cohort_0: 100, __cohort_size: 100 },
+        { dimension_0: "fast-growth", measure_0: 10, __measure_cohort_0: 10, __cohort_size: 10 },
+        { dimension_0: "decline", measure_0: 100, __measure_cohort_0: 100, __cohort_size: 100 },
+        { dimension_0: "new", measure_0: 0, __measure_cohort_0: 10, __cohort_size: 10 },
+        { dimension_0: "private", measure_0: 1, __measure_cohort_0: 1, __cohort_size: 1 },
       ],
       period_2: [
-        { dimension_0: "steady-growth", measure_0: 120, __cohort_size: 120 },
-        { dimension_0: "fast-growth", measure_0: 20, __cohort_size: 20 },
-        { dimension_0: "decline", measure_0: 50, __cohort_size: 50 },
-        { dimension_0: "new", measure_0: 5, __cohort_size: 10 },
-        { dimension_0: "private", measure_0: 1_000, __cohort_size: 1 },
+        { dimension_0: "steady-growth", measure_0: 120, __measure_cohort_0: 120, __cohort_size: 120 },
+        { dimension_0: "fast-growth", measure_0: 20, __measure_cohort_0: 20, __cohort_size: 20 },
+        { dimension_0: "decline", measure_0: 50, __measure_cohort_0: 50, __cohort_size: 50 },
+        { dimension_0: "new", measure_0: 5, __measure_cohort_0: 10, __cohort_size: 10 },
+        { dimension_0: "private", measure_0: 1_000, __measure_cohort_0: 1, __cohort_size: 1 },
       ],
     };
     const runtime = await createScopedExploreRuntime({
@@ -1124,6 +2561,228 @@ describe("Scoped Explore", () => {
     }
   });
 
+  it("resolves relative rows once, compiles the same bounded UTC predicates on both engines, and freezes Protect", async () => {
+    const fixture = await activatedFixture();
+    const now = Date.parse("2026-08-10T15:30:45.123Z");
+    const request = {
+      kind: "rows",
+      resource: "public.subscriptions",
+      select: ["region"],
+      time_window: { field: "churned_at", window: "previous_month" },
+      limit: 5,
+    };
+    const validated = validateExploreRequest(request, fixture.boundary, { now });
+    expect(validated.plan).toMatchObject({
+      time_window: {
+        field: "churned_at",
+        start: "2026-07-01T00:00:00.000Z",
+        end: "2026-08-01T00:00:00.000Z",
+      },
+    });
+    expect(validated.resolved_time_windows).toEqual([expect.objectContaining({
+      location: "time_window",
+      window: "previous_month",
+      reporting_timezone: "UTC",
+      resolved_at: "2026-08-10T15:30:45.123Z",
+    })]);
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [query] = compileExplorePlan(
+        validated.plan,
+        fixture.boundary,
+        { tenant: "tenant-acme", principal: "pm-1" },
+        engine,
+      );
+      expect(query?.sql).toContain(engine === "postgres"
+        ? 't0."churned_at" >= $2'
+        : "t0.`churned_at` >= ?");
+      expect(query?.sql).toContain(engine === "postgres"
+        ? 't0."churned_at" < $3'
+        : "t0.`churned_at` < ?");
+      expect(query?.params).toContain("2026-07-01T00:00:00.000Z");
+      expect(query?.params).toContain("2026-08-01T00:00:00.000Z");
+    }
+
+    const store = new ProposalStore(path.join(fixture.root, ".synapsor/relative-time.db"));
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      store,
+      clock: () => now,
+      inspectDatabaseFn: async () => fixture.inspection,
+      executor: fixedExecutor([{ region: "west" }]),
+    });
+    try {
+      const description = await runtime.describe({ resource: "public.subscriptions" }) as any;
+      expect(description.relative_time_windows).toMatchObject({
+        available: true,
+        reporting_timezone: "UTC",
+        windows: expect.arrayContaining(["previous_month", "month_to_date"]),
+        comparison_partners: ["preceding_period", "same_period_last_year"],
+        range_semantics: "half-open [start, end)",
+        week_starts_on: "Monday",
+        model_supplied_date_arithmetic: false,
+      });
+      expect(description.resources[0]?.relative_time_window_fields).toEqual(["churned_at"]);
+      const compactProjection = projectDescribeDataForModel(await runtime.describe(), false);
+      expect(compactProjection).not.toHaveProperty("relative_time_windows");
+      const focusedProjection = projectDescribeDataForModel(description, true);
+      expect(focusedProjection).toHaveProperty("relative_time_windows.windows");
+
+      const relative = await runtime.explore(request);
+      const absolute = await runtime.explore({
+        ...request,
+        time_window: {
+          field: "churned_at",
+          start: "2026-07-01T00:00:00Z",
+          end: "2026-08-01T00:00:00Z",
+        },
+      });
+      expect(relative.audit).toMatchObject({ query_fingerprint: (absolute.audit as any).query_fingerprint });
+      expect(relative.operator_time_windows).toEqual(validated.resolved_time_windows);
+      expect(absolute).not.toHaveProperty("operator_time_windows");
+      const projected = projectScopedExploreResultForModel({
+        tool: "app.explore_data",
+        arguments: { plan: request },
+        result: relative,
+        boundary: fixture.boundary,
+      });
+      expect(projected.value).not.toHaveProperty("operator_time_windows");
+      expect(projected.operator_metadata_withheld).toBe(true);
+
+      const token = (relative.protect as { token: string }).token;
+      const protectedPlan = await loadProtectedPlan({ projectRoot: fixture.root, token, now });
+      expect(protectedPlan.plan).toMatchObject(validated.plan);
+      expect(JSON.stringify(protectedPlan.plan)).not.toContain("previous_month");
+      const evidence = JSON.stringify(store.listEvidenceBundles());
+      expect(evidence).toContain("previous_month");
+      expect(evidence).toContain("2026-07-01T00:00:00.000Z");
+    } finally {
+      await runtime.close();
+      await store.close();
+    }
+  });
+
+  it("lowers relative comparisons before fingerprinting and withholds resolved timestamps from the model", async () => {
+    const fixture = await activatedFixture();
+    const now = Date.parse("2026-08-10T15:30:45.123Z");
+    const request = {
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "region" }],
+      time_bucket: { field: "churned_at", bucket: "month" },
+      comparison: {
+        field: "churned_at",
+        window: "previous_month",
+        compare_to: "preceding_period",
+      },
+      top_n: 10,
+    };
+    const validated = validateExploreRequest(request, fixture.boundary, { now });
+    expect(validated.plan).toMatchObject({
+      comparison: {
+        ranges: [
+          { start: "2026-06-01T00:00:00.000Z", end: "2026-07-01T00:00:00.000Z" },
+          { start: "2026-07-01T00:00:00.000Z", end: "2026-08-01T00:00:00.000Z" },
+        ],
+      },
+    });
+    expect(compileExplorePlan(
+      validated.plan,
+      fixture.boundary,
+      { tenant: "tenant-acme", principal: "pm-1" },
+      "postgres",
+    )).toHaveLength(2);
+
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      clock: () => now,
+      inspectDatabaseFn: async () => fixture.inspection,
+      executor: {
+        execute: async () => [],
+        executeBatch: async ({ queries }) => queries.map((query) => [{
+          dimension_0: "west",
+          measure_0: query.period === "period_1" ? 10 : 12,
+          __cohort_size: 10,
+        }]),
+        close: async () => undefined,
+      },
+    });
+    try {
+      const result = await runtime.explore(request);
+      expect(result.operator_time_windows).toEqual([expect.objectContaining({
+        location: "comparison",
+        window: "previous_month",
+        compare_to: "preceding_period",
+      })]);
+      const projected = projectScopedExploreResultForModel({
+        tool: "app.explore_data",
+        arguments: { plan: request },
+        result,
+        boundary: fixture.boundary,
+      });
+      expect(JSON.stringify(projected.value)).not.toContain("2026-06-01T00:00:00.000Z");
+      expect(projected.value).not.toHaveProperty("operator_time_windows");
+      expect(projected.value).toMatchObject({
+        outcome: {
+          result: {
+            grain: {
+              kind: "period_comparison",
+              relative_window: [{
+                window: "previous_month",
+                compare_to: "preceding_period",
+                resolved_timestamps_withheld_from_model: true,
+              }],
+            },
+          },
+        },
+      });
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("refuses relative-time authority and shape errors before source execution", async () => {
+    const fixture = await activatedFixture();
+    const base = {
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      top_n: 10,
+    };
+    expect(() => validateExplorePlan({
+      ...base,
+      time_window: { field: "churned_at", window: "last_decade" },
+    }, fixture.boundary)).toThrow(/must be one of today/i);
+    expect(() => validateExplorePlan({
+      ...base,
+      time_window: { field: "region", window: "previous_month" },
+    }, fixture.boundary)).toThrow(/not reviewed for time window/i);
+    expect(() => validateExplorePlan({
+      ...base,
+      time_window: { field: "churned_at", window: "previous_month", offset: "-1 month" },
+    }, fixture.boundary)).toThrow(/unsupported fields: offset/i);
+    expect(() => validateExplorePlan({
+      ...base,
+      time_window: { field: "churned_at", window: "previous_month" },
+      time_bucket: { field: "churned_at", bucket: "month" },
+      comparison: {
+        field: "churned_at",
+        window: "previous_month",
+        compare_to: "preceding_period",
+      },
+    }, fixture.boundary)).toThrow(/mutually exclusive/i);
+    const legacy = structuredClone(fixture.boundary) as any;
+    delete legacy.reporting_timezone;
+    expect(() => validateExplorePlan({
+      ...base,
+      time_window: { field: "churned_at", window: "previous_month" },
+    }, legacy)).toThrow(/authority-bound UTC/i);
+  });
+
   it("describes only activated one-hop relationship fields for the guided PM composer", async () => {
     const fixture = await activatedFixture(undefined, relationshipInspection());
     const runtime = await createScopedExploreRuntime({
@@ -1144,13 +2803,15 @@ describe("Scoped Explore", () => {
       expect(resource.relationships).toEqual([
         expect.objectContaining({
           id: "subscriptions_region_id_fkey",
-          label: "Regions",
           target_resource: "public.regions",
           cardinality: "many_to_one",
           groupable_fields: expect.arrayContaining(["name"]),
-          field_labels: expect.objectContaining({ name: "Name" }),
         }),
       ]);
+      expect(resource).not.toHaveProperty("label");
+      expect(resource).not.toHaveProperty("field_labels");
+      expect(resource.relationships[0]).not.toHaveProperty("label");
+      expect(resource.relationships[0]).not.toHaveProperty("field_labels");
       expect(resource.suggested_questions).toEqual(expect.arrayContaining([
         expect.objectContaining({
           text: "Which reviewed regions have the most subscriptions?",
@@ -1171,6 +2832,215 @@ describe("Scoped Explore", () => {
         });
       }
       expect(JSON.stringify(resource)).not.toMatch(/billing_token|sql/i);
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("returns an exact reviewed relationship correction when a grouping field is not local", async () => {
+    const fixture = await activatedFixture(undefined, relationshipInspection());
+    expect(() => validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "name" }],
+      top_n: 10,
+    }, fixture.boundary)).toThrowError(expect.objectContaining({
+      code: "EXPLORE_RELATIONSHIP_FORBIDDEN",
+      message: expect.stringContaining(
+        'Retry with dimension {"field":"name","relationship":"subscriptions_region_id_fkey"}',
+      ),
+      details: expect.objectContaining({
+        reason: "relationship_required_for_field",
+        resource: "public.subscriptions",
+        field: "name",
+        operation: "group",
+        corrected_dimensions: [{
+          field: "name",
+          relationship: "subscriptions_region_id_fkey",
+        }],
+        source_query_executed: false,
+      }),
+    }));
+  });
+
+  it("lists competing reviewed relationships instead of guessing a grouping path", async () => {
+    const fixture = await activatedFixture(undefined, relationshipInspection());
+    const boundary = structuredClone(fixture.boundary);
+    const resource = boundary.pack.resources.find((candidate) =>
+      candidate.id === "public.subscriptions")!;
+    resource.relationships.push({
+      ...structuredClone(resource.relationships[0]!),
+      id: "subscriptions_backup_region_id_fkey",
+    });
+
+    expect(() => validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "name" }],
+      top_n: 10,
+    }, boundary)).toThrowError(expect.objectContaining({
+      code: "EXPLORE_RELATIONSHIP_FORBIDDEN",
+      message: expect.stringMatching(/more than one relationship.*will not guess/i),
+      details: expect.objectContaining({
+        reason: "relationship_required_for_field",
+        corrected_dimensions: [
+          {
+            field: "name",
+            relationship: "subscriptions_backup_region_id_fkey",
+          },
+          {
+            field: "name",
+            relationship: "subscriptions_region_id_fkey",
+          },
+        ],
+        source_query_executed: false,
+      }),
+    }));
+  });
+
+  it("describes reviewed metadata without exposing kept-out metadata or accepting labels as authority", async () => {
+    const reviewedAt = "2026-08-10T12:00:00.000Z";
+    const metadata = {
+      resource: {
+        label: "Customer subscriptions",
+        description: "One reviewed subscription record per customer account.",
+        actor: "analytics-owner@example.test",
+        reason: "Give people and AI clients business context without changing authority.",
+        decided_at: reviewedAt,
+      },
+      fields: {
+        region: {
+          label: "Sales region",
+          description: "Reviewed account territory used for regional grouping.",
+          actor: "analytics-owner@example.test",
+          reason: "Clarify an existing reviewed dimension.",
+          decided_at: reviewedAt,
+        },
+        billing_token: {
+          label: "Internal billing credential",
+          description: "Kept out of every model-facing response.",
+          actor: "analytics-owner@example.test",
+          reason: "Help the human reviewer identify a field that remains kept out.",
+          decided_at: reviewedAt,
+        },
+      },
+    } satisfies {
+      resource: ReviewedMetadataDecision;
+      fields: Record<string, ReviewedMetadataDecision>;
+    };
+    const fixture = await activatedFixture(
+      undefined,
+      churnInspection(),
+      undefined,
+      undefined,
+      metadata,
+    );
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([]),
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    try {
+      const description = await runtime.describe({ resource: "public.subscriptions" }) as any;
+      const resource = description.resources[0];
+      expect(resource).toMatchObject({
+        id: "public.subscriptions",
+        label: "Customer subscriptions",
+        description: "One reviewed subscription record per customer account.",
+      });
+      expect(resource.fields).toContainEqual({
+        id: "region",
+        label: "Sales region",
+        description: "Reviewed account territory used for regional grouping.",
+      });
+      expect(JSON.stringify(resource.fields)).not.toMatch(/billing_token|Internal billing credential|Kept out/i);
+      expect(resource.suggested_questions.map((question: { text: string }) => question.text).join("\n"))
+        .toMatch(/sales regions|customer subscriptions/i);
+
+      const projected = projectDescribeDataForModel(description, false) as any;
+      expect(projected.resources[0]).toMatchObject({
+        id: "public.subscriptions",
+        label: "Customer subscriptions",
+        description: "One reviewed subscription record per customer account.",
+        fields: expect.arrayContaining([{
+          id: "region",
+          label: "Sales region",
+          description: "Reviewed account territory used for regional grouping.",
+        }]),
+      });
+      expect(JSON.stringify(projected.resources[0].fields))
+        .not.toMatch(/billing_token|Internal billing credential|Kept out/i);
+
+      expect(() => validateExplorePlan({
+        kind: "aggregate",
+        resource: "Customer subscriptions",
+        measures: [{ function: "count" }],
+        top_n: 10,
+      }, fixture.boundary)).toThrow(/not in|not reviewed|outside/i);
+      expect(validateExplorePlan({
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ function: "count" }],
+        top_n: 10,
+      }, fixture.boundary)).toMatchObject({ resource: "public.subscriptions" });
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("does not suggest summing numeric identifiers when forming model-facing questions", async () => {
+    const inspection = churnInspection();
+    inspection.tables[0]!.columns.find((field) => field.name === "id")!.data_type = "integer";
+    const fixture = await activatedFixture(undefined, inspection);
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([]),
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    try {
+      const description = await runtime.describe({ resource: "public.subscriptions" }) as {
+        resources: Array<{ suggested_questions: Array<Record<string, any>> }>;
+      };
+      const questions = description.resources[0]!.suggested_questions;
+      expect(questions).not.toContainEqual(expect.objectContaining({
+        measure: { function: "sum", field: "id" },
+      }));
+      expect(questions).toContainEqual(expect.objectContaining({
+        text: "How did total monthly revenue change by week across region?",
+        measure: { function: "sum", field: "monthly_revenue_cents" },
+      }));
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("suggests an explicit record-count trend when identifiers are the only numeric measures", async () => {
+    const inspection = churnInspection();
+    inspection.tables[0]!.columns.find((field) => field.name === "id")!.data_type = "integer";
+    inspection.tables[0]!.columns.find((field) => field.name === "monthly_revenue_cents")!.data_type = "text";
+    const fixture = await activatedFixture(undefined, inspection);
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([]),
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    try {
+      const description = await runtime.describe({ resource: "public.subscriptions" }) as {
+        resources: Array<{ suggested_questions: Array<Record<string, any>> }>;
+      };
+      expect(description.resources[0]!.suggested_questions).toContainEqual(expect.objectContaining({
+        text: "How did the number of subscriptions change by week across region?",
+        measure: { function: "count" },
+      }));
+      expect(JSON.stringify(description.resources[0]!.suggested_questions)).not.toMatch(/total (?:id|subscription id)/i);
     } finally {
       await runtime.close();
     }
@@ -1224,6 +3094,665 @@ describe("Scoped Explore", () => {
       expect(query?.sql).toContain("COUNT(*)");
       expect(query?.sql).not.toMatch(/CROSS JOIN|SELECT\s+\*/i);
     }
+  });
+
+  it("allows proven relationship analysis without fake tenant scope only in single-organization mode", async () => {
+    const { boundary: activated } = await activatedFixture(undefined, relationshipInspection());
+    const relationshipPlan = {
+      kind: "aggregate" as const,
+      resource: "public.subscriptions",
+      measures: [{ function: "count" as const }],
+      dimensions: [{ field: "name", relationship: "subscriptions_region_id_fkey" }],
+      top_n: 10,
+    };
+
+    const multiTenant = structuredClone(activated);
+    const unscopedTarget = multiTenant.pack.resources.find((resource) =>
+      resource.id === "public.regions")!;
+    delete unscopedTarget.tenant_key;
+    delete unscopedTarget.tenant_scope;
+    expect(() => validateExplorePlan(relationshipPlan, multiTenant)).toThrowError(
+      expect.objectContaining({
+        code: "EXPLORE_RELATIONSHIP_FORBIDDEN",
+        message: expect.stringMatching(/public\.regions has no independently reviewed tenant scope/i),
+      }),
+    );
+
+    const singleOrganization = structuredClone(activated);
+    singleOrganization.organization_scope = {
+      mode: "single_organization",
+      organization_id: "internal-finance",
+      acknowledgement: "all_rows_belong_to_one_organization",
+    };
+    for (const resource of singleOrganization.pack.resources) {
+      delete resource.tenant_key;
+      delete resource.tenant_scope;
+    }
+    const validated = validateExplorePlan(relationshipPlan, singleOrganization);
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [compiled] = compileExplorePlan(validated, singleOrganization, {
+        tenant: "internal-finance",
+        principal: "",
+      }, engine);
+      expect(compiled?.sql).toContain(engine === "postgres"
+        ? 'JOIN "public"."regions" t1'
+        : "JOIN `public`.`regions` t1");
+      expect(compiled?.sql).not.toContain("tenant_id");
+      expect(compiled?.params).not.toContain("internal-finance");
+      expect(compiled?.resources.map((resource) => resource.id).sort()).toEqual([
+        "public.regions",
+        "public.subscriptions",
+      ]);
+    }
+  });
+
+  it("allows a tenant-scoped resource to join an explicitly reviewed shared reference", async () => {
+    const { boundary } = await activatedFixture(undefined, relationshipInspection());
+    const shared = structuredClone(boundary);
+    const target = shared.pack.resources.find((resource) => resource.id === "public.regions")!;
+    delete target.tenant_key;
+    delete target.tenant_scope;
+    target.shared_reference_scope = {
+      mode: "shared_reference",
+      acknowledgement: SHARED_REFERENCE_ACKNOWLEDGEMENT,
+    };
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "name", relationship: "subscriptions_region_id_fkey" }],
+      top_n: 10,
+    }, shared);
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [compiled] = compileExplorePlan(plan, shared, {
+        tenant: "tenant-acme",
+        principal: "",
+      }, engine);
+      expect(compiled?.params).toContain("tenant-acme");
+      expect(compiled?.sql).toContain(engine === "postgres"
+        ? 't0."tenant_id" = $1'
+        : "t0.`tenant_id` = ?");
+      expect(compiled?.sql).not.toContain(engine === "postgres"
+        ? 't1."tenant_id"'
+        : "t1.`tenant_id`");
+    }
+  });
+
+  it("keeps the target tenant predicate when a shared-reference root joins scoped rows", async () => {
+    const { boundary } = await activatedFixture(undefined, relationshipInspection());
+    const sharedRoot = structuredClone(boundary);
+    const root = sharedRoot.pack.resources.find((resource) =>
+      resource.id === "public.subscriptions")!;
+    delete root.tenant_key;
+    delete root.tenant_scope;
+    root.shared_reference_scope = {
+      mode: "shared_reference",
+      acknowledgement: SHARED_REFERENCE_ACKNOWLEDGEMENT,
+    };
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "name", relationship: "subscriptions_region_id_fkey" }],
+      top_n: 10,
+    }, sharedRoot);
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [compiled] = compileExplorePlan(plan, sharedRoot, {
+        tenant: "tenant-acme",
+        principal: "",
+      }, engine);
+      expect(compiled?.sql).not.toContain(engine === "postgres"
+        ? 't0."tenant_id"'
+        : "t0.`tenant_id`");
+      expect(compiled?.sql).toContain(engine === "postgres"
+        ? 't1."tenant_id" = $1'
+        : "t1.`tenant_id` = ?");
+      expect(compiled?.params).toContain("tenant-acme");
+    }
+  });
+
+  it("injects mandatory derived tenant scope for every root plan shape without aggregate fan-out", async () => {
+    const fixture = await activatedFixture();
+    const boundary = derivedScopeBoundary(fixture.boundary);
+    const plans = [
+      validateExplorePlan({
+        kind: "rows",
+        resource: "public.order_items",
+        select: ["id", "quantity"],
+        limit: 5,
+      }, boundary),
+      validateExplorePlan({
+        kind: "aggregate",
+        resource: "public.order_items",
+        measures: [{ function: "sum", field: "quantity" }],
+        dimensions: [{ field: "status" }],
+        time_bucket: { field: "created_at", bucket: "week" },
+        top_n: 10,
+      }, boundary),
+      validateExplorePlan({
+        kind: "aggregate",
+        resource: "public.order_items",
+        measures: [{ function: "sum", field: "quantity" }],
+        time_bucket: { field: "created_at", bucket: "week" },
+        comparison: {
+          field: "created_at",
+          ranges: [
+            { start: "2026-06-01T00:00:00.000Z", end: "2026-07-01T00:00:00.000Z" },
+            { start: "2026-07-01T00:00:00.000Z", end: "2026-08-01T00:00:00.000Z" },
+          ],
+        },
+        top_n: 1,
+      }, boundary),
+    ];
+
+    for (const engine of ["postgres", "mysql"] as const) {
+      for (const plan of plans) {
+        const queries = compileExplorePlan(plan, boundary, {
+          tenant: "tenant-acme",
+          principal: "",
+        }, engine);
+        expect(queries).toHaveLength(plan.kind === "aggregate" && plan.comparison ? 2 : 1);
+        for (const query of queries) {
+          expect(query.resources.map((resource) => resource.id).sort()).toEqual([
+            "public.order_items",
+            "public.orders",
+          ]);
+          expect(query.sql).toContain(engine === "postgres"
+            ? "EXISTS (SELECT 1 FROM \"public\".\"orders\" st0_tenant_0"
+            : "EXISTS (SELECT 1 FROM `public`.`orders` st0_tenant_0");
+          expect(query.sql).toContain(engine === "postgres"
+            ? 't0."order_id" = st0_tenant_0."id"'
+            : "t0.`order_id` = st0_tenant_0.`id`");
+          expect(query.sql).toContain(engine === "postgres"
+            ? 'st0_tenant_0."tenant_id" = $1'
+            : "st0_tenant_0.`tenant_id` = ?");
+          expect(query.sql).not.toMatch(/JOIN\s+[^)]*orders[^)]*JOIN\s+[^)]*orders/i);
+          expect(query.params).toContain("tenant-acme");
+        }
+      }
+    }
+  });
+
+  it("requires an explicit depth-three opt-in before compiling tenant and principal scope", async () => {
+    const fixture = await activatedFixture();
+    const boundary = depthThreeScopeBoundary(fixture.boundary);
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.event_notes",
+      measures: [{ function: "count" }],
+      top_n: 1,
+    }, boundary);
+
+    const defaultDepth = structuredClone(boundary);
+    defaultDepth.budgets.max_derived_scope_hops = 2;
+    expect(() => compileExplorePlan(plan, defaultDepth, {
+      tenant: "tenant-acme",
+      principal: "order-owner-7",
+    }, "postgres")).toThrow(/malformed derived tenant scope/i);
+
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [query] = compileExplorePlan(plan, boundary, {
+        tenant: "tenant-acme",
+        principal: "order-owner-7",
+      }, engine);
+      expect(query!.resources.map((resource) => resource.id).sort()).toEqual([
+        "public.event_notes",
+        "public.order_events",
+        "public.order_items",
+        "public.orders",
+      ]);
+      expect(query!.sql.match(/EXISTS \(SELECT 1 FROM/g)).toHaveLength(2);
+      expect(query!.sql).toContain(engine === "postgres"
+        ? 'FROM "public"."order_events" st0_tenant_0 JOIN "public"."order_items" st0_tenant_1'
+        : "FROM `public`.`order_events` st0_tenant_0 JOIN `public`.`order_items` st0_tenant_1");
+      expect(query!.sql).toContain(engine === "postgres"
+        ? 'JOIN "public"."orders" st0_tenant_2'
+        : "JOIN `public`.`orders` st0_tenant_2");
+      expect(query!.sql).toContain(engine === "postgres"
+        ? 'st0_tenant_2."tenant_id" = $1'
+        : "st0_tenant_2.`tenant_id` = ?");
+      expect(query!.sql).toContain(engine === "postgres"
+        ? 'st0_principal_2."id" = $2'
+        : "st0_principal_2.`id` = ?");
+      expect(query!.sql).not.toMatch(/CROSS JOIN|SELECT\s+\*/i);
+      expect(query!.params).toContain("tenant-acme");
+      expect(query!.params).toContain("order-owner-7");
+    }
+
+    const tampered = structuredClone(boundary);
+    const tamperedScope = tampered.pack.resources.find((resource) =>
+      resource.id === "public.event_notes")!.tenant_scope!;
+    tamperedScope.proof.links[1]!.max_fan_out = 2 as 1;
+    tamperedScope.proof.digest = canonicalJsonDigest(tamperedScope.proof.links);
+    expect(() => compileExplorePlan(plan, tampered, {
+      tenant: "tenant-acme",
+      principal: "order-owner-7",
+    }, "postgres")).toThrow(/continuous non-null many-to-one path/i);
+  });
+
+  it("compiles an exact reviewed three-hop analysis path on both SQL engines", async () => {
+    const fixture = await activatedFixture();
+    const boundary = depthThreeScopeBoundary(fixture.boundary);
+    const relationship = "event_notes_order_event_id_fkey__order_events_order_item_id_fkey__order_items_order_id_fkey";
+    const input = {
+      kind: "aggregate" as const,
+      resource: "public.event_notes",
+      measures: [{ function: "count" as const }],
+      dimensions: [{ field: "region", relationship }],
+      top_n: 10,
+    };
+
+    const defaultDepth = structuredClone(boundary);
+    defaultDepth.budgets.max_analysis_relationship_hops = 2;
+    expect(() => validateExplorePlan(input, defaultDepth)).toThrow(/activated proven path-depth boundary/i);
+
+    const plan = validateExplorePlan(input, boundary);
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [query] = compileExplorePlan(plan, boundary, {
+        tenant: "tenant-acme",
+        principal: "order-owner-7",
+      }, engine);
+      expect(query!.sql).toContain(engine === "postgres"
+        ? 'JOIN "public"."order_events" t1 ON t0."order_event_id" = t1."id"'
+        : "JOIN `public`.`order_events` t1 ON t0.`order_event_id` = t1.`id`");
+      expect(query!.sql).toContain(engine === "postgres"
+        ? 'JOIN "public"."order_items" t2 ON t1."order_item_id" = t2."id"'
+        : "JOIN `public`.`order_items` t2 ON t1.`order_item_id` = t2.`id`");
+      expect(query!.sql).toContain(engine === "postgres"
+        ? 'JOIN "public"."orders" t3 ON t2."order_id" = t3."id"'
+        : "JOIN `public`.`orders` t3 ON t2.`order_id` = t3.`id`");
+      expect(query!.sql).toContain(engine === "postgres" ? 't3."region"' : "t3.`region`");
+      expect(query!.sql).not.toMatch(/CROSS JOIN|SELECT\s+\*/i);
+    }
+  });
+
+  it("reuses only exact reviewed relationship prefixes with matching null semantics", async () => {
+    const fixture = await activatedFixture();
+    const boundary = depthThreeScopeBoundary(fixture.boundary);
+    const oneHop = "event_notes_order_event_id_fkey";
+    const threeHop = "event_notes_order_event_id_fkey__order_events_order_item_id_fkey__order_items_order_id_fkey";
+    const root = boundary.pack.resources.find((resource) => resource.id === "public.event_notes")!;
+    const longRelationship = root.relationships.find((relationship) => relationship.id === threeHop)!;
+    const oneHopLinks = structuredClone(longRelationship.proof!.links.slice(0, 1));
+    root.relationships.push({
+      ...structuredClone(longRelationship),
+      id: oneHop,
+      target_resource: "public.order_events",
+      path_depth: 1,
+      proof: {
+        source: "database_catalog",
+        links: oneHopLinks,
+        digest: canonicalJsonDigest(oneHopLinks),
+      },
+    });
+    root.relationships.find((relationship) => relationship.id === oneHop)!.unmatched_rows = "exclude";
+    root.relationships.find((relationship) => relationship.id === threeHop)!.unmatched_rows = "exclude";
+    const fusedPlan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.event_notes",
+      measures: [{ function: "count" }],
+      dimensions: [
+        { field: "event_type", relationship: oneHop },
+        { field: "region", relationship: threeHop },
+      ],
+      top_n: 10,
+    }, boundary);
+
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [query] = compileExplorePlan(fusedPlan, boundary, {
+        tenant: "tenant-acme",
+        principal: "order-owner-7",
+      }, engine);
+      const orderEventsTable = engine === "postgres"
+        ? 'JOIN "public"."order_events"'
+        : "JOIN `public`.`order_events`";
+      expect(query!.sql.split(orderEventsTable)).toHaveLength(2);
+      expect(query!.sql).toContain(engine === "postgres" ? 't1."event_type"' : "t1.`event_type`");
+      expect(query!.sql).toContain(engine === "postgres" ? 't3."region"' : "t3.`region`");
+    }
+
+    root.relationships.find((relationship) => relationship.id === oneHop)!.unmatched_rows = "keep_null";
+    const separatePlan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.event_notes",
+      measures: [{ function: "count" }],
+      dimensions: [
+        { field: "event_type", relationship: oneHop },
+        { field: "region", relationship: threeHop },
+      ],
+      top_n: 10,
+    }, boundary);
+    const [separateQuery] = compileExplorePlan(separatePlan, boundary, {
+      tenant: "tenant-acme",
+      principal: "order-owner-7",
+    }, "postgres");
+    expect(separateQuery!.sql.match(/(?:LEFT )?JOIN "public"\."order_events"/g)).toHaveLength(2);
+  });
+
+  it("refuses an unsupported database server before compiling a local or HTTP query", async () => {
+    const fixture = await activatedFixture();
+    for (const transport of ["stdio", "streamable_http"] as const) {
+      if (transport === "streamable_http") {
+        await rewriteActiveBoundary(fixture.root, (active) => {
+          active.deployment_profile = "production";
+        });
+      }
+      let error: ScopedExploreError | undefined;
+      try {
+        await prepareScopedExplore({
+          projectRoot: fixture.root,
+          transport,
+          mode: transport === "stdio" ? "local_authoring" : "production_http",
+          env: fixture.env,
+          inspectDatabaseFn: async () => ({
+            ...fixture.inspection,
+            server_version: "PostgreSQL 12.22",
+          }),
+        });
+      } catch (caught) {
+        error = caught as ScopedExploreError;
+      }
+      expect(error?.code).toBe("EXPLORE_SERVER_VERSION_UNSUPPORTED");
+      expect(error?.message).toMatch(/PostgreSQL 13 through 18/i);
+    }
+  });
+
+  it("serves the reviewed MySQL 5.7 grammar but stales it on a release-line change", async () => {
+    const mysql57 = {
+      ...churnInspection(),
+      engine: "mysql" as const,
+      server_version: "5.7.44",
+    };
+    const fixture = await activatedFixture(undefined, mysql57);
+    const prepared = await prepareScopedExplore({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => mysql57,
+    });
+    expect(prepared.lock.database_server_authority).toMatchObject({
+      version_line: "5.7",
+      features: { automatic_numeric_bands: false },
+    });
+    expect(prepared.boundary).toMatchObject({
+      database_server_version: "5.7.44",
+      database_server_tier: "compatible_limited",
+      database_server_authority: {
+        engine: "mysql",
+        version_line: "5.7",
+      },
+    });
+    const resource = prepared.boundary.pack.resources[0]!;
+    expect(resource.auto_bands).toBeUndefined();
+    expect(resource.groupable_fields).not.toContain("region");
+    expect(resource.filterable_fields).not.toHaveProperty("region");
+    await expect(prepareScopedExplore({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => ({
+        ...mysql57,
+        server_version: "5.7.45",
+      }),
+    })).resolves.toMatchObject({
+      boundary: { database_server_version: "5.7.44" },
+      inspection: { server_version: "5.7.45" },
+    });
+
+    for (const transport of ["stdio", "streamable_http"] as const) {
+      if (transport === "streamable_http") {
+        await rewriteActiveBoundary(fixture.root, (active) => {
+          active.deployment_profile = "production";
+        });
+      }
+      await expect(prepareScopedExplore({
+        projectRoot: fixture.root,
+        transport,
+        mode: transport === "stdio" ? "local_authoring" : "production_http",
+        env: fixture.env,
+        inspectDatabaseFn: async () => ({
+          ...mysql57,
+          server_version: "8.0.42",
+        }),
+      })).rejects.toMatchObject({
+        code: "EXPLORE_LOCK_STALE",
+        message: expect.stringMatching(/release line changed from mysql 5\.7 to mysql 8\.x/i),
+      });
+    }
+  });
+
+  it("keeps pre-CHECK MySQL patches stable but stales authority at 8.0.16", async () => {
+    const mysql8015 = {
+      ...churnInspection(),
+      engine: "mysql" as const,
+      server_version: "8.0.15",
+    };
+    const fixture = await activatedFixture(undefined, mysql8015);
+    const prepared = await prepareScopedExplore({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => mysql8015,
+    });
+    expect(prepared.lock.database_server_tier).toBe("compatible_limited");
+    expect(prepared.lock.database_server_authority).toMatchObject({
+      version_line: "8.0-pre-check",
+      features: {
+        automatic_numeric_bands: true,
+        schema_check_constraints: false,
+      },
+    });
+    await expect(prepareScopedExplore({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => ({
+        ...mysql8015,
+        server_version: "8.0.14",
+      }),
+    })).resolves.toMatchObject({
+      boundary: { database_server_version: "8.0.15" },
+      inspection: { server_version: "8.0.14" },
+    });
+    await expect(prepareScopedExplore({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => ({
+        ...mysql8015,
+        server_version: "8.0.16",
+      }),
+    })).rejects.toMatchObject({
+      code: "EXPLORE_LOCK_STALE",
+      message: expect.stringMatching(/release line changed from mysql 8\.0-pre-check to mysql 8\.x/i),
+    });
+  });
+
+  it("serves the full PostgreSQL 13 grammar but stales it on a major-version change", async () => {
+    const postgres13 = {
+      ...churnInspection(),
+      server_version: "PostgreSQL 13.23",
+    };
+    const fixture = await activatedFixture(undefined, postgres13);
+    const prepared = await prepareScopedExplore({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => postgres13,
+    });
+    expect(prepared.lock.database_server_authority).toMatchObject({
+      engine: "postgres",
+      version_line: "13",
+      features: {
+        automatic_numeric_bands: true,
+        schema_check_constraints: true,
+      },
+    });
+    expect(prepared.boundary).toMatchObject({
+      database_server_version: "PostgreSQL 13.23",
+      database_server_tier: "full",
+      database_server_authority: {
+        engine: "postgres",
+        version_line: "13",
+      },
+    });
+    await expect(prepareScopedExplore({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => ({
+        ...postgres13,
+        server_version: "PostgreSQL 13.24",
+      }),
+    })).resolves.toMatchObject({
+      boundary: { database_server_version: "PostgreSQL 13.23" },
+      inspection: { server_version: "PostgreSQL 13.24" },
+    });
+
+    for (const transport of ["stdio", "streamable_http"] as const) {
+      if (transport === "streamable_http") {
+        await rewriteActiveBoundary(fixture.root, (active) => {
+          active.deployment_profile = "production";
+        });
+      }
+      await expect(prepareScopedExplore({
+        projectRoot: fixture.root,
+        transport,
+        mode: transport === "stdio" ? "local_authoring" : "production_http",
+        env: fixture.env,
+        inspectDatabaseFn: async () => ({
+          ...postgres13,
+          server_version: "PostgreSQL 14.20",
+        }),
+      })).rejects.toMatchObject({
+        code: "EXPLORE_LOCK_STALE",
+        message: expect.stringMatching(/release line changed from postgres 13 to postgres 14/i),
+      });
+    }
+  });
+
+  it("refuses a served boundary whose activated artifact omits its reviewed server tier", async () => {
+    const fixture = await activatedFixture();
+    await rewriteActiveBoundary(fixture.root, (active) => {
+      delete active.database_server_version;
+      delete active.database_server_tier;
+      delete active.database_server_authority;
+    });
+
+    await expect(prepareScopedExplore({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+    })).rejects.toMatchObject({
+      code: "EXPLORE_LOCK_STALE",
+      message: expect.stringMatching(/activated boundary does not record.*database server capability tier/is),
+    });
+  });
+
+  it("fails closed when a derived-scope prepared plan is missing authority dependencies", async () => {
+    const fixture = await activatedDerivedScopeFixture();
+    const prepared = await prepareScopedExplore({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    delete prepared.lock.authority_dependencies;
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.order_items",
+      measures: [{ function: "sum", field: "quantity" }],
+      top_n: 1,
+    }, prepared.boundary);
+
+    expect(() => assertPreparedExplorePlanAuthority(plan, prepared)).toThrowError(
+      expect.objectContaining({
+        code: "EXPLORE_LOCK_STALE",
+        message: expect.stringMatching(/derived trusted scope.*does not bind.*No query was executed/is),
+      }),
+    );
+  });
+
+  it("rechecks tenant-isolation evidence before a single-organization query executes", async () => {
+    const fixture = await activatedFixture();
+    const prepared = await prepareScopedExplore({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    prepared.boundary.organization_scope = {
+      mode: "single_organization",
+      organization_id: "internal-finance",
+      acknowledgement: "all_rows_belong_to_one_organization",
+    };
+    prepared.lock.organization_scope = prepared.boundary.organization_scope;
+    for (const resource of prepared.boundary.pack.resources) {
+      delete resource.tenant_key;
+      delete resource.tenant_scope;
+    }
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      top_n: 1,
+    }, prepared.boundary);
+    expect(() => assertPreparedExplorePlanAuthority(plan, prepared)).toThrowError(
+      expect.objectContaining({
+        code: "EXPLORE_LOCK_STALE",
+        message: expect.stringMatching(/tenant-isolation evidence[\s\S]*No query was executed/i),
+      }),
+    );
+  });
+
+  it("scopes a derived relationship target independently and preserves MySQL parameter order", async () => {
+    const fixture = await activatedFixture();
+    const boundary = derivedTargetBoundary(fixture.boundary);
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.orders",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "name", relationship: "orders_featured_product_id_fkey" }],
+      top_n: 10,
+    }, boundary);
+
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [query] = compileExplorePlan(plan, boundary, {
+        tenant: "tenant-acme",
+        principal: "",
+      }, engine);
+      expect(query!.resources.map((resource) => resource.id).sort()).toEqual([
+        "public.catalogs",
+        "public.orders",
+        "public.products",
+      ]);
+      expect(query!.sql).toContain(engine === "postgres"
+        ? "JOIN \"public\".\"products\" t1 ON"
+        : "JOIN `public`.`products` t1 ON");
+      expect(query!.sql).toContain(engine === "postgres"
+        ? "EXISTS (SELECT 1 FROM \"public\".\"catalogs\" st1_tenant_0"
+        : "EXISTS (SELECT 1 FROM `public`.`catalogs` st1_tenant_0");
+      expect(query!.params.filter((value) => value === "tenant-acme")).toHaveLength(2);
+    }
+
+    const enumPlan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.order_items",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "status" }],
+      top_n: 10,
+    }, derivedScopeBoundary(fixture.boundary));
+    const [mysql] = compileExplorePlan(enumPlan, derivedScopeBoundary(fixture.boundary), {
+      tenant: "tenant-acme",
+      principal: "",
+    }, "mysql");
+    expect(mysql!.params.slice(0, 3)).toEqual([
+      "open",
+      "closed",
+      expect.stringMatching(/^__synapsor_unreviewed_[a-f0-9]+__$/),
+    ]);
+    expect(mysql!.params.indexOf("tenant-acme")).toBeGreaterThan(2);
   });
 
   it("returns exact catalog evidence when a safe plan needs a proven but inactive relationship", async () => {
@@ -1525,8 +4054,8 @@ describe("Scoped Explore", () => {
         limit: 1,
       })).rejects.toMatchObject({
         code: "EXPLORE_LOCK_STALE",
-        message: expect.stringContaining(
-          "Reviewed field public.subscriptions.region changed type from text to integer",
+        message: expect.stringMatching(
+          /Reviewed field public\.subscriptions\.region changed type from text to integer[\s\S]*boundary rescan --from-env DATABASE_URL/,
         ),
       });
       expect(changedExecutions).toBe(0);
@@ -1611,7 +4140,7 @@ describe("Scoped Explore", () => {
       });
       expect(result.data).toEqual([{
         region: "north",
-        time_bucket: "2026-06-02T00:00:00.000Z",
+        time_bucket: "2026-06-02",
         count: 8,
       }]);
       expect(result).toMatchObject({
@@ -1623,8 +4152,19 @@ describe("Scoped Explore", () => {
 
       const auditText = JSON.stringify(store.listQueryAudit());
       const evidenceId = String(result.evidence_bundle_id);
-      const evidenceText = JSON.stringify(store.getEvidenceBundle(evidenceId));
+      const storedEvidence = store.getEvidenceBundle(evidenceId);
+      const evidenceText = JSON.stringify(storedEvidence);
       expect(store.listQueryAudit({ evidence: evidenceId })).toHaveLength(1);
+      expect(storedEvidence).toMatchObject({
+        tenant_id: expect.stringMatching(/^keyed:[a-f0-9]{64}$/),
+        principal: expect.stringMatching(/^keyed:[a-f0-9]{64}$/),
+      });
+      expect(store.listEvidenceBundles({
+        tenants: [String(storedEvidence?.tenant_id)],
+        principals: [String(storedEvidence?.principal)],
+        outcome: "ok",
+        boundary: fixture.boundary.activation.digest,
+      })).toHaveLength(1);
       expect(auditText).not.toContain("private-literal");
       expect(auditText).not.toContain("tenant-acme");
       expect(auditText).not.toContain("pm-1");
@@ -1677,7 +4217,12 @@ describe("Scoped Explore", () => {
       transport: "stdio",
       env: fixture.env,
       inspectDatabaseFn: async () => changedRole,
-    })).rejects.toMatchObject({ code: "EXPLORE_LOCK_STALE" });
+    })).rejects.toMatchObject({
+      code: "EXPLORE_LOCK_STALE",
+      message: expect.stringContaining(
+        "synapsor-runner boundary rescan --from-env DATABASE_URL",
+      ),
+    });
 
     const overflowRuntime = await createScopedExploreRuntime({
       projectRoot: fixture.root,
@@ -1710,7 +4255,7 @@ describe("Scoped Explore", () => {
       projectRoot: budgetFixture.root,
       transport: "stdio",
       env: budgetFixture.env,
-      executor: fixedExecutor([{ dimension_0: "a", measure_0: 10, __cohort_size: 10 }]),
+      executor: fixedExecutor([{ dimension_0: "a", measure_0: 10, __measure_cohort_0: 10, __cohort_size: 10 }]),
       inspectDatabaseFn: async () => budgetFixture.inspection,
       clock: () => Date.parse("2026-07-24T12:00:00.000Z"),
     });
@@ -1720,7 +4265,12 @@ describe("Scoped Explore", () => {
       projectRoot: budgetFixture.root,
       transport: "stdio",
       env: budgetFixture.env,
-      executor: fixedExecutor([{ dimension_0: "a", measure_0: 10, __cohort_size: 10 }]),
+      executor: fixedExecutor([{
+        dimension_0: "a",
+        measure_0: 10,
+        __measure_cohort_0: 10,
+        __cohort_size: 10,
+      }]),
       inspectDatabaseFn: async () => budgetFixture.inspection,
       clock: () => Date.parse("2026-07-24T12:00:00.000Z"),
     });
@@ -1787,7 +4337,12 @@ describe("Scoped Explore", () => {
       projectRoot: fixture.root,
       transport: "stdio",
       env: fixture.env,
-      executor: fixedExecutor([{ dimension_0: "a", measure_0: 10, __cohort_size: 10 }]),
+      executor: fixedExecutor([{
+        dimension_0: "a",
+        measure_0: 10,
+        __measure_cohort_0: 10,
+        __cohort_size: 10,
+      }]),
       inspectDatabaseFn: async () => fixture.inspection,
       clock: () => Date.parse("2026-07-24T12:00:00.000Z"),
     });
@@ -1811,6 +4366,73 @@ describe("Scoped Explore", () => {
     await runtime.close();
   });
 
+  it("accounts fixed and automatic bucket-count variants in one differencing family", async () => {
+    const fixture = await activatedFixture((candidate) => {
+      candidate.budgets.max_differencing_queries = 2;
+      candidate.budgets.max_queries_per_session = 20;
+      candidate.budgets.rate_limit_per_minute = 20;
+      candidate.budgets.max_extracted_cells_per_session = 200;
+      candidate.pack.resources[0]!.numeric_bands = [{
+        name: "monthly_revenue_band",
+        label: "Monthly revenue band",
+        field: "monthly_revenue_cents",
+        edges: [1_000, 5_000],
+        bucket_labels: ["under 10", "10 to 49", "50 or more"],
+      }];
+      candidate.pack.resources[0]!.auto_bands = [{
+        field: "monthly_revenue_cents",
+        methods: ["quantile"],
+        min_buckets: 3,
+        max_buckets: 8,
+        label_style: "ordinal",
+      }];
+    });
+    let executions = 0;
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: {
+        execute: async () => [],
+        executeBatch: async ({ queries }) => {
+          executions += 1;
+          return queries.map(() => [{
+            dimension_0: 1,
+            measure_0: 10,
+            __cohort_size: 10,
+            __auto_effective_buckets: 5,
+          }]);
+        },
+        close: async () => undefined,
+      },
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => Date.parse("2026-07-24T12:00:00.000Z"),
+    });
+    const planFor = (numeric_band: string | { field: string; method: "quantile"; buckets: number }) => ({
+      kind: "aggregate" as const,
+      resource: "public.subscriptions",
+      measures: [{ function: "count" as const }],
+      dimensions: [{ numeric_band }],
+      top_n: 10,
+    });
+    try {
+      await expect(runtime.explore(planFor("monthly_revenue_band"))).resolves.toMatchObject({ ok: true });
+      await expect(runtime.explore(planFor({
+        field: "monthly_revenue_cents",
+        method: "quantile",
+        buckets: 4,
+      }))).resolves.toMatchObject({ ok: true });
+      await expect(runtime.explore(planFor({
+        field: "monthly_revenue_cents",
+        method: "quantile",
+        buckets: 5,
+      }))).rejects.toMatchObject({ code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED" });
+      expect(executions).toBe(2);
+    } finally {
+      await runtime.close();
+    }
+  });
+
   it("keeps differencing use across restart and UTC midnight until the rolling window expires", async () => {
     const fixture = await activatedFixture((candidate) => {
       candidate.budgets.max_differencing_queries = 1;
@@ -1829,7 +4451,10 @@ describe("Scoped Explore", () => {
     });
     const beforeMidnight = await createRuntime();
     const stableSessionFingerprint = beforeMidnight.session_fingerprint;
-    await beforeMidnight.explore(aggregatePlan("north"));
+    const firstResult = await beforeMidnight.explore(aggregatePlan("north")) as Record<string, any>;
+    expect(firstResult.operator_budget.trusted_scope.warnings).toEqual([
+      expect.stringMatching(/differencing variants for root resource public\.subscriptions reached 1\/1/i),
+    ]);
     await beforeMidnight.close();
 
     now = Date.parse("2026-07-25T00:01:00.000Z");
@@ -1878,7 +4503,12 @@ describe("Scoped Explore", () => {
       ]);
       expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
       expect(outcomes.find((outcome) => outcome.status === "rejected")).toMatchObject({
-        reason: { code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED" },
+        reason: {
+          code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
+          message: expect.stringMatching(
+            /disclosure-control differencing allowance exhausted[\s\S]*Used 1 of 1 distinct protected variants for root resource public\.subscriptions[\s\S]*not an MCP-session counter[\s\S]*prevents reconstruction/i,
+          ),
+        },
       });
       expect(sourceExecutions).toBe(1);
     } finally {
@@ -1922,12 +4552,84 @@ describe("Scoped Explore", () => {
         second.explore(rowPlan),
       ]);
       expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
-      expect(outcomes.find((outcome) => outcome.status === "rejected")).toMatchObject({
-        reason: { code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED" },
-      });
+      const rejected = outcomes.find((outcome): outcome is PromiseRejectedResult =>
+        outcome.status === "rejected");
+      expect(rejected?.reason).toMatchObject({ code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED" });
+      expect(String(rejected?.reason?.message)).toMatch(
+        /query-volume allowance exhausted[\s\S]*Used 1 of 1 queries[\s\S]*L Limits[\s\S]*controls are separate/i,
+      );
       expect(sourceExecutions).toBe(1);
     } finally {
       await Promise.all([first.close(), second.close()]);
+    }
+  });
+
+  it("returns operator-only remaining budgets and warns once when volume crosses 80 percent", async () => {
+    const fixture = await activatedFixture((candidate) => {
+      candidate.budgets.max_queries_per_session = 5;
+      candidate.budgets.rate_limit_per_minute = 10;
+      candidate.budgets.max_extracted_cells_per_session = 100;
+      candidate.budgets.max_differencing_queries = 16;
+    });
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([{ region: "north" }]),
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => Date.parse("2026-07-24T12:00:00.000Z"),
+    });
+    const plan = {
+      kind: "rows" as const,
+      resource: "public.subscriptions",
+      select: ["region"],
+      limit: 1,
+    };
+    try {
+      for (let index = 1; index <= 3; index += 1) {
+        const result = await runtime.explore(plan) as Record<string, any>;
+        expect(result.operator_budget.trusted_scope.volume.queries_rolling_24_hours).toMatchObject({
+          used: index,
+          limit: 5,
+          remaining: 5 - index,
+        });
+        expect(result.operator_budget.trusted_scope.warnings).toEqual([]);
+      }
+      const threshold = await runtime.explore(plan) as Record<string, any>;
+      expect(threshold.operator_budget).toMatchObject({
+        operator_only: true,
+        accounting: expect.stringMatching(/differencing variants are per trusted scope and root resource/i),
+        trusted_scope: {
+          volume: {
+            queries_rolling_24_hours: { used: 4, limit: 5, remaining: 1, percent_used: 80 },
+          },
+          disclosure: {
+            differencing_variants_rolling_24_hours: {
+              root_resource: "public.subscriptions",
+              persists_across_sessions: true,
+            },
+          },
+        },
+      });
+      expect(threshold.operator_budget.trusted_scope.warnings).toEqual([
+        expect.stringMatching(/volume warning: rolling queries reached 4\/5; 1 remain/i),
+      ]);
+      const afterThreshold = await runtime.explore(plan) as Record<string, any>;
+      expect(afterThreshold.operator_budget.trusted_scope.warnings).toEqual([]);
+      expect(afterThreshold.outcome.result.remaining_budgets).toMatchObject({
+        differencing_queries: null,
+        differencing_variants_for_root_resource: null,
+      });
+      const projected = projectScopedExploreResultForModel({
+        tool: "app.explore_data",
+        arguments: { plan },
+        result: threshold,
+        boundary: fixture.boundary,
+      });
+      expect(projected.value).not.toHaveProperty("operator_budget");
+      expect(projected.operator_metadata_withheld).toBe(true);
+    } finally {
+      await runtime.close();
     }
   });
 
@@ -1958,7 +4660,17 @@ describe("Scoped Explore", () => {
         ok: true,
         outcome: {
           result: {
-            remaining_budgets: { differencing_queries: 0 },
+            remaining_budgets: {
+              differencing_queries: 0,
+              differencing_variants_for_root_resource: {
+                resource: "public.subscriptions",
+                used: 1,
+                limit: 1,
+                remaining: 0,
+                window: "rolling_24_hours",
+                persists_across_sessions: true,
+              },
+            },
           },
         },
       });
@@ -2319,7 +5031,12 @@ describe("Scoped Explore", () => {
       resource: "public.subscriptions",
       select: ["region"],
       limit: 1,
-    })).rejects.toMatchObject({ code: "EXPLORE_RATE_LIMITED" });
+    })).rejects.toMatchObject({
+      code: "EXPLORE_RATE_LIMITED",
+      message: expect.stringMatching(
+        /request-rate allowance exhausted[\s\S]*Used 2 of 2 requests[\s\S]*rolling one-minute window/i,
+      ),
+    });
     await bounded.close();
 
     const extractionFixture = await activatedFixture((candidate) => {
@@ -2349,7 +5066,12 @@ describe("Scoped Explore", () => {
       resource: "public.subscriptions",
       select: ["region"],
       limit: 1,
-    })).rejects.toMatchObject({ code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED" });
+    })).rejects.toMatchObject({
+      code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
+      message: expect.stringMatching(
+        /disclosure-control extracted-cell allowance exhausted[\s\S]*Used 4 of 4 cells[\s\S]*separate from query volume/i,
+      ),
+    });
     await extraction.close();
 
     const failed = await createScopedExploreRuntime({
@@ -2384,6 +5106,343 @@ describe("Scoped Explore", () => {
     expect((sourceError as Error).message).not.toMatch(/secret-password|raw-secret|db\.internal/);
     await failed.close();
   }, 20_000);
+
+  it("runs production HTTP Explore with claim-bound scope and hierarchical privacy accounting", async () => {
+    const fixture = await activatedProductionFixture((candidate) => {
+      const subscriptions = candidate.pack.resources.find((resource) =>
+        resource.id === "public.subscriptions")!;
+      subscriptions.derived_measures = [{
+        name: "revenue_running_total",
+        label: "Revenue running total",
+        shape: "running_total",
+        base_measure: { function: "sum", field: "monthly_revenue_cents" },
+      }, {
+        name: "subscription_event_count",
+        label: "Subscription event count",
+        shape: "child_count_total",
+        child_resource: "public.subscription_events",
+        relationship: "subscription_events_subscription_id_fkey",
+      }];
+    }, productionFanOutInspection());
+    const claimBudget = vi.fn(async () => ({
+      allowed: true as const,
+      principal_usage_after_reservation: {
+        query_count: 1,
+        queries_last_minute: 1,
+        extracted_cells: 10,
+        differencing_attempts: 1,
+      },
+      tenant_usage_after_reservation: {
+        query_count: 1,
+        queries_last_minute: 1,
+        extracted_cells: 10,
+        differencing_attempts: 1,
+      },
+      principal_variant_already_counted: false,
+      tenant_variant_already_counted: false,
+    }));
+    const completeBudget = vi.fn(async () => ({ completed: true as const }));
+    const claimPrivacy = vi.fn(async () => ({ allowed: true as const }));
+    const store = new ProposalStore();
+    Object.assign(store, {
+      claimProductionExploreBudgetReservation: claimBudget,
+      completeProductionExploreBudgetReservation: completeBudget,
+      claimProductionExplorePrivacyRelease: claimPrivacy,
+    });
+    const execute = vi.fn(async () => [] as Record<string, unknown>[]);
+    const executeBatch = vi.fn(async ({ queries, context }: Parameters<ScopedExploreExecutor["executeBatch"]>[0]) => {
+      expect(context).toEqual({ tenant: "tenant-from-jwt", principal: "principal-from-jwt" });
+      return queries.map((query) => query.sql.includes('"subscription_events" fc0')
+        ? [
+          { dimension_0: "north", measure_0: 24, __measure_cohort_0: 8, __cohort_size: 8 },
+          { dimension_0: "small", measure_0: 2, __measure_cohort_0: 2, __cohort_size: 2 },
+        ]
+        : query.sql.includes("SUM(")
+          ? [
+          { time_bucket: "2026-07-06", measure_0: 10, __measure_cohort_0: 10, __cohort_size: 10 },
+          { time_bucket: "2026-07-13", measure_0: 100, __measure_cohort_0: 2, __cohort_size: 2 },
+          { time_bucket: "2026-07-20", measure_0: 20, __measure_cohort_0: 20, __cohort_size: 20 },
+          ]
+          : [
+            { dimension_0: "north", measure_0: 8, __cohort_size: 8 },
+            { dimension_0: "small", measure_0: 2, __cohort_size: 2 },
+          ]);
+    });
+    const tenantLimits = {
+      max_queries_per_session: 10_000,
+      max_extracted_cells_per_session: 1_000_000,
+      max_differencing_queries: 2_000,
+      rate_limit_per_minute: 1_000,
+      max_response_cells: 1_000_000,
+    };
+    const hmacKey = Buffer.from("shared-production-accounting-key-32-bytes-minimum");
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "streamable_http",
+      mode: "production_http",
+      env: {
+        ...fixture.env,
+        SYNAPSOR_TENANT_ID: "environment-tenant-must-not-win",
+        SYNAPSOR_PRINCIPAL: "environment-principal-must-not-win",
+      },
+      store,
+      sessionContext: {
+        tenant_id: "tenant-from-jwt",
+        principal: "principal-from-jwt",
+        provenance: "http_claims",
+      },
+      productionPrivacyHmacKey: hmacKey,
+      productionAccountingNamespace: "example.analytics.production",
+      productionTenantLimits: tenantLimits,
+      executor: { execute, executeBatch, close: async () => undefined },
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => Date.parse("2026-08-04T13:00:00.000Z"),
+    });
+    try {
+      expect(runtime.trusted_scope).toEqual({
+        tenant: { source: "verified_http_claim", binding: "org_id" },
+        principal: { source: "verified_http_claim", binding: "sub" },
+      });
+      await runtime.describe({ include_time_coverage: true });
+      expect(execute).not.toHaveBeenCalled();
+      expect(executeBatch).not.toHaveBeenCalled();
+
+      const result = await runtime.explore({
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "region" }],
+        top_n: 5,
+      });
+      expect(result).toMatchObject({
+        ok: true,
+        privacy: { suppressed_groups: 1 },
+        source_database_changed: false,
+      });
+      expect((result as Record<string, unknown>).protect).toBeUndefined();
+      expect(executeBatch).toHaveBeenCalledTimes(1);
+      const compiled = executeBatch.mock.calls[0]![0].queries[0]!;
+      expect(compiled.sql).toContain('t0."tenant_id" = $1');
+      expect(compiled.sql).toContain('t0."account_id" = $2');
+      expect(compiled.params.slice(0, 2)).toEqual(["tenant-from-jwt", "principal-from-jwt"]);
+      expect(compiled.params[2]).toBe(fixture.boundary.budgets.max_groups + 1);
+      const running = await runtime.explore({
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ derived_measure: "revenue_running_total" }],
+        time_bucket: { field: "churned_at", bucket: "week" },
+        order_by: { kind: "time_bucket", direction: "asc" },
+        top_n: 10,
+      });
+      expect(running).toMatchObject({
+        data: [
+          { time_bucket: "2026-07-06", revenue_running_total: 10 },
+          { time_bucket: "2026-07-20", revenue_running_total: 30 },
+        ],
+        privacy: { suppressed_groups: 1 },
+      });
+      expect(executeBatch).toHaveBeenCalledTimes(2);
+      expect(executeBatch.mock.calls[1]![0].queries[0]!.sql).not.toMatch(/\bOVER\s*\(|RUNNING_TOTAL/i);
+      const childCount = await runtime.explore({
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ derived_measure: "subscription_event_count" }],
+        dimensions: [{ field: "region" }],
+        top_n: 10,
+      });
+      expect(childCount).toMatchObject({
+        data: [{ region: "north", subscription_event_count: 24 }],
+        privacy: { suppressed_groups: 1 },
+      });
+      expect(executeBatch).toHaveBeenCalledTimes(3);
+      const childQuery = executeBatch.mock.calls[2]![0].queries[0]!;
+      expect(childQuery.sql).toContain('t0."tenant_id" = $1');
+      expect(childQuery.sql).toContain('t0."account_id" = $2');
+      expect(childQuery.sql).toContain('FROM "public"."subscription_events" fc0');
+      expect(childQuery.sql).toContain('fc0."tenant_id" = $3');
+      expect(childQuery.sql).toContain('fc0."account_id" = $4');
+      expect(childQuery.sql).not.toMatch(/JOIN\s+"public"\."subscription_events"/i);
+      expect(childQuery.params.slice(0, 4)).toEqual([
+        "tenant-from-jwt",
+        "principal-from-jwt",
+        "tenant-from-jwt",
+        "principal-from-jwt",
+      ]);
+      expect(claimBudget).toHaveBeenCalledWith(expect.objectContaining({
+        principal_scope_fingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+        tenant_scope_fingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+        principal_limits: fixture.boundary.budgets,
+        tenant_limits: {
+          ...tenantLimits,
+          max_response_cells: fixture.boundary.budgets.max_response_cells,
+        },
+      }));
+      expect(claimPrivacy).toHaveBeenCalledWith(expect.objectContaining({
+        principal_scope_fingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+        tenant_scope_fingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+        release_kind: "suppressed_grouping",
+      }));
+      expect(completeBudget).toHaveBeenCalledWith(expect.objectContaining({
+        result_released: true,
+      }));
+      const durableAudit = JSON.stringify(store.listQueryAudit());
+      expect(durableAudit).not.toContain("tenant-from-jwt");
+      expect(durableAudit).not.toContain("principal-from-jwt");
+    } finally {
+      await runtime.close();
+      store.close();
+    }
+  });
+
+  it("serves an explicitly reviewed shared reference over production HTTP without a row-scope predicate", async () => {
+    const fixture = await activatedSharedReferenceFixture({ production: true });
+    const claimBudget = vi.fn(async () => ({
+      allowed: true as const,
+      principal_usage_after_reservation: {
+        query_count: 1,
+        queries_last_minute: 1,
+        extracted_cells: 2,
+        differencing_attempts: 1,
+      },
+      tenant_usage_after_reservation: {
+        query_count: 1,
+        queries_last_minute: 1,
+        extracted_cells: 2,
+        differencing_attempts: 1,
+      },
+      principal_variant_already_counted: false,
+      tenant_variant_already_counted: false,
+    }));
+    const store = new ProposalStore();
+    Object.assign(store, {
+      claimProductionExploreBudgetReservation: claimBudget,
+      completeProductionExploreBudgetReservation: vi.fn(async () => ({ completed: true as const })),
+      claimProductionExplorePrivacyRelease: vi.fn(async () => ({ allowed: true as const })),
+    });
+    const executeBatch = vi.fn(async ({ queries, context }: Parameters<ScopedExploreExecutor["executeBatch"]>[0]) => {
+      expect(context).toEqual({ tenant: "tenant-from-jwt", principal: "principal-from-jwt" });
+      return queries.map(() => [
+        { dimension_0: "north", measure_0: 8, __cohort_size: 8 },
+      ]);
+    });
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "streamable_http",
+      mode: "production_http",
+      env: fixture.env,
+      store,
+      sessionContext: {
+        tenant_id: "tenant-from-jwt",
+        principal: "principal-from-jwt",
+        provenance: "http_claims",
+      },
+      productionPrivacyHmacKey: Buffer.from("shared-production-accounting-key-32-bytes-minimum"),
+      productionAccountingNamespace: "example.shared-reference.production",
+      productionTenantLimits: {
+        max_queries_per_session: 100,
+        max_extracted_cells_per_session: 10_000,
+        max_differencing_queries: 10,
+        rate_limit_per_minute: 20,
+        max_response_cells: 10_000,
+      },
+      executor: {
+        execute: async () => [],
+        executeBatch,
+        close: async () => undefined,
+      },
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    try {
+      const resource = runtime.boundary.pack.resources[0]!;
+      expect(resource.shared_reference_scope).toEqual({
+        mode: "shared_reference",
+        acknowledgement: SHARED_REFERENCE_ACKNOWLEDGEMENT,
+      });
+      expect(resource.kept_out_fields).toContain("billing_token");
+
+      await expect(runtime.explore({
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "region" }],
+        top_n: 5,
+      })).resolves.toMatchObject({ ok: true, source_database_changed: false });
+
+      expect(executeBatch).toHaveBeenCalledTimes(1);
+      const compiled = executeBatch.mock.calls[0]![0].queries[0]!;
+      expect(compiled.sql).not.toContain("tenant_id");
+      expect(compiled.sql).not.toContain("account_id");
+      expect(compiled.params).not.toContain("tenant-from-jwt");
+      expect(compiled.params).not.toContain("principal-from-jwt");
+      expect(claimBudget).toHaveBeenCalledWith(expect.objectContaining({
+        principal_scope_fingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+        tenant_scope_fingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+      }));
+    } finally {
+      await runtime.close();
+      store.close();
+    }
+  });
+
+  it("derives replica-stable opaque production budget scopes", async () => {
+    const [firstFixture, secondFixture] = await Promise.all([
+      activatedProductionFixture(),
+      activatedProductionFixture(),
+    ]);
+    const seen: Array<{ principal: string; tenant: string }> = [];
+    const create = async (root: string, inspection: SchemaInspection) => {
+      const store = new ProposalStore();
+      Object.assign(store, {
+        claimProductionExploreBudgetReservation: vi.fn(async (input: Record<string, unknown>) => {
+          seen.push({
+            principal: String(input.principal_scope_fingerprint),
+            tenant: String(input.tenant_scope_fingerprint),
+          });
+          return {
+            allowed: true,
+            principal_usage_after_reservation: { query_count: 1, queries_last_minute: 1, extracted_cells: 1, differencing_attempts: 0 },
+            tenant_usage_after_reservation: { query_count: 1, queries_last_minute: 1, extracted_cells: 1, differencing_attempts: 0 },
+            principal_variant_already_counted: false,
+            tenant_variant_already_counted: false,
+          };
+        }),
+        completeProductionExploreBudgetReservation: vi.fn(async () => ({ completed: true })),
+        claimProductionExplorePrivacyRelease: vi.fn(async () => ({ allowed: true })),
+      });
+      const runtime = await createScopedExploreRuntime({
+        projectRoot: root,
+        transport: "streamable_http",
+        mode: "production_http",
+        env: { DATABASE_URL: "postgresql://unused.example.test/synapsor" },
+        store,
+        sessionContext: { tenant_id: "tenant-a", principal: "alice", provenance: "http_claims" },
+        productionPrivacyHmacKey: Buffer.from("shared-production-accounting-key-32-bytes-minimum"),
+        productionAccountingNamespace: "example.analytics.production",
+        productionTenantLimits: {
+          max_queries_per_session: 100,
+          max_extracted_cells_per_session: 10_000,
+          max_differencing_queries: 10,
+          rate_limit_per_minute: 20,
+          max_response_cells: 10_000,
+        },
+        executor: fixedExecutor([{ region: "north" }]),
+        inspectDatabaseFn: async () => inspection,
+      });
+      await runtime.explore({
+        kind: "rows",
+        resource: "public.subscriptions",
+        select: ["region"],
+        limit: 1,
+      });
+      await runtime.close();
+      store.close();
+    };
+
+    await create(firstFixture.root, firstFixture.inspection);
+    await create(secondFixture.root, secondFixture.inspection);
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toEqual(seen[1]);
+  });
 
   it("revalidates dependency drift before every call in a long-running authoring runtime", async () => {
     const fixture = await activatedFixture();
@@ -2428,6 +5487,105 @@ describe("Scoped Explore", () => {
       })).rejects.toMatchObject({
         code: "EXPLORE_LOCK_STALE",
         message: expect.stringContaining("public.subscriptions.region no longer exists"),
+      });
+      expect(sourceExecutions).toBe(1);
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("runs an activated generated derived-scope resource and fails closed when its FK proof drifts", async () => {
+    const fixture = await activatedDerivedScopeFixture();
+    let currentInspection = fixture.inspection;
+    const compiled: CompiledExploreQuery[][] = [];
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: {
+        execute: async () => [],
+        executeBatch: async ({ queries }) => {
+          compiled.push(queries);
+          return queries.map(() => [{ quantity: 2 }]);
+        },
+        close: async () => undefined,
+      },
+      inspectDatabaseFn: async () => currentInspection,
+    });
+    try {
+      await expect(runtime.explore({
+        kind: "rows",
+        resource: "public.order_items",
+        select: ["quantity"],
+        limit: 1,
+      })).resolves.toMatchObject({ source_database_changed: false });
+      expect(compiled).toHaveLength(1);
+      expect(compiled[0]?.[0]?.resources.map((resource) => resource.id))
+        .toEqual(["public.order_items", "public.orders"]);
+      expect(compiled[0]?.[0]?.sql).toMatch(/WHERE EXISTS \(SELECT 1 FROM "public"\."orders"/);
+      expect(compiled[0]?.[0]?.sql).toMatch(/st0_tenant_0\."tenant_id" = \$1/);
+
+      const drifted = structuredClone(fixture.inspection);
+      drifted.tables.find((table) => table.name === "order_items")!.columns
+        .find((field) => field.name === "order_id")!.nullable = true;
+      currentInspection = drifted;
+      await expect(runtime.explore({
+        kind: "rows",
+        resource: "public.order_items",
+        select: ["quantity"],
+        limit: 1,
+      })).rejects.toMatchObject({
+        code: "EXPLORE_LOCK_STALE",
+        message: expect.stringMatching(/derived tenant scope/i),
+      });
+      expect(compiled).toHaveLength(1);
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("fails closed before execution when a reviewed shared reference gains tenant-shaped schema", async () => {
+    const fixture = await activatedSharedReferenceFixture();
+    let currentInspection = fixture.inspection;
+    let sourceExecutions = 0;
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: {
+        execute: async () => [],
+        executeBatch: async ({ queries }) => queries.map(() => {
+          sourceExecutions += 1;
+          return [{ region: "north" }];
+        }),
+        close: async () => undefined,
+      },
+      inspectDatabaseFn: async () => currentInspection,
+    });
+    try {
+      await expect(runtime.explore({
+        kind: "rows",
+        resource: "public.subscriptions",
+        select: ["region"],
+        limit: 1,
+      })).resolves.toMatchObject({ source_database_changed: false });
+      expect(sourceExecutions).toBe(1);
+
+      const drifted = structuredClone(fixture.inspection);
+      drifted.tables[0]!.columns.splice(1, 0, column("tenant_id", "uuid", {
+        tenant: true,
+        immutable: true,
+      }));
+      drifted.tables[0]!.suggestions.tenant_columns = ["tenant_id"];
+      currentInspection = drifted;
+      await expect(runtime.explore({
+        kind: "rows",
+        resource: "public.subscriptions",
+        select: ["region"],
+        limit: 1,
+      })).rejects.toMatchObject({
+        code: "EXPLORE_LOCK_STALE",
+        message: expect.stringMatching(/authority-bearing schema[\s\S]*No query was executed/i),
       });
       expect(sourceExecutions).toBe(1);
     } finally {
@@ -2485,6 +5643,10 @@ async function activatedFixture(
   inspection = churnInspection(),
   minimumCohort?: 1 | 2 | 3 | 4,
   trustedScopeExposure?: "runner_only" | "model_visible",
+  metadata?: {
+    resource?: ReviewedMetadataDecision;
+    fields?: Record<string, ReviewedMetadataDecision>;
+  },
 ): Promise<{
   root: string;
   boundary: ActivatedExplorationBoundary;
@@ -2494,6 +5656,8 @@ async function activatedFixture(
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-scoped-explore-"));
   temporaryRoots.push(root);
   const reviewedResource = {
+    ...(metadata?.resource ? { metadata: metadata.resource } : {}),
+    ...(metadata?.fields ? { field_metadata: metadata.fields } : {}),
     ...(minimumCohort
       ? {
         minimum_cohort: {
@@ -2531,7 +5695,7 @@ async function activatedFixture(
       database_env_names: ["DATABASE_URL"],
     },
     sourceEnv: "DATABASE_URL",
-    ...(minimumCohort || trustedScopeExposure
+    ...(minimumCohort || trustedScopeExposure || metadata
       ? {
         overrides: {
           schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
@@ -2551,6 +5715,250 @@ async function activatedFixture(
     candidate,
     expectedDigest: digest,
     actor: "reviewer@example.test",
+    confirmation: `ACTIVATE ${digest}`,
+    confirmedDecisions: candidate.unresolved_decisions,
+    currentInspection: inspection,
+  });
+  return {
+    root,
+    boundary,
+    inspection,
+    env: {
+      DATABASE_URL: "postgresql://unused.example.test/synapsor",
+      SYNAPSOR_TENANT_ID: "tenant-acme",
+      SYNAPSOR_PRINCIPAL: "pm-1",
+    },
+  };
+}
+
+async function activatedDerivedScopeFixture(
+  narrow?: (candidate: ReturnType<typeof buildAutoBoundary>["exploration_boundary"]) => void,
+): Promise<{
+  root: string;
+  boundary: ActivatedExplorationBoundary;
+  inspection: SchemaInspection;
+  env: NodeJS.ProcessEnv;
+}> {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-derived-scope-runtime-"));
+  temporaryRoots.push(root);
+  const inspection = derivedScopeInspection();
+  const build = buildAutoBoundary({
+    inspection,
+    project: {
+      root,
+      package_manager: "pnpm",
+      frameworks: [],
+      schema_inputs: [],
+      database_env_names: ["DATABASE_URL"],
+    },
+    sourceEnv: "DATABASE_URL",
+    overrides: {
+      schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+      resources: {
+        "public.order_items": {
+          tenant_scope_path: {
+            value: "order_items_order_id_fkey",
+            actor: "owner@example.test",
+            reason: "Every item belongs to the tenant of its required order.",
+            decided_at: "2026-08-05T12:00:00.000Z",
+          },
+        },
+      },
+    },
+  });
+  await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+  const candidate = structuredClone(build.exploration_boundary);
+  narrow?.(candidate);
+  const digest = explorationBoundaryCandidateDigest(candidate);
+  const boundary = await activateExplorationBoundary({
+    projectRoot: root,
+    candidate,
+    expectedDigest: digest,
+    actor: "reviewer@example.test",
+    confirmation: `ACTIVATE ${digest}`,
+    confirmedDecisions: candidate.unresolved_decisions,
+    currentInspection: inspection,
+  });
+  return {
+    root,
+    boundary,
+    inspection,
+    env: {
+      DATABASE_URL: "postgresql://unused.example.test/synapsor",
+      SYNAPSOR_TENANT_ID: "tenant-acme",
+      SYNAPSOR_PRINCIPAL: "pm-1",
+    },
+  };
+}
+
+async function activatedProductionFixture(
+  narrow?: (candidate: ReturnType<typeof buildAutoBoundary>["exploration_boundary"]) => void,
+  sourceInspection = churnInspection(),
+): Promise<{
+  root: string;
+  boundary: ActivatedExplorationBoundary;
+  inspection: SchemaInspection;
+  env: NodeJS.ProcessEnv;
+}> {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-production-explore-"));
+  temporaryRoots.push(root);
+  const inspection = structuredClone(sourceInspection);
+  for (const resource of inspection.tables) {
+    if (!resource.columns.some((field) => field.name === "account_id")) {
+      resource.columns.splice(2, 0, column("account_id", "uuid", { immutable: true }));
+    }
+    if (!resource.suggestions.default_visible_columns.includes("account_id")) {
+      resource.suggestions.default_visible_columns.push("account_id");
+    }
+    resource.row_level_security_policies ??= [];
+    resource.row_level_security_policies.push({
+      name: `${resource.name}_principal_read`,
+      command: "SELECT",
+      permissive: true,
+      roles: ["app_reader"],
+      using_expression: "(account_id = current_setting('app.principal_id')::uuid)",
+    });
+  }
+  const build = buildAutoBoundary({
+    inspection,
+    project: {
+      root,
+      package_manager: "pnpm",
+      frameworks: ["nextjs"],
+      schema_inputs: [],
+      database_env_names: ["DATABASE_URL"],
+    },
+    sourceEnv: "DATABASE_URL",
+    deploymentProfile: "production",
+    httpClaims: { tenantClaim: "org_id", principalClaim: "sub" },
+    overrides: {
+      schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+      resources: Object.fromEntries(inspection.tables.map((resource) => [
+        `${resource.schema}.${resource.name}`,
+        {
+          principal_key: {
+            value: "account_id",
+            actor: "production-owner@example.test",
+            reason: "Each authenticated account may analyze only its own reviewed rows.",
+            decided_at: "2026-08-04T12:00:00.000Z",
+          },
+        },
+      ])),
+    },
+  });
+  await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+  const candidate = structuredClone(build.exploration_boundary);
+  narrow?.(candidate);
+  const digest = explorationBoundaryCandidateDigest(candidate);
+  const boundary = await activateExplorationBoundary({
+    projectRoot: root,
+    candidate,
+    expectedDigest: digest,
+    actor: "production-owner@example.test",
+    confirmation: `ACTIVATE ${digest}`,
+    confirmedDecisions: candidate.unresolved_decisions,
+    currentInspection: inspection,
+  });
+  return {
+    root,
+    boundary,
+    inspection,
+    env: { DATABASE_URL: "postgresql://unused.example.test/synapsor" },
+  };
+}
+
+function productionFanOutInspection(): SchemaInspection {
+  const inspection = churnInspection();
+  const root = inspection.tables[0]!;
+  const child = structuredClone(root);
+  child.name = "subscription_events";
+  child.columns = [
+    column("id", "uuid", { immutable: true }),
+    column("tenant_id", "uuid", { tenant: true, immutable: true }),
+    column("subscription_id", "uuid", { immutable: true }),
+    column("event_type", "text"),
+  ];
+  child.primary_key = ["id"];
+  child.unique_constraints = [{ name: "subscription_events_pkey", columns: ["id"] }];
+  child.check_constraints = [];
+  child.foreign_keys = [{
+    name: "subscription_events_subscription_id_fkey",
+    columns: ["subscription_id"],
+    referenced_schema: "public",
+    referenced_table: "subscriptions",
+    referenced_columns: ["id"],
+    delete_rule: "RESTRICT",
+  }];
+  child.row_level_security_policies = [{
+    name: "subscription_events_tenant_read",
+    command: "SELECT",
+    permissive: true,
+    roles: ["app_reader"],
+    using_expression: "(tenant_id = current_setting('app.tenant_id')::uuid)",
+  }];
+  child.indexes = [
+    { name: "subscription_events_pkey", columns: ["id"], unique: true },
+    { name: "subscription_events_subscription_id_idx", columns: ["subscription_id"] },
+  ];
+  child.suggestions = {
+    tenant_columns: ["tenant_id"],
+    conflict_columns: [],
+    sensitive_columns: [],
+    default_visible_columns: ["id", "tenant_id", "subscription_id", "event_type"],
+  };
+  inspection.tables.push(child);
+  return inspection;
+}
+
+async function activatedSharedReferenceFixture(
+  options: { production?: boolean } = {},
+): Promise<{
+  root: string;
+  boundary: ActivatedExplorationBoundary;
+  inspection: SchemaInspection;
+  env: NodeJS.ProcessEnv;
+}> {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-shared-reference-"));
+  temporaryRoots.push(root);
+  const inspection = sharedReferenceInspection();
+  const build = buildAutoBoundary({
+    inspection,
+    project: {
+      root,
+      package_manager: "pnpm",
+      frameworks: [],
+      schema_inputs: [],
+      database_env_names: ["DATABASE_URL"],
+    },
+    sourceEnv: "DATABASE_URL",
+    ...(options.production
+      ? {
+        deploymentProfile: "production" as const,
+        httpClaims: { tenantClaim: "org_id", principalClaim: "sub" },
+      }
+      : {}),
+    overrides: {
+      schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+      resources: {
+        "public.subscriptions": {
+          shared_reference_scope: {
+            value: SHARED_REFERENCE_ACKNOWLEDGEMENT,
+            actor: "owner@example.test",
+            reason: "This reference table is centrally maintained and has identical rows for every tenant.",
+            decided_at: "2026-08-07T12:00:00.000Z",
+          },
+        },
+      },
+    },
+  });
+  await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+  const candidate = structuredClone(build.exploration_boundary);
+  const digest = explorationBoundaryCandidateDigest(candidate);
+  const boundary = await activateExplorationBoundary({
+    projectRoot: root,
+    candidate,
+    expectedDigest: digest,
+    actor: "owner@example.test",
     confirmation: `ACTIVATE ${digest}`,
     confirmedDecisions: candidate.unresolved_decisions,
     currentInspection: inspection,
@@ -2673,6 +6081,347 @@ function principalPolicy(name: string) {
   };
 }
 
+function derivedScopeBoundary(
+  input: ActivatedExplorationBoundary,
+): ActivatedExplorationBoundary {
+  const boundary = structuredClone(input);
+  const original = structuredClone(boundary.pack.resources[0]!);
+  const orders = {
+    ...original,
+    id: "public.orders",
+    table: "orders",
+    relationships: [],
+  };
+  const scopeLink = {
+    constraint_name: "order_items_order_id_fkey",
+    source_resource: "public.order_items",
+    target_resource: "public.orders",
+    source_columns: ["order_id"],
+    target_columns: ["id"],
+    target_uniqueness: {
+      kind: "primary_key" as const,
+      name: "orders_pkey",
+      columns: ["id"],
+    },
+    nullable: false,
+    cardinality: "many_to_one" as const,
+    max_fan_out: 1 as const,
+  };
+  const { tenant_key: _tenantKey, principal_key: _principalKey, ...withoutDirectScope } = original;
+  const orderItems = {
+    ...withoutDirectScope,
+    id: "public.order_items",
+    table: "order_items",
+    primary_key: "id",
+    tenant_scope: {
+      mode: "derived" as const,
+      path_id: "order_items_order_id_fkey",
+      ancestor_resource: "public.orders",
+      ancestor_column: "tenant_id",
+      proof: {
+        source: "database_catalog" as const,
+        links: [scopeLink],
+        digest: canonicalJsonDigest([scopeLink]),
+      },
+    },
+    field_types: {
+      id: "uuid",
+      order_id: "uuid",
+      quantity: "integer",
+      status: "text",
+      created_at: "timestamp with time zone",
+    },
+    field_enums: { status: ["open", "closed"] },
+    selectable_fields: ["id", "order_id", "quantity", "status", "created_at"],
+    filterable_fields: {
+      id: ["eq", "neq", "in"] as Array<"eq" | "neq" | "in">,
+      order_id: ["eq", "neq", "in"] as Array<"eq" | "neq" | "in">,
+      quantity: ["eq", "neq", "lt", "lte", "gt", "gte", "in"] as Array<"eq" | "neq" | "lt" | "lte" | "gt" | "gte" | "in">,
+      status: ["eq", "neq", "in"] as Array<"eq" | "neq" | "in">,
+      created_at: ["eq", "neq", "lt", "lte", "gt", "gte", "in"] as Array<"eq" | "neq" | "lt" | "lte" | "gt" | "gte" | "in">,
+    },
+    sortable_fields: ["id", "order_id", "quantity", "status", "created_at"],
+    groupable_fields: ["status"],
+    aggregate_measures: ["quantity"],
+    aggregate_measure_functions: { quantity: ["sum", "avg"] as Array<"sum" | "avg"> },
+    count_distinct_fields: ["id", "order_id"],
+    time_bucket_fields: { created_at: ["day", "week", "month"] as Array<"day" | "week" | "month"> },
+    kept_out_fields: [],
+    relationships: [],
+  };
+  boundary.pack.resources = [orders, orderItems];
+  return boundary;
+}
+
+function depthThreeScopeBoundary(
+  input: ActivatedExplorationBoundary,
+): ActivatedExplorationBoundary {
+  type Resource = ActivatedExplorationBoundary["pack"]["resources"][number];
+  type Scope = NonNullable<Resource["tenant_scope"]>;
+  type Link = Scope["proof"]["links"][number];
+
+  const boundary = structuredClone(input);
+  boundary.budgets.max_derived_scope_hops = 3;
+  boundary.budgets.max_analysis_relationship_hops = 3;
+  const template = structuredClone(boundary.pack.resources[0]!);
+  const link = (
+    constraintName: string,
+    sourceResource: string,
+    targetResource: string,
+    sourceColumn: string,
+  ): Link => ({
+    constraint_name: constraintName,
+    source_resource: sourceResource,
+    target_resource: targetResource,
+    source_columns: [sourceColumn],
+    target_columns: ["id"],
+    target_uniqueness: {
+      kind: "primary_key",
+      name: `${targetResource.split(".").at(-1)}_pkey`,
+      columns: ["id"],
+    },
+    nullable: false,
+    cardinality: "many_to_one",
+    max_fan_out: 1,
+  });
+  const links = [
+    link(
+      "event_notes_order_event_id_fkey",
+      "public.event_notes",
+      "public.order_events",
+      "order_event_id",
+    ),
+    link(
+      "order_events_order_item_id_fkey",
+      "public.order_events",
+      "public.order_items",
+      "order_item_id",
+    ),
+    link(
+      "order_items_order_id_fkey",
+      "public.order_items",
+      "public.orders",
+      "order_id",
+    ),
+  ];
+  const derivedScope = (path: Link[], kind: "tenant" | "principal"): Scope => ({
+    mode: "derived",
+    path_id: path.map((candidate) => candidate.constraint_name).join("__"),
+    ancestor_resource: "public.orders",
+    ancestor_column: kind === "tenant" ? "tenant_id" : "id",
+    proof: {
+      source: "database_catalog",
+      links: structuredClone(path),
+      digest: canonicalJsonDigest(path),
+    },
+  });
+  const derivedResource = (inputResource: {
+    id: string;
+    table: string;
+    foreignKey: string;
+    path: Link[];
+    labelField: string;
+  }): Resource => {
+    const resource = structuredClone(template);
+    resource.id = inputResource.id;
+    resource.table = inputResource.table;
+    resource.primary_key = "id";
+    delete resource.tenant_key;
+    delete resource.principal_key;
+    delete resource.shared_reference_scope;
+    resource.tenant_scope = derivedScope(inputResource.path, "tenant");
+    resource.principal_scope = derivedScope(inputResource.path, "principal");
+    resource.field_types = {
+      id: "uuid",
+      [inputResource.foreignKey]: "uuid",
+      [inputResource.labelField]: "text",
+    };
+    resource.field_enums = {};
+    resource.selectable_fields = ["id", inputResource.foreignKey, inputResource.labelField];
+    resource.model_withheld_fields = [];
+    resource.filterable_fields = {
+      [inputResource.labelField]: ["eq", "neq", "in"],
+    };
+    resource.sortable_fields = ["id", inputResource.labelField];
+    resource.groupable_fields = [inputResource.labelField];
+    resource.aggregate_measures = [];
+    resource.aggregate_measure_functions = {};
+    resource.count_distinct_fields = ["id"];
+    resource.time_bucket_fields = {};
+    resource.kept_out_fields = [];
+    resource.relationships = [];
+    delete resource.numeric_bands;
+    delete resource.auto_bands;
+    delete resource.derived_measures;
+    return resource;
+  };
+
+  const orders = structuredClone(template);
+  orders.id = "public.orders";
+  orders.table = "orders";
+  orders.primary_key = "id";
+  orders.tenant_key = "tenant_id";
+  orders.principal_key = "id";
+  delete orders.tenant_scope;
+  delete orders.principal_scope;
+  delete orders.shared_reference_scope;
+  orders.field_types = { id: "uuid", tenant_id: "uuid", region: "text" };
+  orders.field_enums = {};
+  orders.selectable_fields = ["id", "tenant_id", "region"];
+  orders.model_withheld_fields = [];
+  orders.filterable_fields = { region: ["eq", "neq", "in"] };
+  orders.sortable_fields = ["id", "region"];
+  orders.groupable_fields = ["region"];
+  orders.aggregate_measures = [];
+  orders.aggregate_measure_functions = {};
+  orders.count_distinct_fields = ["id"];
+  orders.time_bucket_fields = {};
+  orders.kept_out_fields = [];
+  orders.relationships = [];
+  delete orders.numeric_bands;
+  delete orders.auto_bands;
+  delete orders.derived_measures;
+
+  const orderItems = derivedResource({
+    id: "public.order_items",
+    table: "order_items",
+    foreignKey: "order_id",
+    path: links.slice(2),
+    labelField: "product",
+  });
+  const orderEvents = derivedResource({
+    id: "public.order_events",
+    table: "order_events",
+    foreignKey: "order_item_id",
+    path: links.slice(1),
+    labelField: "event_type",
+  });
+  const eventNotes = derivedResource({
+    id: "public.event_notes",
+    table: "event_notes",
+    foreignKey: "order_event_id",
+    path: links,
+    labelField: "note_type",
+  });
+  const pathId = links.map((candidate) => candidate.constraint_name).join("__");
+  eventNotes.relationships = [{
+    id: pathId,
+    target_resource: "public.orders",
+    local_columns: ["order_event_id"],
+    target_columns: ["id"],
+    counted_entity: "id",
+    cardinality: "many_to_one",
+    max_fan_out: 1,
+    path_depth: 3,
+    proof: {
+      source: "database_catalog",
+      links: structuredClone(links),
+      digest: canonicalJsonDigest(links),
+    },
+    nullable: false,
+    unmatched_rows: "exclude",
+  }];
+  boundary.pack.resources = [eventNotes, orderEvents, orderItems, orders];
+  return boundary;
+}
+
+function derivedTargetBoundary(
+  input: ActivatedExplorationBoundary,
+): ActivatedExplorationBoundary {
+  const boundary = derivedScopeBoundary(input);
+  const orders = boundary.pack.resources.find((resource) => resource.id === "public.orders")!;
+  const original = structuredClone(orders);
+  const catalogs = {
+    ...structuredClone(original),
+    id: "public.catalogs",
+    table: "catalogs",
+    relationships: [],
+  };
+  const scopeLink = {
+    constraint_name: "products_catalog_id_fkey",
+    source_resource: "public.products",
+    target_resource: "public.catalogs",
+    source_columns: ["catalog_id"],
+    target_columns: ["id"],
+    target_uniqueness: {
+      kind: "primary_key" as const,
+      name: "catalogs_pkey",
+      columns: ["id"],
+    },
+    nullable: false,
+    cardinality: "many_to_one" as const,
+    max_fan_out: 1 as const,
+  };
+  const { tenant_key: _tenantKey, principal_key: _principalKey, ...withoutDirectScope } = original;
+  const products = {
+    ...withoutDirectScope,
+    id: "public.products",
+    table: "products",
+    tenant_scope: {
+      mode: "derived" as const,
+      path_id: "products_catalog_id_fkey",
+      ancestor_resource: "public.catalogs",
+      ancestor_column: "tenant_id",
+      proof: {
+        source: "database_catalog" as const,
+        links: [scopeLink],
+        digest: canonicalJsonDigest([scopeLink]),
+      },
+    },
+    field_types: { id: "uuid", catalog_id: "uuid", name: "text" },
+    field_enums: {},
+    selectable_fields: ["id", "catalog_id", "name"],
+    filterable_fields: {
+      id: ["eq", "neq", "in"] as Array<"eq" | "neq" | "in">,
+      catalog_id: ["eq", "neq", "in"] as Array<"eq" | "neq" | "in">,
+      name: ["eq", "neq", "in"] as Array<"eq" | "neq" | "in">,
+    },
+    sortable_fields: ["id", "catalog_id", "name"],
+    groupable_fields: ["name"],
+    aggregate_measures: [],
+    count_distinct_fields: ["id", "catalog_id"],
+    time_bucket_fields: {},
+    kept_out_fields: [],
+    relationships: [],
+  };
+  const relationshipLink = {
+    constraint_name: "orders_featured_product_id_fkey",
+    source_resource: "public.orders",
+    target_resource: "public.products",
+    source_columns: ["featured_product_id"],
+    target_columns: ["id"],
+    target_uniqueness: {
+      kind: "primary_key" as const,
+      name: "products_pkey",
+      columns: ["id"],
+    },
+    nullable: false,
+    cardinality: "many_to_one" as const,
+    max_fan_out: 1 as const,
+  };
+  orders.field_types.featured_product_id = "uuid";
+  orders.selectable_fields.push("featured_product_id");
+  orders.relationships = [{
+    id: "orders_featured_product_id_fkey",
+    target_resource: "public.products",
+    local_columns: ["featured_product_id"],
+    target_columns: ["id"],
+    counted_entity: orders.primary_key,
+    cardinality: "many_to_one",
+    max_fan_out: 1,
+    path_depth: 1,
+    proof: {
+      source: "database_catalog",
+      links: [relationshipLink],
+      digest: canonicalJsonDigest([relationshipLink]),
+    },
+    nullable: false,
+    unmatched_rows: "exclude",
+  }];
+  boundary.pack.resources = [orders, products, catalogs];
+  return boundary;
+}
+
 function fixedExecutor(rows: Record<string, unknown>[]): ScopedExploreExecutor {
   return {
     execute: async () => structuredClone(rows),
@@ -2702,19 +6451,10 @@ async function rewriteActiveBoundary(
   const activePath = path.join(root, ".synapsor/exploration-boundary.active.json");
   const active = JSON.parse(await fs.readFile(activePath, "utf8")) as Record<string, any>;
   mutate(active);
+  const { activation: _activation, ...activeAuthority } = active;
   active.activation.digest = canonicalJsonDigest({
-    schema_version: active.schema_version,
+    ...activeAuthority,
     activation: "reviewed",
-    deployment_profile: active.deployment_profile,
-    source: active.source,
-    compiler_version: active.compiler_version,
-    spec_version: active.spec_version,
-    ...(active.reporting_timezone ? { reporting_timezone: active.reporting_timezone } : {}),
-    trusted_context: active.trusted_context,
-    generation_lock_fingerprint: active.generation_lock_fingerprint,
-    role_posture_fingerprint: active.role_posture_fingerprint,
-    pack: active.pack,
-    budgets: active.budgets,
   });
   await fs.writeFile(activePath, `${JSON.stringify(active, null, 2)}\n`, "utf8");
   const setPath = path.join(root, ".synapsor/exploration-boundaries.active.json");
@@ -2727,6 +6467,41 @@ async function rewriteActiveBoundary(
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
+}
+
+function derivedScopeInspection(): SchemaInspection {
+  const inspection = churnInspection();
+  const orders = structuredClone(inspection.tables[0]!);
+  orders.name = "orders";
+  orders.unique_constraints = [{ name: "orders_pkey", columns: ["id"] }];
+  orders.indexes = [{ name: "orders_pkey", columns: ["id"], unique: true }];
+
+  const orderItems = structuredClone(orders);
+  orderItems.name = "order_items";
+  orderItems.columns = orderItems.columns.filter((field) => field.name !== "tenant_id");
+  orderItems.columns.push(column("order_id", "uuid", { immutable: true }));
+  orderItems.columns.push(column("quantity", "integer"));
+  orderItems.unique_constraints = [{ name: "order_items_pkey", columns: ["id"] }];
+  orderItems.indexes = [{ name: "order_items_pkey", columns: ["id"], unique: true }];
+  orderItems.foreign_keys = [{
+    name: "order_items_order_id_fkey",
+    columns: ["order_id"],
+    referenced_schema: "public",
+    referenced_table: "orders",
+    referenced_columns: ["id"],
+    delete_rule: "RESTRICT",
+  }];
+  orderItems.row_level_security = false;
+  orderItems.row_level_security_policies = [];
+  if (!orderItems.role_posture) throw new Error("derived-scope fixture role posture is required");
+  orderItems.role_posture.row_security_forced = false;
+  orderItems.role_posture.row_security_effective_for_current_role = false;
+  orderItems.suggestions.tenant_columns = [];
+  orderItems.suggestions.default_visible_columns = orderItems.suggestions.default_visible_columns
+    .filter((field) => field !== "tenant_id")
+    .concat("order_id", "quantity");
+  inspection.tables = [orderItems, orders];
+  return inspection;
 }
 
 function churnInspection(): SchemaInspection {
@@ -2796,6 +6571,40 @@ function churnInspection(): SchemaInspection {
       },
     }],
   };
+}
+
+function quotedIdentifierInspection(): SchemaInspection {
+  const inspection = churnInspection();
+  const table = inspection.tables[0]!;
+  table.name = "select";
+  const renamedFields = new Map([
+    ["region", "caf\u00e9_count"],
+    ["monthly_revenue_cents", "total amount"],
+  ]);
+  table.columns = table.columns.map((field) => ({
+    ...field,
+    name: renamedFields.get(field.name) ?? field.name,
+  }));
+  table.columns.push(column('quote"field', "text"), column("back`tick", "text"));
+  table.suggestions.default_visible_columns = table.suggestions.default_visible_columns
+    .map((field) => renamedFields.get(field) ?? field)
+    .concat('quote"field', "back`tick");
+  return inspection;
+}
+
+function sharedReferenceInspection(): SchemaInspection {
+  const inspection = churnInspection();
+  const resource = inspection.tables[0]!;
+  resource.columns = resource.columns.filter((field) => field.name !== "tenant_id");
+  resource.suggestions.tenant_columns = [];
+  resource.suggestions.default_visible_columns = resource.suggestions.default_visible_columns
+    .filter((field) => field !== "tenant_id");
+  resource.row_level_security = false;
+  resource.row_level_security_policies = [];
+  if (!resource.role_posture) throw new Error("shared-reference fixture role posture is required");
+  resource.role_posture.row_security_forced = false;
+  resource.role_posture.row_security_effective_for_current_role = false;
+  return inspection;
 }
 
 function column(

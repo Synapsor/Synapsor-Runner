@@ -143,7 +143,12 @@ export async function guidedActionOptions(input: {
   return {
     boundary_digest: boundary.activation.digest,
     source: boundary.source,
-    resources: boundary.pack.resources.map((resource) => {
+    resources: boundary.pack.resources
+      .filter((resource): resource is typeof resource & { tenant_key: string } =>
+        typeof resource.tenant_key === "string"
+        && resource.tenant_key.length > 0
+        && !resource.principal_scope)
+      .map((resource) => {
       const table = requireInspectedTable(input.inspection, resource.schema, resource.table);
       const writableFields = table.columns
         .filter((column) =>
@@ -240,6 +245,7 @@ export async function createGuidedActionDraft(input: {
   const action = normalizeAction(input.action);
   const resource = boundary.pack.resources.find((candidate) => candidate.id === action.resource);
   if (!resource) throw new Error(`GUIDED_ACTION_RESOURCE_UNKNOWN: ${action.resource} is not in the active reviewed boundary.`);
+  requireDirectWriteTenantKey(resource);
   const table = requireInspectedTable(input.inspection, resource.schema, resource.table);
   const options = (await guidedActionOptions({ projectRoot, inspection: input.inspection })).resources
     .find((candidate) => candidate.id === resource.id)!;
@@ -546,6 +552,10 @@ function emitGuidedActionDsl(input: {
   table: TableInfo;
 }): string {
   const { action, boundary, resource, table } = input;
+  const tenantKey = requireDirectWriteTenantKey(resource);
+  if (boundary.trusted_context.provider !== "environment") {
+    throw new Error("Guided write actions are local authoring artifacts and cannot be generated from a production Explore boundary.");
+  }
   const contextName = safeIdentifier(`guided_${safeCapabilityFileName(action.capability_name)}`);
   const lookupArgument = action.lookup_argument || `${singular(resource.table)}_id`;
   const lines = [
@@ -563,7 +573,7 @@ function emitGuidedActionDsl(input: {
     `  SOURCE ${safeIdentifier(boundary.source)}`,
     `  ON ${safeIdentifier(resource.schema)}.${safeIdentifier(resource.table)}`,
     `  PRIMARY KEY ${safeIdentifier(resource.primary_key)}`,
-    `  TENANT KEY ${safeIdentifier(resource.tenant_key)}`,
+    `  TENANT KEY ${safeIdentifier(tenantKey)}`,
     ...(resource.principal_key ? [`  PRINCIPAL SCOPE KEY ${safeIdentifier(resource.principal_key)}`] : []),
     ...(action.operation === "insert" ? [] : [
       `  CONFLICT GUARD ${safeIdentifier(action.conflict_column!)}`,
@@ -581,7 +591,7 @@ function emitGuidedActionDsl(input: {
     "  MAX ROWS 1",
     `  PROPOSE ACTION ${safeIdentifier(lastCapabilitySegment(action.capability_name))} ${action.operation.toUpperCase()}`,
     ...(action.operation === "insert" ? [
-      `  DEDUP KEY ${safeIdentifier(resource.tenant_key)} = TRUSTED TENANT, ${safeIdentifier(action.dedup_proposal_column!)} = PROPOSAL ID`,
+      `  DEDUP KEY ${safeIdentifier(tenantKey)} = TRUSTED TENANT, ${safeIdentifier(action.dedup_proposal_column!)} = PROPOSAL ID`,
     ] : []),
     ...(action.operation === "delete" ? [] : [
       `  ALLOW WRITE ${action.patches.map((patch) => safeIdentifier(patch.column)).join(", ")}`,
@@ -728,6 +738,7 @@ function validateActionAgainstSource(
   resource: ActivatedExplorationBoundary["pack"]["resources"][number],
   table: TableInfo,
 ): void {
+  const tenantKey = requireDirectWriteTenantKey(resource);
   if (table.type !== "table" || !table.writable) throw new Error("GUIDED_ACTION_TABLE_REQUIRED: direct writeback requires an inspected writable base table.");
   if (table.primary_key.length !== 1 || table.primary_key[0] !== resource.primary_key) {
     throw new Error("GUIDED_ACTION_PRIMARY_KEY_MISMATCH: direct writeback requires the source-proven single-column primary key.");
@@ -746,14 +757,14 @@ function validateActionAgainstSource(
   }
   if (action.operation === "insert") {
     const dedup = action.dedup_proposal_column;
-    if (!dedup || !insertIdentityCandidates(table, resource.tenant_key).includes(dedup)) {
+    if (!dedup || !insertIdentityCandidates(table, tenantKey).includes(dedup)) {
       throw new Error("GUIDED_ACTION_INSERT_DEDUP_UNPROVEN: select a primary/unique proposal-identity column proven by inspected metadata.");
     }
   }
   const prerequisites = assessDirectWritePrerequisites(table, {
     operation: action.operation,
     primary_key: resource.primary_key,
-    tenant_key: resource.tenant_key,
+    tenant_key: tenantKey,
     allowed_columns: action.patches.map((patch) => patch.column),
     patch_columns: action.patches.map((patch) => patch.column),
     ...(conflict ? { conflict_column: conflict } : {}),
@@ -761,13 +772,29 @@ function validateActionAgainstSource(
       version_advance: { column: conflict, strategy: action.version_advance },
     } : {}),
     ...(action.operation === "insert" && action.dedup_proposal_column
-      ? { dedup_columns: [resource.tenant_key, action.dedup_proposal_column] }
+      ? { dedup_columns: [tenantKey, action.dedup_proposal_column] }
       : {}),
   });
   const failures = prerequisites.filter((check) => check.level === "fail");
   if (failures.length) {
     throw new Error(`GUIDED_ACTION_SOURCE_PREREQUISITE_FAILED: ${failures.map((failure) => failure.message).join(" ")}`);
   }
+}
+
+function requireDirectWriteTenantKey(
+  resource: ActivatedExplorationBoundary["pack"]["resources"][number],
+): string {
+  if (!resource.tenant_key) {
+    throw new Error(
+      `GUIDED_ACTION_DIRECT_TENANT_REQUIRED: ${resource.id} uses relationship-carried read scope; guarded writes still require a direct tenant column.`,
+    );
+  }
+  if (resource.principal_scope) {
+    throw new Error(
+      `GUIDED_ACTION_DIRECT_PRINCIPAL_REQUIRED: ${resource.id} uses relationship-carried principal read scope; guarded writes require a direct principal column when principal scope applies.`,
+    );
+  }
+  return resource.tenant_key;
 }
 
 function validatePatchType(patch: ReturnType<typeof normalizePatch>, column: ColumnInfo): void {

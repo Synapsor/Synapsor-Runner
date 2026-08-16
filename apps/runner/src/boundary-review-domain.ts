@@ -1,19 +1,32 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { Buffer } from "node:buffer";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
   AUTO_BOUNDARY_OVERRIDES_VERSION,
+  SHARED_REFERENCE_ACKNOWLEDGEMENT,
+  emptyReviewOverrides,
   explorationBoundaryCandidateDigest,
+  generationLockSharedFactsDigest,
+  loadGenerationLockSnapshot,
+  normalizeAutoBoundaryReviewOverrides,
+  normalizeExplorationDerivedMeasure,
+  normalizeExplorationAutoBandPolicy,
+  normalizeExplorationNumericBand,
   reviewExplorationBoundaryCandidate,
   type AutoBoundaryReviewOverrides,
   type ExplorationBoundaryDraft,
+  type ExplorationDerivedMeasure,
+  type ExplorationAutoBandPolicy,
+  type ExplorationNumericBand,
 } from "./auto-boundary.js";
 import {
   BOUNDARY_REVIEW_PROGRESS_VERSION,
   type BoundaryReviewConfirmation,
   type BoundaryReviewDecision,
   type BoundaryReviewInvalidation,
+  type BoundaryReviewPolicyMigration,
   type BoundaryReviewProgressArtifact,
 } from "./boundary-review-progress-types.js";
 
@@ -28,10 +41,33 @@ export type {
   BoundaryReviewInvalidation,
 };
 const LEGACY_BOUNDARY_REVIEW_PROGRESS_VERSION = "synapsor.boundary-review-progress.v1";
+const LEGACY_BOUNDARY_REVIEW_PROGRESS_V2 = "synapsor.boundary-review-progress.v2";
 
-export type BoundaryReviewProgress = BoundaryReviewProgressArtifact<ExplorationBoundaryDraft>;
+export type BoundaryReviewProgress = BoundaryReviewProgressArtifact<
+  ExplorationBoundaryDraft,
+  AutoBoundaryReviewOverrides
+>;
 
 export type ManagedBoundaryReviewDecision =
+  | {
+      kind: "resource_metadata";
+      resource_id: string;
+      label?: string | null;
+      description?: string | null;
+      actor: string;
+      reason: string;
+      decided_at?: string;
+    }
+  | {
+      kind: "field_metadata";
+      resource_id: string;
+      field: string;
+      label?: string | null;
+      description?: string | null;
+      actor: string;
+      reason: string;
+      decided_at?: string;
+    }
   | {
       kind: "field_exposure";
       resource_id: string;
@@ -42,7 +78,16 @@ export type ManagedBoundaryReviewDecision =
       decided_at?: string;
     }
   | {
-      kind: "row_identity" | "tenant_key";
+      kind: "field_enum";
+      resource_id: string;
+      field: string;
+      values: string[];
+      actor: string;
+      reason: string;
+      decided_at?: string;
+    }
+  | {
+      kind: "row_identity" | "tenant_key" | "tenant_scope_path";
       resource_id: string;
       value: string;
       actor: string;
@@ -50,7 +95,15 @@ export type ManagedBoundaryReviewDecision =
       decided_at?: string;
     }
   | {
-      kind: "principal_key";
+      kind: "shared_reference_scope";
+      resource_id: string;
+      acknowledgement: typeof SHARED_REFERENCE_ACKNOWLEDGEMENT;
+      actor: string;
+      reason: string;
+      decided_at?: string;
+    }
+  | {
+      kind: "principal_key" | "principal_scope_path";
       resource_id: string;
       value: string | null;
       actor: string;
@@ -61,6 +114,36 @@ export type ManagedBoundaryReviewDecision =
       kind: "minimum_cohort";
       resource_id: string;
       value: number;
+      actor: string;
+      reason: string;
+      decided_at?: string;
+    }
+  | {
+      kind: "derived_measure";
+      resource_id: string;
+      name: string;
+      definition: ExplorationDerivedMeasure | null;
+      remove?: true;
+      actor: string;
+      reason: string;
+      decided_at?: string;
+    }
+  | {
+      kind: "numeric_band";
+      resource_id: string;
+      name: string;
+      definition: ExplorationNumericBand | null;
+      remove?: true;
+      actor: string;
+      reason: string;
+      decided_at?: string;
+    }
+  | {
+      kind: "auto_band";
+      resource_id: string;
+      field: string;
+      definition: ExplorationAutoBandPolicy | null;
+      remove?: true;
       actor: string;
       reason: string;
       decided_at?: string;
@@ -77,6 +160,24 @@ export function normalizeManagedBoundaryReviewDecision(
   const decidedAt = input.decided_at === undefined
     ? now
     : requiredTimestamp(input.decided_at, "decided_at");
+
+  if (kind === "resource_metadata" || kind === "field_metadata") {
+    if (!Object.hasOwn(input, "label") && !Object.hasOwn(input, "description")) {
+      throw new Error(`${kind} review requires label and/or description; use null to clear a value.`);
+    }
+    const label = optionalMetadataText(input.label, "label", 64);
+    const description = optionalMetadataText(input.description, "description", 280);
+    return {
+      kind,
+      resource_id: resourceId,
+      ...(kind === "field_metadata" ? { field: requiredText(input.field, "field") } : {}),
+      ...(Object.hasOwn(input, "label") ? { label } : {}),
+      ...(Object.hasOwn(input, "description") ? { description } : {}),
+      actor,
+      reason,
+      decided_at: decidedAt,
+    } as ManagedBoundaryReviewDecision;
+  }
 
   if (kind === "field_exposure") {
     const exposure = input.exposure;
@@ -97,7 +198,90 @@ export function normalizeManagedBoundaryReviewDecision(
       decided_at: decidedAt,
     };
   }
-  if (kind === "row_identity" || kind === "tenant_key") {
+  if (kind === "field_enum") {
+    if (!Array.isArray(input.values)
+      || input.values.length > 64
+      || input.values.some((value) => typeof value !== "string" || [...value].length > 64)
+      || new Set(input.values).size !== input.values.length
+      || Buffer.byteLength(JSON.stringify(input.values), "utf8") > 2_048) {
+      throw new Error(
+        "field_enum review requires at most 64 unique values, at most 64 characters each and 2048 bytes total.",
+      );
+    }
+    return {
+      kind,
+      resource_id: resourceId,
+      field: requiredText(input.field, "field"),
+      values: input.values.map(String),
+      actor,
+      reason,
+      decided_at: decidedAt,
+    };
+  }
+  if (kind === "derived_measure") {
+    const name = requiredText(input.name, "name");
+    if (!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name)) {
+      throw new Error("derived_measure review requires a safe name of at most 64 characters.");
+    }
+    const definition = input.definition === null
+      ? null
+      : normalizeExplorationDerivedMeasure(input.definition, `${resourceId}.${name} derived measure`);
+    if (definition && definition.name !== name) {
+      throw new Error("derived_measure review name must match its fixed definition name.");
+    }
+    return {
+      kind,
+      resource_id: resourceId,
+      name,
+      definition,
+      ...(input.remove === true ? { remove: true } : {}),
+      actor,
+      reason,
+      decided_at: decidedAt,
+    };
+  }
+  if (kind === "numeric_band") {
+    const name = requiredText(input.name, "name");
+    if (!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name)) {
+      throw new Error("numeric_band review requires a safe name of at most 64 characters.");
+    }
+    const definition = input.definition === null
+      ? null
+      : normalizeExplorationNumericBand(input.definition, `${resourceId}.${name} numeric band`);
+    if (definition && definition.name !== name) {
+      throw new Error("numeric_band review name must match its fixed definition name.");
+    }
+    return {
+      kind,
+      resource_id: resourceId,
+      name,
+      definition,
+      ...(input.remove === true ? { remove: true } : {}),
+      actor,
+      reason,
+      decided_at: decidedAt,
+    };
+  }
+  if (kind === "auto_band") {
+    const field = requiredText(input.field, "field");
+    const definition = input.definition === null
+      ? null
+      : normalizeExplorationAutoBandPolicy(input.definition, `${resourceId}.${field} auto band`);
+    if (definition && definition.field !== field) {
+      throw new Error("auto_band review field must match its policy field.");
+    }
+    return {
+      kind,
+      resource_id: resourceId,
+      field,
+      definition,
+      ...(input.remove === true ? { remove: true } : {}),
+      actor,
+      reason,
+      decided_at: decidedAt,
+    };
+  }
+  if (kind === "row_identity" || kind === "tenant_key" || kind === "tenant_scope_path") {
     return {
       kind,
       resource_id: resourceId,
@@ -107,7 +291,22 @@ export function normalizeManagedBoundaryReviewDecision(
       decided_at: decidedAt,
     };
   }
-  if (kind === "principal_key") {
+  if (kind === "shared_reference_scope") {
+    if (input.acknowledgement !== SHARED_REFERENCE_ACKNOWLEDGEMENT) {
+      throw new Error(
+        `shared_reference_scope review requires acknowledgement ${SHARED_REFERENCE_ACKNOWLEDGEMENT}.`,
+      );
+    }
+    return {
+      kind,
+      resource_id: resourceId,
+      acknowledgement: SHARED_REFERENCE_ACKNOWLEDGEMENT,
+      actor,
+      reason,
+      decided_at: decidedAt,
+    };
+  }
+  if (kind === "principal_key" || kind === "principal_scope_path") {
     return {
       kind,
       resource_id: resourceId,
@@ -131,7 +330,7 @@ export function normalizeManagedBoundaryReviewDecision(
     };
   }
   throw new Error(
-    "Managed boundary review kind must be field_exposure, row_identity, tenant_key, principal_key, or minimum_cohort.",
+    "Managed boundary review kind must be resource_metadata, field_metadata, field_exposure, field_enum, derived_measure, numeric_band, auto_band, row_identity, tenant_key, tenant_scope_path, shared_reference_scope, principal_key, principal_scope_path, or minimum_cohort.",
   );
 }
 
@@ -146,7 +345,44 @@ export function applyManagedBoundaryReviewDecision(
   const resource = next.resources[input.resource_id] ?? {};
   const decidedAt = input.decided_at ?? new Date().toISOString();
 
-  if (input.kind === "field_exposure") {
+  if (input.kind === "resource_metadata" || input.kind === "field_metadata") {
+    const currentMetadata = input.kind === "resource_metadata"
+      ? resource.metadata
+      : resource.field_metadata?.[input.field];
+    const label = input.label === undefined ? currentMetadata?.label : input.label ?? undefined;
+    const description = input.description === undefined
+      ? currentMetadata?.description
+      : input.description ?? undefined;
+    if (input.kind === "resource_metadata") {
+      if (!label && !description) {
+        delete resource.metadata;
+      } else {
+        resource.metadata = {
+          ...(label ? { label } : {}),
+          ...(description ? { description } : {}),
+          actor: input.actor,
+          reason: input.reason,
+          decided_at: decidedAt,
+        };
+      }
+    } else if (!label && !description) {
+      if (resource.field_metadata) {
+        delete resource.field_metadata[input.field];
+        if (Object.keys(resource.field_metadata).length === 0) delete resource.field_metadata;
+      }
+    } else {
+      resource.field_metadata = {
+        ...(resource.field_metadata ?? {}),
+        [input.field]: {
+          ...(label ? { label } : {}),
+          ...(description ? { description } : {}),
+          actor: input.actor,
+          reason: input.reason,
+          decided_at: decidedAt,
+        },
+      };
+    }
+  } else if (input.kind === "field_exposure") {
     resource.fields = {
       ...(resource.fields ?? {}),
       [input.field]: {
@@ -156,6 +392,67 @@ export function applyManagedBoundaryReviewDecision(
         decided_at: decidedAt,
       },
     };
+  } else if (input.kind === "field_enum") {
+    resource.field_enums = {
+      ...(resource.field_enums ?? {}),
+      [input.field]: {
+        values: [...input.values],
+        actor: input.actor,
+        reason: input.reason,
+        decided_at: decidedAt,
+      },
+    };
+  } else if (input.kind === "derived_measure") {
+    if (input.remove || input.definition === null) {
+      if (resource.derived_measures) {
+        delete resource.derived_measures[input.name];
+        if (Object.keys(resource.derived_measures).length === 0) delete resource.derived_measures;
+      }
+    } else {
+      resource.derived_measures = {
+        ...(resource.derived_measures ?? {}),
+        [input.name]: {
+          definition: structuredClone(input.definition),
+          actor: input.actor,
+          reason: input.reason,
+          decided_at: decidedAt,
+        },
+      };
+    }
+  } else if (input.kind === "numeric_band") {
+    if (input.remove || input.definition === null) {
+      if (resource.numeric_bands) {
+        delete resource.numeric_bands[input.name];
+        if (Object.keys(resource.numeric_bands).length === 0) delete resource.numeric_bands;
+      }
+    } else {
+      resource.numeric_bands = {
+        ...(resource.numeric_bands ?? {}),
+        [input.name]: {
+          definition: structuredClone(input.definition),
+          actor: input.actor,
+          reason: input.reason,
+          decided_at: decidedAt,
+        },
+      };
+    }
+  } else if (input.kind === "auto_band") {
+    if (input.remove || input.definition === null) {
+      if (resource.auto_bands) {
+        delete resource.auto_bands[input.field];
+        if (Object.keys(resource.auto_bands).length === 0) delete resource.auto_bands;
+      }
+    } else {
+      resource.auto_bands = {
+        ...(resource.auto_bands ?? {}),
+        [input.field]: {
+          definition: structuredClone(input.definition),
+          actor: input.actor,
+          reason: input.reason,
+          decided_at: decidedAt,
+        },
+      };
+    }
   } else if (input.kind === "row_identity") {
     resource.row_identity = {
       value: input.value,
@@ -170,6 +467,26 @@ export function applyManagedBoundaryReviewDecision(
       reason: input.reason,
       decided_at: decidedAt,
     };
+    delete resource.tenant_scope_path;
+    delete resource.shared_reference_scope;
+  } else if (input.kind === "tenant_scope_path") {
+    resource.tenant_scope_path = {
+      value: input.value,
+      actor: input.actor,
+      reason: input.reason,
+      decided_at: decidedAt,
+    };
+    delete resource.tenant_key;
+    delete resource.shared_reference_scope;
+  } else if (input.kind === "shared_reference_scope") {
+    resource.shared_reference_scope = {
+      value: input.acknowledgement,
+      actor: input.actor,
+      reason: input.reason,
+      decided_at: decidedAt,
+    };
+    delete resource.tenant_key;
+    delete resource.tenant_scope_path;
   } else if (input.kind === "principal_key") {
     resource.principal_key = {
       value: input.value,
@@ -177,6 +494,15 @@ export function applyManagedBoundaryReviewDecision(
       reason: input.reason,
       decided_at: decidedAt,
     };
+    delete resource.principal_scope_path;
+  } else if (input.kind === "principal_scope_path") {
+    resource.principal_scope_path = {
+      value: input.value,
+      actor: input.actor,
+      reason: input.reason,
+      decided_at: decidedAt,
+    };
+    delete resource.principal_key;
   } else {
     const minimumCohort = Number(input.value);
     if (minimumCohort === 5) {
@@ -203,6 +529,7 @@ export async function readBoundaryReviewProgress(
   if (raw === null) return undefined;
   if (!isRecord(raw)
     || (raw.schema_version !== BOUNDARY_REVIEW_PROGRESS_VERSION
+      && raw.schema_version !== LEGACY_BOUNDARY_REVIEW_PROGRESS_V2
       && raw.schema_version !== LEGACY_BOUNDARY_REVIEW_PROGRESS_VERSION)
     || !isRecord(raw.candidate)
     || !Array.isArray(raw.confirmed_decisions)
@@ -224,6 +551,9 @@ export async function readBoundaryReviewProgress(
           .filter((decision) => preview.candidate.unresolved_decisions.includes(decision)),
       ),
       actor: "legacy-workbench-review",
+      boundaryId: legacyBoundaryReviewId(preview.candidate),
+      reviewOverrides: emptyReviewOverrides(),
+      policyMigration: legacyPolicyMigration(),
       revision: 1,
       now: raw.updated_at,
     });
@@ -238,12 +568,46 @@ export async function readBoundaryReviewProgress(
   }
 
   const draftDigest = explorationBoundaryCandidateDigest(draft);
-  let candidate = draft;
-  if (raw.draft_digest === draftDigest) {
-    candidate = reviewExplorationBoundaryCandidate(
-      draft,
-      raw.candidate as unknown as ExplorationBoundaryDraft,
-    ).candidate;
+  const storedCandidate = raw.candidate as unknown as ExplorationBoundaryDraft;
+  let candidate = raw.schema_version === LEGACY_BOUNDARY_REVIEW_PROGRESS_V2
+    ? structuredClone(storedCandidate)
+    : draft;
+  if (raw.schema_version === LEGACY_BOUNDARY_REVIEW_PROGRESS_V2
+    && storedCandidate.generation_lock_fingerprint === draft.generation_lock_fingerprint) {
+    candidate = reviewExplorationBoundaryCandidate(draft, storedCandidate).candidate;
+  } else if (raw.draft_digest === draftDigest) {
+    if (storedCandidate.generation_lock_fingerprint === draft.generation_lock_fingerprint) {
+      candidate = reviewExplorationBoundaryCandidate(draft, storedCandidate).candidate;
+    } else if (raw.schema_version === BOUNDARY_REVIEW_PROGRESS_VERSION
+      && raw.candidate_digest === explorationBoundaryCandidateDigest(storedCandidate)) {
+      try {
+        const [storedLock, draftLock] = await Promise.all([
+          loadGenerationLockSnapshot(projectRoot, storedCandidate.generation_lock_fingerprint),
+          loadGenerationLockSnapshot(projectRoot, draft.generation_lock_fingerprint),
+        ]);
+        if (generationLockSharedFactsDigest(storedLock)
+          !== generationLockSharedFactsDigest(draftLock)) {
+          throw new Error(
+            "Saved boundary-review progress is bound to different schema or role facts; rescan that boundary before editing it.",
+          );
+        }
+      } catch (error) {
+        const migration = isRecord(raw.policy_migration)
+          ? normalizePolicyMigration(raw.policy_migration)
+          : undefined;
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT"
+          || migration?.status !== "review_required"
+          || migration.source !== "legacy_exact_boundary_revision") {
+          throw error;
+        }
+        // Legacy disabled boundaries may predate lock snapshots. Keep their
+        // exact authority disabled and require reconstruction; never rebase
+        // them through another boundary's policy-bound draft.
+      }
+      // Different boundaries may bind different human policy over these exact
+      // shared facts. Preserve the selected boundary's self-consistent revision.
+      candidate = storedCandidate;
+    }
   }
   const previous = normalizeStoredBoundaryReviewProgress(raw, candidate);
   return createBoundaryReviewProgress({
@@ -270,11 +634,46 @@ export function normalizePartialReviewDecisions(required: string[], confirmed: s
   return required.filter((decision) => confirmedSet.has(decision));
 }
 
+export function newBoundaryReviewId(): `bnd_${string}` {
+  return `bnd_${crypto.randomBytes(16).toString("hex")}`;
+}
+
+export function legacyBoundaryReviewId(
+  candidate: ExplorationBoundaryDraft,
+): `bnd_${string}` {
+  const digest = canonicalJsonDigest({
+    schema_version: "synapsor.boundary-review-legacy-id.v1",
+    source: candidate.source,
+    generation_lock_fingerprint: candidate.generation_lock_fingerprint,
+    boundary_name: candidate.pack.name,
+  }).slice("sha256:".length, "sha256:".length + 32);
+  return `bnd_${digest}`;
+}
+
+export function nativePolicyMigration(): BoundaryReviewPolicyMigration {
+  return {
+    status: "complete",
+    source: "native",
+    reason: "Review policy is stored with this immutable boundary identity.",
+  };
+}
+
+export function legacyPolicyMigration(): BoundaryReviewPolicyMigration {
+  return {
+    status: "review_required",
+    source: "legacy_exact_boundary_revision",
+    reason: "Legacy project-wide review inputs were not assigned to this boundary; its exact saved revision remains authoritative until policy is reconstructed from a clean inspection.",
+  };
+}
+
 export function createBoundaryReviewProgress(input: {
   draft: ExplorationBoundaryDraft;
   candidate: ExplorationBoundaryDraft;
   confirmedDecisions: string[];
   previous?: BoundaryReviewProgress;
+  boundaryId?: `bnd_${string}`;
+  reviewOverrides?: AutoBoundaryReviewOverrides;
+  policyMigration?: BoundaryReviewPolicyMigration;
   actor?: string;
   revision: number;
   now?: string;
@@ -324,6 +723,17 @@ export function createBoundaryReviewProgress(input: {
     });
   return {
     schema_version: BOUNDARY_REVIEW_PROGRESS_VERSION,
+    boundary_id: input.boundaryId
+      ?? input.previous?.boundary_id
+      ?? newBoundaryReviewId(),
+    review_overrides: normalizeAutoBoundaryReviewOverrides(
+      input.reviewOverrides
+        ?? input.previous?.review_overrides
+        ?? emptyReviewOverrides(),
+    ),
+    policy_migration: input.policyMigration
+      ?? input.previous?.policy_migration
+      ?? nativePolicyMigration(),
     revision: input.revision,
     draft_digest: explorationBoundaryCandidateDigest(input.draft),
     candidate: input.candidate,
@@ -393,6 +803,7 @@ export async function saveInstantBoundaryEditBaseline(input: {
 export function reconcileBoundaryReviewProgress(
   previous: BoundaryReviewProgress | undefined,
   draft: ExplorationBoundaryDraft,
+  reviewOverrides?: AutoBoundaryReviewOverrides,
 ): BoundaryReviewProgress | undefined {
   if (!previous) return undefined;
   const nextDecisions = boundaryReviewDecisions(draft);
@@ -405,6 +816,16 @@ export function reconcileBoundaryReviewProgress(
     candidate: draft,
     confirmedDecisions,
     previous,
+    ...(reviewOverrides ? {
+      reviewOverrides,
+      policyMigration: previous.policy_migration.source === "legacy_exact_boundary_revision"
+        ? {
+          status: "complete",
+          source: "legacy_exact_boundary_revision",
+          reason: "Reconstructed this boundary's policy from its exact saved revision during schema rescan.",
+        }
+        : nativePolicyMigration(),
+    } : {}),
     actor: "local-workbench-review",
     revision: previous.revision + 1,
   });
@@ -420,6 +841,13 @@ export function boundaryReviewDecisions(candidate: ExplorationBoundaryDraft): Bo
     }
     if (decision.startsWith("trusted context:")) {
       return reviewDecision("global.trusted_context", "trusted_context", decision, candidate.trusted_context);
+    }
+    if (decision.startsWith("organization scope:")) {
+      return reviewDecision("global.organization_scope", "organization_scope", decision, {
+        mode: candidate.organization_scope?.mode,
+        organization_id: candidate.organization_scope?.organization_id,
+        tenant_predicate: "not_applied",
+      });
     }
     if (decision.startsWith("database role:")) {
       return reviewDecision("global.database_role", "database_role", decision, {
@@ -450,17 +878,59 @@ export function boundaryReviewDecisions(candidate: ExplorationBoundaryDraft): Bo
     if (detail.startsWith("confirm tenant key ")) {
       return reviewDecision(`resource.${resourceId}.tenant_scope`, "tenant_scope", decision, {
         tenant_key: resource.tenant_key,
-        trusted_tenant_env: candidate.trusted_context.tenant_env,
-        ...(candidate.trusted_context.database_role_tenant ? {
-          trusted_tenant_database_role_setting: candidate.trusted_context.database_role_tenant.setting,
-        } : {}),
+        ...(candidate.trusted_context.provider === "http_claims"
+          ? { trusted_tenant_http_claim: candidate.trusted_context.tenant_claim }
+          : {
+            trusted_tenant_env: candidate.trusted_context.tenant_env,
+            ...(candidate.trusted_context.database_role_tenant ? {
+              trusted_tenant_database_role_setting: candidate.trusted_context.database_role_tenant.setting,
+            } : {}),
+          }),
         rls_session: resource.rls_session ?? null,
+      }, resourceId);
+    }
+    if (detail === "confirm whole-organization read access with no tenant predicate") {
+      return reviewDecision(`resource.${resourceId}.tenant_scope`, "tenant_scope", decision, {
+        organization_scope: candidate.organization_scope,
+        tenant_predicate: "not_applied",
+      }, resourceId);
+    }
+    if (detail.startsWith("confirm mandatory derived tenant scope ")) {
+      return reviewDecision(`resource.${resourceId}.tenant_scope`, "tenant_scope", decision, {
+        tenant_scope: resource.tenant_scope,
+        ...(candidate.trusted_context.provider === "http_claims"
+          ? { trusted_tenant_http_claim: candidate.trusted_context.tenant_claim }
+          : {
+            trusted_tenant_env: candidate.trusted_context.tenant_env,
+            ...(candidate.trusted_context.database_role_tenant ? {
+              trusted_tenant_database_role_setting: candidate.trusted_context.database_role_tenant.setting,
+            } : {}),
+          }),
+        rls_session: resource.rls_session ?? null,
+      }, resourceId);
+    }
+    if (detail === "confirm reviewed shared reference with no tenant predicate") {
+      return reviewDecision(`resource.${resourceId}.tenant_scope`, "tenant_scope", decision, {
+        shared_reference_scope: resource.shared_reference_scope,
+        tenant_predicate: "not_applied",
+        field_privacy_controls: "unchanged",
       }, resourceId);
     }
     if (detail.startsWith("confirm principal scope ")) {
       return reviewDecision(`resource.${resourceId}.principal_scope`, "principal_scope", decision, {
         principal_key: resource.principal_key ?? null,
-        trusted_principal_env: candidate.trusted_context.principal_env,
+        ...(candidate.trusted_context.provider === "http_claims"
+          ? { trusted_principal_http_claim: candidate.trusted_context.principal_claim }
+          : { trusted_principal_env: candidate.trusted_context.principal_env }),
+        rls_session: resource.rls_session ?? null,
+      }, resourceId);
+    }
+    if (detail.startsWith("confirm mandatory derived principal scope ")) {
+      return reviewDecision(`resource.${resourceId}.principal_scope`, "principal_scope", decision, {
+        principal_scope: resource.principal_scope,
+        ...(candidate.trusted_context.provider === "http_claims"
+          ? { trusted_principal_http_claim: candidate.trusted_context.principal_claim }
+          : { trusted_principal_env: candidate.trusted_context.principal_env }),
         rls_session: resource.rls_session ?? null,
       }, resourceId);
     }
@@ -473,14 +943,37 @@ export function boundaryReviewDecisions(candidate: ExplorationBoundaryDraft): Bo
         kept_out_fields: resource.kept_out_fields,
       }, resourceId);
     }
+    if (detail === "confirm reviewed labels and descriptions") {
+      return reviewDecision(`resource.${resourceId}.metadata`, "metadata", decision, {
+        ...(resource.label ? { label: resource.label } : {}),
+        ...(resource.description ? { description: resource.description } : {}),
+        field_metadata: resource.field_metadata ?? {},
+      }, resourceId);
+    }
     if (detail === "confirm filter/sort/group/aggregate-only field permissions") {
       return reviewDecision(`resource.${resourceId}.field_permissions`, "field_permissions", decision, {
         filterable_fields: resource.filterable_fields,
         sortable_fields: resource.sortable_fields,
         groupable_fields: resource.groupable_fields,
         aggregate_measures: resource.aggregate_measures,
+        ...(resource.aggregate_measure_functions
+          ? { aggregate_measure_functions: resource.aggregate_measure_functions }
+          : {}),
+        ...(resource.presence_measure_fields
+          ? { presence_measure_fields: resource.presence_measure_fields }
+          : {}),
+        ...(resource.derived_measures?.length
+          ? { derived_measures: resource.derived_measures }
+          : {}),
+        ...(resource.numeric_bands?.length
+          ? { numeric_bands: resource.numeric_bands }
+          : {}),
+        ...(resource.auto_bands?.length
+          ? { auto_bands: resource.auto_bands }
+          : {}),
         count_distinct_fields: resource.count_distinct_fields,
         time_bucket_fields: resource.time_bucket_fields,
+        field_enums: resource.field_enums,
       }, resourceId);
     }
     if (detail === "confirm minimum cohort and extraction/differencing budgets") {
@@ -502,12 +995,22 @@ export function boundaryReviewDecisions(candidate: ExplorationBoundaryDraft): Bo
         {
           relationship: resource.relationships.find((item) => item.id === relationshipId) ?? null,
           source_scope: {
-            tenant_key: resource.tenant_key,
+            ...(resource.tenant_key ? { tenant_key: resource.tenant_key } : {}),
+            ...(resource.tenant_scope ? { tenant_scope: resource.tenant_scope } : {}),
+            ...(resource.shared_reference_scope
+              ? { shared_reference_scope: resource.shared_reference_scope }
+              : {}),
             principal_key: resource.principal_key ?? null,
+            ...(resource.principal_scope ? { principal_scope: resource.principal_scope } : {}),
           },
           target_scope: targetResource ? {
-            tenant_key: targetResource.tenant_key,
+            ...(targetResource.tenant_key ? { tenant_key: targetResource.tenant_key } : {}),
+            ...(targetResource.tenant_scope ? { tenant_scope: targetResource.tenant_scope } : {}),
+            ...(targetResource.shared_reference_scope
+              ? { shared_reference_scope: targetResource.shared_reference_scope }
+              : {}),
             principal_key: targetResource.principal_key ?? null,
+            ...(targetResource.principal_scope ? { principal_scope: targetResource.principal_scope } : {}),
           } : null,
         },
         resourceId,
@@ -523,10 +1026,20 @@ export function boundaryReviewDecisions(candidate: ExplorationBoundaryDraft): Bo
   });
 }
 
-function normalizeStoredBoundaryReviewProgress(
+export function normalizeStoredBoundaryReviewProgress(
   raw: JsonRecord,
   candidate: ExplorationBoundaryDraft,
 ): BoundaryReviewProgress {
+  const currentVersion = raw.schema_version === BOUNDARY_REVIEW_PROGRESS_VERSION;
+  const boundaryId = currentVersion
+    ? normalizeBoundaryReviewId(raw.boundary_id)
+    : legacyBoundaryReviewId(candidate);
+  const reviewOverrides = currentVersion
+    ? normalizeAutoBoundaryReviewOverrides(raw.review_overrides)
+    : emptyReviewOverrides();
+  const policyMigration = currentVersion
+    ? normalizePolicyMigration(raw.policy_migration)
+    : legacyPolicyMigration();
   const decisions = boundaryReviewDecisions(candidate);
   const decisionById = new Map(decisions.map((decision) => [decision.id, decision]));
   const confirmations: BoundaryReviewConfirmation[] = [];
@@ -573,6 +1086,9 @@ function normalizeStoredBoundaryReviewProgress(
     });
   return {
     schema_version: BOUNDARY_REVIEW_PROGRESS_VERSION,
+    boundary_id: boundaryId,
+    review_overrides: reviewOverrides,
+    policy_migration: policyMigration,
     revision: raw.revision as number,
     draft_digest: raw.draft_digest as `sha256:${string}`,
     candidate,
@@ -583,6 +1099,29 @@ function normalizeStoredBoundaryReviewProgress(
     confirmations,
     invalidated_decisions: invalidatedDecisions,
     updated_at: raw.updated_at as string,
+  };
+}
+
+function normalizeBoundaryReviewId(value: unknown): `bnd_${string}` {
+  if (typeof value !== "string" || !/^bnd_[a-f0-9]{32}$/.test(value)) {
+    throw new Error("Saved boundary-review progress has an invalid immutable boundary id.");
+  }
+  return value as `bnd_${string}`;
+}
+
+function normalizePolicyMigration(value: unknown): BoundaryReviewPolicyMigration {
+  if (!isRecord(value)
+    || (value.status !== "complete" && value.status !== "review_required")
+    || (value.source !== "native" && value.source !== "legacy_exact_boundary_revision")
+    || typeof value.reason !== "string"
+    || !value.reason.trim()
+    || value.reason.length > 500) {
+    throw new Error("Saved boundary-review progress has invalid policy migration state.");
+  }
+  return {
+    status: value.status,
+    source: value.source,
+    reason: value.reason,
   };
 }
 
@@ -663,6 +1202,15 @@ function boundedReviewText(value: unknown, label: string, maximum: number): stri
     throw new Error(`Managed boundary review ${label} must be at most ${maximum} characters.`);
   }
   return normalized;
+}
+
+function optionalMetadataText(
+  value: unknown,
+  label: string,
+  maximum: number,
+): string | null | undefined {
+  if (value === undefined || value === null) return value;
+  return boundedReviewText(value, label, maximum);
 }
 
 function requiredTimestamp(value: unknown, label: string): string {

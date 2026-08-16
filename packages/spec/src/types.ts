@@ -230,24 +230,79 @@ export type ProtectedReadRelationshipPathSpec = ExtensionFields & {
   links: ProtectedReadRelationshipLinkSpec[];
 };
 
-export type ProtectedReadMeasureSpec = ExtensionFields & {
-  name: string;
+export type ProtectedReadBaseMeasureSpec = ExtensionFields & {
   function: "count" | "count_distinct" | "sum" | "avg";
   field?: string;
   relationship?: string;
+};
+
+export type ProtectedReadPostAggregateOperation =
+  | "running_total"
+  | "rank"
+  | "lag_absolute_change"
+  | "lag_percentage_change"
+  | "moving_average"
+  | "share_of_released_total";
+
+export type ProtectedReadDerivedMeasureSpec = ExtensionFields & (
+  | {
+    shape: "ratio" | "percentage" | "per_unit_average";
+    numerator: ProtectedReadBaseMeasureSpec;
+    denominator: ProtectedReadBaseMeasureSpec;
+    null_policy: "null_on_zero_or_null_denominator";
+  }
+  | {
+    shape: ProtectedReadPostAggregateOperation;
+    base_measure: ProtectedReadBaseMeasureSpec;
+    direction?: "asc" | "desc";
+    window_size?: number;
+  }
+);
+
+export type ProtectedReadMeasureSpec = ExtensionFields & {
+  name: string;
+  function:
+    | "count"
+    | "count_distinct"
+    | "sum"
+    | "avg"
+    | "stddev_samp"
+    | "stddev_pop"
+    | "var_samp"
+    | "var_pop"
+    | "null_count"
+    | "non_null_count"
+    | "completion_rate"
+    | "reviewed_derived";
+  field?: string;
+  relationship?: string;
+  derived?: ProtectedReadDerivedMeasureSpec;
 };
 
 export type ProtectedReadDimensionSpec = ExtensionFields & {
   name: string;
   field: string;
   relationship?: string;
+  numeric_band?: {
+    edges: number[];
+    bucket_labels: string[];
+  };
 };
 
 export type ProtectedReadTimeBucketSpec = ExtensionFields & {
   name: string;
   field: string;
-  bucket: "day" | "week" | "month";
+  bucket: "hour" | "day" | "week" | "month" | "quarter" | "year" | "day_of_week";
   relationship?: string;
+};
+
+export type ProtectedReadTimeWindowSpec = ExtensionFields & {
+  field: string;
+  relationship?: string;
+  /** Frozen UTC ISO instant captured when the reviewed Explore analysis ran. */
+  start: string;
+  /** Exclusive frozen UTC ISO instant captured when the reviewed Explore analysis ran. */
+  end: string;
 };
 
 export type ProtectedReadAggregateSpec = ExtensionFields & {
@@ -306,10 +361,15 @@ export type ProtectedReadSpec = ExtensionFields & {
    */
   relationship?: ProtectedReadRelationshipSpec;
   /**
-   * Additive reviewed star/depth-two form. Every path and link is fixed by
+   * Additive reviewed bounded-path form. Every path and link is fixed by
    * human-reviewed authority; runtime plans may reference names only.
    */
   relationships?: ProtectedReadRelationshipPathSpec[];
+  /**
+   * A fixed half-open time predicate. Protect freezes resolved relative windows
+   * here; it never turns them into dynamic model arguments.
+   */
+  time_window?: ProtectedReadTimeWindowSpec;
   row_order_by?: Array<{
     field: string;
     direction: "asc" | "desc";

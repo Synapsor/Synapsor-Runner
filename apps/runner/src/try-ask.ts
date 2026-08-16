@@ -26,10 +26,14 @@ import {
 } from "./ask-authority.js";
 import { createWorkbenchAskMcpGateway } from "./ask-mcp-gateway.js";
 import { assertKnownOptions, optionalArg, positional } from "./cli-options.js";
+import { fileExists } from "./cli-files.js";
 import { redactCliErrorMessage } from "./cli-logging.js";
 import { startLocalUiServer } from "./local-ui.js";
 import {
   AskError,
+  resolveAskMaxOutputTokens,
+  resolveAskRequestTimeoutSeconds,
+  resolveAskSessionTokenBudget,
   WorkbenchAskSession,
   type AskProviderDependencies,
   type AskProvider,
@@ -56,6 +60,11 @@ import {
   padTerminalBlock,
   terminalContentWidth,
 } from "./terminal-layout.js";
+import { loadActivatedExplorationBoundaries } from "./auto-boundary.js";
+import {
+  buildBoundaryCatalogModel,
+  type BoundaryCatalogModel,
+} from "./boundary-catalog.js";
 
 export type TryAskDependencies = {
   env?: NodeJS.ProcessEnv;
@@ -81,6 +90,7 @@ export type TryAskDependencies = {
   }) => Promise<number>;
   runPostAccessAsk?: (args: string[]) => Promise<number>;
   readSecret?: typeof readHiddenSecret;
+  boundaryCatalogLoader?: (projectRoot: string) => Promise<BoundaryCatalogModel | undefined>;
 };
 
 export async function tryAsk(
@@ -102,6 +112,9 @@ export async function tryAsk(
       "--api-key-env",
       "--mode",
       "--consent",
+      "--timeout",
+      "--session-token-budget",
+      "--max-output-tokens",
       "--verbose",
       "--json",
     ]),
@@ -123,6 +136,9 @@ export async function tryAsk(
   }
   const provider = providerValue(optionalArg(args, "--provider"));
   const model = resolveAskModel(provider, optionalArg(args, "--model"));
+  const requestTimeoutSeconds = parseAskTimeoutSeconds(optionalArg(args, "--timeout"));
+  const sessionTokenBudget = parseAskSessionTokenBudget(optionalArg(args, "--session-token-budget"));
+  const maxOutputTokens = parseAskMaxOutputTokens(optionalArg(args, "--max-output-tokens"));
   const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
   const guidedState = await readGuidedOnboardingState(projectRoot);
   const boundaryArtifactsRoot = path.resolve(
@@ -190,6 +206,15 @@ export async function tryAsk(
       provider,
       model,
       ...(optionalArg(args, "--base-url") ? { base_url: optionalArg(args, "--base-url") } : {}),
+      ...(requestTimeoutSeconds === undefined
+        ? {}
+        : { request_timeout_seconds: requestTimeoutSeconds }),
+      ...(sessionTokenBudget === undefined
+        ? {}
+        : { session_token_budget: sessionTokenBudget }),
+      ...(maxOutputTokens === undefined
+        ? {}
+        : { max_output_tokens: maxOutputTokens }),
       ...(pastedSecret
         ? { api_key: pastedSecret }
         : apiKeyEnv
@@ -273,7 +298,7 @@ export async function tryAsk(
         await gateway.close().catch(() => undefined);
         throw new AskError(
           "ASK_AUTHORITY_CHANGED",
-          "Reviewed access changed outside this Ask handoff. Your question was not sent. Run /access to review it here, or restart `synapsor-runner try ask` to confirm the new provider access before asking.",
+          "Reviewed access changed outside this Ask shell. Your question was not sent. Run /refresh-access to review the new provider access here; no restart is required.",
           409,
         );
       }
@@ -350,7 +375,7 @@ export async function tryAsk(
             ? terminalContentWidth(process.stdout.columns)
             : process.stdout.columns ?? 100,
           {
-            ansi: Boolean(process.stdout.isTTY),
+            ansi: Boolean(process.stdout.isTTY) && !("NO_COLOR" in process.env),
             includeAttempts: verbose,
             attemptsHint: "Rerun with --verbose to inspect them.",
             accessGuidance: response.access_guidance,
@@ -369,6 +394,9 @@ export async function tryAsk(
       env,
       });
       const activeBoundary = await resolveActiveBoundarySummary(projectRoot);
+      const boundaryCatalog = await (
+        dependencies.boundaryCatalogLoader ?? loadActiveBoundaryCatalog
+      )(projectRoot);
       const pendingBoundaryReview = await resolvePendingBoundaryReviewSummary(projectRoot);
       const listProtectable = dependencies.listProtectable ?? listProtectableQueries;
       const createDraft = dependencies.createProtectedDraft ?? createProtectedQueryDraft;
@@ -376,12 +404,15 @@ export async function tryAsk(
       const uiFactory = dependencies.uiServerFactory ?? startLocalUiServer;
       const shellExit = await runAnalyticsShell({
       projectRoot,
+      configPath,
+      storePath,
       providerLabel: providerDisplayLabel(provider, configuration.endpoint_scope),
       modelLabel: model,
       boundaryLabel: activeBoundary?.name,
       profileLabel: profile,
       reviewedDataAreas: accessSummary.table_count,
       accessSummary,
+      boundaryCatalog,
       pendingBoundaryReview,
       operatorLabel: localAskOperator(env),
       verboseAttempts: verbose,
@@ -404,6 +435,9 @@ export async function tryAsk(
           }),
           ...(item.returned_cells === undefined ? {} : { returned_cells: item.returned_cells }),
           ...(item.suppressed_groups === undefined ? {} : { suppressed_groups: item.suppressed_groups }),
+          ...(item.resolved_time_windows?.length
+            ? { resolved_time_windows: item.resolved_time_windows }
+            : {}),
           ...(item.minimum_cohort_override
             ? { minimum_cohort_override: item.minimum_cohort_override }
             : {}),
@@ -471,6 +505,103 @@ export async function tryAsk(
         });
         return { workbenchUrl: workbench.url };
       },
+      refreshAccess: async (confirm) => {
+        let gateway: AskToolGateway | undefined;
+        try {
+          gateway = await gatewayFactory({
+            configPath,
+            storePath,
+            projectRoot,
+            env,
+            mode: "authoring",
+          });
+          const previewTools = await gateway.listTools();
+          assertAnalyticsTools(previewTools.map((tool) => tool.name));
+          const previewAuthority = await computeAskAuthority({
+            tools: previewTools,
+            configPath,
+            projectRoot,
+            profile,
+            mode: "authoring",
+          });
+          if (previewAuthority.authority_digest === authority.authority_digest) {
+            return { status: "unchanged" as const };
+          }
+          const previewBoundary = await resolveActiveBoundarySummary(projectRoot);
+          const accepted = await confirm({
+            providerLabel: providerDisplayLabel(provider, configuration.endpoint_scope),
+            modelLabel: model,
+            boundaryLabel: previewBoundary?.name ?? "newly activated reviewed access",
+          });
+          if (!accepted) return { status: "cancelled" as const };
+
+          const recheckedTools = await gateway.listTools();
+          assertAnalyticsTools(recheckedTools.map((tool) => tool.name));
+          const recheckedAuthority = await computeAskAuthority({
+            tools: recheckedTools,
+            configPath,
+            projectRoot,
+            profile,
+            mode: "authoring",
+          });
+          if (recheckedAuthority.authority_digest !== previewAuthority.authority_digest) {
+            throw new AskError(
+              "ASK_AUTHORITY_CHANGED",
+              "Reviewed access changed while you were confirming it. No provider access was renewed. Run /refresh-access again to review the current access.",
+              409,
+            );
+          }
+          configuration = session.rebindAuthority(recheckedAuthority.authority_digest);
+          authority = recheckedAuthority;
+          const [refreshedSummary, refreshedBoundary, refreshedCatalog, refreshedPending] = await Promise.all([
+            loadReviewedAccessSummary({
+              gatewayFactory,
+              configPath,
+              storePath,
+              projectRoot,
+              env,
+            }),
+            resolveActiveBoundarySummary(projectRoot),
+            (dependencies.boundaryCatalogLoader ?? loadActiveBoundaryCatalog)(projectRoot),
+            resolvePendingBoundaryReviewSummary(projectRoot),
+          ]);
+          return {
+            status: "updated" as const,
+            boundaryLabel: refreshedBoundary?.name,
+            reviewedDataAreas: refreshedSummary.table_count,
+            accessSummary: refreshedSummary,
+            boundaryCatalog: refreshedCatalog,
+            pendingBoundaryReview: refreshedPending,
+          };
+        } finally {
+          await gateway?.close().catch(() => undefined);
+        }
+      },
+      askTokenLimits: () => {
+        const status = session.status();
+        if (!status.token_usage || !status.configuration) {
+          throw new AskError("ASK_NOT_CONFIGURED", "Choose a provider before viewing Ask token limits.");
+        }
+        return {
+          token_usage: status.token_usage,
+          ...(status.configuration.max_output_tokens === undefined
+            ? {}
+            : { max_output_tokens: status.configuration.max_output_tokens }),
+        };
+      },
+      updateAskTokenLimits: (limits) => {
+        const status = session.updateTokenLimits(limits);
+        if (!status.token_usage || !status.configuration) {
+          throw new AskError("ASK_NOT_CONFIGURED", "Choose a provider before changing Ask token limits.");
+        }
+        configuration = status.configuration;
+        return {
+          token_usage: status.token_usage,
+          ...(status.configuration.max_output_tokens === undefined
+            ? {}
+            : { max_output_tokens: status.configuration.max_output_tokens }),
+        };
+      },
       clearConversation: () => session.clearConversation(),
       cancel: () => session.cancel(),
       });
@@ -530,6 +661,21 @@ export async function tryAsk(
         continue;
       }
       if (reviewResult !== 0) return reviewResult;
+      const activeAuthorityExists = await fileExists(path.join(
+        projectRoot,
+        ".synapsor/exploration-boundaries.active.json",
+      )) || await fileExists(path.join(
+        projectRoot,
+        ".synapsor/exploration-boundary.active.json",
+      ));
+      if (!activeAuthorityExists) {
+        writeInteractiveStdout([
+          "No active boundary. Ask remains disabled.",
+          "The access editor was closed explicitly; restart Ask after activating a reviewed boundary.",
+          "",
+        ].join("\n"));
+        return 0;
+      }
     }
   } finally {
     pastedSecret = undefined;
@@ -538,6 +684,18 @@ export async function tryAsk(
     await workbench?.close().catch(() => undefined);
   }
   return 0;
+}
+
+async function loadActiveBoundaryCatalog(
+  projectRoot: string,
+): Promise<BoundaryCatalogModel | undefined> {
+  const boundaries = await loadActivatedExplorationBoundaries(projectRoot).catch(
+    (error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    },
+  );
+  return boundaries.length ? buildBoundaryCatalogModel(boundaries) : undefined;
 }
 
 async function revalidateCliAskAuthority(input: {
@@ -596,6 +754,9 @@ async function requireEgressConsent(input: {
       provider: providerDisplayLabel(input.provider, input.configuration.endpoint_scope),
       model: input.model,
       endpointOrigin: input.configuration.endpoint_origin,
+      requestTimeoutSeconds: input.configuration.request_timeout_seconds,
+      sessionTokenBudget: input.configuration.session_token_budget,
+      maxOutputTokens: input.configuration.max_output_tokens,
       tools: input.tools,
     };
     writeInteractiveStdout(formatProviderEgressReview(
@@ -627,6 +788,9 @@ export function formatProviderEgressReview(input: {
   provider: string;
   model: string;
   endpointOrigin: string;
+  requestTimeoutSeconds?: number;
+  sessionTokenBudget?: number;
+  maxOutputTokens?: number;
 }, color = false): string {
   const theme = terminalTheme(color);
   return [
@@ -634,11 +798,35 @@ export function formatProviderEgressReview(input: {
     `  ${theme.key(input.provider)} will receive your question and only data allowed by the active reviewed boundaries.`,
     `  Model: ${theme.key(input.model)}`,
     `  Endpoint: ${theme.scope(input.endpointOrigin)}`,
+    ...(input.requestTimeoutSeconds === undefined
+      ? []
+      : [`  Model request timeout: ${theme.key(`${input.requestTimeoutSeconds} seconds`)} per provider call`]),
+    ...(input.sessionTokenBudget === undefined
+      ? []
+      : [`  Ask session token budget: ${theme.key(input.sessionTokenBudget.toLocaleString("en-US"))} provider-reported tokens`]),
+    `  Provider output limit: ${input.maxOutputTokens === undefined
+      ? theme.key("automatic provider-call defaults")
+      : theme.key(`${input.maxOutputTokens.toLocaleString("en-US")} tokens per call`)}`,
     "  Model-withheld and kept-out raw values are never sent.",
     "  Trusted scope stays fixed outside model arguments; its raw column value is sent only when reviewed as Model + Runner.",
     "  The model cannot activate, approve, apply, or change this authority.",
     "",
   ].join("\n");
+}
+
+export function parseAskTimeoutSeconds(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  return resolveAskRequestTimeoutSeconds(Number(value), "official_remote");
+}
+
+export function parseAskSessionTokenBudget(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  return resolveAskSessionTokenBudget(Number(value));
+}
+
+export function parseAskMaxOutputTokens(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  return resolveAskMaxOutputTokens(Number(value));
 }
 
 export function formatProviderEgressActivationNotice(input: {

@@ -89,6 +89,7 @@ export async function evidence(args: string[]): Promise<number> {
   const [subcommand, ...rest] = args;
   if (subcommand === "show") return evidenceShow(rest);
   if (subcommand === "list") return evidenceList(rest);
+  if (subcommand === "browse") return evidenceList([...rest, "--interactive"]);
   if (subcommand === "export") return evidenceExport(rest);
   usage(["evidence"]);
   return 2;
@@ -98,6 +99,7 @@ export async function evidence(args: string[]): Promise<number> {
 export async function queryAudit(args: string[]): Promise<number> {
   const [subcommand, ...rest] = args;
   if (subcommand === "list") return queryAuditList(rest);
+  if (subcommand === "browse") return queryAuditList([...rest, "--interactive"]);
   if (subcommand === "show") return queryAuditShow(rest);
   if (subcommand === "export") return queryAuditExport(rest);
   usage(["query-audit"]);

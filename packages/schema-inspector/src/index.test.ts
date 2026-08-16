@@ -1,14 +1,261 @@
-import { describe, expect, it } from "vitest";
+import { Pool } from "pg";
+import { describe, expect, it, vi } from "vitest";
 import {
+  assertSupportedDatabaseServerVersion,
   assessDirectWritePrerequisites,
+  databaseServerCompatibility,
+  deriveSchemaDeclaredEnumValues,
   generateRunnerConfigFromSpec,
+  inspectDatabase,
   mysqlGrantPosture,
+  schemaFingerprintForInspection,
   summarizeInspection,
   type SchemaInspection,
   type TableInfo,
 } from "./index.js";
 
 describe("schema inspector helpers", () => {
+  it("resolves full, compatible-limited, and unsupported database grammar tiers", () => {
+    expect(databaseServerCompatibility({
+      engine: "postgres",
+      server_version: "PostgreSQL 13.23 (Debian 13.23-1.pgdg13+1)",
+    })).toMatchObject({ supported: true, tier: "full", normalized_version: "13.23" });
+    for (const major of [14, 15, 16, 17, 18]) {
+      expect(databaseServerCompatibility({
+        engine: "postgres",
+        server_version: `PostgreSQL ${major}.1`,
+      })).toMatchObject({
+        supported: true,
+        tier: "full",
+        authority: { version_line: String(major) },
+      });
+    }
+    const mysql80 = databaseServerCompatibility({
+      engine: "mysql",
+      server_version: "8.0.42-commercial",
+    });
+    expect(mysql80).toMatchObject({
+      supported: true,
+      tier: "full",
+      normalized_version: "8.0",
+      authority: { version_line: "8.x" },
+    });
+    const mysql8015 = databaseServerCompatibility({
+      engine: "mysql",
+      server_version: "8.0.15",
+    });
+    expect(mysql8015).toMatchObject({
+      supported: true,
+      tier: "compatible_limited",
+      full_feature_version: "8.0.16",
+      authority: {
+        version_line: "8.0-pre-check",
+        features: {
+          automatic_numeric_bands: true,
+          schema_check_constraints: false,
+        },
+      },
+    });
+    const mysql8016 = databaseServerCompatibility({
+      engine: "mysql",
+      server_version: "8.0.16",
+    });
+    expect(mysql8016).toMatchObject({ supported: true, tier: "full" });
+    expect(mysql8016.authority).toEqual(mysql80.authority);
+    expect(databaseServerCompatibility({
+      engine: "mysql",
+      server_version: "8.0.10",
+    })).toMatchObject({
+      supported: false,
+      tier: "unsupported",
+      reason: "unsupported_release_line",
+    });
+    expect(databaseServerCompatibility({
+      engine: "mysql",
+      server_version: "8.0.11",
+    })).toMatchObject({
+      supported: true,
+      tier: "compatible_limited",
+      authority: {
+        version_line: "8.0-pre-check",
+        features: {
+          automatic_numeric_bands: true,
+          schema_check_constraints: false,
+        },
+      },
+    });
+    for (const release of ["8.1.0", "8.2.0", "8.3.0", "MySQL 8.4"]) {
+      const compatibility = databaseServerCompatibility({
+        engine: "mysql",
+        server_version: release,
+      });
+      expect(compatibility).toMatchObject({
+        supported: true,
+        tier: "full",
+        authority: { version_line: "8.x" },
+      });
+      expect(compatibility.authority).toEqual(mysql80.authority);
+    }
+    expect(databaseServerCompatibility({
+      engine: "postgres",
+      server_version: "PostgreSQL 12.22",
+    })).toMatchObject({ supported: false, reason: "below_minimum" });
+    expect(databaseServerCompatibility({
+      engine: "mysql",
+      server_version: "MySQL 5.7.44-log",
+    })).toMatchObject({
+      supported: true,
+      tier: "compatible_limited",
+      authority: {
+        version_line: "5.7",
+        features: {
+          automatic_numeric_bands: false,
+          schema_check_constraints: false,
+        },
+      },
+    });
+    expect(databaseServerCompatibility({
+      engine: "mysql",
+      server_version: "5.6.51",
+    })).toMatchObject({ supported: false, reason: "below_minimum" });
+    expect(databaseServerCompatibility({
+      engine: "postgres",
+      server_version: "PostgreSQL 19.0",
+    })).toMatchObject({ supported: false, reason: "above_tested_range" });
+    expect(databaseServerCompatibility({
+      engine: "postgres",
+      server_version: "PostgreSQL 18beta1 (Debian 18~beta1-1.pgdg13+1)",
+    })).toMatchObject({ supported: false, reason: "unsupported_release_line" });
+    expect(databaseServerCompatibility({
+      engine: "mysql",
+      server_version: "9.0.1",
+    })).toMatchObject({ supported: false, reason: "above_tested_range" });
+    expect(databaseServerCompatibility({
+      engine: "mysql",
+      server_version: "8.0.16-rc",
+    })).toMatchObject({ supported: false, reason: "unsupported_release_line" });
+    expect(databaseServerCompatibility({
+      engine: "mysql",
+      server_version: "5.8.0",
+    })).toMatchObject({ supported: false, reason: "unsupported_release_line" });
+    expect(databaseServerCompatibility({
+      engine: "mysql",
+      server_version: "10.11.11-MariaDB",
+    })).toMatchObject({ supported: false, reason: "unsupported_product" });
+
+    expect(() => assertSupportedDatabaseServerVersion({
+      engine: "mysql",
+      server_version: "5.6.51",
+    })).toThrow(/MySQL 5\.7, or GA MySQL 8\.0\.11 and newer 8\.x/i);
+    expect(assertSupportedDatabaseServerVersion({
+      engine: "mysql",
+      server_version: "5.7.44",
+    }).tier).toBe("compatible_limited");
+  });
+
+  it("closes the PostgreSQL pool when its initial connection fails", async () => {
+    const connect = vi.spyOn(Pool.prototype, "connect")
+      .mockRejectedValue(new Error("transient connect failure"));
+    const end = vi.spyOn(Pool.prototype, "end").mockResolvedValue(undefined);
+    try {
+      await expect(inspectDatabase({
+        engine: "postgres",
+        databaseUrlEnv: "TEST_DATABASE_URL",
+        env: { TEST_DATABASE_URL: "postgresql://example.invalid/test" },
+      })).rejects.toThrow("transient connect failure");
+      expect(end).toHaveBeenCalledOnce();
+    } finally {
+      connect.mockRestore();
+      end.mockRestore();
+    }
+  });
+
+  it("derives complete bounded categorical vocabularies from schema metadata", () => {
+    expect(deriveSchemaDeclaredEnumValues({
+      engine: "postgres",
+      column_name: "status",
+      check_definitions: [
+        "CHECK ((status = ANY (ARRAY['open'::text, 'paid'::text, 'void'::text])))",
+      ],
+    })).toEqual(["open", "paid", "void"]);
+    expect(deriveSchemaDeclaredEnumValues({
+      engine: "postgres",
+      column_name: "status",
+      check_definitions: [
+        "CHECK (((\"status\")::text IN ('open'::text, 'paid'::text, 'void'::text)))",
+      ],
+    })).toEqual(["open", "paid", "void"]);
+    expect(deriveSchemaDeclaredEnumValues({
+      engine: "mysql",
+      column_name: "status",
+      check_definitions: ["`status` in (_utf8mb4'open',_utf8mb4'paid',_utf8mb4'void')"],
+    })).toEqual(["open", "paid", "void"]);
+    expect(deriveSchemaDeclaredEnumValues({
+      engine: "mysql",
+      column_name: "status",
+      check_definitions: ["(`status` in (_utf8mb4\\'open\\',_utf8mb4\\'paid\\',_utf8mb4\\'void\\'))"],
+    })).toEqual(["open", "paid", "void"]);
+    expect(deriveSchemaDeclaredEnumValues({
+      engine: "mysql",
+      column_name: "status",
+      column_type: "enum('open','paid','can''t_bill')",
+    })).toEqual(["open", "paid", "can't_bill"]);
+    expect(deriveSchemaDeclaredEnumValues({
+      engine: "mysql",
+      column_name: "channels",
+      column_type: "set('web','mobile')",
+    })).toEqual(["", "web", "mobile", "web,mobile"]);
+  });
+
+  it("omits incomplete, unrelated, or oversized schema vocabularies all-or-nothing", () => {
+    expect(deriveSchemaDeclaredEnumValues({
+      engine: "postgres",
+      column_name: "status",
+      check_definitions: ["CHECK (status IN ('open', 'paid') OR archived = true)"],
+    })).toBeUndefined();
+    expect(deriveSchemaDeclaredEnumValues({
+      engine: "postgres",
+      column_name: "status",
+      check_definitions: ["CHECK (plan IN ('free', 'team'))"],
+    })).toBeUndefined();
+    expect(deriveSchemaDeclaredEnumValues({
+      engine: "postgres",
+      column_name: "status",
+      native_values: ["open", "paid", "void"],
+      check_definitions: ["CHECK (status IN ('open', 'paid'))"],
+    })).toEqual(["open", "paid"]);
+    expect(deriveSchemaDeclaredEnumValues({
+      engine: "postgres",
+      column_name: "status",
+      native_values: Array.from({ length: 65 }, (_, index) => `state_${index}`),
+    })).toBeUndefined();
+    expect(deriveSchemaDeclaredEnumValues({
+      engine: "postgres",
+      column_name: "status",
+      native_values: ["x".repeat(65)],
+    })).toBeUndefined();
+    expect(deriveSchemaDeclaredEnumValues({
+      engine: "postgres",
+      column_name: "status",
+      native_values: Array.from({ length: 40 }, (_, index) =>
+        `${String(index).padStart(2, "0")}_${"x".repeat(57)}`),
+    })).toBeUndefined();
+  });
+
+  it("ignores an unparsed native enum value without losing CHECK metadata", () => {
+    expect(deriveSchemaDeclaredEnumValues({
+      engine: "postgres",
+      column_name: "status",
+      native_values: "{pending,fulfilled,cancelled}",
+    })).toBeUndefined();
+    expect(deriveSchemaDeclaredEnumValues({
+      engine: "postgres",
+      column_name: "status",
+      native_values: "{pending,fulfilled,cancelled}",
+      check_definitions: ["CHECK (status IN ('open', 'paid', 'void'))"],
+    })).toEqual(["open", "paid", "void"]);
+  });
+
   it("maps MySQL grants to exact relations and fails closed on roles or elevated authority", () => {
     const relations = [
       { schema: "fitflow", table: "memberships" },
@@ -441,6 +688,34 @@ describe("schema inspector helpers", () => {
     };
     expect(summarizeInspection(inspection)).toContain("public.invoices");
     expect(summarizeInspection(inspection)).toContain("tenant=tenant_id");
+    expect(summarizeInspection(inspection)).toContain("Server support: FULL");
+  });
+
+  it("keeps advisory catalog index metadata outside reviewed schema fingerprints", () => {
+    const inspection: SchemaInspection = {
+      engine: "postgres",
+      server_version: "PostgreSQL 16",
+      current_user: "reader",
+      inspected_at: "2026-08-05T00:00:00.000Z",
+      schemas: ["public"],
+      warnings: [],
+      tables: [directWriteTable()],
+    };
+    inspection.tables[0]!.indexes = [{
+      name: "credits_tenant_idx",
+      definition: 'CREATE INDEX credits_tenant_idx ON public.credits USING btree (tenant_id)',
+    }];
+    const before = schemaFingerprintForInspection(inspection);
+    inspection.tables[0]!.approximate_row_count = 4_000_000;
+    inspection.tables[0]!.indexes[0] = {
+      ...inspection.tables[0]!.indexes[0]!,
+      catalog_key_columns: ["tenant_id"],
+      catalog_leading_column: "tenant_id",
+      catalog_usable: true,
+      catalog_partial: false,
+    };
+
+    expect(schemaFingerprintForInspection(inspection)).toBe(before);
   });
 });
 

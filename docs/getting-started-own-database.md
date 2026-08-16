@@ -12,6 +12,14 @@ path. Auto Boundary inspects the whole selected schema, combines deterministic
 database/Prisma/Drizzle/OpenAPI/Synapsor evidence, and generates disabled
 review artifacts without sampling source rows or using an LLM.
 
+Before review, Runner also checks the source server release. PostgreSQL 13-18
+and MySQL 8.0.16+ expose the complete reviewed grammar. MySQL 8.0.11-8.0.15
+uses a supported tier without `CHECK`-derived categorical authority; MySQL 5.7
+also omits automatic bands. Unsupported options disappear before model discovery.
+Below-floor, future unverified, and unrecognized products fail with the detected
+version. See [Database Server Compatibility](database-server-compatibility.md)
+before using an older installation.
+
 ## Fast path
 
 Run the public guided path:
@@ -55,6 +63,17 @@ The browserless route is one continuous command:
 ```bash
 synapsor-runner start --from-env DATABASE_URL --cli
 ```
+
+On later runs, that command resumes the pinned review without inspecting the
+database again. Add `--rescan` to that Start command only when you deliberately
+want a fresh schema and role-posture
+inspection. `--rescan` applies to both single-organization and multi-tenant
+projects. It preserves manual tables, derived/shared-reference scope, privacy
+settings, and other decisions whose exact reviewed inputs did not change. It
+invalidates only affected decisions, reports the concrete diff, leaves current
+authority active, and creates a disabled update that must be reviewed and
+activated. `--force` is not required; on this Start path it uses the same
+reconciliation behavior.
 
 On a fresh project, Runner first shows one conservative one-table,
 zero-relationship boundary. Pressing Enter once records its human review,
@@ -418,7 +437,8 @@ npx -y @synapsor/runner onboard db \
   --table account_credits \
   --mode review \
   --operation insert \
-  --dedup-columns request_id \
+  --tenant-key tenant_id \
+  --dedup request_id=proposal_id,tenant_id=trusted_tenant \
   --receipt-mode runner_ledger \
   --patch amount_cents=arg:amount_cents \
   --write-url-env SYNAPSOR_DATABASE_WRITE_URL \

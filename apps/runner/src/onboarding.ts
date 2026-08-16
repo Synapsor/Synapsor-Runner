@@ -17,7 +17,7 @@ import path from "node:path";
 import process from "node:process";
 import readline from "node:readline/promises";
 import { cliCommandName } from "./cli-command-meta.js";
-import { writeFileGuarded } from "./cli-files.js";
+import { fileExists, writeFileGuarded } from "./cli-files.js";
 import { isRecord } from "./cli-format.js";
 import { envValue, firstPositional, listArg, optionalArg, outputArg, positiveIntegerOption, repeatedArgs, uniqueStrings } from "./cli-options.js";
 import { databaseInputFromArgs, defaultStorePath, generatedSmokeInputPath } from "./cli-project.js";
@@ -514,17 +514,37 @@ export async function runInitWizard(
   const confirmed = await askDefault(ask, "Write generated config and MCP snippets? Type yes to continue", "no");
   if (confirmed.toLowerCase() !== "yes") throw new Error("guided init canceled before writing files");
   const outputPath = outputArg(args) ?? "synapsor.runner.json";
-  await writeGeneratedOnboardingFiles(outputPath, generated, spec, args.includes("--force"), {
+  let force = args.includes("--force");
+  if (!force) {
+    const existingTargets = [
+      ...(await fileExists(path.resolve(outputPath)) ? [outputPath] : []),
+      ...(generatedHandlerTemplate && await fileExists(path.resolve(generatedHandlerTemplate.output))
+        ? [generatedHandlerTemplate.output]
+        : []),
+    ];
+    if (existingTargets.length > 0) {
+      const replace = await askDefault(
+        ask,
+        `Generated setup files already exist (${existingTargets.join(", ")}). Replace them? Type yes to replace`,
+        "no",
+      );
+      if (replace.toLowerCase() !== "yes") {
+        throw new Error("guided init kept the existing files unchanged");
+      }
+      force = true;
+    }
+  }
+  await writeGeneratedOnboardingFiles(outputPath, generated, spec, force, {
     printNext: false,
     table,
     activationConfirmed: spec.mode === "review",
   });
   if (generatedHandlerTemplate) {
-    await writeHandlerTemplateFile(generatedHandlerTemplate.name, generatedHandlerTemplate.output, args.includes("--force"));
+    await writeHandlerTemplateFile(generatedHandlerTemplate.name, generatedHandlerTemplate.output, force);
     stdout.write(`created ${generatedHandlerTemplate.output}\n`);
   }
   if (smokeObjectId) {
-    await writeGeneratedSmokeInputFile(lookupArg, smokeObjectId, args.includes("--force"));
+    await writeGeneratedSmokeInputFile(lookupArg, smokeObjectId, force);
     stdout.write(`created ${generatedSmokeInputPath}\n`);
     const smoke = await maybeRunGeneratedSmokeCall({
       config: loadRuntimeConfigFromFile(outputPath),
@@ -639,7 +659,7 @@ export function isScriptedOnboardingArgs(args: string[]): boolean {
     args.includes("--dry-run") ||
     Boolean(optionalArg(args, "--answers")) ||
     Boolean(optionalArg(args, "--inspection-json")) ||
-    Boolean(optionalArg(args, "--table"));
+    Boolean(optionalArg(args, "--spec"));
 }
 
 

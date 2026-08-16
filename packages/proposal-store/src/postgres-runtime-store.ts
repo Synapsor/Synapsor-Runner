@@ -42,6 +42,15 @@ import type {
   PostgresRuntimePool,
   PostgresProposalRuntimeStoreOptions,
   PostgresWritebackIntentStoreOptions,
+  ExploreBudgetLimits,
+  ExploreBudgetUsage,
+  ProductionExploreBudgetReservationDecision,
+  ProductionExploreBudgetReservationInput,
+  ProductionExplorePrivacyReleaseDecision,
+  ProductionExplorePrivacyReleaseInput,
+  CompleteExploreBudgetReservationDecision,
+  CompleteExploreBudgetReservationInput,
+  ProductionExploreAuditEventInput,
 } from "./domain-types.js";
 import { isRecord } from "./common.js";
 import { assertNoSecretMaterial } from "./proposal-integrity.js";
@@ -211,6 +220,9 @@ export class PostgresProposalRuntimeStore implements ProposalRuntimeStore {
   private readonly autoMigrate: boolean;
   private readonly closePool: boolean;
   private readonly maxEntries: number;
+  private migrationPromise?: Promise<void>;
+  private productionExploreMaintenancePromise?: Promise<void>;
+  private lastProductionExploreMaintenanceAt = 0;
 
   constructor(options: PostgresProposalRuntimeStoreOptions) {
     this.pool = options.pool;
@@ -232,6 +244,24 @@ export class PostgresProposalRuntimeStore implements ProposalRuntimeStore {
 
   async recordQueryAudit(input: Parameters<ProposalRuntimeStore["recordQueryAudit"]>[0]): Promise<void> {
     await this.withWrite("recordQueryAudit", (store) => store.recordQueryAudit(input));
+  }
+
+  async recordProductionExploreAuditEvent(input: ProductionExploreAuditEventInput): Promise<void> {
+    if (!input.event_id || !Number.isFinite(Date.parse(input.created_at))) {
+      throw new ProposalStoreError(
+        "PRODUCTION_EXPLORE_AUDIT_INVALID",
+        "Production Explore audit metadata is invalid.",
+      );
+    }
+    assertNoSecretMaterial(input.payload, "production_explore.audit_event");
+    await this.ensureProductionExploreMigrated();
+    const table = `${quotePostgresIdentifier(this.schema)}.production_explore_audit_events`;
+    await this.pool.query(
+      `INSERT INTO ${table} (event_id, event_kind, payload_json, created_at)
+VALUES ($1, $2, $3::jsonb, $4::timestamptz)`,
+      [input.event_id, input.event_kind, JSON.stringify(input.payload), input.created_at],
+    );
+    this.scheduleProductionExploreMaintenance(Date.parse(input.created_at));
   }
 
   async findActiveProposal(input: ActiveProposalLookup): Promise<StoredProposal | undefined> {
@@ -337,6 +367,15 @@ export class PostgresProposalRuntimeStore implements ProposalRuntimeStore {
     );
   }
 
+  async claimExplorePrivacyRelease(
+    input: Parameters<NonNullable<ProposalRuntimeStore["claimExplorePrivacyRelease"]>>[0],
+  ): Promise<ReturnType<ProposalStore["claimExplorePrivacyRelease"]>> {
+    return await this.withWrite(
+      "claimExplorePrivacyRelease",
+      (store) => store.claimExplorePrivacyRelease(input),
+    );
+  }
+
   async completeExploreBudgetReservation(
     input: Parameters<NonNullable<ProposalRuntimeStore["completeExploreBudgetReservation"]>>[0],
   ): Promise<ReturnType<ProposalStore["completeExploreBudgetReservation"]>> {
@@ -344,6 +383,247 @@ export class PostgresProposalRuntimeStore implements ProposalRuntimeStore {
       "completeExploreBudgetReservation",
       (store) => store.completeExploreBudgetReservation(input),
     );
+  }
+
+  async claimProductionExploreBudgetReservation(
+    input: ProductionExploreBudgetReservationInput,
+  ): Promise<ProductionExploreBudgetReservationDecision> {
+    assertProductionExploreBudgetInput(input);
+    await this.ensureProductionExploreMigrated();
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const scopes = productionExploreScopes(input);
+      await lockProductionExploreScopes(client, this.schema, "budget", scopes.map((scope) => scope.fingerprint), this.lockTimeoutMs);
+      const table = `${quotePostgresIdentifier(this.schema)}.production_explore_budget_reservations`;
+      const now = new Date(input.now);
+      const windowStart = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+      const minuteStart = new Date(now.getTime() - 60 * 1000).toISOString();
+      const snapshots: Array<{
+        kind: "principal" | "tenant";
+        fingerprint: `sha256:${string}`;
+        limits: ExploreBudgetLimits;
+        usage: ExploreBudgetUsage;
+        variantAlreadyCounted: boolean;
+      }> = [];
+      for (const scope of scopes) {
+        const usageResult = await client.query(`
+          SELECT
+            COUNT(*)::bigint AS query_count,
+            COUNT(*) FILTER (WHERE created_at >= $4::timestamptz)::bigint AS queries_last_minute,
+            COALESCE(SUM(CASE WHEN status = 'pending' THEN reserved_cells WHEN status = 'released' THEN accounted_cells ELSE 0 END), 0)::bigint AS extracted_cells
+          FROM ${table}
+          WHERE scope_kind = $1 AND scope_fingerprint = $2 AND created_at >= $3::timestamptz
+        `, [scope.kind, scope.fingerprint, windowStart, minuteStart]);
+        const variantResult = await client.query(`
+          SELECT DISTINCT variant_fingerprint
+          FROM ${table}
+          WHERE scope_kind = $1 AND scope_fingerprint = $2
+            AND resource_id = $3 AND created_at >= $4::timestamptz
+            AND status IN ('pending', 'released') AND differencing_counted = true
+        `, [scope.kind, scope.fingerprint, input.resource_id, windowStart]);
+        const variants = new Set(variantResult.rows.map((row) => String(row.variant_fingerprint)));
+        const usageRow = usageResult.rows[0] ?? {};
+        const usage: ExploreBudgetUsage = {
+          query_count: Number(usageRow.query_count ?? 0),
+          queries_last_minute: Number(usageRow.queries_last_minute ?? 0),
+          extracted_cells: Number(usageRow.extracted_cells ?? 0),
+          differencing_attempts: variants.size,
+        };
+        const denied = productionExploreBudgetDenial({
+          limits: scope.limits,
+          usage,
+          variantAlreadyCounted: variants.has(input.variant_fingerprint),
+          requiresDifferencing: input.requires_differencing,
+          estimatedResponseCells: input.estimated_response_cells,
+        });
+        if (denied) {
+          await client.query("ROLLBACK");
+          return {
+            ...denied,
+            exhausted_scope: scope.kind,
+            usage,
+          };
+        }
+        snapshots.push({
+          ...scope,
+          usage,
+          variantAlreadyCounted: variants.has(input.variant_fingerprint),
+        });
+      }
+
+      for (const snapshot of snapshots) {
+        await client.query(`
+          INSERT INTO ${table} (
+            reservation_id, scope_kind, scope_fingerprint, resource_id,
+            variant_fingerprint, requires_differencing, differencing_counted,
+            reserved_cells, accounted_cells, status, created_at, completed_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $6, $7, $7, 'pending', $8::timestamptz, NULL)
+        `, [
+          input.reservation_id,
+          snapshot.kind,
+          snapshot.fingerprint,
+          input.resource_id,
+          input.variant_fingerprint,
+          input.requires_differencing,
+          input.estimated_response_cells,
+          input.now,
+        ]);
+      }
+      await client.query("COMMIT");
+      this.scheduleProductionExploreMaintenance(now.getTime());
+      const principal = snapshots.find((scope) => scope.kind === "principal")!;
+      const tenant = snapshots.find((scope) => scope.kind === "tenant")!;
+      return {
+        allowed: true,
+        principal_usage_after_reservation: usageAfterProductionReservation(principal, input),
+        tenant_usage_after_reservation: usageAfterProductionReservation(tenant, input),
+        principal_variant_already_counted: principal.variantAlreadyCounted,
+        tenant_variant_already_counted: tenant.variantAlreadyCounted,
+      };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async completeProductionExploreBudgetReservation(
+    input: CompleteExploreBudgetReservationInput,
+  ): Promise<CompleteExploreBudgetReservationDecision> {
+    if (!Number.isSafeInteger(input.returned_cells) || input.returned_cells < 0 || !Number.isFinite(Date.parse(input.completed_at))) {
+      throw new ProposalStoreError("EXPLORE_BUDGET_RESERVATION_INVALID", "Production Explore completion accounting is invalid.");
+    }
+    await this.ensureProductionExploreMigrated();
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const table = `${quotePostgresIdentifier(this.schema)}.production_explore_budget_reservations`;
+      const initial = await client.query(`SELECT scope_fingerprint FROM ${table} WHERE reservation_id = $1`, [input.reservation_id]);
+      if (initial.rows.length !== 2) {
+        await client.query("ROLLBACK");
+        return { completed: false, reason: "reservation_missing" };
+      }
+      await lockProductionExploreScopes(
+        client,
+        this.schema,
+        "budget",
+        initial.rows.map((row) => String(row.scope_fingerprint)),
+        this.lockTimeoutMs,
+      );
+      const selected = await client.query(`
+        SELECT scope_kind, status, requires_differencing, reserved_cells, accounted_cells
+        FROM ${table} WHERE reservation_id = $1 FOR UPDATE
+      `, [input.reservation_id]);
+      if (selected.rows.length !== 2) {
+        await client.query("ROLLBACK");
+        return { completed: false, reason: "reservation_missing" };
+      }
+      if (selected.rows.every((row) => String(row.status) !== "pending")) {
+        const same = selected.rows.every((row) =>
+          (String(row.status) === "released") === input.result_released
+          && Number(row.accounted_cells) === (input.result_released ? input.returned_cells : 0));
+        await client.query("COMMIT");
+        return same
+          ? { completed: true }
+          : { completed: false, reason: "reservation_already_finalized" };
+      }
+      if (selected.rows.some((row) => String(row.status) !== "pending")) {
+        await client.query("ROLLBACK");
+        return { completed: false, reason: "reservation_already_finalized" };
+      }
+      if (input.result_released && selected.rows.some((row) => input.returned_cells > Number(row.reserved_cells))) {
+        await client.query(`
+          UPDATE ${table}
+          SET status = 'not_released', differencing_counted = false,
+              accounted_cells = 0, completed_at = $2::timestamptz
+          WHERE reservation_id = $1 AND status = 'pending'
+        `, [input.reservation_id, input.completed_at]);
+        await client.query("COMMIT");
+        return { completed: false, reason: "response_exceeded_reservation" };
+      }
+      await client.query(`
+        UPDATE ${table}
+        SET status = $2,
+            differencing_counted = CASE WHEN $3::boolean THEN requires_differencing ELSE false END,
+            accounted_cells = $4,
+            completed_at = $5::timestamptz
+        WHERE reservation_id = $1 AND status = 'pending'
+      `, [
+        input.reservation_id,
+        input.result_released ? "released" : "not_released",
+        input.result_released,
+        input.result_released ? input.returned_cells : 0,
+        input.completed_at,
+      ]);
+      await client.query("COMMIT");
+      return { completed: true };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async claimProductionExplorePrivacyRelease(
+    input: ProductionExplorePrivacyReleaseInput,
+  ): Promise<ProductionExplorePrivacyReleaseDecision> {
+    assertProductionExplorePrivacyReleaseInput(input);
+    const fingerprints = [...new Set(input.complement_fingerprints)].sort();
+    if (fingerprints.length === 0) return { allowed: true };
+    await this.ensureProductionExploreMigrated();
+    const client = await this.pool.connect();
+    const opposite = input.release_kind === "scalar_total" ? "suppressed_grouping" : "scalar_total";
+    try {
+      await client.query("BEGIN");
+      const scopes = [
+        { kind: "principal" as const, fingerprint: input.principal_scope_fingerprint },
+        { kind: "tenant" as const, fingerprint: input.tenant_scope_fingerprint },
+      ];
+      await lockProductionExploreScopes(client, this.schema, "privacy", scopes.map((scope) => scope.fingerprint), this.lockTimeoutMs);
+      const table = `${quotePostgresIdentifier(this.schema)}.production_explore_privacy_releases`;
+      for (const scope of scopes) {
+        const conflict = await client.query(`
+          SELECT release_kind FROM ${table}
+          WHERE scope_kind = $1 AND scope_fingerprint = $2
+            AND release_kind = $3 AND complement_fingerprint = ANY($4::text[])
+            AND created_at >= now() - interval '24 hours'
+          LIMIT 1
+        `, [scope.kind, scope.fingerprint, opposite, fingerprints]);
+        if (conflict.rows.length > 0) {
+          await client.query("ROLLBACK");
+          return {
+            allowed: false,
+            conflicting_release_kind: opposite,
+            conflicting_scope: scope.kind,
+          };
+        }
+      }
+      for (const scope of scopes) {
+        for (const fingerprint of fingerprints) {
+          await client.query(`
+            INSERT INTO ${table} (
+              scope_kind, scope_fingerprint, complement_fingerprint,
+              release_kind, query_fingerprint, boundary_digest
+            ) VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (scope_kind, scope_fingerprint, complement_fingerprint, release_kind)
+            DO UPDATE SET query_fingerprint = EXCLUDED.query_fingerprint,
+                          boundary_digest = EXCLUDED.boundary_digest,
+                          created_at = now()
+          `, [scope.kind, scope.fingerprint, fingerprint, input.release_kind, input.query_fingerprint, input.boundary_digest]);
+        }
+      }
+      await client.query("COMMIT");
+      this.scheduleProductionExploreMaintenance(Date.now());
+      return { allowed: true };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async replay(proposalId: string): Promise<ProposalReplayRecord> {
@@ -553,6 +833,60 @@ export class PostgresProposalRuntimeStore implements ProposalRuntimeStore {
     }
   }
 
+  private async ensureProductionExploreMigrated(): Promise<void> {
+    if (!this.autoMigrate) return;
+    this.migrationPromise ??= migrateSharedPostgresRuntimeStore(
+      this.pool,
+      this.schema,
+      this.lockTimeoutMs,
+    ).catch((error) => {
+      this.migrationPromise = undefined;
+      throw error;
+    });
+    await this.migrationPromise;
+  }
+
+  async runProductionExploreMaintenance(now = new Date()): Promise<void> {
+    if (!Number.isFinite(now.getTime())) {
+      throw new ProposalStoreError(
+        "PRODUCTION_EXPLORE_MAINTENANCE_TIME_INVALID",
+        "Production Explore maintenance requires a valid time.",
+      );
+    }
+    await this.ensureProductionExploreMigrated();
+    const schema = quotePostgresIdentifier(this.schema);
+    const budgetCutoff = new Date(now.getTime() - PRODUCTION_EXPLORE_BUDGET_RETENTION_MS).toISOString();
+    const auditCutoff = new Date(now.getTime() - PRODUCTION_EXPLORE_AUDIT_RETENTION_MS).toISOString();
+    await this.pool.query(
+      `DELETE FROM ${schema}.production_explore_budget_reservations WHERE created_at < $1::timestamptz`,
+      [budgetCutoff],
+    );
+    await this.pool.query(
+      `DELETE FROM ${schema}.production_explore_privacy_releases
+       WHERE created_at < now() - interval '24 hours'`,
+    );
+    await this.pool.query(
+      `DELETE FROM ${schema}.production_explore_audit_events WHERE created_at < $1::timestamptz`,
+      [auditCutoff],
+    );
+  }
+
+  private scheduleProductionExploreMaintenance(now: number): void {
+    if (!Number.isFinite(now)
+      || now - this.lastProductionExploreMaintenanceAt < PRODUCTION_EXPLORE_MAINTENANCE_INTERVAL_MS
+      || this.productionExploreMaintenancePromise) return;
+    this.lastProductionExploreMaintenanceAt = now;
+    this.productionExploreMaintenancePromise = this.runProductionExploreMaintenance(new Date(now))
+      .catch(() => {
+        process.stderr.write(
+          "Warning: production Explore control-ledger retention maintenance did not complete; serving continues and the next hourly maintenance window will retry.\n",
+        );
+      })
+      .finally(() => {
+        this.productionExploreMaintenancePromise = undefined;
+      });
+  }
+
   private async withWrite<T>(operation: string, callback: (store: ProposalStore) => T): Promise<T> {
     const client = await this.pool.connect();
     try {
@@ -652,7 +986,162 @@ export function sharedPostgresRuntimeStoreMigration(schema = "synapsor_runner"):
     "  updated_at timestamptz NOT NULL DEFAULT now(),",
     "  PRIMARY KEY (bucket_key, window_start)",
     ");",
+    `CREATE TABLE IF NOT EXISTS ${s}.production_explore_budget_reservations (`,
+    "  reservation_id text NOT NULL,",
+    "  scope_kind text NOT NULL CHECK (scope_kind IN ('principal', 'tenant')),",
+    "  scope_fingerprint text NOT NULL,",
+    "  resource_id text NOT NULL,",
+    "  variant_fingerprint text NOT NULL,",
+    "  requires_differencing boolean NOT NULL,",
+    "  differencing_counted boolean NOT NULL,",
+    "  reserved_cells bigint NOT NULL,",
+    "  accounted_cells bigint NOT NULL,",
+    "  status text NOT NULL CHECK (status IN ('pending', 'released', 'not_released')),",
+    "  created_at timestamptz NOT NULL,",
+    "  completed_at timestamptz,",
+    "  PRIMARY KEY (reservation_id, scope_kind)",
+    ");",
+    `CREATE INDEX IF NOT EXISTS idx_synapsor_production_explore_budget_scope_time ON ${s}.production_explore_budget_reservations(scope_kind, scope_fingerprint, created_at);`,
+    `CREATE INDEX IF NOT EXISTS idx_synapsor_production_explore_budget_variant ON ${s}.production_explore_budget_reservations(scope_kind, scope_fingerprint, resource_id, variant_fingerprint, created_at);`,
+    `CREATE INDEX IF NOT EXISTS idx_synapsor_production_explore_budget_created ON ${s}.production_explore_budget_reservations(created_at);`,
+    `CREATE TABLE IF NOT EXISTS ${s}.production_explore_privacy_releases (`,
+    "  scope_kind text NOT NULL CHECK (scope_kind IN ('principal', 'tenant')),",
+    "  scope_fingerprint text NOT NULL,",
+    "  complement_fingerprint text NOT NULL,",
+    "  release_kind text NOT NULL CHECK (release_kind IN ('scalar_total', 'suppressed_grouping')),",
+    "  query_fingerprint text NOT NULL,",
+    "  boundary_digest text NOT NULL,",
+    "  created_at timestamptz NOT NULL DEFAULT now(),",
+    "  PRIMARY KEY (scope_kind, scope_fingerprint, complement_fingerprint, release_kind)",
+    ");",
+    `CREATE INDEX IF NOT EXISTS idx_synapsor_production_explore_privacy_scope ON ${s}.production_explore_privacy_releases(scope_kind, scope_fingerprint, complement_fingerprint, release_kind);`,
+    `CREATE INDEX IF NOT EXISTS idx_synapsor_production_explore_privacy_created ON ${s}.production_explore_privacy_releases(created_at);`,
+    `CREATE TABLE IF NOT EXISTS ${s}.production_explore_audit_events (`,
+    "  event_id text PRIMARY KEY,",
+    "  event_kind text NOT NULL CHECK (event_kind IN ('query_audit', 'evidence_bundle')),",
+    "  payload_json jsonb NOT NULL,",
+    "  created_at timestamptz NOT NULL",
+    ");",
+    `CREATE INDEX IF NOT EXISTS idx_synapsor_production_explore_audit_created ON ${s}.production_explore_audit_events(created_at);`,
   ].join("\n");
+}
+
+const PRODUCTION_EXPLORE_BUDGET_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+const PRODUCTION_EXPLORE_AUDIT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+const PRODUCTION_EXPLORE_MAINTENANCE_INTERVAL_MS = 60 * 60 * 1000;
+
+type ProductionExploreScopeSnapshot = {
+  kind: "principal" | "tenant";
+  fingerprint: `sha256:${string}`;
+  limits: ExploreBudgetLimits;
+  usage: ExploreBudgetUsage;
+  variantAlreadyCounted: boolean;
+};
+
+function productionExploreScopes(input: ProductionExploreBudgetReservationInput): Array<{
+  kind: "principal" | "tenant";
+  fingerprint: `sha256:${string}`;
+  limits: ExploreBudgetLimits;
+}> {
+  return [
+    { kind: "principal", fingerprint: input.principal_scope_fingerprint, limits: input.principal_limits },
+    { kind: "tenant", fingerprint: input.tenant_scope_fingerprint, limits: input.tenant_limits },
+  ];
+}
+
+function assertProductionExploreBudgetInput(input: ProductionExploreBudgetReservationInput): void {
+  if (!/^explore_budget_[a-f0-9]{32}$/.test(input.reservation_id)
+    || !/^sha256:[a-f0-9]{64}$/.test(input.principal_scope_fingerprint)
+    || !/^sha256:[a-f0-9]{64}$/.test(input.tenant_scope_fingerprint)
+    || !/^sha256:[a-f0-9]{64}$/.test(input.variant_fingerprint)
+    || !input.resource_id
+    || !Number.isSafeInteger(input.estimated_response_cells)
+    || input.estimated_response_cells < 0
+    || !Number.isFinite(Date.parse(input.now))) {
+    throw new ProposalStoreError("EXPLORE_BUDGET_RESERVATION_INVALID", "Production Explore budget reservation input is invalid.");
+  }
+  for (const limits of [input.principal_limits, input.tenant_limits]) {
+    if (!Number.isSafeInteger(limits.max_queries_per_session) || limits.max_queries_per_session < 1
+      || !Number.isSafeInteger(limits.rate_limit_per_minute) || limits.rate_limit_per_minute < 1
+      || !Number.isSafeInteger(limits.max_extracted_cells_per_session) || limits.max_extracted_cells_per_session < 1
+      || !Number.isSafeInteger(limits.max_differencing_queries) || limits.max_differencing_queries < 1
+      || !Number.isSafeInteger(limits.max_response_cells) || limits.max_response_cells < 1) {
+      throw new ProposalStoreError("EXPLORE_BUDGET_RESERVATION_INVALID", "Production Explore budget limits must be positive safe integers.");
+    }
+  }
+}
+
+function assertProductionExplorePrivacyReleaseInput(input: ProductionExplorePrivacyReleaseInput): void {
+  if (!/^sha256:[a-f0-9]{64}$/.test(input.principal_scope_fingerprint)
+    || !/^sha256:[a-f0-9]{64}$/.test(input.tenant_scope_fingerprint)
+    || !/^sha256:[a-f0-9]{64}$/.test(input.query_fingerprint)
+    || !/^sha256:[a-f0-9]{64}$/.test(input.boundary_digest)
+    || input.complement_fingerprints.length > 64
+    || input.complement_fingerprints.some((fingerprint) => !/^sha256:[a-f0-9]{64}$/.test(fingerprint))
+    || (input.release_kind !== "scalar_total" && input.release_kind !== "suppressed_grouping")) {
+    throw new ProposalStoreError(
+      "EXPLORE_PRIVACY_RELEASE_INVALID",
+      "Production Explore privacy release accounting input is invalid.",
+    );
+  }
+}
+
+function productionExploreBudgetDenial(input: {
+  limits: ExploreBudgetLimits;
+  usage: ExploreBudgetUsage;
+  variantAlreadyCounted: boolean;
+  requiresDifferencing: boolean;
+  estimatedResponseCells: number;
+}): Exclude<ProductionExploreBudgetReservationDecision, { allowed: true }> | undefined {
+  if (input.usage.query_count >= input.limits.max_queries_per_session) {
+    return { allowed: false, code: "QUERY_BUDGET_EXHAUSTED", message: "The rolling 24-hour query budget is exhausted.", exhausted_scope: "principal", usage: input.usage };
+  }
+  if (input.usage.queries_last_minute >= input.limits.rate_limit_per_minute) {
+    return { allowed: false, code: "RATE_LIMIT_EXHAUSTED", message: "The requests-per-minute budget is exhausted.", exhausted_scope: "principal", usage: input.usage };
+  }
+  if (input.estimatedResponseCells > input.limits.max_response_cells
+    || input.usage.extracted_cells + input.estimatedResponseCells > input.limits.max_extracted_cells_per_session) {
+    return { allowed: false, code: "EXTRACTION_BUDGET_EXHAUSTED", message: "The rolling 24-hour extracted-cell budget would be exceeded.", exhausted_scope: "principal", usage: input.usage };
+  }
+  if (input.requiresDifferencing
+    && !input.variantAlreadyCounted
+    && input.usage.differencing_attempts >= input.limits.max_differencing_queries) {
+    return { allowed: false, code: "DIFFERENCING_BUDGET_EXHAUSTED", message: "The rolling 24-hour differencing budget is exhausted.", exhausted_scope: "principal", usage: input.usage };
+  }
+  return undefined;
+}
+
+function usageAfterProductionReservation(
+  snapshot: ProductionExploreScopeSnapshot,
+  input: ProductionExploreBudgetReservationInput,
+): ExploreBudgetUsage {
+  return {
+    query_count: snapshot.usage.query_count + 1,
+    queries_last_minute: snapshot.usage.queries_last_minute + 1,
+    extracted_cells: snapshot.usage.extracted_cells + input.estimated_response_cells,
+    differencing_attempts: snapshot.usage.differencing_attempts
+      + (input.requires_differencing && !snapshot.variantAlreadyCounted ? 1 : 0),
+  };
+}
+
+async function lockProductionExploreScopes(
+  client: PostgresRuntimeClient,
+  schema: string,
+  purpose: "budget" | "privacy",
+  fingerprints: string[],
+  timeoutMs: number,
+): Promise<void> {
+  const keys = [...new Set(fingerprints.map((fingerprint) =>
+    `synapsor-runner:${schema}:production-explore:${purpose}:${fingerprint}`))].sort();
+  for (const key of keys) {
+    const locked = await acquirePostgresRuntimeStoreLock(client, key, timeoutMs);
+    if (!locked) {
+      throw new ProposalStoreError(
+        "POSTGRES_RUNTIME_STORE_LOCK_TIMEOUT",
+        `Production Explore ${purpose} accounting lock timed out.`,
+      );
+    }
+  }
 }
 
 async function fetchSharedLedgerEntries(connection: Pick<PostgresRuntimePool, "query">, schema: string, maxEntries: number): Promise<SharedLedgerEntry[]> {

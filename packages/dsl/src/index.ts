@@ -6,7 +6,9 @@ import {
   type CapabilitySpec,
   type PolicySpec,
   type ProtectedReadAggregateSpec,
+  type ProtectedReadBaseMeasureSpec,
   type ProtectedReadLimitsSpec,
+  type ProtectedReadPostAggregateOperation,
   type ProtectedReadPredicateSpec,
   type ProtectedReadRelationshipPathSpec,
   type ProtectedReadRelationshipSpec,
@@ -70,6 +72,7 @@ export type AgentDslCapabilityAst = {
     predicates: ProtectedReadPredicateSpec[];
     relationship?: ProtectedReadRelationshipSpec;
     relationships: ProtectedReadRelationshipPathSpec[];
+    timeWindow?: ProtectedReadSpec["time_window"];
     rowOrderBy: Array<{ field: string; direction: "asc" | "desc" }>;
     aggregate?: Partial<ProtectedReadAggregateSpec> & {
       measures?: ProtectedReadAggregateSpec["measures"];
@@ -312,6 +315,7 @@ function protectedReadSpecFromDsl(capability: AgentDslCapabilityAst): ProtectedR
     ...(protectedRead.predicates.length ? { predicates: protectedRead.predicates } : {}),
     ...(protectedRead.relationship ? { relationship: protectedRead.relationship } : {}),
     ...(protectedRead.relationships.length ? { relationships: protectedRead.relationships } : {}),
+    ...(protectedRead.timeWindow ? { time_window: protectedRead.timeWindow } : {}),
     ...(protectedRead.rowOrderBy.length ? { row_order_by: protectedRead.rowOrderBy } : {}),
     ...(protectedRead.aggregate ? { aggregate: protectedRead.aggregate as ProtectedReadAggregateSpec } : {}),
     limits: protectedRead.limits,
@@ -594,7 +598,7 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
       reviewed.generationLockFingerprint = generationLock[1].toLowerCase() as `sha256:${string}`;
       continue;
     }
-    const protectedRelationshipLink = item.text.match(/^PROTECTED\s+RELATIONSHIP\s+([A-Za-z_][A-Za-z0-9_]*)\s+LINK\s+([12])\s+ON\s+([A-Za-z_][A-Za-z0-9_]*)\s+REFERENCES\s+([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\s+PRIMARY\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*)\s+TENANT\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+PRINCIPAL\s+SCOPE\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*))?\s+UNMATCHED\s+(EXCLUDE|KEEP\s+NULL)$/i);
+    const protectedRelationshipLink = item.text.match(/^PROTECTED\s+RELATIONSHIP\s+([A-Za-z_][A-Za-z0-9_]*)\s+LINK\s+([123])\s+ON\s+([A-Za-z_][A-Za-z0-9_]*)\s+REFERENCES\s+([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\s+PRIMARY\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*)\s+TENANT\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+PRINCIPAL\s+SCOPE\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*))?\s+UNMATCHED\s+(EXCLUDE|KEEP\s+NULL)$/i);
     if (protectedRelationshipLink?.[1] && protectedRelationshipLink[2] && protectedRelationshipLink[3]
       && protectedRelationshipLink[4] && protectedRelationshipLink[5] && protectedRelationshipLink[6]
       && protectedRelationshipLink[7] && protectedRelationshipLink[8] && protectedRelationshipLink[10]) {
@@ -663,13 +667,66 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
       }
       continue;
     }
+    const protectedTimeWindow = item.text.match(/^PROTECTED\s+TIME\s+WINDOW\s+([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?)\s+FROM\s+FIXED\s+(.+?)\s+TO\s+FIXED\s+(.+)$/i);
+    if (protectedTimeWindow?.[1] && protectedTimeWindow[2] && protectedTimeWindow[3]) {
+      const reviewed = requireProtectedRead(capability, item);
+      if (reviewed.timeWindow) {
+        throw dslError(item.line, 1, "PROTECTED_TIME_WINDOW_DUPLICATE", "PROTECTED READ permits one fixed time window");
+      }
+      const start = parseProtectedLiteral(protectedTimeWindow[2], item.line, 1);
+      const end = parseProtectedLiteral(protectedTimeWindow[3], item.line, 1);
+      if (typeof start !== "string" || typeof end !== "string") {
+        throw dslError(item.line, 1, "PROTECTED_TIME_WINDOW_FIXED_STRING_REQUIRED", "PROTECTED TIME WINDOW requires fixed UTC timestamp strings");
+      }
+      reviewed.timeWindow = {
+        ...parseProtectedFieldReference(protectedTimeWindow[1]),
+        start,
+        end,
+      };
+      continue;
+    }
     const rowOrder = item.text.match(/^ROW\s+ORDER\s+BY\s+([A-Za-z_][A-Za-z0-9_]*)\s+(ASC|DESC)$/i);
     if (rowOrder?.[1] && rowOrder[2]) {
       const reviewed = requireProtectedRead(capability, item);
       reviewed.rowOrderBy.push({ field: rowOrder[1], direction: rowOrder[2].toLowerCase() as "asc" | "desc" });
       continue;
     }
-    const protectedMeasure = item.text.match(/^MEASURE\s+([A-Za-z_][A-Za-z0-9_]*)\s+(COUNT\s+ROWS|COUNT\s+DISTINCT\s+[A-Za-z_][A-Za-z0-9_.]*|SUM\s+[A-Za-z_][A-Za-z0-9_.]*|AVG\s+[A-Za-z_][A-Za-z0-9_.]*)$/i);
+    const protectedDerivedMeasure = item.text.match(/^MEASURE\s+([A-Za-z_][A-Za-z0-9_]*)\s+DERIVED\s+(RATIO|PERCENTAGE|PER_UNIT_AVERAGE)\s+NUMERATOR\s+(COUNT\s+ROWS|COUNT\s+DISTINCT\s+[A-Za-z_][A-Za-z0-9_.]*|(?:SUM|AVG)\s+[A-Za-z_][A-Za-z0-9_.]*)\s+DENOMINATOR\s+(COUNT\s+ROWS|COUNT\s+DISTINCT\s+[A-Za-z_][A-Za-z0-9_.]*|(?:SUM|AVG)\s+[A-Za-z_][A-Za-z0-9_.]*)$/i);
+    if (protectedDerivedMeasure?.[1] && protectedDerivedMeasure[2]
+      && protectedDerivedMeasure[3] && protectedDerivedMeasure[4]) {
+      const aggregate = requireProtectedAggregate(capability, item);
+      aggregate.measures ??= [];
+      aggregate.measures.push({
+        name: protectedDerivedMeasure[1],
+        function: "reviewed_derived",
+        derived: {
+          shape: protectedDerivedMeasure[2].toLowerCase() as "ratio" | "percentage" | "per_unit_average",
+          numerator: parseProtectedDerivedOperand(protectedDerivedMeasure[3], item.line),
+          denominator: parseProtectedDerivedOperand(protectedDerivedMeasure[4], item.line),
+          null_policy: "null_on_zero_or_null_denominator",
+        },
+      });
+      continue;
+    }
+    const protectedPostMeasure = item.text.match(/^MEASURE\s+([A-Za-z_][A-Za-z0-9_]*)\s+POST\s+(RUNNING_TOTAL|RANK|LAG_ABSOLUTE_CHANGE|LAG_PERCENTAGE_CHANGE|MOVING_AVERAGE|SHARE_OF_RELEASED_TOTAL)(?:\s+(ASC|DESC))?(?:\s+WINDOW\s+(\d+))?\s+OF\s+(COUNT\s+ROWS|COUNT\s+DISTINCT\s+[A-Za-z_][A-Za-z0-9_.]*|(?:SUM|AVG)\s+[A-Za-z_][A-Za-z0-9_.]*)$/i);
+    if (protectedPostMeasure?.[1] && protectedPostMeasure[2] && protectedPostMeasure[5]) {
+      const aggregate = requireProtectedAggregate(capability, item);
+      aggregate.measures ??= [];
+      aggregate.measures.push({
+        name: protectedPostMeasure[1],
+        function: "reviewed_derived",
+        derived: {
+          shape: protectedPostMeasure[2].toLowerCase() as ProtectedReadPostAggregateOperation,
+          base_measure: parseProtectedDerivedOperand(protectedPostMeasure[5], item.line),
+          ...(protectedPostMeasure[3]
+            ? { direction: protectedPostMeasure[3].toLowerCase() as "asc" | "desc" }
+            : {}),
+          ...(protectedPostMeasure[4] ? { window_size: Number(protectedPostMeasure[4]) } : {}),
+        },
+      });
+      continue;
+    }
+    const protectedMeasure = item.text.match(/^MEASURE\s+([A-Za-z_][A-Za-z0-9_]*)\s+(COUNT\s+ROWS|COUNT\s+DISTINCT\s+[A-Za-z_][A-Za-z0-9_.]*|(?:SUM|AVG|STDDEV_SAMP|STDDEV_POP|VAR_SAMP|VAR_POP|NULL_COUNT|NON_NULL_COUNT|COMPLETION_RATE)\s+[A-Za-z_][A-Za-z0-9_.]*)$/i);
     if (protectedMeasure?.[1] && protectedMeasure[2]) {
       const aggregate = requireProtectedAggregate(capability, item);
       const words = protectedMeasure[2].trim().split(/\s+/);
@@ -678,11 +735,36 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
         ? { name: protectedMeasure[1], function: "count" as const }
         : {
           name: protectedMeasure[1],
-          function: fn === "count" ? "count_distinct" as const : fn as "sum" | "avg",
+          function: fn === "count" ? "count_distinct" as const : fn as "sum" | "avg" | "stddev_samp" | "stddev_pop" | "var_samp" | "var_pop" | "null_count" | "non_null_count" | "completion_rate",
           ...parseProtectedFieldReference(words[fn === "count" ? 2 : 1]!),
         };
       aggregate.measures ??= [];
       aggregate.measures.push(measure);
+      continue;
+    }
+    const protectedBandDimension = item.text.match(/^GROUP\s+DIMENSION\s+([A-Za-z_][A-Za-z0-9_]*)\s+BY\s+BAND\s+OF\s+([A-Za-z_][A-Za-z0-9_.]*)\s+EDGES\s+\((.*)\)\s+LABELS\s+\((.*)\)$/i);
+    if (protectedBandDimension?.[1] && protectedBandDimension[2]
+      && protectedBandDimension[3] !== undefined && protectedBandDimension[4] !== undefined) {
+      const aggregate = requireProtectedAggregate(capability, item);
+      const edges = splitEnumValues(protectedBandDimension[3], item.line, "GROUP DIMENSION BAND EDGES")
+        .map((value) => parseProtectedLiteral(value, item.line, 1));
+      const labels = splitEnumValues(protectedBandDimension[4], item.line, "GROUP DIMENSION BAND LABELS")
+        .map((value) => parseProtectedLiteral(value, item.line, 1));
+      if (edges.some((value) => typeof value !== "number" || !Number.isFinite(value))) {
+        throw dslError(item.line, 1, "PROTECTED_NUMERIC_BAND_EDGE_INVALID", "GROUP DIMENSION BAND edges must be finite numeric literals");
+      }
+      if (labels.some((value) => typeof value !== "string")) {
+        throw dslError(item.line, 1, "PROTECTED_NUMERIC_BAND_LABEL_INVALID", "GROUP DIMENSION BAND labels must be quoted string literals");
+      }
+      aggregate.dimensions ??= [];
+      aggregate.dimensions.push({
+        name: protectedBandDimension[1],
+        ...parseProtectedFieldReference(protectedBandDimension[2]),
+        numeric_band: {
+          edges: edges as number[],
+          bucket_labels: labels as string[],
+        },
+      });
       continue;
     }
     const protectedDimension = item.text.match(/^GROUP\s+DIMENSION\s+([A-Za-z_][A-Za-z0-9_]*)\s+BY\s+([A-Za-z_][A-Za-z0-9_.]*)$/i);
@@ -692,12 +774,12 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
       aggregate.dimensions.push({ name: protectedDimension[1], ...parseProtectedFieldReference(protectedDimension[2]) });
       continue;
     }
-    const protectedTime = item.text.match(/^TIME\s+DIMENSION\s+([A-Za-z_][A-Za-z0-9_]*)\s+BY\s+(DAY|WEEK|MONTH)\s+OF\s+([A-Za-z_][A-Za-z0-9_.]*)$/i);
+    const protectedTime = item.text.match(/^TIME\s+DIMENSION\s+([A-Za-z_][A-Za-z0-9_]*)\s+BY\s+(HOUR|DAY|WEEK|MONTH|QUARTER|YEAR|DAY_OF_WEEK)\s+OF\s+([A-Za-z_][A-Za-z0-9_.]*)$/i);
     if (protectedTime?.[1] && protectedTime[2] && protectedTime[3]) {
       const aggregate = requireProtectedAggregate(capability, item);
       aggregate.time_bucket = {
         name: protectedTime[1],
-        bucket: protectedTime[2].toLowerCase() as "day" | "week" | "month",
+        bucket: protectedTime[2].toLowerCase() as "hour" | "day" | "week" | "month" | "quarter" | "year" | "day_of_week",
         ...parseProtectedFieldReference(protectedTime[3]),
       };
       continue;
@@ -1245,6 +1327,21 @@ function parseProtectedFieldReference(raw: string): { field: string; relationshi
   if (parts.length === 1 && parts[0]) return { field: parts[0] };
   if (parts.length === 2 && parts[0] && parts[1]) return { relationship: parts[0], field: parts[1] };
   throw dslError(1, 1, "PROTECTED_FIELD_REFERENCE_INVALID", "protected field references must be field or relationship.field");
+}
+
+function parseProtectedDerivedOperand(raw: string, line: number): ProtectedReadBaseMeasureSpec {
+  const words = raw.trim().split(/\s+/);
+  const fn = words[0]?.toLowerCase();
+  if (fn === "count" && words[1]?.toUpperCase() === "ROWS" && words.length === 2) {
+    return { function: "count" };
+  }
+  if (fn === "count" && words[1]?.toUpperCase() === "DISTINCT" && words[2] && words.length === 3) {
+    return { function: "count_distinct", ...parseProtectedFieldReference(words[2]) };
+  }
+  if ((fn === "sum" || fn === "avg") && words[1] && words.length === 2) {
+    return { function: fn, ...parseProtectedFieldReference(words[1]) };
+  }
+  throw dslError(line, 1, "PROTECTED_DERIVED_OPERAND_INVALID", "derived operands must be COUNT ROWS, COUNT DISTINCT field, SUM field, or AVG field");
 }
 
 function parseProtectedValueBinding(raw: string, line: number): ProtectedReadValueSpec {

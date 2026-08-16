@@ -6,37 +6,77 @@ import { Pool, type PoolClient } from "pg";
 import {
   ProposalStore,
   type ExploreBudgetUsage,
+  type ExploreBudgetLimits,
+  type ExploreBudgetReservationInput,
+  type ExploreBudgetReservationDecision,
+  type ProductionExploreBudgetReservationInput,
+  type ProductionExploreBudgetReservationDecision,
+  type ProposalRuntimeStore,
 } from "@synapsor-runner/proposal-store";
 import {
   PrivacyBoundaryError,
+  applyReviewedAggregateTransforms,
   canonicalJsonDigest,
   shapePrivacySuppressedGroups,
 } from "@synapsor-runner/protocol";
-import { inspectDatabase, type SchemaInspection } from "@synapsor-runner/schema-inspector";
+import {
+  assertDatabaseGrammarFeature,
+  assertSupportedDatabaseServerVersion,
+  inspectDatabase,
+  inspectDatabaseWithConnection,
+  type SchemaInspection,
+} from "@synapsor-runner/schema-inspector";
 import {
   AUTHORITY_DEPENDENCIES_VERSION,
   AUTO_BOUNDARY_COMPILER_VERSION,
   AUTO_BOUNDARY_SPEC_VERSION,
+  SUPPORTED_AUTO_BOUNDARY_SPEC_VERSIONS,
+  EXPLORATION_NUMERIC_AGGREGATE_FUNCTIONS,
+  SHARED_REFERENCE_ACKNOWLEDGEMENT,
+  assertSingleOrganizationInspectionSafe,
   compareGenerationLock,
   credentialPostureFingerprintForAuthority,
+  derivedScopeDependencyKey,
+  generationLockRemediation,
   loadActivatedExplorationBoundary,
   loadGenerationLockForActivatedBoundary,
   relationshipAuthorityDependencyFingerprint,
   relationshipDependencyKey,
+  resolveReviewedChildCountLink,
+  reviewedAnalysisRelationshipHopLimit,
+  reviewedDerivedScopeHopLimit,
   reviewedRankedGroupLimit,
   resourceAuthorityDependencyFingerprint,
   rolePostureFingerprint,
   type ActivatedExplorationBoundary,
   type ExplorationBoundaryDraft,
+  type ExplorationDerivedBaseMeasure,
+  type ExplorationDerivedMeasure,
+  type ExplorationNumericBand,
+  type ExplorationAutoBandPolicy,
   type GenerationAuthorityDependencies,
   type GenerationLock,
+  type ExplorationTimeBucket,
   type RelationshipLinkProof,
 } from "./auto-boundary.js";
 import {
   ExploreTrustedScopeError,
   resolveExploreTrustedScope,
+  type ExploreHttpSessionContext,
   type ExploreTrustedScope,
 } from "./explore-trusted-scope.js";
+import { runAllCleanups } from "./resource-lifecycle.js";
+import {
+  RELATIVE_TIME_COMPARISONS,
+  RELATIVE_TIME_WINDOWS,
+  isRelativeTimeComparison,
+  isRelativeTimeWindow,
+  resolveRelativeTimeComparison,
+  resolveRelativeTimeWindow,
+  type RelativeTimeComparison,
+  type RelativeTimeWindow,
+  type ResolvedRelativeTimeWindow,
+} from "./relative-time-window.js";
 
 export const SCOPED_EXPLORE_DESCRIBE_TOOL = "app.describe_data";
 export const SCOPED_EXPLORE_QUERY_TOOL = "app.explore_data";
@@ -55,8 +95,45 @@ const MAX_PROTECT_ITEMS = 32;
 type Scalar = string | number | boolean | null;
 type Operator = "eq" | "neq" | "lt" | "lte" | "gt" | "gte" | "in";
 type Direction = "asc" | "desc";
-type TimeBucket = "day" | "week" | "month";
+type TimeBucket = ExplorationTimeBucket;
 type BoundaryResource = ActivatedExplorationBoundary["pack"]["resources"][number];
+
+export const AGGREGATE_MEASURE_FUNCTIONS = [
+  "count",
+  "count_distinct",
+  "sum",
+  "avg",
+  "stddev_samp",
+  "stddev_pop",
+  "var_samp",
+  "var_pop",
+  "null_count",
+  "non_null_count",
+  "completion_rate",
+] as const;
+export type AggregateMeasureFunction = typeof AGGREGATE_MEASURE_FUNCTIONS[number];
+const CONTRIBUTOR_AWARE_MEASURE_FUNCTIONS = new Set<AggregateMeasureFunction>([
+  "sum",
+  "avg",
+  "stddev_samp",
+  "stddev_pop",
+  "var_samp",
+  "var_pop",
+]);
+const DISPERSION_MEASURE_FUNCTIONS = new Set<AggregateMeasureFunction>([
+  "stddev_samp",
+  "stddev_pop",
+  "var_samp",
+  "var_pop",
+]);
+const PRESENCE_MEASURE_FUNCTIONS = new Set<AggregateMeasureFunction>([
+  "null_count",
+  "non_null_count",
+  "completion_rate",
+]);
+const LEGACY_NUMERIC_AGGREGATE_FUNCTIONS = ["sum", "avg"] as const;
+export const MINIMUM_DISPERSION_COHORT_SIZE = 5;
+export const MINIMUM_AUTO_BAND_COHORT_SIZE = 5;
 
 export type ExploreFilter = {
   field: string;
@@ -69,21 +146,34 @@ export type RowExplorePlan = {
   kind: "rows";
   resource: string;
   select: string[];
+  time_window?: CanonicalTimeWindow;
   where?: ExploreFilter[];
   order_by?: Array<{ field: string; direction: Direction }>;
   limit: number;
 };
 
-export type AggregateMeasure = {
-  function: "count" | "count_distinct" | "sum" | "avg";
+export type BaseAggregateMeasure = {
+  function: AggregateMeasureFunction;
   field?: string;
   relationship?: string;
 };
+export type AggregateMeasure = BaseAggregateMeasure | { derived_measure: string };
 
-export type AggregateDimension = {
-  field: string;
-  relationship?: string;
-};
+export type AggregateDimension =
+  | {
+      field: string;
+      relationship?: string;
+    }
+  | {
+      numeric_band: string;
+    }
+  | {
+      numeric_band: {
+        field: string;
+        buckets: number;
+        method: "quantile" | "equal_width";
+      };
+    };
 
 export type AggregateExplorePlan = {
   kind: "aggregate";
@@ -92,6 +182,7 @@ export type AggregateExplorePlan = {
   measures: AggregateMeasure[];
   dimensions?: AggregateDimension[];
   time_bucket?: { field: string; bucket: TimeBucket; relationship?: string };
+  time_window?: CanonicalTimeWindow;
   where?: ExploreFilter[];
   order_by?:
     | { kind: "measure"; index: number; direction: Direction }
@@ -105,9 +196,22 @@ export type AggregateExplorePlan = {
   };
 };
 
+export type CanonicalTimeWindow = {
+  field: string;
+  relationship?: string;
+  start: string;
+  end: string;
+};
+
+export type ValidatedExploreRequest = {
+  plan: ExplorePlan;
+  resolved_time_windows: ResolvedRelativeTimeWindow[];
+};
+
 export type ExplorePlan = RowExplorePlan | AggregateExplorePlan;
 
 export type ScopedExploreTransport = "stdio" | "loopback_workbench" | "streamable_http" | "remote_http";
+export type ScopedExploreMode = "local_authoring" | "production_http";
 
 export type ScopedExploreErrorCode =
   | "EXPLORE_DISABLED"
@@ -126,6 +230,7 @@ export type ScopedExploreErrorCode =
   | "EXPLORE_PRIVACY_BUDGET_EXHAUSTED"
   | "EXPLORE_RATE_LIMITED"
   | "EXPLORE_RESPONSE_TOO_LARGE"
+  | "EXPLORE_SERVER_VERSION_UNSUPPORTED"
   | "EXPLORE_SOURCE_UNAVAILABLE";
 
 export class ScopedExploreError extends Error {
@@ -152,8 +257,8 @@ export type ScopedExploreRuntime = {
   boundary: ActivatedExplorationBoundary;
   session_fingerprint: `sha256:${string}`;
   trusted_scope?: {
-    tenant: { source: "environment" | "postgres_role_setting"; binding: string };
-    principal: { source: "environment" | "not_required"; binding?: string };
+    tenant: { source: "environment" | "postgres_role_setting" | "verified_http_claim" | "reviewed_organization"; binding: string };
+    principal: { source: "environment" | "verified_http_claim" | "not_required"; binding?: string };
   };
   describe(input?: {
     resource?: string;
@@ -171,6 +276,15 @@ export type CompiledExploreQuery = {
   resources: BoundaryResource[];
   period?: "period_1" | "period_2";
   reporting_timezone?: "UTC";
+  reviewed_value_controls?: CompiledReviewedValueControl[];
+};
+
+type CompiledReviewedValueControl = {
+  kind: "bucket_unreviewed_values" | "exclude_unreviewed_rows";
+  resource: string;
+  field: string;
+  output_column?: string;
+  marker?: string;
 };
 
 export type ScopedExploreExecutor = {
@@ -183,6 +297,7 @@ export type ScopedExploreExecutor = {
     context: { tenant: string; principal: string };
     timeoutMs: number;
   }): Promise<Array<Record<string, unknown>[]>>;
+  inspectDatabase?: InspectDatabaseFn;
   close(): Promise<void>;
 };
 
@@ -198,13 +313,18 @@ export type ResolveExploreTrustedScopeFn = typeof resolveExploreTrustedScope;
 export async function prepareScopedExplore(input: {
   projectRoot: string;
   transport: ScopedExploreTransport;
+  mode?: ScopedExploreMode;
   boundaryName?: string;
   env?: NodeJS.ProcessEnv;
   inspectDatabaseFn?: InspectDatabaseFn;
 }): Promise<PreparedExplore> {
   const projectRoot = path.resolve(input.projectRoot);
-  if (input.transport !== "stdio" && input.transport !== "loopback_workbench") {
-    throw new ScopedExploreError("EXPLORE_TRANSPORT_FORBIDDEN", "Scoped Explore is an authoring-only local stdio or secured loopback Workbench feature.");
+  const mode = input.mode ?? "local_authoring";
+  if (mode === "production_http" && input.transport !== "streamable_http") {
+    throw new ScopedExploreError("EXPLORE_TRANSPORT_FORBIDDEN", "Production Explore is available only through the secured Streamable HTTP transport.");
+  }
+  if (mode === "local_authoring" && input.transport !== "stdio" && input.transport !== "loopback_workbench") {
+    throw new ScopedExploreError("EXPLORE_TRANSPORT_FORBIDDEN", "Local Scoped Explore is available only through stdio or the secured loopback Workbench.");
   }
   const boundary = await loadActivatedExplorationBoundary(
     projectRoot,
@@ -212,10 +332,16 @@ export async function prepareScopedExplore(input: {
   ).catch((error) => {
     throw scopedExploreBoundaryLoadError(error);
   });
-  if (boundary.deployment_profile !== "development" && boundary.deployment_profile !== "staging") {
-    throw new ScopedExploreError("EXPLORE_PROFILE_FORBIDDEN", "Missing, unknown, malformed, and production profiles cannot enable Scoped Explore.");
+  if (mode === "production_http" && boundary.deployment_profile !== "production") {
+    throw new ScopedExploreError("EXPLORE_PROFILE_FORBIDDEN", "Production HTTP Explore requires a separately reviewed and activated production boundary.");
   }
-  if (boundary.compiler_version !== AUTO_BOUNDARY_COMPILER_VERSION || boundary.spec_version !== AUTO_BOUNDARY_SPEC_VERSION) {
+  if (mode === "local_authoring"
+    && boundary.deployment_profile !== "development"
+    && boundary.deployment_profile !== "staging") {
+    throw new ScopedExploreError("EXPLORE_PROFILE_FORBIDDEN", "A production boundary cannot be served by the local authoring Explore runtime.");
+  }
+  if (boundary.compiler_version !== AUTO_BOUNDARY_COMPILER_VERSION
+    || !SUPPORTED_AUTO_BOUNDARY_SPEC_VERSIONS.has(boundary.spec_version)) {
     throw new ScopedExploreError("EXPLORE_BOUNDARY_MISMATCH", "The active exploration boundary was compiled by a different compiler or Spec version.");
   }
   const lock = await loadGenerationLockForActivatedBoundary(projectRoot, boundary).catch((error) => {
@@ -224,14 +350,92 @@ export async function prepareScopedExplore(input: {
   if (boundary.activation.generation_lock_fingerprint !== boundary.generation_lock_fingerprint) {
     throw new ScopedExploreError("EXPLORE_BOUNDARY_MISMATCH", "The active exploration boundary is not bound to the current generation lock.");
   }
+  if (lock.authority_dependencies) {
+    assertAuthorityDependenciesShape(lock.authority_dependencies);
+  }
   const inspection = await (input.inspectDatabaseFn ?? inspectDatabase)({
     engine: lock.engine,
     databaseUrlEnv: lock.source_env,
     ...(lock.inspected_schema ? { schema: lock.inspected_schema } : {}),
+    ...(lock.authority_dependencies
+      ? {
+        resources: Object.values(lock.authority_dependencies.resources)
+          .map((dependency) => ({
+            schema: dependency.schema,
+            table: dependency.table,
+          }))
+          .sort((left, right) => left.schema.localeCompare(right.schema)
+            || left.table.localeCompare(right.table)),
+        ...(boundary.organization_scope ? { verifySingleOrganization: true } : {}),
+      }
+      : {}),
     env: input.env ?? process.env,
   });
+  let serverCompatibility: ReturnType<typeof assertSupportedDatabaseServerVersion>;
+  try {
+    serverCompatibility = assertSupportedDatabaseServerVersion(inspection);
+  } catch (error) {
+    throw new ScopedExploreError(
+      "EXPLORE_SERVER_VERSION_UNSUPPORTED",
+      safeError(error),
+    );
+  }
+  if (!lock.database_server_version
+    || !lock.database_server_tier
+    || !lock.database_server_authority) {
+    throw new ScopedExploreError(
+      "EXPLORE_LOCK_STALE",
+      [
+        "Generated authority is stale: the generation lock does not record its database server capability tier.",
+        generationLockRemediation(lock),
+      ].join("\n"),
+    );
+  }
+  if (!boundary.database_server_version
+    || !boundary.database_server_tier
+    || !boundary.database_server_authority) {
+    throw new ScopedExploreError(
+      "EXPLORE_LOCK_STALE",
+      [
+        "Generated authority is stale: the activated boundary does not record its reviewed database server capability tier.",
+        generationLockRemediation(lock),
+      ].join("\n"),
+    );
+  }
+  if (boundary.database_server_version !== lock.database_server_version
+    || boundary.database_server_tier !== lock.database_server_tier
+    || canonicalJsonDigest(boundary.database_server_authority)
+      !== canonicalJsonDigest(lock.database_server_authority)) {
+    throw new ScopedExploreError(
+      "EXPLORE_BOUNDARY_MISMATCH",
+      "The active boundary and generation lock disagree on database server capability authority.",
+    );
+  }
+  if (canonicalJsonDigest(serverCompatibility.authority ?? null)
+      !== canonicalJsonDigest(lock.database_server_authority)
+    || serverCompatibility.tier !== lock.database_server_tier) {
+    throw new ScopedExploreError(
+      "EXPLORE_LOCK_STALE",
+      [
+        `Generated authority is stale: the database server release line changed from ${lock.database_server_authority.engine} ${lock.database_server_authority.version_line} to ${serverCompatibility.authority ? `${serverCompatibility.authority.engine} ${serverCompatibility.authority.version_line}` : inspection.server_version}.`,
+        generationLockRemediation(lock),
+      ].join("\n"),
+    );
+  }
+  if (boundary.pack.resources.some((resource) => resource.auto_bands?.length)) {
+    try {
+      assertDatabaseGrammarFeature(
+        serverCompatibility.authority ?? inspection,
+        "automatic_numeric_bands",
+      );
+    } catch (error) {
+      throw new ScopedExploreError("EXPLORE_LOCK_STALE", [
+        `Generated authority is stale: ${safeError(error)}`,
+        generationLockRemediation(lock),
+      ].join("\n"));
+    }
+  }
   if (lock.authority_dependencies) {
-    assertAuthorityDependenciesShape(lock.authority_dependencies);
     if (lock.compiler_version !== boundary.compiler_version || lock.spec_version !== boundary.spec_version) {
       throw new ScopedExploreError("EXPLORE_BOUNDARY_MISMATCH", "The active boundary and generation lock disagree on compiler or Spec version.");
     }
@@ -239,14 +443,20 @@ export async function prepareScopedExplore(input: {
       !== lock.authority_dependencies.credential_posture_fingerprint) {
       throw new ScopedExploreError(
         "EXPLORE_LOCK_STALE",
-        "Generated authority is stale: the inspected credential posture changed.",
+        [
+          "Generated authority is stale: the inspected credential posture changed.",
+          generationLockRemediation(lock),
+        ].join("\n"),
       );
     }
     assertGlobalReadOnlyPosture(inspection);
   } else {
     const comparison = compareGenerationLock(lock, inspection);
     if (!comparison.current) {
-      throw new ScopedExploreError("EXPLORE_LOCK_STALE", `Generated authority is stale: ${comparison.changes.join("; ")}.`);
+      throw new ScopedExploreError("EXPLORE_LOCK_STALE", [
+        `Generated authority is stale: ${comparison.changes.join("; ")}.`,
+        generationLockRemediation(lock),
+      ].join("\n"));
     }
     if (rolePostureFingerprint(inspection) !== boundary.role_posture_fingerprint) {
       throw new ScopedExploreError("EXPLORE_ROLE_UNSAFE", "Database role, grant, ownership, or RLS posture changed after boundary activation.");
@@ -259,33 +469,41 @@ export async function prepareScopedExplore(input: {
 export async function createScopedExploreRuntime(input: {
   projectRoot: string;
   transport: ScopedExploreTransport;
+  mode?: ScopedExploreMode;
   boundaryName?: string;
   env?: NodeJS.ProcessEnv;
   executor?: ScopedExploreExecutor;
-  store?: ProposalStore;
+  store?: ProposalRuntimeStore;
+  sessionContext?: ExploreHttpSessionContext;
+  productionPrivacyHmacKey?: Buffer;
+  productionAccountingNamespace?: string;
+  productionTenantLimits?: ExploreBudgetLimits;
   clock?: () => number;
   inspectDatabaseFn?: InspectDatabaseFn;
   resolveTrustedScopeFn?: ResolveExploreTrustedScopeFn;
 }): Promise<ScopedExploreRuntime> {
   const projectRoot = path.resolve(input.projectRoot);
   const env = input.env ?? process.env;
+  const mode = input.mode ?? "local_authoring";
   const prepared = await prepareScopedExplore({
     projectRoot,
     transport: input.transport,
+    mode,
     ...(input.boundaryName ? { boundaryName: input.boundaryName } : {}),
     env,
     ...(input.inspectDatabaseFn ? { inspectDatabaseFn: input.inspectDatabaseFn } : {}),
   });
   const databaseUrl = env[prepared.lock.source_env];
   if (!databaseUrl) throw new ScopedExploreError("EXPLORE_SOURCE_UNAVAILABLE", `${prepared.lock.source_env} is not set.`);
-  const principalRequired = prepared.boundary.pack.resources.some((resource) =>
-    typeof resource.principal_key === "string" && resource.principal_key.length > 0);
+  const principalRequired = mode === "production_http" || prepared.boundary.pack.resources.some((resource) =>
+    Boolean(resource.principal_key || resource.principal_scope));
   const trustedScopeResolver = input.resolveTrustedScopeFn ?? resolveExploreTrustedScope;
   const trustedScope = await trustedScopeResolver({
     boundary: prepared.boundary,
     lock: prepared.lock,
     inspection: prepared.inspection,
     env,
+    ...(input.sessionContext ? { sessionContext: input.sessionContext } : {}),
   }).catch((error) => {
     throw scopedExploreTrustedScopeError(
       error,
@@ -296,10 +514,47 @@ export async function createScopedExploreRuntime(input: {
   const trustedTenant = trustedScope.tenant;
   const principal = trustedScope.principal;
   const auditKey = await loadAuditKey(projectRoot);
+  const privacyHmacKey = mode === "production_http"
+    ? input.productionPrivacyHmacKey
+    : auditKey;
+  if (!privacyHmacKey || privacyHmacKey.byteLength < 32) {
+    throw new ScopedExploreError(
+      "EXPLORE_BOUNDARY_MISMATCH",
+      "Production Explore requires one shared 32-byte-or-longer HMAC key for opaque cross-process privacy accounting.",
+    );
+  }
+  if (mode === "production_http" && !input.productionTenantLimits) {
+    throw new ScopedExploreError(
+      "EXPLORE_BOUNDARY_MISMATCH",
+      "Production Explore requires explicit tenant-wide query, extraction, differencing, and rate ceilings.",
+    );
+  }
+  if (mode === "production_http"
+    && (!input.productionAccountingNamespace
+      || !/^[a-z][a-z0-9_.:-]{0,127}$/.test(input.productionAccountingNamespace))) {
+    throw new ScopedExploreError(
+      "EXPLORE_BOUNDARY_MISMATCH",
+      "Production Explore requires one stable reviewed accounting namespace shared by every replica.",
+    );
+  }
   const clock = input.clock ?? Date.now;
-  const projectFingerprint = hmac(auditKey, projectRoot);
-  const tenantFingerprint = hmac(auditKey, trustedTenant);
-  const principalFingerprint = principal ? hmac(auditKey, principal) : "not_configured";
+  const projectFingerprint = hmac(
+    privacyHmacKey,
+    mode === "production_http" ? input.productionAccountingNamespace! : projectRoot,
+  );
+  const tenantFingerprint = hmac(privacyHmacKey, trustedTenant);
+  const principalFingerprint = principal ? hmac(privacyHmacKey, principal) : "not_configured";
+  const auditScopeKey = mode === "production_http" ? privacyHmacKey : auditKey;
+  const auditIdentity = {
+    tenantAuditFingerprint: `keyed:${hmac(auditScopeKey, trustedTenant)}`,
+    ...(principal ? { principalAuditFingerprint: `keyed:${hmac(auditScopeKey, principal)}` } : {}),
+  };
+  const tenantPrivacyScopeFingerprint = canonicalJsonDigest({
+    version: "synapsor.explore-privacy-tenant-scope.v1",
+    project: projectFingerprint,
+    source: prepared.boundary.source,
+    tenant: tenantFingerprint,
+  });
   const privacyScopeFingerprint = canonicalJsonDigest({
     version: "synapsor.explore-privacy-scope.v1",
     project: projectFingerprint,
@@ -314,7 +569,7 @@ export async function createScopedExploreRuntime(input: {
   const ownsStore = !input.store;
   const store = input.store ?? new ProposalStore(path.join(projectRoot, ".synapsor/local.db"));
   const ownsExecutor = !input.executor;
-  const executor = input.executor ?? createDatabaseExecutor({
+  const executor = input.executor ?? createScopedExploreDatabaseExecutor({
     engine: prepared.lock.engine,
     databaseUrl,
   });
@@ -347,7 +602,9 @@ export async function createScopedExploreRuntime(input: {
       prepared.boundary,
       request,
       reviewableBoundary,
-      request.include_time_coverage === false ? {} : await reviewedTimeCoverage(),
+      mode === "production_http" || request.include_time_coverage === false
+        ? {}
+        : await reviewedTimeCoverage(),
     ),
     explore: async (unknownPlan) => {
       let currentPrepared: PreparedExplore;
@@ -355,6 +612,7 @@ export async function createScopedExploreRuntime(input: {
         currentPrepared = await prepareScopedExplore({
           projectRoot,
           transport: input.transport,
+          mode,
           boundaryName: prepared.boundary.pack.name,
           env,
           ...(input.inspectDatabaseFn ? { inspectDatabaseFn: input.inspectDatabaseFn } : {}),
@@ -371,6 +629,7 @@ export async function createScopedExploreRuntime(input: {
           lock: currentPrepared.lock,
           inspection: currentPrepared.inspection,
           env,
+          ...(input.sessionContext ? { sessionContext: input.sessionContext } : {}),
         }).catch((error) => {
           throw scopedExploreTrustedScopeError(
             error,
@@ -381,6 +640,8 @@ export async function createScopedExploreRuntime(input: {
         assertTrustedScopeUnchanged(trustedScope, currentScope);
       } catch (error) {
         await recordPreExecutionRefusalAudit(store, {
+          mode,
+          ...auditIdentity,
           boundary: prepared.boundary,
           sessionFingerprint,
           budgetScopeFingerprint: privacyScopeFingerprint,
@@ -392,9 +653,15 @@ export async function createScopedExploreRuntime(input: {
         });
         throw error;
       }
+      const executionStartedAt = clock();
       let plan: ExplorePlan;
+      let resolvedTimeWindows: ResolvedRelativeTimeWindow[] = [];
       try {
-        plan = validateExplorePlan(unknownPlan, currentPrepared.boundary);
+        const validated = validateExploreRequest(unknownPlan, currentPrepared.boundary, {
+          now: executionStartedAt,
+        });
+        plan = validated.plan;
+        resolvedTimeWindows = validated.resolved_time_windows;
       } catch (error) {
         const refusal = enrichReviewableRelationshipError(
           error,
@@ -403,6 +670,8 @@ export async function createScopedExploreRuntime(input: {
           reviewableBoundary,
         );
         await recordPreExecutionRefusalAudit(store, {
+          mode,
+          ...auditIdentity,
           boundary: prepared.boundary,
           sessionFingerprint,
           budgetScopeFingerprint: privacyScopeFingerprint,
@@ -410,7 +679,7 @@ export async function createScopedExploreRuntime(input: {
           unknownPlan,
           stage: "validation",
           error: refusal,
-          now: clock(),
+          now: executionStartedAt,
         });
         throw refusal;
       }
@@ -418,6 +687,8 @@ export async function createScopedExploreRuntime(input: {
         assertPreparedExplorePlanAuthority(plan, currentPrepared);
       } catch (error) {
         await recordPreExecutionRefusalAudit(store, {
+          mode,
+          ...auditIdentity,
           boundary: prepared.boundary,
           sessionFingerprint,
           budgetScopeFingerprint: privacyScopeFingerprint,
@@ -430,8 +701,9 @@ export async function createScopedExploreRuntime(input: {
         });
         throw error;
       }
-      const executionStartedAt = clock();
-      const normalizedAuditPlan = normalizedAudit(plan, auditKey);
+      // Production budget variants must be stable across replicas. The shared
+      // HMAC key keeps literals opaque while making accounting deterministic.
+      const normalizedAuditPlan = normalizedAudit(plan, privacyHmacKey);
       const queryFingerprint = canonicalJsonDigest(normalizedAuditPlan);
       const familyFingerprint = canonicalJsonDigest({
         version: "synapsor.explore-differencing-family.v2",
@@ -442,6 +714,10 @@ export async function createScopedExploreRuntime(input: {
       const estimatedResponseCells = estimatedExploreResponseCells(plan);
       let compiledQueries: CompiledExploreQuery[];
       let budgetUsage: ExploreBudgetUsage;
+      let tenantBudgetUsage: ExploreBudgetUsage | undefined;
+      let principalVariantAlreadyCounted = true;
+      let tenantVariantAlreadyCounted = true;
+      let requiresDifferencing = false;
       try {
         assertExploreComplexity(plan, prepared.boundary);
         compiledQueries = compileExplorePlan(
@@ -450,32 +726,80 @@ export async function createScopedExploreRuntime(input: {
           { tenant: trustedTenant, principal },
           prepared.lock.engine,
         );
-        const reservation = store.claimExploreBudgetReservation({
-          reservation_id: reservationId,
-          scope_fingerprint: privacyScopeFingerprint,
-          legacy_session_fingerprints: legacySessionFingerprints({
-            auditKey,
-            projectRoot,
-            tenant: trustedTenant,
-            principal,
-            now: executionStartedAt,
-          }),
-          resource_id: plan.resource,
-          variant_fingerprint: variantFingerprint,
-          requires_differencing: requiresDifferencingProtection(plan, prepared.boundary),
-          estimated_response_cells: estimatedResponseCells,
-          limits: prepared.boundary.budgets,
-          now: new Date(executionStartedAt).toISOString(),
-        });
+        requiresDifferencing = requiresDifferencingProtection(plan, prepared.boundary);
+        const reservation = mode === "production_http"
+          ? await claimProductionExploreBudget(store, {
+            reservation_id: reservationId,
+            principal_scope_fingerprint: privacyScopeFingerprint,
+            tenant_scope_fingerprint: tenantPrivacyScopeFingerprint,
+            resource_id: plan.resource,
+            variant_fingerprint: variantFingerprint,
+            requires_differencing: requiresDifferencing,
+            estimated_response_cells: estimatedResponseCells,
+            principal_limits: prepared.boundary.budgets,
+            tenant_limits: {
+              ...input.productionTenantLimits!,
+              // A deployment-wide ceiling may be stricter, but can never make
+              // one response looser than this reviewed boundary permits.
+              max_response_cells: Math.min(
+                input.productionTenantLimits!.max_response_cells,
+                prepared.boundary.budgets.max_response_cells,
+              ),
+            },
+            now: new Date(executionStartedAt).toISOString(),
+          })
+          : await claimLocalExploreBudget(store, {
+            reservation_id: reservationId,
+            scope_fingerprint: privacyScopeFingerprint,
+            legacy_session_fingerprints: legacySessionFingerprints({
+              auditKey,
+              projectRoot,
+              tenant: trustedTenant,
+              principal,
+              now: executionStartedAt,
+            }),
+            resource_id: plan.resource,
+            variant_fingerprint: variantFingerprint,
+            requires_differencing: requiresDifferencing,
+            estimated_response_cells: estimatedResponseCells,
+            limits: prepared.boundary.budgets,
+            now: new Date(executionStartedAt).toISOString(),
+          });
         if (!reservation.allowed) {
+          const exhaustedScope = "exhausted_scope" in reservation
+            && (reservation.exhausted_scope === "principal" || reservation.exhausted_scope === "tenant")
+            ? reservation.exhausted_scope
+            : undefined;
           throw new ScopedExploreError(
             reservation.code === "RATE_LIMIT_EXHAUSTED"
               ? "EXPLORE_RATE_LIMITED"
               : "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
-            exploreBudgetRefusalMessage(reservation.code, reservation.message),
+            exploreBudgetRefusalMessage(
+              {
+                code: reservation.code,
+                fallback: reservation.message,
+                usage: reservation.usage,
+                limits: exhaustedScope === "tenant"
+                  ? input.productionTenantLimits!
+                  : prepared.boundary.budgets,
+                estimatedResponseCells,
+                now: executionStartedAt,
+                exhaustedScope,
+                resourceId: plan.resource,
+              },
+            ),
           );
         }
-        budgetUsage = reservation.usage_after_reservation;
+        budgetUsage = "principal_usage_after_reservation" in reservation
+          ? reservation.principal_usage_after_reservation
+          : reservation.usage_after_reservation;
+        if ("tenant_usage_after_reservation" in reservation) {
+          tenantBudgetUsage = reservation.tenant_usage_after_reservation;
+          principalVariantAlreadyCounted = reservation.principal_variant_already_counted;
+          tenantVariantAlreadyCounted = reservation.tenant_variant_already_counted;
+        } else {
+          principalVariantAlreadyCounted = reservation.variant_already_counted;
+        }
       } catch (error) {
         const refusal = error instanceof ScopedExploreError
           ? error
@@ -484,10 +808,12 @@ export async function createScopedExploreRuntime(input: {
             "Runner could not reserve the reviewed privacy budget, so no source query was executed.",
           );
         await recordPreExecutionRefusalAudit(store, {
+          mode,
+          ...auditIdentity,
           boundary: prepared.boundary,
           sessionFingerprint,
           budgetScopeFingerprint: privacyScopeFingerprint,
-          auditKey,
+          auditKey: privacyHmacKey,
           plan,
           unknownPlan,
           stage: "budget",
@@ -511,8 +837,10 @@ export async function createScopedExploreRuntime(input: {
           resultRows.push(...rows.map((row) => query.period ? { __period: query.period, ...row } : row));
         });
       } catch (error) {
-        releaseExploreBudgetReservation(store, reservationId, clock());
+        await releaseExploreBudgetReservation(store, reservationId, clock(), mode);
         await recordExploreAudit(store, {
+          mode,
+          ...auditIdentity,
           boundary: prepared.boundary,
           sessionFingerprint,
           budgetScopeFingerprint: privacyScopeFingerprint,
@@ -521,6 +849,7 @@ export async function createScopedExploreRuntime(input: {
           familyFingerprint,
           variantFingerprint,
           normalizedPlan: normalizedAuditPlan,
+          resolvedTimeWindows,
           plan,
           status: "failed",
           rowCount: 0,
@@ -532,10 +861,17 @@ export async function createScopedExploreRuntime(input: {
       }
       let response: ReturnType<typeof shapeExploreResponse>;
       try {
-        response = shapeExploreResponse(plan, resultRows, prepared.boundary);
+        response = shapeExploreResponse(
+          plan,
+          resultRows,
+          prepared.boundary,
+          compiledQueries,
+        );
       } catch (error) {
-        releaseExploreBudgetReservation(store, reservationId, clock());
+        await releaseExploreBudgetReservation(store, reservationId, clock(), mode);
         await recordExploreAudit(store, {
+          mode,
+          ...auditIdentity,
           boundary: prepared.boundary,
           sessionFingerprint,
           budgetScopeFingerprint: privacyScopeFingerprint,
@@ -544,6 +880,7 @@ export async function createScopedExploreRuntime(input: {
           familyFingerprint,
           variantFingerprint,
           normalizedPlan: normalizedAuditPlan,
+          resolvedTimeWindows,
           plan,
           status: "refused_privacy_boundary",
           rowCount: 0,
@@ -555,8 +892,10 @@ export async function createScopedExploreRuntime(input: {
       }
       const serializedBytes = Buffer.byteLength(JSON.stringify(response.data), "utf8");
       if (serializedBytes > prepared.boundary.budgets.max_response_bytes || response.cells > prepared.boundary.budgets.max_response_cells) {
-        releaseExploreBudgetReservation(store, reservationId, clock());
+        await releaseExploreBudgetReservation(store, reservationId, clock(), mode);
         await recordExploreAudit(store, {
+          mode,
+          ...auditIdentity,
           boundary: prepared.boundary,
           sessionFingerprint,
           budgetScopeFingerprint: privacyScopeFingerprint,
@@ -565,6 +904,7 @@ export async function createScopedExploreRuntime(input: {
           familyFingerprint,
           variantFingerprint,
           normalizedPlan: normalizedAuditPlan,
+          resolvedTimeWindows,
           plan,
           status: "refused_response_budget",
           rowCount: 0,
@@ -575,17 +915,21 @@ export async function createScopedExploreRuntime(input: {
         throw new ScopedExploreError("EXPLORE_RESPONSE_TOO_LARGE", "Scoped Explore refused a result that exceeded the reviewed cell or byte budget.");
       }
       try {
-        enforcePrivacyComplementRelease(store, {
+        await enforcePrivacyComplementRelease(store, {
           boundary: prepared.boundary,
           privacyScopeFingerprint,
+          tenantPrivacyScopeFingerprint,
           queryFingerprint,
           plan,
           response,
-          auditKey,
+          auditKey: privacyHmacKey,
+          mode,
         });
       } catch (error) {
-        releaseExploreBudgetReservation(store, reservationId, clock());
+        await releaseExploreBudgetReservation(store, reservationId, clock(), mode);
         await recordExploreAudit(store, {
+          mode,
+          ...auditIdentity,
           boundary: prepared.boundary,
           sessionFingerprint,
           budgetScopeFingerprint: privacyScopeFingerprint,
@@ -594,6 +938,7 @@ export async function createScopedExploreRuntime(input: {
           familyFingerprint,
           variantFingerprint,
           normalizedPlan: normalizedAuditPlan,
+          resolvedTimeWindows,
           plan,
           status: "refused_privacy_complement",
           rowCount: 0,
@@ -604,19 +949,21 @@ export async function createScopedExploreRuntime(input: {
         throw error;
       }
       const completedAt = clock();
-      let completedBudget: ReturnType<ProposalStore["completeExploreBudgetReservation"]>;
+      let completedBudget;
       try {
-        completedBudget = store.completeExploreBudgetReservation({
+        completedBudget = await completeExploreBudget(store, {
           reservation_id: reservationId,
           result_released: true,
           returned_cells: response.cells,
           completed_at: new Date(completedAt).toISOString(),
-        });
+        }, mode);
       } catch {
         completedBudget = { completed: false, reason: "reservation_missing" };
       }
       if (!completedBudget.completed) {
         await recordExploreAudit(store, {
+          mode,
+          ...auditIdentity,
           boundary: prepared.boundary,
           sessionFingerprint,
           budgetScopeFingerprint: privacyScopeFingerprint,
@@ -625,6 +972,7 @@ export async function createScopedExploreRuntime(input: {
           familyFingerprint,
           variantFingerprint,
           normalizedPlan: normalizedAuditPlan,
+          resolvedTimeWindows,
           plan,
           status: "refused_budget_completion",
           rowCount: 0,
@@ -644,12 +992,21 @@ export async function createScopedExploreRuntime(input: {
           budgetUsage.extracted_cells - estimatedResponseCells + response.cells,
         ),
       };
+      if (tenantBudgetUsage) {
+        tenantBudgetUsage = {
+          ...tenantBudgetUsage,
+          extracted_cells: Math.max(
+            0,
+            tenantBudgetUsage.extracted_cells - estimatedResponseCells + response.cells,
+          ),
+        };
+      }
       const evidence = await recordExploreEvidence(store, {
+        mode,
+        ...auditIdentity,
         boundary: prepared.boundary,
         generationLockFingerprint: prepared.boundary.generation_lock_fingerprint,
         rolePostureFingerprint: prepared.boundary.role_posture_fingerprint,
-        auditKey,
-        tenant: trustedTenant,
         sessionFingerprint,
         budgetScopeFingerprint: privacyScopeFingerprint,
         budgetReservationId: reservationId,
@@ -657,6 +1014,7 @@ export async function createScopedExploreRuntime(input: {
         familyFingerprint,
         variantFingerprint,
         normalizedPlan: normalizedAuditPlan,
+        resolvedTimeWindows,
         plan,
         status: response.status,
         rowCount: response.rowCount,
@@ -666,21 +1024,26 @@ export async function createScopedExploreRuntime(input: {
         executionStartedAt,
         completedAt,
       });
-      const protectToken = await storeProtectedPlan({
-        projectRoot,
-        auditKey,
-        boundaryDigest: prepared.boundary.activation.digest,
-        plan,
-        now: completedAt,
-        metadata: {
-          evidence_bundle_id: evidence.evidence_bundle_id,
-          query_audit_handle: queryFingerprint,
-          outcome: response.status,
-          returned_rows_or_groups: response.rowCount,
-          returned_cells: response.cells,
-          suppressed_groups: response.suppressed,
-        },
-      });
+      const protectToken = mode === "local_authoring"
+        ? await storeProtectedPlan({
+          projectRoot,
+          auditKey,
+          boundaryDigest: prepared.boundary.activation.digest,
+          plan,
+          now: completedAt,
+          metadata: {
+            evidence_bundle_id: evidence.evidence_bundle_id,
+            query_audit_handle: queryFingerprint,
+            outcome: response.status,
+            returned_rows_or_groups: response.rowCount,
+            returned_cells: response.cells,
+            suppressed_groups: response.suppressed,
+            ...(resolvedTimeWindows.length
+              ? { resolved_time_windows: resolvedTimeWindows }
+              : {}),
+          },
+        })
+        : undefined;
       const resultSemantics = describeExploreResult({
         plan,
         boundary: prepared.boundary,
@@ -715,12 +1078,34 @@ export async function createScopedExploreRuntime(input: {
         data: response.data,
         privacy: {
           minimum_cohort_size: plan.kind === "aggregate" ? resourceFor(prepared.boundary, plan.resource).minimum_cohort_size : null,
+          effective_minimum_cohort_size: plan.kind === "aggregate"
+            ? effectiveMinimumCohortSize(plan, resourceFor(prepared.boundary, plan.resource))
+            : null,
+          contributor_aware_measures: plan.kind === "aggregate"
+            ? plan.measures
+              .map((measure, index) =>
+                "derived_measure" in measure || CONTRIBUTOR_AWARE_MEASURE_FUNCTIONS.has(measure.function)
+                  ? index
+                  : -1)
+              .filter((index) => index >= 0)
+            : [],
           ...(plan.kind === "aggregate"
             && resourceFor(prepared.boundary, plan.resource).minimum_cohort_overridden
             ? { minimum_cohort_overridden: true }
             : {}),
           suppressed_groups: response.suppressed,
           totals_returned: false,
+          ...(response.autoBands.length ? { auto_bands: response.autoBands } : {}),
+          ...(response.reviewedValueControls.bucketed.length
+            || response.reviewedValueControls.excluded.length
+            ? {
+              reviewed_value_controls: {
+                bucketed_fields: response.reviewedValueControls.bucketed,
+                excluded_fields: response.reviewedValueControls.excluded,
+                source_values_exposed: false,
+              },
+            }
+            : {}),
         },
         audit: {
           query_fingerprint: queryFingerprint,
@@ -729,18 +1114,39 @@ export async function createScopedExploreRuntime(input: {
           returned_cells: response.cells,
           persisted_result_values: false,
         },
+        operator_budget: describeOperatorExploreBudget({
+          principalUsage: budgetUsage,
+          principalLimits: prepared.boundary.budgets,
+          principalVariantAlreadyCounted,
+          ...(tenantBudgetUsage && input.productionTenantLimits
+            ? {
+              tenantUsage: tenantBudgetUsage,
+              tenantLimits: input.productionTenantLimits,
+              tenantVariantAlreadyCounted,
+            }
+            : {}),
+          requiresDifferencing,
+          resourceId: plan.resource,
+          returnedCells: response.cells,
+          completedAt,
+        }),
+        ...(resolvedTimeWindows.length ? { operator_time_windows: resolvedTimeWindows } : {}),
         evidence_bundle_id: evidence.evidence_bundle_id,
         evidence_resource: `synapsor://evidence/${evidence.evidence_bundle_id}`,
-        protect: {
-          token: protectToken.token,
-          expires_at: protectToken.expires_at,
-          action: "Open the secured local Workbench and choose Protect this query.",
-        },
+        ...(protectToken ? {
+          protect: {
+            token: protectToken.token,
+            expires_at: protectToken.expires_at,
+            action: "Use the local operator CLI or Workbench to Protect this analysis.",
+          },
+        } : {}),
       };
     },
     close: async () => {
-      if (ownsExecutor) await executor.close();
-      if (ownsStore) store.close();
+      await runAllCleanups([
+        ...(ownsExecutor ? [() => executor.close()] : []),
+        ...(ownsStore ? [async () => { await store.close(); }] : []),
+      ], "Scoped Explore runtime cleanup failed");
     },
   };
 }
@@ -749,10 +1155,49 @@ export function assertPreparedExplorePlanAuthority(
   plan: ExplorePlan,
   prepared: PreparedExplore,
 ): void {
-  if (!prepared.lock.authority_dependencies) return;
+  if (JSON.stringify(prepared.boundary.organization_scope ?? null)
+    !== JSON.stringify(prepared.lock.organization_scope ?? null)) {
+    throw new ScopedExploreError(
+      "EXPLORE_LOCK_STALE",
+      withGenerationLockRemediation(
+        "The active boundary organization-scope posture does not match its generation lock. No query was executed.",
+        prepared.lock,
+      ),
+    );
+  }
+  if (prepared.boundary.organization_scope) {
+    try {
+      assertSingleOrganizationInspectionSafe(prepared.inspection);
+    } catch (error) {
+      throw new ScopedExploreError(
+        "EXPLORE_LOCK_STALE",
+        `${error instanceof Error ? error.message : String(error)} No query was executed.`,
+      );
+    }
+  }
+  if (!prepared.lock.authority_dependencies) {
+    const usesDependencyBoundScope = prepared.boundary.pack.resources.some((resource) =>
+      Boolean(
+        resource.tenant_scope
+        || resource.principal_scope
+        || resource.shared_reference_scope
+        || resource.derived_measures?.some((definition) => "child_resource" in definition),
+      ));
+    if (usesDependencyBoundScope) {
+      throw new ScopedExploreError(
+        "EXPLORE_LOCK_STALE",
+        withGenerationLockRemediation(
+          "The active boundary uses derived trusted scope or shared-reference scope, but its generation lock does not bind that authority. No query was executed.",
+          prepared.lock,
+        ),
+      );
+    }
+    return;
+  }
   assertPlanAuthorityDependenciesCurrent(
     plan,
     prepared.boundary,
+    prepared.lock,
     prepared.lock.authority_dependencies,
     prepared.inspection,
   );
@@ -797,7 +1242,7 @@ function enrichReviewableRelationshipError(
     || candidate.proof.source !== "database_catalog"
     || canonicalJsonDigest(candidate.proof.links) !== candidate.proof.digest
     || candidate.proof.links.length < 1
-    || candidate.proof.links.length > 2) {
+    || candidate.proof.links.length > 3) {
     return error;
   }
   const activeResources = new Set(active.pack.resources.map((resource) => resource.id));
@@ -858,15 +1303,41 @@ function requestedRelationshipIds(input: Record<string, unknown>): string[] {
     for (const item of input[key]) if (isRecord(item)) add(item.relationship);
   }
   if (isRecord(input.time_bucket)) add(input.time_bucket.relationship);
+  if (isRecord(input.time_window)) add(input.time_window.relationship);
   if (isRecord(input.comparison)) add(input.comparison.relationship);
   return unique(ids);
 }
 
-export function validateExplorePlan(input: unknown, boundary: ActivatedExplorationBoundary): ExplorePlan {
+type ExploreValidationContext = {
+  now: number;
+  resolvedTimeWindows: ResolvedRelativeTimeWindow[];
+};
+
+export function validateExploreRequest(
+  input: unknown,
+  boundary: ActivatedExplorationBoundary,
+  options: { now?: number } = {},
+): ValidatedExploreRequest {
   if (!isRecord(input)) throw planError("plan must be an object");
-  if (input.kind === "rows") return validateRowPlan(input, boundary);
-  if (input.kind === "aggregate") return validateAggregatePlan(input, boundary);
-  throw planError("kind must be rows or aggregate");
+  const context: ExploreValidationContext = {
+    now: options.now ?? Date.now(),
+    resolvedTimeWindows: [],
+  };
+  const plan = input.kind === "rows"
+    ? validateRowPlan(input, boundary, context)
+    : input.kind === "aggregate"
+      ? validateAggregatePlan(input, boundary, context)
+      : undefined;
+  if (!plan) throw planError("kind must be rows or aggregate");
+  return { plan, resolved_time_windows: context.resolvedTimeWindows };
+}
+
+export function validateExplorePlan(
+  input: unknown,
+  boundary: ActivatedExplorationBoundary,
+  options: { now?: number } = {},
+): ExplorePlan {
+  return validateExploreRequest(input, boundary, options).plan;
 }
 
 export function projectScopedExploreResultForModel(input: {
@@ -877,17 +1348,49 @@ export function projectScopedExploreResultForModel(input: {
 }): {
   value: Record<string, unknown>;
   withheld: boolean;
+  operator_metadata_withheld?: boolean;
 } {
   if (input.tool !== SCOPED_EXPLORE_QUERY_TOOL || input.result.ok === false) {
     return { value: structuredClone(input.result), withheld: false };
   }
   const rawPlan = input.arguments.plan;
-  const plan = validateExplorePlan(rawPlan, input.boundary);
+  const operatorTimeWindows = Array.isArray(input.result.operator_time_windows)
+    ? input.result.operator_time_windows.filter(isRecord)
+    : [];
+  const resolvedAt = operatorTimeWindows.find((item) => typeof item.resolved_at === "string")?.resolved_at;
+  const projectionNow = typeof resolvedAt === "string" && Number.isFinite(Date.parse(resolvedAt))
+    ? Date.parse(resolvedAt)
+    : Date.now();
+  const plan = validateExplorePlan(rawPlan, input.boundary, { now: projectionNow });
+  const projected = structuredClone(input.result);
+  const operatorMetadataWithheld = Object.hasOwn(projected, "operator_budget")
+    || Object.hasOwn(projected, "operator_time_windows");
+  delete projected.operator_budget;
+  delete projected.operator_time_windows;
+  if (operatorTimeWindows.some((item) => item.location === "comparison")) {
+    const outcome = isRecord(projected.outcome) ? projected.outcome : undefined;
+    const result = outcome && isRecord(outcome.result) ? outcome.result : undefined;
+    const grain = result && isRecord(result.grain) ? result.grain : undefined;
+    if (grain?.kind === "period_comparison") {
+      delete grain.periods;
+      grain.relative_window = operatorTimeWindows
+        .filter((item) => item.location === "comparison")
+        .map((item) => ({
+          window: item.window,
+          compare_to: item.compare_to,
+          reporting_timezone: "UTC",
+          resolved_timestamps_withheld_from_model: true,
+        }));
+    }
+  }
   const columns = new Set(modelWithheldExploreOutputColumns(plan, input.boundary));
   if (columns.size === 0) {
-    return { value: structuredClone(input.result), withheld: false };
+    return {
+      value: projected,
+      withheld: false,
+      ...(operatorMetadataWithheld ? { operator_metadata_withheld: true } : {}),
+    };
   }
-  const projected = structuredClone(input.result);
   if (Array.isArray(projected.data)) {
     const nonce = crypto.randomBytes(6).toString("hex");
     const tokens = new Map<string, string>();
@@ -915,7 +1418,11 @@ export function projectScopedExploreResultForModel(input: {
     tokenized_columns: [...columns].sort(),
     token_scope: "this_tool_response_only",
   };
-  return { value: projected, withheld: true };
+  return {
+    value: projected,
+    withheld: true,
+    ...(operatorMetadataWithheld ? { operator_metadata_withheld: true } : {}),
+  };
 }
 
 export function modelWithheldExploreOutputColumns(
@@ -935,6 +1442,7 @@ export function modelWithheldExploreOutputColumns(
   const aliases = aggregateOutputAliases(plan, boundary);
   const columns = new Set<string>();
   for (const [index, dimension] of (plan.dimensions ?? []).entries()) {
+    if ("numeric_band" in dimension) continue;
     if (isWithheld(dimension.field, dimension.relationship)) {
       columns.add(aliases.dimensions[index]!);
     }
@@ -953,17 +1461,18 @@ export function compileExplorePlan(
   context: { tenant: string; principal: string },
   engine: "postgres" | "mysql",
 ): CompiledExploreQuery[] {
+  const enumBucketMarker = `__synapsor_unreviewed_${crypto.randomBytes(16).toString("hex")}__`;
   if (plan.kind === "rows") return [withReportingTimezone(
     compileRowPlan(plan, boundary, context, engine),
     boundary,
   )];
   const ranges = plan.comparison?.ranges;
   if (!ranges?.length) return [withReportingTimezone(
-    compileAggregatePlan(plan, boundary, context, engine),
+    compileAggregatePlan(plan, boundary, context, engine, enumBucketMarker),
     boundary,
   )];
   return ranges.map((range, index) => withReportingTimezone(
-    compileAggregatePlan(plan, boundary, context, engine, {
+    compileAggregatePlan(plan, boundary, context, engine, enumBucketMarker, {
       range,
       period: index === 0 ? "period_1" : "period_2",
     }),
@@ -1018,6 +1527,7 @@ export type ProtectedPlanMetadata = {
   returned_rows_or_groups?: number;
   returned_cells?: number;
   suppressed_groups?: number;
+  resolved_time_windows?: ResolvedRelativeTimeWindow[];
 };
 
 export type ProtectedPlanRecord = {
@@ -1070,58 +1580,134 @@ export async function bindProtectedPlansToAnswer(input: {
   await writeProtectState(projectRoot, { ...state, items });
 }
 
-function validateRowPlan(input: Record<string, unknown>, boundary: ActivatedExplorationBoundary): RowExplorePlan {
-  assertKeys(input, ["kind", "resource", "select", "where", "order_by", "limit"], "row plan");
+function validateRowPlan(
+  input: Record<string, unknown>,
+  boundary: ActivatedExplorationBoundary,
+  context: ExploreValidationContext,
+): RowExplorePlan {
+  assertKeys(input, ["kind", "resource", "select", "time_window", "where", "order_by", "limit"], "row plan");
   const resource = requestedResource(boundary, input.resource);
   const select = stringArray(input.select, "select", 1, Math.min(20, boundary.budgets.max_response_cells));
   assertSubsetAllowed(select, resource.selectable_fields, resource, "select");
   const where = validateFilters(input.where, resource, boundary);
+  const timeWindow = input.time_window === undefined
+    ? undefined
+    : validateTimeWindow(input.time_window, resource, boundary, context, false);
   const orderBy = input.order_by === undefined ? undefined : recordArray(input.order_by, "order_by", 0, 3).map((order) => {
     assertKeys(order, ["field", "direction"], "order_by item");
     const field = requiredString(order.field, "order_by.field");
     if (!resource.sortable_fields.includes(field)) throw fieldError(resource, field, "sort");
     return { field, direction: direction(order.direction) };
   });
-  const limit = positiveInteger(input.limit, "limit");
+  const maximumRowsByCells = Math.max(1, Math.floor(
+    boundary.budgets.max_response_cells / select.length,
+  ));
+  const limit = input.limit === undefined
+    ? Math.min(50, boundary.budgets.max_rows, maximumRowsByCells)
+    : positiveInteger(input.limit, "limit");
   if (limit > boundary.budgets.max_rows) throw planError(`limit exceeds reviewed maximum ${boundary.budgets.max_rows}`);
   return {
     kind: "rows",
     resource: resource.id,
     select,
+    ...(timeWindow ? { time_window: timeWindow } : {}),
     ...(where.length ? { where } : {}),
     ...(orderBy?.length ? { order_by: orderBy } : {}),
     limit,
   };
 }
 
-function validateAggregatePlan(input: Record<string, unknown>, boundary: ActivatedExplorationBoundary): AggregateExplorePlan {
-  assertKeys(input, ["kind", "resource", "relationship", "measures", "dimensions", "time_bucket", "where", "order_by", "top_n", "comparison"], "aggregate plan");
+function validateAggregatePlan(
+  input: Record<string, unknown>,
+  boundary: ActivatedExplorationBoundary,
+  context: ExploreValidationContext,
+): AggregateExplorePlan {
+  assertKeys(input, ["kind", "resource", "relationship", "measures", "dimensions", "time_bucket", "time_window", "where", "order_by", "top_n", "comparison"], "aggregate plan");
   const resource = requestedResource(boundary, input.resource);
   const relationship = optionalString(input.relationship, "relationship");
   if (relationship) reviewedRelationship(resource, relationship, boundary);
   const measures = recordArray(input.measures, "measures", 1, boundary.budgets.max_measures).map((measure): AggregateMeasure => {
+    if (measure.derived_measure !== undefined) {
+      assertKeys(measure, ["derived_measure"], "reviewed derived measure");
+      const name = requiredString(measure.derived_measure, "measure.derived_measure");
+      if (!resource.derived_measures?.some((definition) => definition.name === name)) {
+        throw fieldError(resource, name, "reviewed derived measure");
+      }
+      return { derived_measure: name };
+    }
     assertKeys(measure, ["function", "field", "relationship"], "measure");
     const fn = requiredString(measure.function, "measure.function");
-    if (!["count", "count_distinct", "sum", "avg"].includes(fn)) throw planError("measure.function must be count, count_distinct, sum, or avg");
+    if (!AGGREGATE_MEASURE_FUNCTIONS.includes(fn as AggregateMeasureFunction)) {
+      throw planError(`measure.function must be one of ${AGGREGATE_MEASURE_FUNCTIONS.join(", ")}`);
+    }
     const relation = optionalString(measure.relationship, "measure.relationship");
     const target = relation ? relationshipResource(resource, relation, boundary) : resource;
     const field = optionalString(measure.field, "measure.field");
     if (fn === "count" && field !== undefined) throw planError("count does not accept a field");
     if (fn === "count" && relation !== undefined) throw planError("count measures the reviewed subject entity and cannot switch counted entity through a relationship");
     if (fn === "count_distinct" && (!field || !target.count_distinct_fields.includes(field))) throw fieldError(target, field ?? "(missing)", "count_distinct");
-    if ((fn === "sum" || fn === "avg") && (!field || !target.aggregate_measures.includes(field))) throw fieldError(target, field ?? "(missing)", fn);
+    if (CONTRIBUTOR_AWARE_MEASURE_FUNCTIONS.has(fn as AggregateMeasureFunction)
+      && (!field
+        || !target.aggregate_measures.includes(field)
+        || !reviewedNumericAggregateFunctions(target, field).includes(
+          fn as Exclude<AggregateMeasureFunction, "count" | "count_distinct">,
+        ))) {
+      throw fieldError(target, field ?? "(missing)", fn);
+    }
+    if (PRESENCE_MEASURE_FUNCTIONS.has(fn as AggregateMeasureFunction)
+      && (!field || !target.presence_measure_fields?.includes(field))) {
+      throw fieldError(target, field ?? "(missing)", fn);
+    }
     return {
-      function: fn as AggregateMeasure["function"],
+      function: fn as BaseAggregateMeasure["function"],
       ...(field ? { field } : {}),
       ...(relation ? { relationship: relation } : {}),
     };
   });
   const dimensions = input.dimensions === undefined ? [] : recordArray(input.dimensions, "dimensions", 0, boundary.budgets.max_dimensions).map((dimension): AggregateDimension => {
+    if (dimension.numeric_band !== undefined) {
+      assertKeys(dimension, ["numeric_band"], "reviewed numeric-band dimension");
+      if (typeof dimension.numeric_band === "string") {
+        const name = requiredString(dimension.numeric_band, "dimension.numeric_band");
+        reviewedNumericBand(resource, name);
+        return { numeric_band: name };
+      }
+      if (!isRecord(dimension.numeric_band)) {
+        throw planError("dimension.numeric_band must be one reviewed name or an auto-band request");
+      }
+      assertKeys(dimension.numeric_band, ["field", "buckets", "method"], "reviewed auto-band request");
+      const field = requiredString(dimension.numeric_band.field, "dimension.numeric_band.field");
+      const policy = reviewedAutoBand(resource, field);
+      const method = requiredString(dimension.numeric_band.method, "dimension.numeric_band.method");
+      if (method !== "quantile" && method !== "equal_width") {
+        throw planError("dimension.numeric_band.method must be quantile or equal_width");
+      }
+      if (!policy.methods.includes(method)) {
+        throw planError(`${method} is not a reviewed auto-band method for ${resource.id}.${field}`);
+      }
+      const buckets = positiveInteger(dimension.numeric_band.buckets, "dimension.numeric_band.buckets");
+      if (buckets < policy.min_buckets || buckets > policy.max_buckets) {
+        throw planError(
+          `dimension.numeric_band.buckets must be from ${policy.min_buckets} through ${policy.max_buckets} for ${resource.id}.${field}`,
+        );
+      }
+      return { numeric_band: { field, buckets, method } };
+    }
     assertKeys(dimension, ["field", "relationship"], "dimension");
     const relation = optionalString(dimension.relationship, "dimension.relationship");
     const target = relation ? relationshipResource(resource, relation, boundary) : resource;
     const field = requiredString(dimension.field, "dimension.field");
-    if (!target.groupable_fields.includes(field)) throw fieldError(target, field, "group");
+    if (!target.groupable_fields.includes(field)) {
+      if (!relation) {
+        const relationshipRequired = relationshipRequiredForGrouping(
+          resource,
+          field,
+          boundary,
+        );
+        if (relationshipRequired) throw relationshipRequired;
+      }
+      throw fieldError(target, field, "group");
+    }
     return { field, ...(relation ? { relationship: relation } : {}) };
   });
   const timeBucket = input.time_bucket === undefined ? undefined : (() => {
@@ -1138,12 +1724,40 @@ function validateAggregatePlan(input: Record<string, unknown>, boundary: Activat
     // A scalar aggregate remains valid, but it is still privacy-suppressed.
   }
   const where = validateFilters(input.where, resource, boundary);
-  const comparison = input.comparison === undefined ? undefined : validateComparison(input.comparison, resource, boundary);
+  const timeWindow = input.time_window === undefined
+    ? undefined
+    : validateTimeWindow(input.time_window, resource, boundary, context, true);
+  const comparison = input.comparison === undefined
+    ? undefined
+    : validateComparison(input.comparison, resource, boundary, context);
+  if (timeWindow && comparison) {
+    throw planError("time_window and comparison are mutually exclusive; send one reviewed time selection per plan");
+  }
+  const autoBandDimensions = dimensions.filter(isAutoBandDimension);
+  if (autoBandDimensions.length > 1) {
+    throw planError("one aggregate plan may use at most one reviewed auto-band dimension");
+  }
+  if (comparison && autoBandDimensions.length) {
+    throw planError("reviewed auto-banding cannot be combined with a two-period comparison because each period would derive different buckets");
+  }
+  if (autoBandDimensions.length) {
+    const autoField = autoBandDimensions[0]!.numeric_band.field;
+    const duplicatesField = dimensions.some((dimension) => {
+      if (!("numeric_band" in dimension) || typeof dimension.numeric_band !== "string") return false;
+      const fixed = reviewedNumericBand(resource, dimension.numeric_band);
+      return !fixed.relationship && fixed.field === autoField;
+    });
+    if (duplicatesField) {
+      throw planError(`one plan cannot cross a fixed and adaptive band over ${resource.id}.${autoField}`);
+    }
+  }
   const orderBy = input.order_by === undefined ? undefined : validateAggregateOrder(input.order_by, measures, Boolean(timeBucket));
-  const topN = positiveInteger(input.top_n, "top_n");
   const maximumResultGroups = orderBy?.kind === "measure" || orderBy?.kind === "comparison_change"
     ? reviewedRankedGroupLimit(boundary.budgets)
     : boundary.budgets.max_groups;
+  const topN = input.top_n === undefined
+    ? Math.min(25, boundary.budgets.max_top_n, maximumResultGroups)
+    : positiveInteger(input.top_n, "top_n");
   if (topN > boundary.budgets.max_top_n || topN > maximumResultGroups) throw planError("top_n exceeds the reviewed aggregate result bound");
   if (comparison && !timeBucket) throw planError("bounded period comparison requires a reviewed time_bucket");
   if (comparison && orderBy?.kind === "time_bucket") {
@@ -1152,11 +1766,42 @@ function validateAggregatePlan(input: Record<string, unknown>, boundary: Activat
   if (!comparison && orderBy?.kind === "comparison_change") {
     throw planError("comparison_change ordering requires one bounded two-period comparison");
   }
+  for (const measure of measures) {
+    if (!("derived_measure" in measure)) continue;
+    const definition = reviewedDerivedMeasure(resource, measure.derived_measure);
+    if ("child_resource" in definition) {
+      resolveReviewedChildCountLink(
+        resource.id,
+        definition,
+        boundary.pack.resources,
+        Boolean(boundary.organization_scope),
+      );
+      continue;
+    }
+    if (!("base_measure" in definition)) continue;
+    if (comparison) {
+      throw planError(`${definition.shape} is a post-suppression transform and cannot be combined with a two-period comparison`);
+    }
+    const sequential = isSequentialDerivedMeasureShape(definition.shape);
+    if (sequential && !timeBucket) {
+      throw planError(`${definition.shape} requires one reviewed time_bucket`);
+    }
+    if (sequential && timeBucket?.bucket === "day_of_week") {
+      throw planError(`${definition.shape} requires an ordered calendar bucket, not day_of_week`);
+    }
+    if (!sequential && timeBucket) {
+      throw planError(`${definition.shape} groups the complete released result and cannot be combined with a time_bucket`);
+    }
+    if (!sequential && dimensions.length === 0) {
+      throw planError(`${definition.shape} requires at least one reviewed dimension`);
+    }
+  }
   const relationships = unique([
     relationship,
-    ...measures.map((measure) => measure.relationship),
-    ...dimensions.map((dimension) => dimension.relationship),
+    ...measures.flatMap((measure) => measureRelationships(measure, resource)),
+    ...dimensions.flatMap((dimension) => dimensionRelationships(dimension, resource)),
     timeBucket?.relationship,
+    timeWindow?.relationship,
     ...where.map((filter) => filter.relationship),
     comparison?.relationship,
   ].filter((value): value is string => Boolean(value)));
@@ -1165,7 +1810,7 @@ function validateAggregatePlan(input: Record<string, unknown>, boundary: Activat
   }
   for (const id of relationships) {
     const reviewed = reviewedRelationship(resource, id, boundary);
-    if ((reviewed.path_depth ?? 1) > boundary.budgets.max_relationship_hops) {
+    if ((reviewed.path_depth ?? 1) > reviewedAnalysisRelationshipHopLimit(boundary.budgets)) {
       throw relationshipError(`Relationship ${id} exceeds the activated path-depth bound.`);
     }
   }
@@ -1176,6 +1821,7 @@ function validateAggregatePlan(input: Record<string, unknown>, boundary: Activat
     measures,
     ...(dimensions.length ? { dimensions } : {}),
     ...(timeBucket ? { time_bucket: timeBucket } : {}),
+    ...(timeWindow ? { time_window: timeWindow } : {}),
     ...(where.length ? { where } : {}),
     ...(orderBy ? { order_by: orderBy } : {}),
     top_n: topN,
@@ -1210,13 +1856,112 @@ function validateFilters(input: unknown, root: BoundaryResource, boundary: Activ
   });
 }
 
-function validateComparison(input: unknown, root: BoundaryResource, boundary: ActivatedExplorationBoundary): NonNullable<AggregateExplorePlan["comparison"]> {
+function validateTimeWindow(
+  input: unknown,
+  root: BoundaryResource,
+  boundary: ActivatedExplorationBoundary,
+  context: ExploreValidationContext,
+  allowRelationship: boolean,
+): CanonicalTimeWindow {
+  if (!isRecord(input)) throw planError("time_window must be an object");
+  const relationship = allowRelationship
+    ? optionalString(input.relationship, "time_window.relationship")
+    : undefined;
+  const target = relationship ? relationshipResource(root, relationship, boundary) : root;
+  const field = requiredString(input.field, "time_window.field");
+  if (!target.time_bucket_fields[field]) throw fieldError(target, field, "time window");
+  if (input.window !== undefined) {
+    assertKeys(
+      input,
+      allowRelationship ? ["field", "relationship", "window"] : ["field", "window"],
+      "relative time_window",
+    );
+    assertReviewedUtcRelativeTime(boundary);
+    const window = requiredString(input.window, "time_window.window");
+    if (!isRelativeTimeWindow(window)) {
+      throw planError(`time_window.window must be one of ${RELATIVE_TIME_WINDOWS.join(", ")}`);
+    }
+    let resolved;
+    try {
+      resolved = resolveRelativeTimeWindow(window, context.now);
+    } catch (error) {
+      throw planError(error instanceof Error ? error.message : "relative time window could not be resolved");
+    }
+    context.resolvedTimeWindows.push({
+      source: "reviewed_relative_time",
+      location: "time_window",
+      field,
+      ...(relationship ? { relationship } : {}),
+      window,
+      reporting_timezone: "UTC",
+      resolved_at: new Date(context.now).toISOString(),
+      ranges: [{
+        id: "window",
+        start_inclusive: resolved.start,
+        end_exclusive: resolved.end,
+      }],
+    });
+    return { field, ...(relationship ? { relationship } : {}), ...resolved };
+  }
+  assertKeys(
+    input,
+    allowRelationship ? ["field", "relationship", "start", "end"] : ["field", "start", "end"],
+    "absolute time_window",
+  );
+  const start = requiredString(input.start, "time_window.start");
+  const end = requiredString(input.end, "time_window.end");
+  if (!isIsoTime(start) || !isIsoTime(end) || Date.parse(start) >= Date.parse(end)) {
+    throw planError("time_window requires a bounded ISO start < end");
+  }
+  return { field, ...(relationship ? { relationship } : {}), start, end };
+}
+
+function validateComparison(
+  input: unknown,
+  root: BoundaryResource,
+  boundary: ActivatedExplorationBoundary,
+  context: ExploreValidationContext,
+): NonNullable<AggregateExplorePlan["comparison"]> {
   if (!isRecord(input)) throw planError("comparison must be an object");
-  assertKeys(input, ["field", "relationship", "ranges"], "comparison");
   const relationship = optionalString(input.relationship, "comparison.relationship");
   const resource = relationship ? relationshipResource(root, relationship, boundary) : root;
   const field = requiredString(input.field, "comparison.field");
   if (!resource.time_bucket_fields[field]) throw fieldError(resource, field, "time comparison");
+  if (input.window !== undefined || input.compare_to !== undefined) {
+    assertKeys(input, ["field", "relationship", "window", "compare_to"], "relative comparison");
+    assertReviewedUtcRelativeTime(boundary);
+    const window = requiredString(input.window, "comparison.window");
+    if (!isRelativeTimeWindow(window)) {
+      throw planError(`comparison.window must be one of ${RELATIVE_TIME_WINDOWS.join(", ")}`);
+    }
+    const compareTo = requiredString(input.compare_to, "comparison.compare_to");
+    if (!isRelativeTimeComparison(compareTo)) {
+      throw planError(`comparison.compare_to must be one of ${RELATIVE_TIME_COMPARISONS.join(", ")}`);
+    }
+    let ranges;
+    try {
+      ranges = resolveRelativeTimeComparison(window, compareTo, context.now);
+    } catch (error) {
+      throw planError(error instanceof Error ? error.message : "relative comparison could not be resolved");
+    }
+    context.resolvedTimeWindows.push({
+      source: "reviewed_relative_time",
+      location: "comparison",
+      field,
+      ...(relationship ? { relationship } : {}),
+      window,
+      compare_to: compareTo,
+      reporting_timezone: "UTC",
+      resolved_at: new Date(context.now).toISOString(),
+      ranges: ranges.map((range, index) => ({
+        id: index === 0 ? "period_1" as const : "period_2" as const,
+        start_inclusive: range.start,
+        end_exclusive: range.end,
+      })),
+    });
+    return { field, ranges, ...(relationship ? { relationship } : {}) };
+  }
+  assertKeys(input, ["field", "relationship", "ranges"], "comparison");
   const ranges = recordArray(input.ranges, "comparison.ranges", 2, boundary.budgets.max_time_ranges).map((range) => {
     assertKeys(range, ["start", "end"], "comparison range");
     const start = requiredString(range.start, "comparison.start");
@@ -1231,6 +1976,14 @@ function validateComparison(input: unknown, root: BoundaryResource, boundary: Ac
     );
   }
   return { field, ranges, ...(relationship ? { relationship } : {}) };
+}
+
+function assertReviewedUtcRelativeTime(boundary: ActivatedExplorationBoundary): void {
+  if (boundary.reporting_timezone !== "UTC") {
+    throw planError(
+      "reviewed relative time requires an authority-bound UTC reporting timezone; use an absolute ISO range for this legacy boundary",
+    );
+  }
 }
 
 function validateAggregateOrder(
@@ -1268,21 +2021,41 @@ function compileRowPlan(
   boundary: ActivatedExplorationBoundary,
   context: { tenant: string; principal: string },
   engine: "postgres" | "mysql",
-): { sql: string; params: Scalar[]; resources: BoundaryResource[] } {
+): Omit<CompiledExploreQuery, "reporting_timezone"> {
   const resource = resourceFor(boundary, plan.resource);
   const params: Scalar[] = [];
   const alias = "t0";
-  const where = scopePredicates(resource, alias, context, params, engine);
+  const scope = compileScopePredicates(resource, boundary, alias, context, params, engine);
+  const where = scope.predicates;
   for (const filter of plan.where ?? []) where.push(filterSql(filter, resource, alias, params, engine));
+  if (plan.time_window) {
+    appendTimeWindowPredicate(where, plan.time_window, alias, params, engine);
+  }
+  const enumUses = unique([
+    ...plan.select,
+    ...(plan.where ?? []).map((filter) => filter.field),
+  ].filter((field) => resource.field_enums[field]?.length));
+  for (const field of enumUses) {
+    where.push(reviewedEnumAllowlistSql(resource, field, alias, params, engine));
+  }
   const columns = plan.select.map((field) => `${alias}.${quote(field, engine)} AS ${quote(field, engine)}`);
   const order = plan.order_by?.length
     ? ` ORDER BY ${plan.order_by.map((item) => `${alias}.${quote(item.field, engine)} ${item.direction.toUpperCase()}`).join(", ")}`
     : ` ORDER BY ${alias}.${quote(resource.primary_key, engine)} ASC`;
   params.push(plan.limit);
   return {
-    sql: `SELECT ${columns.join(", ")} FROM ${qualified(resource, engine)} ${alias} WHERE ${where.join(" AND ")}${order} LIMIT ${placeholder(params.length, engine)}`,
+    sql: `SELECT ${columns.join(", ")} FROM ${qualified(resource, engine)} ${alias}${where.length ? ` WHERE ${where.join(" AND ")}` : ""}${order} LIMIT ${placeholder(params.length, engine)}`,
     params,
-    resources: [resource],
+    resources: scope.resources,
+    ...(enumUses.length
+      ? {
+        reviewed_value_controls: enumUses.map((field) => ({
+          kind: "exclude_unreviewed_rows" as const,
+          resource: resource.id,
+          field,
+        })),
+      }
+      : {}),
   };
 }
 
@@ -1291,14 +2064,26 @@ function compileAggregatePlan(
   boundary: ActivatedExplorationBoundary,
   context: { tenant: string; principal: string },
   engine: "postgres" | "mysql",
+  enumBucketMarker: string,
   comparison?: { range: { start: string; end: string }; period: "period_1" | "period_2" },
-): { sql: string; params: Scalar[]; resources: BoundaryResource[]; period?: "period_1" | "period_2" } {
+): Omit<CompiledExploreQuery, "reporting_timezone"> {
   const root = resourceFor(boundary, plan.resource);
+  if ((plan.dimensions ?? []).some(isAutoBandDimension)) {
+    return compileAutoBandAggregatePlan(
+      plan,
+      boundary,
+      context,
+      engine,
+      enumBucketMarker,
+      comparison,
+    );
+  }
   const relationshipIds = unique([
     plan.relationship,
-    ...plan.measures.map((measure) => measure.relationship),
-    ...(plan.dimensions ?? []).map((dimension) => dimension.relationship),
+    ...plan.measures.flatMap((measure) => measureRelationships(measure, root)),
+    ...(plan.dimensions ?? []).flatMap((dimension) => dimensionRelationships(dimension, root)),
     plan.time_bucket?.relationship,
+    plan.time_window?.relationship,
     ...(plan.where ?? []).map((filter) => filter.relationship),
     plan.comparison?.relationship,
   ].filter((value): value is string => Boolean(value)));
@@ -1311,10 +2096,61 @@ function compileAggregatePlan(
     params,
     engine,
   );
-  const where = scopePredicates(root, "t0", context, params, engine);
+  const rootScope = compileScopePredicates(root, boundary, "t0", context, params, engine);
+  const where = rootScope.predicates;
   for (const filter of plan.where ?? []) {
     const target = filter.relationship ? joined.targets.get(filter.relationship) : undefined;
     where.push(filterSql(filter, target?.resource ?? root, target?.alias ?? "t0", params, engine));
+  }
+  if (plan.time_window) {
+    const target = plan.time_window.relationship
+      ? joined.targets.get(plan.time_window.relationship)
+      : undefined;
+    appendTimeWindowPredicate(
+      where,
+      plan.time_window,
+      target?.alias ?? "t0",
+      params,
+      engine,
+    );
+  }
+  if (plan.time_bucket && plan.measures.some((measure) => {
+    if (!("derived_measure" in measure)) return false;
+    return isSequentialDerivedMeasureShape(
+      reviewedDerivedMeasure(root, measure.derived_measure).shape,
+    );
+  })) {
+    const target = plan.time_bucket.relationship
+      ? joined.targets.get(plan.time_bucket.relationship)
+      : undefined;
+    const alias = target?.alias ?? "t0";
+    where.push(`${alias}.${quote(plan.time_bucket.field, engine)} IS NOT NULL`);
+  }
+  const enumUses = (plan.where ?? []).map((filter) => ({
+    field: filter.field,
+    relationship: filter.relationship,
+  }));
+  const appliedEnumAllowlist = new Set<string>();
+  const reviewedValueControls: CompiledReviewedValueControl[] = [];
+  for (const use of enumUses) {
+    const target = use.relationship ? joined.targets.get(use.relationship) : undefined;
+    const resource = target?.resource ?? root;
+    if (!resource.field_enums[use.field]?.length) continue;
+    const key = `${target?.alias ?? "t0"}.${use.field}`;
+    if (appliedEnumAllowlist.has(key)) continue;
+    appliedEnumAllowlist.add(key);
+    where.push(reviewedEnumAllowlistSql(
+      resource,
+      use.field,
+      target?.alias ?? "t0",
+      params,
+      engine,
+    ));
+    reviewedValueControls.push({
+      kind: "exclude_unreviewed_rows",
+      resource: resource.id,
+      field: use.field,
+    });
   }
   if (comparison) {
     const target = plan.comparison?.relationship
@@ -1327,14 +2163,56 @@ function compileAggregatePlan(
     params.push(comparison.range.end);
     where.push(`${alias}.${column} < ${placeholder(params.length, engine)}`);
   }
+  const parametersBeforeSelect = params.length;
   const select: string[] = [];
   const groupBy: string[] = [];
+  const derivedResources: BoundaryResource[] = [];
   (plan.dimensions ?? []).forEach((dimension, index) => {
-    const alias = dimension.relationship
-      ? joined.targets.get(dimension.relationship)!.alias
-      : "t0";
+    if ("numeric_band" in dimension) {
+      if (typeof dimension.numeric_band !== "string") {
+        throw planError("adaptive numeric bands use the dedicated auto-band compiler");
+      }
+      const definition = reviewedNumericBand(root, dimension.numeric_band);
+      const target = definition.relationship
+        ? joined.targets.get(definition.relationship)!
+        : undefined;
+      const alias = target?.alias ?? "t0";
+      const expression = reviewedNumericBandSql(definition, alias, params, engine);
+      select.push(`${expression} AS ${quote(`dimension_${index}`, engine)}`);
+      groupBy.push(String(select.length));
+      return;
+    }
+    const target = dimension.relationship
+      ? joined.targets.get(dimension.relationship)!
+      : undefined;
+    const alias = target?.alias ?? "t0";
+    const resource = target?.resource ?? root;
+    const outputColumn = `dimension_${index}`;
+    if (resource.field_enums[dimension.field]?.length) {
+      const expression = reviewedEnumBucketSql(
+        resource,
+        dimension.field,
+        alias,
+        params,
+        engine,
+        enumBucketMarker,
+      );
+      select.push(`${expression} AS ${quote(outputColumn, engine)}`);
+      // PostgreSQL and MySQL both support positional GROUP BY. The reviewed
+      // ordinal avoids repeating parameterized CASE values on MySQL and cannot
+      // collide with a source column named like the internal output alias.
+      groupBy.push(String(select.length));
+      reviewedValueControls.push({
+        kind: "bucket_unreviewed_values",
+        resource: resource.id,
+        field: dimension.field,
+        output_column: outputColumn,
+        marker: enumBucketMarker,
+      });
+      return;
+    }
     const expression = `${alias}.${quote(dimension.field, engine)}`;
-    select.push(`${expression} AS ${quote(`dimension_${index}`, engine)}`);
+    select.push(`${expression} AS ${quote(outputColumn, engine)}`);
     groupBy.push(expression);
   });
   // A comparison aggregates each bounded range as one period. The reviewed
@@ -1350,17 +2228,37 @@ function compileAggregatePlan(
     groupBy.push(expression);
   }
   plan.measures.forEach((measure, index) => {
+    if ("derived_measure" in measure) {
+      const definition = reviewedDerivedMeasure(root, measure.derived_measure);
+      const expression = compiledDerivedMeasureSql({
+        definition,
+        root,
+        joined,
+        boundary,
+        context,
+        params,
+        engine,
+        measureIndex: index,
+      });
+      select.push(`${expression.value} AS ${quote(`measure_${index}`, engine)}`);
+      select.push(`${expression.contributorCohort} AS ${quote(`__measure_cohort_${index}`, engine)}`);
+      derivedResources.push(...expression.resources);
+      return;
+    }
     const alias = measure.relationship
       ? joined.targets.get(measure.relationship)!.alias
       : "t0";
-    const expression = measure.function === "count"
-      ? "COUNT(*)"
-      : measure.function === "count_distinct"
-        ? `COUNT(DISTINCT ${alias}.${quote(measure.field!, engine)})`
-        : `${measure.function.toUpperCase()}(${alias}.${quote(measure.field!, engine)})`;
+    const fieldExpression = measure.field
+      ? `${alias}.${quote(measure.field, engine)}`
+      : undefined;
+    const expression = aggregateMeasureSql(measure.function, fieldExpression);
     select.push(`${expression} AS ${quote(`measure_${index}`, engine)}`);
+    if (CONTRIBUTOR_AWARE_MEASURE_FUNCTIONS.has(measure.function)) {
+      select.push(`COUNT(${fieldExpression}) AS ${quote(`__measure_cohort_${index}`, engine)}`);
+    }
   });
   select.push(`COUNT(*) AS ${quote("__cohort_size", engine)}`);
+  const parametersAfterSelect = params.length;
   const order = plan.order_by?.kind === "measure"
     ? ` ORDER BY ${quote(`measure_${plan.order_by.index}`, engine)} ${plan.order_by.direction.toUpperCase()}`
     : plan.order_by?.kind === "time_bucket" && !comparison
@@ -1373,10 +2271,323 @@ function compileAggregatePlan(
   // fails closed instead of silently truncating the ranking.
   params.push(aggregateUnderlyingGroupLimit(plan, boundary) + 1);
   return {
-    sql: `SELECT ${select.join(", ")} FROM ${qualified(root, engine)} t0${joined.sql} WHERE ${where.join(" AND ")}${groupBy.length ? ` GROUP BY ${groupBy.join(", ")}` : ""}${order} LIMIT ${placeholder(params.length, engine)}`,
-    params,
-    resources: joined.resources,
+    sql: `SELECT ${select.join(", ")} FROM ${qualified(root, engine)} t0${joined.sql}${where.length ? ` WHERE ${where.join(" AND ")}` : ""}${groupBy.length ? ` GROUP BY ${groupBy.join(", ")}` : ""}${order} LIMIT ${placeholder(params.length, engine)}`,
+    params: engine === "mysql"
+      ? [
+        ...params.slice(parametersBeforeSelect, parametersAfterSelect),
+        ...params.slice(0, parametersBeforeSelect),
+        ...params.slice(parametersAfterSelect),
+      ]
+      : params,
+    resources: uniqueResources([...joined.resources, ...rootScope.resources, ...derivedResources]),
+    ...(reviewedValueControls.length
+      ? { reviewed_value_controls: uniqueReviewedValueControls(reviewedValueControls) }
+      : {}),
     ...(comparison ? { period: comparison.period } : {}),
+  };
+}
+
+function compileAutoBandAggregatePlan(
+  plan: AggregateExplorePlan,
+  boundary: ActivatedExplorationBoundary,
+  context: { tenant: string; principal: string },
+  engine: "postgres" | "mysql",
+  enumBucketMarker: string,
+  comparison?: { range: { start: string; end: string }; period: "period_1" | "period_2" },
+): Omit<CompiledExploreQuery, "reporting_timezone"> {
+  if (comparison || plan.comparison) {
+    throw planError("reviewed auto-banding cannot compile a two-period comparison");
+  }
+  const root = resourceFor(boundary, plan.resource);
+  const autoDimensionIndex = (plan.dimensions ?? []).findIndex(isAutoBandDimension);
+  const autoDimension = (plan.dimensions ?? [])[autoDimensionIndex];
+  if (!autoDimension || !isAutoBandDimension(autoDimension)) {
+    throw planError("reviewed auto-band dimension is missing");
+  }
+  const request = autoDimension.numeric_band;
+  const policy = reviewedAutoBand(root, request.field);
+  const relationshipIds = unique([
+    plan.relationship,
+    ...plan.measures.flatMap((measure) => measureRelationships(measure, root)),
+    ...(plan.dimensions ?? []).flatMap((dimension) => dimensionRelationships(dimension, root)),
+    plan.time_bucket?.relationship,
+    plan.time_window?.relationship,
+    ...(plan.where ?? []).map((filter) => filter.relationship),
+  ].filter((value): value is string => Boolean(value)));
+  const params: Scalar[] = [];
+  const joined = compileReviewedRelationshipJoins(
+    root,
+    relationshipIds,
+    boundary,
+    context,
+    params,
+    engine,
+  );
+  const rootScope = compileScopePredicates(root, boundary, "t0", context, params, engine);
+  const where = rootScope.predicates;
+  for (const filter of plan.where ?? []) {
+    const target = filter.relationship ? joined.targets.get(filter.relationship) : undefined;
+    where.push(filterSql(filter, target?.resource ?? root, target?.alias ?? "t0", params, engine));
+  }
+  if (plan.time_window) {
+    const target = plan.time_window.relationship
+      ? joined.targets.get(plan.time_window.relationship)
+      : undefined;
+    appendTimeWindowPredicate(
+      where,
+      plan.time_window,
+      target?.alias ?? "t0",
+      params,
+      engine,
+    );
+  }
+  if (plan.time_bucket && plan.measures.some((measure) => {
+    if (!("derived_measure" in measure)) return false;
+    return isSequentialDerivedMeasureShape(reviewedDerivedMeasure(root, measure.derived_measure).shape);
+  })) {
+    const target = plan.time_bucket.relationship
+      ? joined.targets.get(plan.time_bucket.relationship)
+      : undefined;
+    where.push(`${target?.alias ?? "t0"}.${quote(plan.time_bucket.field, engine)} IS NOT NULL`);
+  }
+  const appliedEnumAllowlist = new Set<string>();
+  const reviewedValueControls: CompiledReviewedValueControl[] = [];
+  for (const filter of plan.where ?? []) {
+    const target = filter.relationship ? joined.targets.get(filter.relationship) : undefined;
+    const targetResource = target?.resource ?? root;
+    if (!targetResource.field_enums[filter.field]?.length) continue;
+    const key = `${target?.alias ?? "t0"}.${filter.field}`;
+    if (appliedEnumAllowlist.has(key)) continue;
+    appliedEnumAllowlist.add(key);
+    where.push(reviewedEnumAllowlistSql(
+      targetResource,
+      filter.field,
+      target?.alias ?? "t0",
+      params,
+      engine,
+    ));
+    reviewedValueControls.push({
+      kind: "exclude_unreviewed_rows",
+      resource: targetResource.id,
+      field: filter.field,
+    });
+  }
+
+  const parametersBeforeProjection = params.length;
+  const projected: string[] = [];
+  const derivedResources: BoundaryResource[] = [];
+  const autoColumn = `t0.${quote(request.field, engine)}`;
+  const nullPartition = `CASE WHEN ${autoColumn} IS NULL THEN 0 ELSE 1 END`;
+  projected.push(`${autoColumn} AS ${quote("__auto_value", engine)}`);
+  if (request.method === "quantile") {
+    projected.push(
+      `CUME_DIST() OVER (PARTITION BY ${nullPartition} ORDER BY ${autoColumn}) AS ${quote("__auto_metric", engine)}`,
+    );
+  } else {
+    projected.push(`MIN(${autoColumn}) OVER (PARTITION BY ${nullPartition}) AS ${quote("__auto_min", engine)}`);
+    projected.push(`MAX(${autoColumn}) OVER (PARTITION BY ${nullPartition}) AS ${quote("__auto_max", engine)}`);
+  }
+
+  (plan.dimensions ?? []).forEach((dimension, index) => {
+    if (index === autoDimensionIndex) return;
+    if ("numeric_band" in dimension) {
+      if (typeof dimension.numeric_band !== "string") throw planError("one aggregate plan may use at most one reviewed auto band");
+      const definition = reviewedNumericBand(root, dimension.numeric_band);
+      const target = definition.relationship ? joined.targets.get(definition.relationship)! : undefined;
+      projected.push(
+        `${reviewedNumericBandSql(definition, target?.alias ?? "t0", params, engine)} AS ${quote(`__dimension_${index}`, engine)}`,
+      );
+      return;
+    }
+    const target = dimension.relationship ? joined.targets.get(dimension.relationship)! : undefined;
+    const targetResource = target?.resource ?? root;
+    const alias = target?.alias ?? "t0";
+    if (targetResource.field_enums[dimension.field]?.length) {
+      projected.push(
+        `${reviewedEnumBucketSql(targetResource, dimension.field, alias, params, engine, enumBucketMarker)} AS ${quote(`__dimension_${index}`, engine)}`,
+      );
+      reviewedValueControls.push({
+        kind: "bucket_unreviewed_values",
+        resource: targetResource.id,
+        field: dimension.field,
+        output_column: `dimension_${index}`,
+        marker: enumBucketMarker,
+      });
+      return;
+    }
+    projected.push(`${alias}.${quote(dimension.field, engine)} AS ${quote(`__dimension_${index}`, engine)}`);
+  });
+  if (plan.time_bucket) {
+    const target = plan.time_bucket.relationship ? joined.targets.get(plan.time_bucket.relationship)! : undefined;
+    projected.push(
+      `${timeBucketSql(`${target?.alias ?? "t0"}.${quote(plan.time_bucket.field, engine)}`, plan.time_bucket.bucket, engine)} AS ${quote("__time_bucket", engine)}`,
+    );
+  }
+
+  type ProjectedOperand = { function: ExplorationDerivedBaseMeasure["function"]; field?: string };
+  const projectOperand = (
+    operand: ExplorationDerivedBaseMeasure,
+    aliasName: string,
+  ): ProjectedOperand => {
+    if (operand.function === "count") return { function: "count" };
+    const target = operand.relationship ? joined.targets.get(operand.relationship) : undefined;
+    projected.push(
+      `${target?.alias ?? "t0"}.${quote(operand.field, engine)} AS ${quote(aliasName, engine)}`,
+    );
+    return { function: operand.function, field: `ab.${quote(aliasName, engine)}` };
+  };
+  const projectedOperandSql = (operand: ProjectedOperand): { value: string; contributors: string } => {
+    if (operand.function === "count") return { value: "COUNT(*)", contributors: "COUNT(*)" };
+    return {
+      value: aggregateMeasureSql(operand.function, operand.field),
+      contributors: `COUNT(${operand.field})`,
+    };
+  };
+  const outerMeasures: Array<{ value: string; contributor?: string }> = [];
+  plan.measures.forEach((measure, index) => {
+    if (!("derived_measure" in measure)) {
+      if (measure.function === "count") {
+        outerMeasures.push({ value: "COUNT(*)" });
+        return;
+      }
+      const target = measure.relationship ? joined.targets.get(measure.relationship)! : undefined;
+      const projectedName = `__measure_input_${index}`;
+      projected.push(
+        `${target?.alias ?? "t0"}.${quote(measure.field!, engine)} AS ${quote(projectedName, engine)}`,
+      );
+      const field = `ab.${quote(projectedName, engine)}`;
+      outerMeasures.push({
+        value: aggregateMeasureSql(measure.function, field),
+        ...(CONTRIBUTOR_AWARE_MEASURE_FUNCTIONS.has(measure.function)
+          ? { contributor: `COUNT(${field})` }
+          : {}),
+      });
+      return;
+    }
+    const definition = reviewedDerivedMeasure(root, measure.derived_measure);
+    if ("child_resource" in definition) {
+      const reviewed = resolveReviewedChildCountLink(
+        root.id,
+        definition,
+        boundary.pack.resources,
+        Boolean(boundary.organization_scope),
+      );
+      const childAlias = `abc${index}`;
+      const childScope = compileScopePredicates(
+        reviewed.child,
+        boundary,
+        childAlias,
+        context,
+        params,
+        engine,
+      );
+      const correlation = reviewed.link.source_columns.map((column, columnIndex) =>
+        `${childAlias}.${quote(column, engine)} = t0.${quote(reviewed.link.target_columns[columnIndex]!, engine)}`);
+      const projectedName = `__measure_child_${index}`;
+      projected.push(
+        `(SELECT COUNT(*) FROM ${qualified(reviewed.child, engine)} ${childAlias} WHERE ${[...correlation, ...childScope.predicates].join(" AND ")}) AS ${quote(projectedName, engine)}`,
+      );
+      const field = `ab.${quote(projectedName, engine)}`;
+      outerMeasures.push({
+        value: definition.shape === "child_count_total" ? `SUM(${field})` : `AVG(1.0 * ${field})`,
+        contributor: "COUNT(*)",
+      });
+      derivedResources.push(...childScope.resources);
+      return;
+    }
+    if ("base_measure" in definition) {
+      const operand = projectedOperandSql(projectOperand(definition.base_measure, `__measure_base_${index}`));
+      outerMeasures.push({ value: operand.value, contributor: operand.contributors });
+      return;
+    }
+    const numerator = projectedOperandSql(projectOperand(definition.numerator, `__measure_numerator_${index}`));
+    const denominator = projectedOperandSql(projectOperand(definition.denominator, `__measure_denominator_${index}`));
+    const scale = definition.shape === "percentage" ? "100.0" : "1.0";
+    outerMeasures.push({
+      value: `CASE WHEN ${denominator.value} IS NULL OR ${denominator.value} = 0 THEN NULL ELSE (${scale} * ${numerator.value} / ${denominator.value}) END`,
+      contributor: `LEAST(COUNT(*), ${numerator.contributors}, ${denominator.contributors})`,
+    });
+  });
+  const parametersAfterProjection = params.length;
+
+  const integerCast = (expression: string): string => engine === "postgres"
+    ? `CAST(${expression} AS INTEGER)`
+    : `CAST(${expression} AS SIGNED)`;
+  let bucketExpression: string;
+  let effectiveExpression: string;
+  if (request.method === "quantile") {
+    effectiveExpression = String(request.buckets);
+    bucketExpression = `CASE WHEN s.${quote("__auto_value", engine)} IS NULL THEN NULL ELSE ${integerCast(
+      `LEAST(${request.buckets}, CEIL(s.${quote("__auto_metric", engine)} * ${request.buckets}))`,
+    )} END`;
+  } else {
+    const minimumWidth = String(policy.min_bucket_width!);
+    const range = `(s.${quote("__auto_max", engine)} - s.${quote("__auto_min", engine)})`;
+    effectiveExpression = `CASE WHEN ${range} <= 0 THEN 1 ELSE ${integerCast(
+      `LEAST(${request.buckets}, GREATEST(1, FLOOR(${range} / ${minimumWidth})))`,
+    )} END`;
+    const width = `(${range} / NULLIF(${effectiveExpression}, 0))`;
+    bucketExpression = `CASE WHEN s.${quote("__auto_value", engine)} IS NULL THEN NULL WHEN ${range} <= 0 THEN 1 ELSE ${integerCast(
+      `LEAST(${effectiveExpression}, FLOOR((s.${quote("__auto_value", engine)} - s.${quote("__auto_min", engine)}) / NULLIF(${width}, 0)) + 1)`,
+    )} END`;
+  }
+  const scopedCte = `${quote("__synapsor_auto_scope", engine)} AS (SELECT ${projected.join(", ")} FROM ${qualified(root, engine)} t0${joined.sql}${where.length ? ` WHERE ${where.join(" AND ")}` : ""})`;
+  const bandedCte = `${quote("__synapsor_auto_banded", engine)} AS (SELECT s.*, ${bucketExpression} AS ${quote("__auto_bucket", engine)}, ${effectiveExpression} AS ${quote("__auto_effective", engine)} FROM ${quote("__synapsor_auto_scope", engine)} s)`;
+  const rounded = policy.label_style === "rounded";
+  const labeledCte = rounded
+    ? `, ${quote("__synapsor_auto_labeled", engine)} AS (SELECT b.*, MIN(b.${quote("__auto_value", engine)}) OVER (PARTITION BY b.${quote("__auto_bucket", engine)}) AS ${quote("__auto_bucket_min", engine)}, MAX(b.${quote("__auto_value", engine)}) OVER (PARTITION BY b.${quote("__auto_bucket", engine)}) AS ${quote("__auto_bucket_max", engine)} FROM ${quote("__synapsor_auto_banded", engine)} b)`
+    : "";
+  const bandedSource = rounded
+    ? quote("__synapsor_auto_labeled", engine)
+    : quote("__synapsor_auto_banded", engine);
+
+  const select: string[] = [];
+  const groupBy: string[] = [];
+  (plan.dimensions ?? []).forEach((_dimension, index) => {
+    const expression = index === autoDimensionIndex
+      ? `ab.${quote("__auto_bucket", engine)}`
+      : `ab.${quote(`__dimension_${index}`, engine)}`;
+    select.push(`${expression} AS ${quote(`dimension_${index}`, engine)}`);
+    groupBy.push(String(select.length));
+  });
+  if (plan.time_bucket) {
+    select.push(`ab.${quote("__time_bucket", engine)} AS ${quote("time_bucket", engine)}`);
+    groupBy.push(String(select.length));
+  }
+  outerMeasures.forEach((measure, index) => {
+    select.push(`${measure.value} AS ${quote(`measure_${index}`, engine)}`);
+    if (measure.contributor) {
+      select.push(`${measure.contributor} AS ${quote(`__measure_cohort_${index}`, engine)}`);
+    }
+  });
+  select.push(`COUNT(*) AS ${quote("__cohort_size", engine)}`);
+  select.push(`MIN(ab.${quote("__auto_effective", engine)}) AS ${quote("__auto_effective_buckets", engine)}`);
+  if (rounded) {
+    select.push(`MIN(ab.${quote("__auto_bucket_min", engine)}) AS ${quote("__auto_bucket_min", engine)}`);
+    select.push(`MAX(ab.${quote("__auto_bucket_max", engine)}) AS ${quote("__auto_bucket_max", engine)}`);
+  }
+  const order = plan.order_by?.kind === "measure"
+    ? ` ORDER BY ${quote(`measure_${plan.order_by.index}`, engine)} ${plan.order_by.direction.toUpperCase()}`
+    : plan.order_by?.kind === "time_bucket"
+      ? ` ORDER BY ${quote("time_bucket", engine)} ${plan.order_by.direction.toUpperCase()}`
+      : groupBy.length
+        ? ` ORDER BY ${groupBy.join(", ")}`
+        : "";
+  params.push(aggregateUnderlyingGroupLimit(plan, boundary) + 1);
+  const queryParams = engine === "mysql"
+    ? [
+      ...params.slice(parametersBeforeProjection, parametersAfterProjection),
+      ...params.slice(0, parametersBeforeProjection),
+      ...params.slice(parametersAfterProjection),
+    ]
+    : params;
+  return {
+    sql: `WITH ${scopedCte}, ${bandedCte}${labeledCte} SELECT ${select.join(", ")} FROM ${bandedSource} ab${groupBy.length ? ` GROUP BY ${groupBy.join(", ")}` : ""}${order} LIMIT ${placeholder(params.length, engine)}`,
+    params: queryParams,
+    resources: uniqueResources([...joined.resources, ...rootScope.resources, ...derivedResources]),
+    ...(reviewedValueControls.length
+      ? { reviewed_value_controls: uniqueReviewedValueControls(reviewedValueControls) }
+      : {}),
   };
 }
 
@@ -1394,25 +2605,48 @@ function compileReviewedRelationshipJoins(
 } {
   const targets = new Map<string, { resource: BoundaryResource; alias: string }>();
   const resources = new Map<string, BoundaryResource>([[root.id, root]]);
+  const joinedPrefixes = new Map<string, { resource: BoundaryResource; alias: string }>();
   const joins: string[] = [];
   let aliasIndex = 1;
   for (const id of relationshipIds) {
     const relationship = reviewedRelationship(root, id, boundary);
     const links = relationshipLinks(root, relationship);
+    const joinedLinks: typeof links = [];
     let source = root;
     let sourceAlias = "t0";
     for (const link of links) {
       if (link.source_resource !== source.id) {
         throw relationshipError(`Relationship ${id} contains a discontinuous structural path.`);
       }
+      joinedLinks.push(link);
+      const joinKind = relationship.unmatched_rows === "keep_null" ? " LEFT JOIN " : " JOIN ";
+      const prefixKey = canonicalJsonDigest({
+        join_kind: joinKind,
+        links: joinedLinks,
+      });
+      const existingPrefix = joinedPrefixes.get(prefixKey);
+      if (existingPrefix) {
+        source = existingPrefix.resource;
+        sourceAlias = existingPrefix.alias;
+        continue;
+      }
       const target = resourceFor(boundary, link.target_resource);
       const targetAlias = `t${aliasIndex++}`;
       const on = link.source_columns.map((column, index) =>
         `${sourceAlias}.${quote(column, engine)} = ${targetAlias}.${quote(link.target_columns[index]!, engine)}`);
-      on.push(...scopePredicates(target, targetAlias, context, params, engine));
-      const joinKind = relationship.unmatched_rows === "keep_null" ? " LEFT JOIN " : " JOIN ";
+      const targetScope = compileScopePredicates(
+        target,
+        boundary,
+        targetAlias,
+        context,
+        params,
+        engine,
+      );
+      on.push(...targetScope.predicates);
       joins.push(`${joinKind}${qualified(target, engine)} ${targetAlias} ON ${on.join(" AND ")}`);
       resources.set(target.id, target);
+      targetScope.resources.forEach((scopedResource) => resources.set(scopedResource.id, scopedResource));
+      joinedPrefixes.set(prefixKey, { resource: target, alias: targetAlias });
       source = target;
       sourceAlias = targetAlias;
     }
@@ -1429,6 +2663,7 @@ function shapeExploreResponse(
   plan: ExplorePlan,
   rows: Record<string, unknown>[],
   boundary: ActivatedExplorationBoundary,
+  compiledQueries: CompiledExploreQuery[],
 ): {
   data: Record<string, Scalar>[];
   rowCount: number;
@@ -1436,7 +2671,40 @@ function shapeExploreResponse(
   suppressed: number;
   status: "ok" | "empty" | "fully_suppressed" | "incomplete_comparison";
   incompleteComparisons: number;
+  reviewedValueControls: {
+    bucketed: Array<{
+      resource: string;
+      field: string;
+      output_field: string;
+      bucket_returned: boolean;
+      bucket_token?: string;
+    }>;
+    excluded: Array<{
+      resource: string;
+      field: string;
+      effect: "rows_outside_reviewed_values_excluded";
+    }>;
+  };
+  autoBands: Array<{
+    field: string;
+    method: "quantile" | "equal_width";
+    requested_buckets: number;
+    effective_buckets: number;
+    reduced: boolean;
+    label_style: "ordinal" | "rounded";
+    raw_edges_returned: false;
+  }>;
 } {
+  const compiledControls = uniqueReviewedValueControls(
+    compiledQueries.flatMap((query) => query.reviewed_value_controls ?? []),
+  );
+  const excluded = compiledControls
+    .filter((control) => control.kind === "exclude_unreviewed_rows")
+    .map((control) => ({
+      resource: control.resource,
+      field: control.field,
+      effect: "rows_outside_reviewed_values_excluded" as const,
+    }));
   if (plan.kind === "rows") {
     const data = rows.map((row) => Object.fromEntries(plan.select.map((field) => [field, safeDatabaseValue(row[field])])));
     return {
@@ -1446,6 +2714,8 @@ function shapeExploreResponse(
       suppressed: 0,
       status: data.length ? "ok" : "empty",
       incompleteComparisons: 0,
+      reviewedValueControls: { bucketed: [], excluded },
+      autoBands: [],
     };
   }
   const resource = resourceFor(boundary, plan.resource);
@@ -1457,11 +2727,27 @@ function shapeExploreResponse(
     ...(plan.comparison ? ["__period"] : []),
   ];
   const normalized = rows.map((row) => {
-    const output: Record<string, unknown> = { __cohort_size: row.__cohort_size };
-    (plan.dimensions ?? []).forEach((_dimension, index) => {
-      output[`dimension_${index}`] = safeDatabaseValue(row[`dimension_${index}`]);
+    const contributorCounts = plan.measures.flatMap((measure, index) =>
+      ("derived_measure" in measure || CONTRIBUTOR_AWARE_MEASURE_FUNCTIONS.has(measure.function))
+        ? [numberOrInvalid(row[`__measure_cohort_${index}`])]
+        : []);
+    const rowCohort = numberOrInvalid(row.__cohort_size);
+    const effectiveCohort = contributorCounts.length
+      ? Math.min(rowCohort, ...contributorCounts)
+      : rowCohort;
+    const output: Record<string, unknown> = { __cohort_size: effectiveCohort };
+    (plan.dimensions ?? []).forEach((dimension, index) => {
+      output[`dimension_${index}`] = isAutoBandDimension(dimension)
+        ? autoBandLabel(resource, dimension.numeric_band, row, index)
+        : safeDatabaseValue(row[`dimension_${index}`]);
     });
-    if (plan.time_bucket && !plan.comparison) output.time_bucket = safeDatabaseValue(row.time_bucket);
+    if (plan.time_bucket && !plan.comparison) {
+      output.time_bucket = canonicalTimeBucketValue(
+        row.time_bucket,
+        plan.time_bucket.bucket,
+        boundary.reporting_timezone,
+      );
+    }
     plan.measures.forEach((_measure, index) => {
       output[`measure_${index}`] = finiteNumberOrNull(row[`measure_${index}`]);
     });
@@ -1470,25 +2756,27 @@ function shapeExploreResponse(
   });
   try {
     const underlyingGroupLimit = aggregateUnderlyingGroupLimit(plan, boundary);
+    const minimumCohortSize = effectiveMinimumCohortSize(plan, resource);
     const shaped = shapePrivacySuppressedGroups({
       rows: normalized,
       output_fields: outputFields,
       cohort_field: "__cohort_size",
-      minimum_cohort_size: resource.minimum_cohort_size,
+      minimum_cohort_size: minimumCohortSize,
       maximum_groups: underlyingGroupLimit,
       // Ranked and comparison plans must suppress and pair the complete
       // reviewed candidate set before final ordering and top-N selection.
-      top_n: isRankedAggregatePlan(plan) || plan.comparison
+      top_n: isRankedAggregatePlan(plan, resource) || plan.comparison
         ? underlyingGroupLimit
         : plan.top_n,
       ...(plan.comparison
         ? { period_field: "__period", periods: ["period_1", "period_2"] }
         : {}),
     });
+    const releasedGroups = applyPostSuppressionTransforms(plan, resource, shaped.groups);
     const comparison = plan.comparison
-      ? shapePeriodComparison(shaped.groups, aliases)
+      ? shapePeriodComparison(releasedGroups, aliases)
       : undefined;
-    const data = comparison?.data ?? shaped.groups.map((group) => {
+    const data = comparison?.data ?? releasedGroups.map((group) => {
       const output: Record<string, Scalar> = {};
       aliases.dimensions.forEach((alias, index) => {
         output[alias] = safeDatabaseValue(group[`dimension_${index}`]);
@@ -1500,6 +2788,41 @@ function shapeExploreResponse(
       return output;
     });
     const ordered = sortExploreData(plan, data, aliases).slice(0, plan.top_n);
+    const bucketed = compiledControls
+      .filter((control): control is CompiledReviewedValueControl & {
+        kind: "bucket_unreviewed_values";
+        output_column: string;
+        marker: string;
+      } => {
+        const outputColumn = control.output_column;
+        const marker = control.marker;
+        return control.kind === "bucket_unreviewed_values"
+          && typeof outputColumn === "string"
+          && typeof marker === "string"
+          && normalized.some((row) => row[outputColumn] === marker);
+      })
+      .map((control) => {
+        const dimensionIndex = Number(control.output_column.replace(/^dimension_/, ""));
+        const outputField = aliases.dimensions[dimensionIndex] ?? control.output_column;
+        let bucketToken = "[outside-reviewed-values]";
+        let suffix = 2;
+        while (ordered.some((row) => row[outputField] === bucketToken)) {
+          bucketToken = `[outside-reviewed-values-${suffix++}]`;
+        }
+        let bucketReturned = false;
+        for (const row of ordered) {
+          if (row[outputField] !== control.marker) continue;
+          row[outputField] = bucketToken;
+          bucketReturned = true;
+        }
+        return {
+          resource: control.resource,
+          field: control.field,
+          output_field: outputField,
+          bucket_returned: bucketReturned,
+          ...(bucketReturned ? { bucket_token: bucketToken } : {}),
+        };
+      });
     const incompleteComparisons = comparison?.incomplete ?? 0;
     const status = ordered.length
       ? "ok"
@@ -1508,6 +2831,28 @@ function shapeExploreResponse(
         : incompleteComparisons > 0
           ? "incomplete_comparison"
           : "empty";
+    const autoBands = (plan.dimensions ?? []).flatMap((dimension, index) => {
+      if (!isAutoBandDimension(dimension)) return [];
+      const policy = reviewedAutoBand(resource, dimension.numeric_band.field);
+      const occupied = new Set(rows.flatMap((row) => {
+        const bucket = finiteNumberOrNull(row[`dimension_${index}`]);
+        return bucket === null ? [] : [bucket];
+      })).size;
+      const reportedEffective = rows.reduce((maximum, row) =>
+        Math.max(maximum, finiteNumberOrNull(row.__auto_effective_buckets) ?? 0), 0);
+      const effectiveBuckets = dimension.numeric_band.method === "quantile"
+        ? occupied
+        : Math.max(occupied, reportedEffective);
+      return [{
+        field: dimension.numeric_band.field,
+        method: dimension.numeric_band.method,
+        requested_buckets: dimension.numeric_band.buckets,
+        effective_buckets: effectiveBuckets,
+        reduced: effectiveBuckets < dimension.numeric_band.buckets,
+        label_style: policy.label_style,
+        raw_edges_returned: false as const,
+      }];
+    });
     return {
       data: ordered,
       rowCount: ordered.length,
@@ -1515,13 +2860,15 @@ function shapeExploreResponse(
       suppressed: shaped.suppressed_groups,
       status,
       incompleteComparisons,
+      reviewedValueControls: { bucketed, excluded },
+      autoBands,
     };
   } catch (error) {
     if (error instanceof PrivacyBoundaryError) {
       throw new ScopedExploreError(
         "EXPLORE_RESPONSE_TOO_LARGE",
         error.code === "GROUP_LIMIT_EXCEEDED"
-          ? isRankedAggregatePlan(plan)
+          ? isRankedAggregatePlan(plan, resource)
             ? "The ranked aggregate exceeded its separately reviewed execution boundary. Narrow the filters or grouping before retrying."
             : `${error.message} Use fewer dimensions, a coarser time bucket, or one bounded two-period comparison; top_n cannot bypass this reviewed limit.`
           : "Aggregate result failed its reviewed privacy boundary.",
@@ -1529,6 +2876,41 @@ function shapeExploreResponse(
     }
     throw error;
   }
+}
+
+function autoBandLabel(
+  resource: BoundaryResource,
+  request: { field: string; buckets: number; method: "quantile" | "equal_width" },
+  row: Record<string, unknown>,
+  dimensionIndex: number,
+): Scalar {
+  const compiledBucket = finiteNumberOrNull(row[`dimension_${dimensionIndex}`]);
+  if (compiledBucket === null) return null;
+  const policy = reviewedAutoBand(resource, request.field);
+  const effective = Math.max(1, Math.floor(finiteNumberOrNull(row.__auto_effective_buckets) ?? request.buckets));
+  const ordinal = Math.max(1, Math.floor(compiledBucket));
+  if (policy.label_style === "ordinal") {
+    return request.method === "quantile"
+      ? `Q${ordinal} of ${request.buckets}`
+      : `Band ${ordinal} of ${effective}`;
+  }
+  const minimum = finiteNumberOrNull(row.__auto_bucket_min);
+  const maximum = finiteNumberOrNull(row.__auto_bucket_max);
+  if (minimum === null || maximum === null) return null;
+  const step = policy.label_round_to!;
+  let lower = Math.floor(minimum / step) * step;
+  let upper = Math.ceil(maximum / step) * step;
+  const tolerance = Math.max(Number.EPSILON * Math.max(1, Math.abs(minimum), Math.abs(maximum)), step * 1e-12);
+  if (Math.abs(lower - minimum) <= tolerance) lower -= step;
+  if (Math.abs(upper - maximum) <= tolerance) upper += step;
+  if (Object.is(lower, -0)) lower = 0;
+  if (Object.is(upper, -0)) upper = 0;
+  return `${formatAutoBandBoundary(lower)} to ${formatAutoBandBoundary(upper)}`;
+}
+
+function formatAutoBandBoundary(value: number): string {
+  if (!Number.isFinite(value)) throw planError("reviewed auto-band label could not be bounded");
+  return Number(value.toPrecision(15)).toString();
 }
 
 type AggregateOutputAliases = {
@@ -1559,13 +2941,46 @@ function aggregateOutputAliases(
     return `${target}_${field}`;
   };
   const dimensions = (plan.dimensions ?? []).map((dimension) =>
-    claim(reviewedFieldAlias(dimension.field, dimension.relationship)));
+    claim("numeric_band" in dimension
+      ? typeof dimension.numeric_band === "string"
+        ? dimension.numeric_band
+        : `${dimension.numeric_band.field}_${dimension.numeric_band.method}_band`
+      : reviewedFieldAlias(dimension.field, dimension.relationship)));
   const measures = plan.measures.map((measure) => claim(
-    measure.function === "count"
+    "derived_measure" in measure
+      ? measure.derived_measure
+      : measure.function === "count"
       ? "count"
       : `${measure.function}_${reviewedFieldAlias(measure.field!, measure.relationship)}`,
   ));
   return { dimensions, measures, timeBucket: "time_bucket" };
+}
+
+function applyPostSuppressionTransforms(
+  plan: AggregateExplorePlan,
+  resource: BoundaryResource,
+  groups: Array<Record<string, unknown>>,
+): Array<Record<string, unknown>> {
+  const transforms = plan.measures.flatMap((measure, index) => {
+    if (!("derived_measure" in measure)) return [];
+    const definition = reviewedDerivedMeasure(resource, measure.derived_measure);
+    if (!("base_measure" in definition)) return [];
+    const sequential = isSequentialDerivedMeasureShape(definition.shape);
+    return [{
+      operation: definition.shape,
+      input_field: `measure_${index}`,
+      output_field: `measure_${index}`,
+      partition_fields: sequential
+        ? (plan.dimensions ?? []).map((_dimension, dimensionIndex) => `dimension_${dimensionIndex}`)
+        : [],
+      ...(sequential ? { time_field: "time_bucket" } : {}),
+      ...(definition.shape === "rank" ? { direction: definition.direction } : {}),
+      ...(definition.shape === "moving_average" ? { window_size: definition.window_size } : {}),
+    }];
+  });
+  return transforms.length
+    ? applyReviewedAggregateTransforms({ groups, transforms })
+    : groups;
 }
 
 function shapePeriodComparison(
@@ -1647,15 +3062,194 @@ function sortExploreData(
   });
 }
 
-function isRankedAggregatePlan(plan: AggregateExplorePlan): boolean {
-  return plan.order_by?.kind === "measure" || plan.order_by?.kind === "comparison_change";
+function isRankedAggregatePlan(plan: AggregateExplorePlan, resource: BoundaryResource): boolean {
+  return plan.order_by?.kind === "measure"
+    || plan.order_by?.kind === "comparison_change"
+    || plan.measures.some((measure) => {
+      if (!("derived_measure" in measure)) return false;
+      return "base_measure" in reviewedDerivedMeasure(resource, measure.derived_measure);
+    });
+}
+
+function reviewedNumericAggregateFunctions(
+  resource: BoundaryResource,
+  field: string,
+): readonly Exclude<AggregateMeasureFunction, "count" | "count_distinct">[] {
+  const reviewed = resource.aggregate_measure_functions?.[field];
+  if (reviewed) {
+    return reviewed.every((fn) => EXPLORATION_NUMERIC_AGGREGATE_FUNCTIONS.includes(fn))
+      ? reviewed
+      : [];
+  }
+  return resource.aggregate_measure_functions
+    ? []
+    : LEGACY_NUMERIC_AGGREGATE_FUNCTIONS;
+}
+
+function reviewedDerivedMeasure(
+  resource: BoundaryResource,
+  name: string,
+): ExplorationDerivedMeasure {
+  const definition = resource.derived_measures?.find((candidate) => candidate.name === name);
+  if (!definition) throw fieldError(resource, name, "reviewed derived measure");
+  return definition;
+}
+
+function reviewedNumericBand(
+  resource: BoundaryResource,
+  name: string,
+): ExplorationNumericBand {
+  const definition = resource.numeric_bands?.find((candidate) => candidate.name === name);
+  if (definition) return definition;
+  const available = (resource.numeric_bands ?? []).map((candidate) => candidate.name).sort();
+  throw new ScopedExploreError(
+    "EXPLORE_FIELD_FORBIDDEN",
+    `${JSON.stringify(name)} is not a reviewed numeric band for ${resource.id}. ` +
+      `Reviewed numeric bands: ${available.join(", ") || "none"}. No source query was executed.`,
+    {
+      reason: "numeric_band_not_reviewed",
+      resource: resource.id,
+      numeric_band: name,
+      reviewed_numeric_bands: available,
+      source_query_executed: false,
+    },
+  );
+}
+
+function reviewedAutoBand(
+  resource: BoundaryResource,
+  field: string,
+): ExplorationAutoBandPolicy {
+  const definition = resource.auto_bands?.find((candidate) => candidate.field === field);
+  if (definition) return definition;
+  const available = (resource.auto_bands ?? []).map((candidate) => candidate.field).sort();
+  throw new ScopedExploreError(
+    "EXPLORE_FIELD_FORBIDDEN",
+    `${JSON.stringify(field)} is not reviewed for auto-banding on ${resource.id}. ` +
+      `Reviewed auto-band fields: ${available.join(", ") || "none"}. No source query was executed.`,
+    {
+      reason: "auto_band_not_reviewed",
+      resource: resource.id,
+      field,
+      reviewed_auto_band_fields: available,
+      source_query_executed: false,
+    },
+  );
+}
+
+function isAutoBandDimension(
+  dimension: AggregateDimension,
+): dimension is Extract<AggregateDimension, { numeric_band: { field: string } }> {
+  return "numeric_band" in dimension && typeof dimension.numeric_band !== "string";
+}
+
+function dimensionRelationships(
+  dimension: AggregateDimension,
+  root: BoundaryResource,
+): string[] {
+  if ("numeric_band" in dimension) {
+    if (isAutoBandDimension(dimension)) return [];
+    const relationship = reviewedNumericBand(root, dimension.numeric_band).relationship;
+    return relationship ? [relationship] : [];
+  }
+  return dimension.relationship ? [dimension.relationship] : [];
+}
+
+function measureRelationships(measure: AggregateMeasure, root: BoundaryResource): string[] {
+  if (!("derived_measure" in measure)) return measure.relationship ? [measure.relationship] : [];
+  const definition = reviewedDerivedMeasure(root, measure.derived_measure);
+  if ("child_resource" in definition) return [];
+  const source = "base_measure" in definition ? definition.base_measure : definition.numerator;
+  const relationship = "relationship" in source
+    ? source.relationship
+    : undefined;
+  return relationship ? [relationship] : [];
+}
+
+function compiledDerivedMeasureSql(input: {
+  definition: ExplorationDerivedMeasure;
+  root: BoundaryResource;
+  joined: {
+    targets: Map<string, { resource: BoundaryResource; alias: string }>;
+  };
+  boundary: ActivatedExplorationBoundary;
+  context: { tenant: string; principal: string };
+  params: Scalar[];
+  engine: "postgres" | "mysql";
+  measureIndex: number;
+}): { value: string; contributorCohort: string; resources: BoundaryResource[] } {
+  const { definition, root, joined, engine } = input;
+  const operand = (measure: ExplorationDerivedBaseMeasure): { value: string; contributors: string } => {
+    if (measure.function === "count") return { value: "COUNT(*)", contributors: "COUNT(*)" };
+    const target = measure.relationship ? joined.targets.get(measure.relationship) : undefined;
+    const alias = target?.alias ?? "t0";
+    const field = `${alias}.${quote(measure.field, engine)}`;
+    return {
+      value: aggregateMeasureSql(measure.function, field),
+      contributors: `COUNT(${field})`,
+    };
+  };
+  if ("child_resource" in definition) {
+    const reviewed = resolveReviewedChildCountLink(
+      root.id,
+      definition,
+      input.boundary.pack.resources,
+      Boolean(input.boundary.organization_scope),
+    );
+    const alias = `fc${input.measureIndex}`;
+    const childScope = compileScopePredicates(
+      reviewed.child,
+      input.boundary,
+      alias,
+      input.context,
+      input.params,
+      engine,
+    );
+    const correlation = reviewed.link.source_columns.map((column, index) =>
+      `${alias}.${quote(column, engine)} = t0.${quote(reviewed.link.target_columns[index]!, engine)}`);
+    const predicates = [...correlation, ...childScope.predicates];
+    const childCount = `(SELECT COUNT(*) FROM ${qualified(reviewed.child, engine)} ${alias} WHERE ${predicates.join(" AND ")})`;
+    return {
+      value: definition.shape === "child_count_total"
+        ? `SUM(${childCount})`
+        : `AVG(1.0 * ${childCount})`,
+      contributorCohort: "COUNT(*)",
+      resources: childScope.resources,
+    };
+  }
+  if ("base_measure" in definition) {
+    const base = operand(definition.base_measure);
+    return { value: base.value, contributorCohort: base.contributors, resources: [] };
+  }
+  const numerator = operand(definition.numerator);
+  const denominator = operand(definition.denominator);
+  const scale = definition.shape === "percentage" ? "100.0" : "1.0";
+  return {
+    value: `CASE WHEN ${denominator.value} IS NULL OR ${denominator.value} = 0 THEN NULL ELSE (${scale} * ${numerator.value} / ${denominator.value}) END`,
+    contributorCohort: `LEAST(COUNT(*), ${numerator.contributors}, ${denominator.contributors})`,
+    resources: [],
+  };
+}
+
+function effectiveMinimumCohortSize(
+  plan: AggregateExplorePlan,
+  resource: BoundaryResource,
+): number {
+  const measureFloor = plan.measures.some((measure) =>
+    "derived_measure" in measure || DISPERSION_MEASURE_FUNCTIONS.has(measure.function))
+    ? MINIMUM_DISPERSION_COHORT_SIZE
+    : 1;
+  const autoBandFloor = (plan.dimensions ?? []).some(isAutoBandDimension)
+    ? MINIMUM_AUTO_BAND_COHORT_SIZE
+    : 1;
+  return Math.max(resource.minimum_cohort_size, measureFloor, autoBandFloor);
 }
 
 function aggregateUnderlyingGroupLimit(
   plan: AggregateExplorePlan,
   boundary: ActivatedExplorationBoundary,
 ): number {
-  return isRankedAggregatePlan(plan)
+  return isRankedAggregatePlan(plan, resourceFor(boundary, plan.resource))
     ? reviewedRankedGroupLimit(boundary.budgets)
     : boundary.budgets.max_groups;
 }
@@ -1669,6 +3263,8 @@ function describeExploreResult(input: {
     cells: number;
     suppressed: number;
     incompleteComparisons: number;
+    reviewedValueControls: ReturnType<typeof shapeExploreResponse>["reviewedValueControls"];
+    autoBands: ReturnType<typeof shapeExploreResponse>["autoBands"];
   };
   queryFingerprint: `sha256:${string}`;
   serializedBytes: number;
@@ -1683,8 +3279,8 @@ function describeExploreResult(input: {
   const relationships = input.plan.kind === "aggregate"
     ? unique([
       input.plan.relationship,
-      ...input.plan.measures.map((measure) => measure.relationship),
-      ...(input.plan.dimensions ?? []).map((dimension) => dimension.relationship),
+      ...input.plan.measures.flatMap((measure) => measureRelationships(measure, resource)),
+      ...(input.plan.dimensions ?? []).flatMap((dimension) => dimensionRelationships(dimension, resource)),
       input.plan.time_bucket?.relationship,
       ...(input.plan.where ?? []).map((filter) => filter.relationship),
       input.plan.comparison?.relationship,
@@ -1703,9 +3299,17 @@ function describeExploreResult(input: {
   const measures = aggregatePlan
     ? aggregatePlan.measures.map((measure, index) => ({
       alias: aliases!.measures[index],
-      function: measure.function,
-      field: measure.field ?? null,
-      relationship: measure.relationship ?? null,
+      function: "derived_measure" in measure ? "reviewed_derived" : measure.function,
+      field: "derived_measure" in measure ? null : measure.field ?? null,
+      relationship: "derived_measure" in measure ? null : measure.relationship ?? null,
+      ...( "derived_measure" in measure ? { derived_measure: measure.derived_measure } : {}),
+      contributor_cohort: "derived_measure" in measure
+        ? "child_resource" in reviewedDerivedMeasure(resource, measure.derived_measure)
+          ? "reviewed parent rows"
+          : "non-null contributors to this reviewed definition"
+        : CONTRIBUTOR_AWARE_MEASURE_FUNCTIONS.has(measure.function)
+          ? "non-null values for this reviewed field"
+          : "reviewed root rows",
       ...(aggregatePlan.comparison
         ? {
           comparison_outputs: {
@@ -1721,12 +3325,40 @@ function describeExploreResult(input: {
     }))
     : [];
   const dimensions = input.plan.kind === "aggregate"
-    ? (input.plan.dimensions ?? []).map((dimension, index) => ({
-      alias: aliases!.dimensions[index],
-      field: dimension.field,
-      relationship: dimension.relationship ?? null,
-      null_label: "Not set (database null)",
-    }))
+    ? (input.plan.dimensions ?? []).map((dimension, index) => {
+      if ("numeric_band" in dimension) {
+        if (isAutoBandDimension(dimension)) {
+          const policy = reviewedAutoBand(resource, dimension.numeric_band.field);
+          return {
+            alias: aliases!.dimensions[index],
+            field: dimension.numeric_band.field,
+            relationship: null,
+            auto_band: {
+              method: dimension.numeric_band.method,
+              requested_buckets: dimension.numeric_band.buckets,
+              reviewed_bucket_range: [policy.min_buckets, policy.max_buckets],
+              label_style: policy.label_style,
+              raw_edges_returned: false,
+            },
+            null_label: "Not set (database null)" as const,
+          };
+        }
+        const definition = reviewedNumericBand(resource, dimension.numeric_band);
+        return {
+          alias: aliases!.dimensions[index],
+          field: definition.field,
+          relationship: definition.relationship ?? null,
+          numeric_band: definition.name,
+          null_label: "Not set (database null)" as const,
+        };
+      }
+      return {
+        alias: aliases!.dimensions[index],
+        field: dimension.field,
+        relationship: dimension.relationship ?? null,
+        null_label: "Not set (database null)" as const,
+      };
+    })
     : [];
   const filters = (input.plan.where ?? []).map((filter) => ({
     field: filter.field,
@@ -1783,6 +3415,7 @@ function describeExploreResult(input: {
     measures,
     dimensions,
     filters,
+    ...(input.response.autoBands.length ? { adaptive_numeric_bands: input.response.autoBands } : {}),
     relationship_paths: relationships,
     reporting_timezone: {
       name: reportingTimezone,
@@ -1792,11 +3425,19 @@ function describeExploreResult(input: {
     freshness: {
       execution_started_at: new Date(input.executionStartedAt).toISOString(),
       observed_at: new Date(input.completedAt).toISOString(),
+      execution_duration_ms: Math.max(0, input.completedAt - input.executionStartedAt),
       snapshot_consistency: "single_read_only_transaction",
       upstream_source_freshness: "not_asserted",
     },
     suppression: {
       minimum_cohort_size: input.plan.kind === "aggregate" ? resource.minimum_cohort_size : null,
+      effective_minimum_cohort_size: input.plan.kind === "aggregate"
+        ? effectiveMinimumCohortSize(input.plan, resource)
+        : null,
+      contributor_aware: input.plan.kind === "aggregate"
+        ? input.plan.measures.some((measure) =>
+          "derived_measure" in measure || CONTRIBUTOR_AWARE_MEASURE_FUNCTIONS.has(measure.function))
+        : false,
       ...(input.plan.kind === "aggregate" && resource.minimum_cohort_overridden
         ? { minimum_cohort_overridden: true }
         : {}),
@@ -1805,6 +3446,21 @@ function describeExploreResult(input: {
       incomplete_comparison_groups: input.response.incompleteComparisons,
       suppression_aware_totals_returned: false,
     },
+    ...(input.response.reviewedValueControls.bucketed.length
+      || input.response.reviewedValueControls.excluded.length
+      ? {
+        reviewed_value_controls: {
+          bucketed_fields: input.response.reviewedValueControls.bucketed.map((item) => ({
+            resource: item.resource,
+            field: item.field,
+            output_field: item.output_field,
+            bucket_returned: item.bucket_returned,
+          })),
+          excluded_fields: input.response.reviewedValueControls.excluded,
+          source_values_exposed: false,
+        },
+      }
+      : {}),
     returned: {
       rows_or_groups: input.response.rowCount,
       cells: input.response.cells,
@@ -1816,6 +3472,16 @@ function describeExploreResult(input: {
       extracted_cells: Math.max(0, budgets.max_extracted_cells_per_session - input.budgetUsage.extracted_cells),
       differencing_queries: differencingProtectionRequired
         ? Math.max(0, budgets.max_differencing_queries - input.budgetUsage.differencing_attempts)
+        : null,
+      differencing_variants_for_root_resource: differencingProtectionRequired
+        ? {
+          resource: resource.id,
+          used: input.budgetUsage.differencing_attempts,
+          limit: budgets.max_differencing_queries,
+          remaining: Math.max(0, budgets.max_differencing_queries - input.budgetUsage.differencing_attempts),
+          window: "rolling_24_hours",
+          persists_across_sessions: true,
+        }
         : null,
     },
     query_audit_handle: input.queryFingerprint,
@@ -1840,9 +3506,27 @@ function describeBoundary(
     outcome: { type: "success" },
     boundary_digest: boundary.activation.digest,
     pack: boundary.pack.name,
+    ...(boundary.organization_scope ? {
+      organization_scope: {
+        mode: "single_organization",
+        tenant_filter: "not_applicable",
+        organization_identity: "fixed_outside_model_arguments",
+      },
+    } : {}),
     reporting_timezone: {
       name: boundary.reporting_timezone ?? "database_session",
       authority_bound: Boolean(boundary.reporting_timezone),
+    },
+    relative_time_windows: {
+      available: boundary.reporting_timezone === "UTC",
+      reporting_timezone: boundary.reporting_timezone === "UTC" ? "UTC" : null,
+      windows: boundary.reporting_timezone === "UTC" ? [...RELATIVE_TIME_WINDOWS] : [],
+      comparison_partners: boundary.reporting_timezone === "UTC"
+        ? [...RELATIVE_TIME_COMPARISONS]
+        : [],
+      range_semantics: "half-open [start, end)",
+      week_starts_on: "Monday",
+      model_supplied_date_arithmetic: false,
     },
     resources: selected.map((resource) => {
       const reviewableRelationships = inactiveReviewableRelationships(resource, boundary, reviewableBoundary);
@@ -1853,16 +3537,30 @@ function describeBoundary(
         ...resource.sortable_fields,
         ...resource.groupable_fields,
         ...resource.aggregate_measures,
+        ...(resource.presence_measure_fields ?? []),
         ...resource.count_distinct_fields,
         ...Object.keys(resource.time_bucket_fields),
       ]);
-      const fieldLabels = Object.fromEntries(reviewedFields.map((field) => [field, businessLabel(field)]));
+      const describedFields = reviewedFields.filter((field) =>
+        !resource.kept_out_fields.includes(field));
+      const fieldLabels = Object.fromEntries(
+        describedFields.map((field) => [field, reviewedFieldLabel(resource, field)]),
+      );
       const modelWithheld = new Set(resource.model_withheld_fields ?? []);
       return {
         id: resource.id,
-        label: businessLabel(resource.table),
+        ...(resource.label ? { label: resource.label } : {}),
+        ...(resource.description ? { description: resource.description } : {}),
         primary_key: resource.primary_key,
-        field_labels: fieldLabels,
+        fields: describedFields.map((field) => ({
+          id: field,
+          ...(resource.field_metadata?.[field]?.label
+            ? { label: resource.field_metadata[field]!.label }
+            : {}),
+          ...(resource.field_metadata?.[field]?.description
+            ? { description: resource.field_metadata[field]!.description }
+            : {}),
+        })),
         field_egress: Object.fromEntries(reviewedFields.map((field) => [
           field,
           { model_egress: modelWithheld.has(field) ? "withheld" : "visible" },
@@ -1873,8 +3571,40 @@ function describeBoundary(
         sortable_fields: resource.sortable_fields,
         groupable_fields: resource.groupable_fields,
         aggregate_measures: resource.aggregate_measures,
+        aggregate_measure_functions: Object.fromEntries(resource.aggregate_measures.map((field) => [
+          field,
+          reviewedNumericAggregateFunctions(resource, field),
+        ])),
+        presence_measure_fields: resource.presence_measure_fields ?? [],
+        presence_measure_functions: resource.presence_measure_fields?.length
+          ? ["null_count", "non_null_count", "completion_rate"]
+          : [],
+        derived_measures: (resource.derived_measures ?? []).map((measure) =>
+          describeReviewedDerivedMeasure(measure, resource.minimum_cohort_size)),
+        numeric_bands: (resource.numeric_bands ?? []).map((band) => ({
+          name: band.name,
+          label: band.label,
+          field: band.field,
+          relationship: band.relationship ?? null,
+          edges: [...band.edges],
+          bucket_labels: [...band.bucket_labels],
+        })),
+        auto_bands: (resource.auto_bands ?? []).map((policy) => ({
+          field: policy.field,
+          methods: [...policy.methods],
+          min_buckets: policy.min_buckets,
+          max_buckets: policy.max_buckets,
+          min_bucket_width: policy.min_bucket_width ?? null,
+          label_style: policy.label_style,
+          label_round_to: policy.label_round_to ?? null,
+          model_selects: ["field", "method", "buckets"],
+          raw_edges_returned: false,
+        })),
         count_distinct_fields: resource.count_distinct_fields,
         time_bucket_fields: resource.time_bucket_fields,
+        relative_time_window_fields: boundary.reporting_timezone === "UTC"
+          ? Object.keys(resource.time_bucket_fields).sort()
+          : [],
         time_coverage: timeCoverage[resource.id] ?? {},
         field_types: Object.fromEntries(reviewedFields.map((field) => [field, resource.field_types[field]])),
         field_enums: Object.fromEntries(reviewedFields
@@ -1894,16 +3624,20 @@ function describeBoundary(
             ...Object.keys(target.filterable_fields),
             ...target.groupable_fields,
             ...target.aggregate_measures,
+            ...(target.presence_measure_fields ?? []),
             ...target.count_distinct_fields,
             ...Object.keys(target.time_bucket_fields),
           ]);
           const targetModelWithheld = new Set(target.model_withheld_fields ?? []);
+          const describedTargetFields = targetFields.filter((field) =>
+            !target.kept_out_fields.includes(field));
           return {
             id: relationship.id,
-            label: businessLabel(target.table),
             activation,
             operator_review_required: activation === "review_required",
             target_resource: relationship.target_resource,
+            ...(target.label ? { target_label: target.label } : {}),
+            ...(target.description ? { target_description: target.description } : {}),
             cardinality: relationship.cardinality,
             counted_entity: relationship.counted_entity,
             path_depth: relationship.path_depth ?? 1,
@@ -1919,17 +3653,38 @@ function describeBoundary(
               nullable: link.nullable,
               cardinality: link.cardinality,
             })) ?? [],
-            field_labels: Object.fromEntries(targetFields.map((field) => [field, businessLabel(field)])),
             field_egress: Object.fromEntries(targetFields.map((field) => [
               field,
               { model_egress: targetModelWithheld.has(field) ? "withheld" : "visible" },
             ])),
+            fields: describedTargetFields.map((field) => ({
+              id: field,
+              ...(target.field_metadata?.[field]?.label
+                ? { label: target.field_metadata[field]!.label }
+                : {}),
+              ...(target.field_metadata?.[field]?.description
+                ? { description: target.field_metadata[field]!.description }
+                : {}),
+            })),
             filterable_fields: Object.keys(target.filterable_fields),
             filter_operators: target.filterable_fields,
             groupable_fields: target.groupable_fields,
             aggregate_measures: target.aggregate_measures,
+            aggregate_measure_functions: Object.fromEntries(target.aggregate_measures.map((field) => [
+              field,
+              reviewedNumericAggregateFunctions(target, field),
+            ])),
+            presence_measure_fields: target.presence_measure_fields ?? [],
+            presence_measure_functions: target.presence_measure_fields?.length
+              ? ["null_count", "non_null_count", "completion_rate"]
+              : [],
+            derived_measures: (target.derived_measures ?? []).map((measure) =>
+              describeReviewedDerivedMeasure(measure, target.minimum_cohort_size)),
             count_distinct_fields: target.count_distinct_fields,
             time_bucket_fields: target.time_bucket_fields,
+            relative_time_window_fields: boundary.reporting_timezone === "UTC"
+              ? Object.keys(target.time_bucket_fields).sort()
+              : [],
             field_types: Object.fromEntries(targetFields.map((field) => [field, target.field_types[field]])),
           };
         }),
@@ -1948,6 +3703,50 @@ function describeBoundary(
     next_cursor: input.resource || cursor + selected.length >= boundary.pack.resources.length ? null : cursor + selected.length,
     raw_sql_available: false,
     source_rows_available_before_activation: false,
+  };
+}
+
+function describeReviewedDerivedMeasure(
+  measure: ExplorationDerivedMeasure,
+  minimumCohortSize: number,
+): Record<string, unknown> {
+  const common = {
+    name: measure.name,
+    label: measure.label,
+    shape: measure.shape,
+    effective_minimum_cohort_size: Math.max(
+      minimumCohortSize,
+      MINIMUM_DISPERSION_COHORT_SIZE,
+    ),
+  };
+  if ("child_resource" in measure) {
+    return {
+      ...common,
+      calculation_stage: "scoped child count aggregated over reviewed parent cohorts",
+      child_resource: measure.child_resource,
+      relationship: measure.relationship,
+      parent_contributor_floor: "applied before release",
+      raw_child_rows_returned: false,
+    };
+  }
+  if (!("base_measure" in measure)) {
+    return {
+      ...common,
+      calculation_stage: "after cohort validation",
+      null_behavior: "null when the reviewed denominator is zero or null",
+    };
+  }
+  const sequential = isSequentialDerivedMeasureShape(measure.shape);
+  return {
+    ...common,
+    calculation_stage: "after small-group suppression",
+    required_grain: sequential
+      ? "one reviewed ordered time_bucket; dimensions are optional partitions"
+      : "one or more reviewed dimensions and no time_bucket",
+    ...(sequential ? { records_without_reviewed_time: "omitted" } : {}),
+    ...(measure.shape === "rank" ? { fixed_direction: measure.direction } : {}),
+    ...(measure.shape === "moving_average" ? { fixed_window_size: measure.window_size } : {}),
+    suppressed_groups_included: false,
   };
 }
 
@@ -1970,12 +3769,20 @@ async function loadReviewedTimeCoverage(input: {
     const params: Scalar[] = [];
     const alias = "t0";
     const column = `${alias}.${quote(field, input.prepared.lock.engine)}`;
-    const where = scopePredicates(resource, alias, input.context, params, input.prepared.lock.engine);
+    const scope = compileScopePredicates(
+      resource,
+      input.prepared.boundary,
+      alias,
+      input.context,
+      params,
+      input.prepared.lock.engine,
+    );
+    const where = scope.predicates;
     where.push(`${column} IS NOT NULL`);
     return {
       sql: `SELECT MIN(${column}) AS ${quote("__coverage_start", input.prepared.lock.engine)}, MAX(${column}) AS ${quote("__coverage_end", input.prepared.lock.engine)}, COUNT(${column}) AS ${quote("__coverage_cohort", input.prepared.lock.engine)} FROM ${qualified(resource, input.prepared.lock.engine)} ${alias} WHERE ${where.join(" AND ")}`,
       params,
-      resources: [resource],
+      resources: scope.resources,
       ...(input.prepared.boundary.reporting_timezone
         ? { reporting_timezone: input.prepared.boundary.reporting_timezone }
         : {}),
@@ -2047,7 +3854,7 @@ function inactiveReviewableRelationships(
       && relationship.proof?.source === "database_catalog"
       && canonicalJsonDigest(relationship.proof.links) === relationship.proof.digest
       && relationship.proof.links.length >= 1
-      && relationship.proof.links.length <= 2
+      && relationship.proof.links.length <= 3
       && relationship.proof.links.every((link) =>
         activeResources.has(link.source_resource)
         && activeResources.has(link.target_resource)
@@ -2066,8 +3873,12 @@ function suggestedAggregateQuestions(
   reviewableRelationships: BoundaryResource["relationships"] = [],
 ): Array<Record<string, unknown>> {
   const dimension = suggestedDimension(resource.groupable_fields);
-  const measure = resource.aggregate_measures[0];
-  const resourceLabel = businessLabel(resource.table).toLowerCase();
+  const measure = [...resource.aggregate_measures]
+    .filter((field) => suggestedMeasureUsefulness(resource, field) >= 0)
+    .sort((left, right) => suggestedMeasureUsefulness(resource, right)
+      - suggestedMeasureUsefulness(resource, left)
+      || left.localeCompare(right))[0];
+  const resourceLabel = (resource.label ?? businessLabel(resource.table)).toLowerCase();
   const measureLabel = measure
     ? labels[measure]?.toLowerCase().replace(/\s+cents$/, "")
     : undefined;
@@ -2107,7 +3918,7 @@ function suggestedAggregateQuestions(
   }
   if (timeField && dimension) {
     questions.push({
-      text: `How did ${measureQuestionSubject ?? resourceLabel} change by week across ${labels[dimension]?.toLowerCase()}?`,
+      text: `How did ${measureQuestionSubject ?? `the number of ${resourceLabel}`} change by week across ${labels[dimension]?.toLowerCase()}?`,
       measure: measure ? { function: "sum", field: measure } : { function: "count" },
       dimension,
       time_field: timeField,
@@ -2140,6 +3951,23 @@ function suggestedAggregateQuestions(
       question.relationship_review_required === true
       || suggestedAggregateQuestionIsExecutable(resource, question, boundary))
     .slice(0, 3);
+}
+
+function suggestedMeasureUsefulness(resource: BoundaryResource, field: string): number {
+  const normalized = field.toLowerCase();
+  if (field === resource.primary_key
+    || normalized === "id"
+    || normalized.endsWith("_id")
+    || normalized === "version"
+    || normalized.endsWith("_version")
+    || normalized.endsWith("_key")
+    || normalized.endsWith("_code")) {
+    return -1;
+  }
+  if (/(amount|revenue|price|cost|balance|fee|discount|total|subtotal|tax|quantity|duration|usage|count)/.test(normalized)) {
+    return 100;
+  }
+  return 10;
 }
 
 function suggestedAggregateQuestionIsExecutable(
@@ -2188,13 +4016,17 @@ function suggestedDimension(fields: string[], allowGenericLabel = false): string
 
 function dimensionSubject(resource: BoundaryResource, field: string): string {
   if (/^(?:name|title|label|display_name)$/i.test(field)) {
-    return businessLabel(resource.table).toLowerCase();
+    return (resource.label ?? businessLabel(resource.table)).toLowerCase();
   }
-  const label = businessLabel(field).toLowerCase();
+  const label = reviewedFieldLabel(resource, field).toLowerCase();
   if (label.endsWith("status")) return `${label}es`;
   if (label.endsWith("category")) return `${label.slice(0, -1)}ies`;
   if (label.endsWith("s")) return label;
   return `${label}s`;
+}
+
+function reviewedFieldLabel(resource: BoundaryResource, field: string): string {
+  return resource.field_metadata?.[field]?.label ?? businessLabel(field);
 }
 
 function businessLabel(identifier: string): string {
@@ -2221,7 +4053,7 @@ function assertExploreComplexity(
   plan: ExplorePlan,
   boundary: ActivatedExplorationBoundary,
 ): void {
-  const complexity = exploreComplexity(plan);
+  const complexity = exploreComplexity(plan, boundary);
   if (complexity > boundary.budgets.max_complexity) {
     throw new ScopedExploreError(
       "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
@@ -2238,31 +4070,260 @@ function estimatedExploreResponseCells(plan: ExplorePlan): number {
   return plan.top_n * fieldsPerGroup;
 }
 
-function exploreBudgetRefusalMessage(code: string, fallback: string): string {
-  if (code === "QUERY_BUDGET_EXHAUSTED") {
-    return "The reviewed rolling 24-hour query budget is exhausted.";
+function exploreBudgetRefusalMessage(input: {
+  code: string;
+  fallback: string;
+  usage: ExploreBudgetUsage;
+  limits: ExploreBudgetLimits;
+  estimatedResponseCells: number;
+  now: number;
+  exhaustedScope?: "principal" | "tenant";
+  resourceId: string;
+}): string {
+  const scope = input.exhaustedScope === "tenant"
+    ? "Tenant-wide production ceiling"
+    : input.exhaustedScope === "principal"
+      ? "Authenticated-principal budget"
+      : "Reviewed trusted-scope budget";
+  const rollingExpiry = new Date(input.now + 24 * 60 * 60 * 1000).toISOString();
+  const rateExpiry = new Date(input.now + 60 * 1000).toISOString();
+  const reviewRoute = input.exhaustedScope === "tenant"
+    ? "Change the matching production_explore.tenant_limits setting in synapsor.runner.json, run doctor, and restart the production MCP server."
+    : "Change it in /access -> select the boundary -> L Limits, then C Review + activate.";
+  if (input.code === "QUERY_BUDGET_EXHAUSTED") {
+    return [
+      `${scope}: query-volume allowance exhausted.`,
+      `Used ${input.usage.query_count} of ${input.limits.max_queries_per_session} queries in the rolling 24-hour window.`,
+      `Capacity returns as earlier queries age out; all currently counted queries expire no later than ${rollingExpiry}.`,
+      reviewRoute,
+      "Extracted-cell, differencing, cohort, and suppression controls are separate and unchanged.",
+    ].join("\n");
   }
-  if (code === "EXTRACTION_BUDGET_EXHAUSTED") {
-    return "The reviewed response or rolling 24-hour extraction budget would be exceeded.";
+  if (input.code === "RATE_LIMIT_EXHAUSTED") {
+    return [
+      `${scope}: request-rate allowance exhausted.`,
+      `Used ${input.usage.queries_last_minute} of ${input.limits.rate_limit_per_minute} requests in the rolling one-minute window.`,
+      `Capacity returns as earlier requests age out; all currently counted requests expire no later than ${rateExpiry}.`,
+      reviewRoute,
+    ].join("\n");
   }
-  if (code === "DIFFERENCING_BUDGET_EXHAUSTED") {
-    return "Too many distinct cohort-protected plans were released for this table in the rolling 24-hour privacy window.";
+  if (input.code === "EXTRACTION_BUDGET_EXHAUSTED") {
+    return [
+      `${scope}: disclosure-control extracted-cell allowance exhausted.`,
+      `Used ${input.usage.extracted_cells} of ${input.limits.max_extracted_cells_per_session} cells; this request could return up to ${input.estimatedResponseCells} more.`,
+      `Capacity returns as earlier releases age out; all currently counted cells expire no later than ${rollingExpiry}.`,
+      "This privacy control is separate from query volume. Review the boundary's disclosure policy rather than raising throughput limits.",
+    ].join("\n");
   }
-  return fallback;
+  if (input.code === "DIFFERENCING_BUDGET_EXHAUSTED") {
+    return [
+      `${scope}: disclosure-control differencing allowance exhausted.`,
+      `Used ${input.usage.differencing_attempts} of ${input.limits.max_differencing_queries} distinct protected variants for root resource ${input.resourceId} in the rolling 24-hour window.`,
+      `Capacity returns as earlier variants age out; all currently counted variants expire no later than ${rollingExpiry}.`,
+      "This counter follows the trusted tenant/principal scope across token renewal, reconnects, and server restarts; it is not an MCP-session counter.",
+      "This privacy control is separate from query volume and prevents reconstruction through repeated variants.",
+    ].join("\n");
+  }
+  return input.fallback;
 }
 
-function releaseExploreBudgetReservation(
-  store: ProposalStore,
+function describeOperatorExploreBudget(input: {
+  principalUsage: ExploreBudgetUsage;
+  principalLimits: ExploreBudgetLimits;
+  principalVariantAlreadyCounted: boolean;
+  tenantUsage?: ExploreBudgetUsage;
+  tenantLimits?: ExploreBudgetLimits;
+  tenantVariantAlreadyCounted?: boolean;
+  requiresDifferencing: boolean;
+  resourceId: string;
+  returnedCells: number;
+  completedAt: number;
+}): Record<string, unknown> {
+  const scopeStatus = (
+    scope: "trusted_scope" | "tenant",
+    usage: ExploreBudgetUsage,
+    limits: ExploreBudgetLimits,
+    variantAlreadyCounted: boolean,
+  ) => ({
+    scope,
+    volume: {
+      queries_rolling_24_hours: budgetGauge(
+        usage.query_count,
+        limits.max_queries_per_session,
+      ),
+      requests_rolling_minute: budgetGauge(
+        usage.queries_last_minute,
+        limits.rate_limit_per_minute,
+      ),
+    },
+    disclosure: {
+      extracted_cells_rolling_24_hours: budgetGauge(
+        usage.extracted_cells,
+        limits.max_extracted_cells_per_session,
+      ),
+      differencing_variants_rolling_24_hours: {
+        ...budgetGauge(
+          usage.differencing_attempts,
+          limits.max_differencing_queries,
+        ),
+        root_resource: input.resourceId,
+        persists_across_sessions: true,
+      },
+    },
+    warnings: budgetThresholdWarnings({
+      scope,
+      usage,
+      limits,
+      resourceId: input.resourceId,
+      queryIncrement: 1,
+      extractedCellIncrement: input.returnedCells,
+      differencingIncrement: input.requiresDifferencing && !variantAlreadyCounted ? 1 : 0,
+    }),
+  });
+  return {
+    operator_only: true,
+    accounting: "query, rate, and extracted-cell usage is per trusted scope; differencing variants are per trusted scope and root resource; production also enforces tenant-wide ceilings",
+    rolling_24_hour_usage_expires_no_later_than: new Date(
+      input.completedAt + 24 * 60 * 60 * 1000,
+    ).toISOString(),
+    rolling_minute_usage_expires_no_later_than: new Date(
+      input.completedAt + 60 * 1000,
+    ).toISOString(),
+    trusted_scope: scopeStatus(
+      "trusted_scope",
+      input.principalUsage,
+      input.principalLimits,
+      input.principalVariantAlreadyCounted,
+    ),
+    ...(input.tenantUsage && input.tenantLimits
+      ? {
+        tenant: scopeStatus(
+          "tenant",
+          input.tenantUsage,
+          input.tenantLimits,
+          input.tenantVariantAlreadyCounted ?? true,
+        ),
+      }
+      : {}),
+  };
+}
+
+function budgetGauge(used: number, limit: number): {
+  used: number;
+  limit: number;
+  remaining: number;
+  percent_used: number;
+} {
+  return {
+    used,
+    limit,
+    remaining: Math.max(0, limit - used),
+    percent_used: limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 100,
+  };
+}
+
+function budgetThresholdWarnings(input: {
+  scope: "trusted_scope" | "tenant";
+  usage: ExploreBudgetUsage;
+  limits: ExploreBudgetLimits;
+  resourceId: string;
+  queryIncrement: number;
+  extractedCellIncrement: number;
+  differencingIncrement: number;
+}): string[] {
+  const warnings: string[] = [];
+  const addIfCrossed = (
+    label: string,
+    used: number,
+    limit: number,
+    increment: number,
+    classification: "volume" | "disclosure",
+  ): void => {
+    const threshold = Math.ceil(limit * 0.8);
+    const before = Math.max(0, used - increment);
+    if (before < threshold && used >= threshold) {
+      warnings.push(
+        `${input.scope === "tenant" ? "Tenant" : "Trusted scope"} ${classification} warning: ` +
+        `${label} reached ${used}/${limit}; ${Math.max(0, limit - used)} remain.`,
+      );
+    }
+  };
+  addIfCrossed(
+    "rolling queries",
+    input.usage.query_count,
+    input.limits.max_queries_per_session,
+    input.queryIncrement,
+    "volume",
+  );
+  addIfCrossed(
+    "requests per minute",
+    input.usage.queries_last_minute,
+    input.limits.rate_limit_per_minute,
+    input.queryIncrement,
+    "volume",
+  );
+  addIfCrossed(
+    "extracted cells",
+    input.usage.extracted_cells,
+    input.limits.max_extracted_cells_per_session,
+    input.extractedCellIncrement,
+    "disclosure",
+  );
+  addIfCrossed(
+    `differencing variants for root resource ${input.resourceId}`,
+    input.usage.differencing_attempts,
+    input.limits.max_differencing_queries,
+    input.differencingIncrement,
+    "disclosure",
+  );
+  return warnings;
+}
+
+async function claimLocalExploreBudget(
+  store: ProposalRuntimeStore,
+  input: ExploreBudgetReservationInput,
+): Promise<ExploreBudgetReservationDecision> {
+  if (!store.claimExploreBudgetReservation) {
+    throw new Error("The configured runtime store does not implement local Explore privacy reservations.");
+  }
+  return await store.claimExploreBudgetReservation(input);
+}
+
+async function claimProductionExploreBudget(
+  store: ProposalRuntimeStore,
+  input: ProductionExploreBudgetReservationInput,
+): Promise<ProductionExploreBudgetReservationDecision> {
+  if (!store.claimProductionExploreBudgetReservation) {
+    throw new Error("The configured shared runtime store does not implement atomic production Explore privacy reservations.");
+  }
+  return await store.claimProductionExploreBudgetReservation(input);
+}
+
+async function completeExploreBudget(
+  store: ProposalRuntimeStore,
+  input: Parameters<NonNullable<ProposalRuntimeStore["completeExploreBudgetReservation"]>>[0],
+  mode: ScopedExploreMode,
+) {
+  const method = mode === "production_http"
+    ? store.completeProductionExploreBudgetReservation
+    : store.completeExploreBudgetReservation;
+  if (!method) throw new Error("The configured runtime store cannot complete Explore privacy reservations.");
+  return await method.call(store, input);
+}
+
+async function releaseExploreBudgetReservation(
+  store: ProposalRuntimeStore,
   reservationId: string,
   completedAt: number,
-): void {
+  mode: ScopedExploreMode,
+): Promise<void> {
   try {
-    store.completeExploreBudgetReservation({
+    await completeExploreBudget(store, {
       reservation_id: reservationId,
       result_released: false,
       returned_cells: 0,
       completed_at: new Date(completedAt).toISOString(),
-    });
+    }, mode);
   } catch {
     // A stranded pending reservation remains a conservative budget charge.
   }
@@ -2293,24 +4354,26 @@ function requiresDifferencingProtection(
 ): boolean {
   if (plan.kind !== "aggregate") return false;
   const resource = resourceFor(boundary, plan.resource);
-  if (resource.minimum_cohort_size <= 1) return false;
+  if (effectiveMinimumCohortSize(plan, resource) <= 1) return false;
   return true;
 }
 
-function enforcePrivacyComplementRelease(
-  store: ProposalStore,
+async function enforcePrivacyComplementRelease(
+  store: ProposalRuntimeStore,
   input: {
     boundary: ActivatedExplorationBoundary;
     privacyScopeFingerprint: `sha256:${string}`;
+    tenantPrivacyScopeFingerprint: `sha256:${string}`;
     queryFingerprint: `sha256:${string}`;
     plan: ExplorePlan;
     response: ReturnType<typeof shapeExploreResponse>;
     auditKey: Buffer;
+    mode: ScopedExploreMode;
   },
-): void {
+): Promise<void> {
   if (input.plan.kind !== "aggregate") return;
   const resource = resourceFor(input.boundary, input.plan.resource);
-  if (resource.minimum_cohort_size <= 1) return;
+  if (effectiveMinimumCohortSize(input.plan, resource) <= 1) return;
   const hasGrouping = (input.plan.dimensions?.length ?? 0) > 0
     || Boolean(input.plan.time_bucket)
     || Boolean(input.plan.comparison);
@@ -2320,15 +4383,32 @@ function enforcePrivacyComplementRelease(
       : undefined
     : "scalar_total" as const;
   if (!releaseKind) return;
-  let decision: ReturnType<ProposalStore["claimExplorePrivacyRelease"]>;
+  let decision;
   try {
-    decision = store.claimExplorePrivacyRelease({
-      scope_fingerprint: input.privacyScopeFingerprint,
+    const common = {
       complement_fingerprints: privacyComplementFingerprints(input.plan, input.auditKey),
       release_kind: releaseKind,
       query_fingerprint: input.queryFingerprint,
       boundary_digest: input.boundary.activation.digest,
-    });
+    };
+    if (input.mode === "production_http") {
+      if (!store.claimProductionExplorePrivacyRelease) {
+        throw new Error("Production privacy release accounting is unavailable.");
+      }
+      decision = await store.claimProductionExplorePrivacyRelease({
+        ...common,
+        principal_scope_fingerprint: input.privacyScopeFingerprint,
+        tenant_scope_fingerprint: input.tenantPrivacyScopeFingerprint,
+      });
+    } else {
+      if (!store.claimExplorePrivacyRelease) {
+        throw new Error("Local privacy release accounting is unavailable.");
+      }
+      decision = await store.claimExplorePrivacyRelease({
+        ...common,
+        scope_fingerprint: input.privacyScopeFingerprint,
+      });
+    }
   } catch {
     throw new ScopedExploreError(
       "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
@@ -2379,26 +4459,31 @@ function privacyComplementFingerprints(
   };
   return [...new Set(plan.measures.map((measure) => canonicalJsonDigest({
     cohort,
-    measure: {
-      function: measure.function,
-      field: measure.field ?? null,
-      relationship: measure.relationship ?? null,
-    },
+    measure: "derived_measure" in measure
+      ? { derived_measure: measure.derived_measure }
+      : {
+        function: measure.function,
+        field: measure.field ?? null,
+        relationship: measure.relationship ?? null,
+      },
   })))].sort();
 }
 
-function exploreComplexity(plan: ExplorePlan): number {
+function exploreComplexity(plan: ExplorePlan, boundary: ActivatedExplorationBoundary): number {
   if (plan.kind === "rows") {
     return 1
       + plan.select.length
+      + (plan.time_window ? 2 : 0)
       + (plan.where?.length ?? 0) * 2
       + (plan.order_by?.length ?? 0);
   }
   const relationships = unique([
     plan.relationship,
-    ...plan.measures.map((measure) => measure.relationship),
-    ...(plan.dimensions ?? []).map((dimension) => dimension.relationship),
+    ...plan.measures.flatMap((measure) =>
+      measureRelationships(measure, resourceFor(boundary, plan.resource))),
+    ...(plan.dimensions ?? []).flatMap((dimension) => dimensionRelationships(dimension, resourceFor(boundary, plan.resource))),
     plan.time_bucket?.relationship,
+    plan.time_window?.relationship,
     ...(plan.where ?? []).map((filter) => filter.relationship),
     plan.comparison?.relationship,
   ].filter((value): value is string => Boolean(value)));
@@ -2406,14 +4491,18 @@ function exploreComplexity(plan: ExplorePlan): number {
     + plan.measures.length * 2
     + (plan.dimensions?.length ?? 0) * 2
     + (plan.time_bucket ? 2 : 0)
+    + (plan.time_window ? 2 : 0)
     + (plan.where?.length ?? 0) * 2
     + (plan.comparison?.ranges.length ?? 0) * 2
     + relationships.length * 4;
 }
 
 async function recordPreExecutionRefusalAudit(
-  store: ProposalStore,
+  store: ProposalRuntimeStore,
   input: {
+    mode: ScopedExploreMode;
+    tenantAuditFingerprint: string;
+    principalAuditFingerprint?: string;
     boundary: ActivatedExplorationBoundary;
     sessionFingerprint: string;
     budgetScopeFingerprint: `sha256:${string}`;
@@ -2438,10 +4527,17 @@ async function recordPreExecutionRefusalAudit(
   const errorCode = input.error instanceof ScopedExploreError
     ? input.error.code
     : "EXPLORE_PLAN_INVALID";
-  store.recordQueryAudit({
+  const attemptedAccess = reviewedRefusalAttempt(input);
+  const scopeApplication = attemptedAccess
+    ? auditScopeApplication(input.boundary, attemptedAccess.resource, false)
+    : undefined;
+  await recordExploreQueryAudit(store, input.mode, {
+    tenant_id: input.tenantAuditFingerprint,
+    ...(input.principalAuditFingerprint ? { principal: input.principalAuditFingerprint } : {}),
+    capability: "app.explore_data",
     source_id: input.boundary.source,
     query_fingerprint: queryFingerprint,
-    table_name: input.plan?.resource ?? "app.explore_data",
+    table_name: attemptedAccess?.resource ?? "app.explore_data",
     row_count: 0,
     payload: {
       scoped_explore_version: SCOPED_EXPLORE_VERSION,
@@ -2450,6 +4546,8 @@ async function recordPreExecutionRefusalAudit(
       budget_scope_fingerprint: input.budgetScopeFingerprint,
       request_shape_fingerprint: `hmac-sha256:${requestShapeFingerprint}`,
       ...(input.plan ? { normalized_plan: normalizedAudit(input.plan, input.auditKey) } : {}),
+      ...(attemptedAccess ? { attempted_access: attemptedAccess } : {}),
+      ...(scopeApplication ? { scope_application: scopeApplication } : {}),
       status: "refused_before_source_execution",
       refusal_stage: input.stage,
       error_code: errorCode,
@@ -2464,9 +4562,57 @@ async function recordPreExecutionRefusalAudit(
   });
 }
 
+function reviewedRefusalAttempt(input: {
+  boundary: ActivatedExplorationBoundary;
+  unknownPlan: unknown;
+  plan?: ExplorePlan;
+  error: unknown;
+}): { resource: string; field?: string; operation?: string } | undefined {
+  const details = input.error instanceof ScopedExploreError && isRecord(input.error.details)
+    ? input.error.details
+    : {};
+  const unknownPlan = isRecord(input.unknownPlan) ? input.unknownPlan : {};
+  const resourceId = [details.resource, input.plan?.resource, unknownPlan.resource]
+    .find((value): value is string =>
+      typeof value === "string"
+      && input.boundary.pack.resources.some((resource) => resource.id === value));
+  if (!resourceId) return undefined;
+
+  const resource = input.boundary.pack.resources.find((candidate) => candidate.id === resourceId)!;
+  const field = typeof details.field === "string" && reviewedResourceField(resource, details.field)
+    ? details.field
+    : undefined;
+  const operation = typeof details.operation === "string"
+    && details.operation.length <= 80
+    && /^[a-z][a-z0-9_]*(?: [a-z][a-z0-9_]*){0,3}$/.test(details.operation)
+    ? details.operation
+    : undefined;
+  return {
+    resource: resource.id,
+    ...(field ? { field } : {}),
+    ...(operation ? { operation } : {}),
+  };
+}
+
+function reviewedResourceField(resource: BoundaryResource, field: string): boolean {
+  return Object.hasOwn(resource.field_types, field)
+    || resource.kept_out_fields.includes(field)
+    || (resource.model_withheld_fields?.includes(field) ?? false)
+    || resource.selectable_fields.includes(field)
+    || Object.hasOwn(resource.filterable_fields, field)
+    || resource.sortable_fields.includes(field)
+    || resource.groupable_fields.includes(field)
+    || resource.aggregate_measures.includes(field)
+    || resource.count_distinct_fields.includes(field)
+    || Object.hasOwn(resource.time_bucket_fields, field);
+}
+
 async function recordExploreAudit(
-  store: ProposalStore,
+  store: ProposalRuntimeStore,
   input: {
+    mode: ScopedExploreMode;
+    tenantAuditFingerprint: string;
+    principalAuditFingerprint?: string;
     boundary: ActivatedExplorationBoundary;
     sessionFingerprint: string;
     budgetScopeFingerprint: `sha256:${string}`;
@@ -2475,6 +4621,7 @@ async function recordExploreAudit(
     familyFingerprint: string;
     variantFingerprint: string;
     normalizedPlan: Record<string, unknown>;
+    resolvedTimeWindows: ResolvedRelativeTimeWindow[];
     plan: ExplorePlan;
     status: string;
     rowCount: number;
@@ -2483,7 +4630,10 @@ async function recordExploreAudit(
     now: number;
   },
 ): Promise<void> {
-  store.recordQueryAudit({
+  await recordExploreQueryAudit(store, input.mode, {
+    tenant_id: input.tenantAuditFingerprint,
+    ...(input.principalAuditFingerprint ? { principal: input.principalAuditFingerprint } : {}),
+    capability: "app.explore_data",
     source_id: input.boundary.source,
     query_fingerprint: input.queryFingerprint,
     table_name: resourceFor(input.boundary, input.plan.resource).id,
@@ -2498,6 +4648,10 @@ async function recordExploreAudit(
       differencing_family: input.familyFingerprint,
       differencing_variant: input.variantFingerprint,
       normalized_plan: input.normalizedPlan,
+      scope_application: auditScopeApplication(input.boundary, input.plan.resource),
+      ...(input.resolvedTimeWindows.length
+        ? { resolved_time_windows: input.resolvedTimeWindows }
+        : {}),
       status: input.status,
       returned_rows_or_groups: input.rowCount,
       returned_cells: input.cells,
@@ -2526,13 +4680,14 @@ function boundedUnknownSerialization(value: unknown): string {
 }
 
 async function recordExploreEvidence(
-  store: ProposalStore,
+  store: ProposalRuntimeStore,
   input: {
+    mode: ScopedExploreMode;
+    tenantAuditFingerprint: string;
+    principalAuditFingerprint?: string;
     boundary: ActivatedExplorationBoundary;
     generationLockFingerprint: `sha256:${string}`;
     rolePostureFingerprint: `sha256:${string}`;
-    auditKey: Buffer;
-    tenant: string;
     sessionFingerprint: string;
     budgetScopeFingerprint: `sha256:${string}`;
     budgetReservationId: string;
@@ -2540,6 +4695,7 @@ async function recordExploreEvidence(
     familyFingerprint: string;
     variantFingerprint: string;
     normalizedPlan: Record<string, unknown>;
+    resolvedTimeWindows: ResolvedRelativeTimeWindow[];
     plan: ExplorePlan;
     status: "ok" | "empty" | "fully_suppressed" | "incomplete_comparison";
     rowCount: number;
@@ -2553,6 +4709,7 @@ async function recordExploreEvidence(
   const evidenceBundleId = `ev_explore_${crypto.randomBytes(12).toString("hex")}`;
   const recordedAt = new Date(input.completedAt).toISOString();
   const resource = resourceFor(input.boundary, input.plan.resource);
+  const scopeApplication = auditScopeApplication(input.boundary, resource.id);
   const auditPayload = {
     scoped_explore_version: SCOPED_EXPLORE_VERSION,
     capability: "app.explore_data",
@@ -2566,6 +4723,10 @@ async function recordExploreEvidence(
     differencing_family: input.familyFingerprint,
     differencing_variant: input.variantFingerprint,
     normalized_plan: input.normalizedPlan,
+    scope_application: scopeApplication,
+    ...(input.resolvedTimeWindows.length
+      ? { resolved_time_windows: input.resolvedTimeWindows }
+      : {}),
     status: input.status,
     returned_rows_or_groups: input.rowCount,
     returned_cells: input.cells,
@@ -2578,14 +4739,17 @@ async function recordExploreEvidence(
     trusted_scope_values_persisted: false,
     raw_sql_included: false,
     source_database_changed: false,
+    result_fingerprint: `hmac-sha256:${input.resultFingerprint}`,
+    execution_duration_ms: Math.max(0, input.completedAt - input.executionStartedAt),
     recorded_at: recordedAt,
   };
-  store.recordEvidenceBundle({
+  await recordExploreEvidenceBundle(store, input.mode, {
     evidence_bundle_id: evidenceBundleId,
-    tenant_id: `keyed:${hmac(input.auditKey, input.tenant)}`,
+    tenant_id: input.tenantAuditFingerprint,
     payload: {
       schema_version: "synapsor.analytics-evidence.v1",
       capability: "app.explore_data",
+      ...(input.principalAuditFingerprint ? { principal: input.principalAuditFingerprint } : {}),
       source_id: input.boundary.source,
       source_table: resource.id,
       query_fingerprint: input.queryFingerprint,
@@ -2594,11 +4758,15 @@ async function recordExploreEvidence(
       role_posture_fingerprint: input.rolePostureFingerprint,
       trusted_scope: {
         tenant_bound: true,
-        principal_bound: Boolean(resource.principal_key),
+        principal_bound: Boolean(resource.principal_key || resource.principal_scope),
         provenance: "trusted_runtime_context",
         values_persisted: false,
       },
+      scope_application: scopeApplication,
       normalized_plan: input.normalizedPlan,
+      ...(input.resolvedTimeWindows.length
+        ? { resolved_time_windows: input.resolvedTimeWindows }
+        : {}),
       outcome: input.status,
       returned_rows_or_groups: input.rowCount,
       returned_cells: input.cells,
@@ -2610,11 +4778,15 @@ async function recordExploreEvidence(
       result_fingerprint: `hmac-sha256:${input.resultFingerprint}`,
       execution_started_at: new Date(input.executionStartedAt).toISOString(),
       completed_at: recordedAt,
+      execution_duration_ms: Math.max(0, input.completedAt - input.executionStartedAt),
       result_values_persisted: false,
       source_database_changed: false,
     },
     items: [],
     query_audit: [{
+      tenant_id: input.tenantAuditFingerprint,
+      ...(input.principalAuditFingerprint ? { principal: input.principalAuditFingerprint } : {}),
+      capability: "app.explore_data",
       source_id: input.boundary.source,
       query_fingerprint: input.queryFingerprint,
       table_name: resource.id,
@@ -2625,8 +4797,110 @@ async function recordExploreEvidence(
   return { evidence_bundle_id: evidenceBundleId };
 }
 
+function auditScopeApplication(
+  boundary: ActivatedExplorationBoundary,
+  resourceId: string,
+  predicateApplied = true,
+): Record<string, unknown> | undefined {
+  const resource = boundary.pack.resources.find((candidate) => candidate.id === resourceId);
+  if (!resource) return undefined;
+  const tenant = resource.tenant_key
+    ? { kind: "direct", predicate_applied: predicateApplied, column: resource.tenant_key }
+    : resource.tenant_scope
+      ? { kind: "derived", predicate_applied: predicateApplied, path_id: resource.tenant_scope.path_id }
+      : resource.shared_reference_scope
+        ? { kind: "shared_reference", predicate_applied: false }
+        : boundary.organization_scope
+          ? { kind: "single_organization", predicate_applied: false }
+          : { kind: "unresolved", predicate_applied: false };
+  const principal = resource.principal_key
+    ? { kind: "direct", predicate_applied: predicateApplied, column: resource.principal_key }
+    : resource.principal_scope
+      ? { kind: "derived", predicate_applied: predicateApplied, path_id: resource.principal_scope.path_id }
+      : { kind: "not_configured", predicate_applied: false };
+  return { tenant, principal };
+}
+
+let lastProductionExploreAuditWarningAt = 0;
+
+async function recordExploreQueryAudit(
+  store: ProposalRuntimeStore,
+  mode: ScopedExploreMode,
+  audit: Parameters<ProposalRuntimeStore["recordQueryAudit"]>[0],
+): Promise<void> {
+  if (mode !== "production_http") {
+    await store.recordQueryAudit(audit);
+    return;
+  }
+  await appendProductionExploreAudit(store, {
+    event_id: `audit_explore_${crypto.randomBytes(12).toString("hex")}`,
+    event_kind: "query_audit",
+    payload: { query_audit: audit },
+    created_at: productionExploreAuditCreatedAt(audit.payload),
+  });
+}
+
+async function recordExploreEvidenceBundle(
+  store: ProposalRuntimeStore,
+  mode: ScopedExploreMode,
+  evidence: Parameters<ProposalRuntimeStore["recordEvidenceBundle"]>[0],
+): Promise<void> {
+  if (mode !== "production_http") {
+    await store.recordEvidenceBundle(evidence);
+    return;
+  }
+  await appendProductionExploreAudit(store, {
+    event_id: evidence.evidence_bundle_id,
+    event_kind: "evidence_bundle",
+    payload: { evidence_bundle: evidence },
+    created_at: productionExploreAuditCreatedAt(evidence.payload),
+  });
+}
+
+async function appendProductionExploreAudit(
+  store: ProposalRuntimeStore,
+  event: Parameters<NonNullable<ProposalRuntimeStore["recordProductionExploreAuditEvent"]>>[0],
+): Promise<void> {
+  try {
+    if (!store.recordProductionExploreAuditEvent) {
+      throw new Error("The production audit sink is unavailable.");
+    }
+    await store.recordProductionExploreAuditEvent(event);
+  } catch {
+    const now = Date.now();
+    if (now - lastProductionExploreAuditWarningAt >= 60_000) {
+      lastProductionExploreAuditWarningAt = now;
+      process.stderr.write(
+        "Warning: Runner could not append production Explore metadata evidence. The bounded query result remains available; inspect the shared control database.\n",
+      );
+    }
+  }
+}
+
+function productionExploreAuditCreatedAt(payload: Record<string, unknown>): string {
+  for (const key of ["recorded_at", "completed_at", "execution_started_at"]) {
+    const value = payload[key];
+    if (typeof value === "string" && Number.isFinite(Date.parse(value))) return value;
+  }
+  return new Date().toISOString();
+}
+
 function normalizedAudit(plan: ExplorePlan, auditKey: Buffer): Record<string, unknown> {
   return mapLiterals(plan, (value) => ({ keyed_hash: hmac(auditKey, JSON.stringify(value)) })) as Record<string, unknown>;
+}
+
+function appendTimeWindowPredicate(
+  predicates: string[],
+  window: CanonicalTimeWindow,
+  alias: string,
+  params: Scalar[],
+  engine: "postgres" | "mysql",
+): void {
+  const column = `${alias}.${quote(window.field, engine)}`;
+  params.push(window.start);
+  predicates.push(`${column} >= ${placeholder(params.length, engine)}`);
+  params.push(window.end);
+  predicates.push(`${column} < ${placeholder(params.length, engine)}`);
 }
 
 function mapLiterals(value: unknown, map: (value: Scalar | Scalar[]) => unknown, parentKey?: string): unknown {
@@ -2636,7 +4910,13 @@ function mapLiterals(value: unknown, map: (value: Scalar | Scalar[]) => unknown,
   }
   if (!isRecord(value)) return value;
   return Object.fromEntries(Object.entries(value).map(([key, item]) => {
-    if (key === "value" || key === "start" || key === "end") return [key, map(item as Scalar)];
+    if (key === "start" || key === "end") {
+      const canonicalTime = typeof item === "string" && isIsoTime(item)
+        ? new Date(item).toISOString()
+        : item;
+      return [key, map(canonicalTime as Scalar)];
+    }
+    if (key === "value") return [key, map(item as Scalar)];
     return [key, mapLiterals(item, map, key)];
   }));
 }
@@ -2646,20 +4926,137 @@ function canonicalRecordOrder<T extends Record<string, unknown>>(values: T[]): T
     JSON.stringify(left).localeCompare(JSON.stringify(right)));
 }
 
-function scopePredicates(
+function compileScopePredicates(
   resource: BoundaryResource,
+  boundary: ActivatedExplorationBoundary,
   alias: string,
   context: { tenant: string; principal: string },
   params: Scalar[],
   engine: "postgres" | "mysql",
-): string[] {
-  params.push(context.tenant);
-  const predicates = [`${alias}.${quote(resource.tenant_key, engine)} = ${placeholder(params.length, engine)}`];
+): { predicates: string[]; resources: BoundaryResource[] } {
+  const predicates: string[] = [];
+  const resources = new Map<string, BoundaryResource>([[resource.id, resource]]);
+  if (resource.tenant_key) {
+    params.push(context.tenant);
+    predicates.push(
+      `${alias}.${quote(resource.tenant_key, engine)} = ${placeholder(params.length, engine)}`,
+    );
+  } else if (resource.tenant_scope) {
+    predicates.push(derivedScopePredicate({
+      resource,
+      boundary,
+      scope: resource.tenant_scope,
+      kind: "tenant",
+      value: context.tenant,
+      alias,
+      params,
+      engine,
+      resources,
+    }));
+  } else if (!resource.shared_reference_scope && !boundary.organization_scope) {
+    throw new ScopedExploreError(
+      "EXPLORE_BOUNDARY_MISMATCH",
+      `Reviewed resource ${resource.id} has no direct or derived tenant scope and is not reviewed as a shared reference.`,
+    );
+  }
   if (resource.principal_key) {
     params.push(context.principal);
     predicates.push(`${alias}.${quote(resource.principal_key, engine)} = ${placeholder(params.length, engine)}`);
+  } else if (resource.principal_scope) {
+    predicates.push(derivedScopePredicate({
+      resource,
+      boundary,
+      scope: resource.principal_scope,
+      kind: "principal",
+      value: context.principal,
+      alias,
+      params,
+      engine,
+      resources,
+    }));
   }
-  return predicates;
+  return { predicates, resources: [...resources.values()] };
+}
+
+function derivedScopePredicate(input: {
+  resource: BoundaryResource;
+  boundary: ActivatedExplorationBoundary;
+  scope: NonNullable<BoundaryResource["tenant_scope"]>;
+  kind: "tenant" | "principal";
+  value: string;
+  alias: string;
+  params: Scalar[];
+  engine: "postgres" | "mysql";
+  resources: Map<string, BoundaryResource>;
+}): string {
+  const links = input.scope.proof?.links ?? [];
+  if (input.scope.mode !== "derived"
+    || input.scope.proof.source !== "database_catalog"
+    || links.length < 1
+    || links.length > reviewedDerivedScopeHopLimit(input.boundary.budgets)
+    || input.scope.path_id !== links.map((link) => link.constraint_name).join("__")
+    || canonicalJsonDigest(links) !== input.scope.proof.digest) {
+    throw new ScopedExploreError(
+      "EXPLORE_BOUNDARY_MISMATCH",
+      `Reviewed resource ${input.resource.id} has malformed derived ${input.kind} scope.`,
+    );
+  }
+  let expectedSource = input.resource.id;
+  let sourceAlias = input.alias;
+  let from = "";
+  const joins: string[] = [];
+  const correlations: string[] = [];
+  const visited = new Set([input.resource.id]);
+  let terminalAlias = "";
+  links.forEach((link, index) => {
+    if (link.source_resource !== expectedSource
+      || visited.has(link.target_resource)
+      || link.nullable
+      || link.cardinality !== "many_to_one"
+      || link.max_fan_out !== 1
+      || link.source_columns.length < 1
+      || link.source_columns.length !== link.target_columns.length
+      || link.target_uniqueness.columns.length !== link.target_columns.length
+      || link.target_uniqueness.columns.some((field, columnIndex) =>
+        field !== link.target_columns[columnIndex])) {
+      throw new ScopedExploreError(
+        "EXPLORE_BOUNDARY_MISMATCH",
+        `Reviewed resource ${input.resource.id} derived ${input.kind} scope is not a continuous non-null many-to-one path.`,
+      );
+    }
+    const target = resourceFor(input.boundary, link.target_resource);
+    const targetAlias = `s${input.alias}_${input.kind}_${index}`;
+    const equality = link.source_columns.map((column, columnIndex) =>
+      `${sourceAlias}.${quote(column, input.engine)} = ${targetAlias}.${quote(link.target_columns[columnIndex]!, input.engine)}`);
+    if (index === 0) {
+      from = `${qualified(target, input.engine)} ${targetAlias}`;
+      correlations.push(...equality);
+    } else {
+      joins.push(` JOIN ${qualified(target, input.engine)} ${targetAlias} ON ${equality.join(" AND ")}`);
+    }
+    input.resources.set(target.id, target);
+    expectedSource = target.id;
+    sourceAlias = targetAlias;
+    terminalAlias = targetAlias;
+    visited.add(target.id);
+  });
+  const ancestor = resourceFor(input.boundary, input.scope.ancestor_resource);
+  const directColumn = input.kind === "tenant" ? ancestor.tenant_key : ancestor.principal_key;
+  if (expectedSource !== ancestor.id || directColumn !== input.scope.ancestor_column) {
+    throw new ScopedExploreError(
+      "EXPLORE_BOUNDARY_MISMATCH",
+      `Reviewed resource ${input.resource.id} derived ${input.kind} scope does not terminate at its reviewed direct scope column.`,
+    );
+  }
+  input.params.push(input.value);
+  correlations.push(
+    `${terminalAlias}.${quote(input.scope.ancestor_column, input.engine)} = ${placeholder(input.params.length, input.engine)}`,
+  );
+  return `EXISTS (SELECT 1 FROM ${from}${joins.join("")} WHERE ${correlations.join(" AND ")})`;
+}
+
+function uniqueResources(resources: BoundaryResource[]): BoundaryResource[] {
+  return [...new Map(resources.map((resource) => [resource.id, resource])).values()];
 }
 
 function filterSql(
@@ -2683,9 +5080,29 @@ function filterSql(
   return `${column} ${operator} ${placeholder(params.length, engine)}`;
 }
 
-function createDatabaseExecutor(input: { engine: "postgres" | "mysql"; databaseUrl: string }): ScopedExploreExecutor {
+export function createScopedExploreDatabaseExecutor(input: {
+  engine: "postgres" | "mysql";
+  databaseUrl: string;
+  maxConnections?: number;
+}, dependencies: {
+  inspectDatabaseWithConnectionFn?: typeof inspectDatabaseWithConnection;
+} = {}): ScopedExploreExecutor {
+  const maxConnections = Math.max(1, Math.min(input.maxConnections ?? 4, 100));
+  const inspectWithConnection = dependencies.inspectDatabaseWithConnectionFn
+    ?? inspectDatabaseWithConnection;
   if (input.engine === "postgres") {
-    const pool = new Pool({ connectionString: input.databaseUrl, max: 4, connectionTimeoutMillis: 3000, idleTimeoutMillis: 10_000 });
+    const pool = new Pool({ connectionString: input.databaseUrl, max: maxConnections, connectionTimeoutMillis: 3000, idleTimeoutMillis: 10_000 });
+    const inspectFromPool: InspectDatabaseFn = async (options) => {
+      const client = await pool.connect();
+      try {
+        return await inspectWithConnection(options, {
+          engine: "postgres",
+          connection: client,
+        });
+      } finally {
+        client.release();
+      }
+    };
     const executeBatch: ScopedExploreExecutor["executeBatch"] = async (batch) => {
       const client = await pool.connect();
       try {
@@ -2716,33 +5133,72 @@ function createDatabaseExecutor(input: { engine: "postgres" | "mysql"; databaseU
         timeoutMs: query.timeoutMs,
       }))[0]!,
       executeBatch,
+      inspectDatabase: inspectFromPool,
       close: () => pool.end(),
     };
   }
-  const pool = mysql.createPool({ uri: input.databaseUrl, connectionLimit: 4, connectTimeout: 3000, dateStrings: true });
-  const executeBatch: ScopedExploreExecutor["executeBatch"] = async (batch) => {
+  const pool = mysql.createPool({ uri: input.databaseUrl, connectionLimit: maxConnections, connectTimeout: 3000, dateStrings: true });
+  const inspectFromPool: InspectDatabaseFn = async (options) => {
     const connection = await pool.getConnection();
     try {
+      return await inspectWithConnection(options, {
+        engine: "mysql",
+        connection,
+      });
+    } finally {
+      connection.release();
+    }
+  };
+  const executeBatch: ScopedExploreExecutor["executeBatch"] = async (batch) => {
+    const connection = await pool.getConnection();
+    let previousTimeZone: string | undefined;
+    let results: Array<Record<string, unknown>[]> | undefined;
+    let failure: unknown;
+    let failed = false;
+    let discardConnection = false;
+    try {
       if (batch.queries.some((query) => query.reporting_timezone === "UTC")) {
-        await connection.query("SET SESSION time_zone = '+00:00'");
+        const [timeZoneRows] = await connection.query("SELECT @@SESSION.time_zone AS time_zone");
+        const timeZone = Array.isArray(timeZoneRows)
+          ? (timeZoneRows[0] as { time_zone?: unknown } | undefined)?.time_zone
+          : undefined;
+        if (typeof timeZone !== "string" || !timeZone) {
+          throw new Error("MySQL did not return the current session time zone.");
+        }
+        previousTimeZone = timeZone;
+        await connection.query("SET SESSION time_zone = ?", ["+00:00"]);
       }
       await connection.query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ");
       await connection.query("SET TRANSACTION READ ONLY");
       await connection.query("START TRANSACTION READ ONLY");
       await connection.query("SET SESSION max_execution_time = ?", [Math.max(1, Math.floor(batch.timeoutMs))]);
-      const results: Array<Record<string, unknown>[]> = [];
+      results = [];
       for (const query of batch.queries) {
         const [rows] = await connection.query(query.sql, query.params);
         results.push(rows as Record<string, unknown>[]);
       }
       await connection.query("COMMIT");
-      return results;
     } catch (error) {
       await connection.query("ROLLBACK").catch(() => undefined);
-      throw error;
-    } finally {
+      failure = error;
+      failed = true;
+    }
+    if (previousTimeZone !== undefined) {
+      try {
+        await connection.query("SET SESSION time_zone = ?", [previousTimeZone]);
+      } catch (error) {
+        discardConnection = true;
+        if (!failed) failure = error;
+        failed = true;
+      }
+    }
+    if (discardConnection) {
+      connection.destroy();
+    } else {
       connection.release();
     }
+    if (failed) throw failure;
+    return results!;
   };
   return {
     execute: async (query) => (await executeBatch({
@@ -2751,6 +5207,7 @@ function createDatabaseExecutor(input: { engine: "postgres" | "mysql"; databaseU
       timeoutMs: query.timeoutMs,
     }))[0]!,
     executeBatch,
+    inspectDatabase: inspectFromPool,
     close: () => pool.end(),
   };
 }
@@ -2815,6 +5272,11 @@ function assertAuthorityDependenciesShape(dependencies: GenerationAuthorityDepen
       || typeof dependency.table !== "string"
       || !Array.isArray(dependency.fields)
       || dependency.fields.some((field) => typeof field !== "string")
+      || (dependency.shared_reference_scope !== undefined
+        && (!isRecord(dependency.shared_reference_scope)
+          || dependency.shared_reference_scope.mode !== "shared_reference"
+          || dependency.shared_reference_scope.acknowledgement
+            !== SHARED_REFERENCE_ACKNOWLEDGEMENT))
       || !digest.test(String(dependency.fingerprint))) {
       throw new ScopedExploreError("EXPLORE_BOUNDARY_MISMATCH", `The generation lock contains a malformed resource dependency for ${id || "(empty)"}.`);
     }
@@ -2834,35 +5296,95 @@ function assertAuthorityDependenciesShape(dependencies: GenerationAuthorityDepen
 function assertPlanAuthorityDependenciesCurrent(
   plan: ExplorePlan,
   boundary: ActivatedExplorationBoundary,
+  lock: GenerationLock,
   dependencies: GenerationAuthorityDependencies,
   inspection: SchemaInspection,
 ): void {
   const root = resourceFor(boundary, plan.resource);
   const resourceIds = new Set([root.id]);
-  for (const relationshipId of relationshipIdsForPlan(plan)) {
-    const relationship = reviewedRelationship(root, relationshipId, boundary);
-    const key = relationshipDependencyKey(root.id, relationshipId);
+  if (plan.kind === "aggregate") {
+    for (const measure of plan.measures) {
+      if (!("derived_measure" in measure)) continue;
+      const definition = reviewedDerivedMeasure(root, measure.derived_measure);
+      if (!("child_resource" in definition)) continue;
+      const reviewed = resolveReviewedChildCountLink(
+        root.id,
+        definition,
+        boundary.pack.resources,
+        Boolean(boundary.organization_scope),
+      );
+      resourceIds.add(reviewed.child.id);
+    }
+  }
+  for (const authority of relationshipAuthoritiesForPlan(plan, boundary)) {
+    const relationship = reviewedRelationship(authority.root, authority.relationshipId, boundary);
+    const key = relationshipDependencyKey(authority.root.id, authority.relationshipId);
     const dependency = dependencies.relationships[key];
     if (!dependency || !relationship.proof
-      || dependency.root_resource !== root.id
-      || dependency.relationship_id !== relationshipId
+      || dependency.root_resource !== authority.root.id
+      || dependency.relationship_id !== authority.relationshipId
       || dependency.proof_digest !== relationship.proof.digest
       || canonicalJsonDigest(dependency.links) !== relationship.proof.digest) {
       throw new ScopedExploreError(
         "EXPLORE_LOCK_STALE",
-        `Reviewed relationship ${relationshipId} is not bound to the current generation-lock proof.`,
+        withGenerationLockRemediation(
+          `Reviewed relationship ${authority.relationshipId} is not bound to the current generation-lock proof.`,
+          lock,
+        ),
       );
     }
     const currentProof = relationshipAuthorityDependencyFingerprint(dependency, inspection);
     if (currentProof !== dependency.proof_digest) {
       throw new ScopedExploreError(
         "EXPLORE_LOCK_STALE",
-        `Reviewed relationship ${relationshipId} is stale because its foreign-key or uniqueness proof changed.`,
+        withGenerationLockRemediation(
+          `Reviewed relationship ${authority.relationshipId} is stale because its foreign-key or uniqueness proof changed.`,
+          lock,
+        ),
       );
     }
     for (const link of dependency.links) {
       resourceIds.add(link.source_resource);
       resourceIds.add(link.target_resource);
+    }
+  }
+  for (const resourceId of [...resourceIds]) {
+    const resource = resourceFor(boundary, resourceId);
+    for (const [kind, scope] of [
+      ["tenant", resource.tenant_scope],
+      ["principal", resource.principal_scope],
+    ] as const) {
+      if (!scope) continue;
+      const key = derivedScopeDependencyKey(resource.id, kind);
+      const dependency = dependencies.relationships[key];
+      const relationshipId = `scope:${kind}:${scope.path_id}`;
+      if (!dependency
+        || dependency.root_resource !== resource.id
+        || dependency.relationship_id !== relationshipId
+        || dependency.proof_digest !== scope.proof.digest
+        || canonicalJsonDigest(dependency.links) !== scope.proof.digest) {
+        throw new ScopedExploreError(
+          "EXPLORE_LOCK_STALE",
+          withGenerationLockRemediation(
+            `Reviewed derived ${kind} scope for ${resource.id} is not bound to the current generation-lock proof.`,
+            lock,
+          ),
+        );
+      }
+      const currentProof = relationshipAuthorityDependencyFingerprint(dependency, inspection);
+      if (currentProof !== dependency.proof_digest) {
+        throw new ScopedExploreError(
+          "EXPLORE_LOCK_STALE",
+          withGenerationLockRemediation(
+            `Reviewed derived ${kind} scope for ${resource.id} is stale because its foreign-key, nullability, or uniqueness proof changed.`,
+            lock,
+          ),
+        );
+      }
+      for (const link of dependency.links) {
+        resourceIds.add(link.source_resource);
+        resourceIds.add(link.target_resource);
+      }
     }
   }
   for (const resourceId of resourceIds) {
@@ -2871,18 +5393,28 @@ function assertPlanAuthorityDependenciesCurrent(
     if (!dependency) {
       throw new ScopedExploreError(
         "EXPLORE_LOCK_STALE",
-        `Reviewed resource ${resourceId} is not represented in the generation-lock dependencies.`,
+        withGenerationLockRemediation(
+          `Reviewed resource ${resourceId} is not represented in the generation-lock dependencies.`,
+          lock,
+        ),
       );
     }
     const current = resourceAuthorityDependencyFingerprint(dependency, inspection);
     if (current !== dependency.fingerprint) {
       throw new ScopedExploreError(
         "EXPLORE_LOCK_STALE",
-        describeReviewedResourceDrift(resource, dependency, inspection),
+        withGenerationLockRemediation(
+          describeReviewedResourceDrift(resource, dependency, inspection),
+          lock,
+        ),
       );
     }
     assertResourceReadOnlyPosture(inspection, resource);
   }
+}
+
+function withGenerationLockRemediation(message: string, lock: GenerationLock): string {
+  return `${message}\n${generationLockRemediation(lock)}`;
 }
 
 function describeReviewedResourceDrift(
@@ -2912,16 +5444,44 @@ function describeReviewedResourceDrift(
   return `Reviewed table or view ${resource.id} changed in authority-bearing schema, RLS, grant, ownership, or column semantics. No query was executed.`;
 }
 
-function relationshipIdsForPlan(plan: ExplorePlan): string[] {
+function relationshipAuthoritiesForPlan(
+  plan: ExplorePlan,
+  boundary: ActivatedExplorationBoundary,
+): Array<{ root: BoundaryResource; relationshipId: string }> {
   if (plan.kind !== "aggregate") return [];
-  return unique([
+  const root = resourceFor(boundary, plan.resource);
+  const authorities = unique([
     plan.relationship,
-    ...plan.measures.map((measure) => measure.relationship),
-    ...(plan.dimensions ?? []).map((dimension) => dimension.relationship),
+    ...plan.measures.flatMap((measure) => measureRelationships(measure, root)),
+    ...(plan.dimensions ?? []).flatMap((dimension) => dimensionRelationships(dimension, root)),
     plan.time_bucket?.relationship,
+    plan.time_window?.relationship,
     ...(plan.where ?? []).map((filter) => filter.relationship),
     plan.comparison?.relationship,
-  ].filter((value): value is string => Boolean(value)));
+  ].filter((value): value is string => Boolean(value))).map((relationshipId) => ({
+    root,
+    relationshipId,
+  }));
+  for (const measure of plan.measures) {
+    if (!("derived_measure" in measure)) continue;
+    const definition = reviewedDerivedMeasure(root, measure.derived_measure);
+    if (!("child_resource" in definition)) continue;
+    const reviewed = resolveReviewedChildCountLink(
+      root.id,
+      definition,
+      boundary.pack.resources,
+      Boolean(boundary.organization_scope),
+    );
+    const activeRelationship = reviewed.child.relationships.find((relationship) =>
+      relationship.id === definition.relationship && (relationship.path_depth ?? 1) === 1);
+    if (activeRelationship) {
+      authorities.push({ root: reviewed.child, relationshipId: activeRelationship.id });
+    }
+  }
+  return [...new Map(authorities.map((authority) => [
+    `${authority.root.id}\u0000${authority.relationshipId}`,
+    authority,
+  ])).values()];
 }
 
 function requestedResource(boundary: ActivatedExplorationBoundary, value: unknown): BoundaryResource {
@@ -2946,8 +5506,9 @@ function reviewedRelationship(root: BoundaryResource, id: string, boundary: Acti
     throw relationshipError(`Relationship ${id} has unresolved nullable-link semantics.`);
   }
   const links = relationshipLinks(root, relationship);
-  if (links.length > 2 || links.length !== (relationship.path_depth ?? 1)) {
-    throw relationshipError(`Relationship ${id} exceeds the proven depth-two path boundary.`);
+  if (links.length > reviewedAnalysisRelationshipHopLimit(boundary.budgets)
+    || links.length !== (relationship.path_depth ?? 1)) {
+    throw relationshipError(`Relationship ${id} exceeds the activated proven path-depth boundary.`);
   }
   let expectedSource = root.id;
   for (const link of links) {
@@ -2959,8 +5520,13 @@ function reviewedRelationship(root: BoundaryResource, id: string, boundary: Acti
       throw relationshipError(`Relationship ${id} does not contain continuous many-to-one uniqueness proof.`);
     }
     const target = resourceFor(boundary, link.target_resource);
-    if (!target.tenant_key) {
-      throw relationshipError(`Relationship ${id} target ${target.id} has no independently reviewed tenant scope.`);
+    if (!boundary.organization_scope
+      && !target.tenant_key
+      && !target.tenant_scope
+      && !target.shared_reference_scope) {
+      throw relationshipError(
+        `Relationship ${id} target ${target.id} has no independently reviewed tenant scope or shared-reference scope.`,
+      );
     }
     expectedSource = target.id;
   }
@@ -3010,7 +5576,12 @@ function assertSubsetAllowed(values: string[], allowed: string[], resource: Boun
 }
 
 function assertTypedLiteral(resource: BoundaryResource, field: string, value: Scalar): void {
-  if (value === null) return;
+  if (value === null) {
+    throw planError(
+      `Null is not a filter literal for ${resource.id}.${field}. ` +
+      "Use the reviewed null_count, non_null_count, or completion_rate measure for missing-data analysis.",
+    );
+  }
   const type = resource.field_types[field] ?? "";
   if (/(?:int|numeric|decimal|real|double|float|money|number)/i.test(type) && typeof value !== "number") {
     throw planError(`${resource.id}.${field} requires a numeric filter value`);
@@ -3020,8 +5591,97 @@ function assertTypedLiteral(resource: BoundaryResource, field: string, value: Sc
     throw planError(`${resource.id}.${field} requires a string filter value`);
   }
   const enumValues = resource.field_enums[field];
-  if (enumValues?.length && !enumValues.includes(String(value))) throw planError(`${resource.id}.${field} requires a reviewed enum value`);
+  if (enumValues?.length && !enumValues.includes(String(value))) {
+    const modelWithheld = (resource.model_withheld_fields ?? []).includes(field);
+    throw new ScopedExploreError(
+      "EXPLORE_PLAN_INVALID",
+      `${JSON.stringify(String(value))} is not a reviewed value for ${resource.id}.${field}. ` +
+      (modelWithheld
+        ? "The reviewed values are withheld from the model. "
+        : `Reviewed values: ${enumValues.map((item) => JSON.stringify(item)).join(", ")}. `) +
+      "No source query was executed.",
+      {
+        reason: "categorical_value_not_reviewed",
+        resource: resource.id,
+        field,
+        ...(!modelWithheld ? { reviewed_values: [...enumValues] } : {}),
+        source_query_executed: false,
+      },
+    );
+  }
   if (typeof value === "string" && value.length > 512) throw planError("string filter values are limited to 512 characters");
+}
+
+function reviewedEnumAllowlistSql(
+  resource: BoundaryResource,
+  field: string,
+  alias: string,
+  params: Scalar[],
+  engine: "postgres" | "mysql",
+): string {
+  const values = resource.field_enums[field];
+  if (!values?.length) throw planError(`${resource.id}.${field} has no active reviewed value allowlist`);
+  const placeholders = values.map((value) => {
+    params.push(value);
+    return placeholder(params.length, engine);
+  });
+  return `${alias}.${quote(field, engine)} IN (${placeholders.join(", ")})`;
+}
+
+function reviewedEnumBucketSql(
+  resource: BoundaryResource,
+  field: string,
+  alias: string,
+  params: Scalar[],
+  engine: "postgres" | "mysql",
+  marker: string,
+): string {
+  const values = resource.field_enums[field];
+  if (!values?.length) throw planError(`${resource.id}.${field} has no active reviewed value allowlist`);
+  const column = `${alias}.${quote(field, engine)}`;
+  const textColumn = engine === "postgres"
+    ? `CAST(${column} AS TEXT)`
+    : `CAST(${column} AS CHAR)`;
+  const placeholders = values.map((value) => {
+    params.push(value);
+    return placeholder(params.length, engine);
+  });
+  params.push(marker);
+  return `CASE WHEN ${column} IS NULL THEN NULL WHEN ${textColumn} IN (${placeholders.join(", ")}) THEN ${textColumn} ELSE ${placeholder(params.length, engine)} END`;
+}
+
+function reviewedNumericBandSql(
+  definition: ExplorationNumericBand,
+  alias: string,
+  params: Scalar[],
+  engine: "postgres" | "mysql",
+): string {
+  const column = `${alias}.${quote(definition.field, engine)}`;
+  const clauses = definition.edges.map((edge, index) => {
+    params.push(edge);
+    const edgePlaceholder = placeholder(params.length, engine);
+    params.push(definition.bucket_labels[index]!);
+    const labelPlaceholder = placeholder(params.length, engine);
+    return `WHEN ${column} < ${edgePlaceholder} THEN ${labelPlaceholder}`;
+  });
+  params.push(definition.bucket_labels.at(-1)!);
+  return `CASE WHEN ${column} IS NULL THEN NULL ${clauses.join(" ")} ELSE ${placeholder(params.length, engine)} END`;
+}
+
+function uniqueReviewedValueControls(
+  controls: CompiledReviewedValueControl[],
+): CompiledReviewedValueControl[] {
+  const uniqueControls = new Map<string, CompiledReviewedValueControl>();
+  for (const control of controls) {
+    const key = [
+      control.kind,
+      control.resource,
+      control.field,
+      control.output_column ?? "",
+    ].join("\u0000");
+    if (!uniqueControls.has(key)) uniqueControls.set(key, control);
+  }
+  return [...uniqueControls.values()];
 }
 
 function qualified(resource: BoundaryResource, engine: "postgres" | "mysql"): string {
@@ -3029,7 +5689,9 @@ function qualified(resource: BoundaryResource, engine: "postgres" | "mysql"): st
 }
 
 function quote(identifier: string, engine: "postgres" | "mysql"): string {
-  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(identifier)) throw planError("activated database identifier is invalid");
+  if (!identifier.trim() || identifier.length > 256 || /[\u0000-\u001f\u007f]/.test(identifier)) {
+    throw planError("activated database identifier is not a bounded printable name");
+  }
   return engine === "postgres" ? `"${identifier.replace(/"/g, "\"\"")}"` : `\`${identifier.replace(/`/g, "``")}\``;
 }
 
@@ -3037,11 +5699,31 @@ function placeholder(index: number, engine: "postgres" | "mysql"): string {
   return engine === "postgres" ? `$${index}` : "?";
 }
 
+function aggregateMeasureSql(
+  fn: AggregateMeasureFunction,
+  field: string | undefined,
+): string {
+  if (fn === "count") return "COUNT(*)";
+  if (!field) throw planError(`${fn} requires a reviewed field`);
+  if (fn === "count_distinct") return `COUNT(DISTINCT ${field})`;
+  if (fn === "non_null_count") return `COUNT(${field})`;
+  if (fn === "null_count") return `(COUNT(*) - COUNT(${field}))`;
+  if (fn === "completion_rate") return `(100.0 * COUNT(${field}) / NULLIF(COUNT(*), 0))`;
+  return `${fn.toUpperCase()}(${field})`;
+}
+
 function timeBucketSql(column: string, bucket: TimeBucket, engine: "postgres" | "mysql"): string {
-  if (engine === "postgres") return `date_trunc('${bucket}', ${column})`;
+  if (engine === "postgres") {
+    if (bucket === "day_of_week") return `EXTRACT(ISODOW FROM ${column})`;
+    return `date_trunc('${bucket}', ${column})`;
+  }
+  if (bucket === "hour") return `DATE_FORMAT(${column}, '%Y-%m-%d %H:00:00')`;
   if (bucket === "day") return `DATE(${column})`;
   if (bucket === "week") return `DATE_SUB(DATE(${column}), INTERVAL WEEKDAY(${column}) DAY)`;
-  return `DATE_FORMAT(${column}, '%Y-%m-01')`;
+  if (bucket === "month") return `DATE_FORMAT(${column}, '%Y-%m-01')`;
+  if (bucket === "quarter") return `CONCAT(YEAR(${column}), '-Q', QUARTER(${column}))`;
+  if (bucket === "year") return `YEAR(${column})`;
+  return `(WEEKDAY(${column}) + 1)`;
 }
 
 async function loadAuditKey(projectRoot: string): Promise<Buffer> {
@@ -3178,10 +5860,48 @@ function finiteNumberOrNull(value: unknown): number | null {
   return Number.isFinite(number) ? number : null;
 }
 
+function numberOrInvalid(value: unknown): number {
+  const number = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(number) ? number : Number.NaN;
+}
+
 function safeDatabaseValue(value: unknown): Scalar {
   if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
   if (value instanceof Date) return value.toISOString();
   return String(value);
+}
+
+function canonicalTimeBucketValue(
+  value: unknown,
+  bucket: TimeBucket,
+  reportingTimezone: "UTC" | undefined,
+): Scalar {
+  if (value === null || value === undefined) return null;
+  if (bucket === "day_of_week") {
+    const day = typeof value === "number" ? value : Number(value);
+    return Number.isInteger(day) && day >= 1 && day <= 7 ? day : safeDatabaseValue(value);
+  }
+
+  const text = value instanceof Date ? value.toISOString() : String(value).trim();
+  if (bucket === "quarter") {
+    const named = /^(\d{4})-Q([1-4])$/.exec(text);
+    if (named) return `${named[1]}-Q${named[2]}`;
+    const dated = /^(\d{4})-(\d{2})-\d{2}/.exec(text);
+    if (dated) return `${dated[1]}-Q${Math.floor((Number(dated[2]) - 1) / 3) + 1}`;
+    return safeDatabaseValue(value);
+  }
+
+  const dated = /^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}))?/.exec(text);
+  if (bucket === "year") return dated?.[1] ?? (/^\d{4}$/.test(text) ? text : safeDatabaseValue(value));
+  if (bucket === "hour" && dated?.[4]) {
+    const separator = reportingTimezone === "UTC" ? "T" : " ";
+    const suffix = reportingTimezone === "UTC" ? "Z" : "";
+    return `${dated[1]}-${dated[2]}-${dated[3]}${separator}${dated[4]}:00:00${suffix}`;
+  }
+  if ((bucket === "day" || bucket === "week" || bucket === "month") && dated) {
+    return `${dated[1]}-${dated[2]}-${dated[3]}`;
+  }
+  return safeDatabaseValue(value);
 }
 
 function direction(value: unknown): Direction {
@@ -3235,6 +5955,13 @@ function isScalar(value: unknown): value is Scalar {
   return value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean";
 }
 
+function isSequentialDerivedMeasureShape(shape: string): boolean {
+  return shape === "running_total"
+    || shape === "lag_absolute_change"
+    || shape === "lag_percentage_change"
+    || shape === "moving_average";
+}
+
 function unique<T>(values: T[]): T[] {
   return [...new Set(values)];
 }
@@ -3259,6 +5986,51 @@ function fieldError(resource: BoundaryResource, field: string, operation: string
       resource: resource.id,
       field,
       operation,
+    },
+  );
+}
+
+function relationshipRequiredForGrouping(
+  resource: BoundaryResource,
+  field: string,
+  boundary: ActivatedExplorationBoundary,
+): ScopedExploreError | undefined {
+  const candidates = resource.relationships.flatMap((relationship) => {
+    if ((relationship.path_depth ?? 1) > reviewedAnalysisRelationshipHopLimit(boundary.budgets)) {
+      return [];
+    }
+    const target = boundary.pack.resources.find((candidate) =>
+      candidate.id === relationship.target_resource);
+    return target?.groupable_fields.includes(field)
+      ? [{ id: relationship.id, target_resource: target.id }]
+      : [];
+  }).sort((left, right) =>
+    left.id.localeCompare(right.id) || left.target_resource.localeCompare(right.target_resource));
+  if (candidates.length === 0) return undefined;
+
+  const correctedDimensions = candidates.map((candidate) => ({
+    field,
+    relationship: candidate.id,
+  }));
+  const unique = candidates.length === 1;
+  const retry = unique
+    ? `Retry with dimension ${JSON.stringify(correctedDimensions[0])}.`
+    : `Choose one exact reviewed path and retry with one of these dimensions: ${correctedDimensions.map((dimension) => JSON.stringify(dimension)).join("; ")}.`;
+  return new ScopedExploreError(
+    "EXPLORE_RELATIONSHIP_FORBIDDEN",
+    `${resource.id}.${field} is not a local grouping field. `
+      + (unique
+        ? `It is reviewed for grouping on ${candidates[0]!.target_resource} through relationship ${JSON.stringify(candidates[0]!.id)}. `
+        : `It is reviewed through more than one relationship, so Runner will not guess which path was intended. `)
+      + `${retry} No source query was executed.`,
+    {
+      reason: "relationship_required_for_field",
+      resource: resource.id,
+      field,
+      operation: "group",
+      reviewed_relationships: candidates,
+      corrected_dimensions: correctedDimensions,
+      source_query_executed: false,
     },
   );
 }

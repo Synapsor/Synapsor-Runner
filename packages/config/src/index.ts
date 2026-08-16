@@ -20,7 +20,7 @@ export type ConfigValidationResult = {
 
 type JsonRecord = Record<string, unknown>;
 
-const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "contexts", "executors", "capabilities", "contracts", "policies", "approvals", "proposal_freshness", "operator_identity", "session_auth", "http_security", "rate_limits", "metrics", "graduated_trust", "cloud", "governance", "generated_authority", "supervised_worker", "notifications", "strict", "result_format"]);
+const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "contexts", "executors", "capabilities", "contracts", "policies", "approvals", "proposal_freshness", "operator_identity", "session_auth", "http_security", "rate_limits", "metrics", "graduated_trust", "cloud", "governance", "generated_authority", "supervised_worker", "notifications", "production_explore", "strict", "result_format"]);
 const STORAGE_KEYS = new Set(["sqlite_path", "shared_postgres"]);
 const SHARED_POSTGRES_STORAGE_KEYS = new Set(["mode", "url_env", "schema", "lock_timeout_ms", "max_entries"]);
 const APPROVALS_KEYS = new Set(["disable_auto_approval"]);
@@ -56,6 +56,17 @@ const HTTP_LIMIT_KEYS = new Set([
 ]);
 const RATE_LIMITS_KEYS = new Set(["enabled", "default", "capabilities"]);
 const RATE_LIMIT_RULE_KEYS = new Set(["requests", "window_seconds"]);
+const PRODUCTION_EXPLORE_KEYS = new Set([
+  "enabled", "project_root", "required_oauth_scope", "budget_hmac_key_env", "accounting_namespace", "tenant_limits",
+  "source_max_connections", "max_sessions_per_principal", "single_organization_id",
+]);
+const PRODUCTION_EXPLORE_TENANT_LIMIT_KEYS = new Set([
+  "max_queries_per_rolling_24_hours",
+  "max_extracted_cells_per_rolling_24_hours",
+  "max_differencing_queries_per_rolling_24_hours",
+  "requests_per_minute",
+  "max_response_cells_per_response",
+]);
 const CLOUD_KEYS = new Set(["base_url_env", "runner_token_env", "runner_id", "runner_version", "project_id", "adapter_id", "source_id", "engines", "capabilities", "session"]);
 const GOVERNANCE_KEYS = new Set(["mode", "connection_file", "evidence_residency", "queue_when_unavailable", "sync_interval_ms", "max_attempts", "outbox_retention_days"]);
 const GENERATED_AUTHORITY_KEYS = new Set([
@@ -325,6 +336,7 @@ export function validateRunnerCapabilityConfig(input: unknown): ConfigValidation
   validateOperatorIdentity(input.operator_identity, strict, errors);
   validateSessionAuth(input.session_auth, input.trusted_context, input.contexts, strict, errors);
   validateHttpSecurity(input.http_security, input.session_auth, input.trusted_context, input.contexts, strict, errors, warnings);
+  validateProductionExplore(input.production_explore, input, strict, errors);
   validateRateLimits(input.rate_limits, strict, errors);
   validateMetrics(input.metrics, strict, errors);
   validateGraduatedTrust(input.graduated_trust, strict, errors);
@@ -339,6 +351,7 @@ export function validateRunnerCapabilityConfig(input: unknown): ConfigValidation
     warnings,
     hasContracts,
     input.generated_authority,
+    input.production_explore,
   );
   validateNotifications(input.notifications, strict, errors);
   validateSupervisedWorker(input.supervised_worker, input, strict, errors);
@@ -349,6 +362,140 @@ export function validateRunnerCapabilityConfig(input: unknown): ConfigValidation
   scanForForbiddenFields(input, "$", errors);
 
   return { ok: errors.length === 0, errors, warnings };
+}
+
+function validateProductionExplore(
+  value: unknown,
+  config: JsonRecord,
+  strict: boolean,
+  errors: ConfigIssue[],
+): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    errors.push({ path: "$.production_explore", code: "PRODUCTION_EXPLORE_NOT_OBJECT", message: "production_explore must be an explicit secured HTTP deployment configuration." });
+    return;
+  }
+  if (strict) checkUnknownKeys(value, PRODUCTION_EXPLORE_KEYS, "$.production_explore", errors);
+  if (config.mode !== "read_only") {
+    errors.push({ path: "$.mode", code: "PRODUCTION_EXPLORE_READ_ONLY_REQUIRED", message: "production Explore requires mode = read_only; it exposes no proposal, approval, apply, or write surface." });
+  }
+  if (value.enabled !== true) {
+    errors.push({ path: "$.production_explore.enabled", code: "PRODUCTION_EXPLORE_EXPLICIT_OPT_IN_REQUIRED", message: "production Explore is available only when enabled is explicitly true." });
+  }
+  if (!isNonEmptyString(value.project_root)
+    || value.project_root.includes("://")
+    || /[\u0000-\u001f\u007f]/.test(value.project_root)) {
+    errors.push({ path: "$.production_explore.project_root", code: "PRODUCTION_EXPLORE_PROJECT_ROOT_REQUIRED", message: "production Explore requires a local project_root containing the separately reviewed production boundary." });
+  }
+  if (!isOAuthScope(value.required_oauth_scope)) {
+    errors.push({ path: "$.production_explore.required_oauth_scope", code: "PRODUCTION_EXPLORE_OAUTH_SCOPE_REQUIRED", message: "production Explore requires one explicit OAuth scope, for example synapsor.explore." });
+  }
+  if (!isEnvName(value.budget_hmac_key_env)) {
+    errors.push({ path: "$.production_explore.budget_hmac_key_env", code: "PRODUCTION_EXPLORE_HMAC_KEY_ENV_REQUIRED", message: "production Explore requires an environment-variable name containing one shared 32-byte-or-longer budget HMAC key." });
+  }
+  if (!isNonEmptyString(value.accounting_namespace)
+    || value.accounting_namespace.length > 128
+    || !/^[a-z][a-z0-9_.:-]*$/.test(value.accounting_namespace)) {
+    errors.push({ path: "$.production_explore.accounting_namespace", code: "PRODUCTION_EXPLORE_ACCOUNTING_NAMESPACE_REQUIRED", message: "production Explore requires a stable lower-case accounting namespace shared by every replica, for example acme.analytics.production." });
+  }
+  const singleOrganizationId = value.single_organization_id;
+  if (singleOrganizationId !== undefined
+    && (typeof singleOrganizationId !== "string"
+      || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(singleOrganizationId))) {
+    errors.push({
+      path: "$.production_explore.single_organization_id",
+      code: "PRODUCTION_EXPLORE_SINGLE_ORGANIZATION_ID_INVALID",
+      message: "single_organization_id must be a stable 1-128 character organization label using letters, numbers, dots, colons, underscores, or dashes.",
+    });
+  }
+  for (const [key, maximum] of [
+    ["source_max_connections", 100],
+    ["max_sessions_per_principal", 100],
+  ] as const) {
+    const configured = value[key];
+    if (configured !== undefined
+      && (!Number.isSafeInteger(configured) || Number(configured) < 1 || Number(configured) > maximum)) {
+      errors.push({
+        path: `$.production_explore.${key}`,
+        code: "INVALID_PRODUCTION_EXPLORE_AVAILABILITY_LIMIT",
+        message: `${key} must be an integer from 1 through ${maximum}.`,
+      });
+    }
+  }
+  if (!isRecord(value.tenant_limits)) {
+    errors.push({ path: "$.production_explore.tenant_limits", code: "PRODUCTION_EXPLORE_TENANT_LIMITS_REQUIRED", message: "production Explore requires explicit tenant-wide safety ceilings in addition to per-principal boundary budgets." });
+  } else {
+    if (strict) checkUnknownKeys(value.tenant_limits, PRODUCTION_EXPLORE_TENANT_LIMIT_KEYS, "$.production_explore.tenant_limits", errors);
+    for (const [key, maximum] of [
+      ["max_queries_per_rolling_24_hours", 10_000_000],
+      ["max_extracted_cells_per_rolling_24_hours", 1_000_000_000],
+      ["max_differencing_queries_per_rolling_24_hours", 10_000_000],
+      ["requests_per_minute", 1_000_000],
+    ] as const) {
+      const configured = value.tenant_limits[key];
+      if (!Number.isSafeInteger(configured) || Number(configured) < 1 || Number(configured) > maximum) {
+        errors.push({ path: `$.production_explore.tenant_limits.${key}`, code: "INVALID_PRODUCTION_EXPLORE_TENANT_LIMIT", message: `${key} must be an integer from 1 through ${maximum}.` });
+      }
+    }
+    if (value.tenant_limits.max_response_cells_per_response !== undefined
+      && (!Number.isSafeInteger(value.tenant_limits.max_response_cells_per_response)
+        || Number(value.tenant_limits.max_response_cells_per_response) < 1
+        || Number(value.tenant_limits.max_response_cells_per_response) > 1_000_000_000)) {
+      errors.push({
+        path: "$.production_explore.tenant_limits.max_response_cells_per_response",
+        code: "INVALID_PRODUCTION_EXPLORE_TENANT_LIMIT",
+        message: "max_response_cells_per_response must be an integer from 1 through 1000000000.",
+      });
+    }
+  }
+
+  const storage = isRecord(config.storage) ? config.storage : undefined;
+  const sharedPostgres = storage && isRecord(storage.shared_postgres) ? storage.shared_postgres : undefined;
+  if (sharedPostgres?.mode !== "runtime_store") {
+    errors.push({ path: "$.storage.shared_postgres.mode", code: "PRODUCTION_EXPLORE_SHARED_STORE_REQUIRED", message: "production Explore requires shared_postgres.mode = runtime_store for durable cross-process privacy accounting." });
+  }
+  const trustedContext = isRecord(config.trusted_context) ? config.trusted_context : undefined;
+  if (trustedContext?.provider !== "http_claims") {
+    errors.push({ path: "$.trusted_context.provider", code: "PRODUCTION_EXPLORE_HTTP_CLAIMS_REQUIRED", message: "production Explore requires tenant and principal scope from verified HTTP claims." });
+  }
+  const sessionAuth = isRecord(config.session_auth) ? config.session_auth : undefined;
+  if (sessionAuth?.provider !== "jwt_asymmetric") {
+    errors.push({ path: "$.session_auth.provider", code: "PRODUCTION_EXPLORE_ASYMMETRIC_JWT_REQUIRED", message: "production Explore requires asymmetric JWT verification with RS256 or ES256." });
+  }
+  if (!isNonEmptyString(sessionAuth?.issuer)) {
+    errors.push({ path: "$.session_auth.issuer", code: "PRODUCTION_EXPLORE_ISSUER_REQUIRED", message: "production Explore requires an exact JWT issuer." });
+  }
+  if (!isNonEmptyString(sessionAuth?.audience)) {
+    errors.push({ path: "$.session_auth.audience", code: "PRODUCTION_EXPLORE_AUDIENCE_REQUIRED", message: "production Explore requires an exact JWT audience." });
+  }
+  if (singleOrganizationId === undefined && !isSafeIdentifier(sessionAuth?.tenant_claim)) {
+    errors.push({ path: "$.session_auth.tenant_claim", code: "PRODUCTION_EXPLORE_TENANT_CLAIM_REQUIRED", message: "Multi-tenant production Explore requires an explicit safe tenant_claim." });
+  }
+  if (singleOrganizationId !== undefined && sessionAuth?.tenant_claim !== undefined) {
+    errors.push({
+      path: "$.session_auth.tenant_claim",
+      code: "PRODUCTION_EXPLORE_SINGLE_ORGANIZATION_TENANT_CLAIM_FORBIDDEN",
+      message: "Single-organization production Explore uses production_explore.single_organization_id and must not accept a tenant claim from the request.",
+    });
+  }
+  if (!isSafeIdentifier(sessionAuth?.principal_claim)) {
+    errors.push({ path: "$.session_auth.principal_claim", code: "PRODUCTION_EXPLORE_PRINCIPAL_CLAIM_REQUIRED", message: "production Explore requires an explicit safe principal_claim." });
+  }
+  const httpSecurity = isRecord(config.http_security) ? config.http_security : undefined;
+  if (httpSecurity?.deployment !== "shared") {
+    errors.push({ path: "$.http_security.deployment", code: "PRODUCTION_EXPLORE_SHARED_HTTP_REQUIRED", message: "production Explore requires the shared secured HTTP deployment posture." });
+  }
+  if (httpSecurity?.channel !== "direct_tls" && httpSecurity?.channel !== "trusted_tls_proxy") {
+    errors.push({ path: "$.http_security.channel", code: "PRODUCTION_EXPLORE_SECURE_CHANNEL_REQUIRED", message: "production Explore requires direct TLS or an explicitly trusted TLS proxy." });
+  }
+  if (isRecord(httpSecurity?.static_token)) {
+    errors.push({ path: "$.http_security.static_token", code: "PRODUCTION_EXPLORE_STATIC_TOKEN_FORBIDDEN", message: "production Explore cannot use an opaque static token as an authentication substitute." });
+  }
+  const oauth = httpSecurity && isRecord(httpSecurity.oauth_resource) ? httpSecurity.oauth_resource : undefined;
+  const requiredScopes = Array.isArray(oauth?.required_scopes) ? oauth.required_scopes : [];
+  if (!isOAuthScope(value.required_oauth_scope) || !requiredScopes.includes(value.required_oauth_scope)) {
+    errors.push({ path: "$.http_security.oauth_resource.required_scopes", code: "PRODUCTION_EXPLORE_SCOPE_NOT_REQUIRED", message: "The production Explore OAuth scope must be listed in http_security.oauth_resource.required_scopes." });
+  }
 }
 
 function validateGeneratedAuthority(value: unknown, strict: boolean, errors: ConfigIssue[]): void {
@@ -1957,10 +2104,15 @@ function validateCapabilities(
   warnings: ConfigIssue[],
   hasContracts = false,
   generatedAuthority?: unknown,
+  productionExplore?: unknown,
 ): void {
   if (mode === "cloud" && value === undefined) return;
   if (hasContracts && value === undefined) return;
   if (hasContracts && Array.isArray(value) && value.length === 0) return;
+  const productionExploreSurface = isRecord(productionExplore)
+    && productionExplore.enabled === true
+    && (value === undefined || (Array.isArray(value) && value.length === 0));
+  if (productionExploreSurface) return;
   const emptyReadOnlyShell = mode === "read_only"
     && Array.isArray(value)
     && value.length === 0;

@@ -8,14 +8,42 @@ import {
 } from "./model-ask.js";
 import {
   explorationBoundaryCandidateDigest,
+  type ActivatedExplorationBoundary,
   type ExplorationBoundaryDraft,
 } from "./auto-boundary.js";
+import { resolveBoundaryRevisionState } from "./boundary-revision-state.js";
+import {
+  formatBoundaryRescanRelationshipChange,
+  preservedAuthorityForEntry,
+  readBoundaryRescanReport,
+  type BoundaryRescanEntry,
+  type BoundaryRescanPreservedAuthority,
+} from "./boundary-rescan.js";
 
 type ActiveBoundaryAuthorityIdentity = {
   name: string;
   digest: `sha256:${string}`;
+  generation_lock_fingerprint?: `sha256:${string}`;
   deployment_profile?: unknown;
   table_count: number;
+  authority: ActivatedExplorationBoundary;
+};
+
+export type PendingBoundaryReviewSummary = {
+  boundary_name: string;
+  pending_changes: number;
+  previous_authority_active: boolean;
+  changes: Array<{
+    boundary_name: string;
+    previous_authority_active: boolean;
+    cause: "database_posture_changed" | "reviewed_access_edited";
+    reconciliation?: {
+      kept_decisions: number;
+      preserved_authority?: BoundaryRescanPreservedAuthority;
+      decisions_requiring_review: number;
+      details: string[];
+    };
+  }>;
 };
 
 export type AskDeploymentProfile = "development" | "staging" | "production" | "unknown";
@@ -52,37 +80,119 @@ export async function resolveActiveBoundarySummary(
 
 export async function resolvePendingBoundaryReviewSummary(
   projectRoot: string,
-): Promise<{
-  boundary_name: string;
-  pending_changes: 1;
-  previous_authority_active: boolean;
-} | undefined> {
+): Promise<PendingBoundaryReviewSummary | undefined> {
   const library = await readOptionalJson(
     path.join(projectRoot, ".synapsor/boundary-library.json"),
   );
   if (!isRecord(library) || !isRecord(library.boundaries)) return undefined;
-  const selectedName = typeof library.selected_name === "string"
-    ? library.selected_name
-    : undefined;
-  if (!selectedName || !/^[a-z][a-z0-9_.-]{0,63}$/.test(selectedName)) return undefined;
-  const progress = record(library.boundaries[selectedName]);
-  const candidate = progress.candidate;
-  if (!isRecord(candidate) || !isRecord(candidate.pack)) return undefined;
-  let candidateDigest: `sha256:${string}`;
-  try {
-    candidateDigest = explorationBoundaryCandidateDigest(
-      candidate as unknown as ExplorationBoundaryDraft,
-    );
-  } catch {
-    return undefined;
-  }
+  const guided = await readOptionalJson(
+    path.join(projectRoot, ".synapsor/guided-onboarding.json"),
+  );
+  const initialInstantBoundary = isRecord(guided)
+    && guided.instant_onboarding === true
+    && guided.status === "boundary_active";
   const active = await optionalActiveBoundaries(projectRoot);
-  const activeBoundary = active.find((boundary) => boundary.name === selectedName);
-  if (activeBoundary?.digest === candidateDigest) return undefined;
+  const rescanReport = await readBoundaryRescanReport(projectRoot);
+  const changes: PendingBoundaryReviewSummary["changes"] = [];
+  for (const boundaryName of Object.keys(library.boundaries).sort()) {
+    if (!/^[a-z][a-z0-9_.-]{0,63}$/.test(boundaryName)) continue;
+    const progress = record(library.boundaries[boundaryName]);
+    const candidate = progress.candidate;
+    if (!isRecord(candidate) || !isRecord(candidate.pack)) continue;
+    let candidateDigest: `sha256:${string}`;
+    try {
+      candidateDigest = explorationBoundaryCandidateDigest(
+        candidate as unknown as ExplorationBoundaryDraft,
+      );
+    } catch {
+      continue;
+    }
+    const activeBoundary = active.find((boundary) => boundary.name === boundaryName);
+    let revisionState;
+    try {
+      revisionState = activeBoundary
+        ? await resolveBoundaryRevisionState({
+            projectRoot,
+            candidate: candidate as unknown as ExplorationBoundaryDraft,
+            active: activeBoundary.authority,
+          })
+        : undefined;
+    } catch {
+      revisionState = undefined;
+    }
+    if (revisionState?.matches_active_authority || activeBoundary?.digest === candidateDigest) continue;
+    const candidateGenerationLock = hash(candidate.generation_lock_fingerprint);
+    if (initialInstantBoundary
+      && progress.revision === 1
+      && activeBoundary?.deployment_profile === "development"
+      && candidate.deployment_profile === "staging"
+      && candidateGenerationLock !== undefined
+      && candidateGenerationLock === activeBoundary.generation_lock_fingerprint) {
+      // Quick Start intentionally activates a conservative development revision while
+      // leaving the generated staging review available under /access. It is not an edit.
+      continue;
+    }
+    changes.push({
+      boundary_name: boundaryName,
+      previous_authority_active: Boolean(activeBoundary),
+      cause: revisionState?.cause ?? "reviewed_access_edited",
+      ...(matchingRescanEntry(rescanReport?.boundaries, boundaryName, candidateDigest)
+        ? {
+            reconciliation: reconciliationSummary(
+              matchingRescanEntry(rescanReport?.boundaries, boundaryName, candidateDigest)!,
+            ),
+          }
+        : {}),
+    });
+  }
+  if (!changes.length) return undefined;
   return {
-    boundary_name: selectedName,
-    pending_changes: 1,
-    previous_authority_active: Boolean(activeBoundary),
+    boundary_name: changes[0]!.boundary_name,
+    pending_changes: changes.length,
+    previous_authority_active: changes.some((change) => change.previous_authority_active),
+    changes,
+  };
+}
+
+function matchingRescanEntry(
+  entries: BoundaryRescanEntry[] | undefined,
+  boundaryName: string,
+  candidateDigest: `sha256:${string}`,
+): BoundaryRescanEntry | undefined {
+  return entries?.find((entry) =>
+    entry.boundary_name === boundaryName && entry.candidate_digest === candidateDigest);
+}
+
+function reconciliationSummary(entry: BoundaryRescanEntry): NonNullable<
+  PendingBoundaryReviewSummary["changes"][number]["reconciliation"]
+> {
+  const details = [
+    ...entry.invalidated_decisions.map((decision) =>
+      `${decision.id}: ${decision.reason === "decision_removed"
+        ? "the reviewed input no longer exists"
+        : "the reviewed input changed"}`),
+    ...entry.changed_field_types.map((field) =>
+      `${field.resource_id}.${field.field}: reviewed column type changed`),
+    ...entry.removed_fields.map((field) =>
+      `${field.resource_id}.${field.field}: reviewed column was removed`),
+    ...entry.removed_relationships.map((relationship) =>
+      formatBoundaryRescanRelationshipChange(relationship, "removed")),
+    ...entry.removed_resources.map((resource) => `${resource}: reviewed table was removed`),
+    ...entry.newly_available_fields.map((field) =>
+      `${field.resource_id}.${field.field}: new column is kept out until reviewed`),
+    ...entry.newly_available_relationships.map((relationship) =>
+      formatBoundaryRescanRelationshipChange(relationship, "new")),
+    ...entry.newly_available_resources.map((resource) =>
+      `${resource}: new table is available to review`),
+    ...(entry.newly_proven_value_allowlists ?? []).map((item) =>
+      `${item.resource_id}.${item.field}: an enforced schema vocabulary now narrows existing filter/group authority to ${item.value_count} reviewed values; confirm field permissions, then activate`),
+    ...entry.pruned_review_inputs,
+  ];
+  return {
+    kept_decisions: entry.kept_confirmations,
+    preserved_authority: preservedAuthorityForEntry(entry),
+    decisions_requiring_review: entry.invalidated_decisions.length,
+    details,
   };
 }
 
@@ -208,9 +318,19 @@ function activeBoundaryIdentity(
   return {
     name,
     digest: digest as `sha256:${string}`,
+    ...(hash(value.generation_lock_fingerprint)
+      ? { generation_lock_fingerprint: value.generation_lock_fingerprint as `sha256:${string}` }
+      : {}),
     deployment_profile: value.deployment_profile,
     table_count: Array.isArray(pack.resources) ? pack.resources.length : 0,
+    authority: value as unknown as ActivatedExplorationBoundary,
   };
+}
+
+function hash(value: unknown): `sha256:${string}` | undefined {
+  return typeof value === "string" && /^sha256:[a-f0-9]{64}$/.test(value)
+    ? value as `sha256:${string}`
+    : undefined;
 }
 
 async function readOptionalJson(filePath: string): Promise<unknown | null> {

@@ -74,7 +74,7 @@ synapsor-runner cloud push ./synapsor.contract.json --dry-run
 - visible and kept-out fields;
 - evidence/query-audit requirements;
 - optional protected named row/aggregate reads with fixed predicates, reviewed
-  one-hop or star/depth-two many-to-one paths, explicit missing-row semantics,
+  one-hop or explicitly reviewed bounded many-to-one paths (up to three hops), explicit missing-row semantics,
   privacy budgets, and generation-lock/boundary digests;
 - proposal action shape, explicit INSERT/UPDATE/DELETE operation, source-unique
   INSERT deduplication, UPDATE version advancement, numeric bounds, transition
@@ -197,7 +197,7 @@ Current additive safety fields:
   is valid only as explicit reviewed authority, not as Runner's generated
   default.
 - capability `protected_read.relationships`: up to three operator-reviewed
-  paths, each containing one or two `many_to_one` links with
+  paths, each containing one through three `many_to_one` links with
   `max_fan_out: 1` and explicit `unmatched_rows = "exclude" | "keep_null"`.
   The legacy singular `protected_read.relationship` field remains canonical
   for unchanged one-hop contracts so their normalized bytes and digest do not
@@ -208,6 +208,12 @@ Current additive safety fields:
   exactly two comparison periods by signed absolute or percentage change.
   Contracts omitting these fields retain their prior group ceiling,
   normalization, and digest.
+- capability `protected_read.time_window`: one optional fixed half-open UTC
+  range with `field`, optional reviewed `relationship`, and canonical `start`
+  and exclusive `end` timestamps. It is valid for protected rows or aggregates,
+  cannot coexist with an aggregate comparison, and cannot contain argument or
+  relative-window expressions. Protect uses it to freeze the absolute range
+  resolved by a relative Explore analysis.
 
 Receipt authority, receipt-table provisioning, credentials, and Runner ledger
 topology are deliberately not canonical fields. They remain deployment choices

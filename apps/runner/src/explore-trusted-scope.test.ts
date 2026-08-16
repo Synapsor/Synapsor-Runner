@@ -52,6 +52,100 @@ describe("Explore trusted scope", () => {
     });
   });
 
+  it("keeps role-bound tenant proof on scoped tables while skipping reviewed shared references", async () => {
+    const candidate = boundary(true);
+    const shared = structuredClone(candidate.pack.resources[0]!);
+    shared.id = "public.product_catalog";
+    delete shared.tenant_key;
+    delete shared.rls_session;
+    shared.shared_reference_scope = {
+      mode: "shared_reference",
+      acknowledgement: "table_has_no_per_tenant_rows",
+    };
+    candidate.pack.resources.push(shared);
+    const currentInspection = inspection();
+    currentInspection.tables.push({
+      ...structuredClone(currentInspection.tables[0]!),
+      name: "product_catalog",
+      row_level_security: false,
+      row_level_security_policies: [],
+      role_posture: {
+        ...structuredClone(currentInspection.tables[0]!.role_posture!),
+        row_security_forced: false,
+        row_security_effective_for_current_role: false,
+      },
+    });
+    const reader = vi.fn().mockResolvedValue({
+      currentUser: "fitflow_analytics_reader",
+      value: "org-fitflow",
+    });
+
+    await expect(resolveExploreTrustedScope({
+      boundary: candidate,
+      lock: lock(),
+      inspection: currentInspection,
+      env: { DATABASE_URL: "postgresql://credential-owned-scope" },
+      readPostgresRoleSetting: reader,
+    })).resolves.toMatchObject({
+      tenant: "org-fitflow",
+      tenant_source: "postgres_role_setting",
+    });
+    expect(reader).toHaveBeenCalledOnce();
+  });
+
+  it("proves role-bound derived scope on the terminal ancestor rather than the child", async () => {
+    const candidate = derivedBoundary();
+    const derivedInspection = inspection();
+    derivedInspection.tables.unshift({
+      schema: "public",
+      name: "check_in_items",
+      type: "table",
+      row_level_security: false,
+      role_posture: {
+        owner: "fitflow_admin",
+        current_role_is_owner: false,
+        current_role_can_assume_owner: false,
+        privileges: {
+          select: true,
+          insert: false,
+          update: false,
+          delete: false,
+          truncate: false,
+          references: false,
+          trigger: false,
+        },
+        row_security_forced: false,
+        row_security_effective_for_current_role: false,
+      },
+    } as SchemaInspection["tables"][number]);
+    const reader = vi.fn().mockResolvedValue({
+      currentUser: "fitflow_analytics_reader",
+      value: "org-fitflow",
+    });
+
+    await expect(resolveExploreTrustedScope({
+      boundary: candidate,
+      lock: lock(),
+      inspection: derivedInspection,
+      env: { DATABASE_URL: "postgresql://credential-owned-scope" },
+      readPostgresRoleSetting: reader,
+    })).resolves.toMatchObject({
+      tenant: "org-fitflow",
+      tenant_source: "postgres_role_setting",
+    });
+    expect(reader).toHaveBeenCalledOnce();
+
+    derivedInspection.tables.find((table) => table.name === "check_ins")!
+      .role_posture!.row_security_effective_for_current_role = false;
+    await expect(resolveExploreTrustedScope({
+      boundary: candidate,
+      lock: lock(),
+      inspection: derivedInspection,
+      env: { DATABASE_URL: "postgresql://credential-owned-scope" },
+      readPostgresRoleSetting: reader,
+    })).rejects.toThrow(/not proven by the reviewed RLS policy for public\.check_in_items/);
+  });
+
   it("still requires a trusted principal when reviewed authority explicitly selects principal scope", async () => {
     const candidate = boundary(true);
     candidate.pack.resources[0]!.principal_key = "trainer_id";
@@ -120,6 +214,127 @@ describe("Explore trusted scope", () => {
       readPostgresRoleSetting: vi.fn(),
     })).rejects.toThrow(/not valid for this source/);
   });
+
+  it("binds production tenant and principal only from the verified HTTP session", async () => {
+    const candidate = productionBoundary();
+    const scope = await resolveExploreTrustedScope({
+      boundary: candidate,
+      lock: lock(),
+      inspection: inspection(),
+      env: {
+        SYNAPSOR_TENANT_ID: "environment-tenant-must-not-win",
+        SYNAPSOR_PRINCIPAL: "environment-principal-must-not-win",
+      },
+      sessionContext: {
+        tenant_id: "tenant-from-jwt",
+        principal: "principal-from-jwt",
+        provenance: "http_claims",
+      },
+      readPostgresRoleSetting: vi.fn(),
+    });
+
+    expect(scope).toEqual({
+      tenant: "tenant-from-jwt",
+      principal: "principal-from-jwt",
+      tenant_source: "verified_http_claim",
+      tenant_binding: "org_id",
+      principal_source: "verified_http_claim",
+      principal_binding: "sub",
+    });
+  });
+
+  it("uses the reviewed fixed organization locally without requiring a tenant environment value", async () => {
+    const candidate = boundary(false);
+    candidate.organization_scope = {
+      mode: "single_organization",
+      organization_id: "internal-finance",
+      acknowledgement: "all_rows_belong_to_one_organization",
+    };
+    delete candidate.pack.resources[0]!.tenant_key;
+    const scope = await resolveExploreTrustedScope({
+      boundary: candidate,
+      lock: { ...lock(), organization_scope: candidate.organization_scope },
+      inspection: inspection(),
+      env: {},
+      readPostgresRoleSetting: vi.fn(),
+    });
+    expect(scope).toEqual({
+      tenant: "internal-finance",
+      principal: "",
+      tenant_source: "reviewed_organization",
+      tenant_binding: "fixed organization internal-finance",
+      principal_source: "not_required",
+    });
+  });
+
+  it("requires only the verified principal for single-organization production Explore", async () => {
+    const candidate = productionBoundary();
+    candidate.organization_scope = {
+      mode: "single_organization",
+      organization_id: "internal-finance",
+      acknowledgement: "all_rows_belong_to_one_organization",
+    };
+    candidate.trusted_context = {
+      provider: "http_claims",
+      principal_claim: "sub",
+    };
+    delete candidate.pack.resources[0]!.tenant_key;
+    await expect(resolveExploreTrustedScope({
+      boundary: candidate,
+      lock: { ...lock(), organization_scope: candidate.organization_scope },
+      inspection: inspection(),
+      env: {},
+      sessionContext: { principal: "analyst-7", provenance: "http_claims" },
+    })).resolves.toMatchObject({
+      tenant: "internal-finance",
+      principal: "analyst-7",
+      tenant_source: "reviewed_organization",
+      principal_source: "verified_http_claim",
+    });
+    await expect(resolveExploreTrustedScope({
+      boundary: candidate,
+      lock: { ...lock(), organization_scope: candidate.organization_scope },
+      inspection: inspection(),
+      env: {},
+    })).rejects.toMatchObject({ missingBindings: ["sub"] });
+  });
+
+  it("requires both verified HTTP scopes for every production Explore session", async () => {
+    for (const sessionContext of [
+      undefined,
+      { tenant_id: "tenant-a", principal: "", provenance: "http_claims" as const },
+      { tenant_id: "", principal: "principal-a", provenance: "http_claims" as const },
+    ]) {
+      await expect(resolveExploreTrustedScope({
+        boundary: productionBoundary(),
+        lock: lock(),
+        inspection: inspection(),
+        env: {
+          SYNAPSOR_TENANT_ID: "environment-fallback-forbidden",
+          SYNAPSOR_PRINCIPAL: "environment-fallback-forbidden",
+        },
+        ...(sessionContext ? { sessionContext } : {}),
+      })).rejects.toMatchObject({
+        missingBindings: ["org_id", "sub"],
+      });
+    }
+  });
+
+  it("refuses HTTP claim bindings on a non-production boundary", async () => {
+    const candidate = productionBoundary();
+    candidate.deployment_profile = "staging";
+    await expect(resolveExploreTrustedScope({
+      boundary: candidate,
+      lock: lock(),
+      inspection: inspection(),
+      env: {},
+      sessionContext: {
+        tenant_id: "tenant-a",
+        principal: "principal-a",
+        provenance: "http_claims",
+      },
+    })).rejects.toThrow(/only valid for a reviewed production Explore boundary/);
+  });
 });
 
 function boundary(roleBound: boolean): ExplorationBoundaryDraft {
@@ -186,6 +401,59 @@ function boundary(roleBound: boolean): ExplorationBoundaryDraft {
     },
     unresolved_decisions: [],
   };
+}
+
+function productionBoundary(): ExplorationBoundaryDraft {
+  const candidate = boundary(false);
+  candidate.deployment_profile = "production";
+  candidate.pack.name = "reviewed_production";
+  candidate.trusted_context = {
+    provider: "http_claims",
+    tenant_claim: "org_id",
+    principal_claim: "sub",
+  };
+  return candidate;
+}
+
+function derivedBoundary(): ExplorationBoundaryDraft {
+  const candidate = boundary(true);
+  const ancestor = candidate.pack.resources[0]!;
+  candidate.pack.resources.unshift({
+    ...structuredClone(ancestor),
+    id: "public.check_in_items",
+    table: "check_in_items",
+    tenant_key: undefined,
+    tenant_scope: {
+      mode: "derived",
+      path_id: "public.check_in_items.check_in_id->public.check_ins.id",
+      ancestor_resource: "public.check_ins",
+      ancestor_column: "organization_id",
+      proof: {
+        source: "database_catalog",
+        links: [{
+          constraint_name: "check_in_items_check_in_id_fkey",
+          source_resource: "public.check_in_items",
+          source_columns: ["check_in_id"],
+          target_resource: "public.check_ins",
+          target_columns: ["id"],
+          target_uniqueness: {
+            kind: "primary_key",
+            name: "check_ins_pkey",
+            columns: ["id"],
+          },
+          nullable: false,
+          cardinality: "many_to_one",
+          max_fan_out: 1,
+        }],
+        digest: `sha256:${"8".repeat(64)}`,
+      },
+    },
+    field_types: { id: "text", check_in_id: "text" },
+    selectable_fields: ["id", "check_in_id"],
+    filterable_fields: { id: ["eq"], check_in_id: ["eq"] },
+    kept_out_fields: [],
+  });
+  return candidate;
 }
 
 function lock(): GenerationLock {

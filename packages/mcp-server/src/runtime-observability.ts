@@ -11,6 +11,7 @@ import type {
   ProposalRuntimeStore,
 } from "@synapsor-runner/proposal-store";
 import mysql from "mysql2/promise";
+import type { PoolClient } from "pg";
 import type {
   SourceEngine,
   RuntimeConfig,
@@ -187,23 +188,21 @@ export async function checkRunnerReadiness(
       const databaseUrl = envValue(env, shared.url_env);
       if (!databaseUrl) throw new Error("ledger URL unavailable");
       const pool = createPostgresPool(databaseUrl, { connectionTimeoutMillis: timeoutMs });
-      const client = await pool.connect();
-      try {
-        await client.query("BEGIN");
-        await client.query(`SET LOCAL statement_timeout = ${Math.max(1, Math.floor(timeoutMs))}`);
-        const table = `${quotePostgresIdentifier(shared.schema ?? "synapsor_runner")}.ledger_entries`;
-        await client.query(
-          `INSERT INTO ${table} (entry_key, kind, payload_json) VALUES ($1, 'readiness_probe', '{}'::jsonb)`,
-          [`readiness:${crypto.randomUUID()}`],
-        );
-        await client.query("ROLLBACK");
-      } catch (error) {
-        await client.query("ROLLBACK").catch(() => undefined);
-        throw error;
-      } finally {
-        client.release();
-        await pool.end();
-      }
+      await withPostgresReadinessClient(pool, async (client) => {
+        try {
+          await client.query("BEGIN");
+          await client.query(`SET LOCAL statement_timeout = ${Math.max(1, Math.floor(timeoutMs))}`);
+          const table = `${quotePostgresIdentifier(shared.schema ?? "synapsor_runner")}.ledger_entries`;
+          await client.query(
+            `INSERT INTO ${table} (entry_key, kind, payload_json) VALUES ($1, 'readiness_probe', '{}'::jsonb)`,
+            [`readiness:${crypto.randomUUID()}`],
+          );
+          await client.query("ROLLBACK");
+        } catch (error) {
+          await client.query("ROLLBACK").catch(() => undefined);
+          throw error;
+        }
+      });
     }));
   }
   const ok = components.every((component) => component.ok);
@@ -257,4 +256,43 @@ export async function probeDatabase(engine: SourceEngine, databaseUrl: string, t
   } finally {
     await connection.end();
   }
+}
+
+type ReadinessPostgresPool = {
+  connect(): Promise<PoolClient>;
+  end(): Promise<void>;
+};
+
+export async function withPostgresReadinessClient<T>(
+  pool: ReadinessPostgresPool,
+  operation: (client: PoolClient) => Promise<T>,
+): Promise<T> {
+  let client: PoolClient | undefined;
+  let operationFailed = false;
+  let operationError: unknown;
+  let result: T | undefined;
+
+  try {
+    client = await pool.connect();
+    result = await operation(client);
+  } catch (error) {
+    operationFailed = true;
+    operationError = error;
+  }
+
+  let cleanupError: unknown;
+  try {
+    client?.release();
+  } catch (error) {
+    cleanupError = error;
+  }
+  try {
+    await pool.end();
+  } catch (error) {
+    cleanupError ??= error;
+  }
+
+  if (operationFailed) throw operationError;
+  if (cleanupError) throw cleanupError;
+  return result as T;
 }

@@ -1,12 +1,70 @@
 import { describe, expect, it } from "vitest";
+import { wrapStyledTerminalLine } from "./terminal-layout.js";
 import {
+  renderTerminalCommandFrame,
+  renderTerminalFact,
   renderTerminalJson,
+  renderTerminalJsonFrame,
   renderTerminalSql,
-  safeTerminalText,
+  renderTerminalSqlFrame,
+  renderTerminalToolName,
   terminalSyntaxColorEnabled,
 } from "./terminal-syntax.js";
 
 describe("terminal syntax rendering", () => {
+  it("wraps styled picker lines without counting color codes or accepting terminal controls", () => {
+    const wrapped = wrapStyledTerminalLine(
+      "\u001b[32mReviewed query\u001b[0m with a deliberately long description\u001b[2J",
+      24,
+    );
+    expect(wrapped.length).toBeGreaterThan(1);
+    expect(wrapped.join("\n")).not.toContain("\u001b[2J");
+    expect(stripAnsi(wrapped.join("\n"))).toContain("Reviewed query");
+    expect(stripAnsi(wrapped.join("\n"))).toContain("?[2J");
+    expect(stripAnsi(wrapped.join("\n")).split("\n").every((line) => line.length <= 24)).toBe(true);
+  });
+
+  it("frames copy-paste commands and distinguishes executables, flags, paths, and placeholders", () => {
+    const plain = renderTerminalCommandFrame([
+      "synapsor-runner query-audit show <audit_id> --details --config '/tmp/project/synapsor.runner.json'",
+    ], {
+      title: "COPY-PASTE COMMANDS",
+      metadata: ["Filter with --table <schema.table> when needed."],
+      columns: 80,
+    });
+    expect(plain).toContain("+-- COPY-PASTE COMMANDS");
+    expect(plain).toContain("<audit_id>");
+    expect(plain).toContain("--details");
+
+    const colored = renderTerminalCommandFrame([
+      "synapsor-runner query-audit show <audit_id> --details --config '/tmp/project/synapsor.runner.json'",
+    ], {
+      title: "COPY-PASTE COMMANDS",
+      metadata: ["Filter with --table <schema.table> when needed."],
+      color: true,
+      columns: 80,
+    });
+    expect(colored).toContain("\u001b[1;32msynapsor-runner\u001b[0m");
+    expect(colored).toContain("\u001b[1;33m<audit_id>\u001b[0m");
+    expect(colored).toContain("\u001b[1;36m--details\u001b[0m");
+    expect(colored).toContain("\u001b[1;35m'/tmp/project/synapsor.runner.json'\u001b[0m");
+    expect(stripAnsi(colored)).toBe(plain);
+  });
+
+  it("wraps an unbroken command argument longer than the frame without looping", () => {
+    const longPath = `'/home/developer/${"deeply-nested-project/".repeat(8)}synapsor.runner.json'`;
+    const rendered = renderTerminalCommandFrame([
+      `synapsor-runner query-audit list --config ${longPath}`,
+    ], {
+      title: "COPY-PASTE COMMANDS",
+      columns: 60,
+    });
+    const lines = rendered.split("\n");
+    expect(lines.length).toBeGreaterThan(4);
+    expect(new Set(lines.map((line) => line.length))).toEqual(new Set([58]));
+    expect(rendered).toContain(".json'");
+  });
+
   it("keeps JSON byte-clean without color and highlights typed tokens with color", () => {
     const value = {
       boundary: "reviewed_orders",
@@ -28,6 +86,45 @@ describe("terminal syntax rendering", () => {
     const colored = renderTerminalJson(value, true, 0);
     expect(plain).toBe('{"ok":true,"count":3}');
     expect(stripAnsi(colored)).toBe(plain);
+  });
+
+  it("frames JSON with aligned borders while preserving syntax colors", () => {
+    const value = {
+      boundary: "reviewed_orders",
+      plan: { kind: "aggregate", top_n: 25 },
+    };
+    const plain = renderTerminalJsonFrame(value, {
+      title: "Model request parameters",
+      columns: 64,
+    });
+    const plainLines = plain.split("\n");
+    expect(plainLines[0]).toMatch(/^\+-- Model request parameters -+\+$/);
+    expect(plain).toContain('|   "boundary": "reviewed_orders",');
+    expect(new Set(plainLines.map((line) => line.length)).size).toBe(1);
+    expect(plainLines[0]!.length).toBeLessThanOrEqual(62);
+
+    const colored = renderTerminalJsonFrame(value, {
+      title: "Model request parameters",
+      color: true,
+      columns: 64,
+    });
+    expect(colored).toContain('\u001b[1;36m"boundary"\u001b[0m');
+    expect(colored).toContain('\u001b[1;32m"reviewed_orders"\u001b[0m');
+    expect(colored).toContain("\u001b[1;33m25\u001b[0m");
+    expect(stripAnsi(colored)).toBe(plain);
+  });
+
+  it("styles tool identifiers and evidence facts without changing their text", () => {
+    const tool = renderTerminalToolName("app.explore_data", true);
+    expect(tool).toContain("\u001b[36mapp\u001b[0m");
+    expect(tool).toContain("\u001b[2m.\u001b[0m");
+    expect(tool).toContain("\u001b[1;32mexplore_data\u001b[0m");
+    expect(stripAnsi(tool)).toBe("app.explore_data");
+
+    expect(renderTerminalFact("Outcome", "ok")).toBe("Outcome: ok");
+    const fact = renderTerminalFact("Outcome", "ok", { color: true, tone: "success" });
+    expect(fact).toBe("\u001b[1;36mOutcome:\u001b[0m \u001b[1;32mok\u001b[0m");
+    expect(stripAnsi(fact)).toBe("Outcome: ok");
   });
 
   it("highlights PostgreSQL diagnostics including DDL, types, comments, and placeholders", () => {
@@ -60,10 +157,82 @@ describe("terminal syntax rendering", () => {
     expect(stripAnsi(colored)).toBe(sql);
   });
 
+  it("formats compiled PostgreSQL aggregates without splitting protected tokens", () => {
+    const sql = 'SELECT t0."feature" AS "dimension_0", SUM(t0."event_count") AS "measure_0", COUNT(*) AS "__cohort_size" FROM "public"."usage_events" t0 WHERE t0."organization_id" = $1 AND t0."note" = \'FROM, AND\' GROUP BY t0."feature" ORDER BY "measure_0" DESC LIMIT $2';
+    const formatted = [
+      "SELECT",
+      '  t0."feature" AS "dimension_0",',
+      '  SUM(t0."event_count") AS "measure_0",',
+      '  COUNT(*) AS "__cohort_size"',
+      "FROM",
+      '  "public"."usage_events" t0',
+      "WHERE",
+      '  t0."organization_id" = $1',
+      '  AND t0."note" = \'FROM, AND\'',
+      "GROUP BY",
+      '  t0."feature"',
+      "ORDER BY",
+      '  "measure_0" DESC',
+      "LIMIT $2",
+    ].join("\n");
+
+    expect(renderTerminalSql(sql)).toBe(formatted);
+    expect(stripAnsi(renderTerminalSql(sql, true))).toBe(formatted);
+  });
+
+  it("formats MySQL SELECT diagnostics while preserving quoted identifiers and placeholders", () => {
+    const sql = "SELECT `status`, COUNT(*) FROM `app`.`orders` WHERE `tenant_id` = ? GROUP BY `status` ORDER BY COUNT(*) DESC LIMIT ?";
+    expect(renderTerminalSql(sql)).toBe([
+      "SELECT",
+      "  `status`,",
+      "  COUNT(*)",
+      "FROM",
+      "  `app`.`orders`",
+      "WHERE",
+      "  `tenant_id` = ?",
+      "GROUP BY",
+      "  `status`",
+      "ORDER BY",
+      "  COUNT(*) DESC",
+      "LIMIT ?",
+    ].join("\n"));
+  });
+
+  it("frames formatted SQL and metadata without exceeding the terminal width", () => {
+    const frame = renderTerminalSqlFrame(
+      'SELECT "status", COUNT(*) FROM "public"."orders" WHERE "tenant_id" = $1 GROUP BY "status" ORDER BY COUNT(*) DESC LIMIT $2',
+      {
+        title: "Statement 1 - postgres",
+        metadata: ["Parameter types: string, integer", "Parameter values: redacted"],
+        columns: 64,
+      },
+    );
+    const lines = frame.split("\n");
+    expect(lines[0]).toMatch(/^\+-- Statement 1 - postgres -+\+$/);
+    expect(frame).toContain("| SELECT");
+    expect(frame).toContain("|   COUNT(*)");
+    expect(frame).toContain("Parameter values: redacted");
+    expect(new Set(lines.map((line) => line.length)).size).toBe(1);
+    expect(lines[0]!.length).toBeLessThanOrEqual(62);
+
+    const colored = renderTerminalSqlFrame("SELECT COUNT(*) FROM `orders` WHERE `id` = ?", {
+      title: "Statement 1 - mysql",
+      metadata: ["Parameter values: redacted"],
+      color: true,
+      columns: 48,
+    });
+    expect(colored).toContain("\u001b[1;36mSELECT\u001b[0m");
+    expect(colored).toContain("\u001b[1;36mParameter values:\u001b[0m");
+    expect(colored).toContain("\u001b[1m redacted\u001b[0m");
+    const coloredWidths = stripAnsi(colored).split("\n").map((line) => line.length);
+    expect(new Set(coloredWidths).size).toBe(1);
+    expect(coloredWidths[0]).toBeLessThanOrEqual(46);
+  });
+
   it("escapes terminal controls before adding trusted syntax colors", () => {
     const unsafe = "SELECT '\u001b[31mspoof' -- \u202eright-to-left";
     const colored = renderTerminalSql(unsafe, true);
-    expect(stripAnsi(colored)).toBe(safeTerminalText(unsafe));
+    expect(stripAnsi(colored)).toBe(renderTerminalSql(unsafe));
     expect(stripAnsi(colored)).toContain("\\u001b[31mspoof");
     expect(stripAnsi(colored)).toContain("\\u202e");
     expect(stripAnsi(colored)).not.toContain("\u202e");

@@ -359,6 +359,19 @@ function relatedGroupingAlternative(
   field: string,
 ): { relationship: string; resource: string; field: string } | undefined {
   if (!boundary || !resource) return undefined;
+  const exactTargetMatches = resource.relationships.flatMap((relationship) => {
+    const target = boundary.pack.resources.find((candidate) =>
+      candidate.id === relationship.target_resource);
+    return target?.groupable_fields.includes(field)
+      ? [{
+        relationship: relationship.id,
+        resource: target.id,
+        field,
+      }]
+      : [];
+  });
+  if (exactTargetMatches.length === 1) return exactTargetMatches[0];
+  if (exactTargetMatches.length > 1) return undefined;
   for (const relationship of resource.relationships) {
     const localColumns = relationship.local_columns
       ?? relationship.proof?.links
@@ -537,7 +550,7 @@ function provenManyToOne(
   return relationship.cardinality === "many_to_one"
     && relationship.proof?.source === "database_catalog"
     && relationship.proof.links.length >= 1
-    && relationship.proof.links.length <= 2
+    && relationship.proof.links.length <= 3
     && relationship.proof.links.every((link) =>
       link.cardinality === "many_to_one"
       && link.max_fan_out === 1

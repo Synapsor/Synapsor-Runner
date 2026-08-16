@@ -126,6 +126,38 @@ function fixtureRows() {
       occurredAt: "2026-07-15 00:00:00",
     });
   }
+  const metricSeries = [
+    ["growth", [10, 20, 30]],
+    ["retained", [40, 50, 60]],
+  ];
+  for (const [segment, weeklyAmounts] of metricSeries) {
+    for (let week = 0; week < weeklyAmounts.length; week += 1) {
+      for (let index = 0; index < 5; index += 1) {
+        rows.push({
+          id: `metric-${segment}-${week}-${index}`,
+          tenant: "acme",
+          store: "store-a",
+          product: "product-energy",
+          amount: weeklyAmounts[week],
+          scenario: "metrics",
+          segment,
+          occurredAt: `2026-07-${String(6 + (week * 7)).padStart(2, "0")} 00:00:00`,
+        });
+      }
+    }
+  }
+  for (let index = 0; index < 2; index += 1) {
+    rows.push({
+      id: `metric-private-${index}`,
+      tenant: "acme",
+      store: "store-a",
+      product: "product-energy",
+      amount: 999,
+      scenario: "metrics",
+      segment: "private-small",
+      occurredAt: "2026-07-13 00:00:00",
+    });
+  }
   return rows;
 }
 
@@ -151,8 +183,17 @@ async function seedPostgres() {
       CREATE TABLE star_live.categories (
         id text PRIMARY KEY,
         tenant_id text NOT NULL,
+        department_id text NOT NULL,
         name text NOT NULL
       );
+      CREATE TABLE star_live.departments (
+        id text PRIMARY KEY,
+        tenant_id text NOT NULL,
+        name text NOT NULL
+      );
+      ALTER TABLE star_live.categories
+        ADD CONSTRAINT categories_department_id_fkey FOREIGN KEY (department_id)
+        REFERENCES star_live.departments(id);
       CREATE TABLE star_live.products (
         id text PRIMARY KEY,
         tenant_id text NOT NULL,
@@ -183,14 +224,23 @@ async function seedPostgres() {
         CONSTRAINT line_items_sales_fact_id_fkey FOREIGN KEY (sales_fact_id)
           REFERENCES star_live.sales_facts(id)
       );
+      CREATE INDEX sales_facts_store_id_idx ON star_live.sales_facts(store_id);
+      CREATE INDEX sales_facts_product_id_idx ON star_live.sales_facts(product_id);
+      CREATE INDEX products_category_id_idx ON star_live.products(category_id);
+      CREATE INDEX categories_department_id_idx ON star_live.categories(department_id);
+      CREATE INDEX line_items_sales_fact_id_idx ON star_live.line_items(sales_fact_id);
       INSERT INTO star_live.stores VALUES
         ('store-a', 'acme', 'Downtown'),
         ('store-b', 'acme', 'Airport'),
         ('store-other', 'globex', 'Other tenant');
+      INSERT INTO star_live.departments VALUES
+        ('department-energy', 'acme', 'Energy portfolio'),
+        ('department-hardware', 'acme', 'Hardware portfolio'),
+        ('department-other', 'globex', 'Other tenant');
       INSERT INTO star_live.categories VALUES
-        ('category-energy', 'acme', 'Energy'),
-        ('category-hardware', 'acme', 'Hardware'),
-        ('category-other', 'globex', 'Other tenant');
+        ('category-energy', 'acme', 'department-energy', 'Energy'),
+        ('category-hardware', 'acme', 'department-hardware', 'Hardware'),
+        ('category-other', 'globex', 'department-other', 'Other tenant');
       INSERT INTO star_live.products VALUES
         ('product-energy', 'acme', 'category-energy', 'Battery'),
         ('product-hardware', 'acme', 'category-hardware', 'Cable'),
@@ -207,6 +257,8 @@ async function seedPostgres() {
       ALTER TABLE star_live.stores FORCE ROW LEVEL SECURITY;
       ALTER TABLE star_live.categories ENABLE ROW LEVEL SECURITY;
       ALTER TABLE star_live.categories FORCE ROW LEVEL SECURITY;
+      ALTER TABLE star_live.departments ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE star_live.departments FORCE ROW LEVEL SECURITY;
       ALTER TABLE star_live.products ENABLE ROW LEVEL SECURITY;
       ALTER TABLE star_live.products FORCE ROW LEVEL SECURITY;
       ALTER TABLE star_live.sales_facts ENABLE ROW LEVEL SECURITY;
@@ -216,6 +268,8 @@ async function seedPostgres() {
       CREATE POLICY stores_tenant_read ON star_live.stores FOR SELECT TO synapsor_reader
         USING (tenant_id = current_setting('app.tenant_id', true));
       CREATE POLICY categories_tenant_read ON star_live.categories FOR SELECT TO synapsor_reader
+        USING (tenant_id = current_setting('app.tenant_id', true));
+      CREATE POLICY departments_tenant_read ON star_live.departments FOR SELECT TO synapsor_reader
         USING (tenant_id = current_setting('app.tenant_id', true));
       CREATE POLICY products_tenant_read ON star_live.products FOR SELECT TO synapsor_reader
         USING (tenant_id = current_setting('app.tenant_id', true));
@@ -247,8 +301,17 @@ async function seedMysql() {
       CREATE TABLE synapsor_star.categories (
         id varchar(64) PRIMARY KEY,
         tenant_id varchar(64) NOT NULL,
+        department_id varchar(64) NOT NULL,
         name varchar(128) NOT NULL
       );
+      CREATE TABLE synapsor_star.departments (
+        id varchar(64) PRIMARY KEY,
+        tenant_id varchar(64) NOT NULL,
+        name varchar(128) NOT NULL
+      );
+      ALTER TABLE synapsor_star.categories
+        ADD CONSTRAINT categories_department_id_fkey FOREIGN KEY (department_id)
+        REFERENCES synapsor_star.departments(id);
       CREATE TABLE synapsor_star.products (
         id varchar(64) PRIMARY KEY,
         tenant_id varchar(64) NOT NULL,
@@ -283,10 +346,14 @@ async function seedMysql() {
         ('store-a', 'acme', 'Downtown'),
         ('store-b', 'acme', 'Airport'),
         ('store-other', 'globex', 'Other tenant');
+      INSERT INTO synapsor_star.departments VALUES
+        ('department-energy', 'acme', 'Energy portfolio'),
+        ('department-hardware', 'acme', 'Hardware portfolio'),
+        ('department-other', 'globex', 'Other tenant');
       INSERT INTO synapsor_star.categories VALUES
-        ('category-energy', 'acme', 'Energy'),
-        ('category-hardware', 'acme', 'Hardware'),
-        ('category-other', 'globex', 'Other tenant');
+        ('category-energy', 'acme', 'department-energy', 'Energy'),
+        ('category-hardware', 'acme', 'department-hardware', 'Hardware'),
+        ('category-other', 'globex', 'department-other', 'Other tenant');
       INSERT INTO synapsor_star.products VALUES
         ('product-energy', 'acme', 'category-energy', 'Battery'),
         ('product-hardware', 'acme', 'category-hardware', 'Cable'),
@@ -347,6 +414,7 @@ async function sourceSnapshot(engine, admin) {
 async function verifyEngine(engine, readUrl, inspectedSchema, admin) {
   const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), `synapsor-star-${engine}-`));
   temporaryRoots.push(projectRoot);
+  let depthThreeExecutionDurationMs;
   const env = {
     STAR_DATABASE_URL: readUrl,
     SYNAPSOR_TENANT_ID: "acme",
@@ -428,6 +496,14 @@ async function verifyEngine(engine, readUrl, inspectedSchema, admin) {
     && relationship.nullable === true
     && relationship.unmatched_rows === "review_required"),
   `${engine} did not prove the depth-two category dimension`, fact.relationships);
+  const depthThreeRelationship = "sales_facts_product_id_fkey__products_category_id_fkey__categories_department_id_fkey";
+  assert(fact.relationships.some((relationship) =>
+    relationship.id === depthThreeRelationship
+    && relationship.path_depth === 3
+    && relationship.proof?.links.length === 3
+    && relationship.nullable === true
+    && relationship.unmatched_rows === "review_required"),
+  `${engine} did not preserve the exact depth-three department candidate`, fact.relationships);
   assert(!fact.relationships.some((relationship) =>
     relationship.target_resource === `${inspectedSchema}.line_items`),
   `${engine} generated a one-to-many fan-out path`, fact.relationships);
@@ -454,6 +530,9 @@ async function verifyEngine(engine, readUrl, inspectedSchema, admin) {
       }
     }
     const reviewed = reviewExplorationBoundaryCandidate(build.exploration_boundary, candidate);
+    assert(!reviewed.candidate.pack.resources.find((resource) => resource.id === factId)
+      ?.relationships.some((relationship) => relationship.id === depthThreeRelationship),
+    `${engine} activated depth three without the explicit reviewed opt-in`, reviewed.candidate.budgets);
     await activateExplorationBoundary({
       projectRoot,
       candidate: reviewed.candidate,
@@ -492,6 +571,287 @@ async function verifyEngine(engine, readUrl, inspectedSchema, admin) {
     } finally {
       await runtime.close();
     }
+  }
+
+  const defaultDepthRuntime = await createScopedExploreRuntime({
+    projectRoot,
+    transport: "stdio",
+    env,
+  });
+  try {
+    await defaultDepthRuntime.explore({
+      kind: "aggregate",
+      resource: factId,
+      measures: [{ function: "sum", field: "amount_cents" }],
+      dimensions: [{ field: "name", relationship: depthThreeRelationship }],
+      where: [{ field: "scenario", op: "eq", value: "star" }],
+      top_n: 10,
+    }).then(
+      () => assert(false, `${engine} accepted depth three under the depth-two default`),
+      (error) => assert(error?.code === "EXPLORE_RELATIONSHIP_FORBIDDEN",
+        `${engine} refused the inactive depth-three path with an unexpected error`, {
+          code: error?.code,
+          message: error?.message,
+        }),
+    );
+  } finally {
+    await defaultDepthRuntime.close();
+  }
+
+  const overDepthCandidate = structuredClone(build.exploration_boundary);
+  overDepthCandidate.budgets.max_analysis_relationship_hops = 4;
+  try {
+    reviewExplorationBoundaryCandidate(build.exploration_boundary, overDepthCandidate);
+    assert(false, `${engine} accepted an analysis relationship depth above the reviewed hard cap`);
+  } catch (error) {
+    assert(/hard reviewed ceiling 3|hard-capped at three proven hops/i.test(error?.message ?? ""),
+      `${engine} refused analysis relationship depth four with an unexpected error`, {
+        message: error?.message,
+      });
+  }
+
+  const depthThreeCandidate = structuredClone(build.exploration_boundary);
+  depthThreeCandidate.budgets.max_analysis_relationship_hops = 3;
+  assert(depthThreeCandidate.budgets.max_derived_scope_hops === 2,
+    `${engine} raising analysis depth implicitly raised derived-scope depth`, depthThreeCandidate.budgets);
+  for (const resource of depthThreeCandidate.pack.resources) {
+    for (const relationship of resource.relationships) {
+      if (relationship.unmatched_rows === "review_required") relationship.unmatched_rows = "exclude";
+    }
+  }
+  const depthThreeReviewed = reviewExplorationBoundaryCandidate(
+    build.exploration_boundary,
+    depthThreeCandidate,
+  );
+  await activateExplorationBoundary({
+    projectRoot,
+    candidate: depthThreeReviewed.candidate,
+    expectedDigest: depthThreeReviewed.digest,
+    actor: "depth-three-verifier",
+    confirmation: `ACTIVATE ${depthThreeReviewed.digest}`,
+    confirmedDecisions: depthThreeReviewed.candidate.unresolved_decisions,
+    currentInspection: inspection,
+  });
+  const depthThreeRuntime = await createScopedExploreRuntime({
+    projectRoot,
+    transport: "stdio",
+    env,
+  });
+  try {
+    const depthThreeStartedAt = performance.now();
+    const result = await depthThreeRuntime.explore({
+      kind: "aggregate",
+      resource: factId,
+      measures: [{ function: "sum", field: "amount_cents" }],
+      dimensions: [{ field: "name", relationship: depthThreeRelationship }],
+      where: [{ field: "scenario", op: "eq", value: "star" }],
+      order_by: { kind: "measure", index: 0, direction: "desc" },
+      top_n: 10,
+    });
+    depthThreeExecutionDurationMs = Math.round((performance.now() - depthThreeStartedAt) * 100) / 100;
+    assert(JSON.stringify(result.data) === JSON.stringify([
+      { departments_name: "Energy portfolio", sum_amount_cents: 6995 },
+      { departments_name: "Hardware portfolio", sum_amount_cents: 3000 },
+    ]), `${engine} returned incorrect depth-three department totals`, result.data);
+    assert(result.source_database_changed === false,
+      `${engine} depth-three aggregate reported a source mutation`, result);
+  } finally {
+    await depthThreeRuntime.close();
+  }
+
+  const metricsCandidate = structuredClone(build.exploration_boundary);
+  const metricsFact = metricsCandidate.pack.resources.find((resource) => resource.id === factId);
+  assert(metricsFact, `${engine} metrics candidate omitted the sales fact resource`);
+  metricsFact.derived_measures = [
+    {
+      name: "amount_ratio_per_sale",
+      label: "Amount ratio per sale",
+      shape: "ratio",
+      numerator: { function: "sum", field: "amount_cents" },
+      denominator: { function: "count" },
+      null_policy: "null_on_zero_or_null_denominator",
+    },
+    {
+      name: "amount_per_sale",
+      label: "Amount per sale",
+      shape: "per_unit_average",
+      numerator: { function: "sum", field: "amount_cents" },
+      denominator: { function: "count" },
+      null_policy: "null_on_zero_or_null_denominator",
+    },
+    {
+      name: "distinct_sale_percentage",
+      label: "Distinct sale percentage",
+      shape: "percentage",
+      numerator: { function: "count_distinct", field: "id" },
+      denominator: { function: "count" },
+      null_policy: "null_on_zero_or_null_denominator",
+    },
+    {
+      name: "amount_running_total",
+      label: "Amount running total",
+      shape: "running_total",
+      base_measure: { function: "sum", field: "amount_cents" },
+    },
+    {
+      name: "amount_rank",
+      label: "Amount rank",
+      shape: "rank",
+      base_measure: { function: "sum", field: "amount_cents" },
+      direction: "desc",
+    },
+    {
+      name: "amount_lag_change",
+      label: "Amount change from prior period",
+      shape: "lag_absolute_change",
+      base_measure: { function: "sum", field: "amount_cents" },
+    },
+    {
+      name: "amount_lag_percentage",
+      label: "Amount percentage change from prior period",
+      shape: "lag_percentage_change",
+      base_measure: { function: "sum", field: "amount_cents" },
+    },
+    {
+      name: "amount_moving_average",
+      label: "Two-period amount moving average",
+      shape: "moving_average",
+      base_measure: { function: "sum", field: "amount_cents" },
+      window_size: 2,
+    },
+    {
+      name: "amount_share",
+      label: "Share of released amount",
+      shape: "share_of_released_total",
+      base_measure: { function: "sum", field: "amount_cents" },
+    },
+  ];
+  for (const resource of metricsCandidate.pack.resources) {
+    for (const relationship of resource.relationships) {
+      if (relationship.unmatched_rows === "review_required") relationship.unmatched_rows = "exclude";
+    }
+  }
+  const metricsReviewed = reviewExplorationBoundaryCandidate(
+    build.exploration_boundary,
+    metricsCandidate,
+  );
+  await activateExplorationBoundary({
+    projectRoot,
+    candidate: metricsReviewed.candidate,
+    expectedDigest: metricsReviewed.digest,
+    actor: "reviewed-metrics-verifier",
+    confirmation: `ACTIVATE ${metricsReviewed.digest}`,
+    confirmedDecisions: metricsReviewed.candidate.unresolved_decisions,
+    currentInspection: inspection,
+  });
+  const metricsRuntime = await createScopedExploreRuntime({
+    projectRoot,
+    transport: "stdio",
+    env,
+  });
+  try {
+    const commonPlan = {
+      kind: "aggregate",
+      resource: factId,
+      dimensions: [{ field: "segment" }],
+      where: [{ field: "scenario", op: "eq", value: "metrics" }],
+      top_n: 10,
+    };
+    const ratioResult = await metricsRuntime.explore({
+      ...commonPlan,
+      measures: [
+        { derived_measure: "amount_ratio_per_sale" },
+        { derived_measure: "amount_per_sale" },
+        { derived_measure: "distinct_sale_percentage" },
+      ],
+    });
+    const ratioRows = new Map(ratioResult.data.map((row) => [row.segment, row]));
+    assert(ratioResult.privacy?.suppressed_groups === 1
+      && !ratioRows.has("private-small")
+      && ratioRows.get("growth")?.amount_ratio_per_sale === 20
+      && ratioRows.get("growth")?.amount_per_sale === 20
+      && ratioRows.get("growth")?.distinct_sale_percentage === 100
+      && ratioRows.get("retained")?.amount_ratio_per_sale === 50
+      && ratioRows.get("retained")?.amount_per_sale === 50
+      && ratioRows.get("retained")?.distinct_sale_percentage === 100,
+    `${engine} returned incorrect reviewed ratio/per-unit metrics or included a suppressed input`, ratioResult);
+
+    const rankedResult = await metricsRuntime.explore({
+      ...commonPlan,
+      measures: [
+        { derived_measure: "amount_rank" },
+        { derived_measure: "amount_share" },
+      ],
+    });
+    const rankedRows = new Map(rankedResult.data.map((row) => [row.segment, row]));
+    const growthShare = Number(rankedRows.get("growth")?.amount_share);
+    const retainedShare = Number(rankedRows.get("retained")?.amount_share);
+    assert(rankedResult.privacy?.suppressed_groups === 1
+      && !rankedRows.has("private-small")
+      && rankedRows.get("growth")?.amount_rank === 2
+      && rankedRows.get("retained")?.amount_rank === 1
+      && Math.abs(growthShare - (100 * 300 / 1050)) < 1e-9
+      && Math.abs(retainedShare - (100 * 750 / 1050)) < 1e-9,
+    `${engine} ranked or shared against suppressed groups`, rankedResult);
+
+    const sequentialPlan = {
+      ...commonPlan,
+      time_bucket: { field: "occurred_at", bucket: "week" },
+      order_by: { kind: "time_bucket", direction: "asc" },
+    };
+    const sequentialResult = await metricsRuntime.explore({
+      ...sequentialPlan,
+      measures: [
+        { derived_measure: "amount_running_total" },
+        { derived_measure: "amount_lag_change" },
+        { derived_measure: "amount_lag_percentage" },
+      ],
+    });
+    const series = (segment, field) => sequentialResult.data
+      .filter((row) => row.segment === segment)
+      .sort((left, right) => String(left.time_bucket).localeCompare(String(right.time_bucket)))
+      .map((row) => row[field]);
+    assert(sequentialResult.privacy?.suppressed_groups === 1
+      && !sequentialResult.data.some((row) => row.segment === "private-small")
+      && JSON.stringify(series("growth", "amount_running_total")) === JSON.stringify([50, 150, 300])
+      && JSON.stringify(series("retained", "amount_running_total")) === JSON.stringify([200, 450, 750])
+      && JSON.stringify(series("growth", "amount_lag_change")) === JSON.stringify([null, 50, 50])
+      && JSON.stringify(series("retained", "amount_lag_change")) === JSON.stringify([null, 50, 50])
+      && JSON.stringify(series("growth", "amount_lag_percentage")) === JSON.stringify([null, 100, 50])
+      && JSON.stringify(series("retained", "amount_lag_percentage")) === JSON.stringify([null, 25, 20]),
+    `${engine} returned incorrect post-suppression running or lag metrics`, sequentialResult);
+
+    const movingResult = await metricsRuntime.explore({
+      ...sequentialPlan,
+      measures: [{ derived_measure: "amount_moving_average" }],
+    });
+    const movingSeries = (segment) => movingResult.data
+      .filter((row) => row.segment === segment)
+      .sort((left, right) => String(left.time_bucket).localeCompare(String(right.time_bucket)))
+      .map((row) => row.amount_moving_average);
+    assert(movingResult.privacy?.suppressed_groups === 1
+      && !movingResult.data.some((row) => row.segment === "private-small")
+      && JSON.stringify(movingSeries("growth")) === JSON.stringify([50, 75, 125])
+      && JSON.stringify(movingSeries("retained")) === JSON.stringify([200, 225, 275]),
+    `${engine} returned an incorrect reviewed moving average`, movingResult);
+
+    await metricsRuntime.explore({
+      ...commonPlan,
+      measures: [{
+        derived_measure: "amount_per_sale",
+        formula: "SUM(amount_cents) / COUNT(*)",
+      }],
+    }).then(
+      () => assert(false, `${engine} accepted a model-authored formula`),
+      (error) => assert(error?.code === "EXPLORE_PLAN_INVALID"
+        && /formula|unsupported/i.test(error?.message ?? ""),
+      `${engine} refused a model-authored formula with an unexpected error`, {
+        code: error?.code,
+        message: error?.message,
+      }),
+    );
+  } finally {
+    await metricsRuntime.close();
   }
 
   assert(fact.groupable_fields.includes("segment"),
@@ -583,7 +943,7 @@ async function verifyEngine(engine, readUrl, inspectedSchema, admin) {
   }
   const after = await sourceSnapshot(engine, admin);
   assert(JSON.stringify(after) === JSON.stringify(before), `${engine} live read verification changed source rows`, { before, after });
-  console.log(`${engine} reviewed relationship/ranking verification passed with exact totals, nullable semantics, high-cardinality top-N, period movers, suppression, scope, and fan-out refusal.`);
+  console.log(`${engine} reviewed relationship/ranking verification passed with exact totals, independent depth-three analysis opt-in (${depthThreeExecutionDurationMs} ms end-to-end verifier latency), the complete reviewed metric family, nullable semantics, high-cardinality top-N, period movers, suppression, scope, and fan-out refusal.`);
 }
 
 run("docker", ["compose", "-f", compose, "up", "-d", "--wait", "postgres", "mysql"], { inherit: true });

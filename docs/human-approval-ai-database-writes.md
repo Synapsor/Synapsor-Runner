@@ -10,6 +10,19 @@ separately reviewed policy decides outside MCP; only then can a trusted worker
 recheck scope, evidence freshness, conflicts, bounds, affected rows, and
 idempotency before commit.
 
+## Approve The Effect, Not Merely The Tool Call
+
+A client-level confirmation that a tool may run is useful, but a tool name and
+arguments do not necessarily show the exact rows, before/after values, current
+evidence, contract version, or affected-row limits. If that same tool performs
+the write, invocation approval and commit authority are still coupled.
+
+Runner's model-facing call creates an inert proposal instead. The decision is
+bound to that exact capability digest, trusted scope ownership, target,
+before/after effect, evidence, limits, and idempotency identity. Later contract
+activation cannot reinterpret the old proposal. A stale or unverifiable direct
+write is refused rather than silently refreshed.
+
 ## Review The Policy, Not Every Routine Change
 
 Runner supports human/manual, human/worker, policy/manual, and policy/worker
@@ -25,10 +38,16 @@ A webhook response cannot approve a proposal.
 ## Direct And Application-Owned Writes
 
 Runner can execute reviewed single-row CRUD and bounded-set changes with
-conflict and row-count guards. Multi-step transactions, external side effects,
-and application-specific authorization stay in an app-owned executor. Runner
-governs the request and records the outcome; your application owns the
-transaction.
+conflict and row-count guards. Final revalidation occurs inside the
+Runner-managed source transaction. With source-database receipt authority, the
+mutation and receipt commit atomically. Runner-ledger authority may require
+operator reconciliation after an ambiguous crash and does not claim distributed
+exactly-once behavior.
+
+Multi-step transactions, external side effects, and application-specific
+authorization stay in an app-owned executor. Runner governs the proposal and
+approval envelope, but your application owns final scope, conflict,
+idempotency, transaction/rollback, and safe receipt behavior.
 
 See [Guarded CRUD Writeback](guarded-crud-writeback.md), [Supervised Automatic
 Apply](supervised-automatic-apply.md), and [App-Owned Executors](app-owned-executors.md).

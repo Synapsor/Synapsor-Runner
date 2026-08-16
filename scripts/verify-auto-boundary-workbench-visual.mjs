@@ -9,6 +9,7 @@ import {
 } from "../apps/runner/dist/auto-boundary.js";
 import { initializeGuidedProject } from "../apps/runner/dist/guided-project.js";
 import { startLocalUiServer } from "../apps/runner/dist/local-ui.js";
+import { createScopedExploreRuntime } from "../apps/runner/dist/scoped-explore.js";
 import { ProposalStore } from "../packages/proposal-store/dist/index.js";
 import {
   captureScreenshot,
@@ -96,9 +97,21 @@ try {
       return {
       boundary,
       session_fingerprint: `sha256:${"c".repeat(64)}`,
-      describe: () => ({ resources: boundary.pack.resources }),
+      describe: () => ({
+        resources: boundary.pack.resources.map((resource) => ({
+          ...resource,
+          relative_time_window_fields: Object.keys(resource.time_bucket_fields ?? {}),
+        })),
+        relative_time_windows: {
+          available: true,
+          reporting_timezone: "UTC",
+          windows: ["last_30_days", "previous_month"],
+          comparison_partners: ["preceding_period", "same_period_last_year"],
+        },
+      }),
       explore: async (plan) => {
         const grouped = plan.dimensions?.[0]?.field;
+        const relativeWindow = plan.time_window;
         return {
           ok: true,
           outcome: {
@@ -115,6 +128,22 @@ try {
             returned_rows_or_groups: 1,
             returned_cells: grouped ? 2 : 1,
           },
+          ...(relativeWindow ? {
+            operator_time_windows: [{
+              source: "reviewed_relative_time",
+              location: "time_window",
+              field: relativeWindow.field,
+              ...(relativeWindow.relationship ? { relationship: relativeWindow.relationship } : {}),
+              window: relativeWindow.window,
+              reporting_timezone: "UTC",
+              resolved_at: "2026-08-11T06:00:00.000Z",
+              ranges: [{
+                id: "selected",
+                start_inclusive: "2026-07-12T06:00:00.000Z",
+                end_exclusive: "2026-08-11T06:00:00.000Z",
+              }],
+            }],
+          } : {}),
           source_database_changed: false,
         };
       },
@@ -432,13 +461,111 @@ try {
       await evaluate(page, "document.querySelector('#ask-submit-consent')?.textContent.includes('Submitting your first question confirms')"),
       "configured-model Quick Start did not bind egress disclosure to first-question submission",
     );
+    await waitForExpression(page, "document.querySelector('#view-explore .boundary-field-matrix') !== null");
+    await evaluate(page, `(() => {
+      const guide=document.querySelector('#ask-boundary-guide');
+      if(guide)guide.open=true;
+      const map=document.querySelector('#view-explore [data-boundary-catalog-map]');
+      if(map)map.open=true;
+      const detail=map?.querySelector('.boundary-catalog-boundary > details');
+      if(detail)detail.open=true;
+      map?.scrollIntoView({block:'start'});
+    })()`);
+    const desktopMap = await evaluate(page, `(() => {
+      const map=document.querySelector('#view-explore [data-boundary-catalog-map]');
+      const matrix=map?.querySelector('.boundary-field-matrix');
+      const wrapper=map?.querySelector('.boundary-field-matrix-wrap');
+      const nodes=map?.querySelector('.boundary-catalog-nodes');
+      const headers=[...(matrix?.querySelectorAll('thead th')||[])].map(node=>(node.textContent||'').trim());
+      const operations=[...(matrix?.querySelectorAll('.boundary-operation-list li')||[])]
+        .map(node=>(node.textContent||'').trim());
+      return {
+        visible:Boolean(map?.offsetParent&&matrix?.offsetParent),
+        headers,
+        operations,
+        pageFits:document.documentElement.scrollWidth<=document.documentElement.clientWidth+1,
+        matrixContained:Boolean(wrapper&&wrapper.clientWidth<=map.clientWidth+1),
+        tableColumns:nodes?getComputedStyle(nodes).gridTemplateColumns:'missing',
+        exactDetailsCollapsed:[...map.querySelectorAll('.boundary-field-exact')]
+          .every(item=>item.open===false),
+        pathIdsCollapsed:[...map.querySelectorAll('.boundary-relationship-summary details')]
+          .every(item=>item.open===false),
+      };
+    })()`);
+    assert(
+      desktopMap.visible
+        && desktopMap.headers.join('|') === 'Field and database type|Reviewed operations'
+        && desktopMap.operations.includes('Return value')
+        && desktopMap.operations.includes('Group / band')
+        && desktopMap.operations.includes('Missing-data measure')
+        && desktopMap.pageFits
+        && desktopMap.matrixContained
+        && desktopMap.tableColumns.trim().split(/\s+/).length === 1
+        && desktopMap.exactDetailsCollapsed
+        && desktopMap.pathIdsCollapsed,
+      "reviewed data map was not a contained plain-language operation table",
+      desktopMap,
+    );
+    await evaluate(page, `(() => {
+      const maps=[...document.querySelectorAll('#view-explore [data-boundary-catalog-map]')];
+      const map=maps.find(node=>node.offsetParent);
+      map?.querySelector('.boundary-field-matrix-wrap')?.scrollIntoView({block:'center'});
+    })()`);
+    await screenshot(page, "workbench-reviewed-data-map-desktop.png");
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true,
+      screenWidth: 390,
+      screenHeight: 844,
+    });
+    await evaluate(page, `(() => {
+      const maps=[...document.querySelectorAll('#view-explore [data-boundary-catalog-map]')];
+      const map=maps.find(node=>node.offsetParent);
+      map?.querySelector('.boundary-field-matrix-wrap')?.scrollIntoView({block:'center'});
+    })()`);
+    const mobileMap = await evaluate(page, `(() => {
+      const wrapper=document.querySelector('#view-explore .boundary-field-matrix-wrap');
+      return {
+        pageFits:document.documentElement.scrollWidth<=document.documentElement.clientWidth+1,
+        matrixFits:Boolean(wrapper&&wrapper.scrollWidth<=wrapper.clientWidth+1),
+        overflow:getComputedStyle(wrapper).overflowX,
+      };
+    })()`);
+    assert(
+      mobileMap.pageFits && mobileMap.matrixFits && /auto|scroll/.test(mobileMap.overflow),
+      "mobile reviewed data map did not fit inside its bordered operation table",
+      mobileMap,
+    );
+    await screenshot(page, "workbench-reviewed-data-map-mobile.png");
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 1440,
+      height: 1100,
+      deviceScaleFactor: 1,
+      mobile: false,
+      screenWidth: 1440,
+      screenHeight: 1100,
+    });
+    await evaluate(page, "window.scrollTo(0,0)");
     assert(visualProviderRequests === 0, "Workbench contacted the provider before the first question");
     firstValueHumanSteps += 1;
     await typeIntoSelector(page, "#ask-question", "Which outcomes have the most check ins?");
     await evaluate(page, `document.querySelector("#ask-question").dispatchEvent(
       new KeyboardEvent("keydown",{key:"Enter",bubbles:true})
     )`);
-    await waitForExpression(page, "document.querySelectorAll('#ask-transcript .ask-turn.answer').length === 1");
+    try {
+      await waitForExpression(page, "document.querySelectorAll('#ask-transcript .ask-turn.answer').length === 1");
+    } catch (error) {
+      const diagnostic = await evaluate(page, `({
+        status:document.querySelector("#ask-run-status")?.textContent||"",
+        configStatus:document.querySelector("#ask-config-status")?.textContent||"",
+        transcript:document.querySelector("#ask-transcript")?.textContent||"",
+        askVisible:document.querySelector("#ask-chat")?.classList.contains("hidden")===false,
+        configurationVisible:document.querySelector("#ask-configuration-form")?.classList.contains("hidden")===false
+      })`);
+      throw new Error(`${error.message}\n${JSON.stringify({ ...diagnostic, visualProviderRequests }, null, 2)}`);
+    }
     assert(
       visualProviderRequests === 2,
       "the first submitted question did not complete the configured provider/tool loop",
@@ -460,6 +587,79 @@ try {
       { firstVerifiedResultMs },
     );
     await screenshot(page, "workbench-model-first-analyze-desktop.png");
+    const activeBoundary = JSON.parse(activeArtifact);
+    const historyRuntime = await createScopedExploreRuntime({
+      projectRoot,
+      transport: "loopback_workbench",
+      env: { ...process.env, DATABASE_URL: "postgresql://visual.invalid/workbench" },
+      inspectDatabaseFn: async () => inspection,
+      resolveTrustedScopeFn: async () => ({
+        tenant: "visual-tenant-from-operator-environment",
+        principal: "",
+        tenant_source: "environment",
+        tenant_binding: "SYNAPSOR_TENANT_ID",
+        principal_source: "not_required",
+      }),
+      executor: {
+        execute: async () => [],
+        executeBatch: async ({ queries }) => queries.map(() => [{
+          measure_0: 12,
+          __cohort_size: 12,
+        }]),
+        close: async () => undefined,
+      },
+    });
+    try {
+      await historyRuntime.explore({
+        kind: "aggregate",
+        resource: activeBoundary.pack.resources[0].id,
+        measures: [{ function: "count" }],
+        top_n: 1,
+      });
+    } finally {
+      await historyRuntime.close();
+    }
+    await clickSelector(page, "#ask-history > summary");
+    await clickSelector(page, "#load-ask-history");
+    await waitForExpression(page, "document.querySelector('#ask-history-status')?.textContent.includes('recent reference')");
+    const historyReport = await evaluate(page, `(() => ({
+      recentRows:document.querySelectorAll("#ask-history-content table tbody tr").length,
+      text:document.querySelector("#ask-history")?.textContent||"",
+      horizontalOverflow:document.documentElement.scrollWidth>document.documentElement.clientWidth+1,
+    }))()`);
+    assert(
+      historyReport.recentRows >= 1
+        && /Recent references/.test(historyReport.text)
+        && /Latest/.test(historyReport.text),
+      "Workbench query history did not render the completed Ask reference",
+      historyReport,
+    );
+    assert(
+      !historyReport.text.includes("visual-provider-key-never-rendered")
+        && !historyReport.text.includes("visual-tenant-from-operator-environment"),
+      "Workbench query history rendered a credential or trusted-scope value",
+      historyReport,
+    );
+    assert(historyReport.horizontalOverflow === false, "desktop query history overflowed the viewport", historyReport);
+    await screenshot(page, "workbench-query-history-desktop.png");
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true,
+      screenWidth: 390,
+      screenHeight: 844,
+    });
+    await assertWorkbenchDom(page, "mobile query history", { expectedView: "explore" });
+    await screenshot(page, "workbench-query-history-mobile.png");
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 1440,
+      height: 1100,
+      deviceScaleFactor: 1,
+      mobile: false,
+      screenWidth: 1440,
+      screenHeight: 1100,
+    });
     await clickSelector(page, "#prove-boundary-chat");
     await waitForExpression(page, "document.querySelector('#boundary-proof-result')?.textContent.includes('Boundary held')");
     assert(
@@ -469,6 +669,95 @@ try {
     await screenshot(page, "workbench-boundary-proof-desktop.png");
     await evaluate(page, `(() => {
       document.body.classList.remove("ask-result-mode");
+      showAskConfiguration();
+    })()`);
+    await waitForExpression(page, "document.querySelector('#open-client-setup')?.offsetParent !== null");
+    await clickSelector(page, "#ask-open-no-model");
+    await waitForExpression(page, `[...document.querySelectorAll('#aggregate-window-field option')]
+      .some(option=>{try{return JSON.parse(option.value).field==='created_at'}catch{return false}})`);
+    await evaluate(page, `(() => {
+      const select=document.querySelector("#aggregate-window-field");
+      const option=[...select.options].find(item=>{try{return JSON.parse(item.value).field==="created_at"}catch{return false}});
+      select.value=option.value;
+      select.dispatchEvent(new Event("change",{bubbles:true}));
+    })()`);
+    await selectOptionByValue(page, "#aggregate-window-name", "last_30_days");
+    await waitForExpression(page, "document.querySelector('#aggregate-window-wrap')?.classList.contains('hidden') === false");
+    const relativeWindowComposer = await evaluate(page, `(() => {
+      document.querySelector("#aggregate-window-field")?.scrollIntoView({block:"center"});
+      const form=document.querySelector("#aggregate-controls");
+      const preview=document.querySelector("#plan-preview")?.textContent||"";
+      const rect=form?.getBoundingClientRect();
+      return {
+        field:document.querySelector("#aggregate-window-field")?.value,
+        window:document.querySelector("#aggregate-window-name")?.value,
+        preview,
+        withinWidth:Boolean(rect&&rect.left>=0&&rect.right<=innerWidth),
+        horizontalOverflow:document.documentElement.scrollWidth>document.documentElement.clientWidth+1,
+      };
+    })()`);
+    assert(
+      JSON.parse(relativeWindowComposer.field).field === "created_at"
+        && relativeWindowComposer.window === "last_30_days"
+        && /"time_window"/.test(relativeWindowComposer.preview)
+        && /"last_30_days"/.test(relativeWindowComposer.preview)
+        && relativeWindowComposer.withinWidth
+        && !relativeWindowComposer.horizontalOverflow,
+      "Workbench relative-window composer did not produce a bounded reviewed plan",
+      relativeWindowComposer,
+    );
+    await screenshot(page, "workbench-relative-window-controls-desktop.png");
+    await clickSelector(page, "#run-explore");
+    await waitForExpression(page, "document.querySelector('#explore-status')?.textContent.includes('Reviewed result returned')");
+    const relativeWindowResult = await evaluate(page, `(() => {
+      const result=document.querySelector("#explore-result");
+      const text=result?.textContent||"";
+      return {
+        text,
+        operatorDetails:Boolean(result?.querySelector(".ask-execution-evidence")),
+        horizontalOverflow:document.documentElement.scrollWidth>document.documentElement.clientWidth+1,
+      };
+    })()`);
+    assert(
+      relativeWindowResult.operatorDetails
+        && /Operator-only resolved UTC window/.test(relativeWindowResult.text)
+        && /Last 30 days/.test(relativeWindowResult.text)
+        && /2026-07-12T06:00:00.000Z/.test(relativeWindowResult.text)
+        && /2026-08-11T06:00:00.000Z/.test(relativeWindowResult.text)
+        && !relativeWindowResult.horizontalOverflow,
+      "Workbench did not render the Runner-resolved range as operator-only evidence",
+      relativeWindowResult,
+    );
+    await evaluate(page, `(() => {
+      const details=document.querySelector("#explore-result .ask-execution-evidence");
+      details.open=true;
+      details.scrollIntoView({block:"center"});
+    })()`);
+    await screenshot(page, "workbench-relative-window-result-desktop.png");
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true,
+      screenWidth: 390,
+      screenHeight: 844,
+    });
+    await evaluate(page, `document.querySelector("#explore-result")?.scrollIntoView({block:"start"})`);
+    assert(
+      await evaluate(page, "document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1"),
+      "Workbench relative-window evidence overflowed the mobile viewport",
+    );
+    await screenshot(page, "workbench-relative-window-result-mobile.png");
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 1440,
+      height: 1100,
+      deviceScaleFactor: 1,
+      mobile: false,
+      screenWidth: 1440,
+      screenHeight: 1100,
+    });
+    await evaluate(page, `(() => {
+      document.body.classList.remove("no-model-focus");
       showAskConfiguration();
     })()`);
     await waitForExpression(page, "document.querySelector('#open-client-setup')?.offsetParent !== null");
@@ -540,8 +829,9 @@ try {
     await waitForExpression(page, "document.querySelector('[data-access-column-list]')?.offsetParent !== null");
     const immediateColumns = await evaluate(page, `(() => {
       const list=document.querySelector("[data-access-column-list]");
-      const tier=[...list.querySelectorAll("[data-field-tier]")]
-        .find(input=>input.dataset.currentTier==="visible"&&!input.disabled);
+      const visibleTiers=[...list.querySelectorAll("[data-field-tier]")]
+        .filter(input=>input.dataset.currentTier==="visible"&&!input.disabled);
+      const tier=visibleTiers.find(input=>input.dataset.fieldName!=="amount_cents")||visibleTiers[0];
       const secondary=[...document.querySelectorAll("#resource-detail details[data-access-secondary]")];
       const rect=tier?.getBoundingClientRect();
       return {
@@ -611,6 +901,346 @@ try {
       "the current active boundary stopped passing runtime preflight while its replacement was only staged",
       stagedReplacementPreflight,
     );
+    const enumReview = await evaluate(page, `(() => {
+      const form=document.querySelector('[data-enum-review-form][data-enum-field="status"]');
+      if(!form)return null;
+      form.open=true;
+      const values=[...form.querySelectorAll('[data-enum-review-value]')];
+      const removed=values.at(-1);
+      removed.checked=false;
+      form.querySelector('[data-enum-review-actor]').value='visual-reviewer@example.test';
+      form.querySelector('[data-enum-review-reason]').value='Keep the internal archived lifecycle state outside this reviewed agent boundary.';
+      return {before:values.map(input=>input.value),removed:removed.value,copy:form.textContent};
+    })()`);
+    assert(
+      enumReview
+        && JSON.stringify(enumReview.before) === JSON.stringify(["open", "closed", "archived"])
+        && /database schema metadata/i.test(String(enumReview.copy))
+        && /only by checked values/i.test(String(enumReview.copy)),
+      "Workbench did not expose the complete schema-declared categorical review control",
+      enumReview,
+    );
+    await clickSelector(page, '[data-submit-enum-review="status"]');
+    await waitForExpression(page, `/Recorded: .*\.status keeps 2 reviewed values/.test(document.querySelector('#access-staged-summary')?.textContent||'')`);
+    const enumRecorded = await evaluate(page, `(() => {
+      const form=document.querySelector('[data-enum-review-form][data-enum-field="status"]');
+      form.open=true;
+      const selected=[...form.querySelectorAll('[data-enum-review-value]:checked')].map(input=>input.value);
+      form.querySelector('[data-enum-review-actor]').value='visual-reviewer@example.test';
+      form.querySelector('[data-enum-review-reason]').value='Keep the internal archived lifecycle state outside this reviewed agent boundary.';
+      return {selected,summary:document.querySelector('#access-staged-summary')?.textContent||''};
+    })()`);
+    assert(
+      JSON.stringify(enumRecorded.selected) === JSON.stringify(["open", "closed"])
+        && /Actor: visual-reviewer@example\.test/.test(enumRecorded.summary),
+      "Workbench did not confirm the exact categorical narrowing and reviewer",
+      enumRecorded,
+    );
+    await clickSelector(page, '[data-submit-enum-review="status"]');
+    await waitForExpression(page, "/Unchanged: this column already uses exactly these allowed values/.test(document.querySelector('[data-enum-review-form][data-enum-field=\"status\"] [data-enum-review-status]')?.textContent||'')");
+    assert(
+      await fs.readFile(
+        path.join(projectRoot, ".synapsor", "exploration-boundary.active.json"),
+        "utf8",
+      ) === activeArtifact,
+      "reviewing categorical values changed active authority before confirmation",
+    );
+    const resourceMetadataEditor = await evaluate(page, `(() => {
+      const form=document.querySelector('[data-metadata-review-form][data-metadata-kind="resource_metadata"]');
+      if(!form)return null;
+      form.open=true;
+      form.querySelector('[data-metadata-label]').value='Reviewed operational records';
+      form.querySelector('[data-metadata-description]').value='Reviewed records used for operational trend analysis.';
+      form.querySelector('[data-metadata-actor]').value='visual-reviewer@example.test';
+      form.querySelector('[data-metadata-reason]').value='Give people and AI clients clear business context without changing the exact database id.';
+      form.scrollIntoView({block:'center'});
+      const rect=form.getBoundingClientRect();
+      return {
+        copy:form.textContent||'',
+        exact:form.querySelector('code')?.textContent||'',
+        visible:rect.top<innerHeight&&rect.bottom>0,
+        withinWidth:rect.left>=0&&rect.right<=innerWidth,
+        horizontalOverflow:document.documentElement.scrollWidth>document.documentElement.clientWidth+1,
+      };
+    })()`);
+    assert(
+      resourceMetadataEditor
+        && resourceMetadataEditor.exact === twoClickResource
+        && resourceMetadataEditor.visible
+        && resourceMetadataEditor.withinWidth
+        && !resourceMetadataEditor.horizontalOverflow
+        && /grants no access/i.test(resourceMetadataEditor.copy)
+        && /plans still use the exact id/i.test(resourceMetadataEditor.copy),
+      "Workbench did not present bounded table metadata as non-authority beside the exact id",
+      resourceMetadataEditor,
+    );
+    await screenshot(page, "workbench-reviewed-metadata-editor-desktop.png");
+    await clickSelector(page, '[data-metadata-review-form][data-metadata-kind="resource_metadata"] [data-submit-metadata-review]');
+    await waitForExpression(page, `(document.querySelector('#access-staged-summary')?.textContent||'').includes(${JSON.stringify(`Recorded reviewed metadata for ${twoClickResource}`)})`);
+    const resourceMetadataSaved = await evaluate(page, `(() => {
+      const form=document.querySelector('[data-metadata-review-form][data-metadata-kind="resource_metadata"]');
+      return {
+        heading:document.querySelector('#resource-detail h3')?.textContent||'',
+        exact:document.querySelector('#resource-detail h3 + p code')?.textContent||'',
+        label:form?.dataset.metadataCurrentLabel||'',
+        description:form?.dataset.metadataCurrentDescription||'',
+      };
+    })()`);
+    assert(
+      resourceMetadataSaved.heading === "Reviewed operational records"
+        && resourceMetadataSaved.exact === twoClickResource
+        && resourceMetadataSaved.label === "Reviewed operational records"
+        && resourceMetadataSaved.description === "Reviewed records used for operational trend analysis.",
+      "Workbench did not persist the table label while retaining its exact authority id",
+      resourceMetadataSaved,
+    );
+    const metadataField = immediateColumns.tierField;
+    const fieldMetadataEditor = await evaluate(page, `(() => {
+      const row=[...document.querySelectorAll('[data-access-column]')]
+        .find(item=>item.dataset.accessColumn===${JSON.stringify(immediateColumns.tierField)});
+      const form=row?.querySelector('[data-metadata-review-form][data-metadata-kind="field_metadata"]');
+      if(!form)return null;
+      form.open=true;
+      form.querySelector('[data-metadata-label]').value='Reviewed analysis field';
+      form.querySelector('[data-metadata-description]').value='Reviewed field used in this operational boundary.';
+      form.querySelector('[data-metadata-actor]').value='visual-reviewer@example.test';
+      form.querySelector('[data-metadata-reason]').value='Explain this exact field without changing its reviewed operations or visibility.';
+      form.scrollIntoView({block:'center'});
+      return {copy:form.textContent||'',exact:form.querySelector('code')?.textContent||''};
+    })()`);
+    assert(
+      fieldMetadataEditor
+        && fieldMetadataEditor.exact === `${twoClickResource}.${metadataField}`
+        && /grants no access/i.test(fieldMetadataEditor.copy)
+        && /plans still use the exact id/i.test(fieldMetadataEditor.copy),
+      "Workbench did not present field metadata beside its exact plan id",
+      fieldMetadataEditor,
+    );
+    await clickSelector(page, `[data-access-column="${metadataField}"] [data-metadata-review-form][data-metadata-kind="field_metadata"] [data-submit-metadata-review]`);
+    await waitForExpression(page, `(document.querySelector('#access-staged-summary')?.textContent||'').includes(${JSON.stringify(`Recorded reviewed metadata for ${twoClickResource}.${metadataField}`)})`);
+    const fieldMetadataSaved = await evaluate(page, `(() => {
+      const row=[...document.querySelectorAll('[data-access-column]')]
+        .find(item=>item.dataset.accessColumn===${JSON.stringify(immediateColumns.tierField)});
+      const form=row?.querySelector('[data-metadata-review-form][data-metadata-kind="field_metadata"]');
+      if(form)form.open=true;
+      return {
+        label:row?.querySelector('.access-column-copy > strong')?.textContent||'',
+        exact:row?.querySelector('.access-column-copy > small code')?.textContent||'',
+        description:row?.querySelector('.access-column-copy')?.textContent||'',
+        currentLabel:form?.dataset.metadataCurrentLabel||'',
+      };
+    })()`);
+    assert(
+      fieldMetadataSaved.label === "Reviewed analysis field"
+        && fieldMetadataSaved.exact === metadataField
+        && fieldMetadataSaved.currentLabel === "Reviewed analysis field"
+        && /Reviewed field used in this operational boundary/.test(fieldMetadataSaved.description),
+      "Workbench did not persist field metadata while retaining the exact field id",
+      fieldMetadataSaved,
+    );
+    assert(
+      await fs.readFile(
+        path.join(projectRoot, ".synapsor", "exploration-boundary.active.json"),
+        "utf8",
+      ) === activeArtifact,
+      "saving reviewed metadata changed active authority before confirmation",
+    );
+    await screenshot(page, "workbench-reviewed-metadata-saved-desktop.png");
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true,
+      screenWidth: 390,
+      screenHeight: 844,
+    });
+    await evaluate(page, `document.querySelector('[data-access-column="${metadataField}"] [data-metadata-review-form][data-metadata-kind="field_metadata"]')?.scrollIntoView({block:'start'})`);
+    const metadataMobileLayout = await evaluate(page, `(() => {
+      const form=document.querySelector('[data-access-column="${metadataField}"] [data-metadata-review-form][data-metadata-kind="field_metadata"]');
+      const rect=form?.getBoundingClientRect();
+      return {
+        visible:Boolean(rect&&rect.top<innerHeight&&rect.bottom>0),
+        withinWidth:Boolean(rect&&rect.left>=0&&rect.right<=innerWidth),
+        horizontalOverflow:document.documentElement.scrollWidth>document.documentElement.clientWidth+1,
+        controls:[...form.querySelectorAll('input,textarea,button')].every(control=>{
+          const box=control.getBoundingClientRect();
+          return box.left>=0&&box.right<=innerWidth;
+        }),
+      };
+    })()`);
+    assert(
+      metadataMobileLayout.visible
+        && metadataMobileLayout.withinWidth
+        && !metadataMobileLayout.horizontalOverflow
+        && metadataMobileLayout.controls,
+      "Workbench metadata controls overflowed the mobile viewport",
+      metadataMobileLayout,
+    );
+    await screenshot(page, "workbench-reviewed-metadata-editor-mobile.png");
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 1440,
+      height: 1100,
+      deviceScaleFactor: 1,
+      mobile: false,
+      screenWidth: 1440,
+      screenHeight: 1100,
+    });
+    await evaluate(page, `(() => {
+      const panel=document.querySelector("[data-reviewed-analytics]");
+      if(panel)panel.open=true;
+    })()`);
+    await waitForExpression(page, "document.querySelector('#save-auto-band')?.offsetParent !== null");
+    const automaticBandForm = await evaluate(page, `(() => {
+      const panel=document.querySelector("[data-reviewed-analytics]");
+      const method=document.querySelector("#analytics-auto-band-method");
+      const labels=document.querySelector("#analytics-auto-band-label-style");
+      const width=document.querySelector("#analytics-auto-band-width");
+      const round=document.querySelector("#analytics-auto-band-round");
+      return {
+        text:panel?.textContent||"",
+        fields:[...document.querySelectorAll("#analytics-auto-band-field option")].map(option=>option.value),
+        methods:[...method.options].map(option=>option.value),
+        labels:[...labels.options].map(option=>option.value),
+        minimum:Number(document.querySelector("#analytics-auto-band-min")?.min),
+        maximum:Number(document.querySelector("#analytics-auto-band-max")?.max),
+        widthDisabled:Boolean(width?.disabled),
+        roundDisabled:Boolean(round?.disabled),
+        forbiddenInputs:Boolean(panel?.querySelector("#analytics-auto-band-edges,#analytics-auto-band-offset,#analytics-auto-band-labels")),
+      };
+    })()`);
+    assert(
+      automaticBandForm.fields.includes("amount_cents")
+        && JSON.stringify(automaticBandForm.methods) === JSON.stringify(["quantile", "equal_width", "both"])
+        && JSON.stringify(automaticBandForm.labels) === JSON.stringify(["ordinal", "rounded"])
+        && automaticBandForm.minimum === 2
+        && automaticBandForm.maximum === 16
+        && automaticBandForm.widthDisabled
+        && automaticBandForm.roundDisabled
+        && !automaticBandForm.forbiddenInputs
+        && /never exposes raw edges/i.test(automaticBandForm.text),
+      "Workbench automatic-band review did not expose the bounded reviewer controls",
+      automaticBandForm,
+    );
+    await evaluate(page, `(() => {
+      const method=document.querySelector("#analytics-auto-band-method");
+      method.value="both";
+      method.dispatchEvent(new Event("change",{bubbles:true}));
+      const labels=document.querySelector("#analytics-auto-band-label-style");
+      labels.value="rounded";
+      labels.dispatchEvent(new Event("change",{bubbles:true}));
+    })()`);
+    assert(
+      await evaluate(page, `!document.querySelector("#analytics-auto-band-width").disabled
+        &&!document.querySelector("#analytics-auto-band-round").disabled`),
+      "Workbench did not require width and rounding controls for the selected methods",
+    );
+    await evaluate(page, `(() => {
+      document.querySelector("#analytics-auto-band-method").value="quantile";
+      document.querySelector("#analytics-auto-band-method").dispatchEvent(new Event("change",{bubbles:true}));
+      document.querySelector("#analytics-auto-band-label-style").value="ordinal";
+      document.querySelector("#analytics-auto-band-label-style").dispatchEvent(new Event("change",{bubbles:true}));
+      document.querySelector("#analytics-auto-band-field").value="amount_cents";
+      document.querySelector("#analytics-auto-band-min").value="3";
+      document.querySelector("#analytics-auto-band-max").value="7";
+      document.querySelector("#analytics-review-actor").value="visual-reviewer@example.test";
+      document.querySelector("#analytics-review-reason").value="Allow bounded revenue bands without model-authored edges.";
+      document.querySelector("#analytics-auto-band-field").scrollIntoView({block:"center"});
+    })()`);
+    const automaticBandLayout = await evaluate(page, `(() => {
+      const panel=document.querySelector("[data-reviewed-analytics]");
+      const form=document.querySelector("#analytics-auto-band-field")?.closest(".review-form");
+      const rect=form?.getBoundingClientRect();
+      return {
+        visible:Boolean(rect&&rect.top<innerHeight&&rect.bottom>0),
+        withinWidth:Boolean(rect&&rect.left>=0&&rect.right<=innerWidth),
+        horizontalOverflow:document.documentElement.scrollWidth>document.documentElement.clientWidth+1,
+        saveVisible:Boolean(document.querySelector("#save-auto-band")?.offsetParent),
+        text:form?.textContent||"",
+        panelOpen:Boolean(panel?.open),
+      };
+    })()`);
+    assert(
+      automaticBandLayout.visible
+        && automaticBandLayout.withinWidth
+        && !automaticBandLayout.horizontalOverflow
+        && automaticBandLayout.saveVisible
+        && automaticBandLayout.panelOpen
+        && /Fewest buckets/.test(automaticBandLayout.text)
+        && /Most buckets/.test(automaticBandLayout.text)
+        && /Minimum bucket width/.test(automaticBandLayout.text)
+        && /Round labels outward to/.test(automaticBandLayout.text),
+      "Workbench automatic-band form was clipped, incomplete, or outside the viewport",
+      automaticBandLayout,
+    );
+    await screenshot(page, "workbench-auto-band-controls-desktop.png");
+    await clickSelector(page, "#save-auto-band");
+    await waitForExpression(page, "/Saved automatic numeric bands/.test(document.querySelector('#access-staged-summary')?.textContent||'')");
+    await evaluate(page, `(() => {
+      const panel=document.querySelector("[data-reviewed-analytics]");
+      if(panel)panel.open=true;
+    })()`);
+    const automaticBandSaved = await evaluate(page, `(() => {
+      const panel=document.querySelector("[data-reviewed-analytics]");
+      return {text:panel?.textContent||"",staged:document.querySelector("#access-staged-summary")?.textContent||""};
+    })()`);
+    assert(
+      /Automatic bands for amount_cents/.test(automaticBandSaved.text)
+        && /quantile and 3-7 buckets/.test(automaticBandSaved.text)
+        && /Raw computed edges are never shown/.test(automaticBandSaved.text)
+        && /Review the complete boundary, then activate it/.test(automaticBandSaved.staged),
+      "Workbench did not persist and explain the reviewed automatic-band policy",
+      automaticBandSaved,
+    );
+    assert(
+      await fs.readFile(
+        path.join(projectRoot, ".synapsor", "exploration-boundary.active.json"),
+        "utf8",
+      ) === activeArtifact,
+      "saving an automatic-band policy changed active authority before confirmation",
+    );
+    await screenshot(page, "workbench-auto-band-review-desktop.png");
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true,
+      screenWidth: 390,
+      screenHeight: 844,
+    });
+    await evaluate(page, `document.querySelector("#analytics-auto-band-field")?.scrollIntoView({block:"start"})`);
+    const automaticBandMobileLayout = await evaluate(page, `(() => {
+      const form=document.querySelector("#analytics-auto-band-field")?.closest(".review-form");
+      const rect=form?.getBoundingClientRect();
+      return {
+        visible:Boolean(rect&&rect.top<innerHeight&&rect.bottom>0),
+        withinWidth:Boolean(rect&&rect.left>=0&&rect.right<=innerWidth),
+        horizontalOverflow:document.documentElement.scrollWidth>document.documentElement.clientWidth+1,
+        controls:[...form.querySelectorAll("input,select,button")].every(control=>{
+          const box=control.getBoundingClientRect();
+          return box.left>=0&&box.right<=innerWidth;
+        }),
+        selectsReserveArrowSpace:[...form.querySelectorAll("select")].every(select=>
+          Number.parseFloat(getComputedStyle(select).paddingRight)>=30),
+      };
+    })()`);
+    assert(
+      automaticBandMobileLayout.visible
+        && automaticBandMobileLayout.withinWidth
+        && !automaticBandMobileLayout.horizontalOverflow
+        && automaticBandMobileLayout.controls
+        && automaticBandMobileLayout.selectsReserveArrowSpace,
+      "Workbench automatic-band controls overflowed the mobile viewport",
+      automaticBandMobileLayout,
+    );
+    await screenshot(page, "workbench-auto-band-controls-mobile.png");
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 1440,
+      height: 1100,
+      deviceScaleFactor: 1,
+      mobile: false,
+      screenWidth: 1440,
+      screenHeight: 1100,
+    });
     await screenshot(page, "workbench-access-editor-columns-desktop.png");
     await clickSelector(page, "#show-all-access");
     await waitForExpression(page, "document.querySelectorAll('[data-access-resource]').length === 40");
@@ -741,10 +1371,130 @@ try {
         && !wholeBoundary.generatedDetailsOpen
         && /independently reviewed set of tables, columns, relationships, and limits/i.test(wholeBoundary.text)
         && /active boundary adds choices to the same two Explore tools/i.test(wholeBoundary.text)
-        && /active boundaries never merge relationship graphs/i.test(wholeBoundary.text),
+        && /active boundaries never merge relationship graphs/i.test(wholeBoundary.text)
+        && /full reviewed grammar/i.test(wholeBoundary.text)
+        && /reviewed source release:\s*PostgreSQL 16 visual fixture/i.test(wholeBoundary.text)
+        && /reviewed release line 16/i.test(wholeBoundary.text),
       "post-Quick Start Workbench did not preserve the active boundary as the editable reviewed baseline",
       wholeBoundary,
     );
+    await evaluate(page, `(() => {
+      databaseServerCompatibility={
+        engine:"mysql",
+        detected_version:"5.7.44 visual fixture",
+        tier:"compatible_limited",
+        authority:{version_line:"5.7",features:{
+          automatic_numeric_bands:false,
+          schema_check_constraints:false
+        }}
+      };
+      renderBoundaryOverview();
+    })()`);
+    const limitedCompatibilityDesktop = await evaluate(page, `(() => {
+      const panel=document.querySelector("#boundary-overview");
+      const summary=panel?.querySelector(".database-compatibility-summary");
+      const rect=summary?.getBoundingClientRect();
+      return {
+        text:summary?.textContent||"",
+        warning:summary?.querySelector(".badge.warn")?.textContent||"",
+        withinWidth:Boolean(rect&&rect.left>=0&&rect.right<=innerWidth),
+        horizontalOverflow:document.documentElement.scrollWidth>document.documentElement.clientWidth+1,
+      };
+    })()`);
+    assert(
+      /supported limited grammar/i.test(limitedCompatibilityDesktop.warning)
+        && /reviewed source release:\s*MySQL 5\.7\.44 visual fixture/i.test(limitedCompatibilityDesktop.text)
+        && /reviewed release line 5\.7/i.test(limitedCompatibilityDesktop.text)
+        && limitedCompatibilityDesktop.withinWidth
+        && !limitedCompatibilityDesktop.horizontalOverflow,
+      "Workbench did not render the reviewed MySQL 5.7 compatibility tier clearly on desktop",
+      limitedCompatibilityDesktop,
+    );
+    await screenshot(page, "workbench-mysql57-compatibility-desktop.png");
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true,
+      screenWidth: 390,
+      screenHeight: 844,
+    });
+    await evaluate(page, `document.querySelector(".database-compatibility-summary")?.scrollIntoView({block:"center"})`);
+    const limitedCompatibilityMobile = await evaluate(page, `(() => {
+      const summary=document.querySelector(".database-compatibility-summary");
+      const rect=summary?.getBoundingClientRect();
+      return {
+        text:summary?.textContent||"",
+        visible:Boolean(rect&&rect.width>0&&rect.height>0),
+        withinWidth:Boolean(rect&&rect.left>=0&&rect.right<=innerWidth),
+        horizontalOverflow:document.documentElement.scrollWidth>document.documentElement.clientWidth+1,
+      };
+    })()`);
+    assert(
+      limitedCompatibilityMobile.visible
+        && limitedCompatibilityMobile.withinWidth
+        && !limitedCompatibilityMobile.horizontalOverflow
+        && /MySQL 5\.7\.44 visual fixture/i.test(limitedCompatibilityMobile.text),
+      "Workbench MySQL 5.7 compatibility summary overflowed or disappeared on mobile",
+      limitedCompatibilityMobile,
+    );
+    await screenshot(page, "workbench-mysql57-compatibility-mobile.png");
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 1440,
+      height: 1100,
+      deviceScaleFactor: 1,
+      mobile: false,
+      screenWidth: 1440,
+      screenHeight: 1100,
+    });
+    await evaluate(page, `(() => {
+      databaseServerCompatibility={
+        engine:"mysql",
+        detected_version:"8.0.15 visual fixture",
+        tier:"compatible_limited",
+        authority:{version_line:"8.0-pre-check",features:{
+          automatic_numeric_bands:true,
+          schema_check_constraints:false
+        }}
+      };
+      selectedResource=candidate?.pack?.resources?.[0]?.id||null;
+      setView("exceptions","replace");
+    })()`);
+    const preCheckCompatibility = await evaluate(page, `(() => {
+      const detail=document.querySelector("#resource-detail");
+      const text=detail?.textContent||"";
+      const rect=detail?.getBoundingClientRect();
+      return {
+        text,
+        visible:Boolean(detail?.offsetParent),
+        withinWidth:Boolean(rect&&rect.left>=0&&rect.right<=innerWidth),
+        horizontalOverflow:document.documentElement.scrollWidth>document.documentElement.clientWidth+1,
+      };
+    })()`);
+    assert(
+      preCheckCompatibility.visible
+        && /supported limited database grammar/i.test(preCheckCompatibility.text)
+        && /bounded native ENUM/i.test(preCheckCompatibility.text)
+        && !/Automatic numeric bands are unavailable/i.test(preCheckCompatibility.text)
+        && preCheckCompatibility.withinWidth
+        && !preCheckCompatibility.horizontalOverflow,
+      "Workbench described the wrong capability limits for MySQL 8.0.15",
+      preCheckCompatibility,
+    );
+    await screenshot(page, "workbench-mysql8015-compatibility-desktop.png");
+    await evaluate(page, `(() => {
+      databaseServerCompatibility={
+        engine:"postgres",
+        detected_version:"16 visual fixture",
+        tier:"full",
+        authority:{version_line:"16",features:{
+          automatic_numeric_bands:true,
+          schema_check_constraints:true
+        }}
+      };
+      renderBoundaryOverview();
+      setView("overview","replace");
+    })()`);
     await clickSelector(page, "#new-boundary");
     await waitForExpression(page, "document.querySelector('#new-boundary-form')?.hidden === false");
     const newBoundaryForm = await evaluate(page, `(() => {
@@ -754,15 +1504,29 @@ try {
         visible:Boolean(form?.offsetParent),
         text:form?.textContent||"",
         startingTableOptions:[...table.options].map(option=>option.value).filter(Boolean),
-        inspectedTableCount:(original?.pack?.resources||[]).length,
+        generatedTableIds:(original?.pack?.resources||[]).map(resource=>resource.id),
+        sharedReferenceCandidateIds:(reviewReport?.resources||[])
+          .filter(resource=>resource.shared_reference_scope?.eligible)
+          .map(resource=>resource.id),
         selected:table?.value||"",
         createLabel:document.querySelector("#create-boundary")?.textContent||"",
       };
     })()`);
+    const expectedStartingTableIds = [...new Set([
+      ...newBoundaryForm.generatedTableIds,
+      ...newBoundaryForm.sharedReferenceCandidateIds,
+    ])].sort();
     assert(
       newBoundaryForm.visible
-        && newBoundaryForm.startingTableOptions.length === newBoundaryForm.inspectedTableCount
-        && newBoundaryForm.inspectedTableCount > 0
+        && JSON.stringify([...newBoundaryForm.startingTableOptions].sort())
+          === JSON.stringify(expectedStartingTableIds)
+        && newBoundaryForm.generatedTableIds.length > 0
+        && newBoundaryForm.sharedReferenceCandidateIds.includes(
+          "public.unscoped_shared_reference_data",
+        )
+        && !newBoundaryForm.generatedTableIds.includes(
+          "public.unscoped_shared_reference_data",
+        )
         && newBoundaryForm.selected === ""
         && /choose its first table/i.test(newBoundaryForm.text)
         && /nothing is copied from another boundary/i.test(newBoundaryForm.text)
@@ -817,7 +1581,7 @@ try {
       rankedSettings.visible
         && rankedSettings.value === 500
         && rankedSettings.minimum === 50
-        && rankedSettings.maximum === 500
+        && rankedSettings.maximum === 10_000
         && /Small-group suppression runs before ranking/i.test(rankedSettings.help)
         && /only the reviewed top 25 may be returned/i.test(rankedSettings.help)
         && /AI cannot change this setting/i.test(rankedSettings.help)
@@ -1074,6 +1838,49 @@ try {
       screenHeight: 1100,
     });
 
+    const sharedReferenceResource = "public.unscoped_shared_reference_data";
+    await clickSelector(page, `[data-access-resource="${sharedReferenceResource}"]`);
+    await waitForExpression(
+      page,
+      `document.querySelector(".access-resource.selected")?.dataset.accessResource === ${JSON.stringify(sharedReferenceResource)}`,
+    );
+    await evaluate(page, `(() => {
+      const details=[...document.querySelectorAll("#resource-detail details")]
+        .find(item=>/Resolve blocked access/i.test(item.querySelector("summary")?.textContent||""));
+      if(!details)throw new Error("Shared-reference table omitted its review controls");
+      details.open=true;
+    })()`);
+    await waitForExpression(
+      page,
+      "document.querySelector('[data-submit-scope-review=\"tenant_key\"]')?.offsetParent !== null",
+    );
+    const sharedReferenceForm = '[data-scope-review-form]:has([data-submit-scope-review="tenant_key"])';
+    await selectOptionByValue(
+      page,
+      `${sharedReferenceForm} [data-scope-review-value]`,
+      "table_has_no_per_tenant_rows",
+    );
+    const sharedReferenceReview = await evaluate(page, `(() => {
+      const form=document.querySelector(${JSON.stringify(sharedReferenceForm)});
+      const option=form?.querySelector("[data-scope-review-value]")?.selectedOptions?.[0];
+      return {
+        text:document.querySelector("#resource-detail")?.textContent||"",
+        kind:option?.dataset.reviewKind||null,
+        acknowledgementVisible:Boolean(form?.querySelector("[data-shared-reference-ack]")?.offsetParent),
+        acknowledgementChecked:Boolean(form?.querySelector("[data-shared-reference-ack]")?.checked),
+      };
+    })()`);
+    assert(
+      sharedReferenceReview.kind === "shared_reference_scope"
+        && sharedReferenceReview.acknowledgementVisible
+        && !sharedReferenceReview.acknowledgementChecked
+        && /owner assertion, not an automatic inference/i.test(sharedReferenceReview.text)
+        && /field visibility, cohort suppression, and budgets still apply/i.test(sharedReferenceReview.text),
+      "Workbench did not expose Shared reference as an explicit, default-off reviewed authority",
+      sharedReferenceReview,
+    );
+    await screenshot(page, "workbench-shared-reference-review.png");
+
     await evaluate(page, "document.querySelector('[data-view=\"activate\"]')?.click()");
     await typeIntoSelector(page, "#actor", "visual-reviewer@example.test");
     await evaluate(page, `(() => {
@@ -1219,6 +2026,10 @@ try {
       "instant-ready",
       "instant-success-desktop",
       "instant-success-mobile",
+      "query-history-desktop",
+      "query-history-mobile",
+      "reviewed-metadata-desktop",
+      "reviewed-metadata-mobile",
       "attention-unhealthy-sink",
       "attention-large-backlog",
       "worker-disabled",
@@ -1442,7 +2253,7 @@ function visualInspection() {
   });
   return {
     engine: "postgres",
-    server_version: "PostgreSQL 16 visual fixture",
+    server_version: "16 visual fixture",
     current_user: "app_reader",
     role_posture: {
       verified: true,
@@ -1537,7 +2348,7 @@ function table(name, options = {}) {
   const columns = [
     ...(options.omitId ? [] : [column("id", "uuid", { immutable: true })]),
     ...(scoped ? [column("tenant_id", "uuid", { tenant: true, immutable: true })] : []),
-    column("status", "text"),
+    column("status", "text", { enumValues: ["open", "closed", "archived"] }),
     column("created_at", "timestamp with time zone"),
     column("amount_cents", "integer"),
     ...(options.extraColumns ?? []),
@@ -1598,6 +2409,7 @@ function column(name, dataType, flags = {}) {
     nullable: false,
     generated: false,
     ordinal_position: 1,
+    ...(flags.enumValues ? { enum_values: [...flags.enumValues] } : {}),
     suggestions: {
       tenant: flags.tenant ?? false,
       conflict: false,

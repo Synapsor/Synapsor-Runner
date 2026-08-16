@@ -51,10 +51,11 @@ Production-candidate OSS scope:
 
 - Postgres/MySQL reads through fixed semantic MCP tools;
 - trusted context from environment/session values, not model arguments;
-- local SQLite ledger for evidence, query audit, proposals, receipts, replay,
-  and lifecycle events;
+- local SQLite ledger for development evidence, query audit, proposals,
+  receipts, replay, and lifecycle events;
 - bounded shared Postgres runtime ledger for several claim-bound HTTP Runner
-  instances and verified reviewers;
+  instances and verified reviewers, including production Explore metadata-only
+  evidence even when the reviewed application source is MySQL;
 - asymmetric RS256/ES256 session authentication, readiness probes, separately
   protected metrics, source pools, and fleet-wide rate limits;
 - distinct-reviewer approval quorum from the canonical contract;
@@ -385,6 +386,14 @@ engine. `proposals`, `evidence`, `query-audit`, `receipts`, `replay`,
 queue with `--config`. Back up, verify, restore, and archive-before-retention
 with the commands in [Running A Small Runner Fleet](running-a-runner-fleet.md).
 
+The config-aware `evidence`, `query-audit`, `receipts`, `replay`, and
+`activity` reads print whether they consulted local SQLite or shared
+PostgreSQL. Production Explore's dedicated audit-event table is projected into
+the same read-only operator views. These reads use a bounded snapshot, never
+print the control URL or raw trusted scope, and do not take the mutation lock
+held by a serving writer. A MySQL application source still requires PostgreSQL
+for `storage.shared_postgres`; shared MySQL control storage is not supported.
+
 For unattended policy-approved queues, declare reviewed aggregate `LIMIT`
 clauses first, then use the explicit batch command:
 
@@ -490,6 +499,15 @@ issue it. In a shared deployment, the configured external identity provider
 issues short-lived access tokens; Runner verifies them but does not store user
 passwords or issue refresh tokens. See [HTTP MCP](http-mcp.md) before exposing a
 listener outside loopback.
+
+Flexible production analytics is a separate explicit mode, not a consequence
+of enabling shared HTTP. Its authority switch is the reviewed
+`production_explore.enabled` config value; `--production-explore` remains the
+recommended visible launch marker but is not a second independent gate. See [Production Scoped Explore Over
+HTTP](production-scoped-explore-http.md) for the required production boundary,
+JWT principal scope, hierarchical privacy budgets, shared control ledger, and
+production startup attestation. Fixed named capabilities remain the
+narrower default for known production question shapes.
 
 Run the transport-specific doctor check before serving:
 
@@ -645,6 +663,19 @@ dependency lock probes. A passing metadata/read check alone does not prove that
 the writer has the locking privilege needed at apply.
 
 ## Logging And Redaction
+
+When `mcp serve` is attached to an interactive terminal, Runner prints a bounded
+HTTP access line after each request. The line contains only a process-local
+sequence number, HTTP method, query-free path, response status, and elapsed time.
+It never includes the query string, Authorization header, JWT, tenant or
+principal claims, MCP session id, tool arguments, filters, SQL, or result values.
+Redirected and daemon output stays quiet unless a host explicitly opts into the
+same redacted access logger. Tool-level acceptance and refusal remain recorded in
+the durable query-audit/evidence ledger; an HTTP `200` only means that the MCP
+transport completed.
+
+Interactive status labels use green for `OK`, yellow for `WARN`, and red for
+`FAIL`. Set `NO_COLOR` or redirect output to receive ANSI-free text.
 
 Expected public outputs must avoid secrets in:
 

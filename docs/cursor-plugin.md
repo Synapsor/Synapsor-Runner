@@ -20,7 +20,7 @@ claim that Cursor Marketplace review has completed.
 
 ## What the plugin installs
 
-- one production stdio MCP server pinned to `@synapsor/runner@1.6.7`;
+- one production stdio MCP server pinned to `@synapsor/runner@1.7.0`;
 - one `/synapsor-protect` agent command;
 - one discoverable Safe Action skill;
 - one file-scoped rule for `synapsor/actions/**/*.ts`;
@@ -43,9 +43,10 @@ synapsor-runner mcp install cursor \
 
 That temporary local stdio entry is accepted only after exact boundary
 activation and advertises exactly `app.describe_data` and `app.explore_data`.
-After Protect activation, reinstall the normal project config; production then
-advertises only named reviewed capabilities. The plugin never makes Scoped
-Explore available to production, shared HTTP, remote, or non-loopback serving.
+After Protect activation, reinstall the normal project config; the plugin then
+advertises only named reviewed capabilities. It never enables production
+Explore. That separate opt-in deployment uses secured Streamable HTTP, verified
+JWT scope, and shared privacy accounting outside this stdio plugin entry.
 
 ## Build and verify
 
@@ -81,7 +82,7 @@ Required listing media:
 
 ## Submission checklist
 
-- [ ] Runner 1.6.7 package and plugin version agree.
+- [ ] Runner 1.7.0 package and plugin version agree.
 - [ ] `corepack pnpm verify:cursor-plugin` passes from a clean checkout.
 - [ ] Plugin is manually loaded in current stable Cursor at workspace scope.
 - [ ] `/synapsor-protect` drafts and validates without activation.

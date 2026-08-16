@@ -20,6 +20,16 @@ does not give the agent SQL access.
 - The model cannot activate authority, approve a proposal, or apply a write.
 - A trusted operator or worker rechecks the effect and records a receipt.
 
+## Operator Interface Status
+
+Use the terminal CLI as the preferred interface for onboarding, access review,
+Ask, Protect, diagnostics, and production setup. It is the most extensively
+qualified operator surface for this release. Workbench supports the same core
+review and Explore workflows, but its browser UI remains in preview. If its
+guidance or behavior differs from the CLI, follow the CLI. This status does not
+make the production Streamable HTTP MCP server a preview feature; it describes
+only the local browser-based operator interface.
+
 ## Before You Start
 
 Use a disposable or staging database and a dedicated SELECT-only, non-owner
@@ -30,7 +40,7 @@ Do not put a database URL in project documentation or chat. The shortest path
 uses a hidden terminal prompt:
 
 ```bash
-npx -y @synapsor/runner start
+npx -y @synapsor/runner start --cli
 ```
 
 Runner can also use an already-exported `DATABASE_URL`. When a regular `.env`
@@ -39,7 +49,7 @@ selected value only for the current Runner/Workbench process. The URL is not
 written to generated artifacts or the ledger. Runner requires Node 22.13 or
 newer.
 
-## One Command To Workbench
+## Preview Workbench Path
 
 Run this from an empty project directory or your application root:
 
@@ -58,7 +68,7 @@ The command automatically:
 6. validates every generated artifact;
 7. opens one secured loopback Workbench URL.
 
-## One Command In The Terminal
+## Preferred Terminal Path
 
 To keep the same journey browserless, add `--cli`:
 
@@ -76,6 +86,44 @@ or **Later**. Press `E` to open detailed multi-table/column review instead.
 Running the command again resumes review, or goes directly to
 model/client selection when a boundary is already active. `--no-open` remains
 the noninteractive initialize/resume flag; it does not start terminal review.
+
+## Scripted Artifact Setup
+
+`start` is the recommended interactive first run. `onboard db` is the explicit
+artifact generator for CI and established automation. A canonical read-only
+run is:
+
+```bash
+synapsor-runner onboard db \
+  --from-env DATABASE_URL \
+  --table public.orders \
+  --mode read_only \
+  --tenant-key tenant_id \
+  --yes \
+  --no-open
+```
+
+Noninteractive setup requires the table, mode, and one reviewed tenant-scope
+choice in the same invocation. If several are missing, Runner lists all of
+them together. Use `--single-tenant-dev` only for a reviewed single-tenant
+development source. Use `--force` only after inspecting generated files that
+already exist. In a real terminal, omit `--yes` and `--non-interactive`; table
+selectors seed the wizard, which prompts for mode and tenant scope.
+
+For shadow/review proposals, UPDATE and DELETE also require an explicit
+`--conflict-column`; INSERT requires a source-enforced `--dedup` mapping. Review
+mode additionally requires the credential name for its writeback path:
+`--write-url-env`, `--handler-url-env`, or `--handler-command-env`. Runner lists
+all missing choices together before inspecting or writing generated files.
+
+After generation, deferred trusted-context and writer environment variables are
+reported as `setup incomplete` with one next action. A missing primary database
+read credential, a required shared-HTTP session-auth key, or an invalid config
+reports `setup failed`. The strict reusable check remains:
+
+```bash
+synapsor-runner doctor --config ./synapsor.runner.json
+```
 
 Before human activation, the agent has no generated authority and no source row
 has been read. The fresh local `start` route establishes a development
@@ -121,6 +169,29 @@ for governance work. Sensitive widening requires reviewer identity and reason.
 Nullable relationships require a direct keep-unmatched or exclude-unmatched
 choice because either answer changes business totals.
 
+To add or change a per-user row limit in the terminal editor, select the table,
+press `Enter` for columns, then press `O`. Choose a direct non-null column, a
+proven mandatory relationship path, or explicitly keep no per-user limit, and
+record the reason. Runner returns to the same column screen; press `Enter` to
+save any staged column choices, then `C` from the boundary table view to review
+and activate the exact disabled revision. Workbench provides the same control
+under **Record and customer limits**. Trusted principal values remain outside
+the model in both local and production HTTP Explore.
+
+In the boundary overview, `D` means **Deactivate active boundary**. In a
+boundary's table list, `R` means **Remove from draft** and never deactivates the
+whole boundary. Runner never silently cascades that removal: if another table's
+reviewed tenant/principal scope or named analytics policy depends on the selected
+table, removal is blocked and the editor names the dependent tables in leaf-first
+order. Remove or re-scope those dependents first. Analysis relationships that no
+longer have both endpoints are narrowed out of the disabled draft and reported;
+active authority remains unchanged until `C` review and activation. Deactivating
+the last active boundary is a normal `/access` state: the editor stays open,
+displays `Enter/C Review + activate`, and lets the
+operator restore reviewed Ask access without restarting. Activation also
+returns to `/access`; provider rebinding or model choice occurs only after the
+operator presses `Q` or Escape to finish editing.
+
 Explore may then answer repeated legal question combinations without another
 review and without Protect. Protect is optional: it converts one selected
 analysis into generated public DSL, canonical JSON, and tests, but creates only
@@ -155,8 +226,40 @@ choose **Use my existing AI client**. The exact-plan no-model composer remains
 a secondary fallback.
 
 Running the same command again resumes. Resume and Try do not rescan, rewrite
-files, or change a digest. Rescan and destructive Start over remain explicit
-human choices.
+files, or change a digest. To deliberately re-inspect the current database, run:
+
+```bash
+npx -y @synapsor/runner start --from-env DATABASE_URL --rescan
+```
+
+`--rescan` works for both single-organization and multi-tenant projects. It
+reconciles all saved boundaries, preserves decisions whose exact reviewed
+inputs are unchanged, and itemizes new, removed, or invalidated inputs. This
+includes normalized, non-secret trusted-context config: provider, environment or
+JWT claim names, and tenant/principal column bindings. A config-only change such
+as adding `principal_binding` therefore produces a disabled review revision even
+when the database fingerprints are unchanged; unrelated curated policy is kept.
+New fields remain kept out and new relationships remain unused. Ask keeps using
+the previous exact revision until a human reviews and activates the disabled update.
+On this Start path, `--force` performs the same guarded reconciliation; prefer
+`--rescan` because it states the intent clearly.
+
+The three related commands have different jobs:
+
+- `synapsor-runner boundary rescan` inspects the database, reloads config-derived
+  trusted-context authority, and writes a disabled, reconciled revision plus a
+  change report. It does not open an editor or activate anything.
+- `synapsor-runner boundary review --access` opens the focused table, column,
+  relationship, and scope-path editor without inspecting again. This is the
+  same editor opened by `/access` inside the Ask shell.
+- `synapsor-runner start --from-env DATABASE_URL --cli --rescan` performs the
+  rescan, review, activation, and Ask handoff as one guided flow. After running
+  standalone `boundary rescan`, use the same `start` command without
+  `--rescan`; the saved reconciliation is already waiting for review.
+
+When standalone review activates a boundary, Runner prints the exact command
+to resume the guided Ask flow. It also prints a direct `try ask` command for an
+operator who has already selected a provider and model.
 
 Workbench requires no additional terminal command. If you choose the CLI
 fallbacks below after the first success, install Runner once:
@@ -190,6 +293,14 @@ trusted scope, visible fields, kept-out fields, and any aggregate-only fields.
 Then confirm the displayed review. Runner binds its digest to that human action
 internally; the developer does not copy or type a hash. Changing a reviewed
 decision creates a new disabled digest that must be reviewed again.
+
+When a database uses opaque or legacy names, add a reviewed table or column
+label and description in the same access editor. In the terminal press `I` on
+the selected table or column; Workbench shows **Reviewed label** and **Reviewed
+description**. These words help the human and `app.describe_data` explain the
+schema, but grant no operation and are not valid plan identifiers. Exact
+database IDs remain visible beside them. A label on a kept-out field stays
+human-only and does not expose that field to a model.
 
 Choose **Try first safe read**. Runner calls the real local runtime and shows:
 
@@ -247,9 +358,11 @@ the tested provider matrix, and the full no-model alternative.
 
 ## Ten Minutes: Explore Repeatedly, Protect Optionally
 
-Scoped Explore is available only after its exact local authoring boundary is
-activated. It is absent from production, unknown-profile, remote, shared HTTP,
-and non-loopback `tools/list`.
+Scoped Explore is available only after its exact boundary is activated. The
+guided Workbench and `try ask` flow here are local development/staging clients.
+Production uses a separately reviewed production boundary and explicit secured
+HTTP MCP opt-in; without every production prerequisite, Explore remains absent
+from remote `tools/list`.
 
 In Workbench, choose **Ask an aggregate question**. Select only reviewed
 resources, dimensions, measures, filters, and time buckets. No SQL or plan JSON
@@ -258,12 +371,18 @@ is required.
 The first release supports bounded:
 
 - `count` and reviewed `count_distinct`;
-- `sum` and `avg` over reviewed numeric measures;
+- `sum`, `avg`, standard deviation, and variance over reviewed numeric measures;
+- reviewed missing-data measures, named ratios, fixed numeric bands,
+  reviewer-approved automatic numeric bands, and safe child-count metrics;
 - reviewed categorical dimensions;
-- day, week, and month buckets;
+- hour, day, week, month, quarter, year, and day-of-week buckets;
+- reviewed running totals, ranks, lag changes, moving averages, and shares,
+  calculated only from groups released after suppression;
 - typed filters, bounded top/bottom-N, and an exact two-period comparison;
 - up to three activated relationship paths, each containing one or two
-  catalog-proven many-to-one links with fan-out one.
+  catalog-proven many-to-one links with fan-out one by default, or exactly
+  three links after the reviewer raises the hard-capped depth control and
+  activates that exact path.
 
 If a question needs an inactive but proven path, Runner refuses it and
 Workbench offers only that exact path for operator review. The model cannot

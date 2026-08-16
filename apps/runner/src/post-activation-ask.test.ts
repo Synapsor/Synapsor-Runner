@@ -114,13 +114,19 @@ describe("post-activation Ask handoff", () => {
     const prompts: Array<[string, string]> = [];
     const runAsk = vi.fn(async () => 0);
     await expect(runPostActivationAskHandoff(
-      { projectRoot: "/tmp/reviewed-project" },
+      {
+        projectRoot: "/tmp/reviewed-project",
+        requestTimeoutSeconds: 180,
+        sessionTokenBudget: 350_000,
+        maxOutputTokens: 2_048,
+      },
       {
         chooseRoute: async () => "openai-compatible",
         promptWithDefault: async (prompt, defaultValue) => {
           prompts.push([prompt, defaultValue]);
           return defaultValue;
         },
+        listOpenAiCompatibleModels: async () => [],
         runAsk,
         stdout: { write: vi.fn(() => true) },
         stderr: { write: vi.fn(() => true) },
@@ -136,6 +142,9 @@ describe("post-activation Ask handoff", () => {
       "--provider", "openai-compatible",
       "--model", "llama3.2",
       "--base-url", "http://127.0.0.1:11434/v1",
+      "--timeout", "180",
+      "--session-token-budget", "350000",
+      "--max-output-tokens", "2048",
     ]);
   });
 
@@ -159,6 +168,26 @@ describe("post-activation Ask handoff", () => {
       route: "anthropic",
       model: "claude-owner-selected",
     })).toBe("Anthropic / claude-owner-selected");
+  });
+
+  it("uses a model reported by a local OpenAI-compatible endpoint instead of a stale hardcoded default", async () => {
+    const prompts: Array<[string, string]> = [];
+    await expect(choosePostActivationAskSelection({
+      chooseRoute: async () => "openai-compatible",
+      listOpenAiCompatibleModels: async () => ["qwen2.5:7b"],
+      promptWithDefault: async (prompt, defaultValue) => {
+        prompts.push([prompt, defaultValue]);
+        return defaultValue;
+      },
+    })).resolves.toEqual({
+      route: "openai-compatible",
+      baseUrl: "http://127.0.0.1:11434/v1",
+      model: "qwen2.5:7b",
+    });
+    expect(prompts).toEqual([
+      ["Local OpenAI-compatible base URL", "http://127.0.0.1:11434/v1"],
+      ["Local model name (detected: qwen2.5:7b)", "qwen2.5:7b"],
+    ]);
   });
 
   it("returns one level from model input and leaves provider selection on Escape", async () => {
@@ -187,6 +216,7 @@ describe("post-activation Ask handoff", () => {
         prompts.push(prompt);
         return values.shift();
       },
+      listOpenAiCompatibleModels: async () => [],
     })).resolves.toEqual({
       route: "openai-compatible",
       baseUrl: "http://127.0.0.1:1234/v1",

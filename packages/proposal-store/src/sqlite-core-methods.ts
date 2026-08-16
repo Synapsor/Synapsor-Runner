@@ -274,7 +274,9 @@ export const proposalStoreInternalsMethods: ProposalStoreCoreInternalMethods & T
       const firstItem = input.items.find(isRecord) as Record<string, unknown> | undefined;
       const primaryKey = isRecord(firstItem?.primary_key) ? firstItem.primary_key : undefined;
       const principal = stringFromPrincipal(input.payload.principal);
-      const table = stringFromUnknown(input.payload.target) ?? stringFromUnknown(firstItem?.table);
+      const table = stringFromUnknown(input.payload.source_table)
+        ?? stringFromUnknown(input.payload.target)
+        ?? stringFromUnknown(firstItem?.table);
       return {
         principal,
         capability: stringFromUnknown(input.payload.capability),

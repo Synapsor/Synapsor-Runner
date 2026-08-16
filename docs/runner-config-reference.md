@@ -37,6 +37,7 @@ Unknown keys fail when `strict` is true (the default).
 | `operator_identity` | No | Verified operator identity and apply-role wiring for approve/reject/apply. |
 | `session_auth` | HTTP claims | HS256 development or asymmetric RS256/ES256 session-token verification. |
 | `http_security` | Networked HTTP | Deployment profile, protected channel, endpoint-token env names, OAuth protected-resource metadata, exact Origin/Host policy, and request/session bounds. |
+| `production_explore` | Opt-in production analytics | Separately reviewed production-boundary root, required OAuth scope, opaque shared accounting, source/session ceilings, and tenant-wide limits. |
 | `rate_limits` | No | Operational fixed-window limits; fleet-wide only with shared `runtime_store`. |
 | `metrics` | No | Separately authorized scrapeable HTTP metrics. Disabled by default. |
 | `graduated_trust` | No | Off-by-default, operator-only policy recommendation criteria and kill switch. |
@@ -74,9 +75,13 @@ Auto Boundary and Protect projects opt into generation-lock enforcement:
 must be `required`; generated authority fails closed when its reviewed schema,
 role/grant/RLS posture, compiler, Spec, or dependency fingerprints drift.
 `reporting_timezone` is optional for backward compatibility. Newly generated
-analytical authority binds `UTC` into its lock and config so day/week/month
-buckets and exact two-period comparisons keep the same semantics after
-promotion.
+analytical authority binds `UTC` into its lock and config so reviewed calendar
+buckets, relative time windows, and exact two-period comparisons keep the same
+semantics after promotion. Runner 1.7.0 intentionally supports relative windows
+only when this reviewed authority is exactly `UTC`; arbitrary IANA business
+timezones and DST-aware relative windows are not claimed. PostgreSQL applies UTC
+transaction-locally. MySQL restores each pooled connection's prior session
+timezone before that connection can be reused by another boundary.
 
 Manual and legacy projects omit `generated_authority`. Runner does not create
 an implicit lock, rescan their database, change their startup path, or alter
@@ -132,6 +137,48 @@ configured schema must already contain `ledger_entries`, `proposal_locks`,
 `worker_leases`, and `rate_limit_buckets`. Doctor reports env var names and
 table readiness only; it does
 not print database URLs or create the schema.
+
+## Production Explore
+
+`production_explore` is an explicit deployment-only opt-in. It does not widen a
+portable contract or convert a development boundary into production authority.
+
+- `project_root`: local path containing separately reviewed active production
+  boundary artifacts.
+- `required_oauth_scope`: scope every verified session token must grant; it
+  must also appear in `http_security.oauth_resource.required_scopes`.
+- `budget_hmac_key_env`: environment variable containing at least 32 bytes of
+  randomly generated shared secret material used only to create opaque stable
+  accounting keys. A 32-character hex string contains only 16 bytes and is
+  rejected; generate 32 random bytes and encode them as base64url instead.
+- `accounting_namespace`: stable non-secret deployment name shared by every
+  replica.
+- `source_max_connections`: optional process-wide source pool ceiling shared by
+  every production Explore session; defaults to `8`.
+- `max_sessions_per_principal`: optional concurrent MCP-session ceiling for one
+  verified tenant/principal pair; defaults to `4`.
+- `tenant_limits`: rolling 24-hour query, extracted-cell, differencing, and
+  one-minute rate ceilings across every principal in a tenant. Per-principal
+  ceilings remain bound into each reviewed boundary. Optional
+  `max_response_cells_per_response` sets a stricter tenant-wide response cap;
+  when omitted, each response inherits its selected boundary's reviewed cap.
+
+Generate this configuration with `synapsor-runner config init
+--production-explore`; an existing production boundary draft supplies the
+reviewed source and claim names. Issuer, audience, and accounting namespace are
+required explicit inputs. The generated file contains no credentials or secret
+values.
+
+Production Explore defaults the HTTP session idle timeout to 120 seconds unless
+`http_security.limits.session_idle_timeout_seconds` is explicitly configured.
+The source pool is per Runner process, so fleet connection planning must account
+for the maximum replica count.
+
+It additionally requires `storage.shared_postgres.mode = runtime_store`,
+asymmetric `session_auth`, `trusted_context.provider = http_claims`, shared HTTP,
+TLS or a trusted TLS proxy, and an active production boundary with matching
+claim names and source lock. See [Production Scoped Explore Over
+HTTP](production-scoped-explore-http.md).
 
 ## Sources
 
@@ -244,6 +291,34 @@ Providers are `environment`, `static_dev`, `http_claims`, and `cloud_session`.
 `static_dev` is only for local fixtures. Named `contexts` use the same shape.
 Capabilities may reference a context by name. The model never receives tenant
 or principal as an overridable argument.
+
+For Explore authoring, `tenant_binding` and `principal_binding` exactly name
+source columns rather than JWT claim names. `tenant_binding` is required for a
+multi-tenant MySQL production scaffold because MySQL has no PostgreSQL RLS
+metadata from which Runner can establish a policy-neutral authoring baseline.
+PostgreSQL can instead use effective reviewed RLS evidence. `principal_binding`
+may name a non-null source column such as `rep`. On a fresh `boundary draft`, Runner records that
+match as a per-boundary disabled review seed; it does not infer authority from
+the name and does not activate it. The operator can confirm or replace the
+direct column with a proven derived principal path in `/access` or Workbench.
+No match, a nullable column, or a binary/large column leaves principal row scope
+unconfigured. `config init --production-explore` accepts
+`--tenant-binding <column>` and `--principal-binding <column>`, carries reviewed
+bindings forward from an existing draft lock, and rejects a conflicting value.
+Before a production draft exists, `--engine postgres|mysql` is mandatory and is
+never inferred from the source URL. If the named source environment variable is
+set, init checks configured direct bindings against read-only schema metadata
+and warns when a column is missing or structurally ineligible. Add
+`--verify-bindings` to make an unreachable source or invalid binding fail before
+the config is written. An unset source variable remains a silent offline path
+unless strict verification was explicitly requested. The URL value is never
+written or printed.
+When a binding is added to a legacy draft that reviewed it as unset, config init
+marks reconciliation as required and prints the exact `boundary rescan` command;
+production startup remains fail-closed until that revision is reviewed and
+activated.
+The trusted principal value still comes from
+`values.principal_env` locally or the verified JWT claim over production HTTP.
 
 The language-neutral canonical contract can preserve a `session` binding for
 implementations such as C++/Cloud that own a typed session boundary. Runner has

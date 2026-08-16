@@ -38,7 +38,14 @@ import {
   startStreamableHttpMcpServer,
   type DbRowReader,
   type RuntimeConfig,
+  type StreamableHttpSessionFactory,
 } from "./index.js";
+import {
+  closeStreamableHttpServer,
+  disposeStreamableSession,
+  formatStreamableHttpAccessLog,
+} from "./http-transport.js";
+import type { StreamableHttpSession } from "./runtime-types.js";
 
 const {
   McpUiInitializeRequestSchema,
@@ -3274,6 +3281,71 @@ describe("local Synapsor MCP runtime", () => {
     }
   });
 
+  it("renders a TTY-only redacted Streamable HTTP access log without query strings", async () => {
+    const chunks: string[] = [];
+    const accessLogEnv = { ...process.env };
+    delete accessLogEnv.NO_COLOR;
+    const server = await startStreamableHttpMcpServer({
+      config,
+      storePath: ":memory:",
+      port: 0,
+      devNoAuth: true,
+      env: accessLogEnv,
+      accessLog: true,
+      log: {
+        isTTY: true,
+        write: (chunk) => chunks.push(chunk),
+      },
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+    });
+    const secretQuery = "must-not-appear-in-access-log";
+    const url = new URL(server.url);
+    url.searchParams.set("token", secretQuery);
+    const transport = new StreamableHTTPClientTransport(url);
+    const client = new Client({ name: "access-log-client", version: "1.0.0" });
+    try {
+      await client.connect(transport);
+      await client.listTools();
+    } finally {
+      await client.close().catch(() => undefined);
+      await server.close();
+    }
+
+    const rendered = chunks.join("");
+    expect(rendered).toContain("Access log: enabled for HTTP request metadata only");
+    expect(rendered).toMatch(/\u001b\[1;32mOK\u001b\[0m  HTTP #\d{6} POST \/mcp -> 200 in \d+ ms/);
+    expect(rendered).not.toContain(secretQuery);
+    expect(rendered).not.toContain("authorization");
+  });
+
+  it("uses distinct access-log status colors and keeps plain output ANSI-free", () => {
+    expect(formatStreamableHttpAccessLog({
+      sequence: 7,
+      method: "POST",
+      url: "/mcp",
+      statusCode: 401,
+      elapsedMs: 2.4,
+      color: true,
+    })).toBe("  \u001b[1;33mWARN\u001b[0m  HTTP #000007 POST /mcp -> 401 in 2 ms");
+    expect(formatStreamableHttpAccessLog({
+      sequence: 8,
+      method: "POST",
+      url: "/mcp",
+      statusCode: 503,
+      elapsedMs: 3.6,
+      color: true,
+    })).toBe("  \u001b[1;31mFAIL\u001b[0m  HTTP #000008 POST /mcp -> 503 in 4 ms");
+    expect(formatStreamableHttpAccessLog({
+      sequence: 9,
+      method: "GET",
+      url: "/readyz?token=never-log-this",
+      statusCode: 200,
+      elapsedMs: 1,
+      closedEarly: true,
+      color: false,
+    })).toBe("  FAIL  HTTP #000009 GET /readyz -> connection closed in 1 ms");
+  });
+
   it("validates present Origin and Host exactly while preserving native clients without Origin", async () => {
     const originConfig = structuredClone(config);
     originConfig.http_security = {
@@ -4012,6 +4084,256 @@ describe("local Synapsor MCP runtime", () => {
       await server.close();
     }
   }, 15_000);
+
+  it("passes only verified JWT context into a custom per-session Streamable HTTP runtime", async () => {
+    const secret = "a-production-length-session-secret-32-bytes-minimum";
+    const sessionConfig = structuredClone(config);
+    sessionConfig.trusted_context = {
+      provider: "http_claims",
+      values: { tenant_id_key: "tenant_id", principal_key: "sub" },
+    };
+    sessionConfig.session_auth = {
+      provider: "jwt_hs256",
+      secret_env: "SYNAPSOR_SESSION_JWT_SECRET",
+      issuer: "https://identity.example",
+      audience: "synapsor-runner",
+    };
+    const env = { SYNAPSOR_SESSION_JWT_SECRET: secret };
+    const seen: Array<{ tenant_id: string; principal: string; provenance: string }> = [];
+    const server = await startStreamableHttpMcpServer({
+      config: sessionConfig,
+      storePath: ":memory:",
+      port: 0,
+      env,
+      log: false,
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+      streamableSessionFactory: async ({ store, trustedContext }) => {
+        seen.push(trustedContext);
+        const runtime = createMcpRuntime(sessionConfig, {
+          env,
+          store,
+          trustedContext,
+          readRow: async ({ args, context }) => ({
+            row: {
+              ...fixtureRow,
+              id: args.invoice_id,
+              tenant_id: context.tenant_id,
+            },
+            rowCount: 1,
+          }),
+        });
+        const sessionServer = createSynapsorMcpServer(runtime);
+        return {
+          connect: (transport) => sessionServer.connect(transport),
+          close: () => runtime.close(),
+        };
+      },
+    });
+    const token = signedSessionToken(secret, {
+      sub: "verified-user",
+      tenant_id: "verified-tenant",
+      iss: "https://identity.example",
+      aud: "synapsor-runner",
+      exp: Math.floor(Date.now() / 1000) + 600,
+    });
+    const url = new URL(server.url);
+    url.searchParams.set("tenant_id", "query-string-tenant-must-not-win");
+    const transport = new StreamableHTTPClientTransport(url, {
+      requestInit: {
+        headers: {
+          authorization: `Bearer ${token}`,
+          "x-synapsor-tenant-id": "header-tenant-must-not-win",
+          "x-synapsor-principal": "header-principal-must-not-win",
+        },
+      },
+    });
+    const client = new Client({ name: "custom-session-runtime", version: "0.0.0" });
+    try {
+      await client.connect(transport);
+      expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual([
+        "billing.inspect_invoice",
+        "billing.propose_late_fee_waiver",
+      ]);
+      await expect(client.callTool({
+        name: "billing.inspect_invoice",
+        arguments: { invoice_id: "INV-CUSTOM" },
+      })).resolves.toMatchObject({
+        structuredContent: {
+          trusted_context: {
+            tenant_id: "verified-tenant",
+            principal: "verified-user",
+            provenance: "http_claims",
+          },
+        },
+      });
+      expect(seen).toEqual([{
+        tenant_id: "verified-tenant",
+        principal: "verified-user",
+        provenance: "http_claims",
+      }]);
+    } finally {
+      await client.close().catch(() => undefined);
+      await server.close();
+    }
+  }, 15_000);
+
+  it("caps concurrent Streamable HTTP sessions per verified principal without affecting another principal", async () => {
+    const secret = "a-production-length-session-secret-32-bytes-minimum";
+    const sessionConfig = structuredClone(config);
+    sessionConfig.trusted_context = {
+      provider: "http_claims",
+      values: { tenant_id_key: "tenant_id", principal_key: "sub" },
+    };
+    sessionConfig.session_auth = {
+      provider: "jwt_hs256",
+      secret_env: "SYNAPSOR_SESSION_JWT_SECRET",
+      issuer: "https://identity.example",
+      audience: "synapsor-runner",
+    };
+    const env = { SYNAPSOR_SESSION_JWT_SECRET: secret };
+    const sessionFactory: StreamableHttpSessionFactory = Object.assign(
+      async ({ store, trustedContext }: Parameters<StreamableHttpSessionFactory>[0]) => {
+        const runtime = createMcpRuntime(sessionConfig, {
+          env,
+          store,
+          trustedContext,
+          readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+        });
+        const sessionServer = createSynapsorMcpServer(runtime);
+        return {
+          connect: (transport: Parameters<typeof sessionServer.connect>[0]) => sessionServer.connect(transport),
+          close: () => runtime.close(),
+        };
+      },
+      { maxSessionsPerPrincipal: 1 },
+    );
+    const server = await startStreamableHttpMcpServer({
+      config: sessionConfig,
+      storePath: ":memory:",
+      port: 0,
+      env,
+      log: false,
+      readRow: async () => ({ row: fixtureRow, rowCount: 1 }),
+      streamableSessionFactory: sessionFactory,
+    });
+    const tokenFor = (principal: string) => signedSessionToken(secret, {
+      sub: principal,
+      tenant_id: "verified-tenant",
+      iss: "https://identity.example",
+      aud: "synapsor-runner",
+      exp: Math.floor(Date.now() / 1000) + 600,
+    });
+    const firstTransport = new StreamableHTTPClientTransport(new URL(server.url), {
+      requestInit: { headers: { authorization: `Bearer ${tokenFor("principal-a")}` } },
+    });
+    const otherTransport = new StreamableHTTPClientTransport(new URL(server.url), {
+      requestInit: { headers: { authorization: `Bearer ${tokenFor("principal-b")}` } },
+    });
+    const replacementTransport = new StreamableHTTPClientTransport(new URL(server.url), {
+      requestInit: { headers: { authorization: `Bearer ${tokenFor("principal-a")}` } },
+    });
+    const first = new Client({ name: "principal-a-first", version: "1.0.0" });
+    const other = new Client({ name: "principal-b-first", version: "1.0.0" });
+    const replacement = new Client({ name: "principal-a-replacement", version: "1.0.0" });
+    try {
+      await first.connect(firstTransport);
+      const refused = await fetch(server.url, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${tokenFor("principal-a")}`,
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: {
+            protocolVersion: "2025-11-25",
+            capabilities: {},
+            clientInfo: { name: "principal-a-second", version: "1.0.0" },
+          },
+        }),
+      });
+      expect(refused.status).toBe(429);
+      await expect(refused.json()).resolves.toMatchObject({
+        error: "principal_session_capacity_exhausted",
+        retryable: true,
+      });
+
+      await expect(other.connect(otherTransport)).resolves.toBeUndefined();
+      await expect(other.listTools()).resolves.toMatchObject({ tools: expect.any(Array) });
+
+      await expect(firstTransport.terminateSession()).resolves.toBeUndefined();
+      await first.close();
+      await expect(replacement.connect(replacementTransport)).resolves.toBeUndefined();
+      await expect(replacement.listTools()).resolves.toMatchObject({ tools: expect.any(Array) });
+    } finally {
+      await firstTransport.terminateSession().catch(() => undefined);
+      await otherTransport.terminateSession().catch(() => undefined);
+      await replacementTransport.terminateSession().catch(() => undefined);
+      await first.close().catch(() => undefined);
+      await other.close().catch(() => undefined);
+      await replacement.close().catch(() => undefined);
+      await server.close();
+    }
+  }, 15_000);
+
+  it("guards session disposal before runtime shutdown can re-enter transport close", async () => {
+    let session!: StreamableHttpSession;
+    let reentrantClose: Promise<void> | undefined;
+    const runtimeClose = vi.fn(async () => {
+      reentrantClose = disposeStreamableSession(session);
+    });
+    session = {
+      transport: {} as StreamableHttpSession["transport"],
+      runtime: {
+        connect: async () => undefined,
+        close: runtimeClose,
+      },
+      authFingerprint: "test-fingerprint",
+      lastSeenAt: Date.now(),
+    };
+
+    const initialClose = disposeStreamableSession(session);
+    await expect(initialClose).resolves.toBeUndefined();
+    await expect(reentrantClose).resolves.toBeUndefined();
+    expect(runtimeClose).toHaveBeenCalledTimes(1);
+    expect(session.closed).toBe(true);
+  });
+
+  it("closes shared resources and the store when the session factory close fails", async () => {
+    const resourceClose = vi.fn(async () => undefined);
+    const storeClose = vi.fn(async () => undefined);
+    const factoryClose = vi.fn(async () => {
+      throw new Error("source pool close failed");
+    });
+    const server = {
+      close: (callback: (error?: Error) => void) => callback(),
+    } as unknown as Parameters<typeof closeStreamableHttpServer>[0];
+    const sharedResources = {
+      close: resourceClose,
+    } as unknown as Parameters<typeof closeStreamableHttpServer>[2];
+    const sharedStore = {
+      close: storeClose,
+    } as unknown as Parameters<typeof closeStreamableHttpServer>[3];
+    const sessionFactory = Object.assign(
+      async () => { throw new Error("not used"); },
+      { close: factoryClose },
+    ) as StreamableHttpSessionFactory;
+
+    await expect(closeStreamableHttpServer(
+      server,
+      new Set(),
+      sharedResources,
+      sharedStore,
+      undefined,
+      sessionFactory,
+    )).rejects.toThrow("Streamable HTTP resources did not all close cleanly");
+    expect(factoryClose).toHaveBeenCalledTimes(1);
+    expect(resourceClose).toHaveBeenCalledTimes(1);
+    expect(storeClose).toHaveBeenCalledTimes(1);
+  });
 
   it("refuses claims-authenticated serving when a capability resolves an environment context", async () => {
     const secret = "a-production-length-session-secret-32-bytes-minimum";

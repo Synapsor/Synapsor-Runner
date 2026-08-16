@@ -186,6 +186,7 @@ export interface ProposalStoreWritebackMethods {
       payload: Record<string, unknown>;
       items?: Record<string, unknown>[];
       query_audit?: QueryAuditRecordInput[];
+      created_at?: string;
     }): void;
   recordQueryAudit(input: QueryAuditRecordInput): void;
   getEvidenceBundle(evidenceBundleId: string): StoredEvidenceBundle | undefined;

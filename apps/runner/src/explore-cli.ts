@@ -3,8 +3,15 @@ import type {
   AggregateDimension,
   AggregateExplorePlan,
   AggregateMeasure,
+  CanonicalTimeWindow,
   ExploreFilter,
 } from "./scoped-explore.js";
+import {
+  RELATIVE_TIME_COMPARISONS,
+  RELATIVE_TIME_WINDOWS,
+  type RelativeTimeComparison,
+  type RelativeTimeWindow,
+} from "./relative-time-window.js";
 
 export type FriendlyExploreOptions = {
   resource?: string;
@@ -13,14 +20,37 @@ export type FriendlyExploreOptions = {
   countDistinct?: string[];
   sums?: string[];
   averages?: string[];
+  measures?: string[];
   groupBy?: string[];
+  groupBands?: string[];
   timeBucket?: string;
+  timeWindow?: string;
   compareField?: string;
   period?: string;
   versusPeriod?: string;
+  compareWindow?: string;
+  compareTo?: RelativeTimeComparison;
   comparisonChange?: "absolute" | "percentage";
   filters?: string[];
   top?: number;
+};
+
+type FriendlyRelativeTimeWindow = {
+  field: string;
+  relationship?: string;
+  window: RelativeTimeWindow;
+};
+
+type FriendlyRelativeComparison = FriendlyRelativeTimeWindow & {
+  compare_to: RelativeTimeComparison;
+};
+
+export type FriendlyAggregateExplorePlan = Omit<
+  AggregateExplorePlan,
+  "time_window" | "comparison"
+> & {
+  time_window?: CanonicalTimeWindow | FriendlyRelativeTimeWindow;
+  comparison?: AggregateExplorePlan["comparison"] | FriendlyRelativeComparison;
 };
 
 type FriendlyExploreBoundary = Pick<ActivatedExplorationBoundary, "pack" | "budgets">;
@@ -28,7 +58,7 @@ type FriendlyExploreBoundary = Pick<ActivatedExplorationBoundary, "pack" | "budg
 export function buildFriendlyAggregatePlan(
   boundary: FriendlyExploreBoundary,
   options: FriendlyExploreOptions,
-): AggregateExplorePlan {
+): FriendlyAggregateExplorePlan {
   const resource = chooseResource(boundary, options);
   let relationship: string | undefined;
   const bindRelationship = (candidate: string | undefined): void => {
@@ -52,6 +82,18 @@ export function buildFriendlyAggregatePlan(
     bindRelationship(reference.relationship);
     dimensions.push(reference);
   }
+  for (const name of options.groupBands ?? []) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name)) {
+      throw new Error("--group-band must name one reviewed numeric band.");
+    }
+    const band = resource.numeric_bands?.find((candidate) => candidate.name === name);
+    if (!band) {
+      const reviewed = resource.numeric_bands?.map((candidate) => candidate.name).join(", ") || "none";
+      throw new Error(`Numeric band ${name} is not reviewed for ${resource.id}. Reviewed bands: ${reviewed}.`);
+    }
+    bindRelationship(band.relationship);
+    dimensions.push({ numeric_band: name });
+  }
 
   const measures: AggregateMeasure[] = [];
   if (options.count) measures.push({ function: "count" });
@@ -69,6 +111,11 @@ export function buildFriendlyAggregatePlan(
     const reference = parseFieldReference(value);
     bindRelationship(reference.relationship);
     measures.push({ function: "avg", ...reference });
+  }
+  for (const value of options.measures ?? []) {
+    const measure = parseReviewedMeasure(value);
+    if (!("derived_measure" in measure)) bindRelationship(measure.relationship);
+    measures.push(measure);
   }
   if (!measures.length && options.suggested && resource.count_distinct_fields.length) {
     measures.push({ function: "count_distinct", field: resource.count_distinct_fields[0]! });
@@ -89,13 +136,29 @@ export function buildFriendlyAggregatePlan(
     timeBucket = { field: reference.field, bucket, ...(reference.relationship ? { relationship: reference.relationship } : {}) };
   }
 
-  let comparison: AggregateExplorePlan["comparison"];
-  if (options.compareField || options.period || options.versusPeriod) {
+  let timeWindow: FriendlyAggregateExplorePlan["time_window"];
+  if (options.timeWindow) {
+    const parsed = parseRelativeTimeOption(options.timeWindow, "--time-window");
+    bindRelationship(parsed.relationship);
+    timeWindow = parsed;
+  }
+
+  let comparison: FriendlyAggregateExplorePlan["comparison"];
+  const absoluteComparisonRequested = Boolean(
+    options.compareField || options.period || options.versusPeriod,
+  );
+  const relativeComparisonRequested = Boolean(options.compareWindow || options.compareTo);
+  if (absoluteComparisonRequested && relativeComparisonRequested) {
+    throw new Error(
+      "Use either --compare/--period/--vs-period or --compare-window/--compare-to, not both.",
+    );
+  }
+  if (absoluteComparisonRequested) {
     if (!options.compareField || !options.period || !options.versusPeriod) {
       throw new Error("A period comparison requires --compare <time-field>, --period <start>..<end>, and --vs-period <start>..<end>.");
     }
     if (!timeBucket) {
-      throw new Error("A period comparison requires --time-bucket <time-field>:day|week|month to state its reviewed reporting grain.");
+      throw new Error("A period comparison requires --time-bucket <time-field>:hour|day|week|month|quarter|year|day_of_week to state its reviewed reporting grain.");
     }
     const reference = parseFieldReference(options.compareField);
     bindRelationship(reference.relationship);
@@ -104,6 +167,23 @@ export function buildFriendlyAggregatePlan(
       ranges: [parsePeriod(options.period, "--period"), parsePeriod(options.versusPeriod, "--vs-period")],
       ...(reference.relationship ? { relationship: reference.relationship } : {}),
     };
+  } else if (relativeComparisonRequested) {
+    if (!options.compareWindow || !options.compareTo) {
+      throw new Error(
+        `A relative comparison requires --compare-window <field[@relationship]>:<window> and --compare-to ${RELATIVE_TIME_COMPARISONS.join("|")}.`,
+      );
+    }
+    if (!timeBucket) {
+      throw new Error(
+        "A relative comparison requires --time-bucket <time-field>:hour|day|week|month|quarter|year|day_of_week to state its reviewed reporting grain.",
+      );
+    }
+    const parsed = parseRelativeTimeOption(options.compareWindow, "--compare-window");
+    bindRelationship(parsed.relationship);
+    comparison = { ...parsed, compare_to: options.compareTo };
+  }
+  if (timeWindow && comparison) {
+    throw new Error("--time-window cannot be combined with a period comparison.");
   }
 
   const where: ExploreFilter[] = [];
@@ -123,6 +203,7 @@ export function buildFriendlyAggregatePlan(
     measures,
     ...(dimensions.length ? { dimensions } : {}),
     ...(timeBucket ? { time_bucket: timeBucket } : {}),
+    ...(timeWindow ? { time_window: timeWindow } : {}),
     ...(where.length ? { where } : {}),
     order_by: comparison
       ? {
@@ -137,6 +218,22 @@ export function buildFriendlyAggregatePlan(
     top_n: top,
     ...(comparison ? { comparison } : {}),
   };
+}
+
+function parseRelativeTimeOption(
+  value: string,
+  option: "--time-window" | "--compare-window",
+): FriendlyRelativeTimeWindow {
+  const separator = value.lastIndexOf(":");
+  if (separator < 1) {
+    throw new Error(`${option} must use <field[@reviewed_relationship]>:<window>.`);
+  }
+  const reference = parseFieldReference(value.slice(0, separator));
+  const window = value.slice(separator + 1);
+  if (!(RELATIVE_TIME_WINDOWS as readonly string[]).includes(window)) {
+    throw new Error(`${option} window must be one of ${RELATIVE_TIME_WINDOWS.join(", ")}.`);
+  }
+  return { ...reference, window: window as RelativeTimeWindow };
 }
 
 function chooseResource(
@@ -169,7 +266,8 @@ function chooseResource(
 
 function parseFieldReference(value: string): { field: string; relationship?: string } {
   const [field, relationship, ...extra] = value.split("@");
-  if (!field || extra.length || (relationship !== undefined && !relationship)) {
+  if (!field || extra.length || (relationship !== undefined && !relationship)
+    || /[\s()+*/]/.test(field) || (relationship ? /[\s()+*/]/.test(relationship) : false)) {
     throw new Error(`Invalid field reference ${value}. Use field or field@reviewed_relationship.`);
   }
   return {
@@ -180,16 +278,50 @@ function parseFieldReference(value: string): { field: string; relationship?: str
 
 function parseTimeBucket(value: string): {
   reference: { field: string; relationship?: string };
-  bucket: "day" | "week" | "month";
+  bucket: AggregateExplorePlan["time_bucket"] extends infer T
+    ? T extends { bucket: infer B } ? B : never
+    : never;
 } {
   const separator = value.lastIndexOf(":");
-  if (separator < 1) throw new Error("--time-bucket must use field:day|week|month.");
+  const expected = "field:hour|day|week|month|quarter|year|day_of_week";
+  if (separator < 1) throw new Error(`--time-bucket must use ${expected}.`);
   const reference = parseFieldReference(value.slice(0, separator));
   const bucket = value.slice(separator + 1);
-  if (bucket !== "day" && bucket !== "week" && bucket !== "month") {
-    throw new Error("--time-bucket must use field:day|week|month.");
+  if (!["hour", "day", "week", "month", "quarter", "year", "day_of_week"].includes(bucket)) {
+    throw new Error(`--time-bucket must use ${expected}.`);
   }
-  return { reference, bucket };
+  return { reference, bucket: bucket as NonNullable<AggregateExplorePlan["time_bucket"]>["bucket"] };
+}
+
+function parseReviewedMeasure(value: string): AggregateMeasure {
+  const separator = value.indexOf(":");
+  const fn = separator < 0 ? value : value.slice(0, separator);
+  const subject = separator < 0 ? "" : value.slice(separator + 1);
+  if (fn === "count" && !subject) return { function: "count" };
+  if (fn === "derived" && subject && /^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(subject)) {
+    return { derived_measure: subject };
+  }
+  const functions = [
+    "count_distinct",
+    "sum",
+    "avg",
+    "stddev_samp",
+    "stddev_pop",
+    "var_samp",
+    "var_pop",
+    "null_count",
+    "non_null_count",
+    "completion_rate",
+  ] as const;
+  if (!functions.includes(fn as typeof functions[number]) || !subject) {
+    throw new Error(
+      "--measure must use count, derived:<reviewed-name>, or <function>:<field[@reviewed_relationship]> for count_distinct, sum, avg, stddev_samp, stddev_pop, var_samp, var_pop, null_count, non_null_count, or completion_rate.",
+    );
+  }
+  return {
+    function: fn as typeof functions[number],
+    ...parseFieldReference(subject),
+  };
 }
 
 function parseFilter(value: string): ExploreFilter {

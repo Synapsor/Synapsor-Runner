@@ -215,10 +215,14 @@ try {
   assert.equal(preflight.ready, true);
   assert.equal(preflight.source_database_changed, false);
 
-  const noNamedTools = JSON.parse(run(cli, [
+  const boundaryTools = JSON.parse(run(cli, [
     "try", "call", "--list", "--format", "json",
   ], { cwd: analyticsRoot, env: analyticsEnv, allowFailure: true }).stdout);
-  assert.deepEqual(noNamedTools.active_tools, [], "authoring-boundary activation silently activated named tools");
+  assert.deepEqual(
+    boundaryTools.active_tools,
+    ["app.describe_data", "app.explore_data"],
+    "reviewed-boundary activation exposed tools outside the exact two-tool Explore surface",
+  );
 
   const pmPlan = {
     kind: "aggregate",

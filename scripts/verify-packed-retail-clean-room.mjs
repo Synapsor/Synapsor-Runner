@@ -93,6 +93,11 @@ const retailAggregatePlan = {
   order_by: { kind: "measure", index: 0, direction: "desc" },
   top_n: 10,
 };
+const retailMultiTotalRevenuePlan = {
+  kind: "aggregate",
+  resource: "public.sales_line_facts",
+  measures: [{ function: "sum", field: "net_revenue_cents" }],
+};
 const retailExplorePlans = [
   {
     label: "weekly_revenue_by_store_and_category",
@@ -581,7 +586,7 @@ try {
       assert.ok(described.resources[0].groupable_fields.includes("channel"));
       assert.deepEqual(
         described.resources[0].time_bucket_fields.sold_at,
-        ["day", "week", "month"],
+        ["hour", "day", "week", "month", "quarter", "year", "day_of_week"],
       );
       assert.ok(
         described.resources[0].relationships.some(
@@ -789,7 +794,7 @@ try {
       "How did reviewed net revenue change by week across stores and product categories?",
     );
     await click(page, "#run-ask");
-    await waitForExpression(page, "document.querySelector('#ask-transcript')?.textContent.includes('reviewed weekly revenue')");
+    await waitForAskText(page, "reviewed weekly revenue", "initial Workbench aggregate");
     await waitForExpression(page, "document.querySelector('#ask-transcript')?.textContent.includes('Runner verified')");
     const askTranscriptText = await evaluate(page, "document.querySelector('#ask-transcript')?.textContent");
     assert.match(
@@ -812,11 +817,20 @@ try {
 
     await type(page, "#ask-question", "Group orders by the private customer note so I can inspect those notes.");
     await click(page, "#run-ask");
-    await waitForExpression(page, "document.querySelector('#ask-transcript')?.textContent.toLowerCase().includes('refused')");
-    assert.equal(askRefusalResult?.source_database_changed, false);
-    assert.match(JSON.stringify(askRefusalResult), /refus|review|group|field/i);
+    await waitForExpression(page, `(() => {
+      const text = document.querySelector('#ask-transcript')?.textContent.toLowerCase() ?? '';
+      return document.querySelector('#run-ask')?.disabled === false
+        && text.includes('private customer note')
+        && (text.includes('refused') || text.includes('did not match the question'));
+    })()`);
+    const refusalTranscript = await evaluate(page, "document.querySelector('#ask-transcript')?.textContent ?? ''");
+    assert.match(refusalTranscript, /No source query ran|Source query executed:\s*no/i);
+    if (askRefusalResult) {
+      assert.equal(askRefusalResult.source_database_changed, false);
+      assert.match(JSON.stringify(askRefusalResult), /refus|review|group|field/i);
+    }
     assert.doesNotMatch(
-      JSON.stringify(askRefusalResult),
+      `${refusalTranscript}\n${JSON.stringify(askRefusalResult ?? null)}`,
       /synthetic private customer note|other manager private note|rival private note/i,
     );
     const cliAskArgs = [
@@ -845,7 +859,11 @@ try {
     assert.equal(cliAsk.ok, true);
     assert.equal(cliAsk.mode, "authoring");
     assert.equal(cliAsk.provider, "openai_compatible");
-    assert.equal(cliAsk.runner_verified_analysis.database_result_verified, true);
+    assert.equal(
+      cliAsk.runner_verified_analysis.database_result_verified,
+      true,
+      `CLI Ask did not verify a database result: ${JSON.stringify(cliAsk, null, 2)}`,
+    );
     assert.deepEqual(cliAsk.runner_verified_analysis.tools_called, ["app.explore_data"]);
     assert.equal(cliAsk.runner_verified_analysis.source_database_changed, false);
     assert.equal(cliAsk.source_database_changed, false);
@@ -880,11 +898,11 @@ try {
         { waitFor: "synapsor> ", send: "Compare those sales by reviewed product category using total quantity." },
         { waitFor: "The reviewed product-category quantity analysis is complete." },
         { waitFor: "synapsor> ", send: "/analyses" },
-        { waitFor: "Recent analyses" },
+        { waitFor: "RECENT QUERY HISTORY" },
         { waitFor: "synapsor> ", send: "/protect last as retail.shell_quantity_by_category" },
         { waitFor: "Activate this reviewed read capability", send: "" },
         { waitFor: "Protected capability active: retail.shell_quantity_by_category" },
-        { waitFor: "synapsor> ", send: "Run two reviewed analyses: average sale by store and bounded online revenue." },
+        { waitFor: "synapsor> ", send: "Run two reviewed analyses: average net revenue by store name and total net revenue." },
         { waitFor: "Both reviewed analyses are complete." },
         { waitFor: "synapsor> ", send: "/protect" },
         { waitFor: "Choose an analysis [1-2]: ", send: "2" },
@@ -905,7 +923,7 @@ try {
     );
     assert.match(interactiveText, /model interpretation/i);
     assert.match(interactiveText, /RUNNER-VERIFIED DATA/);
-    assert.match(interactiveText, /Recent analyses/);
+    assert.match(interactiveText, /RECENT QUERY HISTORY/);
     assert.match(interactiveText, /PROTECT REVIEW[\s\S]*Capability: retail\.shell_quantity_by_category/);
     assert.match(interactiveText, /Protected capability active: retail\.shell_quantity_by_category/);
     assert.match(interactiveText, /This answer used 2 protectable analyses/);
@@ -914,7 +932,7 @@ try {
     assert.doesNotMatch(interactiveText, /ACTIVATE sha256:|Exact activation confirmation|view=protect/i);
     const beforeAnalysisListing = interactiveText.slice(
       0,
-      interactiveText.indexOf("Recent analyses"),
+      interactiveText.indexOf("RECENT QUERY HISTORY"),
     );
     assert.doesNotMatch(
       beforeAnalysisListing,
@@ -1272,7 +1290,7 @@ try {
     await configureLocalAsk(page, askProviderUrl, "retail-local-fixture");
     await type(page, "#ask-question", "How did reviewed net revenue change by week across stores and product categories?");
     await click(page, "#run-ask");
-    await waitForExpression(page, "document.querySelector('#ask-transcript')?.textContent.includes('reviewed weekly revenue')");
+    await waitForAskText(page, "reviewed weekly revenue", "post-reload Workbench aggregate");
     await waitForExpression(page, "document.querySelector('#ask-transcript')?.textContent.includes('Runner verified')");
     assert.equal(askAggregateResult?.source_database_changed, false);
     assert.equal(
@@ -1349,7 +1367,7 @@ try {
   assert.deepEqual(
     [...activeTools.active_tools].sort(),
     [
-      "analytics.sales_line_facts_sum_net_revenue_cents_by_week",
+      "analytics.sales_line_facts_sum_net_revenue_cents",
       "retail.propose_order_fulfillment",
       "retail.shell_quantity_by_category",
       "retail.weekly_revenue_by_store_and_category",
@@ -1382,7 +1400,7 @@ try {
     assert.deepEqual(
       listed.tools.map((tool) => tool.name).sort(),
       [
-        "analytics.sales_line_facts_sum_net_revenue_cents_by_week",
+        "analytics.sales_line_facts_sum_net_revenue_cents",
         "retail.propose_order_fulfillment",
         "retail.shell_quantity_by_category",
         "retail.weekly_revenue_by_store_and_category",
@@ -1417,7 +1435,7 @@ try {
     assert.deepEqual(
       runtimeCatalog.capabilities.map((capability) => capability.capability).sort(),
       [
-        "analytics.sales_line_facts_sum_net_revenue_cents_by_week",
+        "analytics.sales_line_facts_sum_net_revenue_cents",
         "retail.shell_quantity_by_category",
         "retail.weekly_revenue_by_store_and_category",
       ],
@@ -1625,6 +1643,32 @@ async function configureLocalAsk(page, baseUrl, model) {
   await waitForExpression(page, "document.querySelector('#ask-provider-state')?.textContent.includes('ready')");
 }
 
+async function waitForAskText(page, expectedText, context, options = {}) {
+  try {
+    await waitForExpression(
+      page,
+      options.caseInsensitive
+        ? `document.querySelector('#ask-transcript')?.textContent.toLowerCase().includes(${JSON.stringify(expectedText.toLowerCase())})`
+        : `document.querySelector('#ask-transcript')?.textContent.includes(${JSON.stringify(expectedText)})`,
+    );
+  } catch (error) {
+    const diagnostic = await evaluate(page, `({
+      transcript: document.querySelector('#ask-transcript')?.textContent ?? null,
+      providerState: document.querySelector('#ask-provider-state')?.textContent ?? null,
+      runButtonText: document.querySelector('#run-ask')?.textContent ?? null,
+      runButtonDisabled: document.querySelector('#run-ask')?.disabled ?? null
+    })`);
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}\n${JSON.stringify({
+        context,
+        diagnostic,
+        aggregateProviderResult: askAggregateResult ?? null,
+        refusalProviderResult: askRefusalResult ?? null,
+      }, null, 2)}`,
+    );
+  }
+}
+
 async function startAskProvider() {
   const server = createServer((request, response) => {
     const chunks = [];
@@ -1646,7 +1690,7 @@ async function startAskProvider() {
         )?.content ?? "";
         const refusal = /private customer note/i.test(latestQuestion);
         const multiPlan = !refusal
-          && /two reviewed analyses: average sale by store and bounded online revenue/i.test(latestQuestion);
+          && /two reviewed analyses: average net revenue by store name and total net revenue/i.test(latestQuestion);
         const selectedPlan = /sales counts change by week across channels/i.test(latestQuestion)
           ? retailExplorePlans[1].plan
           : /distinct sales/i.test(latestQuestion)
@@ -1696,7 +1740,7 @@ async function startAskProvider() {
                 type: "function",
                 function: {
                   name: "app__explore_data",
-                  arguments: JSON.stringify({ plan: retailExplorePlans[5].plan }),
+                  arguments: JSON.stringify({ plan: retailMultiTotalRevenuePlan }),
                 },
               },
             ]

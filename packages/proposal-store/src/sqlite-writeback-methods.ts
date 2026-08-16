@@ -65,6 +65,14 @@ import type {
   ProposalStoreMethodContext,
 } from "./sqlite-method-signatures.js";
 
+function validatedRecordedAt(value: string | undefined, label: string): string {
+  const recordedAt = value ?? new Date().toISOString();
+  if (!Number.isFinite(Date.parse(recordedAt))) {
+    throw new ProposalStoreError("LEDGER_TIMESTAMP_INVALID", `${label} created_at must be an ISO timestamp`);
+  }
+  return recordedAt;
+}
+
 export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & ProposalStoreWritebackInternalMethods & ThisType<ProposalStoreMethodContext> = {
   recordExecutionReceipt(input: unknown): StoredProposal {
       const receipt = parseExecutionReceipt(input);
@@ -554,16 +562,17 @@ export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & Prop
       payload: Record<string, unknown>;
       items?: Record<string, unknown>[];
       query_audit?: QueryAuditRecordInput[];
+      created_at?: string;
     }): void {
       assertNoSecretMaterial({
         payload: input.payload,
         items: input.items ?? [],
         query_audit: input.query_audit ?? [],
       }, "evidence_bundle");
-      const now = new Date().toISOString();
+      const now = validatedRecordedAt(input.created_at, "evidence bundle");
       const proposal = input.proposal_id ? this.requireProposal(input.proposal_id) : undefined;
       const metadata = this.evidenceMetadata({ proposal, payload: input.payload, items: input.items ?? [] });
-      this.transaction(() => {
+      const record = () => {
         this.db.prepare(`
           INSERT OR REPLACE INTO evidence_bundles (
             evidence_bundle_id,
@@ -615,14 +624,17 @@ export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & Prop
           this.recordQueryAudit({
             ...audit,
             evidence_bundle_id: input.evidence_bundle_id,
+            created_at: audit.created_at ?? now,
           });
         }
-      });
+      };
+      if (this.db.isTransaction) record();
+      else this.transaction(record);
     },
   
   recordQueryAudit(input: QueryAuditRecordInput): void {
       assertNoSecretMaterial(input.payload, "query_audit");
-      const now = new Date().toISOString();
+      const now = validatedRecordedAt(input.created_at, "query audit");
       const proposal = input.proposal_id ? this.requireProposal(input.proposal_id) : undefined;
       const evidence = input.evidence_bundle_id ? this.getEvidenceBundle(input.evidence_bundle_id) : undefined;
       const metadata = this.queryAuditMetadata({ proposal, evidence, payload: input.payload });
@@ -646,9 +658,9 @@ export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & Prop
       `).run(
         input.proposal_id ?? null,
         input.evidence_bundle_id ?? null,
-        metadata.tenant_id ?? null,
-        metadata.principal ?? null,
-        metadata.capability ?? null,
+        input.tenant_id ?? metadata.tenant_id ?? null,
+        input.principal ?? metadata.principal ?? null,
+        input.capability ?? metadata.capability ?? null,
         metadata.business_object ?? null,
         metadata.object_id ?? null,
         metadata.primary_key_value ?? null,

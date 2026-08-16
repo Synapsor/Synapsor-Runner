@@ -13,7 +13,10 @@ import {
 import {
   formatProviderEgressActivationNotice,
   formatProviderEgressReview,
+  parseAskMaxOutputTokens,
+  parseAskSessionTokenBudget,
   parseEgressConfirmation,
+  parseAskTimeoutSeconds,
   providerDisplayLabel,
   resolveAskModel,
   tryAsk,
@@ -74,6 +77,36 @@ describe("try ask", () => {
       .toThrow("requires --model <value> for an OpenAI-compatible endpoint");
   });
 
+  it("accepts only bounded whole-second model request timeouts", () => {
+    expect(parseAskTimeoutSeconds(undefined)).toBeUndefined();
+    expect(parseAskTimeoutSeconds("1")).toBe(1);
+    expect(parseAskTimeoutSeconds("600")).toBe(600);
+    for (const value of ["0", "1.5", "601", "slow"]) {
+      expect(() => parseAskTimeoutSeconds(value)).toThrowError(expect.objectContaining({
+        code: "ASK_TIMEOUT_INVALID",
+      }));
+    }
+  });
+
+  it("accepts only bounded whole-number Ask token limits", () => {
+    expect(parseAskSessionTokenBudget(undefined)).toBeUndefined();
+    expect(parseAskSessionTokenBudget("1000")).toBe(1_000);
+    expect(parseAskSessionTokenBudget("5000000")).toBe(5_000_000);
+    expect(parseAskMaxOutputTokens(undefined)).toBeUndefined();
+    expect(parseAskMaxOutputTokens("256")).toBe(256);
+    expect(parseAskMaxOutputTokens("16384")).toBe(16_384);
+    for (const value of ["999", "5000001", "1.5", "many"]) {
+      expect(() => parseAskSessionTokenBudget(value)).toThrowError(expect.objectContaining({
+        code: "ASK_SESSION_TOKEN_BUDGET_INVALID",
+      }));
+    }
+    for (const value of ["255", "16385", "1.5", "many"]) {
+      expect(() => parseAskMaxOutputTokens(value)).toThrowError(expect.objectContaining({
+        code: "ASK_MAX_OUTPUT_TOKENS_INVALID",
+      }));
+    }
+  });
+
   it("runs the OpenAI flag path without --model using the documented default", async () => {
     const fixture = await askProject();
     const consent = vi.fn(async () => true);
@@ -85,11 +118,14 @@ describe("try ask", () => {
     }));
 
     await expect(tryAsk([
-      "Count reviewed rows.",
+      "Count reviewed sessions by region and week.",
       "--project-root", fixture.root,
       "--config", fixture.configPath,
       "--store", fixture.storePath,
       "--provider", "openai",
+      "--timeout", "75",
+      "--session-token-budget", "350000",
+      "--max-output-tokens", "2048",
     ], {
       env: fixture.env,
       gatewayFactory: testGatewayFactory([]),
@@ -98,9 +134,17 @@ describe("try ask", () => {
       bindPlansToAnswer: async () => undefined,
     })).resolves.toBe(0);
 
-    expect(consent).toHaveBeenCalledWith(expect.objectContaining({ model: "gpt-5-mini" }));
+    expect(consent).toHaveBeenCalledWith(expect.objectContaining({
+      model: "gpt-5-mini",
+      sessionTokenBudget: 350_000,
+      maxOutputTokens: 2_048,
+    }));
     expect(requestJson).toHaveBeenCalledWith(expect.objectContaining({
-      body: expect.objectContaining({ model: "gpt-5-mini" }),
+      body: expect.objectContaining({
+        model: "gpt-5-mini",
+        max_completion_tokens: 2_048,
+      }),
+      timeoutMs: 75_000,
     }));
   });
 
@@ -122,7 +166,7 @@ describe("try ask", () => {
     let requests = 0;
 
     await expect(tryAsk([
-      "Count reviewed rows.",
+      "Count reviewed sessions by region and week.",
       "--project-root", fixture.root,
       "--config", fixture.configPath,
       "--store", fixture.storePath,
@@ -282,10 +326,10 @@ describe("try ask", () => {
         }],
       },
     });
-    expect(calls).toEqual([{
-      name: "app.explore_data",
-      args: { plan: aggregatePlan() },
-    }]);
+    expect(calls).toEqual([
+      { name: "app.describe_data", args: { resource: "public.sessions" } },
+      { name: "app.explore_data", args: { plan: aggregatePlan() } },
+    ]);
     expect(JSON.stringify(requestBodies[0])).toContain("app__explore_data");
     expect(output.join("")).not.toContain(secret);
     expect(await projectContents(fixture.root)).not.toContain(secret);
@@ -370,7 +414,7 @@ describe("try ask", () => {
     const env = { ...fixture.env, ANTHROPIC_API_KEY: secret };
 
     await expect(tryAsk([
-      "Count the reviewed weekly changes.",
+      "Count the reviewed sessions by region and week.",
       "--project-root", fixture.root,
       "--config", fixture.configPath,
       "--store", fixture.storePath,
@@ -414,7 +458,10 @@ describe("try ask", () => {
       answer: "The reviewed count is 12.",
       answer_is_untrusted_model_output: true,
     });
-    expect(calls).toHaveLength(1);
+    expect(calls).toEqual([
+      { name: "app.describe_data", args: { resource: "public.sessions" } },
+      { name: "app.explore_data", args: { plan: aggregatePlan() } },
+    ]);
     expect(requests).toBe(2);
 
     await expect(tryAsk([
@@ -458,7 +505,7 @@ describe("try ask", () => {
     const readSecret = vi.fn(async () => secret);
     const answers: Array<string | undefined> = [
       "/access",
-      "Count the reviewed rows in the new boundary.",
+      "Count the reviewed sessions by region and week in the new boundary.",
       undefined,
     ];
     const runPostAccessAsk = vi.fn(async () => 0);
@@ -481,6 +528,7 @@ describe("try ask", () => {
         deployment_profile: "development",
         pack: { name: "support", resources: [{ id: "public.tickets" }] },
         activation: {
+          state: "active",
           digest: activeDigest,
           actor: "reviewer@example.test",
           activated_at: "2026-07-26T00:05:00.000Z",
@@ -491,6 +539,7 @@ describe("try ask", () => {
         deployment_profile: "development",
         pack: { name: "finance", resources: [{ id: "public.invoices" }] },
         activation: {
+          state: "active",
           digest: financeDigest,
           actor: "reviewer@example.test",
           activated_at: "2026-07-26T00:05:00.000Z",
@@ -505,9 +554,9 @@ describe("try ask", () => {
           updated_at: "2026-07-26T00:05:00.000Z",
         }, null, 2),
       );
-      await fs.writeFile(
+      await fs.rm(
         path.join(fixture.root, ".synapsor/exploration-boundary.active.json"),
-        JSON.stringify(financeBoundary, null, 2),
+        { force: true },
       );
       return input.onActivated();
     });
@@ -521,6 +570,7 @@ describe("try ask", () => {
     ], {
       env,
       gatewayFactory: testGatewayFactory(calls),
+      boundaryCatalogLoader: async () => undefined,
       confirmEgress: consent,
       providerDependencies: {
         requestJson: async (request) => {
@@ -567,6 +617,48 @@ describe("try ask", () => {
     expect(consent).toHaveBeenCalledOnce();
   });
 
+  it("exits cleanly only after the operator closes /access with no active boundary", async () => {
+    const fixture = await askProject();
+    const answers: Array<string | undefined> = ["/access"];
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    const runTerminalBoundaryReview = vi.fn(async () => {
+      await Promise.all([
+        fs.rm(path.join(fixture.root, ".synapsor/exploration-boundary.active.json"), { force: true }),
+        fs.rm(path.join(fixture.root, ".synapsor/exploration-boundaries.active.json"), { force: true }),
+      ]);
+      return 0;
+    });
+
+    await expect(tryAsk([
+      "--project-root", fixture.root,
+      "--config", fixture.configPath,
+      "--store", fixture.storePath,
+      "--provider", "openai",
+      "--model", "gpt-test",
+    ], {
+      env: fixture.env,
+      gatewayFactory: testGatewayFactory([]),
+      boundaryCatalogLoader: async () => undefined,
+      confirmEgress: async () => true,
+      shellIo: {
+        read: async () => answers.shift(),
+        write: () => undefined,
+        columns: () => 100,
+        onInterrupt: () => () => undefined,
+        close: () => undefined,
+      },
+      runTerminalBoundaryReview,
+    })).resolves.toBe(0);
+
+    expect(runTerminalBoundaryReview).toHaveBeenCalledOnce();
+    expect(output.join("")).toContain("No active boundary. Ask remains disabled.");
+    expect(output.join("")).not.toContain("Ask did not start");
+  });
+
   it("returns to the previous Ask authority when boundary activation fails safely", async () => {
     const fixture = await askProject();
     const answers: Array<string | undefined> = ["/access", undefined];
@@ -590,6 +682,7 @@ describe("try ask", () => {
     ], {
       env: fixture.env,
       gatewayFactory: testGatewayFactory([]),
+      boundaryCatalogLoader: async () => undefined,
       confirmEgress: async () => true,
       shellIo: {
         read: async () => answers.shift(),
@@ -624,6 +717,7 @@ describe("try ask", () => {
     ], {
       env: fixture.env,
       gatewayFactory: testGatewayFactory([]),
+      boundaryCatalogLoader: async () => undefined,
       confirmEgress: async () => true,
       uiServerFactory,
       shellIo: {
@@ -658,6 +752,7 @@ describe("try ask", () => {
     ], {
       env: fixture.env,
       gatewayFactory: testGatewayFactory([]),
+      boundaryCatalogLoader: async () => undefined,
       confirmEgress: consent,
       providerDependencies: { requestJson },
       shellIo: {
@@ -688,7 +783,64 @@ describe("try ask", () => {
     expect(consent).toHaveBeenCalledOnce();
     expect(requestJson).not.toHaveBeenCalled();
     expect(output.join("")).toContain("Your question was not sent");
-    expect(output.join("")).toContain("Run /access");
+    expect(output.join("")).toContain("Run /refresh-access");
+    expect(output.join("")).toContain("no restart is required");
+  });
+
+  it("rebinds an externally activated exact authority after an in-shell consent gesture", async () => {
+    const fixture = await askProject();
+    const requestJson = vi.fn();
+    const output: string[] = [];
+    const prompts: string[] = [];
+    let readCount = 0;
+
+    await expect(tryAsk([
+      "--project-root", fixture.root,
+      "--config", fixture.configPath,
+      "--store", fixture.storePath,
+      "--provider", "openai",
+      "--model", "gpt-owner-selected",
+    ], {
+      env: fixture.env,
+      gatewayFactory: testGatewayFactory([]),
+      boundaryCatalogLoader: async () => undefined,
+      confirmEgress: async () => true,
+      providerDependencies: { requestJson },
+      shellIo: {
+        read: async (prompt) => {
+          prompts.push(prompt);
+          readCount += 1;
+          if (readCount === 1) {
+            await fs.writeFile(
+              path.join(fixture.root, ".synapsor/exploration-boundary.active.json"),
+              JSON.stringify({
+                schema_version: "synapsor.exploration-boundary-active.v1",
+                deployment_profile: "development",
+                pack: { name: "new_review", resources: [] },
+                activation: {
+                  digest: `sha256:${"b".repeat(64)}`,
+                  actor: "another-reviewer@example.test",
+                  activated_at: "2026-07-26T00:10:00.000Z",
+                },
+              }, null, 2),
+            );
+            return "/refresh-access";
+          }
+          if (readCount === 2) return "";
+          return undefined;
+        },
+        write: (value) => output.push(value),
+        columns: () => 100,
+        onInterrupt: () => () => undefined,
+        close: () => undefined,
+      },
+    })).resolves.toBe(0);
+
+    expect(requestJson).not.toHaveBeenCalled();
+    expect(prompts.join("")).toContain("New reviewed access is active: new_review");
+    expect(prompts.join("")).toContain("Use the newly activated access? [Y/n]");
+    expect(output.join("")).toContain("Ask access updated");
+    expect(output.join("")).toContain("No provider request was made");
   });
 });
 
@@ -782,6 +934,28 @@ function testGatewayFactory(
     listTools: async () => structuredClone(tools),
     callTool: async (name, args) => {
       calls.push({ name, args: structuredClone(args) });
+      if (name === "app.describe_data") {
+        return {
+          ok: true,
+          value: {
+            ok: true,
+            catalog_view: "resource_detail",
+            metadata_only: true,
+            resources: [{
+              id: "public.sessions",
+              ...(typeof args.boundary === "string" ? { boundary_name: args.boundary } : {}),
+              fields: [
+                { id: "region", label: "Region" },
+                { id: "started_at", label: "Started at" },
+              ],
+              groupable_fields: ["region"],
+              time_bucket_fields: { started_at: ["week"] },
+              aggregate_measure_functions: {},
+            }],
+            source_database_changed: false,
+          },
+        };
+      }
       return {
         ok: true,
         value: {

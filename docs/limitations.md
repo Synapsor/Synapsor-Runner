@@ -1,13 +1,15 @@
 # Limitations
 
 Synapsor Runner is intentionally narrow. It combines deterministic
-whole-application boundary drafting, local authoring-only repeated Explore with
-optional Protect,
+whole-application boundary drafting, local repeated Explore with optional
+Protect, explicit production HTTP Explore under a stricter identity/privacy
+posture,
 guarded writes, opt-in proposal/evidence freshness, verified operator identity,
 default-off supervised execution, and quiet human-attention delivery. Reviewed
-aggregate paths are limited to proven star/depth-two many-to-one relationships,
-not a general join planner. Optional local Workbench Ask is a client of the
-existing reviewed tools; the complete no-model path remains the default.
+aggregate paths are limited to proven many-to-one relationships with a default
+depth of two and an explicitly reviewed hard maximum of three, not a general
+join planner. Optional local Workbench Ask is a client of the existing reviewed
+tools; the complete no-model path remains the default.
 Runner does not become a generic database query tool, Synapsor Cloud, or an
 enterprise SLA.
 
@@ -69,23 +71,39 @@ enterprise SLA.
   Each plan selects one boundary; overlapping resources require its name and
   cross-boundary joins/unions are unavailable. Session privacy budgets remain
   shared across boundary changes.
+- Explicit production Scoped Explore through the same exact two read-only
+  tools over secured shared Streamable HTTP. It requires a separately reviewed
+  production boundary, mandatory verified tenant/principal JWT claims,
+  per-principal and tenant privacy/rate ceilings, and atomic shared-Postgres
+  accounting. It remains unavailable through static-token, anonymous,
+  cleartext, legacy JSON-RPC, and model-controlled activation paths.
 - Optional development/staging loopback Workbench Ask through OpenAI,
   Anthropic, or a configured OpenAI-compatible endpoint. Provider calls use the
   exact active MCP/runtime surface, explicit direct-egress consent, in-memory
-  credential/history state, fixed tool/time/size/token bounds, and
+  credential/history state, fixed tool/size bounds, bounded operator-configured
+  request time and token ceilings, and
   proposal-only write behavior.
 - CLI `try ask` through the same provider/MCP engine. It accepts no command-line
   key, opens a bounded conversational shell when no question is supplied,
   labels model prose as untrusted, renders Runner-verified results
   independently, and keeps expiring analysis references out of routine output.
   `/protect` remains an operator command and never becomes a model tool.
+  The built-in OpenAI, Anthropic, and OpenAI-compatible adapters refuse an
+  explicit entity/grouping substitution before Explore execution. A generic
+  production HTTP resource server receives a plan without the original human
+  question, so an external MCP host remains responsible for that semantic
+  question-to-plan check.
 - Reviewed bounded aggregate Explore with `count`, `count_distinct`, `sum`,
   `avg`, categorical dimensions, fixed UTC time buckets, typed filters,
   bounded top/bottom-N over a separately reviewed candidate population,
-  signed absolute/percentage movers from an exact two-range comparison, up to
-  three reviewed relationship paths of at most two proven
-  many-to-one links each, cohort suppression, and durable
+  Runner-resolved fixed relative UTC windows, signed absolute/percentage movers
+  from an exact or relative two-range comparison, up to three reviewed
+  relationship paths with a default depth of two and explicit hard maximum of
+  three proven many-to-one links each, cohort suppression, and durable
   extraction/differencing budgets.
+- Relative windows in Runner 1.7.0 require reviewed UTC authority. Arbitrary
+  IANA business timezones and DST-aware relative calendar semantics are not yet
+  supported; use exact ISO ranges where UTC is not the intended authority.
 - Demand-driven operator review for an exact catalog-proven relationship,
   including an explicit missing-row choice for nullable links. The model cannot
   activate a relationship, and every participating relation receives trusted
@@ -152,7 +170,9 @@ truth for the model-facing tools.
 - Prompt-injection prevention.
 - Unbounded/high-throughput or multi-region ledger scale.
 - Managed fleet, SLA, compliance certification, or production support guarantee.
-- Production, shared HTTP, remote, or non-loopback Scoped Explore.
+- Production Scoped Explore without its explicit production boundary, verified
+  principal, per-principal and tenant budgets, shared atomic accounting, rate
+  limits, OAuth/JWT checks, and secured HTTP transport attestation.
 - Production, shared HTTP, remote, or non-loopback Workbench Ask; model-facing
   provider configuration; Synapsor-relayed provider traffic; durable chat
   history; automatic provider retries; exact monetary spend enforcement; or
@@ -161,10 +181,19 @@ truth for the model-facing tools.
   sets, app-owned/external effects, or writes without deterministic conflict,
   deduplication, freshness, and receipt authority.
 - Arbitrary aggregate expressions, dynamic identifiers, unrestricted joins,
-  many-to-many joins, formulas, window functions, subqueries, `HAVING`,
+  many-to-many joins, model-authored formulas or window functions, subqueries, `HAVING`,
   user-defined functions, or a statistical privacy guarantee. Runner supports
-  only the explicitly reviewed authoring cube described above and fixed
-  protected named capabilities produced from it.
+  only the explicitly reviewed authoring cube described above. Named running,
+  lag, rank, moving-average, and share operations run after suppression and do
+  not accept SQL or window definitions from the model.
+- PostgreSQL older than 13 or newer than 18, MySQL older than 5.7, pre-GA MySQL
+  8.0.0-8.0.10, MySQL newer than major 8, MariaDB, and unrecognized
+  MySQL-compatible products. Alpha, beta, release-candidate, development, and
+  snapshot server builds are also refused rather than inheriting stable-release
+  authority. MySQL 5.7 and 8.0.11-8.0.15 are supported only
+  through explicit limited grammar tiers; technical
+  compatibility does not imply current vendor security support. See
+  [Database Server Compatibility](database-server-compatibility.md).
 - Automatic policy widening or activation from graduated-trust metrics.
 - Immutable/WORM compliance storage from the local report exporter.
 
@@ -193,6 +222,9 @@ inspect one bounded shared Postgres ledger across a small fleet. This is still
 not a hosted central evidence service, organization RBAC/SSO, compliance
 retention system, or unbounded search engine. Each bridge operation serializes
 through an advisory lock and fails above configured `max_entries`.
+Production Explore does not route its high-volume query evidence through that
+bridge: it uses a dedicated append-only metadata sink with seven-day retention,
+so analytics traffic cannot consume proposal/writeback ledger capacity.
 
 Only homogeneous 1.x fleet operation is claimed for protocol-v4 compensation
 jobs. Mixed-minor v3/v4 rolling compensation is not claimed.

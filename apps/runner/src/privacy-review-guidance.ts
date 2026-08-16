@@ -16,5 +16,6 @@ export function cliPrivacyReviewInstructions(input: {
     `  4. ${valueInstruction}`,
     "  5. At Save this privacy change? [Y/n], press Enter to save the disabled draft.",
     "  6. At Review and activate this boundary change now? [Y/n], press Enter again. If you postpone activation, press C later from the boundary screen.",
+    "  7. /access stays open after activation. Continue reviewing settings, or press Q/Escape when finished to return to Ask.",
   ].join("\n");
 }

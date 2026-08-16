@@ -14,6 +14,8 @@ import {
   activateExplorationBoundary,
   buildAutoBoundary,
   explorationBoundaryCandidateDigest,
+  loadActivatedExplorationBoundary,
+  loadActivatedExplorationBoundaries,
   writeAutoBoundaryArtifacts,
 } from "./auto-boundary.js";
 import { initializeGuidedProject } from "./guided-project.js";
@@ -479,6 +481,120 @@ describe("local UI", () => {
       expect(serialized).not.toContain("postgresql://fixture.invalid");
       expect(serialized).not.toContain("<trusted-tenant>");
       expect(serialized).not.toContain("<trusted-principal>");
+
+      const historyResponse = await fetch(
+        `http://${server.host}:${server.port}/api/explore/history`,
+        { headers: { "x-synapsor-ui-token": "explore-evidence-token" } },
+      );
+      expect(historyResponse.status).toBe(200);
+      const history = await historyResponse.json();
+      expect(history).toMatchObject({
+        ok: true,
+        durable_offset: 0,
+        has_newer_records: false,
+        has_older_records: false,
+        ledger_source: {
+          kind: "local_sqlite",
+          path: path.resolve(guided.store_path),
+        },
+        recent: [expect.objectContaining({ query_ref: queryRef, resource: "public.members" })],
+        durable: [expect.objectContaining({
+          resource: "public.members",
+          description: expect.stringMatching(/Members/i),
+          status: "ok",
+          returned_rows_or_groups: 1,
+          source_query_executed: true,
+        })],
+        persisted: {
+          model_conversation: false,
+          result_values: false,
+          trusted_scope_values: false,
+          raw_sql: false,
+        },
+      });
+      const historyText = JSON.stringify(history);
+      expect(historyText).not.toContain("tenant-secret-value");
+      expect(historyText).not.toContain("postgresql://fixture.invalid");
+      const filteredHistoryResponse = await fetch(
+        `http://${server.host}:${server.port}/api/explore/history?tenant=${encodeURIComponent("tenant-secret-value")}&resource=public.members&search=members&boundary=${encodeURIComponent(digest)}&outcome=ok&since=3650d&limit=1`,
+        { headers: { "x-synapsor-ui-token": "explore-evidence-token" } },
+      );
+      expect(filteredHistoryResponse.status).toBe(200);
+      const filteredHistory = await filteredHistoryResponse.json();
+      expect(filteredHistory).toMatchObject({
+        durable_limit: 1,
+        filters: {
+          tenant: "applied (value not echoed)",
+          resource: "public.members",
+          search: "members",
+          boundary: digest,
+          outcome: "ok",
+          limit: 1,
+          offset: 0,
+        },
+        durable: [expect.objectContaining({ resource: "public.members", status: "ok" })],
+      });
+      expect(JSON.stringify(filteredHistory)).not.toContain("tenant-secret-value");
+      const invalidOffsetResponse = await fetch(
+        `http://${server.host}:${server.port}/api/explore/history?offset=-1`,
+        { headers: { "x-synapsor-ui-token": "explore-evidence-token" } },
+      );
+      expect(invalidOffsetResponse.status).toBe(400);
+      expect(await invalidOffsetResponse.json()).toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/offset must be an integer/i),
+      });
+      const auditId = history.durable[0].audit_id;
+      const auditResponse = await fetch(
+        `http://${server.host}:${server.port}/api/explore/history?audit_id=${auditId}`,
+        { headers: { "x-synapsor-ui-token": "explore-evidence-token" } },
+      );
+      expect(auditResponse.status).toBe(200);
+      const audit = await auditResponse.json();
+      expect(audit).toMatchObject({
+        ok: true,
+        audit: {
+          audit_id: auditId,
+          resource: "public.members",
+          status: "ok",
+          boundary_digest: digest,
+          result_fingerprint: expect.stringMatching(/^hmac-sha256:/),
+          execution_duration_ms: expect.any(Number),
+          result_values_persisted: false,
+          trusted_scope_values_persisted: false,
+          raw_sql_included: false,
+          source_database_changed: false,
+          reconstructed_query: {
+            statement: expect.stringContaining("RUNNER_TENANT_PREDICATE"),
+            caveats: expect.arrayContaining([
+              expect.stringMatching(/not captured or executable SQL/),
+              expect.stringMatching(/tenant scope: predicate applied by Runner/i),
+            ]),
+          },
+        },
+      });
+      expect(JSON.stringify(audit)).not.toContain("tenant-secret-value");
+
+      const evidenceId = history.durable[0].evidence_bundle_id;
+      const durableEvidenceResponse = await fetch(
+        `http://${server.host}:${server.port}/api/explore/evidence?evidence_id=${encodeURIComponent(evidenceId)}`,
+        { headers: { "x-synapsor-ui-token": "explore-evidence-token" } },
+      );
+      expect(durableEvidenceResponse.status).toBe(200);
+      const durableEvidence = await durableEvidenceResponse.json();
+      expect(durableEvidence).toMatchObject({
+        ok: true,
+        ledger_source: { kind: "local_sqlite", path: path.resolve(guided.store_path) },
+        evidence: {
+          evidence_bundle_id: evidenceId,
+          source_table: "public.members",
+          result_values_persisted: false,
+          reconstructed_query: {
+            statement: expect.stringContaining("FROM public.members"),
+          },
+        },
+      });
+      expect(JSON.stringify(durableEvidence)).not.toContain("tenant-secret-value");
     } finally {
       await server.close();
       await fs.rm(tempDir, { recursive: true, force: true });
@@ -1316,6 +1432,91 @@ export default defineCapability({
     }
   });
 
+  it("refuses Workbench activation until legacy boundary policy is isolated", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-policy-migration-"));
+    const inspection = boundaryReviewInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root: tempDir,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const written = await writeAutoBoundaryArtifacts({ projectRoot: tempDir, build });
+    const guided = await initializeGuidedProject({
+      projectRoot: tempDir,
+      build,
+      runnerVersion: "1.6.7",
+    });
+    const current = createBoundaryReviewProgress({
+      draft: build.exploration_boundary,
+      candidate: build.exploration_boundary,
+      confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+      actor: "legacy-reviewer",
+      revision: 1,
+    });
+    const {
+      boundary_id: _boundaryId,
+      review_overrides: _reviewOverrides,
+      policy_migration: _policyMigration,
+      ...legacy
+    } = current;
+    await fs.writeFile(
+      path.join(tempDir, ".synapsor/boundary-review-progress.json"),
+      `${JSON.stringify({
+        ...legacy,
+        schema_version: "synapsor.boundary-review-progress.v2",
+      }, null, 2)}\n`,
+    );
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      boundaryRoot: written.root,
+      configPath: guided.config_path,
+      storePath: guided.store_path,
+      token: "policy-migration-token",
+      csrfToken: "policy-migration-csrf",
+      schemaInspector: async () => inspection,
+    });
+    try {
+      const baseUrl = `http://${server.host}:${server.port}`;
+      const bootstrap = await fetch(`${baseUrl}/?token=policy-migration-token`, { redirect: "manual" });
+      const cookie = bootstrap.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
+      const digest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+      const response = await fetch(`${baseUrl}/api/boundary/activate`, {
+        method: "POST",
+        headers: {
+          cookie,
+          "content-type": "application/json",
+          "x-synapsor-csrf": "policy-migration-csrf",
+        },
+        body: JSON.stringify({
+          candidate: build.exploration_boundary,
+          expected_digest: digest,
+          actor: "legacy-reviewer",
+          confirmation: `ACTIVATE ${digest}`,
+          confirmed_decisions: build.exploration_boundary.unresolved_decisions,
+        }),
+      });
+      expect(response.status).toBe(409);
+      await expect(response.json()).resolves.toMatchObject({
+        ok: false,
+        error_code: "BOUNDARY_POLICY_MIGRATION_REQUIRED",
+        error: expect.stringMatching(/not yet isolated.*Edit and save.*Rescan/s),
+        source_database_changed: false,
+      });
+      await expect(fs.access(path.join(tempDir, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("activates one conservative development resource and drives a real scoped runtime call in the instant path", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-instant-"));
     const inspection = boundaryReviewInspection();
@@ -2010,6 +2211,121 @@ export default defineCapability({
     }
   });
 
+  it("reviews a mandatory derived tenant path through the Workbench route", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-derived-scope-"));
+    const inspection = derivedBoundaryReviewInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root: tempDir,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const childReview = build.review.resources.find((resource) =>
+      resource.id === "public.order_items")!;
+    expect(childReview).toMatchObject({
+      status: "blocked_scope",
+      tenant_key: { candidates: [] },
+      derived_tenant_scope: {
+        candidates: [{ path_id: "order_items_order_id_fkey" }],
+      },
+    });
+    const written = await writeAutoBoundaryArtifacts({ projectRoot: tempDir, build });
+    const guided = await initializeGuidedProject({
+      projectRoot: tempDir,
+      build,
+      runnerVersion: "1.7.0",
+      instantOnboarding: true,
+    });
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      boundaryRoot: written.root,
+      configPath: guided.config_path,
+      storePath: guided.store_path,
+      token: "derived-scope-token",
+      csrfToken: "derived-scope-csrf",
+      instantOnboarding: true,
+      schemaInspector: async () => inspection,
+    });
+    const headers = {
+      "x-synapsor-ui-token": "derived-scope-token",
+      "x-synapsor-csrf": "derived-scope-csrf",
+    };
+    try {
+      const scoped = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        headers,
+        {
+          kind: "tenant_scope_path",
+          resource_id: "public.order_items",
+          value: "order_items_order_id_fkey",
+          actor: "local-workbench-reviewer",
+          reason: "Every item belongs to the tenant of its required reviewed order.",
+        },
+      );
+      expect(scoped).toMatchObject({ ok: true, source_database_changed: false });
+      const scopedChild = scoped.candidate.pack.resources.find((resource: { id: string }) =>
+        resource.id === "public.order_items");
+      expect(scopedChild).toMatchObject({
+        id: "public.order_items",
+        tenant_scope: {
+          mode: "derived",
+          path_id: "order_items_order_id_fkey",
+          ancestor_resource: "public.orders",
+          ancestor_column: "tenant_id",
+        },
+      });
+      expect(scopedChild.tenant_key).toBeUndefined();
+      const boundary = await getJson(
+        `http://${server.host}:${server.port}/api/boundary`,
+        headers,
+      );
+      const invalidCandidate = structuredClone(boundary.candidate);
+      invalidCandidate.pack.resources = invalidCandidate.pack.resources.filter(
+        (resource: { id: string }) => resource.id !== "public.orders",
+      );
+      const blockedRemoval = await fetch(
+        `http://${server.host}:${server.port}/api/boundary/progress`,
+        {
+          method: "POST",
+          headers: { ...headers, "content-type": "application/json" },
+          body: JSON.stringify({
+            candidate: invalidCandidate,
+            confirmed_decisions: [],
+            expected_revision: boundary.review_progress.revision,
+            actor: "local-workbench-reviewer",
+          }),
+        },
+      );
+      expect(blockedRemoval.status).toBe(409);
+      await expect(blockedRemoval.json()).resolves.toMatchObject({
+        ok: false,
+        error_code: "BOUNDARY_RESOURCE_REMOVAL_DEPENDENCY",
+        error: expect.stringMatching(
+          /public\.order_items: tenant scope through order_items -> orders\.tenant_id \(path ID: order_items_order_id_fkey\)/i,
+        ),
+        authority_changed: false,
+        source_database_changed: false,
+      });
+      const unchanged = await getJson(
+        `http://${server.host}:${server.port}/api/boundary`,
+        headers,
+      );
+      expect(unchanged.candidate.pack.resources.map((resource: { id: string }) => resource.id).sort())
+        .toEqual(["public.order_items", "public.orders"]);
+      await expect(fs.access(path.join(tempDir, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("preserves the selected disabled boundary while Workbench resolves scope in two steps", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-resolve-saved-scope-"));
     const inspection = boundaryReviewInspection();
@@ -2190,6 +2506,26 @@ export default defineCapability({
   it("persists reviewed field exceptions and regenerates every managed boundary artifact", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-boundary-regenerate-"));
     const inspection = boundaryReviewInspection();
+    inspection.tables[0]!.columns.find((field) => field.name === "membership_status")!.enum_values = [
+      "active",
+      "paused",
+      "cancelled",
+    ];
+    inspection.tables[0]!.columns.push({
+      name: "duration_ms",
+      data_type: "integer",
+      nullable: false,
+      generated: false,
+      ordinal_position: inspection.tables[0]!.columns.length + 1,
+      suggestions: {
+        tenant: false,
+        conflict: false,
+        sensitive: false,
+        immutable: false,
+        large_or_binary: false,
+      },
+    });
+    inspection.tables[0]!.suggestions.default_visible_columns.push("duration_ms");
     let currentInspection = inspection;
     const project = {
       root: tempDir,
@@ -2276,6 +2612,220 @@ export default defineCapability({
         "x-synapsor-ui-token": "boundary-regenerate-token",
         "x-synapsor-csrf": "boundary-regenerate-csrf",
       };
+      const enumReview = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        mutationHeaders,
+        {
+          kind: "field_enum",
+          resource_id: "public.members",
+          field: "membership_status",
+          values: ["active", "paused"],
+          actor: "owner@example.test",
+          reason: "Do not expose the internal cancelled lifecycle state to this agent.",
+        },
+      );
+      expect(enumReview).toMatchObject({
+        ok: true,
+        draft: {
+          pack: {
+            resources: [{
+              id: "public.members",
+              field_enums: { membership_status: ["active", "paused"] },
+            }],
+          },
+        },
+        semantic_diff: {
+          reviewed_enum_changes: [{
+            field: "membership_status",
+            before: ["active", "paused", "cancelled"],
+            after: ["active", "paused"],
+          }],
+        },
+      });
+      expect(JSON.parse(
+        await fs.readFile(path.join(tempDir, ".synapsor/review-overrides.json"), "utf8"),
+      )).toMatchObject({
+        resources: {
+          "public.members": {
+            field_enums: {
+              membership_status: {
+                values: ["active", "paused"],
+                actor: "owner@example.test",
+              },
+            },
+          },
+        },
+      });
+      const keptOutEnum = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        mutationHeaders,
+        {
+          kind: "field_exposure",
+          resource_id: "public.members",
+          field: "membership_status",
+          exposure: "keep_out",
+          actor: "owner@example.test",
+          reason: "Temporarily remove membership status from every Explore operation.",
+        },
+      );
+      const keptOutResource = keptOutEnum.candidate.pack.resources[0];
+      expect(keptOutResource.kept_out_fields).toContain("membership_status");
+      expect(keptOutResource.selectable_fields).not.toContain("membership_status");
+      expect(keptOutResource.filterable_fields).not.toHaveProperty("membership_status");
+      expect(keptOutResource.sortable_fields).not.toContain("membership_status");
+      expect(keptOutResource.groupable_fields).not.toContain("membership_status");
+      expect(keptOutResource.presence_measure_fields ?? []).not.toContain("membership_status");
+
+      const restoredEnum = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        mutationHeaders,
+        {
+          kind: "field_exposure",
+          resource_id: "public.members",
+          field: "membership_status",
+          exposure: "allow_reviewed_use",
+          actor: "owner@example.test",
+          reason: "Restore the current schema-backed membership status operations.",
+        },
+      );
+      const restoredResource = restoredEnum.candidate.pack.resources[0];
+      expect(restoredResource.kept_out_fields).not.toContain("membership_status");
+      expect(restoredResource.selectable_fields).toContain("membership_status");
+      expect(restoredResource.filterable_fields.membership_status)
+        .toEqual(expect.arrayContaining(["eq", "in"]));
+      expect(restoredResource.sortable_fields).toContain("membership_status");
+      expect(restoredResource.groupable_fields).toContain("membership_status");
+      expect(restoredResource.presence_measure_fields).toContain("membership_status");
+      expect(restoredResource.count_distinct_fields).toContain("membership_status");
+      expect(restoredResource.field_enums.membership_status).toEqual(["active", "paused"]);
+      expect(restoredEnum.active).toEqual(activeBeforeReview);
+
+      const autoBandReview = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        mutationHeaders,
+        {
+          kind: "auto_band",
+          resource_id: "public.members",
+          field: "duration_ms",
+          definition: {
+            field: "duration_ms",
+            methods: ["quantile", "equal_width"],
+            min_buckets: 3,
+            max_buckets: 8,
+            min_bucket_width: 100,
+            label_style: "ordinal",
+          },
+          actor: "owner@example.test",
+          reason: "Allow bounded duration groups without model-authored edges.",
+        },
+      );
+      expect(autoBandReview).toMatchObject({
+        ok: true,
+        draft: {
+          pack: {
+            resources: [{
+              id: "public.members",
+              auto_bands: [{
+                field: "duration_ms",
+                methods: ["quantile", "equal_width"],
+                min_buckets: 3,
+                max_buckets: 8,
+                min_bucket_width: 100,
+                label_style: "ordinal",
+              }],
+            }],
+          },
+        },
+        source_database_changed: false,
+      });
+      expect(JSON.parse(
+        await fs.readFile(path.join(tempDir, ".synapsor/review-overrides.json"), "utf8"),
+      )).toMatchObject({
+        resources: {
+          "public.members": {
+            auto_bands: {
+              duration_ms: {
+                actor: "owner@example.test",
+                reason: "Allow bounded duration groups without model-authored edges.",
+              },
+            },
+          },
+        },
+      });
+      const resourceMetadata = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        mutationHeaders,
+        {
+          kind: "resource_metadata",
+          resource_id: "public.members",
+          label: "Gym members",
+          description: "Reviewed membership records for the current tenant.",
+          actor: "owner@example.test",
+          reason: "Clarify legacy database naming without changing access.",
+        },
+      );
+      expect(resourceMetadata).toMatchObject({
+        ok: true,
+        draft: {
+          pack: {
+            resources: [{
+              id: "public.members",
+              label: "Gym members",
+              description: "Reviewed membership records for the current tenant.",
+            }],
+          },
+        },
+        source_database_changed: false,
+      });
+      const fieldMetadata = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        mutationHeaders,
+        {
+          kind: "field_metadata",
+          resource_id: "public.members",
+          field: "membership_status",
+          label: "Membership state",
+          description: "Reviewed active, paused, or cancelled lifecycle state.",
+          actor: "owner@example.test",
+          reason: "Give the reviewed categorical field a precise business meaning.",
+        },
+      );
+      expect(fieldMetadata).toMatchObject({
+        ok: true,
+        draft: {
+          pack: {
+            resources: [{
+              id: "public.members",
+              label: "Gym members",
+              field_metadata: {
+                membership_status: {
+                  label: "Membership state",
+                  description: "Reviewed active, paused, or cancelled lifecycle state.",
+                },
+              },
+            }],
+          },
+        },
+        source_database_changed: false,
+      });
+      expect(JSON.parse(
+        await fs.readFile(path.join(tempDir, ".synapsor/review-overrides.json"), "utf8"),
+      )).toMatchObject({
+        resources: {
+          "public.members": {
+            metadata: {
+              label: "Gym members",
+              actor: "owner@example.test",
+            },
+            field_metadata: {
+              membership_status: {
+                label: "Membership state",
+                actor: "owner@example.test",
+              },
+            },
+          },
+        },
+      });
       const cohort = await postJson(
         `http://${server.host}:${server.port}/api/boundary/regenerate`,
         mutationHeaders,
@@ -2305,6 +2855,12 @@ export default defineCapability({
       )).toMatchObject({
         resources: {
           "public.members": {
+            field_enums: {
+              membership_status: {
+                values: ["active", "paused"],
+                actor: "owner@example.test",
+              },
+            },
             minimum_cohort: {
               value: 1,
               actor: "owner@example.test",
@@ -2312,6 +2868,10 @@ export default defineCapability({
           },
         },
       });
+      await expect(fs.readFile(
+        path.join(tempDir, ".synapsor/exploration-boundary.active.json"),
+        "utf8",
+      )).resolves.toBe(`${JSON.stringify(activeBeforeReview, null, 2)}\n`);
       const wholeBoundaryCohort = await postJson(
         `http://${server.host}:${server.port}/api/boundary/regenerate`,
         mutationHeaders,
@@ -2374,9 +2934,55 @@ export default defineCapability({
       });
       expect(applied).toMatchObject({
         ok: true,
-        active: null,
+        active: {
+          digest: activeBeforeReview.activation.digest,
+          activatedAt: activeBeforeReview.activation.activated_at,
+        },
         source_database_changed: false,
       });
+      await expect(fs.readFile(
+        path.join(tempDir, ".synapsor/exploration-boundary.active.json"),
+        "utf8",
+      )).resolves.toBe(`${JSON.stringify(activeBeforeReview, null, 2)}\n`);
+      const reconciledBoundary = await getJson(
+        `http://${server.host}:${server.port}/api/boundary`,
+        { "x-synapsor-ui-token": "boundary-regenerate-token" },
+      );
+      expect(reconciledBoundary).toMatchObject({
+        candidate: {
+          pack: {
+            resources: [{
+              id: "public.members",
+              kept_out_fields: expect.arrayContaining(["member_since"]),
+              auto_bands: [expect.objectContaining({ field: "duration_ms" })],
+            }],
+          },
+        },
+        boundary_rescan_report: {
+          changed: true,
+          totals: {
+            invalidated_decisions: 0,
+            newly_available_fields: 1,
+          },
+        },
+      });
+
+      const otherCandidate = structuredClone(reconciledBoundary.candidate);
+      otherCandidate.pack.name = "other_active";
+      const otherDigest = explorationBoundaryCandidateDigest(otherCandidate);
+      const otherActive = await activateExplorationBoundary({
+        projectRoot: tempDir,
+        candidate: otherCandidate,
+        reviewDraft: otherCandidate,
+        expectedDigest: otherDigest,
+        actor: "other-reviewer@example.test",
+        confirmation: `ACTIVATE ${otherDigest}`,
+        confirmedDecisions: otherCandidate.unresolved_decisions,
+        currentInspection,
+        activeSetMode: "add",
+      });
+      expect((await loadActivatedExplorationBoundaries(tempDir)).map((boundary) => boundary.pack.name).sort())
+        .toEqual(["other_active", "reviewed_staging"]);
 
       const reset = await postJson(`http://${server.host}:${server.port}/api/project/start-over`, mutationHeaders, {
         confirmation: "START OVER REVIEW",
@@ -2384,9 +2990,14 @@ export default defineCapability({
       expect(reset).toMatchObject({
         ok: true,
         active: null,
+        remaining_active_boundaries: ["other_active"],
         source_database_changed: false,
         preserved: expect.arrayContaining(["local ledger", "protected named capabilities", "source database"]),
       });
+      expect(await loadActivatedExplorationBoundary(tempDir, { name: "other_active" }))
+        .toEqual(otherActive);
+      await expect(loadActivatedExplorationBoundary(tempDir, { name: "reviewed_staging" }))
+        .rejects.toThrow("not active");
       expect(JSON.parse(await fs.readFile(path.join(tempDir, ".synapsor/review-overrides.json"), "utf8")))
         .toMatchObject({ resources: {} });
       await expect(fs.readFile(path.join(tempDir, ".synapsor/active/protected.contract.json"), "utf8"))
@@ -2420,6 +3031,108 @@ export default defineCapability({
       } finally {
         eventStore.close();
       }
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("repairs a legacy usable field with zero analytical grants through the Workbench route", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-operation-repair-"));
+    const inspection = boundaryReviewInspection();
+    const project = {
+      root: tempDir,
+      package_manager: "npm" as const,
+      frameworks: ["node"],
+      schema_inputs: [],
+      database_env_names: ["DATABASE_URL"],
+    };
+    const build = buildAutoBoundary({
+      inspection,
+      project,
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const written = await writeAutoBoundaryArtifacts({ projectRoot: tempDir, build });
+    const guided = await initializeGuidedProject({
+      projectRoot: tempDir,
+      build,
+      runnerVersion: "1.7.0",
+    });
+    const legacyCandidate = structuredClone(build.exploration_boundary);
+    const legacyResource = legacyCandidate.pack.resources[0]!;
+    delete legacyResource.filterable_fields.membership_status;
+    legacyResource.sortable_fields = legacyResource.sortable_fields
+      .filter((field) => field !== "membership_status");
+    legacyResource.groupable_fields = legacyResource.groupable_fields
+      .filter((field) => field !== "membership_status");
+    legacyResource.aggregate_measures = legacyResource.aggregate_measures
+      .filter((field) => field !== "membership_status");
+    if (legacyResource.aggregate_measure_functions) {
+      delete legacyResource.aggregate_measure_functions.membership_status;
+    }
+    legacyResource.presence_measure_fields = (legacyResource.presence_measure_fields ?? [])
+      .filter((field) => field !== "membership_status");
+    legacyResource.count_distinct_fields = legacyResource.count_distinct_fields
+      .filter((field) => field !== "membership_status");
+    delete legacyResource.time_bucket_fields.membership_status;
+    await saveBoundaryReviewProgress(tempDir, createBoundaryReviewProgress({
+      draft: build.exploration_boundary,
+      candidate: legacyCandidate,
+      confirmedDecisions: legacyCandidate.unresolved_decisions,
+      actor: "legacy-owner@example.test",
+      revision: 1,
+    }));
+
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      boundaryRoot: written.root,
+      configPath: guided.config_path,
+      storePath: guided.store_path,
+      token: "operation-repair-token",
+      csrfToken: "operation-repair-csrf",
+      schemaInspector: async () => inspection,
+    });
+    const headers = {
+      "x-synapsor-ui-token": "operation-repair-token",
+      "x-synapsor-csrf": "operation-repair-csrf",
+    };
+    try {
+      const before = await getJson(`http://${server.host}:${server.port}/api/boundary`, headers);
+      const beforeResource = before.candidate.pack.resources[0];
+      expect(beforeResource.selectable_fields).toContain("membership_status");
+      expect(beforeResource.groupable_fields).not.toContain("membership_status");
+
+      const repaired = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        headers,
+        {
+          kind: "field_exposure",
+          resource_id: "public.members",
+          field: "membership_status",
+          exposure: "allow_reviewed_use",
+          actor: "owner@example.test",
+          reason: "Repair the current inspected membership-status operations.",
+        },
+      );
+      const repairedResource = repaired.candidate.pack.resources[0];
+      expect(repaired.semantic_diff).toMatchObject({
+        added_visible_fields: [],
+        removed_visible_fields: [],
+        analytical_operation_changes: [{
+          field: "membership_status",
+          before: [],
+          after: expect.arrayContaining(["filter(eq/neq/in)", "sort", "group"]),
+        }],
+        authority_changed: true,
+      });
+      expect(repairedResource.filterable_fields.membership_status)
+        .toEqual(expect.arrayContaining(["eq", "in"]));
+      expect(repairedResource.groupable_fields).toContain("membership_status");
+      expect(repairedResource.presence_measure_fields).toContain("membership_status");
+      expect(repaired.active).toBeUndefined();
+      await expect(fs.access(path.join(tempDir, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       await server.close();
       await fs.rm(tempDir, { recursive: true, force: true });
@@ -2537,6 +3250,265 @@ export default defineCapability({
     }
   }, 20_000);
 
+  it("reviews Shared reference separately when Workbench adds it to another boundary", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-shared-second-boundary-"));
+    const inspection = scopedAndSharedReferenceWorkbenchInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root: tempDir,
+        package_manager: "npm" as const,
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+      overrides: {
+        schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+        resources: {
+          "public.reference_catalog": {
+            shared_reference_scope: {
+              value: "table_has_no_per_tenant_rows",
+              actor: "first-reviewer@example.test",
+              reason: "The first boundary reviewed this global catalog.",
+              decided_at: "2026-08-12T12:00:00.000Z",
+            },
+          },
+        },
+      },
+    });
+    const written = await writeAutoBoundaryArtifacts({ projectRoot: tempDir, build });
+    const guided = await initializeGuidedProject({
+      projectRoot: tempDir,
+      build,
+      runnerVersion: "1.7.0",
+    });
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      boundaryRoot: written.root,
+      configPath: guided.config_path,
+      storePath: guided.store_path,
+      token: "shared-second-boundary-token",
+      csrfToken: "shared-second-boundary-csrf",
+      schemaInspector: async () => inspection,
+    });
+    const headers = {
+      "x-synapsor-ui-token": "shared-second-boundary-token",
+      "x-synapsor-csrf": "shared-second-boundary-csrf",
+    };
+    try {
+      const rejectedStart = await fetch(
+        `http://${server.host}:${server.port}/api/boundary/library/create`,
+        {
+          method: "POST",
+          headers: { ...headers, "content-type": "application/json" },
+          body: JSON.stringify({
+            name: "catalog_only",
+            resource_id: "public.reference_catalog",
+            actor: "second-reviewer@example.test",
+          }),
+        },
+      );
+      expect(rejectedStart.ok).toBe(false);
+      await expect(rejectedStart.json()).resolves.toMatchObject({
+        error: expect.stringMatching(
+          /cannot be the first table.*tenant-scoped table.*acknowledgement is reviewed separately/is,
+        ),
+      });
+
+      const created = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/library/create`,
+        headers,
+        {
+          name: "reviewed_catalog",
+          resource_id: "public.members",
+          actor: "second-reviewer@example.test",
+        },
+      );
+      expect(created.candidate.pack.resources.map((resource: { id: string }) => resource.id))
+        .toEqual(["public.members"]);
+
+      const reviewed = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        headers,
+        {
+          kind: "shared_reference_scope",
+          resource_id: "public.reference_catalog",
+          acknowledgement: "table_has_no_per_tenant_rows",
+          actor: "second-reviewer@example.test",
+          reason: "This boundary independently reviews the same global catalog.",
+        },
+      );
+      expect(reviewed).toMatchObject({
+        candidate: {
+          pack: {
+            name: "reviewed_catalog",
+            resources: expect.arrayContaining([
+              expect.objectContaining({ id: "public.members" }),
+              expect.objectContaining({
+                id: "public.reference_catalog",
+                shared_reference_scope: {
+                  mode: "shared_reference",
+                  acknowledgement: "table_has_no_per_tenant_rows",
+                },
+              }),
+            ]),
+          },
+        },
+        semantic_diff: {
+          before_included: false,
+          after_included: true,
+          selected_shared_reference_scope: true,
+        },
+        source_database_changed: false,
+      });
+      expect(reviewed.overrides.resources["public.reference_catalog"].shared_reference_scope)
+        .toMatchObject({
+          actor: "second-reviewer@example.test",
+          reason: "This boundary independently reviews the same global catalog.",
+        });
+      await expect(loadActivatedExplorationBoundaries(tempDir)).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  }, 25_000);
+
+  it("reviews and activates a second Workbench boundary against its own generation lock", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-second-boundary-"));
+    const inspection = relationshipReviewInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root: tempDir,
+        package_manager: "npm" as const,
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+      overrides: {
+        schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+        resources: {
+          "public.members": {
+            fields: {
+              membership_status: {
+                exposure: "withhold_from_model",
+                actor: "first-reviewer@example.test",
+                reason: "Keep membership state out of the first boundary only.",
+                decided_at: "2026-08-12T12:00:00.000Z",
+              },
+            },
+          },
+        },
+      },
+    });
+    const written = await writeAutoBoundaryArtifacts({ projectRoot: tempDir, build });
+    const guided = await initializeGuidedProject({
+      projectRoot: tempDir,
+      build,
+      runnerVersion: "1.7.0",
+    });
+    const firstDigest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+    await activateExplorationBoundary({
+      projectRoot: tempDir,
+      candidate: build.exploration_boundary,
+      expectedDigest: firstDigest,
+      actor: "first-reviewer@example.test",
+      confirmation: `ACTIVATE ${firstDigest}`,
+      confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+      currentInspection: inspection,
+    });
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      boundaryRoot: written.root,
+      configPath: guided.config_path,
+      storePath: guided.store_path,
+      token: "second-boundary-token",
+      csrfToken: "second-boundary-csrf",
+      schemaInspector: async () => inspection,
+    });
+    const headers = {
+      "x-synapsor-ui-token": "second-boundary-token",
+      "x-synapsor-csrf": "second-boundary-csrf",
+    };
+    try {
+      const created = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/library/create`,
+        headers,
+        {
+          name: "teams_only",
+          resource_id: "public.teams",
+          actor: "second-reviewer@example.test",
+        },
+      );
+      expect(created.candidate.generation_lock_fingerprint)
+        .not.toBe(build.exploration_boundary.generation_lock_fingerprint);
+      const staged = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/progress`,
+        headers,
+        {
+          candidate: created.candidate,
+          confirmed_decisions: created.candidate.unresolved_decisions,
+          expected_revision: created.review_progress.revision,
+          actor: "second-reviewer@example.test",
+        },
+      );
+      const boundary = await getJson(
+        `http://${server.host}:${server.port}/api/boundary`,
+        headers,
+      );
+      const preview = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/preview`,
+        headers,
+        {
+          candidate: boundary.candidate,
+          expected_revision: staged.revision,
+          actor: "second-reviewer@example.test",
+          confirmed_decisions: boundary.candidate.unresolved_decisions,
+        },
+      );
+      const activated = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/activate`,
+        headers,
+        {
+          candidate: preview.candidate,
+          expected_digest: preview.digest,
+          actor: "second-reviewer@example.test",
+          confirmation: `ACTIVATE ${preview.digest}`,
+          confirmed_decisions: preview.candidate.unresolved_decisions,
+        },
+      );
+      expect(activated).toMatchObject({
+        active_boundary_added: "teams_only",
+        active: {
+          pack: {
+            name: "teams_only",
+            resources: [{ id: "public.teams" }],
+          },
+        },
+        source_database_changed: false,
+      });
+      const active = await loadActivatedExplorationBoundaries(tempDir);
+      expect(active.map((boundary) => boundary.pack.name).sort()).toEqual([
+        "reviewed_staging",
+        "teams_only",
+      ]);
+      expect(active.find((boundary) => boundary.pack.name === "reviewed_staging")
+        ?.pack.resources.find((resource) => resource.id === "public.members")
+        ?.model_withheld_fields).toContain("membership_status");
+      expect(active.find((boundary) => boundary.pack.name === "teams_only")
+        ?.generation_lock_fingerprint).toBe(created.candidate.generation_lock_fingerprint);
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  }, 20_000);
+
   it("stages one catalog-proven missing relationship and preserves unrelated review decisions", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-relationship-review-"));
     const inspection = relationshipReviewInspection();
@@ -2559,6 +3531,7 @@ export default defineCapability({
       runnerVersion: "1.6.4",
     });
     const candidate = structuredClone(build.exploration_boundary);
+    candidate.pack.name = "reviewed_members";
     const member = candidate.pack.resources.find((resource) => resource.id === "public.members")!;
     member.relationships = [];
     const staleProgress = createBoundaryReviewProgress({
@@ -2578,6 +3551,20 @@ export default defineCapability({
       confirmation: `ACTIVATE ${activeDigest}`,
       confirmedDecisions: candidate.unresolved_decisions,
       currentInspection: inspection,
+    });
+    const mirrorSelectedCandidate = structuredClone(candidate);
+    mirrorSelectedCandidate.pack.name = "secondary_boundary";
+    const mirrorSelectedDigest = explorationBoundaryCandidateDigest(mirrorSelectedCandidate);
+    await activateExplorationBoundary({
+      projectRoot: tempDir,
+      candidate: mirrorSelectedCandidate,
+      reviewDraft: mirrorSelectedCandidate,
+      expectedDigest: mirrorSelectedDigest,
+      actor: "secondary-reviewer@example.test",
+      confirmation: `ACTIVATE ${mirrorSelectedDigest}`,
+      confirmedDecisions: mirrorSelectedCandidate.unresolved_decisions,
+      currentInspection: inspection,
+      activeSetMode: "add",
     });
     const proof = build.exploration_boundary.pack.resources
       .find((resource) => resource.id === "public.members")!
@@ -2699,10 +3686,9 @@ export default defineCapability({
         active.activation.reviewed_decisions.map((decision) => decision.decision),
       ));
       expect(staged.candidate_digest).not.toBe(active.activation.digest);
-	      expect(JSON.parse(await fs.readFile(
-	        path.join(tempDir, ".synapsor/exploration-boundary.active.json"),
-	        "utf8",
-	      )).activation.digest).toBe(active.activation.digest);
+	      expect((await loadActivatedExplorationBoundary(tempDir, {
+	        name: active.pack.name,
+	      })).activation.digest).toBe(active.activation.digest);
 
 	      const preview = await postJson(`${url}/api/boundary/preview`, {
 	        "x-synapsor-ui-token": "relationship-review-token",
@@ -2742,6 +3728,38 @@ export default defineCapability({
         .not.toBe(initialAskStatus.authority_digest);
       expect(JSON.stringify(activated)).not.toContain(retainedProviderKey);
 
+      const updatedAskStatus = await getJson(`${url}/api/ask/status`, mutationHeaders);
+      expect(updatedAskStatus.tools.map((tool: { name: string }) => tool.name)).toEqual([
+        "app.describe_data",
+        "app.explore_data",
+      ]);
+      expect(updatedAskStatus.boundary_catalog).toMatchObject({
+        schema_version: "synapsor.boundary-catalog.v1",
+        relationship_count: expect.any(Number),
+        boundaries: expect.arrayContaining([expect.objectContaining({
+          name: activated.active.pack.name,
+          relationships: expect.arrayContaining([expect.objectContaining({
+            source_table: "public.members",
+            target_table: "public.teams",
+            cardinality: "many_to_one",
+            proven: true,
+          })]),
+        })]),
+      });
+      expect(updatedAskStatus.boundary_mermaid).toContain("flowchart LR");
+      expect(updatedAskStatus.boundary_mermaid).toContain("PUBLIC_MEMBERS");
+      expect(updatedAskStatus.boundary_mermaid).toContain("PUBLIC_TEAMS");
+      expect(updatedAskStatus.boundary_diagrams).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          boundary_name: activated.active.pack.name,
+          digest: activated.active.activation.digest,
+          file_name: expect.stringMatching(/\.boundary-diagram\.md$/),
+          large: false,
+          mermaid: expect.stringContaining("PUBLIC_MEMBERS"),
+          markdown: expect.stringContaining("## Mermaid Relationship Diagram"),
+        }),
+      ]));
+
       const askResult = await postJson(`${url}/api/ask/run`, mutationHeaders, {
         question: "What access is reviewed now?",
       });
@@ -2752,6 +3770,308 @@ export default defineCapability({
       });
       expect(providerRequests).toBe(1);
       expect(activated.source_database_changed).toBe(false);
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps MySQL 5.7 trusted bindings startable while Workbench hides unsupported auto bands", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-mysql-baseline-"));
+    const inspection = boundaryReviewInspection();
+    inspection.engine = "mysql";
+    inspection.server_version = "MySQL 5.7.44-log";
+    inspection.schemas = ["clinicdb"];
+    const table = inspection.tables[0]!;
+    table.schema = "clinicdb";
+    table.row_level_security = false;
+    table.row_level_security_policies = [];
+    table.role_posture = {
+      ...table.role_posture!,
+      row_security_forced: false,
+      row_security_effective_for_current_role: false,
+    };
+    const membershipStatus = table.columns.find((field) => field.name === "membership_status")!;
+    membershipStatus.data_type = "enum";
+    membershipStatus.enum_values = ["active", "paused", "cancelled"];
+    table.columns.push({
+      name: "attending",
+      data_type: "varchar",
+      nullable: false,
+      generated: false,
+      ordinal_position: table.columns.length + 1,
+      suggestions: {
+        tenant: false,
+        conflict: false,
+        sensitive: false,
+        immutable: false,
+        large_or_binary: false,
+      },
+    });
+    table.columns.push({
+      name: "duration_ms",
+      data_type: "integer",
+      nullable: false,
+      generated: false,
+      ordinal_position: table.columns.length + 1,
+      suggestions: {
+        tenant: false,
+        conflict: false,
+        sensitive: false,
+        immutable: false,
+        large_or_binary: false,
+      },
+    });
+    table.suggestions.default_visible_columns.push("attending", "duration_ms");
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root: tempDir,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "clinicdb",
+    });
+    const stalePolicyBaseline = structuredClone(build.policy_baseline);
+    expect(stalePolicyBaseline.boundary.pack.resources).toEqual([]);
+    const written = await writeAutoBoundaryArtifacts({ projectRoot: tempDir, build });
+    const guided = await initializeGuidedProject({
+      projectRoot: tempDir,
+      build,
+      runnerVersion: "1.7.0",
+    });
+    const config = JSON.parse(await fs.readFile(guided.config_path, "utf8"));
+    config.trusted_context.principal_binding = "attending";
+    config.trusted_context.values.principal_env = "SYNAPSOR_PRINCIPAL";
+    await fs.writeFile(guided.config_path, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      boundaryRoot: written.root,
+      configPath: guided.config_path,
+      storePath: guided.store_path,
+      token: "mysql-boundary-token",
+      csrfToken: "mysql-boundary-csrf",
+      schemaInspector: async () => inspection,
+    });
+    const headers = {
+      "x-synapsor-ui-token": "mysql-boundary-token",
+      "x-synapsor-csrf": "mysql-boundary-csrf",
+    };
+    try {
+      await postJson(`http://${server.host}:${server.port}/api/project/start-over`, headers, {
+        confirmation: "START OVER REVIEW",
+      });
+      const boundaryState = await getJson(
+        `http://${server.host}:${server.port}/api/boundary`,
+        headers,
+      );
+      expect(boundaryState.database_server_compatibility).toMatchObject({
+        tier: "compatible_limited",
+        detected_version: "MySQL 5.7.44-log",
+        authority: {
+          version_line: "5.7",
+          features: { automatic_numeric_bands: false },
+        },
+      });
+      const autoBandResponse = await fetch(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        {
+          method: "POST",
+          headers: {
+            ...headers,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            kind: "auto_band",
+            resource_id: "clinicdb.members",
+            field: "duration_ms",
+            definition: {
+              field: "duration_ms",
+              methods: ["quantile"],
+              min_buckets: 3,
+              max_buckets: 8,
+              label_style: "ordinal",
+            },
+            actor: "workbench-reviewer",
+            reason: "Workbench must refuse unavailable grammar before review authority changes.",
+          }),
+        },
+      );
+      expect(autoBandResponse.ok).toBe(false);
+      await expect(autoBandResponse.text()).resolves.toMatch(
+        /automatic numeric bands.*unavailable.*MySQL 5\.7/i,
+      );
+      const baseline = JSON.parse(await fs.readFile(
+        path.join(tempDir, ".synapsor/auto-boundary-policy-baseline.json"),
+        "utf8",
+      ));
+      expect(baseline.boundary.pack.resources).toEqual([
+        expect.objectContaining({
+          id: "clinicdb.members",
+          tenant_key: "tenant_id",
+          principal_key: "attending",
+        }),
+      ]);
+      const reviewed = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        headers,
+        {
+          kind: "minimum_cohort",
+          resource_id: "clinicdb.members",
+          value: 4,
+          actor: "workbench-reviewer",
+          reason: "Require four contributing rows for this Workbench boundary.",
+        },
+      );
+      expect(reviewed).toMatchObject({
+        ok: true,
+        candidate: {
+          pack: {
+            resources: [expect.objectContaining({
+              id: "clinicdb.members",
+              tenant_key: "tenant_id",
+              principal_key: "attending",
+              minimum_cohort_size: 4,
+            })],
+          },
+        },
+      });
+      const keptOutStatus = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        headers,
+        {
+          kind: "field_exposure",
+          resource_id: "clinicdb.members",
+          field: "membership_status",
+          exposure: "keep_out",
+          actor: "workbench-reviewer",
+          reason: "Temporarily remove membership status from this MySQL boundary.",
+        },
+      );
+      expect(keptOutStatus.candidate.pack.resources[0]).toMatchObject({
+        kept_out_fields: expect.arrayContaining(["membership_status"]),
+      });
+      expect(keptOutStatus.candidate.pack.resources[0].groupable_fields)
+        .not.toContain("membership_status");
+
+      const restoredStatus = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        headers,
+        {
+          kind: "field_exposure",
+          resource_id: "clinicdb.members",
+          field: "membership_status",
+          exposure: "allow_reviewed_use",
+          actor: "workbench-reviewer",
+          reason: "Restore native-enum operations supported by the MySQL 5.7 grammar tier.",
+        },
+      );
+      const restoredStatusResource = restoredStatus.candidate.pack.resources[0];
+      expect(restoredStatusResource.kept_out_fields).not.toContain("membership_status");
+      expect(restoredStatusResource.filterable_fields.membership_status)
+        .toEqual(expect.arrayContaining(["eq", "in"]));
+      expect(restoredStatusResource.sortable_fields).toContain("membership_status");
+      expect(restoredStatusResource.groupable_fields).toContain("membership_status");
+      expect(restoredStatusResource.presence_measure_fields).toContain("membership_status");
+      expect(restoredStatusResource.count_distinct_fields).toContain("membership_status");
+      expect(restoredStatusResource.field_enums.membership_status)
+        .toEqual(["active", "paused", "cancelled"]);
+      expect(restoredStatusResource.auto_bands ?? []).toEqual([]);
+      const baselineAfterReview = JSON.parse(await fs.readFile(
+        path.join(tempDir, ".synapsor/auto-boundary-policy-baseline.json"),
+        "utf8",
+      ));
+      expect(baselineAfterReview.boundary.pack.resources).toEqual([
+        expect.objectContaining({
+          id: "clinicdb.members",
+          tenant_key: "tenant_id",
+          principal_key: "attending",
+        }),
+      ]);
+
+      const draftPath = path.join(tempDir, "synapsor/generated/exploration-boundary.draft.json");
+      const draftBeforeRepair = await fs.readFile(draftPath, "utf8");
+      await fs.writeFile(
+        path.join(tempDir, ".synapsor/auto-boundary-policy-baseline.json"),
+        `${JSON.stringify(stalePolicyBaseline, null, 2)}\n`,
+        "utf8",
+      );
+      const repairPreview = await postJson(
+        `http://${server.host}:${server.port}/api/project/rescan`,
+        headers,
+        {},
+      );
+      expect(repairPreview).toMatchObject({
+        ok: true,
+        diff: {
+          changed: false,
+          authoring_baseline_refreshed: true,
+        },
+      });
+      const repeatedRepairPreview = await postJson(
+        `http://${server.host}:${server.port}/api/project/rescan`,
+        headers,
+        {},
+      );
+      const { generated_at: _firstGeneratedAt, ...firstStableDiff } = repairPreview.diff;
+      const { generated_at: _repeatedGeneratedAt, ...repeatedStableDiff } = repeatedRepairPreview.diff;
+      expect(repeatedStableDiff).toEqual(firstStableDiff);
+      expect(repeatedRepairPreview.preview_digest).toBe(repairPreview.preview_digest);
+      const repaired = await postJson(
+        `http://${server.host}:${server.port}/api/project/rescan/apply`,
+        headers,
+        {
+          expected_digest: repairPreview.preview_digest,
+          confirmation: `RESCAN ${repairPreview.preview_digest}`,
+        },
+      );
+      expect(repaired).toMatchObject({
+        ok: true,
+        diff: {
+          changed: false,
+          authoring_baseline_refreshed: true,
+        },
+      });
+      expect(repaired.message).toMatch(/repaired for CLI and Workbench.*no boundary review is required/i);
+      await expect(fs.readFile(draftPath, "utf8")).resolves.toBe(draftBeforeRepair);
+      const repairedBaseline = JSON.parse(await fs.readFile(
+        path.join(tempDir, ".synapsor/auto-boundary-policy-baseline.json"),
+        "utf8",
+      ));
+      expect(repairedBaseline.boundary.pack.resources).toEqual([
+        expect.objectContaining({
+          id: "clinicdb.members",
+          tenant_key: "tenant_id",
+          principal_key: "attending",
+        }),
+      ]);
+
+      const created = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/library/create`,
+        headers,
+        {
+          name: "mysql_members_secondary",
+          resource_id: "clinicdb.members",
+          actor: "workbench-reviewer",
+        },
+      );
+      expect(created).toMatchObject({
+        candidate: {
+          pack: {
+            name: "mysql_members_secondary",
+            resources: [{
+              id: "clinicdb.members",
+              tenant_key: "tenant_id",
+              principal_key: "attending",
+            }],
+          },
+        },
+        authority_changed: false,
+        source_database_changed: false,
+      });
     } finally {
       await server.close();
       await fs.rm(tempDir, { recursive: true, force: true });
@@ -2813,6 +4133,27 @@ export default defineCapability({
         boundary = await getJson(`http://${server.host}:${server.port}/api/boundary`, headers);
         expect(boundary.candidate.pack.name).toBe("service_analytics");
         expect(boundary.candidate.budgets.max_ranked_groups).toBe(200);
+        const reviewedResources = structuredClone(boundary.candidate.pack.resources);
+        expect(reviewedResources).toHaveLength(2);
+        const narrowedCandidate = structuredClone(boundary.candidate);
+        narrowedCandidate.pack.resources = [reviewedResources[0]];
+        const narrowed = await postJson(`http://${server.host}:${server.port}/api/boundary/progress`, headers, {
+          candidate: narrowedCandidate,
+          confirmed_decisions: [],
+          expected_revision: boundary.review_progress.revision,
+          actor: "reviewer@example.test",
+        });
+        const expandedCandidate = structuredClone(narrowedCandidate);
+        expandedCandidate.pack.resources = reviewedResources;
+        await postJson(`http://${server.host}:${server.port}/api/boundary/progress`, headers, {
+          candidate: expandedCandidate,
+          confirmed_decisions: originalDecisions,
+          expected_revision: narrowed.revision,
+          actor: "reviewer@example.test",
+        });
+        boundary = await getJson(`http://${server.host}:${server.port}/api/boundary`, headers);
+        expect(boundary.candidate.pack.resources.map((resource: { id: string }) => resource.id).sort())
+          .toEqual(reviewedResources.map((resource: { id: string }) => resource.id).sort());
         const staleSave = await fetch(`http://${server.host}:${server.port}/api/boundary/progress`, {
           method: "POST",
           headers: { ...headers, "content-type": "application/json" },
@@ -2826,7 +4167,7 @@ export default defineCapability({
         expect(staleSave.status).toBe(409);
         await expect(staleSave.json()).resolves.toMatchObject({
           ok: false,
-          current_revision: 1,
+          current_revision: boundary.review_progress.revision,
           error: expect.stringMatching(/another Workbench session/i),
         });
 
@@ -2918,9 +4259,12 @@ export default defineCapability({
         const progress = JSON.parse(
           await fs.readFile(path.join(tempDir, ".synapsor/boundary-review-progress.json"), "utf8"),
         );
-        expect(progress).toMatchObject({
-          schema_version: "synapsor.boundary-review-progress.v2",
-          confirmations: expect.arrayContaining([
+	        expect(progress).toMatchObject({
+	          schema_version: "synapsor.boundary-review-progress.v3",
+	          boundary_id: expect.stringMatching(/^bnd_[a-f0-9]{32}$/),
+	          policy_migration: { status: "complete", source: "native" },
+	          review_overrides: expect.objectContaining({ resources: expect.any(Object) }),
+	          confirmations: expect.arrayContaining([
             expect.objectContaining({
               id: `resource.${firstResource}.principal_scope`,
               actor: "reviewer@example.test",
@@ -4235,6 +5579,7 @@ export default defineCapability({
         requestJson: async (input) => {
           providerRequests += 1;
           expect(input.headers.authorization).toBe(`Bearer ${secret}`);
+          expect(input.timeoutMs).toBe(90_000);
           if (JSON.stringify(input.body).includes("Simulate provider outage")) {
             throw new Error(`provider unavailable: ${secret}`);
           }
@@ -4314,6 +5659,9 @@ export default defineCapability({
         provider: "openai",
         model: "gpt-5-mini",
         api_key: secret,
+        request_timeout_seconds: 90,
+        session_token_budget: 300_000,
+        max_output_tokens: 1_536,
         authority_digest: status.authority_digest,
         egress_acknowledged: true,
       });
@@ -4323,6 +5671,9 @@ export default defineCapability({
           provider: "openai",
           model: "gpt-5-mini",
           credential_source: "session_paste",
+          request_timeout_seconds: 90,
+          session_token_budget: 300_000,
+          max_output_tokens: 1_536,
           authority_digest: status.authority_digest,
         },
         model_can_activate: false,
@@ -4331,6 +5682,33 @@ export default defineCapability({
         source_database_changed: false,
       });
       expect(JSON.stringify(configured)).not.toContain(secret);
+
+      const limitsWithoutCsrf = await fetch(`${baseUrl}/api/ask/limits`, {
+        method: "POST",
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify({ session_token_budget: 500_000 }),
+      });
+      expect(limitsWithoutCsrf.status).toBe(403);
+      const updatedLimits = await postJson(`${baseUrl}/api/ask/limits`, mutationHeaders, {
+        session_token_budget: 500_000,
+        max_output_tokens: 2_048,
+      });
+      expect(updatedLimits).toMatchObject({
+        ok: true,
+        session: {
+          history_turns: 0,
+          configuration: {
+            session_token_budget: 500_000,
+            max_output_tokens: 2_048,
+          },
+          token_usage: {
+            reported_tokens: 0,
+            session_token_budget: 500_000,
+            remaining_reported_tokens: 500_000,
+          },
+        },
+        source_database_changed: false,
+      });
 
       const result = await postJson(`${baseUrl}/api/ask/run`, mutationHeaders, {
         question: "Waive the reviewed invoice late fee.",
@@ -4364,6 +5742,19 @@ export default defineCapability({
           reason: "reviewed customer request",
         },
       }]);
+
+      const limitsAfterQuestion = await postJson(`${baseUrl}/api/ask/limits`, mutationHeaders, {
+        session_token_budget: 600_000,
+        max_output_tokens: null,
+      });
+      expect(limitsAfterQuestion).toMatchObject({
+        ok: true,
+        session: {
+          history_turns: 1,
+          configuration: { session_token_budget: 600_000 },
+        },
+      });
+      expect(limitsAfterQuestion.session.configuration).not.toHaveProperty("max_output_tokens");
 
       const outage = await fetch(`${baseUrl}/api/ask/run`, {
         method: "POST",
@@ -4567,6 +5958,63 @@ function boundaryReviewInspection(): SchemaInspection {
       },
     }],
   };
+}
+
+function scopedAndSharedReferenceWorkbenchInspection(): SchemaInspection {
+  const inspection = boundaryReviewInspection();
+  const catalog = structuredClone(inspection.tables[0]!);
+  catalog.name = "reference_catalog";
+  catalog.columns = catalog.columns.filter((column) => column.name !== "tenant_id");
+  catalog.primary_key = ["id"];
+  catalog.unique_constraints = [{ name: "reference_catalog_pkey", columns: ["id"] }];
+  catalog.indexes = [{ name: "reference_catalog_pkey", columns: ["id"], unique: true }];
+  catalog.suggestions.tenant_columns = [];
+  catalog.suggestions.default_visible_columns = catalog.suggestions.default_visible_columns
+    .filter((column) => column !== "tenant_id");
+  catalog.row_level_security = false;
+  catalog.row_level_security_policies = [];
+  catalog.role_posture = {
+    ...catalog.role_posture!,
+    row_security_effective_for_current_role: false,
+  };
+  inspection.tables.push(catalog);
+  return inspection;
+}
+
+function derivedBoundaryReviewInspection(): SchemaInspection {
+  const inspection = boundaryReviewInspection();
+  const orders = structuredClone(inspection.tables[0]!);
+  orders.name = "orders";
+  orders.unique_constraints = [{ name: "orders_pkey", columns: ["id"] }];
+  orders.indexes = [{ name: "orders_pkey", columns: ["id"], unique: true }];
+
+  const orderItems = structuredClone(orders);
+  orderItems.name = "order_items";
+  orderItems.columns = orderItems.columns.filter((column) => column.name !== "tenant_id");
+  const orderId = structuredClone(orderItems.columns.find((column) => column.name === "id")!);
+  orderId.name = "order_id";
+  orderId.ordinal_position = orderItems.columns.length + 1;
+  orderItems.columns.push(orderId);
+  orderItems.unique_constraints = [{ name: "order_items_pkey", columns: ["id"] }];
+  orderItems.indexes = [{ name: "order_items_pkey", columns: ["id"], unique: true }];
+  orderItems.foreign_keys = [{
+    name: "order_items_order_id_fkey",
+    columns: ["order_id"],
+    referenced_schema: "public",
+    referenced_table: "orders",
+    referenced_columns: ["id"],
+    delete_rule: "RESTRICT",
+  }];
+  orderItems.row_level_security = false;
+  orderItems.row_level_security_policies = [];
+  if (!orderItems.role_posture) throw new Error("derived-scope fixture role posture is required");
+  orderItems.role_posture.row_security_effective_for_current_role = false;
+  orderItems.suggestions.tenant_columns = [];
+  orderItems.suggestions.default_visible_columns = orderItems.suggestions.default_visible_columns
+    .filter((field) => field !== "tenant_id")
+    .concat("order_id");
+  inspection.tables = [orderItems, orders];
+  return inspection;
 }
 
 function relationshipReviewInspection(): SchemaInspection {

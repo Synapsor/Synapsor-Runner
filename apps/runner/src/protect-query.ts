@@ -9,13 +9,14 @@ import type {
 } from "@synapsor/spec";
 import {
   deactivateExplorationBoundary,
-  loadAutoBoundaryReviewOverrides,
   loadActivatedExplorationBoundary,
   loadActivatedExplorationBoundaries,
   reviewedRankedGroupLimit,
   type ActivatedExplorationBoundary,
+  type ExplorationDerivedBaseMeasure,
   type GenerationLock,
 } from "./auto-boundary.js";
+import { loadCompletedBoundaryReviewOverrides } from "./boundary-review-policy.js";
 import {
   listProtectedPlans,
   loadProtectedPlan,
@@ -28,6 +29,7 @@ import {
   type ExploreFilter,
   type ExplorePlan,
 } from "./scoped-explore.js";
+import type { ResolvedRelativeTimeWindow } from "./relative-time-window.js";
 
 const PROTECTED_QUERY_VERSION = "synapsor.protected-query.v1";
 const PROTECTED_DIR = "synapsor/protected";
@@ -173,6 +175,7 @@ export async function listProtectableQueries(input: {
   returned_rows_or_groups?: number;
   returned_cells?: number;
   suppressed_groups?: number;
+  resolved_time_windows?: ResolvedRelativeTimeWindow[];
   minimum_cohort_override?: {
     resource: string;
     minimum_cohort_size: number;
@@ -224,12 +227,18 @@ export function describeProtectableAnalysis(plan: ExplorePlan): string {
     return `Reviewed ${resource} rows with ${plan.select.length} visible field${plan.select.length === 1 ? "" : "s"}`;
   }
   const measures = plan.measures.map((measure) => {
+    if ("derived_measure" in measure) return `reviewed ${humanWords(measure.derived_measure)}`;
     if (measure.function === "count") return resource;
     const field = humanWords(measure.field ?? "value");
     return `${measure.function.replace("_", " ")} ${field}`;
   }).join(" and ");
   const groups = [
-    ...(plan.dimensions ?? []).map((dimension) => humanWords(dimension.field)),
+    ...(plan.dimensions ?? []).map((dimension) =>
+      humanWords("numeric_band" in dimension
+        ? typeof dimension.numeric_band === "string"
+          ? dimension.numeric_band
+          : `${dimension.numeric_band.field}_${dimension.numeric_band.method}_band`
+        : dimension.field)),
     ...(plan.time_bucket ? [`${plan.time_bucket.bucket} ${humanWords(plan.time_bucket.field)}`] : []),
   ];
   const comparison = plan.comparison ? " across two reviewed periods" : "";
@@ -240,11 +249,18 @@ export function suggestProtectedCapabilityName(plan: ExplorePlan): string {
   const resource = safeCapabilitySegment(plan.resource.split(".").pop() ?? "analysis");
   if (plan.kind === "rows") return `analytics.${resource}_rows`;
   const measure = plan.measures[0];
-  const measureSegment = measure?.function === "count"
+  const measureSegment = measure && "derived_measure" in measure
+    ? safeCapabilitySegment(measure.derived_measure)
+    : measure?.function === "count"
     ? "count"
     : safeCapabilitySegment(`${measure?.function ?? "measure"}_${measure?.field ?? "value"}`);
   const groupSegments = [
-    ...(plan.dimensions ?? []).map((dimension) => safeCapabilitySegment(dimension.field)),
+    ...(plan.dimensions ?? []).map((dimension) =>
+      safeCapabilitySegment("numeric_band" in dimension
+        ? typeof dimension.numeric_band === "string"
+          ? dimension.numeric_band
+          : `${dimension.numeric_band.field}_${dimension.numeric_band.method}_band`
+        : dimension.field)),
     ...(plan.time_bucket ? [safeCapabilitySegment(plan.time_bucket.bucket)] : []),
   ];
   const candidate = `analytics.${resource}_${measureSegment}${groupSegments.length ? `_by_${groupSegments.join("_and_")}` : ""}`;
@@ -284,6 +300,11 @@ export async function createProtectedQueryDraft(input: {
   const boundary = await loadActivatedExplorationBoundary(projectRoot, {
     digest: protectedPlan.boundary_digest,
   });
+  if (boundary.organization_scope) {
+    throw new Error(
+      "Protect conversion is unavailable for single-organization Explore because protected capabilities still require a direct tenant column. The reviewed Explore boundary remains read-only.",
+    );
+  }
   const prepared = await prepareScopedExplore({
     projectRoot,
     transport: "loopback_workbench",
@@ -387,6 +408,9 @@ export async function activateProtectedQuery(input: {
   disableExplore?: boolean;
   env?: NodeJS.ProcessEnv;
   prepareScopedExploreFn?: typeof prepareScopedExplore;
+  testFailpoint?: (
+    point: "after_active_artifacts" | "after_explore_deactivation" | "before_runtime_config_commit",
+  ) => void | Promise<void>;
 }): Promise<ProtectedQueryActivation> {
   const projectRoot = path.resolve(input.projectRoot);
   assertQualifiedCapabilityName(input.capabilityName);
@@ -459,9 +483,12 @@ export async function activateProtectedQuery(input: {
   const activeRoot = path.join(projectRoot, PROTECTED_DIR, "active");
   await fs.mkdir(activeRoot, { recursive: true, mode: 0o700 });
   const activeContractPath = path.join(activeRoot, `${safeCapabilityFileName(input.capabilityName)}.contract.json`);
-  await writeAtomic(activeContractPath, json(contract), 0o600);
+  const activationPath = path.join(
+    activeRoot,
+    `${safeCapabilityFileName(input.capabilityName)}.activation.json`,
+  );
   const configPath = path.resolve(input.configPath ?? path.join(projectRoot, "synapsor.runner.json"));
-  await addProtectedContractToRuntimeConfig({
+  const runtimeConfig = await protectedRuntimeConfig({
     projectRoot,
     configPath,
     contractPath: activeContractPath,
@@ -474,9 +501,6 @@ export async function activateProtectedQuery(input: {
     minimumCohortOverride: draft.minimum_cohort_override,
   });
   const explorationDisabled = input.disableExplore !== false;
-  if (explorationDisabled) {
-    await deactivateExplorationBoundary(projectRoot, prepared.boundary.pack.name);
-  }
   const activation: ProtectedQueryActivation = {
     schema_version: PROTECTED_QUERY_VERSION,
     state: "active",
@@ -497,7 +521,44 @@ export async function activateProtectedQuery(input: {
       }
       : {}),
   };
-  await writeAtomic(path.join(activeRoot, `${safeCapabilityFileName(input.capabilityName)}.activation.json`), json(activation), 0o600);
+  const trackedFiles = [
+    activeContractPath,
+    activationPath,
+    configPath,
+    path.join(projectRoot, ".synapsor/exploration-boundary.active.json"),
+    path.join(projectRoot, ".synapsor/exploration-boundaries.active.json"),
+  ];
+  const snapshots = new Map(await Promise.all(trackedFiles.map(async (filePath) => [
+    filePath,
+    await captureOptionalFile(filePath),
+  ] as const)));
+  try {
+    await writeAtomic(activeContractPath, json(contract), 0o600);
+    await writeAtomic(activationPath, json(activation), 0o600);
+    await input.testFailpoint?.("after_active_artifacts");
+    if (explorationDisabled) {
+      await deactivateExplorationBoundary(projectRoot, prepared.boundary.pack.name);
+    }
+    await input.testFailpoint?.("after_explore_deactivation");
+    await input.testFailpoint?.("before_runtime_config_commit");
+    await writeAtomic(configPath, runtimeConfig, 0o600);
+  } catch (error) {
+    let rollbackError: unknown;
+    try {
+      for (const filePath of trackedFiles) {
+        await restoreOptionalFile(filePath, snapshots.get(filePath)!);
+      }
+    } catch (failure) {
+      rollbackError = failure;
+    }
+    if (rollbackError) {
+      throw new Error(
+        "Protected capability activation failed and its local authority rollback could not be completed.",
+        { cause: { activation_error: error, rollback_error: rollbackError } },
+      );
+    }
+    throw error;
+  }
   return activation;
 }
 
@@ -561,6 +622,7 @@ function emitProtectedQueryDsl(input: {
   requiresPrincipal: boolean;
 }): string {
   const root = resourceFor(input.boundary, input.plan.resource);
+  const rootTenantKey = requireProtectedDirectTenantKey(root);
   const relationships = relationshipsForPlan(input.plan, root, input.boundary);
   const lines = [
     "CREATE AGENT CONTEXT protected_operator",
@@ -579,13 +641,16 @@ function emitProtectedQueryDsl(input: {
     `  SOURCE ${safeIdentifier(input.boundary.source)}`,
     `  ON ${safeIdentifier(root.schema)}.${safeIdentifier(root.table)}`,
     `  PRIMARY KEY ${safeIdentifier(root.primary_key)}`,
-    `  TENANT KEY ${safeIdentifier(root.tenant_key)}`,
+    `  TENANT KEY ${safeIdentifier(rootTenantKey)}`,
     ...(root.principal_key ? [`  PRINCIPAL SCOPE KEY ${safeIdentifier(root.principal_key)}`] : []),
     ...argumentDsl(input.positions, input.selections),
     `  PROTECTED READ ${input.plan.kind === "rows" ? "ROWS" : "AGGREGATE"}`,
     `  BOUNDARY DIGEST ${input.boundary.activation.digest}`,
     `  GENERATION LOCK ${input.boundary.generation_lock_fingerprint}`,
     ...relationshipsDsl(relationships),
+    ...(input.plan.time_window
+      ? [`  PROTECTED TIME WINDOW ${protectedFieldName(input.plan.time_window.field, input.plan.time_window.relationship)} FROM FIXED ${dslLiteral(input.plan.time_window.start)} TO FIXED ${dslLiteral(input.plan.time_window.end)}`]
+      : []),
     ...predicateDsl(input.plan.where ?? [], input.selections),
   ];
   if (input.plan.kind === "rows") {
@@ -594,7 +659,7 @@ function emitProtectedQueryDsl(input: {
       ...(input.plan.order_by ?? []).map((order) => `  ROW ORDER BY ${safeIdentifier(order.field)} ${order.direction.toUpperCase()}`),
     );
   } else {
-    lines.push(...aggregateDsl(input.plan, input.selections, root.minimum_cohort_size));
+    lines.push(...aggregateDsl(input.plan, input.selections, root.minimum_cohort_size, root));
   }
   if (root.kept_out_fields.length) lines.push(`  KEEP OUT ${root.kept_out_fields.map(safeIdentifier).join(", ")}`);
   const modelWithheldFields = modelWithheldExploreOutputColumns(input.plan, input.boundary);
@@ -603,22 +668,57 @@ function emitProtectedQueryDsl(input: {
   }
   lines.push(
     "  REQUIRE EVIDENCE",
-    protectedLimitsDsl(input.plan, input.boundary),
+    protectedLimitsDsl(input.plan, input.boundary, root),
     "END",
   );
   return `${formatAgentDsl(lines.join("\n"))}\n`;
 }
 
-function aggregateDsl(plan: AggregateExplorePlan, selections: Map<string, ProtectArgumentSelection>, minimumGroupSize: number): string[] {
+function aggregateDsl(
+  plan: AggregateExplorePlan,
+  selections: Map<string, ProtectArgumentSelection>,
+  minimumGroupSize: number,
+  root: BoundaryResource,
+): string[] {
   const aliases = aggregateAliases(plan);
   const lines = plan.measures.map((measure, index) => {
+    if ("derived_measure" in measure) {
+      const definition = protectedDerivedMeasure(root, measure.derived_measure);
+      if ("child_resource" in definition) {
+        throw new Error(
+          `Protect conversion refused ${definition.name}: reviewed child-count metrics are available in local and production HTTP Explore, but protected capabilities do not yet freeze inverse child-scope authority.`,
+        );
+      }
+      if ("base_measure" in definition) {
+        const modifier = definition.shape === "rank"
+          ? ` ${definition.direction!.toUpperCase()}`
+          : definition.shape === "moving_average"
+            ? ` WINDOW ${definition.window_size}`
+            : "";
+        return `  MEASURE ${aliases.measures[index]} POST ${definition.shape.toUpperCase()}${modifier} OF ${protectedDerivedOperandDsl(definition.base_measure)}`;
+      }
+      return `  MEASURE ${aliases.measures[index]} DERIVED ${definition.shape.toUpperCase()} NUMERATOR ${protectedDerivedOperandDsl(definition.numerator)} DENOMINATOR ${protectedDerivedOperandDsl(definition.denominator)}`;
+    }
     if (measure.function === "count") return `  MEASURE ${aliases.measures[index]} COUNT ROWS`;
     const target = protectedFieldName(measure.field, measure.relationship);
     if (measure.function === "count_distinct") return `  MEASURE ${aliases.measures[index]} COUNT DISTINCT ${target}`;
     return `  MEASURE ${aliases.measures[index]} ${measure.function.toUpperCase()} ${target}`;
   });
   for (const [index, dimension] of (plan.dimensions ?? []).entries()) {
-    lines.push(`  GROUP DIMENSION ${aliases.dimensions[index]} BY ${protectedFieldName(dimension.field, dimension.relationship)}`);
+    if ("numeric_band" in dimension) {
+      if (typeof dimension.numeric_band !== "string") {
+        throw new Error(
+          "Protect conversion is unavailable for adaptive numeric bands. Use the reviewed plan through local or production HTTP Explore, or protect a fixed named band.",
+        );
+      }
+      const band = protectedNumericBand(root, dimension.numeric_band);
+      lines.push(
+        `  GROUP DIMENSION ${aliases.dimensions[index]} BY BAND OF ${protectedFieldName(band.field, band.relationship)} ` +
+        `EDGES (${band.edges.join(", ")}) LABELS (${band.bucket_labels.map(dslLiteral).join(", ")})`,
+      );
+    } else {
+      lines.push(`  GROUP DIMENSION ${aliases.dimensions[index]} BY ${protectedFieldName(dimension.field, dimension.relationship)}`);
+    }
   }
   if (plan.time_bucket) {
     lines.push(`  TIME DIMENSION ${aliases.timeBucket} BY ${plan.time_bucket.bucket.toUpperCase()} OF ${protectedFieldName(plan.time_bucket.field, plan.time_bucket.relationship)}`);
@@ -634,15 +734,27 @@ function aggregateDsl(plan: AggregateExplorePlan, selections: Map<string, Protec
     lines.push(`  AGGREGATE ORDER BY TIME BUCKET ${plan.order_by.direction.toUpperCase()}`);
   }
   lines.push(`  TOP ${plan.top_n} GROUPS`);
-  lines.push(`  MIN GROUP SIZE ${minimumGroupSize}`);
+  const effectiveMinimumGroupSize = plan.measures.some((measure) =>
+    "derived_measure" in measure
+      || ["stddev_samp", "stddev_pop", "var_samp", "var_pop"].includes(measure.function))
+    ? Math.max(minimumGroupSize, 5)
+    : minimumGroupSize;
+  lines.push(`  MIN GROUP SIZE ${effectiveMinimumGroupSize}`);
   return lines;
 }
 
-function protectedLimitsDsl(plan: ExplorePlan, boundary: ActivatedExplorationBoundary): string {
+function protectedLimitsDsl(
+  plan: ExplorePlan,
+  boundary: ActivatedExplorationBoundary,
+  root: BoundaryResource,
+): string {
   const budgets = boundary.budgets;
   const rows = plan.kind === "rows" ? plan.limit : budgets.max_rows;
   const ranked = plan.kind === "aggregate"
-    && (plan.order_by?.kind === "measure" || plan.order_by?.kind === "comparison_change");
+    && (plan.order_by?.kind === "measure"
+      || plan.order_by?.kind === "comparison_change"
+      || plan.measures.some((measure) => "derived_measure" in measure
+        && "base_measure" in protectedDerivedMeasure(root, measure.derived_measure)));
   const rankedGroups = ranked
     ? ` RANKED GROUPS ${reviewedRankedGroupLimit(budgets)}`
     : "";
@@ -690,9 +802,32 @@ function relationshipsForPlan(
   const names = new Set<string>();
   if (plan.kind === "aggregate" && plan.relationship) names.add(plan.relationship);
   for (const filter of plan.where ?? []) if (filter.relationship) names.add(filter.relationship);
+  if (plan.time_window?.relationship) names.add(plan.time_window.relationship);
   if (plan.kind === "aggregate") {
-    for (const measure of plan.measures) if (measure.relationship) names.add(measure.relationship);
-    for (const dimension of plan.dimensions ?? []) if (dimension.relationship) names.add(dimension.relationship);
+    for (const measure of plan.measures) {
+      if ("derived_measure" in measure) {
+        const definition = protectedDerivedMeasure(root, measure.derived_measure);
+        if ("child_resource" in definition) {
+          throw new Error(
+            `Protect conversion refused ${definition.name}: reviewed child-count metrics are available in local and production HTTP Explore, but protected capabilities do not yet freeze inverse child-scope authority.`,
+          );
+        }
+        const operands = "base_measure" in definition
+          ? [definition.base_measure]
+          : [definition.numerator, definition.denominator];
+        for (const operand of operands) {
+          if ("relationship" in operand && operand.relationship) names.add(operand.relationship);
+        }
+      } else if (measure.relationship) names.add(measure.relationship);
+    }
+    for (const dimension of plan.dimensions ?? []) {
+      const relationship = "numeric_band" in dimension
+        ? typeof dimension.numeric_band === "string"
+          ? protectedNumericBand(root, dimension.numeric_band).relationship
+          : undefined
+        : dimension.relationship;
+      if (relationship) names.add(relationship);
+    }
     if (plan.time_bucket?.relationship) names.add(plan.time_bucket.relationship);
     if (plan.comparison?.relationship) names.add(plan.comparison.relationship);
   }
@@ -718,8 +853,8 @@ function relationshipsForPlan(
       cardinality: "many_to_one" as const,
       max_fan_out: 1 as const,
     }];
-    if (proofLinks.length < 1 || proofLinks.length > 2) {
-      throw new Error(`Protect conversion requires ${name} to contain one or two reviewed relationship links.`);
+    if (proofLinks.length < 1 || proofLinks.length > 3) {
+      throw new Error(`Protect conversion requires ${name} to contain one through three reviewed relationship links.`);
     }
     if (relationship.proof && (
       relationship.proof.source !== "database_catalog"
@@ -741,6 +876,8 @@ function relationshipsForPlan(
       }
       const source = resourceFor(boundary, link.source_resource);
       const target = resourceFor(boundary, link.target_resource);
+      requireProtectedDirectTenantKey(source);
+      requireProtectedDirectTenantKey(target);
       const localKey = link.source_columns[0]!;
       const targetKey = link.target_columns[0]!;
       if (source.kept_out_fields.includes(localKey) || target.kept_out_fields.includes(targetKey)) {
@@ -779,11 +916,27 @@ function relationshipsDsl(relationships: ProtectedRelationshipPlan[]): string[] 
   if (only?.links.length === 1 && only.links[0]?.unmatchedRows === "exclude") {
     const link = only.links[0];
     return [
-      `  PROTECTED RELATIONSHIP ${safeIdentifier(only.name)} ON ${safeIdentifier(link.localKey)} REFERENCES ${safeIdentifier(link.target.schema)}.${safeIdentifier(link.target.table)}.${safeIdentifier(link.targetKey)} PRIMARY KEY ${safeIdentifier(link.target.primary_key)} TENANT KEY ${safeIdentifier(link.target.tenant_key)}${link.target.principal_key ? ` PRINCIPAL SCOPE KEY ${safeIdentifier(link.target.principal_key)}` : ""}`,
+      `  PROTECTED RELATIONSHIP ${safeIdentifier(only.name)} ON ${safeIdentifier(link.localKey)} REFERENCES ${safeIdentifier(link.target.schema)}.${safeIdentifier(link.target.table)}.${safeIdentifier(link.targetKey)} PRIMARY KEY ${safeIdentifier(link.target.primary_key)} TENANT KEY ${safeIdentifier(requireProtectedDirectTenantKey(link.target))}${link.target.principal_key ? ` PRINCIPAL SCOPE KEY ${safeIdentifier(link.target.principal_key)}` : ""}`,
     ];
   }
   return relationships.flatMap((relationship) => relationship.links.map((link, index) =>
-    `  PROTECTED RELATIONSHIP ${safeIdentifier(relationship.name)} LINK ${index + 1} ON ${safeIdentifier(link.localKey)} REFERENCES ${safeIdentifier(link.target.schema)}.${safeIdentifier(link.target.table)}.${safeIdentifier(link.targetKey)} PRIMARY KEY ${safeIdentifier(link.target.primary_key)} TENANT KEY ${safeIdentifier(link.target.tenant_key)}${link.target.principal_key ? ` PRINCIPAL SCOPE KEY ${safeIdentifier(link.target.principal_key)}` : ""} UNMATCHED ${link.unmatchedRows === "keep_null" ? "KEEP NULL" : "EXCLUDE"}`));
+    `  PROTECTED RELATIONSHIP ${safeIdentifier(relationship.name)} LINK ${index + 1} ON ${safeIdentifier(link.localKey)} REFERENCES ${safeIdentifier(link.target.schema)}.${safeIdentifier(link.target.table)}.${safeIdentifier(link.targetKey)} PRIMARY KEY ${safeIdentifier(link.target.primary_key)} TENANT KEY ${safeIdentifier(requireProtectedDirectTenantKey(link.target))}${link.target.principal_key ? ` PRINCIPAL SCOPE KEY ${safeIdentifier(link.target.principal_key)}` : ""} UNMATCHED ${link.unmatchedRows === "keep_null" ? "KEEP NULL" : "EXCLUDE"}`));
+}
+
+function requireProtectedDirectTenantKey(
+  resource: ActivatedExplorationBoundary["pack"]["resources"][number],
+): string {
+  if (!resource.tenant_key) {
+    throw new Error(
+      `Protect conversion refused ${resource.id} because relationship-carried tenant scope is read-only Explore authority; protected capabilities currently require a direct tenant column.`,
+    );
+  }
+  if (resource.principal_scope) {
+    throw new Error(
+      `Protect conversion refused ${resource.id} because relationship-carried principal scope is read-only Explore authority; protected capabilities currently require a direct principal column when principal scope applies.`,
+    );
+  }
+  return resource.tenant_key;
 }
 
 function aggregateAliases(plan: AggregateExplorePlan): {
@@ -801,12 +954,48 @@ function aggregateAliases(plan: AggregateExplorePlan): {
     return value;
   };
   return {
-    measures: plan.measures.map((measure) => uniqueAlias(measure.function === "count"
+    measures: plan.measures.map((measure) => uniqueAlias("derived_measure" in measure
+      ? measure.derived_measure
+      : measure.function === "count"
       ? "row_count"
       : `${measure.function}_${measure.relationship ? `${measure.relationship}_` : ""}${measure.field}`)),
-    dimensions: (plan.dimensions ?? []).map((dimension) => uniqueAlias(`${dimension.relationship ? `${dimension.relationship}_` : ""}${dimension.field}`)),
+    dimensions: (plan.dimensions ?? []).map((dimension) => uniqueAlias(
+      "numeric_band" in dimension
+        ? typeof dimension.numeric_band === "string"
+          ? dimension.numeric_band
+          : `${dimension.numeric_band.field}_${dimension.numeric_band.method}_band`
+        : `${dimension.relationship ? `${dimension.relationship}_` : ""}${dimension.field}`,
+    )),
     timeBucket: uniqueAlias(`${plan.time_bucket?.relationship ? `${plan.time_bucket.relationship}_` : ""}${plan.time_bucket?.field ?? "time"}_${plan.time_bucket?.bucket ?? "bucket"}`),
   };
+}
+
+function protectedDerivedMeasure(
+  root: BoundaryResource,
+  name: string,
+): NonNullable<BoundaryResource["derived_measures"]>[number] {
+  const definition = root.derived_measures?.find((candidate) => candidate.name === name);
+  if (!definition) throw new Error(`Reviewed derived measure ${root.id}.${name} is no longer active.`);
+  return definition;
+}
+
+function protectedNumericBand(
+  root: BoundaryResource,
+  name: string,
+): NonNullable<BoundaryResource["numeric_bands"]>[number] {
+  const definition = root.numeric_bands?.find((candidate) => candidate.name === name);
+  if (!definition) throw new Error(`Reviewed numeric band ${root.id}.${name} is no longer active.`);
+  return definition;
+}
+
+function protectedDerivedOperandDsl(
+  operand: ExplorationDerivedBaseMeasure,
+): string {
+  if (operand.function === "count") return "COUNT ROWS";
+  const target = protectedFieldName(operand.field, operand.relationship);
+  return operand.function === "count_distinct"
+    ? `COUNT DISTINCT ${target}`
+    : `${operand.function.toUpperCase()} ${target}`;
 }
 
 function validateArgumentSelections(
@@ -959,7 +1148,7 @@ async function writeDraftArtifacts(input: {
   await writeAtomic(markerPath, json({ schema_version: PROTECTED_QUERY_VERSION, capability: input.draft.capability }), 0o600);
 }
 
-async function addProtectedContractToRuntimeConfig(input: {
+async function protectedRuntimeConfig(input: {
   projectRoot: string;
   configPath: string;
   contractPath: string;
@@ -974,7 +1163,7 @@ async function addProtectedContractToRuntimeConfig(input: {
   };
   statementTimeoutMs: number;
   minimumCohortOverride?: ProtectedQueryDraft["minimum_cohort_override"];
-}): Promise<void> {
+}): Promise<string> {
   const existing = await readOptionalJson(input.configPath);
   const relativeContract = relativeConfigPath(path.dirname(input.configPath), input.contractPath);
   const config = existing ?? {
@@ -1079,7 +1268,7 @@ async function addProtectedContractToRuntimeConfig(input: {
   config.sources = sources;
   const validation = validateRunnerCapabilityConfig(config);
   if (!validation.ok) throw new Error(`Protected capability would make Runner config invalid: ${validation.errors.map((issue) => `${issue.code}: ${issue.message}`).join("; ")}`);
-  await writeAtomic(input.configPath, json(config), 0o600);
+  return json(config);
 }
 
 export function protectedDatabaseScope(
@@ -1126,6 +1315,7 @@ export function protectedDatabaseScope(
   if (resources.some((resource) => !resource)) {
     throw new Error("Protected capability references a resource outside the activated exploration boundary.");
   }
+  for (const resource of resources) requireProtectedDirectTenantKey(resource!);
   const scopes = resources
     .map((resource) => resource!.rls_session)
     .filter((scope): scope is NonNullable<typeof scope> => scope !== undefined);
@@ -1205,7 +1395,15 @@ async function reviewedMinimumCohortOverrideForResource(input: {
 }): Promise<ReviewedMinimumCohortAuthority | undefined> {
   const resource = resourceFor(input.boundary, input.resourceId);
   if (resource.minimum_cohort_overridden !== true) return undefined;
-  const overrides = await loadAutoBoundaryReviewOverrides(input.projectRoot);
+  const overrides = await loadCompletedBoundaryReviewOverrides({
+    projectRoot: input.projectRoot,
+    boundaryName: input.boundary.pack.name,
+  });
+  if (!overrides) {
+    throw new Error(
+      `Boundary ${input.boundary.pack.name} has legacy owner-review evidence that is not yet isolated from other boundaries. Open /access, review this boundary, and activate its disabled revision before protecting this lowered cohort threshold.`,
+    );
+  }
   const decision = overrides.resources[resource.id]?.minimum_cohort;
   if (!decision || decision.value !== resource.minimum_cohort_size) {
     throw new Error(
@@ -1343,6 +1541,30 @@ async function writeAtomic(filePath: string, content: string, mode: number): Pro
     await fs.rm(temporary, { force: true }).catch(() => undefined);
     throw error;
   }
+}
+
+type OptionalFileSnapshot =
+  | { exists: false }
+  | { exists: true; contents: string };
+
+async function captureOptionalFile(filePath: string): Promise<OptionalFileSnapshot> {
+  try {
+    return { exists: true, contents: await fs.readFile(filePath, "utf8") };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { exists: false };
+    throw error;
+  }
+}
+
+async function restoreOptionalFile(
+  filePath: string,
+  snapshot: OptionalFileSnapshot,
+): Promise<void> {
+  if (!snapshot.exists) {
+    await fs.rm(filePath, { force: true });
+    return;
+  }
+  await writeAtomic(filePath, snapshot.contents, 0o600);
 }
 
 async function readOptionalJson(filePath: string): Promise<Record<string, unknown> | undefined> {

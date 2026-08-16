@@ -11,13 +11,13 @@
     "database startup"
   ],
   "timing": {
-    "schema_summary_ms": 3679,
-    "boundary_activation_ms": 4466,
-    "first_safe_read_ms": 7304,
-    "pm_aggregate_ms": 11407,
-    "protected_capability_ms": 13095,
-    "first_guided_proposal_ms": 26038,
-    "first_guarded_apply_ms": 165357
+    "schema_summary_ms": 2973,
+    "boundary_activation_ms": 3422,
+    "first_safe_read_ms": 5038,
+    "pm_aggregate_ms": 7447,
+    "protected_capability_ms": 8634,
+    "first_guided_proposal_ms": 17950,
+    "first_guarded_apply_ms": 114035
   },
   "interactions": {
     "shell_commands_in_human_golden_path_through_first_proposal": 1,

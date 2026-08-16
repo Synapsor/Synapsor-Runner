@@ -1,7 +1,9 @@
 import { WORKBENCH_SYNTAX_CSS, workbenchSyntaxScript } from "./workbench-syntax.js";
+import { EXPLORATION_BUDGET_REVIEW_CEILINGS } from "./auto-boundary.js";
 
 export function renderBoundaryWorkbench(csrfToken: string): string {
   const escapedCsrf = escapeScriptString(csrfToken);
+  const reviewedBudgetCeilings = JSON.stringify(EXPLORATION_BUDGET_REVIEW_CEILINGS);
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -26,6 +28,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     button.danger{background:var(--bad);border-color:var(--bad)}button:disabled{opacity:.5;cursor:not-allowed}
     button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 	    input[type=text],input[type=search],input[type=number],input[type=datetime-local],select,textarea{width:100%;min-height:44px;padding:7px 9px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--text)}
+	    select{min-width:0;padding-right:34px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     input[type=checkbox],input[type=radio]{width:16px;height:16px;accent-color:var(--accent)}
     .field{display:flex;min-width:0;flex-direction:column;gap:5px;color:var(--muted)}
     code,pre{font:12px ui-monospace,SFMono-Regular,Consolas,monospace}code{overflow-wrap:anywhere}
@@ -51,14 +54,14 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     .resource{border:1px solid var(--line);background:var(--surface);padding:14px;border-radius:7px;min-width:0;transition:border-color .15s ease,box-shadow .15s ease}.resource:hover{border-color:var(--line-strong);box-shadow:var(--shadow)}
     .resource-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}.resource-name{overflow-wrap:anywhere}
 	    .boundary-overview{margin:24px 0 28px;padding:20px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);scroll-margin-top:88px}
-	    .boundary-overview-head{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:16px}.boundary-overview-head>div{min-width:0;width:min(100%,920px)}.boundary-overview-head h2{font-size:27px;color:var(--text)}.boundary-overview-head p{max-width:720px;color:#aebbb5}
+	    .boundary-overview-head{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:16px}.boundary-overview-head>div{min-width:0;width:min(100%,920px)}.boundary-overview-head h2{font-size:27px;color:var(--text)}.boundary-overview-head p{max-width:720px;color:#aebbb5}.database-compatibility-summary{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:12px 0 16px;color:var(--muted)}.database-compatibility-summary strong{color:var(--text)}
     .boundary-version-table-wrap{width:100%;max-width:920px;overflow:auto;margin:14px 0}.boundary-version-table{margin:0;min-width:700px}.boundary-version-table th:nth-child(1){width:26%}.boundary-version-table th:nth-child(2){width:20%}.boundary-version-table th:nth-child(3){width:10%}.boundary-version-table th:nth-child(4){width:18%}.boundary-version-table th:nth-child(5){width:26%}.boundary-version-table .next-boundary{background:var(--accent-soft)}.boundary-version-table code{color:var(--text)}
     .boundary-version-table .selected-boundary{background:var(--accent-soft)}.boundary-version-table td small{display:block;margin-top:3px;color:var(--muted)}.boundary-row-actions{margin:0;gap:6px}.boundary-row-actions button{min-height:34px;padding:5px 9px}
     .focused-boundary-table-wrap{max-width:none}.focused-boundary-table{min-width:1040px}.focused-boundary-table th:nth-child(1){width:23%}.focused-boundary-table th:nth-child(2){width:22%}.focused-boundary-table th:nth-child(3){width:17%}.focused-boundary-table th:nth-child(4){width:17%}.focused-boundary-table th:nth-child(5){width:21%}.focused-boundary-table td{vertical-align:top}.focused-boundary-table td>strong{display:inline-block;margin-right:4px}.focused-boundary-table td>small{display:block;margin-top:4px;color:var(--muted);line-height:1.4}
     .badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}.badge{display:inline-flex;padding:3px 7px;border-radius:999px;border:1px solid var(--line);font-size:12px;color:var(--muted);background:var(--surface-2)}
     .badge.bad{color:var(--bad);background:var(--bad-soft);border-color:var(--bad)}.badge.warn{color:var(--warn);background:var(--warn-soft);border-color:var(--warn)}.badge.good{color:var(--good);background:var(--good-soft);border-color:var(--good)}
-    .risk-list{display:grid;gap:8px;margin-top:12px}.risk{border-left:3px solid var(--line);padding:9px 11px;background:var(--surface-2)}.risk.high{border-color:var(--bad)}.risk.unresolved{border-color:var(--warn)}
-    .review-form{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+    .risk-list{display:grid;gap:8px;margin-top:12px}.risk{border-left:3px solid var(--line);padding:9px 11px;background:var(--surface-2)}.risk.high{border-color:var(--bad)}.risk.unresolved{border-color:var(--warn)}.risk.available{border-color:var(--good)}
+    .review-form{margin-top:10px;padding-top:10px;border-top:1px solid var(--line);scroll-margin-top:78px}
      .scope-grid,.form-grid,.preflight{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.form-grid-contents{display:contents}.preflight{grid-template-columns:repeat(3,minmax(0,1fr))}.preflight>div{min-width:0}.preflight p{overflow-wrap:anywhere}
     .check{display:flex;align-items:flex-start;gap:8px}.check input{flex:0 0 auto;margin-top:3px}
     details{border-top:1px solid var(--line);margin-top:14px;padding-top:10px}summary{cursor:pointer;color:var(--accent);font-weight:700}
@@ -71,7 +74,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     .question-list{display:grid;gap:8px}.question{width:100%;text-align:left;background:var(--surface);color:var(--text);border-color:var(--line)}
     .question.selected{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
     .action-fields{display:grid;gap:10px;margin-top:10px}.action-field{border:1px solid var(--line);background:var(--surface-2);padding:12px;border-radius:6px}.action-field-settings{margin-top:10px}
-    .result-meta{display:flex;gap:12px;flex-wrap:wrap;margin:10px 0}.result-table{overflow:auto}
+    .result-meta{display:flex;gap:12px;flex-wrap:wrap;margin:10px 0}.result-table{overflow:auto}.resolved-time-table .utc-range{display:grid;gap:2px}.resolved-time-table .utc-range span{white-space:nowrap}
     .tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin-bottom:12px}.tab{background:transparent;color:var(--muted);border:0;border-bottom:3px solid transparent;border-radius:0}.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
     .ask-surface{margin-top:22px;padding:0;background:var(--surface);border:1px solid var(--line);border-radius:7px;overflow:hidden}
     #view-explore.active{display:flex;flex-direction:column}#view-explore>h2{order:0}#view-explore>p{order:1}#explore-preflight{order:2}#ask-shell{order:3}#explorer{order:4}
@@ -153,8 +156,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	    .access-column:last-child{border-bottom:0}.access-column:hover{background:var(--surface-2)}.access-column.highlighted{outline:2px solid var(--accent);outline-offset:-2px;background:var(--accent-soft)}
 	    .access-column-copy{min-width:0}.access-column-copy strong,.access-column-copy small{display:block;overflow-wrap:anywhere}.access-column-copy small{color:var(--muted)}.access-column-risk{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:5px}
 	    .access-column-tier{display:grid;gap:4px;color:var(--muted);font-size:11px;font-weight:700}.access-column-tier select{min-height:38px}.access-column-consequence{font-weight:500;line-height:1.35}.access-column .review-form{grid-column:1/-1;margin:2px 0 4px}
+	    .enum-review{grid-column:1/-1;margin:2px 0 4px;padding:10px 12px;border:1px solid var(--line);border-radius:7px;background:var(--bg)}.enum-review>summary{cursor:pointer;font-weight:700}.enum-review-values{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:7px;margin:10px 0}.enum-review-values .check{margin:0;padding:7px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface)}
 	    .access-secondary{margin-top:10px}.access-secondary>summary{font-weight:700}.access-secondary[open]{padding-bottom:6px}
-	    .access-final{position:sticky;bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:16px;margin:18px 0 0 auto;max-width:calc(100% - 318px);padding:12px 14px;border:1px solid var(--accent);border-radius:8px;background:color-mix(in srgb,var(--surface) 96%,transparent);box-shadow:0 10px 32px rgba(0,0,0,.18);backdrop-filter:blur(10px);z-index:2}.access-final p{margin:0}.access-final strong{color:var(--text)}
+	    .access-final{position:sticky;bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:16px;margin:18px 0 0 auto;max-width:calc(100% - 318px);padding:12px 14px;border:1px solid var(--accent);border-radius:8px;background:color-mix(in srgb,var(--surface) 96%,transparent);box-shadow:0 10px 32px rgba(0,0,0,.18);backdrop-filter:blur(10px);z-index:2}.access-final p{min-width:0;margin:0;overflow-wrap:anywhere}.access-final strong{color:var(--text);overflow-wrap:anywhere}
 	    .hidden{display:none!important}.screen-reader{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 	    @media(max-width:960px){.workbench-layout{grid-template-columns:1fr;gap:18px}.workflow-rail{position:static}.rail-label,.rail-note{display:none}.steps{display:flex;overflow-x:auto;border-bottom:1px solid var(--line);padding-bottom:1px}.step{flex:0 0 auto;min-width:150px;border-left:0;border-bottom:3px solid transparent;border-radius:6px 6px 0 0}.step.active{border-left:0;border-bottom-color:var(--accent)}}
 	    @media(max-width:820px){header>div,main,body.quick-start-mode header>div,body.quick-start-mode main,body.ask-focus-mode header>div,body.ask-focus-mode main,body.access-focus-mode header>div,body.access-focus-mode main{width:calc(100% - 24px)}.summary{grid-template-columns:1fr 1fr}.metric:nth-child(2){border-right:0}.resource-list,.scope-grid,.form-grid,.preflight,.journey,.ask-grid,.instant-reveal,.access-editor,.access-column,.boundary-version-list{grid-template-columns:1fr}.boundary-overview-head{flex-direction:column}.access-editor-head{align-items:flex-start;flex-direction:column}.access-nav{position:static}.access-resource-list{max-height:270px}.access-final{position:static;max-width:none;flex-direction:column;align-items:stretch}.instant-reveal{gap:28px;min-height:auto;padding:28px 0 44px}.instant-copy{display:contents}.instant-copy .instant-kicker{order:1}.instant-copy h2{order:2;font-size:36px}.instant-copy>p{order:3}.instant-boundary{order:4;padding:18px}.instant-actions{order:5}.instant-trust{order:6}.instant-flow{min-height:160px}.footer-actions{position:static}.ask-head{grid-template-columns:1fr}.ask-state{text-align:left}.ask-state .badge{margin:0 5px 0 0}body.ask-focus-mode .ask-state{position:static}}
@@ -233,8 +237,11 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     .ask-boundary-row strong{color:#78867e;font-size:10px;text-transform:uppercase}.ask-boundary-row span{color:#cbd6d0;font-size:13px;overflow-wrap:anywhere}
     .ask-boundary-pagination{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px}.ask-boundary-pagination-status{color:#839189;font-size:12px}.ask-boundary-pagination-actions{display:flex;gap:7px}.ask-boundary-pagination-actions button{min-width:96px;min-height:36px;padding:6px 10px}
     .ask-boundary-examples{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}.ask-boundary-examples .question{width:auto;min-height:38px;padding:8px 11px;font-size:13px}
+	    .boundary-catalog-map{margin-top:16px;padding-top:14px;border-top:1px solid #26372f}.boundary-catalog-map>summary{color:#dce6e1;font-weight:750;cursor:pointer}.boundary-catalog-summary{margin:8px 0 14px;color:#839189;font-size:12px}.boundary-catalog-controls{display:grid;grid-template-columns:minmax(220px,360px) auto;gap:10px;align-items:end;margin:12px 0}.boundary-catalog-controls .actions{margin:0}.boundary-catalog-boundary{margin-top:14px}.boundary-catalog-boundary h4{margin:0 0 10px}.boundary-catalog-graph{width:100%;overflow:auto;border:1px solid #26372f;border-radius:6px;background:#08100c}.boundary-catalog-graph svg{display:block;min-width:100%;height:auto}.boundary-catalog-graph .node{fill:#0d1813;stroke:#75e3b7;stroke-width:1.5}.boundary-catalog-graph .node-title{fill:#eef5f1;font-size:13px;font-weight:750}.boundary-catalog-graph .node-field{fill:#91a198;font:11px ui-monospace,SFMono-Regular,Consolas,monospace}.boundary-catalog-graph .edge{fill:none;stroke:#75e3b7;stroke-width:2}.boundary-catalog-graph .edge.unproven{stroke:#f0aa68;stroke-dasharray:6 5}.boundary-catalog-graph .edge-label{fill:#9aaba2;stroke:#08100c;stroke-width:5px;stroke-linejoin:round;paint-order:stroke;font:10px ui-monospace,SFMono-Regular,Consolas,monospace}.boundary-catalog-nodes{display:grid;grid-template-columns:1fr;gap:9px}.boundary-catalog-node{min-width:0;padding:12px;border:1px solid #2b3c34;border-radius:6px;background:#0a120f}.boundary-catalog-node strong,.boundary-catalog-node small{display:block}.boundary-catalog-node>strong,.boundary-catalog-node small{overflow-wrap:anywhere}.boundary-catalog-node small{margin-top:5px;color:#839189}.boundary-catalog-edges{display:grid;gap:7px;margin-top:10px}.boundary-catalog-edge{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:9px;padding:10px 12px;border-left:2px solid #75e3b7;background:#0b1511}.boundary-catalog-edge.unproven{border-left-color:#f0aa68}.boundary-catalog-edge code{overflow-wrap:anywhere}.boundary-catalog-edge span{text-align:center;color:#839189;font-size:11px}.boundary-catalog-mermaid{margin-top:12px}.boundary-catalog-mermaid pre{max-height:320px;margin:10px 0 0;padding:13px;overflow:auto;border:1px solid #26372f;border-radius:6px;background:#08100c;color:#bcd5c8;font-size:12px;white-space:pre}
+	    .boundary-catalog-path{border-left:2px solid #75e3b7;background:#0b1511}.boundary-catalog-path.unproven{border-left-color:#f0aa68}.boundary-catalog-path .boundary-catalog-edge{border-left:0;background:transparent}.boundary-catalog-question{margin:0;padding:0 12px 11px;color:#cbd6d0;font-size:12px}.boundary-catalog-question strong{color:#75e3b7}.boundary-catalog-questions{margin:12px 0;padding:12px 14px;border-left:2px solid #75e3b7;background:#0b1511}.boundary-catalog-questions strong{color:#75e3b7}.boundary-catalog-questions ul{margin:8px 0 0;padding-left:20px}.boundary-catalog-questions li+li{margin-top:5px}.boundary-catalog-capabilities{color:#aab8b1!important}.boundary-catalog-legend{margin:10px 0 12px;color:#839189;font-size:12px}.boundary-field-matrix-wrap{max-width:100%;margin-top:10px;overflow-x:auto}.boundary-field-matrix{width:100%;min-width:0;table-layout:fixed;border-collapse:collapse;font-size:11px}.boundary-field-matrix th,.boundary-field-matrix td{padding:7px 9px;border:1px solid #26372f;text-align:left;vertical-align:top;overflow-wrap:anywhere}.boundary-field-matrix th:first-child{width:38%;text-align:left}.boundary-field-matrix thead th{color:#aab8b1;font-size:10px}.boundary-field-matrix tbody th{font-weight:500;white-space:normal;overflow-wrap:anywhere}.boundary-field-matrix tbody th small{margin:2px 0 0;color:#839189}.boundary-operation-list{display:flex;flex-wrap:wrap;gap:4px 12px;margin:0;padding:0;list-style:none}.boundary-operation-list li{color:#cbd6d0;white-space:normal;overflow-wrap:anywhere}.boundary-operation-list li::before{content:'Y ';color:#75e3b7;font-weight:700}.boundary-operation-list .unavailable::before{content:''}.boundary-operation-list .unavailable{color:#839189}.boundary-field-exact{margin:8px 0 0;padding-top:8px}.boundary-field-exact ul{display:grid;gap:4px;margin:8px 0 0;padding-left:20px;color:#839189}.boundary-field-exact li code{margin-right:8px;color:#aab8b1}.boundary-catalog-restrictions{margin-top:9px!important;color:#e7bd75!important}.boundary-relationship-summary{display:grid;grid-template-columns:62px minmax(0,1fr);gap:5px 12px;padding:11px 13px}.boundary-relationship-summary>strong{grid-row:1/5;color:#75e3b7}.boundary-relationship-summary>code{overflow-wrap:anywhere}.boundary-relationship-summary>small,.boundary-relationship-summary>span{color:#839189}.boundary-relationship-summary>details summary{cursor:pointer;color:#839189}.boundary-relationship-summary>details code{display:block;margin-top:5px;overflow-wrap:anywhere;color:#aab8b1}
 	    .boundary-proof-report{margin:0 0 18px;padding:18px;border:1px solid var(--line);border-left:3px solid var(--good);border-radius:8px;background:var(--good-soft)}.boundary-proof-report.failed{border-left-color:var(--bad);background:var(--bad-soft)}.boundary-proof-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}.boundary-proof-head h3{margin:3px 0}.boundary-proof-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:14px 0}.boundary-proof-item{padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:var(--surface)}.boundary-proof-item strong,.boundary-proof-item small{display:block}.boundary-proof-item small{margin-top:3px;color:var(--muted)}
 	    .ask-proof-actions{order:1;display:flex;justify-content:flex-end;gap:8px;margin:-6px 0 14px}#boundary-proof-result{order:1}
+	    .ask-history{order:1;margin:0 0 14px;border:1px solid #304239;border-radius:8px;background:#0f1915}.ask-history>summary{padding:12px 16px;cursor:pointer;font-weight:750}.ask-history-body{padding:0 16px 16px}.ask-history-table-wrap{overflow-x:auto}.ask-history table{width:100%;min-width:680px}.ask-history td{vertical-align:top}.ask-history td code{color:#75e3b7;overflow-wrap:anywhere}.ask-history .history-status-latest,.ask-history .history-status-ok{color:var(--good);font-weight:750}.ask-history .history-status-warning{color:var(--warn);font-weight:750}.ask-history .history-status-refused,.ask-history .history-status-error{color:var(--bad);font-weight:750}.history-durable-table th:nth-child(3),.history-durable-table td:nth-child(3){min-width:220px}.history-durable-table th:nth-child(6),.history-durable-table td:nth-child(6){min-width:230px}.history-detail-grid{display:grid;grid-template-columns:minmax(120px,180px) minmax(0,1fr);gap:0;border-top:1px solid #304239;border-bottom:1px solid #304239;margin:10px 0 16px}.history-detail-grid dt,.history-detail-grid dd{margin:0;padding:7px 8px;border-top:1px solid #26372f;overflow-wrap:anywhere}.history-detail-grid dt{color:#91a49a;font-size:11px;font-weight:800;text-transform:uppercase}.history-detail-grid dd{color:#e3ebe6}.history-detail-grid dt:first-of-type,.history-detail-grid dt:first-of-type+dd{border-top:0}.history-audit-section h4{margin-top:16px}.history-audit-section pre{max-height:420px}
     body.ask-focus-mode #ask-chat>.ask-disclosure{order:4;margin-top:26px;color:#77857e}
     body.ask-focus-mode #ask-starters{order:3;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:38px}
     body.ask-focus-mode #ask-starters>strong,body.ask-focus-mode #ask-starters>p{grid-column:1/-1}
@@ -310,8 +317,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       body.ask-focus-mode .ask-head h3{font-size:30px}.ask-state{width:100%;justify-content:center}.ask-state .quiet{min-height:38px}.ask-grid{grid-template-columns:1fr}
       body.ask-focus-mode #ask-starters{grid-template-columns:1fr}.ask-transcript>.ask-turn:not(.answer)>p{font-size:24px}
       body.ask-focus-mode .ask-verified{padding:20px}.ask-verified-head{align-items:flex-start}.runner-verified{font-size:10px}
-      .ask-boundary-grid,.boundary-proof-grid{grid-template-columns:1fr}.ask-boundary-summary{display:grid;gap:2px}.ask-boundary-resource{padding:13px}.ask-boundary-actions{align-items:stretch;flex-direction:column}.ask-boundary-actions button{width:100%}
+	      .ask-boundary-grid,.boundary-proof-grid,.boundary-catalog-nodes{grid-template-columns:1fr}.ask-boundary-summary{display:grid;gap:2px}.ask-boundary-resource{padding:13px}.ask-boundary-actions{align-items:stretch;flex-direction:column}.ask-boundary-actions button{width:100%}.boundary-catalog-controls{grid-template-columns:1fr}.boundary-catalog-edge{grid-template-columns:1fr;gap:5px}.boundary-catalog-edge span{text-align:left}.boundary-relationship-summary{grid-template-columns:1fr}.boundary-relationship-summary>strong{grid-row:auto}
       .ask-boundary-pagination{align-items:stretch;flex-direction:column}.ask-boundary-pagination-actions{display:grid;grid-template-columns:1fr 1fr}.ask-boundary-pagination-actions button{width:100%}
+	      .ask-history-body{padding:0 16px 16px}.ask-history-table-wrap{overflow:visible}.ask-history table{min-width:0}.ask-history thead{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.ask-history tbody,.ask-history tr,.ask-history td{display:block;width:100%}.ask-history tr{padding:10px 0;border-top:1px solid #26372f}.ask-history td{display:grid;grid-template-columns:88px minmax(0,1fr);gap:8px;padding:5px 0;border:0}.ask-history td::before{content:attr(data-label);color:#839189;font-size:10px;font-weight:800;text-transform:uppercase}.history-durable-table td:nth-child(3),.history-durable-table td:nth-child(6){min-width:0}
+	      .resolved-time-table{overflow:visible}.resolved-time-table table{min-width:0}.resolved-time-table thead{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.resolved-time-table tbody,.resolved-time-table tr,.resolved-time-table td{display:block;width:100%}.resolved-time-table tr{padding:10px 0;border-top:1px solid #26372f}.resolved-time-table td{display:grid;grid-template-columns:108px minmax(0,1fr);gap:8px;padding:5px 0;border:0}.resolved-time-table td::before{content:attr(data-label);color:#839189;font-size:10px;font-weight:800;text-transform:uppercase}.resolved-time-table .utc-range span{white-space:normal;overflow-wrap:normal;word-break:normal}
       body.ask-result-mode main{padding-top:28px}.ask-result-mode .ask-transcript>.ask-turn:not(.answer)>p{font-size:30px}body.ask-result-mode .ask-answer-grid{grid-template-columns:1fr}.ask-result-mode .ask-model-panel,.ask-result-mode .ask-verified{padding:20px}.ask-result-mode .ask-composer{grid-template-columns:1fr;padding:16px}
     }
     /* Ask chat redesign: model reply is the primary bubble; verified result is a labeled collapsed disclosure */
@@ -515,6 +524,17 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
                 <label id="ask-base-url-wrap" class="field hidden">Provider base URL
                   <input id="ask-base-url" type="text" maxlength="2048" value="http://127.0.0.1:11434/v1" autocomplete="url" spellcheck="false">
                 </label>
+                <label class="field">Model request timeout (seconds)
+                  <input id="ask-timeout" type="number" min="1" max="600" step="1" placeholder="Automatic">
+                </label>
+                <label class="field">Session reported-token budget
+                  <input id="ask-session-token-budget" type="number" min="1000" max="5000000" step="1000" placeholder="200000">
+                  <span>Client spend/context control. This does not change Explore privacy budgets.</span>
+                </label>
+                <label class="field">Maximum output tokens per provider call
+                  <input id="ask-max-output-tokens" type="number" min="256" max="16384" step="1" placeholder="Automatic">
+                  <span>Leave blank to retain the existing provider-call defaults.</span>
+                </label>
               </div>
               <details id="ask-credential-details">
                 <summary>Credential options</summary>
@@ -554,11 +574,47 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           <div id="ask-chat" class="hidden">
             <div id="ask-submit-consent" class="ask-disclosure hidden"></div>
             <div class="ask-disclosure"><strong>Session-only conversation</strong><p>Questions, tool results, and model responses stay in memory and are cleared when this Workbench stops or you select Clear. Model output is untrusted; database facts must come through a reviewed tool call.</p></div>
+            <details id="ask-live-limits" class="ask-history">
+              <summary><span>Ask limits</span><small id="ask-limit-usage">Loading reported-token usage...</small></summary>
+              <div class="ask-history-body">
+                <p>Raise these in-memory client limits without clearing this conversation. They do not change reviewed database access, cohort suppression, or Explore privacy accounting.</p>
+                <div class="ask-grid">
+                  <label class="field">Session reported-token budget
+                    <input id="ask-live-session-token-budget" type="number" min="1000" max="5000000" step="1000">
+                  </label>
+                  <label class="field">Maximum output tokens per provider call
+                    <input id="ask-live-max-output-tokens" type="number" min="256" max="16384" step="1" placeholder="Automatic">
+                  </label>
+                </div>
+                <div class="actions"><button id="update-ask-limits" class="secondary" type="button">Update Ask limits</button><span id="ask-limit-status" class="status-message" role="status" aria-live="polite"></span></div>
+              </div>
+            </details>
             <details id="ask-boundary-guide" class="ask-boundary-guide">
-              <summary><span class="ask-boundary-summary"><strong>What can I ask?</strong><small id="ask-boundary-summary">Loading the active reviewed boundary...</small></span></summary>
+              <summary><span class="ask-boundary-summary"><strong>What can I ask?</strong><small id="ask-boundary-summary">Loading tables and the reviewed relationship map...</small></span></summary>
               <div id="ask-boundary-body" class="ask-boundary-body"></div>
             </details>
             <div class="ask-proof-actions"><button id="prove-boundary-chat" data-prove-boundary class="secondary" type="button">Prove this boundary</button><button data-tune-boundary class="quiet" type="button">Tune access</button></div>
+            <details id="ask-history" class="ask-history">
+              <summary>Query history</summary>
+              <div class="ask-history-body">
+                <p>Recent references can still be inspected or protected. Durable history contains bounded audit metadata only; Runner does not persist model conversations, result values, trusted scope values, or raw SQL.</p>
+                <div class="grid two ask-history-filters">
+                  <label class="field">Tenant<input id="ask-history-tenant" type="text" maxlength="160" placeholder="Plain tenant ID or keyed fingerprint"></label>
+                  <label class="field">Principal<input id="ask-history-principal" type="text" maxlength="160" placeholder="Plain principal ID or keyed fingerprint"></label>
+                  <label class="field">Resource<input id="ask-history-resource" type="text" maxlength="256" placeholder="schema.table"></label>
+                  <label class="field">Search reviewed query metadata<input id="ask-history-search" type="search" maxlength="160" placeholder="field, measure, resource, evidence ID"></label>
+                  <label class="field">Capability<input id="ask-history-capability" type="text" maxlength="160" placeholder="Exact capability"></label>
+                  <label class="field">Boundary digest<input id="ask-history-boundary" type="text" maxlength="96" placeholder="sha256:..."></label>
+                  <label class="field">Outcome<select id="ask-history-outcome"><option value="">Any outcome</option><option value="ok">Released</option><option value="refused">Refused</option><option value="failed">Source failed</option></select></label>
+                  <label class="field">From<input id="ask-history-since" type="datetime-local"></label>
+                  <label class="field">To<input id="ask-history-to" type="datetime-local"></label>
+                  <label class="field">Maximum records<input id="ask-history-limit" type="number" min="1" max="200" step="1" value="50"></label>
+                </div>
+                <div class="actions"><button id="load-ask-history" class="secondary" type="button">Load query history</button></div>
+                <div id="ask-history-status" class="status-message" role="status" aria-live="polite"></div>
+                <div id="ask-history-content"></div>
+              </div>
+            </details>
             <div id="ask-starters" class="question-list"></div>
             <div id="ask-transcript" class="ask-transcript" aria-live="polite"></div>
             <div class="ask-composer">
@@ -646,12 +702,15 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
   <script>
     ${workbenchSyntaxScript()}
     const csrf="${escapedCsrf}";
+    const reviewedBudgetCeilings=${reviewedBudgetCeilings};
     let original;
     let candidate;
     let reviewReport;
     let activeBoundary;
     let activeBoundaries=[];
     let boundaryLibrary={selected_name:"",entries:[]};
+    let boundaryRescanReport=null;
+    let databaseServerCompatibility=null;
     let candidateDigest;
 	    let currentView="overview";
 	    const validViews=new Set(["overview","exceptions","activate","explore","protect","action"]);
@@ -678,6 +737,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     let guidedActionData=null;
     let guidedActionDraft=null;
     let askStatus=null;
+	    let boundaryCatalog={schema_version:"synapsor.boundary-catalog.v1",table_count:0,relationship_count:0,boundaries:[]};
+	    let boundaryMermaid="flowchart LR";
+	    let boundaryDiagrams=[];
+	    let boundaryGraphSequence=0;
     let askConsentOnSubmit=false;
     let askStarterPrompts=[];
     const askBoundaryPageSize=6;
@@ -761,6 +824,33 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      return includedIds.has(connection.source)?connection.source:connection.target;
 	    };
 	    const reviewResource=id=>(reviewReport&&reviewReport.resources||[]).find(resource=>resource.id===id);
+	    function reviewedFieldAccessTier(resource,field){
+	      if(!resource)return "kept_out";
+	      if((resource.kept_out_fields||[]).includes(field))return "kept_out";
+	      if((resource.model_withheld_fields||[]).includes(field))return "runner_only";
+	      if((resource.selectable_fields||[]).includes(field))return "visible";
+	      return "kept_out";
+	    }
+	    function reviewedFieldAccessCounts(resource,review=reviewResource(resource&&resource.id)){
+	      const reviewedFields=(review&&review.fields||[]).map(field=>field.name);
+	      const fields=[...new Set(reviewedFields.length?reviewedFields:Object.keys(resource&&resource.field_types||{}))];
+	      return fields.reduce((counts,field)=>{
+	        const tier=reviewedFieldAccessTier(resource,field);
+	        if(tier==="visible")counts.visible+=1;
+	        else if(tier==="runner_only")counts.runnerOnly+=1;
+	        else counts.keptOut+=1;
+	        return counts;
+	      },{visible:0,runnerOnly:0,keptOut:0});
+	    }
+	    function totalReviewedFieldAccess(resources){
+	      return (resources||[]).reduce((total,resource)=>{
+	        const counts=reviewedFieldAccessCounts(resource);
+	        total.visible+=counts.visible;
+	        total.runnerOnly+=counts.runnerOnly;
+	        total.keptOut+=counts.keptOut;
+	        return total;
+	      },{visible:0,runnerOnly:0,keptOut:0});
+	    }
 	    const reviewedResourceKind=id=>reviewResource(id)?.type==="view"?"view":"table";
 	    const reviewedCollectionLabel=(resources=reviewReport?.resources||[])=>{
 	      return resources.some(resource=>resource.type==="view")?"tables and views":"tables";
@@ -851,9 +941,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const outsideKindLabel=otherResources===1
         ?reviewedResourceKind(outsideReviews[0]?.id)
         :reviewedCollectionLabel(outsideReviews);
-      const visibleCount=candidateResources.reduce((total,item)=>total+(item.selectable_fields||[]).filter(field=>!(item.model_withheld_fields||[]).includes(field)).length,0);
-      const runnerOnlyCount=candidateResources.reduce((total,item)=>total+(item.model_withheld_fields||[]).length,0);
-      const hiddenCount=candidateResources.reduce((total,item)=>total+(item.kept_out_fields||[]).length,0);
+	      const fieldAccess=totalReviewedFieldAccess(candidateResources);
+	      const visibleCount=fieldAccess.visible;
+	      const runnerOnlyCount=fieldAccess.runnerOnly;
+	      const hiddenCount=fieldAccess.keptOut;
       const relationshipCount=candidateResources.reduce((total,item)=>total+(item.relationships||[]).length,0);
       const includedLabels=candidateResources.map(item=>humanizeIdentifier(item.table||item.id.split(".").pop()||item.id));
       const resourceLabel=includedResourceCount===1
@@ -862,6 +953,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const tenantSource=instantOnboarding.tenant_scope_source;
       const tenantLabel=tenantSource==="postgres_role_setting"
         ?"Tenant fixed by read-only database login"
+        :tenantSource==="reviewed_organization"
+          ?"Whole reviewed organization ("+instantOnboarding.candidate.organization_scope.organization_id+"); no tenant filter"
         :"Tenant from your app";
       const scopeLabel=String(first.principal_scope).startsWith("not required")
         ?tenantLabel
@@ -1133,13 +1226,116 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           ?"Choose the source-proven record ID for "+review.id+"."
           :"Add a single-column primary or unique key, then rescan "+review.id+".";
       }
-      if(!review.tenant_key?.selected){
+      if(!candidate?.organization_scope&&!review.tenant_key?.selected&&!review.derived_tenant_scope?.selected){
+        const guidance=review.scope_resolution_guidance;
+        if(guidance?.remediation?.length)return guidance.remediation.join(" ");
         const candidates=review.tenant_key?.candidates||[];
+        const paths=[...(review.derived_tenant_scope?.candidates||[])].sort((left,right)=>(left.proof?.links?.length||0)-(right.proof?.links?.length||0)||left.path_id.localeCompare(right.path_id));
+        if(paths.length){
+          const path=paths[0];
+          const depth=path.proof?.links?.length||1;
+          const reviewedDepth=Number(candidate?.budgets?.max_derived_scope_hops??candidate?.budgets?.max_relationship_hops??2);
+          if(depth>reviewedDepth){
+            return "A proven "+depth+"-hop tenant path is shown above. Raise Derived-scope depth from "+reviewedDepth+" to "+depth+" in Settings → Result shape, timeout, and path depth, then choose it.";
+          }
+          return "Choose the proven tenant path shown above.";
+        }
+        if(review.shared_reference_scope?.eligible){
+          return "Choose a direct customer-isolation option, or explicitly review Shared reference only if "+review.id+" has the same rows for every tenant.";
+        }
         return candidates.length
-          ?"Choose the customer-isolation column for "+review.id+"."
+          ?"Choose the direct customer-isolation column or mandatory proven relationship path for "+review.id+"."
           :"Add or identify a trusted customer-isolation column, then rescan "+review.id+".";
       }
       return "Open this "+reviewedResourceKind(review.id)+" and resolve its remaining scope blocker.";
+    }
+
+    function derivedScopePathLabel(scope){
+      return scope?"mandatory relationship path "+derivedScopePathChain(scope):"unresolved";
+    }
+
+    function derivedScopePathChain(scope){
+      if(!scope)return "unresolved";
+      const links=scope.proof?.links||[];
+      const resources=[];
+      if(links[0]?.source_resource)resources.push(links[0].source_resource);
+      links.forEach(link=>{
+        if(resources.at(-1)!==link.source_resource)resources.push(link.source_resource);
+        if(resources.at(-1)!==link.target_resource)resources.push(link.target_resource);
+      });
+      if(resources.at(-1)!==scope.ancestor_resource)resources.push(scope.ancestor_resource);
+      if(!resources.length)resources.push(scope.ancestor_resource);
+      const namespaces=resources.map(resource=>{const separator=resource.lastIndexOf(".");return separator>0?resource.slice(0,separator):null;});
+      const commonNamespace=namespaces[0]&&namespaces.every(namespace=>namespace===namespaces[0])?namespaces[0]:null;
+      const shown=resources.map(resource=>commonNamespace?resource.slice(commonNamespace.length+1):resource.startsWith("public.")?resource.slice(7):resource);
+      shown[shown.length-1]=shown.at(-1)+"."+scope.ancestor_column;
+      return shown.join(" → ");
+    }
+
+    function derivedScopeJoinColumns(scope){
+      const links=scope?.proof?.links||[];
+      if(!links.length||links.some(link=>!link.source_columns?.length))return "";
+      return links.map(link=>link.source_columns.join(", ")).join(" → ");
+    }
+
+    function derivedScopeCostAdvisory(scope){
+      const depth=scope?.proof?.links?.length||0;
+      if(!depth)return "";
+      const review=reviewResource(selectedResource);
+      const rows=Number.isFinite(review?.approximate_row_count)?Number(review.approximate_row_count):null;
+      const timeout=Number(candidate?.budgets?.statement_timeout_ms||3000);
+      const rowHops=rows===null?null:rows*depth;
+      const pressure=depth>=3||(rowHops!==null&&rowHops>=500000);
+      const reviewedDepth=Number(candidate?.budgets?.max_derived_scope_hops??candidate?.budgets?.max_relationship_hops??2);
+      return '<div class="band '+(pressure?'warning':'notice')+'"><strong>Derived-scope cost advisory</strong><p>'+esc(depth)+' mandatory many-to-one hop'+(depth===1?'':'s')+' under the reviewed '+esc(timeout.toLocaleString())+' ms statement timeout.</p>'
+        +(rows===null
+          ?'<p>Catalog row volume is unavailable. Doctor can still attest path indexes.</p>'
+          :'<p>The catalog estimates about '+esc(rows.toLocaleString())+' total root rows ('+esc(rowHops.toLocaleString())+' row-hops before selectivity). This is not a tenant count or latency prediction.</p>')
+        +(depth>reviewedDepth?'<p><strong>Raise Derived-scope depth to '+esc(depth)+' in Settings → Result shape, timeout, and path depth before saving this path.</strong></p>':'')
+        +(pressure?'<p>Run doctor to verify every path index. For high-volume leaves, a direct tenant/principal column is usually faster. Measured source time appears in query details.</p>':'')
+        +'</div>';
+    }
+
+    function derivedScopeStartGuidance(scope){
+      const links=scope?.proof?.links||[];
+      const chain=links.length?[links[0].source_resource,...links.map(link=>link.target_resource)]:[scope.ancestor_resource];
+      if(chain.at(-1)!==scope.ancestor_resource)chain.push(scope.ancestor_resource);
+      const sequence=[...new Set(chain)].reverse();
+      const ancestor=sequence[0]||scope.ancestor_resource;
+      const intermediate=sequence.slice(1,-1);
+      return "start with "+ancestor+(intermediate.length?", then add "+intermediate.join(", then "):"")+", then add this table";
+    }
+
+    function firstTableState(resource,generatedStartingIds){
+      const generated=resource.status==="draft_read"&&generatedStartingIds.has(resource.id);
+      if(resource.status==="blocked_role"||(!resource.primary_key?.selected&&!resource.primary_key?.candidates?.length))return {kind:"unavailable",reason:resource.blockers?.[0]||"record identity or database-role posture is unresolved"};
+      const requiredScopes=[];
+      if(!candidate.organization_scope&&!resource.tenant_key?.selected&&!resource.tenant_key?.candidates?.length){
+        const tenantScope=resource.derived_tenant_scope?.selected||resource.derived_tenant_scope?.candidates?.[0];
+        if(tenantScope)requiredScopes.push(tenantScope);
+      }
+      if(!resource.principal_key?.selected&&resource.derived_principal_scope?.selected){
+        requiredScopes.push(resource.derived_principal_scope.selected);
+      }
+      if(requiredScopes.length)return {kind:"ancestor",reason:requiredScopes.map(scope=>derivedScopeStartGuidance(scope)+" ("+derivedScopePathLabel(scope)+")").join("; ")};
+      if(candidate.organization_scope)return {kind:"startable"};
+      if(resource.tenant_key?.selected||resource.tenant_key?.candidates?.length)return generated?{kind:"startable"}:{kind:"unavailable",reason:resource.blockers?.[0]||"structural review required"};
+      if(resource.shared_reference_scope?.eligible)return {kind:"shared_reference",reason:"start with a tenant-scoped table, then add this table and confirm Shared reference for this boundary"};
+      return generated?{kind:"startable"}:{kind:"unavailable",reason:resource.blockers?.[0]||"structural review required"};
+    }
+
+    function reviewedTenantScopeLabel(resource,review){
+      if(candidate?.organization_scope)return "whole reviewed organization ("+candidate.organization_scope.organization_id+"); no tenant filter";
+      if(resource?.tenant_key)return "direct column "+resource.tenant_key;
+      if(resource?.shared_reference_scope)return "Shared reference; no tenant predicate";
+      const scope=resource?.tenant_scope||review?.derived_tenant_scope?.selected;
+      return scope?derivedScopePathLabel(scope):"unresolved";
+    }
+
+    function reviewedPrincipalScopeLabel(resource,review){
+      if(resource?.principal_key)return "direct column "+resource.principal_key;
+      const scope=resource?.principal_scope||review?.derived_principal_scope?.selected;
+      return scope?derivedScopePathLabel(scope):"not required";
     }
 
 		    function renderSummary(){
@@ -1150,17 +1346,26 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      ).length;
 	      const boundarySignoffs=globalDecisions().some(decision=>!confirmedDecisions.has(decision))?1:0;
 	      const unresolvedSignoffs=tableSignoffs+boundarySignoffs;
-	      const exposed=candidate.pack.resources.reduce((total,resource)=>total+resource.selectable_fields.length,0);
-	      const hidden=candidate.pack.resources.reduce((total,resource)=>total+resource.kept_out_fields.length,0);
+	      const fieldAccess=totalReviewedFieldAccess(candidate.pack.resources);
+	      const exposed=fieldAccess.visible;
+	      const hidden=fieldAccess.runnerOnly+fieldAccess.keptOut;
       byId("summary").innerHTML=[
 	        [candidate.pack.resources.length,reviewedCollectionLabel()+" included"],
 	        [exposed,"fields the agent can see"],
 	        [hidden,"fields hidden from the agent"],
 	        [unresolvedSignoffs,"review sign-offs remaining"]
 	      ].map(item=>'<div class="metric"><strong>'+esc(item[0])+'</strong><span>'+esc(item[1])+'</span></div>').join("");
-	      const tenantResources=(reviewReport.resources||[]).filter(resource=>resource.tenant_key?.selected);
-	      const principalResources=(reviewReport.resources||[]).filter(resource=>resource.principal_key?.selected);
+	      const tenantResources=candidate.organization_scope
+	        ?reviewReport.resources||[]
+	        :(reviewReport.resources||[]).filter(resource=>
+	          resource.tenant_key?.selected||resource.derived_tenant_scope?.selected);
+	      const sharedReferenceResources=candidate.organization_scope
+	        ?[]
+	        :(reviewReport.resources||[]).filter(resource=>resource.shared_reference_scope?.eligible);
+	      const principalResources=(reviewReport.resources||[]).filter(resource=>
+	        resource.principal_key?.selected||resource.derived_principal_scope?.selected);
 	      const tenantResolved=tenantResources.length;
+	      const sharedReferenceReviewable=sharedReferenceResources.length;
 	      const principalResolved=principalResources.length;
 	      const collectionLabel=reviewedCollectionLabel();
 		      byId("resources-heading").textContent=collectionLabel==="tables"
@@ -1169,7 +1374,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      byId("resource-navigation-shell").setAttribute("aria-label",collectionLabel.replace(/\\b\\w/g,char=>char.toUpperCase())+" navigation");
 	      byId("resource-search-label").textContent="Find a "+(collectionLabel==="tables"?"table":"table or view");
 	      byId("resource-search").placeholder="Search "+collectionLabel;
-			      byId("database-summary").innerHTML='<h3>Database connected</h3><p><strong>'+esc(String(reviewReport.engine||"database").toUpperCase())+'</strong> · read role <code>'+esc(reviewReport.database_role?.name||"unknown")+'</code> · '+esc(summary.objects)+' '+esc(collectionLabel)+' inspected.</p><p>'+esc(summary.draft_reads)+' can be reviewed now; '+esc(summary.blocked_objects)+' stay unavailable. Customer isolation was detected for '+esc(tenantResolved)+' '+esc(reviewedCollectionLabel(tenantResources))+'. Per-user row limits were detected for '+esc(principalResolved)+' '+esc(reviewedCollectionLabel(principalResources))+'. '+esc(summary.sensitive_fields_kept_out)+' sensitive field(s) were hidden conservatively across the inspected schema.</p>';
+			      byId("database-summary").innerHTML='<h3>Database connected</h3><p><strong>'+esc(String(reviewReport.engine||"database").toUpperCase())+'</strong> · read role <code>'+esc(reviewReport.database_role?.name||"unknown")+'</code> · '+esc(summary.objects)+' '+esc(collectionLabel)+' inspected.</p><p>'+esc(summary.draft_reads)+' can be reviewed now; '+esc(summary.blocked_objects)+' stay unavailable. '+(candidate.organization_scope?'Whole-organization access is explicitly reviewed for <code>'+esc(candidate.organization_scope.organization_id)+'</code>; no tenant predicate is applied.':'Customer isolation was detected for '+esc(tenantResolved)+' '+esc(reviewedCollectionLabel(tenantResources))+'. '+esc(sharedReferenceReviewable)+' '+esc(reviewedCollectionLabel(sharedReferenceResources))+' may instead be explicitly reviewed as Shared reference.')+' Per-user row limits were detected for '+esc(principalResolved)+' '+esc(reviewedCollectionLabel(principalResources))+'. '+esc(summary.sensitive_fields_kept_out)+' sensitive field(s) were hidden conservatively across the inspected schema.</p>';
 		    }
 
 		    function renderBoundaryOverview(){
@@ -1178,13 +1383,16 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		      const generatedStartingIds=new Set(original.pack.resources.map(resource=>resource.id));
 		      const inspectedStartingTables=(reviewReport.resources||[])
 		        .slice()
-		        .sort((left,right)=>Number(left.status!=="draft_read")-Number(right.status!=="draft_read")||left.id.localeCompare(right.id));
-		      const eligibleStartingTables=inspectedStartingTables.filter(resource=>resource.status==="draft_read"&&generatedStartingIds.has(resource.id));
+		        .sort((left,right)=>Number(firstTableState(left,generatedStartingIds).kind!=="startable")-Number(firstTableState(right,generatedStartingIds).kind!=="startable")||Number(left.status!=="draft_read")-Number(right.status!=="draft_read")||left.id.localeCompare(right.id));
+		      const startingTableStates=new Map(inspectedStartingTables.map(resource=>[resource.id,firstTableState(resource,generatedStartingIds)]));
+		      const eligibleStartingTables=inspectedStartingTables.filter(resource=>startingTableStates.get(resource.id)?.kind==="startable");
+		      const sequencedStartingTables=inspectedStartingTables.filter(resource=>["ancestor","shared_reference"].includes(startingTableStates.get(resource.id)?.kind));
 		      const startingTableOptions=inspectedStartingTables
 		        .map(resource=>{
-		          const eligible=resource.status==="draft_read"&&generatedStartingIds.has(resource.id);
-		          const reason=resource.blockers?.[0]||"structural review required";
-		          return '<option value="'+esc(eligible?resource.id:"")+'" '+(eligible?'':'disabled')+'>'+esc(humanizeIdentifier(resource.id.split(".").pop()||resource.id)+(eligible?'':' - unavailable: '+reason))+'</option>';
+		          const state=startingTableStates.get(resource.id);
+		          const eligible=state?.kind==="startable";
+		          const suffix=state?.kind==="ancestor"?' - start from ancestor: '+state.reason:state?.kind==="shared_reference"?' - add after scoped table: '+state.reason:state?.kind==="unavailable"?' - unavailable: '+state.reason:'';
+		          return '<option value="'+esc(eligible?resource.id:"")+'" '+(eligible?'':'disabled')+'>'+esc(humanizeIdentifier(resource.id.split(".").pop()||resource.id)+suffix)+'</option>';
 		        })
 		        .join("");
 		      const activeIds=new Set(activeBoundaries.flatMap(boundary=>(boundary?.pack?.resources||[]).map(resource=>resource.id)));
@@ -1193,7 +1401,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		        ?boundaryLibrary.entries
 		        :[{name:candidate.pack.name,selected:true,active:activeBoundaryName===candidate.pack.name,matches_active_digest:activeBoundaryName===candidate.pack.name,table_count:candidate.pack.resources.length,outstanding_decisions:candidate.unresolved_decisions.length-confirmedDecisions.size}];
 		      const rows=entries.map(entry=>{
-		        const status=entry.active
+		        const status=entry.policy_review_required
+		          ?"Legacy policy review needed"
+		          :entry.active
 		          ?entry.matches_active_digest?"Active":"Active + draft edits"
 		          :entry.outstanding_decisions>0?"Disabled draft":"Reviewed · not active";
 		        const action=entry.selected
@@ -1204,23 +1414,66 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		          :'';
 		        return '<tr class="'+(entry.selected?'selected-boundary':'')+'"><td><strong>'+esc(entry.name)+'</strong>'+(entry.selected?'<small>Selected for editing</small>':'')+'</td><td>'+esc(status)+'</td><td>'+esc(entry.table_count)+'</td><td>'+(entry.active?'<span class="badge good">Active Explore</span>':'<span class="badge">No authority</span>')+'</td><td><div class="actions boundary-row-actions">'+action+deletion+'</div></td></tr>';
 		      }).join("");
-			      const selectedEntry=entries.find(entry=>entry.name===boundaryLibrary.selected_name);
-			      const pendingBoundaryChange=Boolean(selectedEntry&&(!selectedEntry.active||!selectedEntry.matches_active_digest));
+		      const selectedEntry=entries.find(entry=>entry.name===boundaryLibrary.selected_name);
+		      const databaseProduct=databaseServerCompatibility?.engine==="postgres"?"PostgreSQL":"MySQL";
+		      const databaseDetectedVersion=String(databaseServerCompatibility?.detected_version||"");
+		      const databaseVersionLabel=databaseDetectedVersion.toLowerCase().startsWith(databaseProduct.toLowerCase())
+		        ?databaseDetectedVersion
+		        :databaseProduct+' '+databaseDetectedVersion;
+		      const databaseCompatibilitySummary=databaseServerCompatibility
+		        ?'<div class="database-compatibility-summary"><span class="badge '+(databaseServerCompatibility.tier==="full"?'good':databaseServerCompatibility.tier==="compatible_limited"?'warn':'bad')+'">'+(databaseServerCompatibility.tier==="full"?'Full reviewed grammar':databaseServerCompatibility.tier==="compatible_limited"?'Supported limited grammar':'Unsupported source')+'</span><span><strong>Reviewed source release:</strong> '+esc(databaseVersionLabel)+(databaseServerCompatibility.authority?.version_line?' · reviewed release line '+esc(databaseServerCompatibility.authority.version_line):'')+'</span></div>'
+		        :'';
+		      const selectedRescanEntry=(boundaryRescanReport?.boundaries||[]).find(entry=>
+		        entry.boundary_name===selectedEntry?.name&&entry.candidate_digest===selectedEntry?.candidate_digest);
+		      const rescanDetails=selectedRescanEntry
+		        ?[
+		          ...(selectedRescanEntry.invalidated_decisions||[]).map(item=>item.id+": "+(item.reason==="decision_removed"?"reviewed input no longer exists":"reviewed input changed")),
+		          ...(selectedRescanEntry.changed_field_types||[]).map(item=>item.resource_id+"."+item.field+": reviewed column type changed"),
+		          ...(selectedRescanEntry.removed_fields||[]).map(item=>item.resource_id+"."+item.field+": reviewed column was removed"),
+		          ...(selectedRescanEntry.newly_available_fields||[]).map(item=>item.resource_id+"."+item.field+": new column is kept out until reviewed"),
+			          ...(selectedRescanEntry.newly_available_relationships||[]).map(item=>rescanRelationshipDetail(item,"new")),
+		          ...(selectedRescanEntry.newly_proven_value_allowlists||[]).map(item=>item.resource_id+"."+item.field+": an enforced schema vocabulary now narrows existing filter/group authority to "+item.value_count+" reviewed values; confirm field permissions, then activate"),
+		          ...(selectedRescanEntry.pruned_review_inputs||[])
+		        ]
+		        :[];
+		      const rescanExplanation=selectedRescanEntry
+			        ?'<p>Rescan preserved '+esc(rescanPreservedAuthorityText(selectedRescanEntry))+'; '+esc((selectedRescanEntry.invalidated_decisions||[]).length)+' prior '+((selectedRescanEntry.invalidated_decisions||[]).length===1?'decision was':'decisions were')+' invalidated. Review and activate this new exact revision separately.</p>'+(rescanDetails.length?'<ul>'+rescanDetails.slice(0,8).map(detail=>'<li>'+rescanDetailMarkup(detail)+'</li>').join("")+(rescanDetails.length>8?'<li>+'+esc(rescanDetails.length-8)+' more changes are available in this review.</li>':'')+'</ul>':'')
+		        :'';
+		      const pendingBoundaryChange=Boolean(selectedEntry&&(selectedEntry.policy_review_required||!selectedEntry.active||!selectedEntry.matches_active_digest));
 			      const pendingBoundaryBanner=pendingBoundaryChange
-			        ?'<div class="band notice"><strong>1 pending boundary change is not active</strong><p>'+(selectedEntry.active?'Ask still uses the previous exact reviewed revision.':'This disabled boundary grants no Ask access yet.')+'</p><button id="review-pending-boundary" type="button">Review and activate now</button></div>'
+			        ?selectedEntry.policy_review_required
+			          ?'<div class="band notice"><strong>Legacy boundary policy needs review</strong><p>Runner preserved this boundary&apos;s exact revision and did not assign ambiguous project-wide settings to it. Open and save a reviewed setting, or Rescan, before activation.</p></div>'
+		          :'<div class="band notice"><strong>1 pending boundary change is not active</strong><p>'+(selectedEntry.active?'Ask still uses the previous exact reviewed revision.':'This disabled boundary grants no Ask access yet.')+'</p>'+rescanExplanation+'<button id="review-pending-boundary" type="button">Review and activate now</button></div>'
 			        :'';
 			      const lifecycleControls='<div class="actions"><button id="edit-boundary-tables" '+(pendingBoundaryChange?'class="secondary" ':'')+'type="button">Edit selected boundary</button><button id="new-boundary" class="secondary" type="button">New boundary</button>'+(selectedEntry?.active?'<button id="disable-active-boundary" class="quiet" type="button">Deactivate selected boundary</button>':'<button id="disable-active-boundary" class="quiet" type="button" disabled title="The selected boundary is not active.">Selected boundary inactive</button>')+'</div>';
 		      const rankedMinimum=candidate.budgets.max_groups;
 		      const rankedCurrent=candidate.budgets.max_ranked_groups??rankedMinimum;
-			      const rankedMaximum=original.budgets.max_ranked_groups??original.budgets.max_groups;
-			      const rankedEditable=Number.isSafeInteger(original.budgets.max_ranked_groups);
+			      const rankedMaximum=reviewedBudgetCeilings.max_ranked_groups;
+			      const rankedEditable=true;
 			      const rankedSettings='<details class="boundary-options"><summary>Ranked result settings</summary><div class="boundary-name-editor"><label>Groups considered before ranking<input id="boundary-ranked-groups" type="number" min="'+esc(rankedMinimum)+'" max="'+esc(rankedMaximum)+'" value="'+esc(rankedCurrent)+'" '+(rankedEditable?'':'disabled')+' aria-describedby="boundary-ranked-help"></label><button id="save-ranked-groups" class="secondary" type="button" '+(rankedEditable?'':'disabled')+'>Save reviewed limit</button><span id="boundary-ranked-status" class="status-message" aria-live="polite"></span><small id="boundary-ranked-help">Top, bottom, and period-mover questions may consider this many groups. Small-group suppression runs before ranking, and only the reviewed top '+esc(candidate.budgets.max_top_n)+' may be returned. The AI cannot change this setting.</small></div></details>';
+			      const volumeSettings='<details class="boundary-options"><summary>Query volume · '+esc(candidate.budgets.max_queries_per_session)+' per rolling 24 hours · '+esc(candidate.budgets.rate_limit_per_minute)+' per minute</summary><div class="boundary-name-editor"><p><strong>Throughput controls</strong> limit how often this boundary can run for one trusted scope. They do not replace the separate disclosure controls for extracted cells, differencing, or small groups.</p><label>Queries per rolling 24 hours<input id="boundary-query-volume" type="number" min="1" max="1000" value="'+esc(candidate.budgets.max_queries_per_session)+'" aria-describedby="boundary-volume-help"></label><label>Requests per rolling minute<input id="boundary-request-rate" type="number" min="1" max="120" value="'+esc(candidate.budgets.rate_limit_per_minute)+'" aria-describedby="boundary-volume-help"></label><button id="save-boundary-volume" class="secondary" type="button">Save reviewed limits</button><span id="boundary-volume-status" class="status-message" aria-live="polite"></span><small id="boundary-volume-help">These limits are reviewed and digest-bound. Saving creates a disabled boundary revision; Review and activate remains separate. Disclosure defaults and semantics are unchanged.</small></div></details>';
+			      const shapeFields=[
+			        {key:'max_rows',label:'Returned rows',unit:'rows',min:1},
+			        {key:'max_groups',label:'Aggregate groups',unit:'groups',min:candidate.budgets.max_top_n},
+			        {key:'max_top_n',label:'Returned top N',unit:'groups',min:1,max:Math.min(reviewedBudgetCeilings.max_top_n,candidate.budgets.max_groups)},
+			        {key:'max_measures',label:'Measures per aggregate',unit:'measures',min:1},
+			        {key:'max_dimensions',label:'Dimensions per aggregate',unit:'dimensions',min:1},
+			        {key:'max_response_cells',label:'Response cells',unit:'cells',min:1},
+			        {key:'max_response_bytes',label:'Response bytes',unit:'bytes',min:1024},
+			        {key:'statement_timeout_ms',label:'Statement timeout',unit:'milliseconds',min:100},
+			        {key:'max_derived_scope_hops',label:'Derived-scope depth',unit:'proven hops',min:1,max:3,value:candidate.budgets.max_derived_scope_hops??candidate.budgets.max_relationship_hops},
+			        {key:'max_analysis_relationship_hops',label:'Analysis-path depth',unit:'proven hops',min:1,max:3,value:candidate.budgets.max_analysis_relationship_hops??candidate.budgets.max_relationship_hops}
+			      ];
+			      const shapeInputs=shapeFields.map(field=>'<label>'+esc(field.label)+'<input id="boundary-shape-'+esc(field.key)+'" type="number" min="'+esc(field.min)+'" max="'+esc(field.max??reviewedBudgetCeilings[field.key])+'" value="'+esc(field.value??candidate.budgets[field.key])+'" aria-describedby="boundary-shape-help"><small>'+esc(field.unit)+'</small></label>').join('');
+			      const shapeSettings='<details class="boundary-options"><summary>Result shape, timeout, and path depth</summary><div class="boundary-name-editor"><p><strong>Reviewed execution controls</strong> bound one result and the proven relationship paths Runner may compile. Three-hop traversal is opt-in and can be materially slower than direct tenant columns.</p>'+shapeInputs+'<button id="save-boundary-shape" class="secondary" type="button">Save reviewed controls</button><span id="boundary-shape-status" class="status-message" aria-live="polite"></span><small id="boundary-shape-help">Every value is digest-bound and hard-capped. Depth three still requires the exact catalog-proven path to be reviewed. Small-group suppression, rolling extracted-cell accounting, and differencing protection are unchanged.</small></div></details>';
 			      const cohortValues=[...new Set(candidate.pack.resources.map(resource=>resource.minimum_cohort_size))];
 			      const cohortCurrent=cohortValues.length===1?cohortValues[0]:5;
 			      const cohortSettings='<details class="boundary-options"><summary>Privacy for all tables'+(cohortValues.length===1?' · minimum group size '+esc(cohortCurrent):' · mixed group sizes')+'</summary><div class="boundary-name-editor"><label>Minimum group size for every included table<select id="boundary-cohort-all"><option value="5" '+(cohortCurrent===5?'selected':'')+'>5 — default; hide groups with 1–4 rows</option><option value="4" '+(cohortCurrent===4?'selected':'')+'>4 — hide groups with 1–3 rows</option><option value="3" '+(cohortCurrent===3?'selected':'')+'>3 — hide groups with 1–2 rows</option><option value="2" '+(cohortCurrent===2?'selected':'')+'>2 — hide groups with 1 row</option><option value="1" '+(cohortCurrent===1?'selected':'')+'>1 — show every non-empty group; suppression off</option></select></label><label>Human reviewer<input id="boundary-cohort-actor" type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><label>Reason for this privacy setting<textarea id="boundary-cohort-reason" maxlength="500" rows="2" placeholder="Explain why this minimum group size is appropriate for every table in this boundary."></textarea></label><button id="save-boundary-cohort" class="secondary" type="button" '+(candidate.pack.resources.length?'':'disabled')+'>Save for all '+esc(candidate.pack.resources.length)+' table'+(candidate.pack.resources.length===1?'':'s')+'</button><span id="boundary-cohort-status" class="status-message" aria-live="polite"></span><small>Runner hides aggregate groups with fewer rows than this number. Choosing 1 turns small-group suppression off and may reveal a group containing one person or record. Saving creates one disabled boundary change; Review and activate remains separate.</small></div></details>';
 			      panel.innerHTML=
-			        '<div class="boundary-overview-head"><div><p class="instant-kicker">Scoped Explore</p><h2 id="boundary-overview-title">Your boundaries</h2><p>Each boundary is an independently reviewed set of tables, columns, relationships, and limits. An active boundary adds choices to the same two Explore tools; one query still uses exactly one boundary.</p><div class="boundary-version-table-wrap"><table class="boundary-version-table"><thead><tr><th>Name</th><th>Status</th><th>Tables</th><th>Authority</th><th>Actions</th></tr></thead><tbody>'+rows+'</tbody></table></div><p class="muted">Active boundaries never merge relationship graphs. If a table appears in several boundaries, Runner requires the caller to name one.</p>'+pendingBoundaryBanner+'<div id="new-boundary-form" class="band" hidden><h3>Create another boundary</h3><p>Choose its first table. Nothing is copied from another boundary, and no authority is activated.</p><label class="field">Boundary name<input id="new-boundary-name" type="text" maxlength="64" spellcheck="false" placeholder="support_analytics"></label><label class="field">Starting table<select id="new-boundary-table"><option value="">Choose a table</option>'+startingTableOptions+'</select></label><small>Showing all '+esc(inspectedStartingTables.length)+' inspected tables. '+esc(eligibleStartingTables.length)+' can start a boundary; unavailable tables remain visible with their reason.</small><small>Runner opens the selected table&apos;s column access next. Related tables can be added afterward through reviewed foreign-key paths.</small><div class="actions"><button id="create-boundary" type="button">Choose table and edit</button><button id="cancel-new-boundary" class="secondary" type="button">Cancel</button></div></div><p id="boundary-library-status" class="status-message" aria-live="polite"></p><details class="boundary-options"><summary>Rename selected boundary</summary><div class="boundary-name-editor"><label>Boundary name<input id="boundary-pack-name" type="text" maxlength="64" spellcheck="false" value="'+esc(candidate.pack.name)+'" aria-describedby="boundary-name-help"></label><button id="save-boundary-name" class="secondary" type="button">Save disabled name</button><span id="boundary-name-status" class="status-message" aria-live="polite"></span><small id="boundary-name-help">Saving changes only the selected disabled draft. The name is included in its final review fingerprint.</small></div></details>'+cohortSettings+rankedSettings+'</div>'+lifecycleControls+'</div>'
-		        +(selectedEntry?.active?'<div id="boundary-disable-confirmation" class="band notice" hidden><strong>Deactivate '+esc(selectedEntry.name)+'?</strong><p>This removes only this boundary from local Explore. Other active boundaries, protected capabilities, evidence, ledger, and source data stay unchanged.</p><div class="actions"><button id="confirm-disable-boundary" class="danger" type="button">Deactivate selected boundary</button><button id="cancel-disable-boundary" class="secondary" type="button">Cancel</button></div><p id="boundary-disable-status" class="status-message" aria-live="polite"></p></div>':"");
+		        '<div class="boundary-overview-head"><div><p class="instant-kicker">Scoped Explore</p><h2 id="boundary-overview-title">Your boundaries</h2><p>Each boundary is an independently reviewed set of tables, columns, relationships, and limits. An active boundary adds choices to the same two Explore tools; one query still uses exactly one boundary.</p>'+databaseCompatibilitySummary+'<div class="boundary-version-table-wrap"><table class="boundary-version-table"><thead><tr><th>Name</th><th>Status</th><th>Tables</th><th>Authority</th><th>Actions</th></tr></thead><tbody>'+rows+'</tbody></table></div><p class="muted">Active boundaries never merge relationship graphs. If a table appears in several boundaries, Runner requires the caller to name one.</p>'+pendingBoundaryBanner+'<div id="new-boundary-form" class="band" hidden><h3>Create another boundary</h3><p>Choose its first table. Nothing is copied from another boundary, and no authority is activated.</p><label class="field">Boundary name<input id="new-boundary-name" type="text" maxlength="64" spellcheck="false" placeholder="support_analytics"></label><label class="field">Starting table<select id="new-boundary-table"><option value="">Choose a table</option>'+startingTableOptions+'</select></label><small>Showing all '+esc(inspectedStartingTables.length)+' inspected tables. '+esc(eligibleStartingTables.length)+' can start a boundary; '+esc(sequencedStartingTables.length)+' can be added after their scoped ancestor or after a boundary-specific Shared reference acknowledgement; unavailable tables remain visible with their reason.</small><small>Runner opens the selected table&apos;s column access next. Related and Shared reference tables can be added afterward through their reviewed controls.</small><div class="actions"><button id="create-boundary" type="button">Choose table and edit</button><button id="cancel-new-boundary" class="secondary" type="button">Cancel</button></div></div><p id="boundary-library-status" class="status-message" aria-live="polite"></p><details class="boundary-options"><summary>Rename selected boundary</summary><div class="boundary-name-editor"><label>Boundary name<input id="boundary-pack-name" type="text" maxlength="64" spellcheck="false" value="'+esc(candidate.pack.name)+'" aria-describedby="boundary-name-help"></label><button id="save-boundary-name" class="secondary" type="button">Save disabled name</button><span id="boundary-name-status" class="status-message" aria-live="polite"></span><small id="boundary-name-help">Saving changes only the selected disabled draft. The name is included in its final review fingerprint.</small></div></details>'+cohortSettings+volumeSettings+rankedSettings+shapeSettings+'</div>'+lifecycleControls+'</div>'
+		        +(selectedEntry?.active?'<div id="boundary-disable-confirmation" class="band notice" hidden><strong>Deactivate '+esc(selectedEntry.name)+'?</strong><p>This removes only this boundary from local Explore. Other active boundaries, protected capabilities, evidence, ledger, and source data stay unchanged.</p><div class="actions"><button id="confirm-disable-boundary" class="danger" type="button">Deactivate selected boundary</button><button id="cancel-disable-boundary" class="secondary" type="button">Cancel</button></div><p id="boundary-disable-status" class="status-message" aria-live="polite"></p></div>':"")
+		        +renderBoundaryRelationshipMap(boundaryCatalog,boundaryDiagrams);
+		      wireBoundaryRelationshipMaps(panel);
 			      byId("edit-boundary-tables").onclick=()=>openFocusedAccessReview();
 			      byId("review-pending-boundary")?.addEventListener("click",openFocusedActivationReview);
 		      byId("new-boundary").onclick=()=>{
@@ -1360,6 +1613,101 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 			        saved.className="status-message";
 			        saved.textContent="Saved in the disabled boundary. Suppression still runs before ranking; active authority did not change.";
 			      };
+			      byId("save-boundary-volume").onclick=async()=>{
+			        const status=byId("boundary-volume-status");
+			        const queries=Number(byId("boundary-query-volume").value);
+			        const rate=Number(byId("boundary-request-rate").value);
+			        const previousQueries=candidate.budgets.max_queries_per_session;
+			        const previousRate=candidate.budgets.rate_limit_per_minute;
+			        status.className="status-message";
+			        if(!Number.isSafeInteger(queries)||queries<1||queries>1000||!Number.isSafeInteger(rate)||rate<1||rate>120){
+			          status.className="status-message error";
+			          status.textContent="Choose 1–1000 queries per rolling 24 hours and 1–120 requests per minute.";
+			          return;
+			        }
+			        if(queries===previousQueries&&rate===previousRate){
+			          status.textContent="Query volume and request rate are already set to those values.";
+			          return;
+			        }
+			        candidate.budgets.max_queries_per_session=queries;
+			        candidate.budgets.rate_limit_per_minute=rate;
+			        invalidateDigest();
+			        status.textContent="Saving these reviewed throughput limits...";
+			        await queueReviewProgressSave();
+			        if(!reviewProgressHealthy){
+			          candidate.budgets.max_queries_per_session=previousQueries;
+			          candidate.budgets.rate_limit_per_minute=previousRate;
+			          renderBoundaryOverview();
+			          return;
+			        }
+			        await load();
+			        const saved=byId("boundary-volume-status");
+			        saved.className="status-message";
+			        saved.textContent="Saved in the disabled boundary. Disclosure controls are unchanged; active authority did not change.";
+			      };
+			      byId("save-boundary-shape").onclick=async()=>{
+			        const status=byId("boundary-shape-status");
+			        status.className="status-message";
+			        const next={};
+			        for(const field of shapeFields){
+			          const value=Number(byId("boundary-shape-"+field.key).value);
+			          const maximum=field.max??reviewedBudgetCeilings[field.key];
+			          if(!Number.isSafeInteger(value)||value<field.min||value>maximum){
+			            status.className="status-message error";
+			            status.textContent=field.label+" must be a whole number from "+field.min+" through "+maximum+".";
+			            return;
+			          }
+			          next[field.key]=value;
+			        }
+			        if(next.max_top_n>next.max_groups){
+			          status.className="status-message error";
+			          status.textContent="Returned top N cannot exceed the aggregate-group limit.";
+			          return;
+			        }
+			        const incompatibleScope=candidate.pack.resources.find(resource=>
+			          (resource.tenant_scope?.proof?.links?.length??0)>next.max_derived_scope_hops
+			          ||(resource.principal_scope?.proof?.links?.length??0)>next.max_derived_scope_hops);
+			        if(incompatibleScope){
+			          status.className="status-message error";
+			          status.textContent="Cannot lower derived-scope depth while "+incompatibleScope.id+" uses a deeper mandatory scope path.";
+			          return;
+			        }
+			        const unchanged=shapeFields.every(field=>(candidate.budgets[field.key]??candidate.budgets.max_relationship_hops)===next[field.key]);
+			        if(unchanged){status.textContent="These reviewed controls are already set to those values.";return;}
+			        const previousBudgets=structuredClone(candidate.budgets);
+			        const previousAnalysisDepth=candidate.budgets.max_analysis_relationship_hops??candidate.budgets.max_relationship_hops;
+			        const previousRelationships=candidate.pack.resources.map(resource=>[resource.id,structuredClone(resource.relationships)]);
+			        Object.assign(candidate.budgets,next);
+			        candidate.pack.resources.forEach(resource=>{
+			          const retained=resource.relationships.filter(relationship=>(relationship.path_depth??1)<=next.max_analysis_relationship_hops);
+			          if(next.max_analysis_relationship_hops>previousAnalysisDepth){
+			            const generated=original.pack.resources.find(item=>item.id===resource.id);
+			            const existing=new Set(retained.map(relationship=>relationship.id));
+			            for(const relationship of generated?.relationships??[]){
+			              const depth=relationship.path_depth??1;
+			              if(depth>previousAnalysisDepth&&depth<=next.max_analysis_relationship_hops&&!existing.has(relationship.id)){
+			                retained.push(structuredClone(relationship));
+			                existing.add(relationship.id);
+			              }
+			            }
+			          }
+			          resource.relationships=retained.sort((left,right)=>(left.path_depth??1)-(right.path_depth??1)||left.id.localeCompare(right.id));
+			        });
+			        invalidateDigest();
+			        status.textContent="Saving these reviewed execution controls...";
+			        await queueReviewProgressSave();
+			        if(!reviewProgressHealthy){
+			          candidate.budgets=previousBudgets;
+			          const byResource=new Map(previousRelationships);
+			          candidate.pack.resources.forEach(resource=>{resource.relationships=byResource.get(resource.id)??resource.relationships;});
+			          renderBoundaryOverview();
+			          return;
+			        }
+			        await load();
+			        const saved=byId("boundary-shape-status");
+			        saved.className="status-message";
+			        saved.textContent="Saved in the disabled boundary. Suppression and disclosure accounting are unchanged; Review and activate remains separate.";
+			      };
 			      const cohortAllSave=byId("save-boundary-cohort");
 			      if(cohortAllSave&&!cohortAllSave.disabled)cohortAllSave.onclick=async()=>{
 			        const status=byId("boundary-cohort-status");
@@ -1435,21 +1783,35 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	        const included=Boolean(resource);
 		        const risks=riskCount({id:review.id});
 		        const sensitiveKeptOut=sensitiveKeptOutCount(review.id);
-	        const raw=resource?resource.selectable_fields.length:0;
-	        const kept=resource?resource.kept_out_fields.length:(review.fields||[]).filter(field=>field.sensitivity?.state!=="structurally_low_risk").length;
+	        const fieldAccess=reviewedFieldAccessCounts(resource,review);
+	        const raw=fieldAccess.visible;
+	        const runnerOnly=fieldAccess.runnerOnly;
+	        const kept=fieldAccess.keptOut;
 	        const primary=source?.primary_key||review.primary_key?.selected||"unresolved";
-	        const tenant=source?.tenant_key||review.tenant_key?.selected||"unresolved";
-	        const principal=source?.principal_key||review.principal_key?.selected||"not configured";
+	        const tenant=reviewedTenantScopeLabel(source,review);
+	        const principal=reviewedPrincipalScopeLabel(source,review);
 	        const blocked=review.status!=="draft_read";
 	          const badgeText=blocked?"Blocked":!included?"Available to add":risks?"Table sign-off needed":"Reviewed";
 	          const badgeClass=blocked?"bad":!included?"":risks?"warn":"good";
-			        return '<article class="resource" data-risk="'+risks+'"><div class="resource-head"><div><h3 class="resource-name">'+esc(review.id)+'</h3><p>'+esc(blocked?"Unavailable: "+(review.blockers||[]).join("; "):included?"Included in the agent data set":"Excluded from the agent data set")+'</p></div><span class="badge '+badgeClass+'">'+esc(badgeText)+'</span></div><div class="badges"><span class="badge">'+esc(raw)+' visible</span><span class="badge">'+esc(kept)+' hidden</span>'+(sensitiveKeptOut?'<span class="badge good">'+esc(sensitiveKeptOut)+' sensitive kept out</span>':'')+'<span class="badge">record ID: '+esc(primary)+'</span></div><p>Customer column <code>'+esc(tenant)+'</code> · User/owner column <code>'+esc(principal)+'</code></p>'+(blocked?'<p><strong>Next:</strong> '+esc(blockedResourceNextAction(review))+'</p>':'')+'<div class="actions"><button class="secondary" data-open-resource="'+esc(review.id)+'" type="button">'+esc(risks?"Review access":"Inspect access")+'</button>'+(source?'<label class="check"><input type="checkbox" data-resource-toggle="'+esc(review.id)+'" '+(included?"checked":"")+'> Include</label>':'')+'</div></article>';
+	        const scopeWhy=blocked&&review.scope_resolution_guidance?.why?.length?'<div class="risk-list">'+review.scope_resolution_guidance.why.map(reason=>'<div class="risk unresolved"><strong>Why unavailable</strong><p>'+esc(reason)+'</p></div>').join("")+'</div>':'';
+          const reviewedDepth=Number(candidate?.budgets?.max_derived_scope_hops??candidate?.budgets?.max_relationship_hops??2);
+          const availableTenantPaths=blocked?[...(review.derived_tenant_scope?.candidates||[])].sort((left,right)=>(left.proof?.links?.length||0)-(right.proof?.links?.length||0)||left.path_id.localeCompare(right.path_id)):[];
+          const scopeAvailable=availableTenantPaths.length?'<div class="risk-list">'+availableTenantPaths.slice(0,3).map(path=>{const depth=path.proof?.links?.length||1;const joinColumns=derivedScopeJoinColumns(path);return '<div class="risk available"><strong>Tenant scope available ('+esc(depth)+' hop'+(depth===1?'':'s')+')</strong><p>'+esc(derivedScopePathChain(path))+'</p>'+(joinColumns?'<p>via columns: <code>'+esc(joinColumns)+'</code></p>':'')+'<p>path ID: <code>'+esc(path.path_id)+'</code></p>'+(depth>reviewedDepth?'<p>Needs max_derived_scope_hops '+esc(depth)+' (currently '+esc(reviewedDepth)+').</p>':'')+'</div>';}).join("")+'</div>':'';
+	        return '<article class="resource" data-risk="'+risks+'"><div class="resource-head"><div><h3 class="resource-name">'+esc(review.id)+'</h3><p>'+esc(blocked?"Unavailable: "+(review.blockers||[]).join("; "):included?"Included in the agent data set":"Excluded from the agent data set")+'</p></div><span class="badge '+badgeClass+'">'+esc(badgeText)+'</span></div><div class="badges"><span class="badge">'+esc(raw)+' visible</span><span class="badge">'+esc(runnerOnly)+' Runner-only</span><span class="badge">'+esc(kept)+' kept out</span>'+(sensitiveKeptOut?'<span class="badge good">'+esc(sensitiveKeptOut)+' sensitive kept out</span>':'')+'<span class="badge">record ID: '+esc(primary)+'</span></div><p>Customer isolation: <code>'+esc(tenant)+'</code> · User/owner limit: <code>'+esc(principal)+'</code></p>'+scopeWhy+scopeAvailable+(blocked?'<p><strong>Next:</strong> '+esc(blockedResourceNextAction(review))+'</p>':'')+'<div class="actions"><button class="secondary" data-open-resource="'+esc(review.id)+'" type="button">'+esc(risks?"Review access":"Inspect access")+'</button>'+(source?'<label class="check"><input type="checkbox" data-resource-toggle="'+esc(review.id)+'" '+(included?"checked":"")+'> Include</label>':'')+'</div></article>';
 	      }).join("")||'<div class="band notice"><strong>No '+esc(reviewedCollectionLabel())+' match this view.</strong><p>The inspected resources are still available; this filter did not change authority.</p><button id="reset-resource-filter" class="secondary" type="button">Show all '+esc(reviewedCollectionLabel())+'</button></div>';
       document.querySelectorAll("[data-open-resource]").forEach(button=>button.onclick=()=>openResource(button.dataset.openResource));
-      document.querySelectorAll("[data-resource-toggle]").forEach(input=>input.onchange=()=>toggleResource(input.dataset.resourceToggle,input.checked));
+      document.querySelectorAll("[data-resource-toggle]").forEach(input=>input.onchange=()=>{
+        if(!toggleResource(input.dataset.resourceToggle,input.checked))input.checked=true;
+      });
 	      const reset=byId("reset-resource-filter");
 	      if(reset)reset.onclick=()=>setResourceFilter("all");
 	      renderResourceNavigation();
+	    }
+
+	    function scrollAccessDetailForNarrowLayout(){
+	      if(window.matchMedia("(max-width: 820px)").matches){
+	        byId("resource-detail").scrollIntoView({behavior:"auto",block:"start"});
+	      }
 	    }
 
 	    function renderResourceNavigation(){
@@ -1470,7 +1832,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		      const resources=inspected
 		        .filter(resource=>showAllAccessResources||Boolean(currentResource(resource.id))
 		          ||accessRelationshipConnections(resource.id).length>0||resource.id===selectedResource)
-		        .filter(resource=>!query||resource.id.toLowerCase().includes(query)||humanizeIdentifier(resource.id.split(".").pop()||resource.id).toLowerCase().includes(query))
+		        .filter(resource=>{const metadata=currentResource(resource.id);return !query||resource.id.toLowerCase().includes(query)||humanizeIdentifier(resource.id.split(".").pop()||resource.id).toLowerCase().includes(query)||(metadata?.label||"").toLowerCase().includes(query)||(metadata?.description||"").toLowerCase().includes(query)})
 		        .sort((left,right)=>{
 		          const riskDifference=accessNavigationRiskRank(right.id)-accessNavigationRiskRank(left.id);
 		          return riskDifference||left.id.localeCompare(right.id);
@@ -1494,11 +1856,12 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		              ?"Included"
 		              :risks?"Sign-off needed":"Ready";
 		        const stateClass=blocked?"blocked":!included||risks?"pending":"ready";
-		        const label=humanizeIdentifier(review.id.split(".").pop()||review.id);
+		        const label=includedResource?.label||humanizeIdentifier(review.id.split(".").pop()||review.id);
+		        const description=includedResource?.description?'<small>'+esc(includedResource.description)+'</small>':'';
 		      const path=connection
 		        ?'<small>Related to '+esc(accessBoundaryEndpoint(connection)+' via '+connection.relationship)+'</small>'
 		          :'';
-		        return '<button class="access-resource secondary '+(review.id===selectedResource?"selected":"")+'" data-access-resource="'+esc(review.id)+'" data-access-included="'+esc(String(included))+'" data-access-blocked="'+esc(String(blocked))+'" type="button" aria-pressed="'+esc(String(review.id===selectedResource))+'"><span><strong>'+esc(label)+'</strong><small>'+esc(review.id)+'</small>'+privacy+path+'</span><span class="access-resource-state '+stateClass+'">'+esc(state)+'</span></button>';
+		        return '<button class="access-resource secondary '+(review.id===selectedResource?"selected":"")+'" data-access-resource="'+esc(review.id)+'" data-access-included="'+esc(String(included))+'" data-access-blocked="'+esc(String(blocked))+'" type="button" aria-pressed="'+esc(String(review.id===selectedResource))+'"><span><strong>'+esc(label)+'</strong><small>'+esc(review.id)+'</small>'+description+privacy+path+'</span><span class="access-resource-state '+stateClass+'">'+esc(state)+'</span></button>';
 	      }).join("")||'<p>No '+esc(reviewedCollectionLabel())+' match this view. '+(showAllAccessResources?'Try another search.':'Use All inspected only when you intentionally need an unrelated table.')+'</p>';
 		      document.querySelectorAll("[data-access-resource]").forEach(button=>button.onclick=()=>{
 		        selectedResource=button.dataset.accessResource;
@@ -1507,12 +1870,12 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		        if(button.dataset.accessIncluded!=="true"&&button.dataset.accessBlocked!=="true"){
 		          toggleResource(selectedResource,true);
 		          renderResourceDetail();
-		          byId("resource-detail").scrollIntoView({behavior:"auto",block:"start"});
+		          scrollAccessDetailForNarrowLayout();
 		          return;
 		        }
 		        renderResourceNavigation();
 		        renderResourceDetail();
-	        byId("resource-detail").scrollIntoView({behavior:"auto",block:"start"});
+	        scrollAccessDetailForNarrowLayout();
 	      });
 	      requestAnimationFrame(()=>{
 	        const selected=[...panel.querySelectorAll("[data-access-resource]")]
@@ -1528,9 +1891,87 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      });
 	    }
 
+    function removalScopeReferencesResource(scope,id){
+      return Boolean(scope&&(scope.ancestor_resource===id||(scope.proof?.links||[])
+        .some(link=>link.source_resource===id||link.target_resource===id)));
+    }
+
+    function removalRelationshipReferencesResource(relationship,id){
+      return relationship.target_resource===id||(relationship.proof?.links||[])
+        .some(link=>link.source_resource===id||link.target_resource===id);
+    }
+
+    function resourceRemovalImpact(id){
+      const blockers=[];
+      const pruned=[];
+      for(const resource of candidate.pack.resources){
+        if(resource.id===id)continue;
+        for(const [label,scope] of [["tenant",resource.tenant_scope],["principal",resource.principal_scope]]){
+          if(removalScopeReferencesResource(scope,id)){
+            blockers.push(resource.id+": "+label+" scope via "+scope.path_id);
+          }
+        }
+        const affected=new Set();
+        for(const relationship of resource.relationships||[]){
+          if(!removalRelationshipReferencesResource(relationship,id))continue;
+          affected.add(relationship.id);
+          pruned.push(resource.id+"."+relationship.id);
+        }
+        for(const measure of resource.derived_measures||[]){
+          if(measure.child_resource){
+            const child=currentResource(measure.child_resource);
+            const childRelationship=(child?.relationships||[]).find(item=>item.id===measure.relationship);
+            const childScope=[child?.tenant_scope,child?.principal_scope]
+              .find(scope=>scope?.path_id===measure.relationship);
+            if(measure.child_resource===id
+              ||(childRelationship&&removalRelationshipReferencesResource(childRelationship,id))
+              ||removalScopeReferencesResource(childScope,id)){
+              blockers.push(resource.id+": reviewed metric "+measure.name+" uses child "+measure.child_resource);
+            }
+            continue;
+          }
+          const bases=measure.base_measure?[measure.base_measure]:[measure.numerator,measure.denominator].filter(Boolean);
+          const relationship=bases.map(base=>base.relationship).find(value=>value&&affected.has(value));
+          if(relationship)blockers.push(resource.id+": reviewed metric "+measure.name+" uses relationship "+relationship);
+        }
+        for(const band of resource.numeric_bands||[]){
+          if(band.relationship&&affected.has(band.relationship)){
+            blockers.push(resource.id+": reviewed numeric band "+band.name+" uses relationship "+band.relationship);
+          }
+        }
+      }
+      return {blockers:[...new Set(blockers)].sort(),pruned:[...new Set(pruned)].sort()};
+    }
+
+    function showBlockedResourceRemoval(id,impact){
+      const dependentResources=[...new Set(impact.blockers.map(blocker=>blocker.split(":")[0]))];
+      const text="Cannot remove "+id+" because reviewed boundary policy still depends on it. "
+        +impact.blockers.join("; ")+". Remove or re-scope "+dependentResources.join(", ")+" first. Nothing was saved or activated.";
+      const message=byId("message");
+      message.className="status-message error";
+      message.textContent=text;
+      const detail=byId("resource-detail");
+      detail.querySelector("[data-removal-blocked]")?.remove();
+      const notice=document.createElement("div");
+      notice.className="risk high";
+      notice.dataset.removalBlocked="true";
+      const heading=document.createElement("strong");
+      heading.textContent="This table cannot be removed yet.";
+      const explanation=document.createElement("p");
+      explanation.textContent=text;
+      notice.append(heading,explanation);
+      detail.prepend(notice);
+      notice.scrollIntoView({behavior:"auto",block:"nearest"});
+    }
+
     function toggleResource(id,included){
       const source=original.pack.resources.find(resource=>resource.id===id);
-      if(!source)return;
+      if(!source)return false;
+      const removalImpact=!included?resourceRemovalImpact(id):null;
+      if(removalImpact?.blockers.length){
+        showBlockedResourceRemoval(id,removalImpact);
+        return false;
+      }
       if(included&&!currentResource(id)){
         candidate.pack.resources.push(structuredClone(source));
         candidate.pack.resources.sort((left,right)=>left.id.localeCompare(right.id));
@@ -1552,6 +1993,12 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      renderBoundaryOverview();
 	      renderStagedAccessBar();
 	      queueReviewProgressSave();
+	      if(removalImpact?.pruned.length){
+	        const message=byId("message");
+	        message.className="status-message";
+	        message.textContent="Removed from the disabled draft. Related-data paths also removed: "+removalImpact.pruned.join(", ")+". Active authority is unchanged until activation.";
+	      }
+      return true;
 	    }
 
     function syncCandidateDecisions(){
@@ -1681,7 +2128,11 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         (active.budgets.max_ranked_groups??active.budgets.max_groups)
         !==(candidate.budgets.max_ranked_groups??candidate.budgets.max_groups)
       ))?1:0;
-      return {added,removed,egressChanged,privacyChanged,tableChanges,rankedChanged};
+      const volumeChanged=Boolean(active&&(
+        active.budgets.max_queries_per_session!==candidate.budgets.max_queries_per_session
+        ||active.budgets.rate_limit_per_minute!==candidate.budgets.rate_limit_per_minute
+      ))?1:0;
+      return {added,removed,egressChanged,privacyChanged,tableChanges,rankedChanged,volumeChanged};
     }
 
     function renderStagedAccessBar(){
@@ -1690,7 +2141,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const counts=stagedAccessCounts();
       const selectedEntry=(boundaryLibrary?.entries||[]).find(entry=>entry.selected);
       const pendingRevision=Boolean(selectedEntry&&(!selectedEntry.active||!selectedEntry.matches_active_digest));
-      const counted=counts.added+counts.removed+counts.egressChanged+counts.privacyChanged+counts.tableChanges+counts.rankedChanged;
+      const counted=counts.added+counts.removed+counts.egressChanged+counts.privacyChanged+counts.tableChanges+counts.rankedChanged+counts.volumeChanged;
       const pendingChanges=pendingRevision?Math.max(1,counted):counted;
       bar.classList.toggle("hidden",!focusedAccessReview&&!pendingRevision);
       byId("access-staged-summary").textContent=pendingRevision
@@ -1715,6 +2166,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         ["credential_or_secret","credential or secret"],
         ["payment_or_bank_detail","payment data"],
         ["government_identifier","government identifier"],
+        ["institutional_identifier","institutional identifier"],
         ["birth_information","birth information"],
         ["medical_or_health_information","health information"],
         ["direct_contact_or_address","identifies a person"],
@@ -1737,6 +2189,52 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       resource.count_distinct_fields=resource.count_distinct_fields.filter(value=>value!==field);
       delete resource.time_bucket_fields[field];
       resource.relationships=resource.relationships.filter(relation=>!relation.local_columns.includes(field));
+    }
+
+    function reviewedFieldOperations(resource,field){
+      if(!resource)return "no reviewed operation";
+      const operations=[];
+      if((resource.selectable_fields||[]).includes(field))operations.push("return");
+      operations.push(...reviewedFieldAnalyticalOperations(resource,field));
+      return operations.length?operations.join(", "):"no reviewed operation";
+    }
+
+    function reviewedFieldAnalyticalOperations(resource,field,includePresence=true){
+      if(!resource)return [];
+      const operations=[];
+      const filters=(resource.filterable_fields||{})[field];
+      if(filters&&filters.length)operations.push("filter("+filters.join("/")+")");
+      if((resource.sortable_fields||[]).includes(field))operations.push("sort");
+      if((resource.groupable_fields||[]).includes(field))operations.push("group");
+      if((resource.aggregate_measures||[]).includes(field))operations.push("aggregate measure");
+      if(includePresence&&(resource.presence_measure_fields||[]).includes(field))operations.push("presence measures");
+      if((resource.count_distinct_fields||[]).includes(field))operations.push("count distinct");
+      const buckets=(resource.time_bucket_fields||{})[field];
+      if(buckets&&buckets.length)operations.push("time("+buckets.join("/")+")");
+      return operations;
+    }
+
+    function fieldNeedsOperationRepair(resource,source,field){
+      if(!resource||!source||(resource.kept_out_fields||[]).includes(field))return false;
+      const includePresence=!(resource.model_withheld_fields||[]).includes(field);
+      return (resource.selectable_fields||[]).includes(field)
+        &&(source.selectable_fields||[]).includes(field)
+        &&reviewedFieldAnalyticalOperations(resource,field,includePresence).length===0
+        &&reviewedFieldAnalyticalOperations(source,field,includePresence).length>0;
+    }
+
+    function stagedFieldExposureMessage(resourceId,field,exposure,restored,actor){
+      const label=exposure==="allow_reviewed_use"
+        ?"Model + Runner"
+        :exposure==="withhold_from_model"
+          ?"Raw values: Runner only"
+          :"Kept out";
+      const operations=restored
+        ?" Restored current inspected operation suggestions: "+reviewedFieldOperations(currentResource(resourceId),field)+"."
+        :"";
+      return "Recorded: "+resourceId+"."+field+" -> "+label+"."+operations
+        +(actor?" Actor: "+actor+".":"")
+        +" This disabled revision still requires review and activation.";
     }
 
     function setPermission(id,field,key,enabled){
@@ -1789,12 +2287,16 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     async function submitFocusedFieldReview(field,exposure){
       const bar=byId("access-staged");
       const summary=byId("access-staged-summary");
+      const resourceId=selectedResource;
+      const restored=exposure!=="keep_out"
+        &&(reviewedFieldAccessTier(currentResource(resourceId),field)==="kept_out"
+          ||fieldNeedsOperationRepair(currentResource(resourceId),original.pack.resources.find(resource=>resource.id===resourceId),field));
       try{
         bar.classList.remove("hidden");
         summary.textContent="Saving this disabled access choice...";
         await post("/api/boundary/regenerate",{
           kind:"field_exposure",
-          resource_id:selectedResource,
+          resource_id:resourceId,
           field,
           exposure,
           actor:localWorkbenchActor(),
@@ -1804,6 +2306,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         focusedAccessReview=true;
         document.body.classList.remove("quick-start-mode");
         await load();
+        offerStagedActivation();
+        byId("access-staged-summary").textContent=stagedFieldExposureMessage(
+          resourceId,field,exposure,restored,localWorkbenchActor()
+        );
       }catch(error){
         summary.textContent=error.message;
         bar.classList.remove("hidden");
@@ -1816,13 +2322,17 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const actor=form.querySelector("[data-review-actor]").value.trim();
       const reason=form.querySelector("[data-review-reason]").value.trim();
       const status=form.querySelector("[data-review-status]");
+      const resourceId=selectedResource;
+      const restored=exposure!=="keep_out"
+        &&(reviewedFieldAccessTier(currentResource(resourceId),field)==="kept_out"
+          ||fieldNeedsOperationRepair(currentResource(resourceId),original.pack.resources.find(resource=>resource.id===resourceId),field));
       try{
         if(!actor||!reason)throw new Error("Enter the human reviewer identity and a concrete reason.");
         status.className="status-message";
         status.textContent="Saving this reviewed choice and updating only the affected access...";
         await post("/api/boundary/regenerate",{
           kind:"field_exposure",
-          resource_id:selectedResource,
+          resource_id:resourceId,
           field,
           exposure,
           actor,
@@ -1832,14 +2342,116 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         focusedAccessReview=true;
         document.body.classList.remove("quick-start-mode");
         await load();
+        offerStagedActivation();
+        byId("access-staged-summary").textContent=stagedFieldExposureMessage(
+          resourceId,field,exposure,restored,actor
+        );
       }catch(error){
         status.className="status-message error";
         status.textContent=error.message;
       }
     }
 
+    async function submitManagedEnumReview(field,form){
+      const status=form.querySelector("[data-enum-review-status]");
+      const actor=form.querySelector("[data-enum-review-actor]").value.trim();
+      const reason=form.querySelector("[data-enum-review-reason]").value.trim();
+      const values=[...form.querySelectorAll("[data-enum-review-value]:checked")].map(input=>input.value);
+      const resourceId=selectedResource;
+      try{
+        if(!actor||!reason)throw new Error("Enter the human reviewer identity and a concrete reason. No change was made.");
+        const current=JSON.parse(decodeURIComponent(form.dataset.enumCurrent||"%5B%5D"));
+        if(JSON.stringify(values)===JSON.stringify(current)){
+          status.className="status-message";
+          status.textContent="Unchanged: this column already uses exactly these allowed values. No boundary revision was created.";
+          return;
+        }
+        status.className="status-message";
+        status.textContent="Saving this reviewed value allowlist in the disabled boundary...";
+        await post("/api/boundary/regenerate",{
+          kind:"field_enum",
+          resource_id:resourceId,
+          field,
+          values,
+          actor,
+          reason
+        });
+        candidateDigest=undefined;
+        focusedAccessReview=true;
+        document.body.classList.remove("quick-start-mode");
+        await load();
+        offerStagedActivation();
+        byId("access-staged-summary").textContent="Recorded: "+resourceId+"."+field+" keeps "+(values.length?values.length+" reviewed value"+(values.length===1?"":"s"):"no values; filtering and grouping are disabled")+". Actor: "+actor+".";
+      }catch(error){
+        status.className="status-message error";
+        status.textContent=error.message;
+      }
+    }
+
+    function managedEnumReviewPanel(field,schemaValues,reviewedValues,decision){
+      const selected=new Set(reviewedValues);
+      const values=schemaValues.map(value=>'<label class="check"><input data-enum-review-value type="checkbox" value="'+esc(value)+'" '+(selected.has(value)?"checked":"")+'><span><code>'+esc(value)+'</code></span></label>').join("");
+      const decisionText=decision
+        ?'<p>Last reviewed by '+esc(decision.actor)+' at '+esc(decision.decided_at)+': '+esc(decision.reason)+'</p>'
+        :"";
+      return '<details class="enum-review" data-enum-review-form data-enum-field="'+esc(field)+'" data-enum-current="'+esc(encodeURIComponent(JSON.stringify(reviewedValues)))+'"><summary>Allowed values · '+esc(reviewedValues.length)+' of '+esc(schemaValues.length)+'</summary>'
+        +'<p>Runner learned this complete list from database schema metadata; no source rows were sampled. The AI may filter or group only by checked values. Removed values are refused even if guessed.</p>'
+        +'<p><strong>Selecting none disables filtering and grouping for this column.</strong> It does not restore free-text access.</p>'
+        +decisionText
+        +'<div class="enum-review-values">'+values+'</div>'
+        +'<div class="form-grid"><label class="field">Human reviewer<input data-enum-review-actor type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><label class="field">Reason<textarea data-enum-review-reason maxlength="500" rows="2" placeholder="Explain why the AI should be limited to exactly these values."></textarea></label></div>'
+        +'<div class="actions"><button data-submit-enum-review="'+esc(field)+'" type="button">Save allowed values</button></div><span data-enum-review-status class="status-message"></span></details>';
+    }
+
     function managedReviewForm(field,exposure,placeholder){
       return '<div class="review-form hidden" data-managed-review-form data-field="'+esc(field)+'" data-exposure="'+esc(exposure)+'"><label class="field">Human reviewer<input data-review-actor type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><label class="field">Reason<textarea data-review-reason maxlength="500" rows="2" placeholder="'+esc(placeholder)+'"></textarea></label><div class="actions"><button data-submit-field-review="'+esc(field)+'" data-exposure="'+esc(exposure)+'" type="button">Save this reviewed choice</button><button class="quiet" data-cancel-field-review type="button">Cancel</button></div><span data-review-status class="status-message"></span></div>';
+    }
+
+    function managedMetadataReviewPanel(kind,field,metadata){
+      const subject=field?"Column name and description":"Table name and description";
+      const exact=field?selectedResource+"."+field:selectedResource;
+      return '<details class="access-secondary metadata-review" data-metadata-review-form data-metadata-kind="'+esc(kind)+'" data-metadata-field="'+esc(field||"")+'" data-metadata-current-label="'+esc(metadata?.label||"")+'" data-metadata-current-description="'+esc(metadata?.description||"")+'"><summary>'+esc(subject)+(metadata?.label||metadata?.description?' · reviewed':'')+'</summary>'
+        +'<p>Help people and AI clients understand <code>'+esc(exact)+'</code>. This metadata grants no access; plans still use the exact id.</p>'
+        +'<div class="form-grid"><label class="field">Reviewed label<input data-metadata-label type="text" maxlength="64" value="'+esc(metadata?.label||"")+'" placeholder="Short human-readable name"></label><label class="field">Reviewed description<textarea data-metadata-description maxlength="280" rows="2" placeholder="What this '+(field?'column':'table')+' means">'+esc(metadata?.description||"")+'</textarea></label><label class="field">Human reviewer<input data-metadata-actor type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><label class="field">Reason<textarea data-metadata-reason maxlength="500" rows="2" placeholder="Why these words accurately describe the exact database id"></textarea></label></div>'
+        +'<div class="actions"><button data-submit-metadata-review type="button">Save reviewed metadata</button></div><span data-metadata-status class="status-message"></span></details>';
+    }
+
+    async function submitManagedMetadataReview(form){
+      const status=form.querySelector("[data-metadata-status]");
+      try{
+        const label=form.querySelector("[data-metadata-label]").value.trim();
+        const description=form.querySelector("[data-metadata-description]").value.trim();
+        const currentLabel=form.dataset.metadataCurrentLabel||"";
+        const currentDescription=form.dataset.metadataCurrentDescription||"";
+        if(label===currentLabel&&description===currentDescription){
+          status.className="status-message";
+          status.textContent="Unchanged: these reviewed words are already saved. No boundary revision was created.";
+          return;
+        }
+        const actor=form.querySelector("[data-metadata-actor]").value.trim();
+        const reason=form.querySelector("[data-metadata-reason]").value.trim();
+        if(!actor||!reason)throw new Error("Enter the human reviewer identity and a concrete reason. No change was made.");
+        status.className="status-message";
+        status.textContent="Saving reviewed metadata in the disabled boundary...";
+        await post("/api/boundary/regenerate",{
+          kind:form.dataset.metadataKind,
+          resource_id:selectedResource,
+          ...(form.dataset.metadataField?{field:form.dataset.metadataField}:{}),
+          label:label||null,
+          description:description||null,
+          actor,
+          reason
+        });
+        candidateDigest=undefined;
+        focusedAccessReview=true;
+        document.body.classList.remove("quick-start-mode");
+        await load();
+        offerStagedActivation();
+        byId("access-staged-summary").textContent="Recorded reviewed metadata for "+selectedResource+(form.dataset.metadataField?"."+form.dataset.metadataField:"")+". Review the complete boundary, then activate it.";
+      }catch(error){
+        status.className="status-message error";
+        status.textContent=error.message;
+      }
     }
 
     async function submitManagedScopeReview(kind,form){
@@ -1847,22 +2459,36 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const button=form.querySelector("[data-submit-scope-review]");
       const detail=byId("resource-detail");
       try{
-        const selected=form.querySelector("[data-scope-review-value]").value;
-        const value=kind==="principal_key"&&selected==="__none__"?null:selected;
+        const select=form.querySelector("[data-scope-review-value]");
+        const selected=select.value;
+        const selectedOption=select.options[select.selectedIndex];
+        const reviewedKind=selectedOption?.dataset.reviewKind||kind;
+        const selectedDepth=Number(selectedOption?.dataset.reviewDepth||0);
+        const reviewedDepth=Number(candidate?.budgets?.max_derived_scope_hops??candidate?.budgets?.max_relationship_hops??2);
+        if(selectedDepth>reviewedDepth){
+          throw new Error("This "+selectedDepth+"-hop path exceeds the reviewed derived-scope depth of "+reviewedDepth+". Raise it in Settings → Result shape, timeout, and path depth, then return here.");
+        }
+        const value=(reviewedKind==="principal_key"||reviewedKind==="principal_scope_path")
+          &&selected==="__none__"?null:selected;
         const actor=form.querySelector("[data-scope-review-actor]").value.trim();
         const reason=form.querySelector("[data-scope-review-reason]").value.trim();
-        if((value===null?false:!value)||!actor||!reason)throw new Error("Choose the source column and enter the human reviewer identity and reason.");
+        if((value===null?false:!value)||!actor||!reason)throw new Error("Choose the reviewed scope and enter the human reviewer identity and reason.");
+        if(reviewedKind==="shared_reference_scope"&&!form.querySelector("[data-shared-reference-ack]")?.checked){
+          throw new Error("Confirm that this table has no per-tenant rows. No change was made.");
+        }
         button.disabled=true;
         detail.setAttribute("aria-busy","true");
         status.className="status-message";
         status.textContent="Saving this reviewed choice and updating only the affected access...";
-        await post("/api/boundary/regenerate",{
-          kind,
+        const reviewRequest={
+          kind:reviewedKind,
           resource_id:selectedResource,
-          value,
           actor,
           reason
-        });
+        };
+        if(reviewedKind==="shared_reference_scope")reviewRequest.acknowledgement="table_has_no_per_tenant_rows";
+        else reviewRequest.value=value;
+        await post("/api/boundary/regenerate",reviewRequest);
         candidateDigest=undefined;
         focusedAccessReview=true;
         document.body.classList.remove("quick-start-mode");
@@ -1905,6 +2531,353 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       }
     }
 
+    function reviewedAnalyticsFieldChoices(resource){
+      const choices=(resource.aggregate_measures||[]).map(field=>({
+        field,
+        label:resource.id+"."+field
+      }));
+      for(const relationship of resource.relationships||[]){
+        const target=candidate.pack.resources.find(item=>item.id===relationship.target_resource);
+        if(!target)continue;
+        for(const field of target.aggregate_measures||[]){
+          choices.push({
+            field,
+            relationship:relationship.id,
+            label:relationship.id+" -> "+target.id+"."+field
+          });
+        }
+      }
+      return choices;
+    }
+
+    function reviewedAnalyticsOperandChoices(resource){
+      const choices=[{value:{function:"count"},label:"COUNT rows in "+resource.id,relationship:""}];
+      const resources=[{resource,relationship:""}];
+      for(const relationship of resource.relationships||[]){
+        const target=candidate.pack.resources.find(item=>item.id===relationship.target_resource);
+        if(target)resources.push({resource:target,relationship:relationship.id});
+      }
+      for(const item of resources){
+        const prefix=item.relationship?item.relationship+" -> "+item.resource.id:item.resource.id;
+        for(const field of item.resource.aggregate_measures||[]){
+          const functions=item.resource.aggregate_measure_functions?.[field]||["sum","avg"];
+          ["sum","avg"].filter(fn=>functions.includes(fn)).forEach(fn=>choices.push({
+            value:{function:fn,field,...(item.relationship?{relationship:item.relationship}:{})},
+            label:fn.toUpperCase()+" "+prefix+"."+field,
+            relationship:item.relationship
+          }));
+        }
+        for(const field of item.resource.count_distinct_fields||[]){
+          choices.push({
+            value:{function:"count_distinct",field,...(item.relationship?{relationship:item.relationship}:{})},
+            label:"COUNT DISTINCT "+prefix+"."+field,
+            relationship:item.relationship
+          });
+        }
+      }
+      return choices;
+    }
+
+    function reviewedChildCountChoices(resource){
+      const choices=[];
+      for(const child of candidate.pack.resources){
+        if(child.id===resource.id)continue;
+        if(!candidate.organization_scope&&(child.shared_reference_scope||(!child.tenant_key&&!child.tenant_scope)))continue;
+        const proofs=[];
+        for(const relationship of child.relationships||[]){
+          if(relationship.target_resource===resource.id&&(relationship.path_depth||1)===1&&relationship.proof?.links?.length===1){
+            proofs.push({relationship:relationship.id,link:relationship.proof.links[0]});
+          }
+        }
+        for(const scope of [child.tenant_scope,child.principal_scope]){
+          if(scope?.ancestor_resource===resource.id&&scope.proof?.links?.length===1){
+            proofs.push({relationship:scope.path_id,link:scope.proof.links[0]});
+          }
+        }
+        const seen=new Set();
+        for(const proof of proofs){
+          const link=proof.link;
+          const key=proof.relationship+"\u0000"+JSON.stringify(link);
+          if(seen.has(key))continue;
+          seen.add(key);
+          if(!link||link.constraint_name!==proof.relationship||link.source_resource!==child.id||link.target_resource!==resource.id||link.nullable||link.cardinality!=="many_to_one"||link.max_fan_out!==1||!link.source_columns?.length||link.source_columns.length!==link.target_columns?.length)continue;
+          choices.push({
+            child_resource:child.id,
+            relationship:proof.relationship,
+            label:child.id+"."+link.source_columns.join(",")+" -> "+resource.id+"."+link.target_columns.join(",")+" ("+proof.relationship+")"
+          });
+        }
+      }
+      return choices.sort((left,right)=>left.label.localeCompare(right.label));
+    }
+
+    function reviewedAnalyticsPanel(resource){
+      const bands=resource.numeric_bands||[];
+      const autoBands=resource.auto_bands||[];
+      const automaticBandsAvailable=databaseServerCompatibility?.authority?.features?.automatic_numeric_bands!==false;
+      const measures=resource.derived_measures||[];
+      const fields=reviewedAnalyticsFieldChoices(resource);
+      const autoBandFields=(resource.aggregate_measures||[]).slice().sort();
+      const operands=reviewedAnalyticsOperandChoices(resource);
+      const childCounts=reviewedChildCountChoices(resource);
+      const actor=esc(byId("actor").value.trim());
+      const option=value=>esc(JSON.stringify(value));
+      const bandRows=bands.length?bands.map(band=>'<div class="risk"><strong>'+esc(band.label)+'</strong><p><code>'+esc(band.name)+'</code> groups '+esc(band.relationship?band.relationship+" -> "+band.field:band.field)+' into '+esc(band.bucket_labels.length)+' fixed buckets: '+esc(band.bucket_labels.join(" | "))+'</p><button class="quiet" data-remove-numeric-band="'+esc(band.name)+'" type="button">Remove this band</button></div>').join(""):'<p>No numeric bands are reviewed for this table.</p>';
+      const autoBandRows=autoBands.length?autoBands.map(policy=>'<div class="risk"><strong>Automatic bands for '+esc(policy.field)+'</strong><p>The AI may choose '+esc(policy.methods.map(method=>method.replace(/_/g," ")).join(" or "))+' and '+esc(policy.min_buckets)+'-'+esc(policy.max_buckets)+' buckets. Labels are '+esc(policy.label_style)+'. Raw computed edges are never shown.</p><button class="quiet" data-remove-auto-band="'+esc(policy.field)+'" type="button">Disable automatic bands</button></div>').join(""):'<p>No automatic numeric bands are reviewed for this table.</p>';
+      const measureRows=measures.length?measures.map(measure=>'<div class="risk"><strong>'+esc(measure.label)+'</strong><p><code>'+esc(measure.name)+'</code> is a fixed '+esc(measure.shape.replace(/_/g," "))+'. The AI can select its name but cannot change its reviewed definition.'+(measure.base_measure?' Runner applies it only after small-group suppression.':measure.child_resource?' Runner counts scoped child rows through '+esc(measure.child_resource)+" -> "+esc(resource.id)+" without a raw one-to-many join.":'')+'</p><button class="quiet" data-remove-derived-measure="'+esc(measure.name)+'" type="button">Remove this metric</button></div>').join(""):'<p>No named derived metrics are reviewed for this table.</p>';
+      const commonReview='<div class="form-grid"><label class="field">Human reviewer<input id="analytics-review-actor" type="text" maxlength="128" value="'+actor+'"></label><label class="field">Reason for this analytics setting<textarea id="analytics-review-reason" maxlength="500" rows="2" placeholder="Explain why this metric or grouping policy is appropriate for this boundary."></textarea></label></div>';
+      const bandForm=fields.length
+        ?'<div class="review-form"><h4>Add a fixed numeric band</h4><p>Choose a reviewed numeric field and fixed bucket boundaries. The AI receives only the saved name and labels; it cannot supply edges.</p><div class="form-grid"><label class="field">Numeric field<select id="analytics-band-field">'+fields.map(item=>'<option value="'+option(item)+'">'+esc(item.label)+'</option>').join("")+'</select></label><label class="field">Saved name<input id="analytics-band-name" type="text" maxlength="64" placeholder="order_value_band"></label><label class="field">Plain-language label<input id="analytics-band-label" type="text" maxlength="120" placeholder="Order value band"></label><label class="field">Bucket edges<input id="analytics-band-edges" type="text" maxlength="512" placeholder="1000, 5000"></label><label class="field">Labels, lowest to highest<input id="analytics-band-labels" type="text" maxlength="2048" placeholder="Under 10 | 10 to 49 | 50 or more"></label></div><div class="actions"><button id="save-numeric-band" type="button">Save numeric band</button></div></div>'
+        :'<div class="risk high"><strong>No reviewed numeric field is available.</strong><p>Review a numeric aggregate field before defining a band.</p></div>';
+      const autoBandForm=!automaticBandsAvailable
+        ?'<div class="risk"><strong>Automatic numeric bands are unavailable on '+esc(databaseServerCompatibility?.detected_version||"this database release")+'.</strong><p>This database release does not provide the window-function and common-table-expression support required for safe scoped edge computation. Fixed reviewed bands and Runner-side post-suppression calculations remain available. This unavailable grammar is not shown to the model.</p></div>'
+        :autoBandFields.length
+        ?'<div class="review-form"><h4>Allow automatic numeric bands</h4><p>Approve a bounded method once. The AI may choose only the method and bucket count; Runner computes bands from trusted scoped rows and never exposes raw edges.</p><div class="form-grid"><label class="field">Numeric field<select id="analytics-auto-band-field">'+autoBandFields.map(field=>'<option value="'+esc(field)+'">'+esc(field)+'</option>').join("")+'</select></label><label class="field">Allowed method<select id="analytics-auto-band-method"><option value="quantile">Quantile only (recommended)</option><option value="equal_width">Equal width only</option><option value="both">Quantile or equal width</option></select></label><label class="field">Fewest buckets<input id="analytics-auto-band-min" type="number" min="2" max="16" value="3"></label><label class="field">Most buckets<input id="analytics-auto-band-max" type="number" min="2" max="16" value="10"></label><label class="field">Minimum bucket width<input id="analytics-auto-band-width" type="number" min="0" step="any" placeholder="Required for equal width" disabled></label><label class="field">Labels<select id="analytics-auto-band-label-style"><option value="ordinal">Ordinal (recommended; no data-derived numbers)</option><option value="rounded">Outward-rounded ranges</option></select></label><label class="field">Round labels outward to<input id="analytics-auto-band-round" type="number" min="0" step="any" placeholder="Required for rounded labels" disabled></label></div><div class="actions"><button id="save-auto-band" type="button">Save automatic-band policy</button></div></div>'
+        :'<div class="risk high"><strong>No reviewed numeric field is available for automatic bands.</strong><p>Review a numeric aggregate field first.</p></div>';
+      const derivedForm=operands.length
+        ?'<div class="review-form"><h4>Add a named derived metric</h4><p>Choose two existing reviewed aggregates. Runner fixes the calculation; there is no formula or SQL input.</p><div class="form-grid"><label class="field">Numerator<select id="analytics-derived-numerator">'+operands.map(item=>'<option data-relationship="'+esc(item.relationship)+'" value="'+option(item.value)+'">'+esc(item.label)+'</option>').join("")+'</select></label><label class="field">Denominator<select id="analytics-derived-denominator">'+operands.map(item=>'<option data-relationship="'+esc(item.relationship)+'" value="'+option(item.value)+'">'+esc(item.label)+'</option>').join("")+'</select></label><label class="field">Released result<select id="analytics-derived-shape"><option value="ratio">Ratio</option><option value="percentage">Percentage (ratio x 100)</option><option value="per_unit_average">Per-unit average</option></select></label><label class="field">Saved name<input id="analytics-derived-name" type="text" maxlength="64" placeholder="average_order_value"></label><label class="field">Plain-language label<input id="analytics-derived-label" type="text" maxlength="120" placeholder="Average order value"></label></div><div class="actions"><button id="save-derived-measure" type="button">Save named metric</button></div></div>'
+        :'<div class="risk high"><strong>No reviewed aggregate is available.</strong><p>Review aggregate operations before defining a metric.</p></div>';
+      const postForm=operands.length
+        ?'<div class="review-form"><h4>Add a post-suppression calculation</h4><p>Choose one reviewed aggregate and a fixed operation. Runner calculates only from groups that passed small-group privacy; the AI receives only the saved name.</p><div class="form-grid"><label class="field">Base aggregate<select id="analytics-post-base">'+operands.map(item=>'<option value="'+option(item.value)+'">'+esc(item.label)+'</option>').join("")+'</select></label><label class="field">Calculation<select id="analytics-post-shape"><option value="running_total">Running total by time</option><option value="rank">Rank across released groups</option><option value="lag_absolute_change">Change from previous time bucket</option><option value="lag_percentage_change">Percentage change from previous time bucket</option><option value="moving_average">Moving average by time</option><option value="share_of_released_total">Percentage of released-group total</option></select></label><label class="field">Rank direction<select id="analytics-post-direction" disabled><option value="desc">Highest first</option><option value="asc">Lowest first</option></select></label><label class="field">Moving window<input id="analytics-post-window" type="number" min="2" max="12" value="3" disabled></label><label class="field">Saved name<input id="analytics-post-name" type="text" maxlength="64" placeholder="revenue_running_total"></label><label class="field">Plain-language label<input id="analytics-post-label" type="text" maxlength="120" placeholder="Revenue running total"></label></div><p id="analytics-post-grain">This calculation requires a reviewed ordered time bucket when queried. Optional dimensions partition the sequence.</p><div class="actions"><button id="save-post-measure" type="button">Save post-suppression calculation</button></div></div>'
+        :'';
+      const childCountForm=childCounts.length
+        ?'<div class="review-form"><h4>Add a safe child-count metric</h4><p>Count child records without a raw one-to-many join. Runner fixes the catalog-proven child path, applies trusted child scope, and releases only parent cohorts of at least five.</p><div class="form-grid"><label class="field">Child relationship<select id="analytics-child-count-path">'+childCounts.map(item=>'<option value="'+option(item)+'">'+esc(item.label)+'</option>').join("")+'</select></label><label class="field">Released result<select id="analytics-child-count-shape"><option value="child_count_total">Total child rows</option><option value="child_count_average">Average child rows per parent</option></select></label><label class="field">Saved name<input id="analytics-child-count-name" type="text" maxlength="64" placeholder="orders_count"></label><label class="field">Plain-language label<input id="analytics-child-count-label" type="text" maxlength="120" placeholder="Order count"></label></div><div class="actions"><button id="save-child-count" type="button">Save child-count metric</button></div></div>'
+        :'<div class="risk"><strong>No safe child-count path is available for this table.</strong><p>Add and review a child table with one non-null many-to-one foreign key into this table.</p></div>';
+      return '<details class="access-secondary" data-access-secondary data-reviewed-analytics><summary>Reviewed metrics and numeric bands · '+esc(measures.length+bands.length+autoBands.length)+'</summary><p>These are digest-bound human decisions. Saving creates a disabled revision; press <strong>Review and activate</strong> after checking the complete boundary.</p><div class="risk-list">'+measureRows+bandRows+autoBandRows+'</div>'+commonReview+bandForm+autoBandForm+derivedForm+postForm+childCountForm+'<span id="analytics-review-status" class="status-message"></span></details>';
+    }
+
+    function safeAnalyticsName(value){
+      return String(value||"").trim().toLowerCase().replace(/[^a-z0-9_]+/g,"_").replace(/^_+|_+$/g,"").replace(/^[0-9]/,"metric_$&").slice(0,64);
+    }
+
+    function analyticsReviewIdentity(){
+      const actor=byId("analytics-review-actor")?.value.trim();
+      const reason=byId("analytics-review-reason")?.value.trim();
+      if(!actor||!reason)throw new Error("Enter the human reviewer identity and a concrete reason. No change was made.");
+      return {actor,reason};
+    }
+
+    async function saveReviewedAnalyticsDecision(body,statusText){
+      const status=byId("analytics-review-status");
+      try{
+        status.className="status-message";
+        status.textContent="Saving this reviewed definition in the disabled boundary...";
+        await post("/api/boundary/regenerate",body);
+        candidateDigest=undefined;
+        focusedAccessReview=true;
+        document.body.classList.remove("quick-start-mode");
+        await load();
+        offerStagedActivation();
+        byId("access-staged-summary").textContent=statusText+" Review the complete boundary, then activate it.";
+      }catch(error){
+        status.className="status-message error";
+        status.textContent=error.message;
+      }
+    }
+
+    function wireReviewedAnalytics(resource){
+      const field=byId("analytics-band-field");
+      const bandName=byId("analytics-band-name");
+      const bandLabel=byId("analytics-band-label");
+      const suggestBand=()=>{
+        if(!field||!bandName||bandName.value.trim())return;
+        const selected=JSON.parse(field.value);
+        bandName.value=safeAnalyticsName((selected.relationship?selected.relationship+"_":"")+selected.field+"_band");
+        if(bandLabel&&!bandLabel.value.trim())bandLabel.value=bandName.value.replace(/_/g," ").replace(/\b\w/g,value=>value.toUpperCase());
+      };
+      field?.addEventListener("change",suggestBand);
+      suggestBand();
+      const autoMethod=byId("analytics-auto-band-method");
+      const autoLabelStyle=byId("analytics-auto-band-label-style");
+      const refreshAutoBandControls=()=>{
+        const width=byId("analytics-auto-band-width");
+        const round=byId("analytics-auto-band-round");
+        if(width)width.disabled=autoMethod?.value==="quantile";
+        if(round)round.disabled=autoLabelStyle?.value!=="rounded";
+      };
+      autoMethod?.addEventListener("change",refreshAutoBandControls);
+      autoLabelStyle?.addEventListener("change",refreshAutoBandControls);
+      refreshAutoBandControls();
+      const numerator=byId("analytics-derived-numerator");
+      const denominator=byId("analytics-derived-denominator");
+      const refreshDenominators=()=>{
+        if(!numerator||!denominator)return;
+        const relationship=numerator.selectedOptions[0]?.dataset.relationship||"";
+        [...denominator.options].forEach(option=>option.disabled=(option.dataset.relationship||"")!==relationship);
+        if(denominator.selectedOptions[0]?.disabled)denominator.value=[...denominator.options].find(option=>!option.disabled)?.value||"";
+      };
+      numerator?.addEventListener("change",refreshDenominators);
+      refreshDenominators();
+      const postShape=byId("analytics-post-shape");
+      const refreshPostShape=()=>{
+        if(!postShape)return;
+        const shape=postShape.value;
+        const sequential=["running_total","lag_absolute_change","lag_percentage_change","moving_average"].includes(shape);
+        byId("analytics-post-direction").disabled=shape!=="rank";
+        byId("analytics-post-window").disabled=shape!=="moving_average";
+        byId("analytics-post-grain").textContent=sequential
+          ?"This calculation requires a reviewed ordered time bucket when queried. Optional dimensions partition the sequence."
+          :"This calculation requires at least one reviewed group and no time bucket. It uses the complete released candidate set.";
+        const name=byId("analytics-post-name");
+        const label=byId("analytics-post-label");
+        if(name&&!name.value.trim()){
+          const base=JSON.parse(byId("analytics-post-base").value);
+          const subject=base.function==="count"?"rows":(base.relationship?base.relationship+"_":"")+(base.field||base.function);
+          name.value=safeAnalyticsName(subject+"_"+shape);
+          if(label&&!label.value.trim())label.value=name.value.replace(/_/g," ").replace(/\b\w/g,value=>value.toUpperCase());
+        }
+      };
+      postShape?.addEventListener("change",refreshPostShape);
+      byId("analytics-post-base")?.addEventListener("change",()=>{
+        byId("analytics-post-name").value="";
+        byId("analytics-post-label").value="";
+        refreshPostShape();
+      });
+      refreshPostShape();
+      const childPath=byId("analytics-child-count-path");
+      const childShape=byId("analytics-child-count-shape");
+      const refreshChildCount=()=>{
+        if(!childPath||!childShape)return;
+        const selected=JSON.parse(childPath.value);
+        const childName=selected.child_resource.split(".").pop();
+        const name=byId("analytics-child-count-name");
+        const label=byId("analytics-child-count-label");
+        if(name&&!name.value.trim()){
+          name.value=safeAnalyticsName(childShape.value==="child_count_total"?childName+"_count":"average_"+childName+"_per_parent");
+          if(label&&!label.value.trim())label.value=name.value.replace(/_/g," ").replace(/\b\w/g,value=>value.toUpperCase());
+        }
+      };
+      childPath?.addEventListener("change",()=>{
+        byId("analytics-child-count-name").value="";
+        byId("analytics-child-count-label").value="";
+        refreshChildCount();
+      });
+      childShape?.addEventListener("change",()=>{
+        byId("analytics-child-count-name").value="";
+        byId("analytics-child-count-label").value="";
+        refreshChildCount();
+      });
+      refreshChildCount();
+      byId("save-numeric-band")?.addEventListener("click",()=>{
+        try{
+          const review=analyticsReviewIdentity();
+          const selected=JSON.parse(field.value);
+          const name=bandName.value.trim();
+          const label=bandLabel.value.trim();
+          const edges=byId("analytics-band-edges").value.split(",").map(value=>Number(value.trim()));
+          const labels=byId("analytics-band-labels").value.split("|").map(value=>value.trim());
+          if(!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name))throw new Error("Use a saved name that starts with a letter or underscore and contains only letters, numbers, and underscores.");
+          if(!label)throw new Error("Enter a plain-language label.");
+          if(!edges.length||edges.length>16||edges.some((value,index)=>!Number.isFinite(value)||(index>0&&value<=edges[index-1])))throw new Error("Enter 1-16 finite bucket edges in strictly increasing order.");
+          if(labels.length!==edges.length+1||labels.some(value=>!value||value.length>64)||new Set(labels).size!==labels.length||new TextEncoder().encode(JSON.stringify(labels)).byteLength>2048)throw new Error("Enter exactly one unique label per bucket, at most 64 characters each and 2 KB total.");
+          saveReviewedAnalyticsDecision({kind:"numeric_band",resource_id:selectedResource,name,definition:{name,label,field:selected.field,...(selected.relationship?{relationship:selected.relationship}:{}),edges,bucket_labels:labels},...review},"Saved numeric band "+name+" for "+selectedResource+".");
+        }catch(error){
+          const status=byId("analytics-review-status");status.className="status-message error";status.textContent=error.message;
+        }
+      });
+      byId("save-auto-band")?.addEventListener("click",()=>{
+        try{
+          const review=analyticsReviewIdentity();
+          const fieldName=byId("analytics-auto-band-field").value;
+          const methodChoice=autoMethod.value;
+          const methods=methodChoice==="both"?["quantile","equal_width"]:[methodChoice];
+          const minBuckets=Number(byId("analytics-auto-band-min").value);
+          const maxBuckets=Number(byId("analytics-auto-band-max").value);
+          if(!Number.isSafeInteger(minBuckets)||!Number.isSafeInteger(maxBuckets)||minBuckets<2||maxBuckets>16||minBuckets>maxBuckets)throw new Error("Choose a whole-number bucket range from 2 through 16, with the fewest no greater than the most.");
+          const definition={field:fieldName,methods,min_buckets:minBuckets,max_buckets:maxBuckets,label_style:autoLabelStyle.value};
+          if(methods.includes("equal_width")){
+            const width=Number(byId("analytics-auto-band-width").value);
+            if(!Number.isFinite(width)||width<=0)throw new Error("Enter a positive minimum bucket width for equal-width bands.");
+            definition.min_bucket_width=width;
+          }
+          if(autoLabelStyle.value==="rounded"){
+            const roundTo=Number(byId("analytics-auto-band-round").value);
+            if(!Number.isFinite(roundTo)||roundTo<=0)throw new Error("Enter a positive unit for outward-rounded labels.");
+            definition.label_round_to=roundTo;
+          }
+          saveReviewedAnalyticsDecision({kind:"auto_band",resource_id:selectedResource,field:fieldName,definition,...review},"Saved automatic numeric bands for "+selectedResource+"."+fieldName+".");
+        }catch(error){
+          const status=byId("analytics-review-status");status.className="status-message error";status.textContent=error.message;
+        }
+      });
+      byId("save-derived-measure")?.addEventListener("click",()=>{
+        try{
+          const review=analyticsReviewIdentity();
+          const numeratorValue=JSON.parse(numerator.value);
+          const denominatorValue=JSON.parse(denominator.value);
+          if((numeratorValue.relationship||"")!==(denominatorValue.relationship||""))throw new Error("Both aggregates must use the same reviewed table path.");
+          const name=byId("analytics-derived-name").value.trim();
+          const label=byId("analytics-derived-label").value.trim();
+          const shape=byId("analytics-derived-shape").value;
+          if(!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name))throw new Error("Use a saved name that starts with a letter or underscore and contains only letters, numbers, and underscores.");
+          if(!label)throw new Error("Enter a plain-language label.");
+          if(shape==="per_unit_average"&&(numeratorValue.function!=="sum"||!["count","count_distinct"].includes(denominatorValue.function)))throw new Error("A per-unit average requires SUM divided by COUNT or COUNT DISTINCT.");
+          saveReviewedAnalyticsDecision({kind:"derived_measure",resource_id:selectedResource,name,definition:{name,label,shape,numerator:numeratorValue,denominator:denominatorValue,null_policy:"null_on_zero_or_null_denominator"},...review},"Saved named metric "+name+" for "+selectedResource+".");
+        }catch(error){
+          const status=byId("analytics-review-status");status.className="status-message error";status.textContent=error.message;
+        }
+      });
+      byId("save-post-measure")?.addEventListener("click",()=>{
+        try{
+          const review=analyticsReviewIdentity();
+          const shape=byId("analytics-post-shape").value;
+          const baseMeasure=JSON.parse(byId("analytics-post-base").value);
+          const name=byId("analytics-post-name").value.trim();
+          const label=byId("analytics-post-label").value.trim();
+          if(!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name))throw new Error("Use a saved name that starts with a letter or underscore and contains only letters, numbers, and underscores.");
+          if(!label)throw new Error("Enter a plain-language label.");
+          const definition={name,label,shape,base_measure:baseMeasure};
+          if(shape==="rank")definition.direction=byId("analytics-post-direction").value;
+          if(shape==="moving_average"){
+            const windowSize=Number(byId("analytics-post-window").value);
+            if(!Number.isSafeInteger(windowSize)||windowSize<2||windowSize>12)throw new Error("Choose a moving window from 2 through 12 time buckets.");
+            definition.window_size=windowSize;
+          }
+          saveReviewedAnalyticsDecision({kind:"derived_measure",resource_id:selectedResource,name,definition,...review},"Saved post-suppression calculation "+name+" for "+selectedResource+".");
+        }catch(error){
+          const status=byId("analytics-review-status");status.className="status-message error";status.textContent=error.message;
+        }
+      });
+      byId("save-child-count")?.addEventListener("click",()=>{
+        try{
+          const review=analyticsReviewIdentity();
+          const selected=JSON.parse(childPath.value);
+          const shape=childShape.value;
+          const name=byId("analytics-child-count-name").value.trim();
+          const label=byId("analytics-child-count-label").value.trim();
+          if(!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name))throw new Error("Use a saved name that starts with a letter or underscore and contains only letters, numbers, and underscores.");
+          if(!label)throw new Error("Enter a plain-language label.");
+          saveReviewedAnalyticsDecision({kind:"derived_measure",resource_id:selectedResource,name,definition:{name,label,shape,child_resource:selected.child_resource,relationship:selected.relationship},...review},"Saved child-count metric "+name+" for "+selectedResource+".");
+        }catch(error){
+          const status=byId("analytics-review-status");status.className="status-message error";status.textContent=error.message;
+        }
+      });
+      document.querySelectorAll("[data-remove-numeric-band]").forEach(button=>button.onclick=()=>{
+        try{
+          const review=analyticsReviewIdentity();
+          const definition=(resource.numeric_bands||[]).find(item=>item.name===button.dataset.removeNumericBand);
+          if(!definition)throw new Error("That numeric band is no longer in this disabled revision.");
+          saveReviewedAnalyticsDecision({kind:"numeric_band",resource_id:selectedResource,name:definition.name,definition,remove:true,...review},"Removed numeric band "+definition.name+" from "+selectedResource+".");
+        }catch(error){const status=byId("analytics-review-status");status.className="status-message error";status.textContent=error.message;}
+      });
+      document.querySelectorAll("[data-remove-auto-band]").forEach(button=>button.onclick=()=>{
+        try{
+          const review=analyticsReviewIdentity();
+          const definition=(resource.auto_bands||[]).find(item=>item.field===button.dataset.removeAutoBand);
+          if(!definition)throw new Error("That automatic-band policy is no longer in this disabled revision.");
+          saveReviewedAnalyticsDecision({kind:"auto_band",resource_id:selectedResource,field:definition.field,definition,remove:true,...review},"Disabled automatic numeric bands for "+selectedResource+"."+definition.field+".");
+        }catch(error){const status=byId("analytics-review-status");status.className="status-message error";status.textContent=error.message;}
+      });
+      document.querySelectorAll("[data-remove-derived-measure]").forEach(button=>button.onclick=()=>{
+        try{
+          const review=analyticsReviewIdentity();
+          const definition=(resource.derived_measures||[]).find(item=>item.name===button.dataset.removeDerivedMeasure);
+          if(!definition)throw new Error("That named metric is no longer in this disabled revision.");
+          saveReviewedAnalyticsDecision({kind:"derived_measure",resource_id:selectedResource,name:definition.name,definition,remove:true,...review},"Removed named metric "+definition.name+" from "+selectedResource+".");
+        }catch(error){const status=byId("analytics-review-status");status.className="status-message error";status.textContent=error.message;}
+      });
+    }
+
     function inferenceExplanation(label,inference){
       if(!inference)return "";
       const selected=inference.selected;
@@ -1935,6 +2908,48 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         })
       ];
       return inferenceExplanation(label,inference)+'<div class="review-form" data-scope-review-form><h3>Confirm or change the '+esc(label)+'</h3><div class="form-grid"><label class="field">Database column<select data-scope-review-value>'+options.map(option=>'<option value="'+esc(option.value)+'" '+((current===undefined&&option.value==="__none__")||current===option.value?"selected":"")+'>'+esc(option.label)+'</option>').join("")+'</select></label><label class="field">Human reviewer<input data-scope-review-actor type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><label class="field">Why is this correct?<textarea data-scope-review-reason maxlength="500" rows="2" placeholder="Describe the application rule this column enforces."></textarea></label></div><div class="actions"><button data-submit-scope-review="'+esc(kind)+'" type="button">Save this reviewed choice</button></div><span data-scope-review-status class="status-message"></span></div>';
+    }
+
+    function managedTrustedScopeReviewForm(kind,label,directValues,currentDirect,allowNone,directInference,derivedInference,currentDerived,sharedInference,currentShared){
+      const pathKind=kind==="tenant_key"?"tenant_scope_path":"principal_scope_path";
+      const ranked=(directInference?.alternatives_considered||[]).map(item=>item.value);
+      const direct=[...new Set([...ranked,...directValues])].map(value=>({
+        value,
+        label:"Direct column "+value,
+        kind
+      }));
+      const derived=(derivedInference?.candidates||[]).map(scope=>({
+        value:scope.path_id,
+        label:derivedScopePathLabel(scope)+' · '+(scope.proof?.links?.length||0)+' hop'+((scope.proof?.links?.length||0)===1?'':'s'),
+        kind:pathKind,
+        depth:scope.proof?.links?.length||0,
+        scope
+      }));
+      const shared=kind==="tenant_key"&&sharedInference?.eligible?[{
+        value:"table_has_no_per_tenant_rows",
+        label:"Shared reference - same rows for every tenant",
+        kind:"shared_reference_scope"
+      }]:[];
+      const options=[
+        ...(allowNone?[{value:"__none__",label:"No per-user row limit",kind:"principal_key"}]:[]),
+        ...direct,
+        ...derived,
+        ...shared
+      ];
+      if(!options.length){
+        return '<div class="risk high"><strong>No proven '+esc(label)+' is available.</strong><p>Add a direct scope column or a required foreign-key path to a directly scoped ancestor, then rescan.</p></div>';
+      }
+      const selectedKind=currentShared?"shared_reference_scope":currentDerived?pathKind:kind;
+      const selectedValue=currentShared?.acknowledgement||currentDerived||currentDirect||(allowNone?"__none__":undefined);
+      const selectedDerived=derived.find(option=>option.value===selectedValue);
+      const exactPathIds=derived.length
+        ?'<details class="access-secondary"><summary>Advanced exact path IDs</summary><p>Use these canonical IDs only with scripted <code>--'+esc(pathKind.replaceAll("_","-"))+'</code> review. Human review and enforcement still refer to the readable mandatory path above.</p><ul>'+derived.map(option=>'<li><code>'+esc(option.value)+'</code> · '+esc(option.label)+'</li>').join("")+'</ul></details>'
+        :"";
+      const explanation=inferenceExplanation(label,directInference)
+        +(derivedInference?'<div class="risk unresolved"><strong>Relationship-carried scope available</strong><p>Runner will inject the selected path into every read. The AI cannot remove, weaken, or choose this join.</p><p><strong>Safety consequence:</strong> '+esc(derivedInference.safety_consequence)+'</p></div>':"")
+        +(sharedInference?.eligible?'<div class="risk high"><strong>Shared reference is an owner assertion, not an automatic inference.</strong><p>Select it only when this table has no per-tenant rows and every tenant may receive the same reviewed rows. Field visibility, cohort suppression, and budgets still apply.</p></div>':"");
+      const sharedConfirmation=sharedInference?.eligible?'<label class="check"><input data-shared-reference-ack type="checkbox"><span>I confirm this table has no per-tenant rows and every tenant may receive the same reviewed rows. Required when Shared reference is selected.</span></label>':"";
+      return explanation+(selectedDerived?derivedScopeCostAdvisory(selectedDerived.scope):'')+'<div class="review-form" data-scope-review-form><h3>Confirm or change the '+esc(label)+'</h3><div class="form-grid"><label class="field">Reviewed scope<select data-scope-review-value>'+options.map(option=>'<option value="'+esc(option.value)+'" data-review-kind="'+esc(option.kind)+'" '+(option.depth?'data-review-depth="'+esc(option.depth)+'" ':'')+(selectedKind===option.kind&&selectedValue===option.value?"selected":"")+'>'+esc(option.label)+'</option>').join("")+'</select></label><label class="field">Human reviewer<input data-scope-review-actor type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><label class="field">Why is this correct?<textarea data-scope-review-reason maxlength="500" rows="2" placeholder="Describe why this direct column, mandatory path, or shared-reference assertion is correct."></textarea></label></div>'+sharedConfirmation+'<div class="actions"><button data-submit-scope-review="'+esc(kind)+'" type="button">Save this reviewed choice</button></div><span data-scope-review-status class="status-message"></span></div>'+exactPathIds;
     }
 
     function invalidateResourceReview(id){
@@ -1996,6 +3011,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	        renderStagedAccessBar();
 	        return;
 	      }
+	      const boundarySpecificSharedReferenceReview=Boolean(
+	        !resource&&source?.shared_reference_scope&&review.shared_reference_scope?.eligible
+	      );
 	      const selectedKind=reviewedResourceKind(selectedResource);
 	      const fields=review.fields||[];
 	      const orderedFields=[...fields].sort((left,right)=>{
@@ -2006,18 +3024,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      const renderColumnRow=field=>{
 	        const classification=field.sensitivity||{state:"structurally_low_risk",reason_codes:[],reasons:[]};
 	        const sensitive=classification.state!=="structurally_low_risk";
-	        const kept=Boolean((resource||source)?.kept_out_fields.includes(field.name))||(!source&&sensitive);
-	        const withheld=Boolean(resource?.model_withheld_fields?.includes(field.name));
-	        const usable=Boolean(resource&&(
-	          fieldHas(resource,field.name,"selectable_fields")
-	          ||fieldHas(resource,field.name,"filterable_fields")
-	          ||fieldHas(resource,field.name,"sortable_fields")
-	          ||fieldHas(resource,field.name,"groupable_fields")
-	          ||fieldHas(resource,field.name,"aggregate_measures")
-	          ||fieldHas(resource,field.name,"count_distinct_fields")
-	          ||fieldHas(resource,field.name,"time_bucket_fields")
-	        ));
-	        const visible=usable&&!withheld&&!kept;
+	        const reviewedTier=resource?reviewedFieldAccessTier(resource,field.name):null;
+	        const kept=reviewedTier==="kept_out"||(!source&&sensitive);
+	        const withheld=reviewedTier==="runner_only";
+	        const operationRepairNeeded=fieldNeedsOperationRepair(resource,source,field.name);
 	        const supportsVisibility=Boolean(source&&(
 	          fieldHas(source,field.name,"selectable_fields")
 	          ||fieldHas(source,field.name,"filterable_fields")
@@ -2027,6 +3037,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	          ||fieldHas(source,field.name,"count_distinct_fields")
 	          ||fieldHas(source,field.name,"time_bucket_fields")
 	        ));
+	        const visible=reviewedTier==="visible"&&supportsVisibility;
 		        const available=Boolean(source&&resource);
 		        const trustedScopeField=field.name===source?.tenant_key||field.name===source?.principal_key;
 		        const tier=kept
@@ -2060,12 +3071,17 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	            :!visible
 	              ?'<span class="badge">Not visible</span>'
 	              :"";
+	        const operationRepairBadge=operationRepairNeeded
+	          ?'<span class="badge warn" title="This field is usable without analytical operations, while the current inspection offers safe suggestions. Restore them only when that access is intended, then review and activate.">Optional operation restore</span>'
+	          :"";
 	        const unavailableBadge=!available
 	          ?'<span class="badge bad">'+esc(selectedKind.replace(/^./,char=>char.toUpperCase()))+' unavailable</span>'
 	          :!supportsVisibility&&!kept
 	            ?'<span class="badge">Aggregate/filter only</span>'
 	            :"";
-	        const consequence=trustedScopeField&&tier==="visible"
+	        const consequence=operationRepairNeeded
+	          ?"This field may be returned, but it has no filter, sort, group, or measure grant. Leave it return-only or explicitly restore the current inspected suggestions below."
+	          :trustedScopeField&&tier==="visible"
 	          ?"Scope remains fixed outside model arguments. The reviewed value may appear locally and enter model context."
 	          :trustedScopeField&&tier==="withheld"
 	          ?"Scope remains fixed outside model arguments. Runner may show the value locally; the model receives only a response-local token."
@@ -2076,14 +3092,14 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		          :tier==="withheld"
 	            ?"Usable in reviewed plans. Raw values stay local or become response-only tokens; reviewed derived results remain available."
 	            :tier==="kept_out"
-	              ?"Unavailable for selection, filtering, grouping, sorting, or measures."
+	              ?"Unavailable for selection, filtering, grouping, sorting, or measures. Re-including it restores only the current inspected operation suggestions in the disabled draft."
 	              :"Unavailable until this table's safe identity and scope are resolved.";
 		        const tierControl='<label class="access-column-tier">Access tier<select data-field-tier data-field-resource="'+esc(selectedResource)+'" data-field-name="'+esc(field.name)+'" data-current-tier="'+esc(tier)+'" data-trusted-scope="'+esc(String(trustedScopeField))+'" '+(disabled?"disabled":"")+'>'
 	          +'<option value="visible" '+(tier==="visible"?"selected":"")+'>Model + Runner</option>'
 	          +'<option value="withheld" '+(tier==="withheld"?"selected":"")+'>Raw values: Runner only</option>'
 		          +'<option value="kept_out" '+(tier==="kept_out"?"selected":"")+'>Kept out</option>'
 		          +'</select><span class="access-column-consequence">'+esc(consequence)+'</span></label>';
-		        const reviewForms=!resource||disabled
+	        const reviewForms=!resource||disabled
 		          ?""
 		          :trustedScopeField
 	            ?[
@@ -2094,25 +3110,69 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		            :[
 		              tier!=="visible"?managedReviewForm(field.name,"allow_reviewed_use","Why may this field's values enter model context?"):"",
 		              tier!=="withheld"?managedReviewForm(field.name,"withhold_from_model","Why may the agent use this field while its values stay out of model context?"):"",
-		              tier!=="kept_out"?managedReviewForm(field.name,"keep_out","Why should this field become unavailable to plans?"):""
-		            ].join("");
-	        const highlighted=field.name===highlightedAccessField;
-	        return '<div class="access-column '+(highlighted?"highlighted":"")+'" data-access-column="'+esc(field.name)+'" data-column-kept-out="'+esc(String(kept))+'" '+(highlighted?'data-access-highlighted="true"':"")+'>'
-	          +'<span class="access-column-copy"><strong><code>'+esc(field.name)+'</code></strong><small>'+esc(field.data_type||source?.field_types?.[field.name]||"unknown type")+'</small><span class="access-column-risk">'+stateBadge+unavailableBadge+'</span></span>'
+	              tier!=="kept_out"?managedReviewForm(field.name,"keep_out","Why should this field become unavailable to plans?"):""
+	            ].join("");
+	        const operationRepairExposure=withheld?"withhold_from_model":"allow_reviewed_use";
+	        const operationRepairControl=operationRepairNeeded
+	          ?'<div class="band notice"><strong>Optional analytical operation restore</strong><p>If this field should not remain return-only, Runner can restore the current type-, allowlist-, and server-compatible suggestions. This stages a new digest and does not activate it.</p><button class="secondary" data-restore-field-operations="'+esc(field.name)+'" data-exposure="'+esc(operationRepairExposure)+'" type="button">Restore current suggested operations</button></div>'
+	          :"";
+	        const operationRepairForm=operationRepairNeeded
+	          ?managedReviewForm(field.name,operationRepairExposure,"Why should Runner restore the current inspected analytical suggestions for this field?")
+	          :"";
+		        const schemaEnum=Array.isArray(field.enum_values)?field.enum_values:[];
+		        const enumReviewable=Boolean(resource&&schemaEnum.length&&(Object.hasOwn(source?.field_enums||{},field.name)||field.enum_review_override));
+		        const reviewedEnum=enumReviewable
+		          ?Object.hasOwn(resource.field_enums||{},field.name)
+		            ?resource.field_enums[field.name]
+		            :field.enum_review_override?[]:schemaEnum
+		          :[];
+		        const enumControl=enumReviewable
+		          ?managedEnumReviewPanel(field.name,schemaEnum,reviewedEnum,field.enum_review_override)
+		          :"";
+		        const fieldMetadata=resource?.field_metadata?.[field.name];
+		        const metadataControl=resource
+		          ?managedMetadataReviewPanel("field_metadata",field.name,fieldMetadata)
+		          :"";
+		        const fieldName=fieldMetadata?.label
+		          ?'<strong>'+esc(fieldMetadata.label)+'</strong><small><code>'+esc(field.name)+'</code></small>'
+		          :'<strong><code>'+esc(field.name)+'</code></strong>';
+		        const highlighted=field.name===highlightedAccessField;
+		        return '<div class="access-column '+(highlighted?"highlighted":"")+'" data-access-column="'+esc(field.name)+'" data-column-kept-out="'+esc(String(kept))+'" '+(highlighted?'data-access-highlighted="true"':"")+'>'
+	          +'<span class="access-column-copy">'+fieldName+'<small>'+esc(field.data_type||source?.field_types?.[field.name]||"unknown type")+'</small>'+(fieldMetadata?.description?'<small>'+esc(fieldMetadata.description)+'</small>':"")+'<span class="access-column-risk">'+stateBadge+operationRepairBadge+unavailableBadge+'</span></span>'
 	          +tierControl
 	          +reviewForms
-	          +'</div>';
+	          +operationRepairControl
+	          +operationRepairForm
+		          +enumControl
+		          +metadataControl
+		          +'</div>';
 	      };
 	      const columnList='<div class="access-column-list" data-access-column-list>'+orderedFields.map(renderColumnRow).join("")+'</div>';
 		      const privacyButton=resource?'<button class="quiet" id="open-resource-privacy" type="button">Privacy · minimum group '+esc(resource.minimum_cohort_size)+'</button>':"";
-		      const header='<div class="split-actions"><div><h3>'+esc(selectedResource)+'</h3><p>'+(source
+		      const resourceMetadata=resource?managedMetadataReviewPanel("resource_metadata",undefined,{label:resource.label,description:resource.description}):"";
+		      const resourceHeading=resource?.label
+		        ?'<h3>'+esc(resource.label)+'</h3><p><code>'+esc(selectedResource)+'</code></p>'
+		        :'<h3>'+esc(selectedResource)+'</h3>';
+		      const serverCompatibilityLimits=[];
+		      if(databaseServerCompatibility?.authority?.features?.schema_check_constraints===false){
+		        serverCompatibilityLimits.push("Text-like categorical fields need a bounded native ENUM before Runner offers grouping or categorical filtering.");
+		      }
+		      if(databaseServerCompatibility?.authority?.features?.automatic_numeric_bands===false){
+		        serverCompatibilityLimits.push("Automatic numeric bands are unavailable.");
+		      }
+		      const serverCompatibilityNotice=databaseServerCompatibility?.tier==="compatible_limited"
+		        ?'<div class="risk"><strong>Supported limited database grammar · '+esc(databaseServerCompatibility.detected_version)+'</strong><p>'+esc(serverCompatibilityLimits.join(" "))+' Fixed bands, numeric/time analysis, derived scope, and Runner-side post-suppression calculations remain available.</p></div>'
+		        :"";
+		      const header='<div class="split-actions"><div>'+resourceHeading+'<p>'+(source
 	        ?'Choose one explicit tier per column. Visible values may enter model context. Runner-only raw fields remain usable: raw values stay local or become response-only tokens, while reviewed derived results remain available. Kept-out columns cannot be used.'
 		        :'<span class="badge bad">Blocked</span> Its columns remain visible for diagnosis, but no authority can be activated yet.')+'</p></div><div class="actions">'+privacyButton+'<button class="secondary" id="back-resources" type="button">Back to '+esc(reviewedCollectionLabel())+'</button></div></div>'
 	        +'<div class="split-actions"><div><h3>Columns</h3><p>'+(focusedAccessReview
 	          ?"Ordinary access choices are staged immediately. Exposing sensitive data still requires an explicit reviewer and reason."
 	          :"Changing a tier opens a recorded human review. It stages a new digest and never activates access by itself.")+'</p></div>'
 	        +(!resource&&source
-	          ?'<button id="include-selected-resource" class="secondary" type="button">Include this '+esc(selectedKind)+'</button>'
+	          ?boundarySpecificSharedReferenceReview
+	            ?'<span class="badge warn">Boundary-specific Shared reference review required below</span>'
+	            :'<button id="include-selected-resource" class="secondary" type="button">Include this '+esc(selectedKind)+'</button>'
 	          :resource&&source
 	            ?'<button id="remove-selected-resource" class="secondary" type="button" '+(candidate.pack.resources.length<=1?'disabled title="A boundary must retain at least one table."':"")+'>Remove this '+esc(selectedKind)+'</button>'
 	            :"")
@@ -2120,17 +3180,29 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      if(!source){
 	        const kept=fields.filter(field=>field.sensitivity?.state!=="structurally_low_risk").map(field=>field.name);
           const resolvingIdentity=!review.primary_key?.selected;
-          const kind=resolvingIdentity?"row_identity":"tenant_key";
-          const candidateValues=resolvingIdentity
-            ?review.primary_key?.candidates||[]
-            :review.tenant_key?.candidates||[];
           const decisionLabel=resolvingIdentity?"record ID backed by a unique database key":"customer-isolation column";
-          const decisionInference=resolvingIdentity?review.primary_key:review.tenant_key;
-          const resolution=candidateValues.length
-            ?'<p>Your choice updates the public DSL, canonical JSON, tests, and review fingerprint. It does not activate access.</p>'+managedScopeReviewForm(kind,decisionLabel,candidateValues,undefined,false,decisionInference)
-            :'<div class="risk high"><strong>No safe '+esc(decisionLabel)+' candidate exists.</strong><p>Add a single-column primary or unique key in the database, then rescan. Runner will not accept a friendly ORM or API name as row-identity proof.</p></div>';
-	        const blockedDetails='<details class="access-secondary" data-access-secondary open><summary>Resolve blocked access</summary><div class="risk-list">'+(review.blockers||[]).map(blocker=>'<div class="risk high"><strong>'+esc(blocker)+'</strong><p>This object stays unavailable; unrelated safe resources can continue.</p></div>').join("")+'</div><div class="scope-grid" style="margin-top:12px"><div><strong>Row identity candidates</strong><p>'+esc((review.primary_key?.candidates||[]).join(", ")||"none")+'</p></div><div><strong>Tenant candidates</strong><p>'+esc((review.tenant_key?.candidates||[]).join(", ")||"none")+'</p></div></div>'+resolution+'<p>Sensitive or unresolved fields kept unavailable: '+esc(kept.join(", ")||"none detected")+'.</p></details>';
-	        byId("resource-detail").innerHTML=header+blockedDetails+columnList;
+          const resolution=resolvingIdentity
+            ?(review.primary_key?.candidates||[]).length
+              ?'<p>Your choice updates the disabled reviewed boundary and its fingerprint. It does not activate access.</p>'+managedScopeReviewForm("row_identity",decisionLabel,review.primary_key.candidates,undefined,false,review.primary_key)
+              :'<div class="risk high"><strong>No safe '+esc(decisionLabel)+' candidate exists.</strong><p>Add a single-column primary or unique key in the database, then rescan. Runner will not accept a friendly ORM or API name as row-identity proof.</p></div>'
+            :'<p>Your choice updates the disabled reviewed boundary and its fingerprint. It does not activate access.</p>'+managedTrustedScopeReviewForm(
+              "tenant_key",
+              "customer isolation",
+              review.tenant_key?.candidates||[],
+              review.tenant_key?.selected,
+              false,
+              review.tenant_key,
+              review.derived_tenant_scope,
+              review.derived_tenant_scope?.selected?.path_id,
+              review.shared_reference_scope,
+              review.shared_reference_scope?.selected
+            );
+	        const derivedTenantCandidates=(review.derived_tenant_scope?.candidates||[]).map(derivedScopePathLabel);
+	        const scopeGuidance=review.scope_resolution_guidance;
+	        const reviewedDepth=Number(candidate?.budgets?.max_derived_scope_hops??candidate?.budgets?.max_relationship_hops??2);
+	        const scopeExplanation=scopeGuidance?'<div class="risk-list">'+scopeGuidance.why.map(reason=>'<div class="risk unresolved"><strong>Why this table is unavailable</strong><p>'+esc(reason)+'</p></div>').join("")+'</div><div class="band notice"><strong>What makes it addable</strong><ul>'+scopeGuidance.remediation.map(action=>'<li>'+esc(action)+'</li>').join("")+'</ul></div>':derivedTenantCandidates.length?'<div class="band notice"><strong>Proven tenant scope is available</strong><p>Choose one exact mandatory relationship path below. Paths are reviewed ancestor-first and remain outside model arguments.</p><ul>'+(review.derived_tenant_scope?.candidates||[]).map(path=>{const depth=path.proof?.links?.length||1;const joinColumns=derivedScopeJoinColumns(path);return '<li><strong>Tenant scope available ('+esc(depth)+' hop'+(depth===1?'':'s')+')</strong><p>'+esc(derivedScopePathChain(path))+'</p>'+(joinColumns?'<p>via columns: <code>'+esc(joinColumns)+'</code></p>':'')+'<p>path ID: <code>'+esc(path.path_id)+'</code></p>'+(depth>reviewedDepth?'<p>Needs max_derived_scope_hops '+esc(depth)+' (currently '+esc(reviewedDepth)+').</p>':'')+'</li>';}).join("")+'</ul></div>':'';
+	        const blockedDetails='<details class="access-secondary" data-access-secondary open><summary>Resolve blocked access</summary><div class="risk-list">'+(review.blockers||[]).map(blocker=>'<div class="risk high"><strong>'+esc(blocker)+'</strong><p>This object stays unavailable; unrelated safe resources can continue.</p></div>').join("")+'</div>'+scopeExplanation+'<div class="scope-grid" style="margin-top:12px"><div><strong>Row identity candidates</strong><p>'+esc((review.primary_key?.candidates||[]).join(", ")||"none")+'</p></div><div><strong>Direct tenant columns</strong><p>'+esc((review.tenant_key?.candidates||[]).join(", ")||"none")+'</p></div><div><strong>Mandatory proven tenant paths</strong><p>'+esc(derivedTenantCandidates.join("; ")||"none")+'</p></div></div>'+resolution+'<p>Sensitive or unresolved fields kept unavailable: '+esc(kept.join(", ")||"none detected")+'.</p></details>';
+	        byId("resource-detail").innerHTML=header+serverCompatibilityNotice+blockedDetails+columnList;
 		      byId("back-resources").onclick=backFromResourceDetail;
 		      if(byId("open-resource-privacy"))byId("open-resource-privacy").onclick=()=>{
 		        const section=document.querySelector("[data-cohort-review-section]");
@@ -2156,12 +3228,16 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         return '<tr><td><code>'+esc(field)+'</code></td>'+cells+'</tr>';
       }).join(""):"";
       const advanced=resource
-        ?'<details class="access-secondary" data-access-secondary><summary>Advanced field operations</summary><p>Turning a permission off narrows access. Fields hidden by Runner cannot be restored in this review.</p><div style="overflow:auto"><table class="permission-table"><thead><tr><th>Field</th>'+advancedPermissions.map(item=>'<th>'+esc(item[0])+'</th>').join("")+'</tr></thead><tbody>'+permissionRows+'</tbody></table></div></details>'
+        ?'<details class="access-secondary" data-access-secondary><summary>Advanced field operations</summary><p>Turning a permission off narrows access. Fields hidden by Runner cannot be restored here. A usable field with no analytical grants is marked above and may restore all current safe suggestions in one reviewed action.</p><div style="overflow:auto"><table class="permission-table"><thead><tr><th>Field</th>'+advancedPermissions.map(item=>'<th>'+esc(item[0])+'</th>').join("")+'</tr></thead><tbody>'+permissionRows+'</tbody></table></div></details>'
         :'<details class="access-secondary" data-access-secondary><summary>Advanced field operations</summary><p>This '+esc(selectedKind)+' is excluded. Include it before changing analytical permissions.</p></details>';
-      const sourceFields=Object.keys(source.field_types).sort();
+      const organizationScopeReview=candidate.organization_scope
+        ?'<div class="risk"><strong>Whole reviewed organization</strong><p>'+esc(candidate.organization_scope.organization_id)+' is fixed outside model arguments. This boundary applies no tenant predicate; changing that posture requires regenerating and reviewing the complete boundary.</p></div>'
+        :managedTrustedScopeReviewForm("tenant_key","customer isolation",review.tenant_key?.candidates||[],source.tenant_key,false,review.tenant_key,review.derived_tenant_scope,source.tenant_scope?.path_id,review.shared_reference_scope,source.shared_reference_scope);
       const scopeReview=resource
-        ?'<details class="access-secondary" data-access-secondary><summary>Record and customer limits</summary><p>Runner reads these values from trusted application context. The AI never supplies them.</p>'+managedScopeReviewForm("row_identity","record ID",review.primary_key?.candidates||[],source.primary_key,false,review.primary_key)+managedScopeReviewForm("tenant_key","customer-isolation column",sourceFields,source.tenant_key,false,review.tenant_key)+managedScopeReviewForm("principal_key","user/owner column",sourceFields,source.principal_key,true,review.principal_key)+'</details>'
-        :'<details class="access-secondary" data-access-secondary><summary>Record and customer limits</summary><p>This '+esc(selectedKind)+' is excluded. Include it before reviewing trusted scope.</p></details>';
+        ?'<details class="access-secondary" data-access-secondary><summary>Record and customer limits</summary><p>'+(candidate.organization_scope?'The reviewed organization is fixed outside the model. Any user/owner limit still comes from trusted application context.':'Runner reads tenant and user values from trusted application context. The AI never supplies them or controls a mandatory relationship path.')+'</p>'+managedScopeReviewForm("row_identity","record ID",review.primary_key?.candidates||[],source.primary_key,false,review.primary_key)+organizationScopeReview+managedTrustedScopeReviewForm("principal_key","user/owner limit",[...new Set([...(review.principal_key?.candidates||[]),...(review.fields||[]).filter(field=>field.nullable===false&&!/(?:bytea|blob|binary|varbinary|image)/i.test(field.data_type)).map(field=>field.name)])],source.principal_key,true,review.principal_key,review.derived_principal_scope,source.principal_scope?.path_id)+'</details>'
+        :boundarySpecificSharedReferenceReview
+          ?'<details class="access-secondary" data-access-secondary open><summary>Review Shared reference and include</summary><p>This acknowledgement belongs to the selected boundary. An acknowledgement recorded for another boundary is never copied.</p>'+managedTrustedScopeReviewForm("tenant_key","customer isolation",review.tenant_key?.candidates||[],undefined,false,review.tenant_key,review.derived_tenant_scope,undefined,review.shared_reference_scope,undefined)+'</details>'
+          :'<details class="access-secondary" data-access-secondary><summary>Record and customer limits</summary><p>This '+esc(selectedKind)+' is excluded. Include it before reviewing trusted scope.</p></details>';
       const cohortDecision=review.minimum_cohort_override;
       const cohortValue=resource?.minimum_cohort_size??5;
       const cohortWarning=cohortValue===1
@@ -2171,6 +3247,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         +(cohortDecision?'<p>Reviewed by '+esc(cohortDecision.actor)+' at '+esc(cohortDecision.decided_at)+': '+esc(cohortDecision.reason)+'</p>':"")
         +cohortWarning
         +'<div class="review-form" data-cohort-review-form><div class="form-grid"><label class="field">Minimum group size<select data-cohort-review-value><option value="5" '+(cohortValue===5?"selected":"")+'>5 — default; hide groups with 1–4 rows</option><option value="4" '+(cohortValue===4?"selected":"")+'>4 — hide groups with 1–3 rows</option><option value="3" '+(cohortValue===3?"selected":"")+'>3 — hide groups with 1–2 rows</option><option value="2" '+(cohortValue===2?"selected":"")+'>2 — hide groups with 1 row</option><option value="1" '+(cohortValue===1?"selected":"")+'>1 — show every non-empty group; suppression off</option></select></label><label class="field">Human reviewer<input data-cohort-review-actor type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><label class="field">Reason for this privacy setting<textarea data-cohort-review-reason maxlength="500" rows="2" placeholder="Explain why this minimum group size is appropriate for this table."></textarea></label></div><div class="actions"><button data-submit-cohort-review type="button">Save privacy change</button></div><span data-cohort-review-status class="status-message"></span></div></details>':"";
+      const reviewedAnalytics=resource?reviewedAnalyticsPanel(resource):"";
       const unresolvedRelationship=resource?.relationships.some(relationship=>relationship.unmatched_rows==="review_required");
       const relationshipReview=resource?.relationships.length
         ?'<details class="access-secondary" data-access-secondary '+(focusedAccessReview&&unresolvedRelationship?"open":"")+'><summary>Reviewed related data'+(unresolvedRelationship?" · choice required":"")+'</summary><p>Only database foreign keys that cannot multiply '+esc(source.table)+' records are available. The AI cannot invent another join.</p><div class="risk-list">'+resource.relationships.map(relationship=>{
@@ -2186,7 +3263,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      const resourceSignoff=focusedAccessReview
 	        ?'<div class="band notice"><strong>One final confirmation, not one checkbox per table.</strong><p>Step 2 shows this table together with the complete boundary, then records every exact digest-bound decision at once.</p></div>'
 	        :'<div class="actions"><label class="check"><input id="resource-signoff" type="checkbox" data-review-decision="'+esc(selectedResource)+'" '+(resourceConfirmed?"checked":"")+(resource&&!unresolvedRelationship?"":" disabled")+'><span>I reviewed which records and fields this agent may use, including privacy limits and related data.</span></label></div>';
-		      byId("resource-detail").innerHTML=header+columnList+scopeReview+relationshipReview+cohortReview+advanced+resourceSignoff;
+	      byId("resource-detail").innerHTML=header+serverCompatibilityNotice+resourceMetadata+columnList+scopeReview+relationshipReview+cohortReview+reviewedAnalytics+advanced+resourceSignoff;
 	      byId("back-resources").onclick=backFromResourceDetail;
 	      if(byId("open-resource-privacy"))byId("open-resource-privacy").onclick=()=>{
 	        const section=document.querySelector("[data-cohort-review-section]");
@@ -2200,7 +3277,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         renderResourceDetail();
       });
       byId("remove-selected-resource")?.addEventListener("click",()=>{
-        toggleResource(selectedResource,false);
+        if(!toggleResource(selectedResource,false))return;
         selectedResource=null;
         renderResourceNavigation();
         renderResourceDetail();
@@ -2222,10 +3299,17 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         }
       });
       document.querySelectorAll("[data-open-field-review]").forEach(button=>button.onclick=()=>openManagedFieldReview(button.dataset.openFieldReview,button.dataset.exposure));
-      document.querySelectorAll("[data-submit-field-review]").forEach(button=>button.onclick=()=>submitManagedFieldReview(button.dataset.submitFieldReview,button.dataset.exposure));
-      document.querySelectorAll("[data-cancel-field-review]").forEach(button=>button.onclick=()=>button.closest("[data-managed-review-form]").classList.add("hidden"));
+	      document.querySelectorAll("[data-restore-field-operations]").forEach(button=>button.onclick=()=>{
+	        if(focusedAccessReview)submitFocusedFieldReview(button.dataset.restoreFieldOperations,button.dataset.exposure);
+	        else openManagedFieldReview(button.dataset.restoreFieldOperations,button.dataset.exposure);
+	      });
+	      document.querySelectorAll("[data-submit-field-review]").forEach(button=>button.onclick=()=>submitManagedFieldReview(button.dataset.submitFieldReview,button.dataset.exposure));
+	      document.querySelectorAll("[data-cancel-field-review]").forEach(button=>button.onclick=()=>button.closest("[data-managed-review-form]").classList.add("hidden"));
+	      document.querySelectorAll("[data-submit-enum-review]").forEach(button=>button.onclick=()=>submitManagedEnumReview(button.dataset.submitEnumReview,button.closest("[data-enum-review-form]")));
+      document.querySelectorAll("[data-submit-metadata-review]").forEach(button=>button.onclick=()=>submitManagedMetadataReview(button.closest("[data-metadata-review-form]")));
       document.querySelectorAll("[data-submit-scope-review]").forEach(button=>button.onclick=()=>submitManagedScopeReview(button.dataset.submitScopeReview,button.closest("[data-scope-review-form]")));
       document.querySelectorAll("[data-submit-cohort-review]").forEach(button=>button.onclick=()=>submitManagedCohortReview(button.closest("[data-cohort-review-form]")));
+      if(resource)wireReviewedAnalytics(resource);
       document.querySelectorAll("[data-permission-field]").forEach(input=>input.onchange=()=>setPermission(selectedResource,input.dataset.permissionField,input.dataset.permissionKey,input.checked));
       document.querySelectorAll("[data-relationship-semantics]").forEach(input=>input.onchange=()=>setRelationshipSemantics(selectedResource,input.dataset.relationshipSemantics,input.value));
       if(byId("resource-signoff"))byId("resource-signoff").onchange=async event=>{
@@ -2263,8 +3347,19 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       if(decision.startsWith("trusted context:"))return "Your application chooses the customer and user. The AI cannot change either.";
       if(decision.startsWith("database role:"))return "The database login is verified read-only and cannot bypass row security.";
       if(decision.includes(": confirm tenant key "))return decision.slice(0,decision.indexOf(":"))+": confirm the customer-isolation column.";
+      if(decision.includes(": confirm mandatory derived tenant scope ")){
+        const resource=reviewResource(decision.slice(0,decision.indexOf(":")));
+        const scope=resource?.derived_tenant_scope?.selected;
+        return scope?resource.id+": confirm customer isolation through the "+derivedScopePathLabel(scope)+".":decision;
+      }
+      if(decision.includes(": confirm mandatory derived principal scope ")){
+        const resource=reviewResource(decision.slice(0,decision.indexOf(":")));
+        const scope=resource?.derived_principal_scope?.selected;
+        return scope?resource.id+": confirm user/owner isolation through the "+derivedScopePathLabel(scope)+".":decision;
+      }
       if(decision.includes(": confirm principal scope "))return decision.slice(0,decision.indexOf(":"))+": confirm whether each user is limited to their own rows.";
       if(decision.endsWith(": confirm visible and kept-out fields"))return decision.slice(0,decision.indexOf(":"))+": confirm which fields are model-visible, withheld from the model, or kept out.";
+      if(decision.endsWith(": confirm reviewed labels and descriptions"))return decision.slice(0,decision.indexOf(":"))+": confirm the reviewed human-readable names and descriptions for these exact database IDs.";
       if(decision.endsWith(": confirm filter/sort/group/aggregate-only field permissions"))return decision.slice(0,decision.indexOf(":"))+": confirm how fields may be searched, sorted, grouped, or totaled.";
       if(decision.endsWith(": confirm minimum cohort and extraction/differencing budgets"))return decision.slice(0,decision.indexOf(":"))+": confirm privacy and result-size limits.";
       if(decision.includes(": review relationship "))return decision.slice(0,decision.indexOf(":"))+": confirm this reviewed table relationship cannot widen access.";
@@ -2300,15 +3395,24 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         const unresolvedRelationship=candidate.pack.resources
           .flatMap(resource=>(resource.relationships||[]).map(relationship=>({resource,relationship})))
           .find(item=>item.relationship.unmatched_rows==="review_required");
-        const rows=candidate.pack.resources.map(resource=>{
-          const modelFields=(resource.selectable_fields||[]).filter(field=>!(resource.model_withheld_fields||[]).includes(field));
-          const runnerFields=resource.model_withheld_fields||[];
-          const links=(resource.relationships||[]).map(relationship=>relationship.target_resource);
-          const fieldCell=(fields,label)=>'<strong>'+esc(fields.length)+'</strong> '+esc(label)+'<small>'+esc(fields.join(", ")||"None")+'</small>';
-          const principalScope=resource.principal_key
-            ?'Principal required: '+resource.principal_key+' via '+candidate.trusted_context.principal_env
-            :'Principal: not required';
-          return '<tr><td><strong>'+esc(resource.id)+'</strong><small>Tenant scope: '+esc(resource.tenant_key)+' · '+esc(principalScope)+' · minimum group '+esc(resource.minimum_cohort_size)+'</small></td>'
+	        const rows=candidate.pack.resources.map(resource=>{
+	          const modelFields=(resource.selectable_fields||[]).filter(field=>!(resource.model_withheld_fields||[]).includes(field));
+	          const runnerFields=resource.model_withheld_fields||[];
+	          const links=(resource.relationships||[]).map(relationship=>relationship.target_resource);
+	          const resourceReview=reviewResource(resource.id);
+	          const disabledEnums=(resourceReview?.fields||[])
+	            .filter(field=>field.enum_review_override&&field.enum_review_override.values.length===0)
+	            .map(field=>field.name);
+	          const enumSummary=[
+	            ...Object.entries(resource.field_enums||{}).map(([field,values])=>field+": "+values.join(" | ")),
+	            ...disabledEnums.map(field=>field+": none (filter/group disabled)")
+	          ];
+		          const fieldDisplay=field=>resource.field_metadata?.[field]?.label?resource.field_metadata[field].label+" ("+field+")":field;
+		          const fieldCell=(fields,label)=>'<strong>'+esc(fields.length)+'</strong> '+esc(label)+'<small>'+esc(fields.map(fieldDisplay).join(", ")||"None")+'</small>';
+		          const tenantScope=reviewedTenantScopeLabel(resource,resourceReview);
+		          const principalScope=reviewedPrincipalScopeLabel(resource,resourceReview);
+		          const resourceName=resource.label?resource.label+" ("+resource.id+")":resource.id;
+		          return '<tr><td><strong>'+esc(resourceName)+'</strong>'+(resource.description?'<small>'+esc(resource.description)+'</small>':'')+'<small>Tenant scope: '+esc(tenantScope)+' · Principal scope: '+esc(principalScope)+' · minimum group '+esc(resource.minimum_cohort_size)+'</small><small>Allowed categorical values: '+esc(enumSummary.join("; ")||"None")+'</small></td>'
             +'<td>'+fieldCell(modelFields,"model-visible")+'</td>'
             +'<td>'+fieldCell(runnerFields,"Runner-only")+'</td>'
             +'<td>'+fieldCell(resource.kept_out_fields||[],"kept out")+'</td>'
@@ -2346,15 +3450,16 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const decisionLabel=collectionLabel==="tables"?"table":"table/view";
       const nextBlocker=outstanding[0];
       const signoffsRemaining=remainingResources.length+(globalOutstanding.length?1:0);
-      byId("signoff-summary").innerHTML='<h3>'+(signoffsRemaining?esc(signoffsRemaining)+' review sign-off'+(signoffsRemaining===1?"":"s")+' remaining':'Review complete')+'</h3>'
+	      const fieldAccess=totalReviewedFieldAccess(candidate.pack.resources);
+	      byId("signoff-summary").innerHTML='<h3>'+(signoffsRemaining?esc(signoffsRemaining)+' review sign-off'+(signoffsRemaining===1?"":"s")+' remaining':'Review complete')+'</h3>'
         +(outstanding.length
           ?'<p><strong>One next step:</strong> '+esc(humanDecision(nextBlocker))+'</p><p>Each '+esc(decisionLabel)+' sign-off confirms its fields, operations, trusted scope, privacy limits, and reviewed relationships together. Runner still records all '+esc(total)+' exact digest-bound decisions underneath.</p><button id="review-next-blocker" class="secondary" type="button">Go to next sign-off</button>'
           :'<p>Every boundary-wide and '+esc(decisionLabel)+' sign-off is confirmed. Runner recorded all '+esc(total)+' exact digest-bound decisions.</p>')
         +(reviewInvalidations.length?'<p>'+esc(reviewInvalidations.length)+' earlier confirmation'+(reviewInvalidations.length===1?" was":"s were")+' invalidated because reviewed inputs changed.</p>':"")
         +'<p>'+esc(collectionLabel.replace(/\\b\\w/g,char=>char.toUpperCase()))+': '+esc(candidate.pack.resources.length)
-        +' / Model-visible fields: '+esc(candidate.pack.resources.reduce((sum,resource)=>sum+resource.selectable_fields.filter(field=>!(resource.model_withheld_fields||[]).includes(field)).length,0))
-        +' / Model-withheld fields: '+esc(candidate.pack.resources.reduce((sum,resource)=>sum+(resource.model_withheld_fields||[]).length,0))
-        +' / Kept-out fields: '+esc(candidate.pack.resources.reduce((sum,resource)=>sum+resource.kept_out_fields.length,0))+'</p>';
+	        +' / Model-visible fields: '+esc(fieldAccess.visible)
+	        +' / Model-withheld fields: '+esc(fieldAccess.runnerOnly)
+	        +' / Kept-out fields: '+esc(fieldAccess.keptOut)+'</p>';
       byId("review-next-blocker")?.addEventListener("click",()=>{
         const separator=nextBlocker.indexOf(": ");
         if(separator>0&&reviewResource(nextBlocker.slice(0,separator))){
@@ -2463,6 +3568,138 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      }
     }
 
+    function rescanList(value){
+      return Array.isArray(value)?value:[];
+    }
+
+    function rescanPlural(count,singular,plural){
+      return Number(count)===1?singular:plural;
+    }
+
+    function rescanPreservedAuthority(value){
+      const direct=value&&value.preserved_authority;
+      if(direct&&typeof direct==="object"){
+        return {
+          resources:Number(direct.resources)||0,
+          reviewed_paths:Number(direct.reviewed_paths)||0,
+          field_policies:Number(direct.field_policies)||0
+        };
+      }
+      return {
+        resources:rescanList(value&&value.retained_resources).length,
+        reviewed_paths:0,
+        field_policies:0
+      };
+    }
+
+    function rescanPreservedAuthorityText(value){
+      const preserved=rescanPreservedAuthority(value);
+      return preserved.resources+" "+rescanPlural(preserved.resources,"table","tables")+", "+
+        preserved.reviewed_paths+" reviewed "+rescanPlural(preserved.reviewed_paths,"path","paths")+", "+
+        preserved.field_policies+" field "+rescanPlural(preserved.field_policies,"policy","policies");
+    }
+
+    function rescanRelationshipDetail(relationship,state){
+      const action=state==="removed"?"reviewed relationship was removed":"new relationship is available to review";
+      const links=rescanList(relationship&&relationship.path_links);
+      if(!links.length)return relationship.resource_id+"."+relationship.relationship_id+": "+action;
+      const resources=[relationship.resource_id];
+      for(const link of links){
+        if(resources[resources.length-1]!==link.source_resource)resources.push(link.source_resource);
+        if(resources[resources.length-1]!==link.target_resource)resources.push(link.target_resource);
+      }
+      if(resources[resources.length-1]!==relationship.target_resource)resources.push(relationship.target_resource);
+      const namespaces=resources.map(resource=>{
+        const separator=String(resource).lastIndexOf(".");
+        return separator>0?String(resource).slice(0,separator):null;
+      });
+      const namespace=namespaces[0]&&namespaces.every(value=>value===namespaces[0])?namespaces[0]:null;
+      const path=resources.map(resource=>namespace?String(resource).slice(namespace.length+1):String(resource)).join(" -> ");
+      const columns=links.map(link=>rescanList(link.source_columns).join(", "));
+      const depth=Number(relationship.path_depth)||links.length;
+      return [
+        relationship.resource_id+": "+action+" ("+depth+" "+rescanPlural(depth,"hop","hops")+")",
+        "  "+path,
+        ...(columns.every(Boolean)?["  via columns: "+columns.join(" -> ")]:[]),
+        "  path ID: "+relationship.relationship_id
+      ].join("\\n");
+    }
+
+    function rescanDetailMarkup(detail){
+      return esc(detail).replace(/\\n/g,"<br>");
+    }
+
+    function rescanBoundaryDetails(boundary){
+      const details=[];
+      for(const decision of rescanList(boundary.invalidated_decisions)){
+        details.push(decision.id+": "+(decision.reason==="decision_removed"?"reviewed input no longer exists":"reviewed input changed"));
+      }
+      for(const field of rescanList(boundary.changed_field_types))details.push(field.resource_id+"."+field.field+": reviewed column type changed");
+      for(const field of rescanList(boundary.removed_fields))details.push(field.resource_id+"."+field.field+": reviewed column removed");
+      for(const relationship of rescanList(boundary.removed_relationships))details.push(rescanRelationshipDetail(relationship,"removed"));
+      for(const resource of rescanList(boundary.removed_resources))details.push(resource+": reviewed table removed");
+      for(const resource of rescanList(boundary.newly_available_resources))details.push(resource+": new table available to review");
+      for(const item of rescanList(boundary.newly_proven_value_allowlists))details.push(item.resource_id+"."+item.field+": an enforced schema vocabulary now narrows existing filter/group authority to "+item.value_count+" reviewed values; confirm field permissions, then activate");
+      for(const detail of rescanList(boundary.pruned_review_inputs))details.push(detail);
+      for(const field of rescanList(boundary.newly_available_fields))details.push(field.resource_id+"."+field.field+": new column kept out until reviewed");
+      for(const relationship of rescanList(boundary.newly_available_relationships))details.push(rescanRelationshipDetail(relationship,"new"));
+      return details;
+    }
+
+    function renderProjectRescanPreview(diff){
+      const totals=diff&&diff.totals?diff.totals:{};
+      const changed=Boolean(diff&&diff.changed);
+      const baselineRefreshed=Boolean(diff&&diff.authoring_baseline_refreshed);
+      const title=changed?"Review changes found":baselineRefreshed?"Authoring baseline repair available":"No reviewed changes found";
+      const summary=changed
+        ?"Runner found reviewed inputs that need a disabled reconciled revision. Existing active authority remains unchanged."
+        :baselineRefreshed
+          ?"The reviewed database and authority are unchanged, but the private boundary-authoring baseline is stale. Repairing it restores new-boundary authoring in both CLI and Workbench without changing any reviewed revision."
+          :"The reviewed schema, database-server capabilities, database-role posture, trusted context, and private authoring baseline already match. Nothing needs to be applied.";
+      const facts=[
+        ["Schema",diff&&diff.schema_changed?"Changed":"Unchanged"],
+        ["Database capabilities",diff&&diff.database_server_authority_changed?"Changed":"Unchanged"],
+        ["Database role",diff&&diff.role_posture_changed?"Changed":"Unchanged"],
+        ["Trusted context",diff&&diff.trusted_context_changed?"Changed":"Unchanged"],
+        ["Boundaries checked",totals.boundaries??0],
+        ["Reviewed authority preserved",rescanPreservedAuthorityText(totals)],
+        ["Prior decisions invalidated",totals.invalidated_decisions??0],
+        ["Newly proven value allowlists",totals.newly_proven_value_allowlists??0],
+        ["Newly available",(totals.newly_available_resources??0)+" tables, "+(totals.newly_available_fields??0)+" columns, "+(totals.newly_available_relationships??0)+" relationships"],
+        ["Removed",(totals.removed_resources??0)+" tables, "+(totals.removed_fields??0)+" columns, "+(totals.removed_relationships??0)+" relationships"]
+      ];
+      const factRows=facts.map(item=>'<tr><th>'+esc(item[0])+'</th><td>'+esc(item[1])+'</td></tr>').join("");
+      const trustedChanges=rescanList(diff&&diff.trusted_context_changes);
+      const trustedMarkup=trustedChanges.length
+        ?'<h4>Trusted-context changes</h4><ul>'+trustedChanges.map(change=>'<li>'+esc(change)+'</li>').join("")+'</ul>'
+        :"";
+      const serverChanges=rescanList(diff&&diff.database_server_authority_changes);
+      const serverMarkup=serverChanges.length
+        ?'<h4>Database capability changes</h4><ul>'+serverChanges.map(change=>'<li>'+esc(change)+'</li>').join("")+'</ul>'
+        :"";
+      const boundaryRows=rescanList(diff&&diff.boundaries).map(boundary=>{
+        const details=rescanBoundaryDetails(boundary);
+        const shown=details.slice(0,8).map(detail=>'<li>'+rescanDetailMarkup(detail)+'</li>').join("");
+        const more=details.length>8?'<li>+'+esc(details.length-8)+' more changes are available in the boundary review.</li>':"";
+        const detailMarkup=details.length?'<ul>'+shown+more+'</ul>':'No reviewed inputs changed.';
+        return '<tr><td data-label="Boundary"><code>'+esc(boundary.boundary_name)+'</code></td><td data-label="Preserved">'+esc(rescanPreservedAuthorityText(boundary))+'</td><td data-label="Invalidated">'+esc(rescanList(boundary.invalidated_decisions).length)+'</td><td data-label="Details">'+detailMarkup+'</td></tr>';
+      }).join("");
+      const boundariesMarkup=boundaryRows
+        ?'<h4>Boundary reconciliation</h4><div class="result-table"><table><thead><tr><th>Boundary</th><th>Preserved authority</th><th>Invalidated</th><th>Details</th></tr></thead><tbody>'+boundaryRows+'</tbody></table></div>'
+        :"";
+      const action=changed
+        ?'<button id="apply-rescan" type="button">Apply disabled reconciliation</button>'
+        :baselineRefreshed
+          ?'<button id="apply-rescan" type="button">Repair authoring baseline</button>'
+          :"";
+      const consequence=changed
+        ?"Applying writes only a disabled reconciled revision. Review and activation remain separate."
+        :baselineRefreshed
+          ?"Applying repairs private authoring state only. No boundary review is required."
+          :"No generated file, active boundary, protected capability, ledger record, or source row changed.";
+      return '<h3>'+esc(title)+'</h3><p>'+esc(summary)+'</p><div class="result-table"><table><tbody>'+factRows+'</tbody></table></div>'+trustedMarkup+serverMarkup+boundariesMarkup+'<p>'+esc(consequence)+'</p>'+action;
+    }
+
     async function previewProjectRescan(){
       const panel=byId("project-action-message");
       try{
@@ -2470,15 +3707,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         panel.innerHTML="<p>Inspecting current metadata and computing a semantic diff. Nothing is being replaced...</p>";
         const payload=await post("/api/project/rescan",{});
         const diff=payload.diff;
-        const lines=[
-          "Resources: "+diff.resources_before+" → "+diff.resources_after,
-          "Added: "+(diff.added_resources.join(", ")||"none"),
-          "Removed: "+(diff.removed_resources.join(", ")||"none"),
-          "Changed: "+(diff.changed_resources.join(", ")||"none"),
-          "Review inputs no longer valid: "+(diff.pruned_review_inputs.join("; ")||"none")
-        ];
-        panel.innerHTML='<h3>Rescan preview</h3><p>'+lines.map(esc).join("<br>")+'</p><p>No generated file, active boundary, protected capability, ledger record, or source row changed.</p><button id="apply-rescan" type="button">Apply this disabled rescan</button>';
-        byId("apply-rescan").onclick=()=>applyProjectRescan(payload.preview_digest);
+        panel.innerHTML=renderProjectRescanPreview(diff);
+        const apply=byId("apply-rescan");
+        if(apply)apply.onclick=()=>applyProjectRescan(payload.preview_digest);
       }catch(error){
         panel.className="review-form error";
         panel.textContent=error.message;
@@ -2489,7 +3720,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const panel=byId("project-action-message");
       try{
         panel.className="review-form";
-        panel.textContent="Rechecking the preview and replacing only managed boundary artifacts...";
+	        panel.textContent="Rechecking the preview and applying only its reviewed reconciliation...";
 	        const payload=await post("/api/project/rescan/apply",{
           expected_digest:digest,
           confirmation:"RESCAN "+digest
@@ -2498,7 +3729,11 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	        accessBaselineColumns=null;
 	        await load();
         panel.className="review-form success";
-        panel.textContent=payload.message+" Next: Review the changed boundary.";
+        panel.textContent=payload.message+(payload.diff&&payload.diff.changed
+          ?" Next: Review the changed boundary."
+          :payload.diff&&payload.diff.authoring_baseline_refreshed
+            ?" You can create or edit boundaries now; no boundary review is required for this repair."
+            :"");
       }catch(error){
         panel.className="review-form error";
         panel.textContent=error.message;
@@ -2572,6 +3807,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       try{
         const payload=await getJson("/api/ask/status");
         askStatus=payload;
+        boundaryCatalog=payload.boundary_catalog||boundaryCatalog;
+        boundaryMermaid=payload.boundary_mermaid||boundaryMermaid;
+        boundaryDiagrams=payload.boundary_diagrams||boundaryDiagrams;
         shell.classList.remove("hidden");
         renderAskStatus();
       }catch(error){
@@ -2639,9 +3877,16 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       if(session.configuration){
         byId("ask-provider").value=session.configuration.provider;
         byId("ask-model").value=session.configuration.model;
+        byId("ask-timeout").value=String(session.configuration.request_timeout_seconds||"");
+        byId("ask-session-token-budget").value=String(session.configuration.session_token_budget||200000);
+        byId("ask-max-output-tokens").value=session.configuration.max_output_tokens===undefined?"":String(session.configuration.max_output_tokens);
+        byId("ask-live-session-token-budget").value=String(session.configuration.session_token_budget||200000);
+        byId("ask-live-max-output-tokens").value=session.configuration.max_output_tokens===undefined?"":String(session.configuration.max_output_tokens);
+        const tokenUsage=session.token_usage||{reported_tokens:0,session_token_budget:session.configuration.session_token_budget||200000,remaining_reported_tokens:session.configuration.session_token_budget||200000};
+        byId("ask-limit-usage").textContent=Number(tokenUsage.reported_tokens||0).toLocaleString()+" / "+Number(tokenUsage.session_token_budget||0).toLocaleString()+" reported tokens · "+Number(tokenUsage.remaining_reported_tokens||0).toLocaleString()+" remaining";
         updateAskProviderFields(false);
         byId("ask-configured-model").textContent=providerLabel(session.configuration.provider)+" · "+session.configuration.model;
-        byId("ask-configured-detail").textContent="Direct to "+session.configuration.endpoint_origin+" · "+credentialSourceLabel(session.configuration.credential_source)+" · no Synapsor relay or saved conversation.";
+        byId("ask-configured-detail").textContent="Direct to "+session.configuration.endpoint_origin+" · "+session.configuration.request_timeout_seconds+"s per model request · "+Number(session.configuration.session_token_budget||200000).toLocaleString()+" reported tokens per session · "+credentialSourceLabel(session.configuration.credential_source)+" · no Synapsor relay or saved conversation.";
         byId("ask-config-status").className="status-message";
         byId("ask-config-status").textContent=consentCurrent
           ?"Ready. Provider key and conversation remain in this Workbench process only."
@@ -2789,6 +4034,15 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           reload:true
         };
       }
+      if(code==="ASK_SESSION_TOKEN_BUDGET_EXCEEDED"||code==="ASK_SESSION_TOKEN_BUDGET_BELOW_USAGE"){
+        return {
+          title:"Ask session token limit reached",
+          message:error.message,
+          detail:error.payload?.next_action||"Raise the reported-token budget without clearing this conversation.",
+          action:"Open Ask limits",
+          limits:true
+        };
+      }
       if(code.startsWith("ASK_PROVIDER_")){
         return {
           title:"The model provider could not complete this request",
@@ -2832,7 +4086,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           ?reviewedFields(relationship[key])
           :relationship[key]||[];
         related.forEach(field=>values.push(
-          fieldLabel(relationship,field)+" from "+(relationship.label||humanizeIdentifier(relationship.target_resource))
+          fieldLabel(relationship,field)+" from "+relationshipTargetLabel(relationship)
         ));
       }
       return [...new Set(values)];
@@ -2858,7 +4112,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const totalMeasures=resources.reduce((count,resource)=>
         count+1+askBoundaryValues(resource,"aggregate_measures").length+askBoundaryValues(resource,"count_distinct_fields").length,0);
       const collectionLabel=reviewedCollectionLabelForResources(resources);
-      summary.textContent=resources.length+" "+(resources.length===1?(collectionLabel==="tables"?"table":"table or view"):collectionLabel)+" · "+totalMeasures+" measure"+(totalMeasures===1?"":"s")+" · "+totalGroups+" grouping"+(totalGroups===1?"":"s");
+      const reviewedJoins=boundaryCatalog?.relationship_count||0;
+      summary.textContent=resources.length+" "+(resources.length===1?(collectionLabel==="tables"?"table":"table or view"):collectionLabel)+" · "+totalMeasures+" measure"+(totalMeasures===1?"":"s")+" · "+totalGroups+" grouping"+(totalGroups===1?"":"s")+" · "+reviewedJoins+" join"+(reviewedJoins===1?"":"s");
       const resourceSignature=resources.map(resource=>resource.id||resource.table||describedResourceLabel(resource)).join("|");
       if(resourceSignature!==askBoundaryResourceSignature){
         askBoundaryResourceSignature=resourceSignature;
@@ -2875,11 +4130,20 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         const groups=askBoundaryValues(resource,"groupable_fields");
         const dates=askBoundaryValues(resource,"time_bucket_fields");
         const filters=askBoundaryValues(resource,"filterable_fields");
-        return '<section class="ask-boundary-resource"><h4>'+esc(describedResourceLabel(resource))+'</h4>'
+        const catalogBoundary=(boundaryCatalog?.boundaries||[]).find(boundary=>
+          !resource.boundary_name||boundary.name===resource.boundary_name
+        );
+        const joins=(catalogBoundary?.relationships||[]).filter(relationship=>
+          relationship.source_table===(resource.id||resource.table)
+        );
+	        return '<section class="ask-boundary-resource"><h4>'+esc(describedResourceLabel(resource))+'</h4>'
+	          +(resource.label?'<p><code>'+esc(resource.id)+'</code></p>':'')
+	          +(resource.description?'<p>'+esc(resource.description)+'</p>':'')
           +'<div class="ask-boundary-row"><strong>Calculate</strong><span>'+esc(measures.join(" · ")||"Record count")+'</span></div>'
           +'<div class="ask-boundary-row"><strong>Compare by</strong><span>'+esc(groups.join(" · ")||"No reviewed grouping")+'</span></div>'
           +'<div class="ask-boundary-row"><strong>Time</strong><span>'+esc(dates.join(" · ")||"No reviewed time field")+'</span></div>'
           +'<div class="ask-boundary-row"><strong>Filter by</strong><span>'+esc(filters.join(" · ")||"No reviewed filters")+'</span></div>'
+          +'<div class="ask-boundary-row"><strong>Joins</strong><span>'+(joins.length?joins.map(relationship=>'→ '+esc(relationship.target_table)+' · '+esc(relationship.cardinality.replaceAll("_","-"))+' · '+(relationship.proven?'proven':'unproven')).join('<br>'):'No reviewed join from this table')+'</span></div>'
           +'</section>';
       }).join("");
       const examples=askStarterPrompts.slice(0,3).map((prompt,index)=>
@@ -2891,6 +4155,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       body.innerHTML='<p class="ask-boundary-intro">These are the exact analytical choices available to this conversation. Anything not shown remains outside the model tool surface.</p>'
         +'<div class="ask-boundary-grid">'+cards+'</div>'
         +pagination
+        +renderBoundaryRelationshipMap(boundaryCatalog,boundaryDiagrams)
         +(examples?'<div class="ask-boundary-examples">'+examples+'</div>':"")
         +askBoundaryEditAction();
       const previous=byId("ask-boundary-previous");
@@ -2902,6 +4167,266 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         byId("ask-question").focus();
       });
       wireAskBoundaryEditAction();
+      wireBoundaryRelationshipMaps(body);
+    }
+
+    function boundaryOperationList(labels){
+      const items=labels.length?labels:['No reviewed operations'];
+      return '<ul class="boundary-operation-list">'+items.map(label=>'<li class="'+(labels.length?'':'unavailable')+'">'+esc(label)+'</li>').join('')+'</ul>';
+    }
+
+    function boundaryIdentifierDisplay(value){
+      return esc(value).replaceAll('.', '.<wbr>').replaceAll('_', '_<wbr>');
+    }
+
+    function renderBoundaryFieldMatrix(table){
+      const fields=table.model_visible_fields||[];
+      if(!fields.length)return '';
+      const exact=[];
+      const rows=fields.map(field=>{
+        const operations=field.operations||{};
+        const filterOperators=operations.filter_operators||[];
+        const timeBuckets=operations.time_buckets||[];
+        const group=operations.group===true||(table.groupable_fields||[]).includes(field.name);
+        const measure=operations.measure===true||(table.aggregate_measures||[]).includes(field.name);
+        const distinct=operations.distinct===true||(table.count_distinct_fields||[]).includes(field.name);
+        const time=timeBuckets.length>0||(table.time_bucket_fields||[]).includes(field.name);
+        const detail=[];
+        if(filterOperators.length)detail.push('filter: '+filterOperators.join(', '));
+        if(timeBuckets.length)detail.push('time: '+timeBuckets.join(', '));
+        if(detail.length)exact.push('<li><code>'+esc(field.name)+'</code><span>'+esc(detail.join(' · '))+'</span></li>');
+        const reviewed=[];
+        if(operations.return_value!==false)reviewed.push('Return value');
+        if(filterOperators.length>0)reviewed.push('Filter');
+        if(operations.sort===true)reviewed.push('Sort');
+        if(group)reviewed.push('Group / band');
+        if(measure)reviewed.push('Numeric measure');
+        if(operations.presence===true)reviewed.push('Missing-data measure');
+        if(distinct)reviewed.push('Distinct count');
+        if(time)reviewed.push('Time bucket');
+        return '<tr><th scope="row"><code>'+esc(field.name)+'</code><small>'+esc(field.data_type||'reviewed')+'</small></th>'
+          +'<td>'+boundaryOperationList(reviewed)+'</td>'
+          +'</tr>';
+      }).join('');
+      return '<div class="boundary-field-matrix-wrap"><table class="boundary-field-matrix"><thead><tr><th>Field and database type</th><th>Reviewed operations</th></tr></thead><tbody>'+rows+'</tbody></table></div>'
+        +(exact.length?'<details class="boundary-field-exact"><summary>Exact filter and time vocabularies</summary><ul>'+exact.join('')+'</ul></details>':'');
+    }
+
+    function boundaryRelationshipDisplay(relationship){
+      const links=(relationship.links||[]).length?relationship.links:[{source_table:relationship.source_table,target_table:relationship.target_table,source_key:relationship.source_key,target_key:relationship.target_key}];
+      const resources=[links[0]?.source_table||relationship.source_table,...links.map(link=>link.target_table)];
+      const schemas=resources.map(resource=>resource.includes('.')?resource.slice(0,resource.indexOf('.')):'');
+      const commonSchema=schemas[0]&&schemas.every(schema=>schema===schemas[0]);
+      const short=resource=>commonSchema?resource.slice(resource.indexOf('.')+1):resource;
+      return {
+        chain:resources.map(short).join(' -> '),
+        via:links.map(link=>link.source_key).join(' -> ')
+      };
+    }
+
+    function renderBoundaryRelationshipMap(model,diagrams){
+      const boundaries=model?.boundaries||[];
+      if(!boundaries.length)return '';
+      const preferred=[boundaryLibrary?.selected_name,activeBoundary?.pack?.name]
+        .find(name=>boundaries.some(boundary=>boundary.name===name))||boundaries[0].name;
+      const options=boundaries.map(boundary=>
+        '<option value="'+esc(boundary.name)+'" '+(boundary.name===preferred?'selected':'')+'>'
+        +esc(boundary.name)+' · '+esc(boundary.tables.length)+' table'
+        +(boundary.tables.length===1?'':'s')+'</option>').join('');
+      const sections=boundaries.map(boundary=>{
+        const diagram=(diagrams||[]).find(item=>item.boundary_name===boundary.name)||{};
+        const nodes=(boundary.tables||[]).map(table=>{
+          const hidden=[];
+          if(table.runner_only_field_count)hidden.push(table.runner_only_field_count+' Runner-only');
+          if(table.kept_out_field_count)hidden.push(table.kept_out_field_count+' kept out');
+          const runnerOnly=table.runner_only_analysis||{};
+          const runnerAnalysis=[];
+          if((runnerOnly.aggregate_measures||[]).length)runnerAnalysis.push('totals/averages: '+runnerOnly.aggregate_measures.join(', ')+' (raw values withheld)');
+          if((runnerOnly.count_distinct_fields||[]).length)runnerAnalysis.push('unique counts: '+runnerOnly.count_distinct_fields.join(', ')+' (raw values withheld)');
+          if((runnerOnly.groupable_fields||[]).length)runnerAnalysis.push('group by: '+runnerOnly.groupable_fields.join(', ')+' (labels tokenized)');
+          if((runnerOnly.time_bucket_fields||[]).length)runnerAnalysis.push('time: '+runnerOnly.time_bucket_fields.join(', ')+' (labels tokenized)');
+          return '<div class="boundary-catalog-node"><strong>'+boundaryIdentifierDisplay(table.id)+'</strong>'
+            +renderBoundaryFieldMatrix(table)
+            +(runnerAnalysis.length?'<small class="boundary-catalog-capabilities"><strong>Runner-only analysis:</strong> '+esc(runnerAnalysis.join(' · '))+'</small>':'')
+            +(hidden.length?'<small class="boundary-catalog-restrictions">Restricted fields: '+esc(hidden.join(' · '))+'</small>':'')
+            +'</div>';
+        }).join('');
+        const edges=(boundary.relationships||[]).map(relationship=>{
+          const display=boundaryRelationshipDisplay(relationship);
+          const question=(relationship.suggested_questions||[])[0];
+          return '<div class="boundary-catalog-path '+(relationship.proven?'':'unproven')+'"><div class="boundary-relationship-summary"><strong>'+esc(relationship.path_depth)+' '+(relationship.path_depth===1?'hop':'hops')+'</strong><code>'+esc(display.chain)+'</code>'+(display.via?'<small>via '+esc(display.via)+'</small>':'')+'<span>'+esc(relationship.cardinality.replaceAll('_','-'))+' · '+(relationship.proven?'catalog proven':'proof unavailable')+'</span><details><summary>Canonical path ID</summary><code>'+esc(relationship.id)+'</code></details></div>'+(question?'<p class="boundary-catalog-question"><strong>Try asking</strong> “'+esc(question)+'”</p>':'')+'</div>';
+        }).join('');
+        const large=diagram.large===true||boundary.tables.length>10||(boundary.physical_relationship_count||0)>15;
+        const hasJoins=(boundary.physical_relationship_count||0)>0;
+        const graph=!hasJoins
+          ?'<div class="band"><strong>No reviewed joins to draw</strong><p>'+(boundary.tables.length===1?'This boundary contains one reviewed table.':'These tables have no reviewed relationship path.')+' The single-table counts, totals, groupings, filters, and time trends below remain available.</p></div>'
+          :large
+            ?'<div class="band notice"><strong>Download this large boundary map</strong><p>'+esc(boundary.tables.length)+' tables and '+esc(boundary.physical_relationship_count||0)+' physical joins would be difficult to read inline. The export includes the full readable map and directional Mermaid relationship diagram.</p></div>'
+            :renderBoundaryGraphSvg(boundary);
+        const questions=[...new Set([
+          ...(boundary.relationships||[]).flatMap(relationship=>relationship.suggested_questions||[]),
+          ...(boundary.tables||[]).flatMap(table=>table.suggested_questions||[])
+        ])].slice(0,3);
+        const questionPanel=questions.length?'<div class="boundary-catalog-questions"><strong>'+(hasJoins?'Try cross-table questions':'Try single-table questions')+'</strong><ul>'+questions.map(question=>'<li>“'+esc(question)+'”</li>').join('')+'</ul></div>':'';
+        const detail=large?'':'<details><summary>Reviewed fields and relationships</summary><p class="boundary-catalog-legend">Operations are written out by name. Anything omitted from a field is unavailable.</p><div class="boundary-catalog-nodes">'+nodes+'</div>'+(edges?'<div class="boundary-catalog-edges">'+edges+'</div>':'')+'</details>';
+        return '<section class="boundary-catalog-boundary" data-boundary-catalog-section="'+esc(boundary.name)+'" '+(boundary.name===preferred?'':'hidden')+'><h4>'+esc(boundary.name)+'</h4>'+graph+questionPanel+detail+(hasJoins?'<details class="boundary-catalog-mermaid"><summary>Mermaid source</summary><pre>'+esc(diagram.mermaid||'flowchart LR')+'</pre></details>':'')+'</section>';
+      }).join('');
+      return '<details class="boundary-catalog-map" data-boundary-catalog-map><summary>Reviewed data map</summary><div class="boundary-catalog-controls"><label class="field">Boundary<select data-boundary-catalog-select>'+options+'</select></label><div class="actions"><button class="secondary" data-download-boundary-diagram type="button">Download full map</button><button class="quiet" data-copy-boundary-mermaid type="button">Copy Mermaid</button></div></div><p class="boundary-catalog-summary" data-boundary-catalog-summary></p><span class="status-message" data-boundary-catalog-status aria-live="polite"></span>'+sections+'</details>';
+    }
+
+    function renderBoundaryGraphSvg(boundary){
+      const tables=boundary.tables||[];
+      if(!tables.length)return '<p class="muted">No reviewed tables are available in this boundary.</p>';
+      const ids=new Set(tables.map(table=>table.id));
+      const links=[];
+      const seen=new Set();
+      (boundary.relationships||[]).forEach(relationship=>(relationship.links||[]).forEach(link=>{
+        if(!ids.has(link.source_table)||!ids.has(link.target_table))return;
+        const key=[link.source_table,link.target_table,link.source_key,link.target_key].join('|');
+        if(seen.has(key))return;
+        seen.add(key);
+        links.push(Object.assign({},link,{proven:link.proven!==false}));
+      }));
+      const outgoing=new Map(tables.map(table=>[table.id,[]]));
+      const outgoingPorts=new Map(tables.map(table=>[table.id,[]]));
+      const incomingPorts=new Map(tables.map(table=>[table.id,[]]));
+      const indegree=new Map(tables.map(table=>[table.id,0]));
+      links.forEach((link,index)=>{
+        outgoing.get(link.source_table).push(link.target_table);
+        outgoingPorts.get(link.source_table).push(index);
+        incomingPorts.get(link.target_table).push(index);
+        indegree.set(link.target_table,(indegree.get(link.target_table)||0)+1);
+      });
+      const rank=new Map(tables.map(table=>[table.id,0]));
+      const queue=tables.map(table=>table.id).filter(id=>(indegree.get(id)||0)===0).sort();
+      const visited=new Set();
+      while(queue.length){
+        const source=queue.shift();
+        if(visited.has(source))continue;
+        visited.add(source);
+        (outgoing.get(source)||[]).forEach(target=>{
+          rank.set(target,Math.max(rank.get(target)||0,(rank.get(source)||0)+1));
+          indegree.set(target,(indegree.get(target)||0)-1);
+          if(indegree.get(target)===0)queue.push(target);
+        });
+      }
+      const maxRank=Math.max(0,...rank.values());
+      tables.filter(table=>!visited.has(table.id)).forEach((table,index)=>rank.set(table.id,maxRank+1+index));
+      const columns=new Map();
+      tables.forEach(table=>{
+        const value=rank.get(table.id)||0;
+        const column=columns.get(value)||[];
+        column.push(table);
+        column.sort((left,right)=>left.id.localeCompare(right.id));
+        columns.set(value,column);
+      });
+      const longestNodeText=Math.max(0,...tables.flatMap(table=>[
+        table.id.length,
+        ...(table.model_visible_fields||[]).slice(0,4).map(field=>field.name.length)
+      ]));
+      const maxPorts=Math.max(1,...tables.map(table=>Math.max(
+        (outgoingPorts.get(table.id)||[]).length,
+        (incomingPorts.get(table.id)||[]).length
+      )));
+      const nodeWidth=Math.max(250,Math.min(420,longestNodeText*7.4+32));
+      const nodeHeight=Math.max(126,56+maxPorts*22),xGap=190,yGap=30,pad=28;
+      const ranks=[...columns.keys()].sort((left,right)=>left-right);
+      const maxRows=Math.max(...ranks.map(value=>columns.get(value).length));
+      const width=pad*2+ranks.length*nodeWidth+Math.max(0,ranks.length-1)*xGap;
+      const height=pad*2+maxRows*nodeHeight+Math.max(0,maxRows-1)*yGap;
+      const positions=new Map();
+      ranks.forEach((value,columnIndex)=>{
+        const column=columns.get(value);
+        const columnHeight=column.length*nodeHeight+Math.max(0,column.length-1)*yGap;
+        const offset=pad+(height-pad*2-columnHeight)/2;
+        column.forEach((table,rowIndex)=>positions.set(table.id,{
+          x:pad+columnIndex*(nodeWidth+xGap),
+          y:offset+rowIndex*(nodeHeight+yGap)
+        }));
+      });
+      const marker='catalog-arrow-'+String(boundary.name).replace(/[^A-Za-z0-9_-]/g,'-')+'-'+(++boundaryGraphSequence);
+      const portOffset=(ports,tableId,edgeIndex)=>{
+        const indexes=ports.get(tableId)||[];
+        const position=indexes.indexOf(edgeIndex);
+        return (position-(indexes.length-1)/2)*22;
+      };
+      const edgeSvg=links.map((link,edgeIndex)=>{
+        const source=positions.get(link.source_table),target=positions.get(link.target_table);
+        if(!source||!target)return '';
+        const forward=target.x>=source.x;
+        const sx=source.x+(forward?nodeWidth:0);
+        const sy=source.y+nodeHeight/2+portOffset(outgoingPorts,link.source_table,edgeIndex);
+        const tx=target.x+(forward?0:nodeWidth);
+        const ty=target.y+nodeHeight/2+portOffset(incomingPorts,link.target_table,edgeIndex);
+        const mx=(sx+tx)/2;
+        const label=link.hidden_join_key?'reviewed hidden key':link.source_key+' → '+link.target_key;
+        const edgeTitle=link.source_table+'.'+link.source_key+' to '+link.target_table+'.'+link.target_key+'; '+(link.proven?'catalog proven':'proof unavailable');
+        return '<path class="edge '+(link.proven?'':'unproven')+'" d="M '+sx+' '+sy+' C '+mx+' '+sy+', '+mx+' '+ty+', '+tx+' '+ty+'" marker-end="url(#'+marker+')"><title>'+esc(edgeTitle)+'</title></path><text class="edge-label" x="'+(sx+(forward?12:-12))+'" y="'+(sy-8)+'" text-anchor="'+(forward?'start':'end')+'">'+esc(label.slice(0,50))+'<title>'+esc(edgeTitle)+'</title></text>';
+      }).join('');
+      const nodeSvg=tables.map(table=>{
+        const point=positions.get(table.id);
+        const fields=(table.model_visible_fields||[]).slice(0,4).map(field=>field.name);
+        const hidden=(table.runner_only_field_count||0)+(table.kept_out_field_count||0);
+        const lines=[...fields,...((table.model_visible_fields||[]).length>4?['+'+((table.model_visible_fields||[]).length-4)+' more visible']:[]),...(hidden?[''+hidden+' unavailable to model']:[])].slice(0,5);
+        return '<g><title>'+esc(table.id+'; '+(table.model_visible_fields||[]).map(field=>field.name).join(', '))+'</title><rect class="node" x="'+point.x+'" y="'+point.y+'" width="'+nodeWidth+'" height="'+nodeHeight+'" rx="6"></rect><text class="node-title" x="'+(point.x+14)+'" y="'+(point.y+23)+'">'+esc(table.id.slice(0,52))+'</text>'+lines.map((line,index)=>'<text class="node-field" x="'+(point.x+14)+'" y="'+(point.y+47+index*16)+'">'+esc(line.slice(0,52))+'</text>').join('')+'</g>';
+      }).join('');
+      return '<div class="boundary-catalog-graph" role="img" aria-label="Reviewed table relationship diagram for '+esc(boundary.name)+'"><svg viewBox="0 0 '+width+' '+height+'" width="'+width+'" height="'+height+'"><defs><marker id="'+marker+'" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0, 9 3.5, 0 7" fill="#75e3b7"></polygon></marker></defs>'+edgeSvg+nodeSvg+'</svg></div><p class="muted">Arrows point from the many-row table to the reviewed one-row ancestor. Each reviewed join uses its own labeled connection lane. Solid lines are catalog-proven; dashed lines require proof before activation.</p>';
+    }
+
+    function wireBoundaryRelationshipMaps(scope=document){
+      scope.querySelectorAll('[data-boundary-catalog-map]').forEach(root=>{
+        const select=root.querySelector('[data-boundary-catalog-select]');
+        const summary=root.querySelector('[data-boundary-catalog-summary]');
+        const status=root.querySelector('[data-boundary-catalog-status]');
+        const copyMermaid=root.querySelector('[data-copy-boundary-mermaid]');
+        const update=()=>{
+          const name=select.value;
+          root.querySelectorAll('[data-boundary-catalog-section]').forEach(section=>{
+            section.hidden=section.dataset.boundaryCatalogSection!==name;
+          });
+          const boundary=(boundaryCatalog.boundaries||[]).find(item=>item.name===name);
+          if(boundary){
+            summary.textContent=boundary.tables.length+' reviewed table'+(boundary.tables.length===1?'':'s')+' · '+(boundary.physical_relationship_count||0)+' physical join'+((boundary.physical_relationship_count||0)===1?'':'s')+' · '+boundary.relationships.length+' reviewed path'+(boundary.relationships.length===1?'':'s')+'. This is one exact active boundary; it is never merged with another.';
+            copyMermaid.hidden=(boundary.physical_relationship_count||0)===0;
+          }
+          status.textContent='';
+        };
+        select.onchange=update;
+        root.querySelector('[data-download-boundary-diagram]').onclick=()=>{
+          const diagram=(boundaryDiagrams||[]).find(item=>item.boundary_name===select.value);
+          if(!diagram){
+            status.className='status-message error';
+            status.textContent='This boundary export is unavailable. Reload Workbench and retry.';
+            return;
+          }
+          const blob=new Blob([diagram.markdown],{type:'text/markdown'});
+          const href=URL.createObjectURL(blob);
+          const anchor=document.createElement('a');
+          anchor.href=href;
+          anchor.download=diagram.file_name;
+          anchor.click();
+          URL.revokeObjectURL(href);
+          status.className='status-message';
+          status.textContent='Downloaded the exact '+diagram.boundary_name+' boundary map. No source rows were read.';
+        };
+        copyMermaid.onclick=async()=>{
+          const diagram=(boundaryDiagrams||[]).find(item=>item.boundary_name===select.value);
+          if(!diagram){
+            status.className='status-message error';
+            status.textContent='Mermaid source is unavailable. Reload Workbench and retry.';
+            return;
+          }
+          try{
+            await navigator.clipboard.writeText(diagram.mermaid);
+            status.className='status-message';
+            status.textContent='Copied Mermaid for '+diagram.boundary_name+'.';
+          }catch{
+            status.className='status-message error';
+            status.textContent='Clipboard access was unavailable. Open Mermaid source and copy it manually.';
+          }
+        };
+        update();
+      });
     }
 
     function askReviewTarget(call){
@@ -2982,6 +4507,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           :provider==="anthropic"
             ?"ANTHROPIC_API_KEY"
             :"MODEL_API_KEY";
+        byId("ask-timeout").value="";
       }
       updateAskCredentialFields();
       if(!askStatus?.credential_environment?.[provider])byId("ask-credential-details").open=true;
@@ -3025,6 +4551,12 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           egress_acknowledged:byId("ask-egress").checked
         };
         if(provider==="openai_compatible")body.base_url=byId("ask-base-url").value.trim();
+        const requestTimeout=byId("ask-timeout").value.trim();
+        if(requestTimeout)body.request_timeout_seconds=Number(requestTimeout);
+        const sessionTokenBudget=byId("ask-session-token-budget").value.trim();
+        if(sessionTokenBudget)body.session_token_budget=Number(sessionTokenBudget);
+        const maxOutputTokens=byId("ask-max-output-tokens").value.trim();
+        if(maxOutputTokens)body.max_output_tokens=Number(maxOutputTokens);
         if(keySource==="session"){
           const pastedKey=byId("ask-key").value.trim();
           const looksLikeAssignment=/^(?:export\\s+)?[A-Za-z_][A-Za-z0-9_]*\\s*=/.test(pastedKey);
@@ -3053,6 +4585,30 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           review.classList.add("needs-attention");
           requestAnimationFrame(()=>{review.scrollIntoView({behavior:"smooth",block:"center"});byId("ask-egress").focus()});
         }
+      }
+    }
+
+    async function updateAskLimits(){
+      const button=byId("update-ask-limits");
+      const status=byId("ask-limit-status");
+      button.disabled=true;
+      status.className="status-message";
+      status.textContent="Updating in-memory Ask limits...";
+      try{
+        const sessionBudget=byId("ask-live-session-token-budget").value.trim();
+        if(!sessionBudget)throw new Error("Enter the cumulative session reported-token budget.");
+        const outputLimit=byId("ask-live-max-output-tokens").value.trim();
+        await post("/api/ask/limits",{
+          session_token_budget:Number(sessionBudget),
+          max_output_tokens:outputLimit?Number(outputLimit):null
+        });
+        status.textContent="Ask limits updated. Conversation context was preserved.";
+        await loadAskStatus();
+      }catch(error){
+        status.className="status-message error";
+        status.textContent=error.message;
+      }finally{
+        button.disabled=false;
       }
     }
 
@@ -3211,6 +4767,13 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           +'</div>');
         const errorAction=transcript.lastElementChild?.querySelector("[data-ask-error-action]");
         if(errorAction)errorAction.onclick=async()=>{
+          if(presentation.limits){
+            const limits=byId("ask-live-limits");
+            limits.open=true;
+            limits.scrollIntoView({behavior:"smooth",block:"center"});
+            byId("ask-live-session-token-budget").focus();
+            return;
+          }
           if(presentation.reload){
             await loadAskStatus();
             return;
@@ -3227,6 +4790,136 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         cancel.disabled=true;
         composer.classList.remove("is-running");
         composer.removeAttribute("aria-busy");
+      }
+    }
+
+    function historyPlanSentence(query){
+      try{return planSentence(query.normalized_plan)}
+      catch{return (query.kind==="aggregate"?"Aggregate":"Bounded rows")+" on "+query.resource+"."}
+    }
+
+    function ledgerSourceSentence(source){
+      if(source?.kind==="shared_postgres")return "Shared PostgreSQL ledger · schema "+source.schema+" · URL from "+source.url_env+" · read-only";
+      return "Local SQLite ledger · "+(source?.path||"configured local store");
+    }
+
+    function historyStatusClass(value){
+      const status=String(value||"").toLowerCase();
+      if(status.startsWith("refused")||status==="failed"||status.startsWith("error"))return "history-status-error";
+      if(status==="fully_suppressed"||status==="incomplete_comparison")return "history-status-warning";
+      return "history-status-ok";
+    }
+
+    let askHistoryOffset=0;
+    async function loadAskHistory(requestedOffset=0){
+      if(typeof requestedOffset!=="number"||!Number.isSafeInteger(requestedOffset)||requestedOffset<0)requestedOffset=0;
+      askHistoryOffset=requestedOffset;
+      const button=byId("load-ask-history");
+      const status=byId("ask-history-status");
+      const content=byId("ask-history-content");
+      button.disabled=true;
+      button.textContent="Loading...";
+      status.className="status-message";
+      status.textContent="Reading metadata-only query history from the configured ledger...";
+      try{
+        const params=new URLSearchParams();
+        const tenant=byId("ask-history-tenant").value.trim();
+        const principal=byId("ask-history-principal").value.trim();
+        const resource=byId("ask-history-resource").value.trim();
+        const search=byId("ask-history-search").value.trim();
+        const capability=byId("ask-history-capability").value.trim();
+        const boundary=byId("ask-history-boundary").value.trim();
+        const outcome=byId("ask-history-outcome").value;
+        const since=byId("ask-history-since").value;
+        const to=byId("ask-history-to").value;
+        const limit=byId("ask-history-limit").value;
+        if(tenant)params.set("tenant",tenant);
+        if(principal)params.set("principal",principal);
+        if(resource)params.set("resource",resource);
+        if(search)params.set("search",search);
+        if(capability)params.set("capability",capability);
+        if(boundary)params.set("boundary",boundary);
+        if(outcome)params.set("outcome",outcome);
+        if(since)params.set("since",new Date(since).toISOString());
+        if(to)params.set("to",new Date(to).toISOString());
+        if(limit)params.set("limit",limit);
+        if(askHistoryOffset)params.set("offset",String(askHistoryOffset));
+        const payload=await getJson("/api/explore/history"+(params.size?"?"+params.toString():""));
+        const sourceLabel=ledgerSourceSentence(payload.ledger_source);
+        const recent=payload.recent||[];
+        const durable=payload.durable||[];
+        const recentHtml=recent.length
+          ?'<h4>Recent references</h4><div class="ask-history-table-wrap"><table class="history-recent-table"><thead><tr><th>Reference</th><th>Request</th><th>Status</th><th>Expires</th></tr></thead><tbody>'+recent.map((query,index)=>'<tr><td data-label="Reference"><code>'+esc(query.query_ref)+'</code></td><td data-label="Request">'+esc(historyPlanSentence(query))+'</td><td data-label="Status" class="'+(index===0?'history-status-latest':'')+'">'+(index===0?'Latest':'Available')+'</td><td data-label="Expires">'+esc(new Date(query.expires_at).toLocaleString())+'</td></tr>').join("")+'</tbody></table></div><p class="muted">Open Make reusable to inspect or protect one of these references.</p>'
+          :'<h4>Recent references</h4><p class="muted">No unexpired analysis reference is available in this Workbench session.</p>';
+        const durableOffset=Number(payload.durable_offset||0);
+        const durableLimit=Number(payload.durable_limit||50);
+        const durableNavigation=(payload.has_newer_records||payload.has_older_records)
+          ?'<div class="actions"><button id="ask-history-newer" class="secondary" type="button" '+(payload.has_newer_records?'':'disabled')+'>Newer records</button><span class="muted">Showing '+esc(durableOffset+1)+'-'+esc(durableOffset+durable.length)+'</span><button id="ask-history-older" class="secondary" type="button" '+(payload.has_older_records?'':'disabled')+'>Older records</button></div>'
+          :'';
+        const durableHtml=durable.length
+          ?'<h4>Durable query ledger</h4><div class="ask-history-table-wrap"><table class="history-durable-table"><thead><tr><th>Audit</th><th>When</th><th>Reviewed query</th><th>Outcome</th><th>Rows / groups</th><th>Evidence</th></tr></thead><tbody>'+durable.map(audit=>'<tr><td data-label="Audit"><button class="quiet" data-history-audit="'+esc(audit.audit_id)+'" type="button">'+esc(audit.audit_id)+'</button></td><td data-label="When">'+esc(new Date(audit.created_at).toLocaleString())+'</td><td data-label="Reviewed query">'+esc(audit.description||audit.resource)+'<br><code>'+esc(audit.resource)+'</code></td><td data-label="Outcome" class="'+historyStatusClass(audit.status)+'">'+esc(String(audit.status).replaceAll("_"," "))+(audit.error_code?' · '+esc(audit.error_code):'')+'</td><td data-label="Rows / groups">'+esc(audit.returned_rows_or_groups)+'</td><td data-label="Evidence">'+(audit.evidence_bundle_id?'<button class="quiet" data-history-evidence="'+esc(audit.evidence_bundle_id)+'" type="button">'+esc(audit.evidence_bundle_id)+'</button>':'None')+'</td></tr>').join("")+'</tbody></table></div>'+durableNavigation+'<div id="ask-history-detail"></div>'
+          :'<h4>Durable query ledger</h4><p class="muted">No Explore audit metadata was found on this page in '+esc(sourceLabel)+'.</p>'+durableNavigation;
+        const notices=(payload.notices||[]).length
+          ?'<div class="band warning"><strong>Audit notice</strong>'+(payload.notices||[]).map(note=>'<p>'+esc(note)+'</p>').join("")+'</div>'
+          :'';
+        content.innerHTML='<p><strong>Ledger source</strong><br>'+esc(sourceLabel)+'</p>'+notices+recentHtml+durableHtml;
+        content.querySelectorAll("[data-history-audit]").forEach(item=>item.onclick=()=>loadAskHistoryDetail(item.dataset.historyAudit));
+        content.querySelectorAll("[data-history-evidence]").forEach(item=>item.onclick=()=>loadAskEvidenceDetail(item.dataset.historyEvidence));
+        const newer=byId("ask-history-newer");if(newer)newer.onclick=()=>loadAskHistory(Math.max(0,durableOffset-durableLimit));
+        const older=byId("ask-history-older");if(older)older.onclick=()=>loadAskHistory(durableOffset+durableLimit);
+        status.textContent=recent.length+" recent "+(recent.length===1?"reference":"references")+" · "+durable.length+" durable audit "+(durable.length===1?"record":"records")+" · "+sourceLabel+". Result and trusted-scope values are not persisted.";
+      }catch(error){
+        content.innerHTML="";
+        status.className="status-message error";
+        status.textContent=error.message;
+      }finally{
+        button.disabled=false;
+        button.textContent="Refresh query history";
+      }
+    }
+
+    async function loadAskHistoryDetail(auditId){
+      const target=byId("ask-history-detail");
+      if(!target)return;
+      target.innerHTML='<p class="muted">Loading audit '+esc(auditId)+'...</p>';
+      try{
+        const payload=await getJson("/api/explore/history?audit_id="+encodeURIComponent(auditId));
+        const audit=payload.audit;
+        const statusClass=historyStatusClass(audit.status);
+        const attempted=audit.attempted_access;
+        const attemptedLabel=attempted
+          ?attempted.resource+(attempted.field?"."+attempted.field:"")+(attempted.operation?" ("+attempted.operation+")":"")
+          :null;
+        const facts=[["Outcome",String(audit.status).replaceAll("_"," ")],["Error code",audit.error_code||"None"],["Resource",audit.resource],...(attemptedLabel?[["Attempted access",attemptedLabel]]:[]),["Boundary digest",audit.boundary_digest||"Not recorded"],["Tenant fingerprint",audit.tenant_scope_fingerprint||"Not recorded"],["Principal fingerprint",audit.principal_scope_fingerprint||"Not recorded"],["Rows / groups",audit.returned_rows_or_groups],["Suppressed groups",audit.suppressed_groups],["Result values persisted",audit.result_values_persisted?"Yes":"No"],["Source query executed",audit.source_query_executed?"Yes":"No"]];
+        const factHtml='<dl class="history-detail-grid">'+facts.map((fact,index)=>'<dt>'+esc(fact[0])+'</dt><dd class="'+(index===0?statusClass:'')+'">'+esc(fact[1])+'</dd>').join("")+'</dl>';
+        const reconstructed=audit.reconstructed_query;
+        const queryHtml=reconstructed?'<h4>Reconstructed reviewed query</h4><p class="muted">'+reconstructed.caveats.map(esc).join(" ")+'</p><pre id="ask-history-sql"></pre>':'';
+        target.innerHTML='<section class="history-audit-section"><h4>Audit '+esc(audit.audit_id)+'</h4><p><strong>Ledger source:</strong> '+esc(ledgerSourceSentence(payload.ledger_source))+'</p>'+factHtml+queryHtml+'<details><summary>Raw metadata (reference)</summary><pre id="ask-history-json"></pre></details></section>';
+        if(reconstructed)renderSyntaxCode("ask-history-sql",reconstructed.statement,"SQL");
+        renderSyntaxCode("ask-history-json",JSON.stringify(audit,null,2),"JSON");
+      }catch(error){
+        target.innerHTML='<p class="error">'+esc(error.message)+'</p>';
+      }
+    }
+
+    async function loadAskEvidenceDetail(evidenceId){
+      const target=byId("ask-history-detail");
+      if(!target)return;
+      target.innerHTML='<p class="muted">Loading evidence '+esc(evidenceId)+'...</p>';
+      try{
+        const payload=await getJson("/api/explore/evidence?evidence_id="+encodeURIComponent(evidenceId));
+        const evidence=payload.evidence;
+        const evidencePayload=evidence.payload||{};
+        const facts=[["Outcome",String(evidencePayload.outcome||"recorded").replaceAll("_"," ")],["Resource",evidence.source_table||"Not recorded"],["Boundary digest",evidencePayload.boundary_digest||"Not recorded"],["Tenant fingerprint",evidence.tenant_scope_fingerprint||"Not recorded"],["Suppressed groups",evidencePayload.suppressed_groups??"Not recorded"],["Result fingerprint",evidencePayload.result_fingerprint||"Not recorded"],["Result values persisted",evidence.result_values_persisted?"Yes":"No"],["Execution duration",evidencePayload.execution_duration_ms==null?"Not recorded":evidencePayload.execution_duration_ms+" ms"]];
+        const statusClass=historyStatusClass(evidencePayload.outcome);
+        const factHtml='<dl class="history-detail-grid">'+facts.map((fact,index)=>'<dt>'+esc(fact[0])+'</dt><dd class="'+(index===0?statusClass:'')+'">'+esc(fact[1])+'</dd>').join("")+'</dl>';
+        const reconstructed=evidence.reconstructed_query;
+        const queryHtml=reconstructed?'<h4>Reconstructed reviewed query</h4><p class="muted">'+reconstructed.caveats.map(esc).join(" ")+'</p><pre id="ask-history-evidence-sql"></pre>':'';
+        target.innerHTML='<section class="history-audit-section"><h4>Evidence '+esc(evidenceId)+'</h4><p><strong>Ledger source:</strong> '+esc(ledgerSourceSentence(payload.ledger_source))+'</p>'+factHtml+queryHtml+'<details><summary>Raw metadata (reference)</summary><pre id="ask-history-evidence-json"></pre></details></section>';
+        if(reconstructed)renderSyntaxCode("ask-history-evidence-sql",reconstructed.statement,"SQL");
+        renderSyntaxCode("ask-history-evidence-json",JSON.stringify(payload.evidence,null,2),"JSON");
+      }catch(error){
+        target.innerHTML='<p class="error">'+esc(error.message)+'</p>';
       }
     }
 
@@ -3265,12 +4958,13 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         boundary_name:result.boundary_name||call.arguments?.boundary||null,
         boundary_digest:result.boundary_digest||null,
         normalized_plan:planValidated?call.arguments?.plan:null,
-        result_semantics:planValidated?semantics:null
+        result_semantics:planValidated?semantics:null,
+        resolved_time_windows:planValidated?(result.operator_time_windows||null):null
       };
       return '<details class="ask-execution-evidence"><summary>What the model requested and Runner executed</summary>'
         +'<h4>What the model requested</h4><pre>'+esc(JSON.stringify({tool:call.tool,arguments:call.arguments},null,2))+'</pre>'
         +'<h4>What Runner executed</h4><pre>'+esc(JSON.stringify(execution,null,2))+'</pre>'
-        +'<h4>What Runner returned or withheld</h4><pre>'+esc(JSON.stringify(returned,null,2))+'</pre>'
+          +'<h4>What Runner returned or withheld</h4><pre>'+esc(JSON.stringify(returned,null,2))+'</pre>'+renderOperatorExecutionCost(result)
         +(queryRef?'<button class="quiet" data-explore-evidence="'+esc(queryRef)+'" type="button">Show operator SQL diagnostic</button><div data-evidence-target></div>':'')
         +'</details>';
     }
@@ -3341,17 +5035,92 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	        const privacyGuidance=suppressed>0
 	          ?suppressionReviewGuidance(plan,boundaryName,minimumCohort)
 	          :null;
+	        const reviewedValueNotice=reviewedValueControlHtml(result);
+	        const budgetStatus=renderOperatorBudgetStatus(result);
+	        const resolvedTimeStatus=renderOperatorTimeWindowStatus(result);
+	        const executionCostStatus=renderOperatorExecutionCost(result);
 	        const verifiedData=rows.length
           ?'<details class="verified-data-details"><summary>View verified data ('+esc(returned)+' '+resultKind+(returned===1?"":"s")+')</summary><div class="verified-data-body">'+resultDataHtml(plan,rows,semantics,boundaryName)+'</div></details>'
           :'<p class="ask-verified-count">No rows or groups passed the reviewed scope and privacy thresholds.</p>';
         return '<section class="ask-tool-trace"><p>'+esc(planSentence(plan,boundaryName))+'</p>'
           +(rows.length?'<p class="ask-verified-count">'+esc(returned)+' verified '+resultKind+(returned===1?"":"s")+' returned.</p>':"")
-          +verifiedData
+	          +verifiedData
+		          +reviewedValueNotice
+		          +resolvedTimeStatus
+		          +executionCostStatus
+		          +budgetStatus
 		          +(privacyGuidance?'<p><strong>'+esc(suppressed)+' additional group'+(suppressed===1?" was":"s were")+' withheld because '+(suppressed===1?"it was":"they were")+' below the reviewed minimum group size'+(minimumCohort?' of '+esc(minimumCohort):'')+'.</strong></p>'+(privacyGuidance.shape?'<p>'+esc(privacyGuidance.shape)+'</p>':'')+'<p>'+esc(privacyGuidance.path)+'</p><button class="quiet" data-review-privacy-resource="'+esc(plan.resource)+'" type="button">Review privacy for '+esc(plan.resource)+'</button>':'')
           +(protectToken?'<button class="secondary" data-ask-protect="'+esc(protectToken)+'" type="button">Protect as reusable capability</button>':'')
 	          +exploreEvidenceDisclosure(call,result,true)+'</section>';
       }
 	      return '<section class="ask-tool-trace"><strong>Reviewed Runner tool completed</strong><details><summary>Advanced bounded result</summary><pre>'+esc(JSON.stringify({arguments:call.arguments,result},null,2))+'</pre></details></section>';
+	    }
+
+	    function renderOperatorTimeWindowStatus(result){
+	      const items=Array.isArray(result?.operator_time_windows)
+	        ?result.operator_time_windows.filter(item=>item&&item.source==="reviewed_relative_time")
+	        :[];
+	      if(!items.length)return "";
+	      const rows=items.flatMap(item=>(item.ranges||[]).map(range=>{
+	        const request=item.location==="comparison"
+	          ?relativeWindowLabel(item.window)+" vs "+relativeWindowLabel(item.compare_to)
+	          :relativeWindowLabel(item.window);
+	        const field=String(item.field||"unknown")+(item.relationship?" via "+item.relationship:"");
+	        return '<tr><td data-label="Reviewed request">'+esc(request)+'</td><td data-label="Field">'+esc(field)+'</td><td data-label="Range">'+esc(range.id||"range")+'</td><td data-label="UTC [start, end)"><code class="utc-range"><span>['+esc(range.start_inclusive||"?")+',</span><span>'+esc(range.end_exclusive||"?")+')</span></code></td></tr>';
+	      })).join("");
+	      return '<details class="ask-execution-evidence"><summary>Operator-only resolved UTC window</summary><p>Runner captured one instant, used the reviewed UTC authority, and compiled these half-open ranges. Resolved timestamps are withheld from the model.</p><div class="result-table resolved-time-table"><table><thead><tr><th>Reviewed request</th><th>Field</th><th>Range</th><th>UTC [start, end)</th></tr></thead><tbody>'+rows+'</tbody></table></div><p><strong>Resolved at:</strong> '+esc(items[0]?.resolved_at||"not available")+'</p></details>';
+	    }
+
+	    function renderOperatorBudgetStatus(result){
+	      const budget=result?.operator_budget;
+	      if(!budget||typeof budget!=="object")return "";
+	      const scopes=[budget.trusted_scope,budget.tenant].filter(scope=>scope&&typeof scope==="object");
+	      const warnings=scopes.flatMap(scope=>Array.isArray(scope.warnings)?scope.warnings:[]);
+	      const rows=[];
+	      const add=(scope,label,classification,gauge)=>{
+	        if(!gauge||typeof gauge!=="object")return;
+	        rows.push('<tr><td>'+esc(scope)+ '</td><td>'+esc(classification)+'</td><td>'+esc(label)+'</td><td>'+esc(gauge.used)+' / '+esc(gauge.limit)+'</td><td>'+esc(gauge.remaining)+'</td></tr>');
+	      };
+	      scopes.forEach(scope=>{
+	        const label=scope.scope==="tenant"?"Tenant ceiling":"Trusted scope";
+	        add(label,"Queries · rolling 24 hours","Volume",scope.volume?.queries_rolling_24_hours);
+	        add(label,"Requests · rolling minute","Volume",scope.volume?.requests_rolling_minute);
+	        add(label,"Extracted cells · rolling 24 hours","Disclosure",scope.disclosure?.extracted_cells_rolling_24_hours);
+	        const differencing=scope.disclosure?.differencing_variants_rolling_24_hours;
+	        const differencingResource=differencing?.root_resource||"current root resource";
+	        add(label,"Differencing variants for "+differencingResource+" · rolling 24 hours","Disclosure",differencing);
+	      });
+	      const warning=warnings.length
+	        ?'<div class="band notice"><strong>Reviewed budget is nearing its limit</strong>'+warnings.map(message=>'<p>'+esc(message)+'</p>').join("")+'<p>Review throughput in this boundary&apos;s Query volume settings. Disclosure controls remain separate.</p></div>'
+	        :"";
+	      return warning+'<details class="ask-execution-evidence"><summary>Operator-only budget status</summary><p>These counters are not sent to the model. Volume controls throughput; disclosure controls reconstruction risk.</p><div class="result-table"><table><thead><tr><th>Scope</th><th>Class</th><th>Budget</th><th>Used / limit</th><th>Remaining</th></tr></thead><tbody>'+rows.join("")+'</tbody></table></div><p><strong>Rolling 24-hour upper expiry:</strong> '+esc(budget.rolling_24_hour_usage_expires_no_later_than||"not available")+'<br><strong>Rolling-minute upper expiry:</strong> '+esc(budget.rolling_minute_usage_expires_no_later_than||"not available")+'</p></details>';
+	    }
+
+	    function renderOperatorExecutionCost(result){
+	      const duration=result?.outcome?.result?.freshness?.execution_duration_ms;
+	      if(!Number.isFinite(duration))return "";
+	      return '<p class="muted"><strong>Source execution:</strong> '+esc(Math.max(0,Math.round(duration)))+' ms in one read-only transaction.</p>';
+	    }
+
+	    function reviewedValueControlHtml(result){
+	      const controls=result?.privacy?.reviewed_value_controls;
+	      if(!controls||typeof controls!=="object")return "";
+	      const bucketed=Array.isArray(controls.bucketed_fields)?controls.bucketed_fields:[];
+	      const excluded=Array.isArray(controls.excluded_fields)?controls.excluded_fields:[];
+	      const messages=[];
+	      bucketed.forEach(item=>{
+	        const field=(item.resource||"reviewed table")+"."+(item.field||"categorical field");
+	        messages.push(item.bucket_returned&&item.bucket_token
+	          ?field+" includes one opaque "+item.bucket_token+" group for source values outside the reviewed value list. Their labels were not exposed."
+	          :field+" contained source values outside the reviewed value list. Runner combined them before privacy and result limits; their labels were not exposed.");
+	      });
+	      excluded.forEach(item=>{
+	        const field=(item.resource||"reviewed table")+"."+(item.field||"categorical field");
+	        messages.push("This result is limited to reviewed values for "+field+". Rows with other values, if any, were excluded.");
+	      });
+	      return messages.length
+	        ?'<div class="band notice"><strong>Reviewed value controls</strong>'+messages.map(message=>'<p>'+esc(message)+'</p>').join("")+'</div>'
+	        :"";
 	    }
 
 	    function suppressionReviewGuidance(plan,boundaryName,minimumCohort){
@@ -3500,17 +5269,34 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       if(!question||typeof question.text!=="string"||question.relationship_review_required)return false;
       const measure=question.measure;
       if(!measure||typeof measure!=="object")return false;
-      if(measure.function==="count"){
+      if(typeof measure.derived_measure==="string"){
+        if(!(resource.derived_measures||[]).some(item=>item.name===measure.derived_measure))return false;
+      }else if(measure.function==="count"){
         if(measure.field||measure.relationship)return false;
       }else if(measure.function==="count_distinct"){
         if(!activeQuestionField(resource,"count_distinct_fields",measure))return false;
-      }else if(measure.function==="sum"||measure.function==="avg"){
+      }else if(["null_count","non_null_count","completion_rate"].includes(measure.function)){
+        if(!activeQuestionField(resource,"presence_measure_fields",measure))return false;
+      }else if(["sum","avg","stddev_samp","stddev_pop","var_samp","var_pop"].includes(measure.function)){
         if(!activeQuestionField(resource,"aggregate_measures",measure))return false;
+        const target=measure.relationship
+          ?(resource.relationships||[]).find(item=>item.id===measure.relationship&&item.activation==="active")
+          :resource;
+        const functions=target?.aggregate_measure_functions?.[measure.field]||["sum","avg"];
+        if(!functions.includes(measure.function))return false;
       }else{
         return false;
       }
       const dimensions=(Array.isArray(question.dimensions)?question.dimensions:[question.dimension]).filter(Boolean);
-      if(!dimensions.every(dimension=>activeQuestionField(resource,"groupable_fields",dimension)))return false;
+      if(!dimensions.every(dimension=>typeof dimension.numeric_band==="string"
+        ?(resource.numeric_bands||[]).some(item=>item.name===dimension.numeric_band)
+        :dimension.numeric_band&&typeof dimension.numeric_band==="object"
+          ?(resource.auto_bands||[]).some(policy=>policy.field===dimension.numeric_band.field
+            &&policy.methods.includes(dimension.numeric_band.method)
+            &&Number.isSafeInteger(dimension.numeric_band.buckets)
+            &&dimension.numeric_band.buckets>=policy.min_buckets
+            &&dimension.numeric_band.buckets<=policy.max_buckets)
+          :activeQuestionField(resource,"groupable_fields",dimension)))return false;
       if(question.time_field){
         const time=normalizedSuggestedField(question.time_field);
         if(!activeQuestionField(resource,"time_bucket_fields",time))return false;
@@ -3611,11 +5397,17 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         return [
           "Read one exact "+resourceLabel(resource).toLowerCase()+" record",
           "Return only "+plan.select.map(field=>fieldLabel(resource,field)).join(", "),
+          plan.time_window?"Limit to "+relativeWindowLabel(plan.time_window.window)+" using "+fieldReferenceLabel(resource,plan.time_window):"No reviewed time window",
           "Maximum 1 record"
         ];
       }
       const measure=plan.measures[0];
-      const measureText=measure.function==="count"
+      const derived=measure.derived_measure
+        ?(resource.derived_measures||[]).find(item=>item.name===measure.derived_measure)
+        :null;
+      const measureText=derived
+        ?"Calculate "+(derived.label||derived.name)
+        :measure.function==="count"
         ?"Count "+resourceLabel(resource).toLowerCase()
         :(measure.function==="count_distinct"?"Count unique ":"Calculate "+measure.function+" of ")+fieldReferenceLabel(resource,measure).toLowerCase();
       const groups=(plan.dimensions||[]).map(dimension=>fieldReferenceLabel(resource,dimension)).join(", ");
@@ -3623,6 +5415,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         measureText,
         groups?"Group by "+groups:"No categorical grouping",
         plan.time_bucket?"Group time by "+plan.time_bucket.bucket+" using "+fieldReferenceLabel(resource,plan.time_bucket):"No time grouping",
+        plan.time_window?"Limit to "+relativeWindowLabel(plan.time_window.window)+" using "+fieldReferenceLabel(resource,plan.time_window):"No reviewed time window",
+        plan.comparison?.window?"Compare "+relativeWindowLabel(plan.comparison.window)+" with "+relativeWindowLabel(plan.comparison.compare_to):plan.comparison?"Compare two exact UTC ranges":"No period comparison",
         "Maximum "+plan.top_n+" groups",
         "Minimum group size "+resource.minimum_cohort_size+(resource.minimum_cohort_overridden?" (explicit owner override)":"")
       ];
@@ -3632,8 +5426,14 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       return resource?.label||String(resource?.id||"").split(".").pop().replace(/_/g," ");
     }
 
+    function relationshipTargetLabel(relationship){
+      return relationship?.target_label
+        ||relationship?.label
+        ||humanizeIdentifier(String(relationship?.target_resource||"").split(".").pop());
+    }
+
     function fieldLabel(resource,field){
-      return resource?.field_labels?.[field]||String(field).replace(/_/g," ");
+      return resource?.fields?.find(item=>item.id===field)?.label||String(field).replace(/_/g," ");
     }
 
     function fieldChoices(resource,key){
@@ -3645,7 +5445,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         label:fieldLabel(resource,field),
         field_types:resource.field_types||{},
         filter_operators:resource.filter_operators||{},
-        time_bucket_fields:resource.time_bucket_fields||{}
+        time_bucket_fields:resource.time_bucket_fields||{},
+        aggregate_measure_functions:resource.aggregate_measure_functions?.[field]||["sum","avg"]
       }));
       for(const relationship of resource?.relationships||[]){
         const related=key==="filterable_fields"||key==="time_bucket_fields"
@@ -3654,14 +5455,36 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         related.forEach(field=>choices.push({
           field,
           relationship:relationship.id,
-          label:fieldLabel(relationship,field)+" — "+(relationship.label||relationship.target_resource)
+          label:fieldLabel(relationship,field)+" — "+relationshipTargetLabel(relationship)
             +(relationship.operator_review_required?" — human relationship review required":""),
           field_types:relationship.field_types||{},
           filter_operators:relationship.filter_operators||{},
-          time_bucket_fields:relationship.time_bucket_fields||{}
+          time_bucket_fields:relationship.time_bucket_fields||{},
+          aggregate_measure_functions:relationship.aggregate_measure_functions?.[field]||["sum","avg"]
         }));
       }
       return choices;
+    }
+
+    function relativeTimeCatalog(){
+      const catalog=exploreDescription?.relative_time_windows;
+      return catalog?.available&&Array.isArray(catalog.windows)
+        ?catalog
+        :{available:false,reporting_timezone:null,windows:[],comparison_partners:[]};
+    }
+
+    function relativeTimeFieldChoices(resource,includeRelationships=true){
+      return fieldChoices(resource,"time_bucket_fields").filter(choice=>{
+        if(choice.relationship&&!includeRelationships)return false;
+        if(!choice.relationship)return (resource?.relative_time_window_fields||[]).includes(choice.field);
+        const relationship=(resource?.relationships||[]).find(item=>item.id===choice.relationship&&item.activation==="active");
+        return (relationship?.relative_time_window_fields||[]).includes(choice.field);
+      });
+    }
+
+    function relativeWindowLabel(value){
+      const text=String(value||"").replace(/_/g," ");
+      return text?text.charAt(0).toUpperCase()+text.slice(1):"Reviewed window";
     }
 
     function fieldChoiceValue(choice){
@@ -3669,6 +5492,42 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         field:choice.field,
         ...(choice.relationship?{relationship:choice.relationship}:{})
       });
+    }
+
+    function dimensionChoices(resource){
+      return [
+        ...fieldChoices(resource,"groupable_fields"),
+        ...(resource.numeric_bands||[]).map(band=>({
+          numeric_band:band.name,
+          label:(band.label||band.name)+" — reviewed fixed buckets"
+        })),
+        ...(resource.auto_bands||[]).flatMap(policy=>policy.methods.flatMap(method=>{
+          const choices=[];
+          for(let buckets=policy.min_buckets;buckets<=policy.max_buckets;buckets++)choices.push({
+            numeric_band:{field:policy.field,method,buckets},
+            label:fieldLabel(resource,policy.field)+" — automatic "+method.replace(/_/g," ")+", "+buckets+" buckets"
+          });
+          return choices;
+        }))
+      ];
+    }
+
+    function dimensionChoiceValue(choice){
+      return choice.numeric_band
+        ?JSON.stringify({numeric_band:choice.numeric_band})
+        :fieldChoiceValue(choice);
+    }
+
+    function parseDimensionChoice(value){
+      if(!value)return null;
+      const parsed=JSON.parse(value);
+      if(parsed&&typeof parsed.numeric_band==="string"&&Object.keys(parsed).length===1)return parsed;
+      if(parsed&&parsed.numeric_band&&typeof parsed.numeric_band==="object"&&Object.keys(parsed).length===1){
+        const band=parsed.numeric_band;
+        if(typeof band.field==="string"&&["quantile","equal_width"].includes(band.method)&&Number.isSafeInteger(band.buckets)&&Object.keys(band).every(key=>["field","method","buckets"].includes(key)))return parsed;
+      }
+      if(parsed&&typeof parsed.field==="string")return parsed;
+      throw new Error("The selected reviewed grouping is invalid.");
     }
 
     function parseFieldChoice(value){
@@ -3685,9 +5544,16 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 
     function fieldReferenceLabel(resource,reference){
       if(!reference)return "";
+      if(reference.numeric_band){
+        if(typeof reference.numeric_band==="string"){
+          const band=(resource.numeric_bands||[]).find(item=>item.name===reference.numeric_band);
+          return band?.label||reference.numeric_band;
+        }
+        return fieldLabel(resource,reference.numeric_band.field)+" (automatic "+reference.numeric_band.method.replace(/_/g," ")+", "+reference.numeric_band.buckets+" buckets)";
+      }
       if(!reference.relationship)return fieldLabel(resource,reference.field);
       const relationship=(resource.relationships||[]).find(item=>item.id===reference.relationship);
-      return fieldLabel(relationship,reference.field)+" from "+(relationship?.label||relationship?.target_resource||"reviewed related data");
+      return fieldLabel(relationship,reference.field)+" from "+relationshipTargetLabel(relationship);
     }
 
     function optionList(values,selected,labelForValue=value=>value){
@@ -3695,12 +5561,33 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     }
 
     function measureOptions(resource){
+      const numericLabels={
+        sum:"Total ",
+        avg:"Average ",
+        stddev_samp:"Sample standard deviation of ",
+        stddev_pop:"Population standard deviation of ",
+        var_samp:"Sample variance of ",
+        var_pop:"Population variance of "
+      };
+      const presenceLabels={
+        null_count:"Missing values in ",
+        non_null_count:"Present values in ",
+        completion_rate:"Completion rate for "
+      };
       return [
         {value:JSON.stringify({function:"count"}),label:"Number of "+resourceLabel(resource).toLowerCase()},
-        ...fieldChoices(resource,"aggregate_measures").flatMap(choice=>[
-          {value:JSON.stringify({function:"sum",field:choice.field,...(choice.relationship?{relationship:choice.relationship}:{})}),label:"Total "+choice.label.toLowerCase()},
-          {value:JSON.stringify({function:"avg",field:choice.field,...(choice.relationship?{relationship:choice.relationship}:{})}),label:"Average "+choice.label.toLowerCase()}
-        ]),
+        ...(resource.derived_measures||[]).map(measure=>({
+          value:JSON.stringify({derived_measure:measure.name}),
+          label:measure.label+" (reviewed definition)"
+        })),
+        ...fieldChoices(resource,"aggregate_measures").flatMap(choice=>(choice.aggregate_measure_functions||["sum","avg"]).map(fn=>({
+          value:JSON.stringify({function:fn,field:choice.field,...(choice.relationship?{relationship:choice.relationship}:{})}),
+          label:(numericLabels[fn]||fn+" of ")+choice.label.toLowerCase()
+        }))),
+        ...fieldChoices(resource,"presence_measure_fields").flatMap(choice=>(resource.presence_measure_functions||[]).map(fn=>({
+          value:JSON.stringify({function:fn,field:choice.field,...(choice.relationship?{relationship:choice.relationship}:{})}),
+          label:(presenceLabels[fn]||fn+" of ")+choice.label.toLowerCase()
+        }))),
         ...fieldChoices(resource,"count_distinct_fields").map(choice=>({
           value:JSON.stringify({function:"count_distinct",field:choice.field,...(choice.relationship?{relationship:choice.relationship}:{})}),
           label:"Number of unique "+choice.label.toLowerCase()
@@ -3727,8 +5614,12 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     function populateAggregateBuilder(resourceKey,suggestion){
       const resources=resourcesFromDescription();
       const resource=describedResourceFromKey(resourceKey)||resources[0];
-      const dimensions=fieldChoices(resource,"groupable_fields");
+      const dimensions=dimensionChoices(resource);
       const timeFields=fieldChoices(resource,"time_bucket_fields");
+      const relativeTimeFields=relativeTimeFieldChoices(resource);
+      const relativeCatalog=relativeTimeCatalog();
+      const relativeWindows=relativeCatalog.windows||[];
+      const relativeComparisons=relativeCatalog.comparison_partners||[];
       const filters=fieldChoices(resource,"filterable_fields");
       const measures=measureOptions(resource);
       const suggestedMeasure=suggestion?.measure
@@ -3738,9 +5629,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         .map(normalizedSuggestedField)
         .filter(Boolean);
       const suggestedDimensionValues=[
-        suggestedDimensions[0]?fieldChoiceValue(suggestedDimensions[0]):"",
-        suggestedDimensions[1]?fieldChoiceValue(suggestedDimensions[1]):"",
-        suggestedDimensions[2]?fieldChoiceValue(suggestedDimensions[2]):""
+        suggestedDimensions[0]?dimensionChoiceValue(suggestedDimensions[0]):"",
+        suggestedDimensions[1]?dimensionChoiceValue(suggestedDimensions[1]):"",
+        suggestedDimensions[2]?dimensionChoiceValue(suggestedDimensions[2]):""
       ];
       const suggestedTime=normalizedSuggestedField(suggestion?.time_field);
       const suggestedTimeValue=suggestedTime?fieldChoiceValue(suggestedTime):"";
@@ -3760,22 +5651,27 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       resourceSelect.value=selectedResourceKey;
       byId("aggregate-controls").innerHTML=
         '<label class="field">What should Runner calculate?<select id="aggregate-measure">'+measures.map(item=>'<option value="'+esc(item.value)+'" '+(item.value===suggestedMeasure?"selected":"")+'>'+esc(item.label)+'</option>').join("")+'</select></label>'+
-        '<label class="field">Compare groups by<select id="aggregate-dimension"><option value="">No grouping</option>'+optionList(dimensions.map(fieldChoiceValue),suggestedDimensionValues[0],value=>dimensions.find(choice=>fieldChoiceValue(choice)===value)?.label||value)+'</select></label>'+
-        '<label id="aggregate-dimension-2-wrap" class="field '+(suggestedDimensions[1]?"":"hidden")+'">And optionally by<select id="aggregate-dimension-2"><option value="">No second group</option>'+optionList(dimensions.map(fieldChoiceValue),suggestedDimensionValues[1],value=>dimensions.find(choice=>fieldChoiceValue(choice)===value)?.label||value)+'</select></label>'+
-        '<label id="aggregate-dimension-3-wrap" class="field '+(suggestedDimensions[2]?"":"hidden")+'">And optionally by<select id="aggregate-dimension-3"><option value="">No third group</option>'+optionList(dimensions.map(fieldChoiceValue),suggestedDimensionValues[2],value=>dimensions.find(choice=>fieldChoiceValue(choice)===value)?.label||value)+'</select></label>'+
+        '<label class="field">Compare groups by<select id="aggregate-dimension"><option value="">No grouping</option>'+optionList(dimensions.map(dimensionChoiceValue),suggestedDimensionValues[0],value=>dimensions.find(choice=>dimensionChoiceValue(choice)===value)?.label||value)+'</select></label>'+
+        '<label id="aggregate-dimension-2-wrap" class="field '+(suggestedDimensions[1]?"":"hidden")+'">And optionally by<select id="aggregate-dimension-2"><option value="">No second group</option>'+optionList(dimensions.map(dimensionChoiceValue),suggestedDimensionValues[1],value=>dimensions.find(choice=>dimensionChoiceValue(choice)===value)?.label||value)+'</select></label>'+
+        '<label id="aggregate-dimension-3-wrap" class="field '+(suggestedDimensions[2]?"":"hidden")+'">And optionally by<select id="aggregate-dimension-3"><option value="">No third group</option>'+optionList(dimensions.map(dimensionChoiceValue),suggestedDimensionValues[2],value=>dimensions.find(choice=>dimensionChoiceValue(choice)===value)?.label||value)+'</select></label>'+
         '<div id="aggregate-add-group-wrap" class="actions"><button id="aggregate-add-group" class="quiet" type="button">Add another grouping</button></div>'+
         '<label class="field">Show change over time using<select id="aggregate-time"><option value="">No time grouping</option>'+optionList(timeFields.map(fieldChoiceValue),suggestedTimeValue,value=>timeFields.find(choice=>fieldChoiceValue(choice)===value)?.label||value)+'</select></label>'+
         '<label id="aggregate-bucket-wrap" class="field '+(suggestedTime?"":"hidden")+'">Time interval<select id="aggregate-bucket"><option value="week" '+(suggestedBucket==="week"?"selected":"")+'>Week</option><option value="day" '+(suggestedBucket==="day"?"selected":"")+'>Day</option><option value="month" '+(suggestedBucket==="month"?"selected":"")+'>Month</option></select></label>'+
+        '<label class="field">Limit records to<select id="aggregate-window-field"><option value="">All reviewed dates</option>'+optionList(relativeTimeFields.map(fieldChoiceValue),undefined,value=>relativeTimeFields.find(choice=>fieldChoiceValue(choice)===value)?.label||value)+'</select></label>'+
+        '<label id="aggregate-window-wrap" class="field hidden">Reviewed UTC window<select id="aggregate-window-name">'+relativeWindows.map(window=>'<option value="'+esc(window)+'">'+esc(relativeWindowLabel(window))+'</option>').join("")+'</select></label>'+
         '<label class="field">Order result<select id="aggregate-order"><option value="measure:desc">Largest measure first</option><option value="measure:asc">Smallest measure first</option><option value="comparison_change:percentage:desc" data-comparison-order disabled>Fastest percentage growth</option><option value="comparison_change:absolute:desc" data-comparison-order disabled>Largest absolute increase</option><option value="comparison_change:percentage:asc" data-comparison-order disabled>Fastest percentage decline</option><option value="comparison_change:absolute:asc" data-comparison-order disabled>Largest absolute decrease</option><option value="time_bucket:asc">Oldest bucket first</option><option value="time_bucket:desc">Newest bucket first</option></select></label>'+
         '<label class="field">Maximum groups<input id="aggregate-top" type="number" min="1" max="'+esc(resource.maximum_groups||25)+'" value="'+esc(maximumGroups)+'"></label>'+
         '<label class="field">Optional filter<select id="aggregate-filter"><option value="">No filter</option>'+optionList(filters.map(fieldChoiceValue),undefined,value=>filters.find(choice=>fieldChoiceValue(choice)===value)?.label||value)+'</select></label>'+
         '<label id="aggregate-filter-op-wrap" class="field hidden">Filter operator<select id="aggregate-filter-op"><option value="eq">Equals</option></select></label>'+
         '<label id="aggregate-filter-value-wrap" class="field hidden">Filter value<input id="aggregate-filter-value" type="text" maxlength="256" placeholder="Enter a value"></label>'+
         '<label id="aggregate-compare-wrap" class="check '+(suggestedTime?"":"hidden")+'"><input id="aggregate-compare" type="checkbox" '+(timeFields.length?"":"disabled")+'><span>Compare two date ranges</span></label>'+
-        '<label class="field comparison hidden">Earlier period start<input id="period-1-start" type="datetime-local" value="'+ranges[0]+'"></label>'+
-        '<label class="field comparison hidden">Earlier period end<input id="period-1-end" type="datetime-local" value="'+ranges[1]+'"></label>'+
-        '<label class="field comparison hidden">Later period start<input id="period-2-start" type="datetime-local" value="'+ranges[2]+'"></label>'+
-        '<label class="field comparison hidden">Later period end<input id="period-2-end" type="datetime-local" value="'+ranges[3]+'"></label>'+
+        '<label class="field comparison hidden">Date range source<select id="aggregate-comparison-mode"><option value="relative" '+(relativeWindows.length?"":"disabled")+'>Reviewed relative UTC window</option><option value="absolute" '+(relativeWindows.length?"":"selected")+'>Exact UTC date ranges</option></select></label>'+
+        '<label class="field comparison comparison-relative hidden">Reviewed window<select id="aggregate-comparison-window">'+relativeWindows.map(window=>'<option value="'+esc(window)+'">'+esc(relativeWindowLabel(window))+'</option>').join("")+'</select></label>'+
+        '<label class="field comparison comparison-relative hidden">Compare with<select id="aggregate-comparison-partner">'+relativeComparisons.map(partner=>'<option value="'+esc(partner)+'">'+esc(relativeWindowLabel(partner))+'</option>').join("")+'</select></label>'+
+        '<label class="field comparison comparison-absolute hidden">Earlier period start<input id="period-1-start" type="datetime-local" value="'+ranges[0]+'"></label>'+
+        '<label class="field comparison comparison-absolute hidden">Earlier period end<input id="period-1-end" type="datetime-local" value="'+ranges[1]+'"></label>'+
+        '<label class="field comparison comparison-absolute hidden">Later period start<input id="period-2-start" type="datetime-local" value="'+ranges[2]+'"></label>'+
+        '<label class="field comparison comparison-absolute hidden">Later period end<input id="period-2-end" type="datetime-local" value="'+ranges[3]+'"></label>'+
         '<div id="explore-guardrails" class="band notice"><strong>This form cannot widen data access.</strong><p>Your application supplies the customer and user outside this form. Hidden fields never appear as choices. Results stop at '+esc(resource.maximum_groups||"the reviewed number of")+' groups, and groups smaller than '+esc(resource.minimum_cohort_size)+' are suppressed.'+(resource.minimum_cohort_overridden?' <strong>This threshold is an explicit owner override.</strong>':'')+'</p>'+(resource.minimum_cohort_size===1?'<p><strong>Small-group suppression is disabled; groups of one can identify individuals.</strong></p>':'')+'</div>';
       byId("aggregate-add-group").onclick=()=>{
         const second=byId("aggregate-dimension-2-wrap");
@@ -3790,15 +5686,17 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         byId("aggregate-add-group-wrap").classList.add("hidden");
       }
       byId("aggregate-compare").onchange=()=>{
-        document.querySelectorAll(".comparison").forEach(node=>node.classList.toggle("hidden",!byId("aggregate-compare").checked));
-        refreshComparisonOrderOptions();
+        refreshComparisonControls();
       };
+      byId("aggregate-comparison-mode").onchange=refreshComparisonControls;
       byId("aggregate-filter").onchange=refreshFilterOperators;
       byId("aggregate-time").onchange=refreshTimeBucketOptions;
+      byId("aggregate-window-field").onchange=refreshRelativeTimeWindowControls;
       document.querySelectorAll("#aggregate-controls input,#aggregate-controls select").forEach(input=>input.addEventListener("change",updatePlanPreview));
       refreshFilterOperators();
       refreshTimeBucketOptions();
-      refreshComparisonOrderOptions();
+      refreshRelativeTimeWindowControls();
+      refreshComparisonControls();
       updatePlanPreview();
     }
 
@@ -3824,10 +5722,26 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       byId("aggregate-compare-wrap").classList.toggle("hidden",!choice);
       if(!choice){
         byId("aggregate-compare").checked=false;
-        document.querySelectorAll(".comparison").forEach(node=>node.classList.add("hidden"));
       }
       const timeOrderOptions=byId("aggregate-order").querySelectorAll('option[value^="time_bucket:"]');
       timeOrderOptions.forEach(option=>option.disabled=!choice||byId("aggregate-compare").checked);
+      refreshComparisonOrderOptions();
+      refreshComparisonControls();
+    }
+
+    function refreshRelativeTimeWindowControls(){
+      const selected=Boolean(byId("aggregate-window-field")?.value);
+      byId("aggregate-window-wrap")?.classList.toggle("hidden",!selected);
+    }
+
+    function refreshComparisonControls(){
+      const comparing=Boolean(byId("aggregate-compare")?.checked);
+      const relative=byId("aggregate-comparison-mode")?.value==="relative";
+      document.querySelectorAll(".comparison").forEach(node=>node.classList.toggle("hidden",!comparing));
+      document.querySelectorAll(".comparison-relative").forEach(node=>node.classList.toggle("hidden",!comparing||!relative));
+      document.querySelectorAll(".comparison-absolute").forEach(node=>node.classList.toggle("hidden",!comparing||relative));
+      if(byId("aggregate-window-field"))byId("aggregate-window-field").disabled=comparing;
+      if(byId("aggregate-window-name"))byId("aggregate-window-name").disabled=comparing;
       refreshComparisonOrderOptions();
     }
 
@@ -3845,6 +5759,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     function populateRowBuilder(resourceKey){
       const resources=resourcesFromDescription();
       const resource=describedResourceFromKey(resourceKey)||resources[0];
+      const relativeTimeFields=relativeTimeFieldChoices(resource,false);
+      const relativeWindows=relativeTimeCatalog().windows||[];
       const fields=(resource.selectable_fields||[]).slice().sort((left,right)=>{
         const priority=field=>field===resource.primary_key?0:/(^|_)id$/i.test(field)?2:1;
         return priority(left)-priority(right);
@@ -3853,8 +5769,11 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         '<label class="field">Table or view<select id="row-resource">'+optionList(resources.map(describedResourceKey),describedResourceKey(resource),value=>describedResourceLabel(describedResourceFromKey(value)))+'</select></label>'+
         '<label class="field">Exact '+esc(fieldLabel(resource,resource.primary_key||"record ID"))+'<input id="row-id" type="text" maxlength="256" placeholder="Enter a real record ID"></label>'+
         '<label class="field">Values to return<select id="row-fields" multiple size="'+Math.min(6,Math.max(3,fields.length))+'">'+fields.map((field,index)=>'<option value="'+esc(field)+'" '+(index<Math.min(5,fields.length)?"selected":"")+'>'+esc(fieldLabel(resource,field))+'</option>').join("")+'</select></label>'+
+        '<label class="field">Limit record to<select id="row-window-field"><option value="">Any reviewed date</option>'+optionList(relativeTimeFields.map(fieldChoiceValue),undefined,value=>relativeTimeFields.find(choice=>fieldChoiceValue(choice)===value)?.label||value)+'</select></label>'+
+        '<label id="row-window-wrap" class="field hidden">Reviewed UTC window<select id="row-window-name">'+relativeWindows.map(window=>'<option value="'+esc(window)+'">'+esc(relativeWindowLabel(window))+'</option>').join("")+'</select></label>'+
         '<div class="band notice"><strong>The AI cannot choose another customer or user.</strong><p>Your application supplies those trusted values outside this form.</p></div>';
       byId("row-resource").onchange=()=>populateRowBuilder(byId("row-resource").value);
+      byId("row-window-field").onchange=()=>byId("row-window-wrap").classList.toggle("hidden",!byId("row-window-field").value);
       document.querySelectorAll("#row-builder input,#row-builder select").forEach(input=>input.addEventListener("change",updatePlanPreview));
       updatePlanPreview();
     }
@@ -3886,11 +5805,13 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         const resource=describedResourceFromKey(byId("row-resource").value);
         const id=byId("row-id").value.trim();
         const select=[...byId("row-fields").selectedOptions].map(option=>option.value);
+        const timeWindowField=parseFieldChoice(byId("row-window-field").value);
         return {
           kind:"rows",
           resource:resource.id,
           select,
           where:id?[{field:resource.primary_key,op:"eq",value:id}]:[],
+          ...(timeWindowField?{time_window:{...timeWindowField,window:byId("row-window-name").value}}:{}),
           limit:1
         };
       }
@@ -3898,13 +5819,27 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const resourceId=resource.id;
       const measure=JSON.parse(byId("aggregate-measure").value);
       const dimensions=["aggregate-dimension","aggregate-dimension-2","aggregate-dimension-3"]
-        .map(id=>parseFieldChoice(byId(id).value))
+        .map(id=>parseDimensionChoice(byId(id).value))
         .filter(Boolean);
-      const dimensionKeys=dimensions.map(fieldChoiceValue);
+      const dimensionKeys=dimensions.map(dimensionChoiceValue);
       if(new Set(dimensionKeys).size!==dimensionKeys.length){
         throw new Error("Choose each reviewed grouping field only once.");
       }
+      const autoBandDimensions=dimensions.filter(dimension=>dimension.numeric_band&&typeof dimension.numeric_band==="object");
+      if(autoBandDimensions.length>1)throw new Error("Choose at most one automatic numeric band per question.");
       const timeField=parseFieldChoice(byId("aggregate-time").value);
+      const timeWindowField=parseFieldChoice(byId("aggregate-window-field").value);
+      if(measure.derived_measure){
+        const definition=(resource.derived_measures||[]).find(item=>item.name===measure.derived_measure);
+        if(definition?.base_measure){
+          const sequential=["running_total","lag_absolute_change","lag_percentage_change","moving_average"].includes(definition.shape);
+          if(sequential&&!timeField)throw new Error(definition.label+" requires a reviewed time grouping.");
+          if(sequential&&byId("aggregate-bucket").value==="day_of_week")throw new Error(definition.label+" requires an ordered calendar interval, not day of week.");
+          if(!sequential&&timeField)throw new Error(definition.label+" uses released groups and cannot be combined with a time grouping.");
+          if(!sequential&&!dimensions.length)throw new Error(definition.label+" requires at least one reviewed grouping field.");
+          if(byId("aggregate-compare").checked)throw new Error(definition.label+" cannot be combined with a two-period comparison.");
+        }
+      }
       const filterField=parseFieldChoice(byId("aggregate-filter").value);
       const filterOperator=byId("aggregate-filter-op").value;
       const filterText=byId("aggregate-filter-value").value.trim();
@@ -3916,6 +5851,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         measures:[measure],
         ...(dimensions.length?{dimensions}:{}),
         ...(timeField?{time_bucket:{...timeField,bucket:byId("aggregate-bucket").value}}:{}),
+        ...(!byId("aggregate-compare").checked&&timeWindowField?{time_window:{...timeWindowField,window:byId("aggregate-window-name").value}}:{}),
         ...(filterField&&filterText?{where:[{...filterField,op:filterOperator,value:typedFilterValue(resource,filterField,filterOperator,filterText)}]}:{}),
         order_by:orderKind==="time_bucket"
           ?{kind:"time_bucket",direction:orderDirection}
@@ -3924,38 +5860,57 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
             :{kind:"measure",index:0,direction:orderDirection},
         top_n:Number(byId("aggregate-top").value)
       };
+      if(autoBandDimensions.length&&byId("aggregate-compare").checked)throw new Error("Automatic numeric bands cannot be combined with a two-period comparison.");
       if(byId("aggregate-compare").checked){
-        const ranges=[
-          {start:isoValue("period-1-start"),end:isoValue("period-1-end")},
-          {start:isoValue("period-2-start"),end:isoValue("period-2-end")}
-        ];
-        if(ranges.every(range=>range.start&&range.end)&&timeField)plan.comparison={...timeField,ranges};
+        if(byId("aggregate-comparison-mode").value==="relative"){
+          if(!byId("aggregate-comparison-window").value||!byId("aggregate-comparison-partner").value)throw new Error("Choose a reviewed relative window and comparison period.");
+          if(timeField)plan.comparison={...timeField,window:byId("aggregate-comparison-window").value,compare_to:byId("aggregate-comparison-partner").value};
+        }else{
+          const ranges=[
+            {start:isoValue("period-1-start"),end:isoValue("period-1-end")},
+            {start:isoValue("period-2-start"),end:isoValue("period-2-end")}
+          ];
+          if(ranges.every(range=>range.start&&range.end)&&timeField)plan.comparison={...timeField,ranges};
+        }
       }
       return plan;
     }
 
     function planSentence(plan,boundaryName){
       const resource=describedResourceForPlan(plan,boundaryName);
-      if(plan.kind==="rows")return "Read one exact "+resourceLabel(resource).toLowerCase()+" record and return only "+plan.select.map(field=>fieldLabel(resource,field)).join(", ")+".";
+      if(plan.kind==="rows")return "Read one exact "+resourceLabel(resource).toLowerCase()+" record and return only "+plan.select.map(field=>fieldLabel(resource,field)).join(", ")+(plan.time_window?", limited to "+relativeWindowLabel(plan.time_window.window)+" using "+fieldReferenceLabel(resource,plan.time_window):"")+".";
       const measures=plan.measures.map(measure=>{
+        if(measure.derived_measure){
+          const derived=(resource.derived_measures||[]).find(item=>item.name===measure.derived_measure);
+          return (derived?.label||measure.derived_measure).toLowerCase();
+        }
         if(measure.function==="count")return "the number of records";
         if(measure.function==="count_distinct")return "the number of unique "+fieldReferenceLabel(resource,measure).toLowerCase();
         const field=fieldReferenceLabel(resource,measure).toLowerCase();
-        return measure.function==="sum"&&field.startsWith("total ")?field:(measure.function==="sum"?"total ":"average ")+field;
+        const labels={sum:"total ",avg:"average ",stddev_samp:"sample standard deviation of ",stddev_pop:"population standard deviation of ",var_samp:"sample variance of ",var_pop:"population variance of ",null_count:"missing values in ",non_null_count:"present values in ",completion_rate:"completion rate for "};
+        return measure.function==="sum"&&field.startsWith("total ")?field:(labels[measure.function]||measure.function+" of ")+field;
       }).join(", ");
       const groups=(plan.dimensions||[]).map(item=>fieldReferenceLabel(resource,item)).join(", ");
       const filters=(plan.where||[]).map(item=>fieldReferenceLabel(resource,item)+" "+(item.op==="eq"?"equals":item.op)+" "+JSON.stringify(item.value)).join(", ");
-      return "Calculate "+measures+" for "+resourceLabel(resource).toLowerCase()+(groups?" grouped by "+groups:"")+(plan.time_bucket?" for each "+plan.time_bucket.bucket:"")+(filters?" where "+filters:"")+" with at most "+plan.top_n+" groups.";
+      const timeWindow=plan.time_window?" limited to "+relativeWindowLabel(plan.time_window.window)+" using "+fieldReferenceLabel(resource,plan.time_window):"";
+      const comparison=plan.comparison?.window?" comparing "+relativeWindowLabel(plan.comparison.window)+" with "+relativeWindowLabel(plan.comparison.compare_to):plan.comparison?" comparing two exact UTC ranges":"";
+      const groupLimit=Number.isInteger(plan.top_n)?" with at most "+plan.top_n+" groups":"";
+      return "Calculate "+measures+" for "+resourceLabel(resource).toLowerCase()+(groups?" grouped by "+groups:"")+(plan.time_bucket?" for each "+plan.time_bucket.bucket:"")+timeWindow+comparison+(filters?" where "+filters:"")+groupLimit+".";
     }
 
     function resultColumnLabel(plan,key,semantics,boundaryName){
       const resource=describedResourceForPlan(plan,boundaryName);
       const measureLabel=measure=>{
+        if(measure.function==="reviewed_derived"||measure.derived_measure){
+          const name=measure.derived_measure||measure.alias;
+          return (resource.derived_measures||[]).find(item=>item.name===name)?.label||name||"Reviewed derived measure";
+        }
         if(measure.function==="count")return "Record count";
         const field=fieldReferenceLabel(resource,measure);
         if(measure.function==="count_distinct")return "Unique "+field;
         if(measure.function==="avg")return "Average "+field;
-        return measure.function==="sum"&&field.toLowerCase().startsWith("total ")?field:"Total "+field;
+        const labels={sum:"Total ",avg:"Average ",stddev_samp:"Sample standard deviation of ",stddev_pop:"Population standard deviation of ",var_samp:"Sample variance of ",var_pop:"Population variance of ",null_count:"Missing values in ",non_null_count:"Present values in ",completion_rate:"Completion rate for "};
+        return measure.function==="sum"&&field.toLowerCase().startsWith("total ")?field:(labels[measure.function]||measure.function+" of ")+field;
       };
       if(plan.kind==="rows")return fieldLabel(resource,key);
       const reviewedDimension=(semantics?.dimensions||[]).find(item=>item.alias===key);
@@ -3984,9 +5939,11 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       if(measure){
         const value=plan.measures?.[Number(measure[1])];
         if(!value)return "Reviewed measure";
+        if(value.derived_measure)return (resource.derived_measures||[]).find(item=>item.name===value.derived_measure)?.label||value.derived_measure;
         if(value.function==="count")return "Record count";
         if(value.function==="count_distinct")return "Unique "+fieldReferenceLabel(resource,value);
-        return (value.function==="sum"?"Total ":"Average ")+fieldReferenceLabel(resource,value);
+        const labels={sum:"Total ",avg:"Average ",stddev_samp:"Sample standard deviation of ",stddev_pop:"Population standard deviation of ",var_samp:"Sample variance of ",var_pop:"Population variance of ",null_count:"Missing values in ",non_null_count:"Present values in ",completion_rate:"Completion rate for "};
+        return (labels[value.function]||value.function+" of ")+fieldReferenceLabel(resource,value);
       }
       if(key==="time_bucket")return (plan.time_bucket?.bucket||"Time")+" · "+fieldReferenceLabel(resource,plan.time_bucket);
       if(key==="period_index")return "Comparison period";
@@ -4060,7 +6017,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		        const privacyGuidance=result.privacy.suppressed_groups>0
 		          ?suppressionReviewGuidance(plan,selectedBoundary,result.privacy.minimum_cohort_size)
 		          :null;
-		        resultPanel.innerHTML='<section class="band success"><h3>Your reviewed question worked.</h3><p>'+esc(planSentence(plan,selectedBoundary))+'</p>'+resultDataHtml(plan,result.data,result.outcome?.result,selectedBoundary)+(privacyGuidance?'<p><strong>'+esc(result.privacy.suppressed_groups)+' additional group'+(result.privacy.suppressed_groups===1?" was":"s were")+' withheld because '+(result.privacy.suppressed_groups===1?"it was":"they were")+' below the reviewed minimum group size of '+esc(result.privacy.minimum_cohort_size)+'.</strong></p>'+(privacyGuidance.shape?'<p>'+esc(privacyGuidance.shape)+'</p>':'')+'<p>'+esc(privacyGuidance.path)+'</p><button id="review-result-privacy" class="quiet" type="button">Review privacy for '+esc(plan.resource)+'</button>':'')+'<p>Keep asking legal combinations inside this reviewed boundary without another approval. Protect is optional and creates a disabled reusable capability.</p><div class="split-actions"><button id="ask-another-result" type="button">Ask another question</button><button id="protect-result" class="secondary" type="button">Protect this '+esc(plan.kind==="aggregate"?"analysis":"read")+'</button></div><details><summary>What Runner enforced</summary><p><strong>Tool:</strong> <code>app.explore_data</code><br><strong>Reviewed fields used:</strong> '+esc(visible.join(", ")||"record count")+'<br><strong>Minimum group size:</strong> '+esc(result.privacy.minimum_cohort_size??"not applicable")+'<br><strong>Kept out:</strong> '+esc(unavailable)+'<br><strong>Trusted scope:</strong> supplied outside the question<br><strong>Source database changed:</strong> no</p><div class="result-meta"><span class="badge">'+esc(result.audit.returned_rows_or_groups)+' row(s) / group(s)</span><span class="badge">'+esc(result.audit.returned_cells)+' cells</span></div><p>'+esc(result.untrusted_data_notice)+'</p></details></section>';
+          resultPanel.innerHTML='<section class="band success"><h3>Your reviewed question worked.</h3><p>'+esc(planSentence(plan,selectedBoundary))+'</p>'+resultDataHtml(plan,result.data,result.outcome?.result,selectedBoundary)+reviewedValueControlHtml(result)+renderOperatorTimeWindowStatus(result)+renderOperatorExecutionCost(result)+renderOperatorBudgetStatus(result)+(privacyGuidance?'<p><strong>'+esc(result.privacy.suppressed_groups)+' additional group'+(result.privacy.suppressed_groups===1?" was":"s were")+' withheld because '+(result.privacy.suppressed_groups===1?"it was":"they were")+' below the reviewed minimum group size of '+esc(result.privacy.minimum_cohort_size)+'.</strong></p>'+(privacyGuidance.shape?'<p>'+esc(privacyGuidance.shape)+'</p>':'')+'<p>'+esc(privacyGuidance.path)+'</p><button id="review-result-privacy" class="quiet" type="button">Review privacy for '+esc(plan.resource)+'</button>':'')+'<p>Keep asking legal combinations inside this reviewed boundary without another approval. Protect is optional and creates a disabled reusable capability.</p><div class="split-actions"><button id="ask-another-result" type="button">Ask another question</button><button id="protect-result" class="secondary" type="button">Protect this '+esc(plan.kind==="aggregate"?"analysis":"read")+'</button></div><details><summary>What Runner enforced</summary><p><strong>Tool:</strong> <code>app.explore_data</code><br><strong>Reviewed fields used:</strong> '+esc(visible.join(", ")||"record count")+'<br><strong>Minimum group size:</strong> '+esc(result.privacy.minimum_cohort_size??"not applicable")+'<br><strong>Kept out:</strong> '+esc(unavailable)+'<br><strong>Trusted scope:</strong> supplied outside the question<br><strong>Source database changed:</strong> no</p><div class="result-meta"><span class="badge">'+esc(result.audit.returned_rows_or_groups)+' row(s) / group(s)</span><span class="badge">'+esc(result.audit.returned_cells)+' cells</span></div><p>'+esc(result.untrusted_data_notice)+'</p></details></section>';
 			        byId("ask-another-result").onclick=()=>{if(plan.kind==="rows")switchExploreMode("aggregate");byId("explore-composer").open=true;byId("explore-composer").scrollIntoView({behavior:"auto",block:"start"})};
 		        if(byId("review-result-privacy"))byId("review-result-privacy").onclick=()=>openAccessEditor(plan.resource,undefined,true);
 		        byId("protect-result").onclick=async()=>{preferredProtectQueryRef=resultProtectQueryRef;await loadProtect(resultProtectQueryRef);setView("protect")};
@@ -4172,7 +6129,12 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		      const command="npx -y @synapsor/runner mcp serve --authoring --project-root .";
 		      const config={mcpServers:{synapsor_authoring:{command:"npx",args:["-y","@synapsor/runner","mcp","serve","--authoring","--project-root","."]}}};
 		      const codex='[mcp_servers.synapsor_authoring]\\ncommand = "npx"\\nargs = '+JSON.stringify(config.mcpServers.synapsor_authoring.args);
+		      const productionProfile=(activeBoundary?.pack?.deployment_profile||candidate?.deployment_profile)==="production";
+		      const productionHttp=productionProfile
+		        ?'<section class="band notice"><h3>Production Streamable HTTP clients</h3><p>Generate the native remote config after the production endpoint is deployed. Each file references one short-lived bearer-token environment variable; Runner writes no token value.</p><pre>'+esc("synapsor-runner mcp client-config --client claude-code --transport streamable-http --config ./synapsor.runner.json\\nsynapsor-runner mcp client-config --client cursor --transport streamable-http --config ./synapsor.runner.json\\nsynapsor-runner mcp client-config --client vscode --transport streamable-http --config ./synapsor.runner.json")+'</pre><p>Set <code>SYNAPSOR_MCP_ACCESS_TOKEN</code> in the client process from your configured identity provider, then reload the client. Do not paste the token into the generated file.</p></section>'
+		        :'';
 		      byId("client-configs").innerHTML='<p>Every client receives the same two local authoring tools and no approval or commit tool. Runner never puts database credentials in client files.</p>'
+		        +productionHttp
 		        +'<h3>Prepare this project</h3><p>Choose a client used by this project. Runner changes only its <code>synapsor</code> entry, preserves other settings, and backs up an existing file. The client starts the local stdio server when it opens this project.</p>'
 		        +'<div class="actions"><button class="secondary" data-install-mcp="cursor" type="button">Prepare Cursor</button><button class="secondary" data-install-mcp="claude-code" type="button">Prepare Claude Code</button><button class="secondary" data-install-mcp="vscode" type="button">Prepare VS Code</button></div><div id="mcp-install-status" class="status-message" role="status" aria-live="polite"></div>'
 		        +'<details><summary>Manual and generic client setup</summary><h3>Managed project installers</h3><pre>'+esc("synapsor-runner mcp install cursor --project --authoring --project-root . --yes\\nsynapsor-runner mcp install claude-code --project --authoring --project-root . --yes\\nsynapsor-runner mcp install vscode --project --authoring --project-root . --yes")+'</pre><h3>Generic stdio MCP</h3><pre>'+esc(JSON.stringify(config,null,2))+'</pre><h3>Direct server command</h3><p>Use this in another local MCP client. No model API key is needed by Runner.</p><pre>'+esc(command)+'</pre><h3>Codex</h3><pre>'+esc(codex)+'</pre></details>';
@@ -4433,7 +6395,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       byId("action-delete-confirm-wrap").classList.toggle("hidden",operation!=="delete");
       byId("action-delete-confirm").placeholder="DELETE "+resource.id;
       renderGuidedFields(resource,operation);
-      byId("action-boundary-details").innerHTML='<p><strong>Trusted tenant:</strong> '+esc(resource.tenant_key)+'<br><strong>Trusted principal:</strong> '+esc(resource.principal_key||"not configured")+'<br><strong>Source-proven row identity:</strong> '+esc(resource.primary_key)+'<br><strong>Kept out:</strong> '+esc((resource.kept_out_fields||[]).join(", ")||"none")+'</p><p>The model cannot provide or change tenant, principal, activation, approval, or apply authority.</p>';
+      const resourceReview=reviewResource(resource.id);
+      byId("action-boundary-details").innerHTML='<p><strong>Trusted tenant:</strong> '+esc(reviewedTenantScopeLabel(resource,resourceReview))+'<br><strong>Trusted principal:</strong> '+esc(reviewedPrincipalScopeLabel(resource,resourceReview))+'<br><strong>Source-proven row identity:</strong> '+esc(resource.primary_key)+'<br><strong>Kept out:</strong> '+esc((resource.kept_out_fields||[]).join(", ")||"none")+'</p><p>The model cannot provide or change tenant, principal, a mandatory scope path, activation, approval, or apply authority.</p>';
       updateGuidedCompatibility();
     }
 
@@ -4682,10 +6645,15 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		        selected_name:candidate.pack.name,
 		        entries:[]
 		      };
+	      boundaryRescanReport=payload.boundary_rescan_report||null;
+	      databaseServerCompatibility=payload.database_server_compatibility||null;
 	      if(accessBaselineColumns===null)accessBaselineColumns=accessColumnSnapshot(candidate);
 	      reviewReport=payload.review;
 	      activeBoundary=payload.active;
 	      activeBoundaries=payload.active_boundaries||[];
+	      boundaryCatalog=payload.boundary_catalog||{schema_version:"synapsor.boundary-catalog.v1",table_count:0,relationship_count:0,boundaries:[]};
+	      boundaryMermaid=payload.boundary_mermaid||"flowchart LR";
+	      boundaryDiagrams=payload.boundary_diagrams||[];
 	      journey=payload.journey;
       instantOnboarding=payload.instant_onboarding;
       const namedAuthorityActive=!activeBoundaries.length&&journey?.authority_active===true;
@@ -4792,6 +6760,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       }
     };
     byId("configure-ask").onclick=configureAsk;
+    byId("update-ask-limits").onclick=updateAskLimits;
     byId("change-ask-provider").onclick=showAskConfiguration;
     byId("run-ask").onclick=runAsk;
     byId("ask-question").addEventListener("keydown",event=>{
@@ -4802,6 +6771,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     });
     byId("cancel-ask").onclick=cancelAsk;
     byId("clear-ask").onclick=clearAsk;
+    byId("load-ask-history").onclick=()=>loadAskHistory(0);
     byId("refresh-protect").onclick=loadProtect;
     byId("load-action").onclick=loadGuidedAction;
     byId("create-action").onclick=createGuidedAction;

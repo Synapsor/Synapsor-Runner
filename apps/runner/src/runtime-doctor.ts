@@ -1,6 +1,10 @@
 import { CloudLinkedSynchronizer, bindPostgresTrustedScope, capabilityWritebackMode, createDefaultRuntimeStore, describeIsolationAssurance, preflightGeneratedAuthority, type RuntimeCapabilityConfig, type RuntimeConfig, type SourceIsolationAssurance } from "@synapsor-runner/mcp-server";
 import { createPostgresPool, inspectPostgresRlsTarget, type PostgresRlsOperation } from "@synapsor-runner/postgres";
 import {
+  databaseServerCompatibility,
+  databaseServerCompatibilityMessage,
+} from "@synapsor-runner/schema-inspector";
+import {
   ProposalStore
 } from "@synapsor-runner/proposal-store";
 import {
@@ -10,6 +14,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { loadActivatedExplorationBoundaries, type ActivatedExplorationBoundary } from "./auto-boundary.js";
 import { cliCommandName } from "./cli-command-meta.js";
 import { fileExists } from "./cli-files.js";
 import { formatScalar, isRecord, safeErrorMessage, stableStringArray } from "./cli-format.js";
@@ -17,7 +22,8 @@ import { envValue, optionalArg, outputArg } from "./cli-options.js";
 import { readRuntimeConfig, resolvedLocalStorePath, runnerConfigPath } from "./cli-project.js";
 import { RunnerCapabilityConfig, RunnerSourceConfig, adapters, dynamicImportModule } from "./cli-runtime.js";
 import { validateConfigFile } from "./config-domain.js";
-import { DoctorCheck, LocalDoctorGovernance, LocalDoctorReport, envPresenceCheck, formatLocalDoctorMarkdown, formatLocalDoctorReport, httpHandlerReachabilityCheck, inspectConfiguredSource, localToolNames, proposalApprovalPolicyResolutionDoctorCheck, proposalConflictGuardDoctorCheck, proposalReversibilityDoctorCheck, proposalWritebackResolutionDoctorCheck, sharedPostgresLedgerDoctorChecks, trustedContextsForDoctor } from "./doctor-domain.js";
+import { DoctorCheck, LocalDoctorGovernance, LocalDoctorReport, envPresenceCheck, formatLocalDoctorMarkdown, formatLocalDoctorReport, formatLocalDoctorSetupReport, httpHandlerReachabilityCheck, inspectConfiguredSource, localDoctorSetupStatus, localToolNames, proposalApprovalPolicyResolutionDoctorCheck, proposalConflictGuardDoctorCheck, proposalReversibilityDoctorCheck, proposalWritebackResolutionDoctorCheck, sharedPostgresLedgerDoctorChecks, trustedContextsForDoctor } from "./doctor-domain.js";
+import { derivedScopeIndexDoctorChecks } from "./derived-scope-index-doctor.js";
 import {
   managedMcpProjectDefinition,
   managedMcpProjectStatus,
@@ -27,11 +33,14 @@ import {
 import { fetchStdioMcpToolsCommand, mcpAuditToolNames } from "./mcp-audit.js";
 import { isManagedAuthoringEntry } from "./mcp-project-domain.js";
 import { trustedCliContext } from "./operator-authority.js";
+import { inspectProductionExploreStartup } from "./mcp-runtime.js";
+import { runAllCleanups, withPreservedCleanup } from "./resource-lifecycle.js";
 import { capabilityOperation, formatSourceReceiptMode, receiptTableGuidance, runnerReceiptConfig, sourceNeedsSqlWriteback, writebackTimeoutMs } from "./writeback-domain.js";
 
 
 export async function localDoctor(args: string[]): Promise<number> {
   const configPath = runnerConfigPath(args);
+  const productionPreflight = args.includes("--preflight");
   const allowSharedCredential = args.includes("--allow-shared-credential");
   const checkHandlers = args.includes("--check-handlers");
   const checkWriteback = args.includes("--check-writeback") || args.includes("--check-db");
@@ -49,8 +58,70 @@ export async function localDoctor(args: string[]): Promise<number> {
   for (const warning of validation.warnings) {
     checks.push({ name: `config-warning:${warning.code}`, ok: true, level: "warn", message: warning.message });
   }
+  let productionExploreReport: Awaited<ReturnType<typeof inspectProductionExploreStartup>> | undefined;
   if (validation.ok) {
     parsed = await readRuntimeConfig(configPath);
+  }
+  if (productionPreflight) {
+    checks.push({
+      name: "production-preflight-mode",
+      ok: validation.ok && parsed.production_explore !== undefined,
+      level: validation.ok && parsed.production_explore !== undefined ? "pass" : "fail",
+      message: validation.ok && parsed.production_explore !== undefined
+        ? "Production preflight is checking identity, transport, source, shared control store, and reviewed-boundary readiness together; it does not create or activate authority."
+        : "--preflight requires a valid production_explore config. Generate one with synapsor-runner config init --production-explore --engine postgres|mysql, choosing the source engine explicitly.",
+    });
+  }
+  if (validation.ok && parsed.production_explore !== undefined) {
+    productionExploreReport = await inspectProductionExploreStartup(parsed, process.env);
+    checks.push(...productionExploreReport.checks.map((check) => ({
+      name: `production-explore:${check.name}`,
+      ok: check.ok,
+      level: check.level,
+      message: check.message,
+    })));
+  }
+  const activeExploreBoundaries = validation.ok
+    ? await activeExploreBoundariesForDoctor(
+      parsed.production_explore?.project_root ?? path.dirname(path.resolve(configPath)),
+      checks,
+    )
+    : [];
+  for (const boundary of activeExploreBoundaries.filter((item) => item.organization_scope)) {
+    checks.push({
+      name: `single-organization:${boundary.pack.name}`,
+      ok: true,
+      level: "pass",
+      message: `Boundary ${boundary.pack.name} is explicitly reviewed for one organization (${boundary.organization_scope!.organization_id}); no tenant predicate is applied, and principal scope remains independently enforced where reviewed.`,
+    });
+  }
+  for (const boundary of activeExploreBoundaries) {
+    for (const resource of boundary.pack.resources.filter(
+      (item) => Boolean(item.shared_reference_scope),
+    )) {
+      checks.push({
+        name: `shared-reference:${boundary.pack.name}:${resource.id}`,
+        ok: true,
+        level: "pass",
+        message:
+          `${boundary.pack.name}.${resource.id} is a human-reviewed Shared reference: `
+          + "no tenant predicate is applied to this table; field visibility, cohort suppression, "
+          + "privacy budgets, and any independently reviewed principal scope remain enforced.",
+      });
+    }
+    for (const resource of boundary.pack.resources) {
+      for (const policy of resource.auto_bands ?? []) {
+        checks.push({
+          name: `auto-band:${boundary.pack.name}:${resource.id}:${policy.field}`,
+          ok: true,
+          level: "pass",
+          message:
+            `${boundary.pack.name}.${resource.id}.${policy.field} permits reviewed automatic numeric bands: `
+            + `${policy.methods.join(" or ")}, ${policy.min_buckets}-${policy.max_buckets} buckets, `
+            + `${policy.label_style} labels. Edges are computed from trusted scoped rows and are never returned raw.`,
+        });
+      }
+    }
   }
   if ((parsed.capabilities ?? []).some((capability) => capability.protected_read)) {
     try {
@@ -76,6 +147,9 @@ export async function localDoctor(args: string[]): Promise<number> {
   const isolation = describeIsolationAssurance(parsed);
 
   const contextsToCheck = trustedContextsForDoctor(parsed);
+  const singleOrganizationAuthoringOnly = (parsed.capabilities ?? []).length === 0
+    && activeExploreBoundaries.length > 0
+    && activeExploreBoundaries.every((boundary) => Boolean(boundary.organization_scope));
   for (const context of contextsToCheck) {
     if (context.provider === "http_claims") {
       checks.push({
@@ -101,8 +175,11 @@ export async function localDoctor(args: string[]): Promise<number> {
     }
     const tenantEnv = String(context.values.tenant_id_env ?? "SYNAPSOR_TENANT_ID");
     const principalEnv = String(context.values.principal_env ?? "SYNAPSOR_PRINCIPAL");
-    for (const envName of [tenantEnv, ...(context.principal_required ? [principalEnv] : [])]) {
-      checks.push(envPresenceCheck(envName, `${envName} is required for trusted context ${context.name}.`));
+    for (const envName of [
+      ...(!singleOrganizationAuthoringOnly ? [tenantEnv] : []),
+      ...(context.principal_required ? [principalEnv] : []),
+    ]) {
+      checks.push(envPresenceCheck(envName, `${envName} is required for trusted context ${context.name}.`, "pending"));
     }
   }
   checks.push(...await httpSecurityDoctorChecks(parsed, args));
@@ -132,6 +209,7 @@ export async function localDoctor(args: string[]): Promise<number> {
       }
     }
   }
+  const inspectionsBySource = new Map<string, Awaited<ReturnType<typeof inspectConfiguredSource>>>();
   for (const [sourceName, source] of Object.entries(sources)) {
     const assurance = isolation.find((item) => item.source === sourceName);
     if (assurance) checks.push(databaseScopeModeDoctorCheck(assurance));
@@ -150,7 +228,7 @@ export async function localDoctor(args: string[]): Promise<number> {
     if (parsed.mode === "review") {
       if (sourceNeedsSqlWriteback(parsed, sourceName)) {
         if (source.write_url_env) {
-          checks.push(envPresenceCheck(source.write_url_env, `${source.write_url_env} is required for trusted writeback in review mode.`));
+          checks.push(envPresenceCheck(source.write_url_env, `${source.write_url_env} is required for trusted writeback in review mode.`, "pending"));
           const readValue = envValue(process.env, source.read_url_env);
           const writeValue = envValue(process.env, source.write_url_env);
           if (readValue && writeValue && readValue === writeValue) {
@@ -188,7 +266,36 @@ export async function localDoctor(args: string[]): Promise<number> {
         }
       }
     }
-    await inspectConfiguredSource({ config: parsed, sourceName, source, checks });
+    const additionalSchemas = activeExploreBoundaries
+      .filter((boundary) => boundary.source === sourceName)
+      .flatMap((boundary) => boundary.pack.resources.map((resource) => resource.schema));
+    const inspections = await inspectConfiguredSource({
+      config: parsed,
+      sourceName,
+      source,
+      checks,
+      additionalSchemas,
+    });
+    inspectionsBySource.set(sourceName, inspections);
+    const inspectedServerVersions = new Map(
+      inspections.map((inspection) => [
+        `${inspection.engine}\u0000${inspection.server_version}`,
+        inspection,
+      ]),
+    );
+    for (const inspection of inspectedServerVersions.values()) {
+      const compatibility = databaseServerCompatibility(inspection);
+      checks.push({
+        name: `source:${sourceName}:server-version`,
+        ok: compatibility.supported,
+        level: compatibility.tier === "full"
+          ? "pass"
+          : compatibility.tier === "compatible_limited"
+            ? "warn"
+            : "fail",
+        message: databaseServerCompatibilityMessage(compatibility),
+      });
+    }
     if (source.database_scope?.mode === "postgres_rls") {
       checks.push(...await postgresRlsDoctorChecks({
         config: parsed,
@@ -198,13 +305,17 @@ export async function localDoctor(args: string[]): Promise<number> {
       }));
     }
   }
+  checks.push(...derivedScopeIndexDoctorChecks({
+    boundaries: activeExploreBoundaries,
+    inspectionsBySource,
+  }));
 
   for (const [executorName, executor] of Object.entries(parsed.executors ?? {})) {
     if (!isRecord(executor)) continue;
     if (executor.type === "http_handler") {
       const urlEnv = String(executor.url_env ?? "");
       if (urlEnv) {
-        checks.push(envPresenceCheck(urlEnv, `${urlEnv} is required for http_handler executor ${executorName}.`));
+        checks.push(envPresenceCheck(urlEnv, `${urlEnv} is required for http_handler executor ${executorName}.`, "pending"));
         const handlerUrl = envValue(process.env, urlEnv);
         if (checkHandlers && handlerUrl) {
           checks.push(await httpHandlerReachabilityCheck(executorName, handlerUrl, Number(executor.timeout_ms ?? 3000)));
@@ -219,10 +330,10 @@ export async function localDoctor(args: string[]): Promise<number> {
       }
       const auth = isRecord(executor.auth) ? executor.auth : undefined;
       const tokenEnv = typeof auth?.token_env === "string" ? auth.token_env : undefined;
-      if (tokenEnv) checks.push(envPresenceCheck(tokenEnv, `${tokenEnv} is required for http_handler executor ${executorName} bearer auth.`));
+      if (tokenEnv) checks.push(envPresenceCheck(tokenEnv, `${tokenEnv} is required for http_handler executor ${executorName} bearer auth.`, "pending"));
       const signingSecretEnv = typeof executor.signing_secret_env === "string" ? executor.signing_secret_env : undefined;
       if (signingSecretEnv) {
-        checks.push(envPresenceCheck(signingSecretEnv, `${signingSecretEnv} is required to sign http_handler requests for executor ${executorName}.`));
+        checks.push(envPresenceCheck(signingSecretEnv, `${signingSecretEnv} is required to sign http_handler requests for executor ${executorName}.`, "pending"));
       } else {
         checks.push({
           name: `executor:${executorName}:handler-signing`,
@@ -234,11 +345,13 @@ export async function localDoctor(args: string[]): Promise<number> {
     }
     if (executor.type === "command_handler") {
       const commandEnv = String(executor.command_env ?? "");
-      if (commandEnv) checks.push(envPresenceCheck(commandEnv, `${commandEnv} is required for command_handler executor ${executorName}.`));
+      if (commandEnv) checks.push(envPresenceCheck(commandEnv, `${commandEnv} is required for command_handler executor ${executorName}.`, "pending"));
     }
   }
 
-  const tools = await localToolNames(parsed, checks);
+  const tools = productionExploreReport?.tools
+    ? [...productionExploreReport.tools]
+    : await localToolNames(parsed, checks);
   const forbiddenTools = tools.filter((tool) => /execute_sql|run_query|approve|commit|apply_writeback/i.test(tool));
   checks.push({
     name: "mcp-tool-boundary",
@@ -265,10 +378,35 @@ export async function localDoctor(args: string[]): Promise<number> {
     process.stdout.write(`wrote redacted doctor report: ${output}\n`);
   } else if (args.includes("--json")) {
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  } else if (args.includes("--setup")) {
+    process.stdout.write(formatLocalDoctorSetupReport(report));
   } else {
     process.stdout.write(formatLocalDoctorReport(report));
   }
+  if (args.includes("--setup")) {
+    return localDoctorSetupStatus(report) === "failed" ? 1 : 0;
+  }
   return report.ok ? 0 : 1;
+}
+
+
+async function activeExploreBoundariesForDoctor(
+  projectRoot: string,
+  checks: DoctorCheck[],
+): Promise<ActivatedExplorationBoundary[]> {
+  try {
+    return await loadActivatedExplorationBoundaries(projectRoot);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    checks.push({
+      name: "derived-scope-indexes:boundary-metadata",
+      ok: true,
+      level: "warn",
+      advisory: "note",
+      message: `Derived-scope index coverage could not be inspected because active boundary metadata did not load. Explore authority is unchanged. Run ${cliCommandName()} boundary review --map, recover the reviewed boundary, then rerun doctor.`,
+    });
+    return [];
+  }
 }
 
 
@@ -576,7 +714,7 @@ async function httpSecurityDoctorChecks(config: RuntimeConfig, args: string[]): 
     name: "http-security:limits",
     ok: true,
     level: "pass",
-    message: `HTTP bounds: request ${limits?.max_request_bytes ?? 1_048_576} bytes; headers ${limits?.max_header_bytes ?? 16_384} bytes; sessions ${limits?.max_sessions ?? 1_024}; idle ${limits?.session_idle_timeout_seconds ?? 900}s; connections ${limits?.max_connections ?? 2_048}.`,
+    message: `HTTP bounds: request ${limits?.max_request_bytes ?? 1_048_576} bytes; headers ${limits?.max_header_bytes ?? 16_384} bytes; sessions ${limits?.max_sessions ?? 1_024}; idle ${limits?.session_idle_timeout_seconds ?? (config.production_explore?.enabled ? 120 : 900)}s; connections ${limits?.max_connections ?? 2_048}.`,
   });
   const fleetRateScope = config.storage?.shared_postgres?.mode === "runtime_store" ? "shared runtime store (fleet-wide)" : "this Runner process only";
   checks.push({
@@ -906,25 +1044,26 @@ async function inspectPostgresRlsDoctorTarget(
   target: { schema: string; table: string; operations: PostgresRlsOperation[] },
 ): Promise<DoctorCheck> {
   const pool = createPostgresPool(databaseUrl, { max: 1, connectionTimeoutMillis: 3000 });
-  const client = await pool.connect();
   try {
-    const report = await inspectPostgresRlsTarget(client, {
-      schema: target.schema,
-      table: target.table,
-      scope: {
-        tenantSetting: scope.tenant_setting,
-        principalSetting: scope.principal_setting,
-      },
-      operations: target.operations,
+    return await withPostgresProbeClient(pool, async (client) => {
+      const report = await inspectPostgresRlsTarget(client, {
+        schema: target.schema,
+        table: target.table,
+        scope: {
+          tenantSetting: scope.tenant_setting,
+          principalSetting: scope.principal_setting,
+        },
+        operations: target.operations,
+      });
+      return {
+        name: `source:${sourceName}:postgres-rls:${credentialKind}:${target.schema}.${target.table}`,
+        ok: report.ok,
+        level: report.ok ? "pass" : "fail",
+        message: report.ok
+          ? `Role ${report.role} is non-owner/non-bypass, RLS and FORCE RLS are enabled, and ${target.operations.join("/")} policies use both configured settings (${report.policies.length} applicable policy record(s)).`
+          : `RLS prerequisites failed for role ${report.role}: ${report.errors.join(", ")}. Hardened mode will refuse this target rather than fall back to Runner-only predicates.`,
+      };
     });
-    return {
-      name: `source:${sourceName}:postgres-rls:${credentialKind}:${target.schema}.${target.table}`,
-      ok: report.ok,
-      level: report.ok ? "pass" : "fail",
-      message: report.ok
-        ? `Role ${report.role} is non-owner/non-bypass, RLS and FORCE RLS are enabled, and ${target.operations.join("/")} policies use both configured settings (${report.policies.length} applicable policy record(s)).`
-        : `RLS prerequisites failed for role ${report.role}: ${report.errors.join(", ")}. Hardened mode will refuse this target rather than fall back to Runner-only predicates.`,
-    };
   } catch (error) {
     return {
       name: `source:${sourceName}:postgres-rls:${credentialKind}:${target.schema}.${target.table}`,
@@ -932,9 +1071,6 @@ async function inspectPostgresRlsDoctorTarget(
       level: "fail",
       message: `RLS metadata inspection failed (${rlsDoctorError(error)}). Hardened mode will refuse this target.`,
     };
-  } finally {
-    client.release();
-    await pool.end();
   }
 }
 
@@ -947,49 +1083,47 @@ async function verifyPostgresRlsCanary(
 ): Promise<void> {
   const context = trustedCliContext(config, capability, process.env);
   const pool = createPostgresPool(databaseUrl, { max: 1, connectionTimeoutMillis: 3000 });
-  const client = await pool.connect();
   const table = `${quotePostgresIdentifier(capability.target.schema)}.${quotePostgresIdentifier(capability.target.table)}`;
   const primaryKey = quotePostgresIdentifier(capability.target.primary_key);
-  const bind = async (tenantId: string, principal: string) => bindPostgresTrustedScope(client, scope, {
-    tenant_id: tenantId,
-    principal,
-    provenance: "environment",
-  });
-  try {
-    await client.query("BEGIN");
-    await bind(context.tenant_id, context.principal);
-    const visible = await client.query(`SELECT ${primaryKey} AS id FROM ${table} ORDER BY ${primaryKey} LIMIT 1`);
-    await client.query("ROLLBACK");
-    const id = visible.rows[0]?.id;
-    if (id === undefined) throw new Error("POSTGRES_RLS_CANARY_NO_VISIBLE_ROW");
-
-    const deniedScopes: Array<[string, string]> = [
-      [`synapsor-canary-tenant-${crypto.randomUUID()}`, context.principal],
-      ...(scope.principal_setting
-        ? [[context.tenant_id, `synapsor-canary-principal-${crypto.randomUUID()}`] as [string, string]]
-        : []),
-    ];
-    for (const [tenantId, principal] of deniedScopes) {
+  await withPostgresProbeClient(pool, async (client) => {
+    const bind = async (tenantId: string, principal: string) => bindPostgresTrustedScope(client, scope, {
+      tenant_id: tenantId,
+      principal,
+      provenance: "environment",
+    });
+    try {
       await client.query("BEGIN");
-      const before = await client.query(
-        "SELECT current_setting($1, true) AS tenant, current_setting($2, true) AS principal",
-        [scope.tenant_setting, scope.principal_setting],
-      );
-      if (before.rows[0]?.tenant === context.tenant_id || before.rows[0]?.principal === context.principal) {
-        throw new Error("POSTGRES_RLS_CONTEXT_LEAKED_ACROSS_TRANSACTION");
-      }
-      await bind(tenantId, principal);
-      const denied = await client.query(`SELECT ${primaryKey} AS id FROM ${table} WHERE ${primaryKey} = $1`, [id]);
+      await bind(context.tenant_id, context.principal);
+      const visible = await client.query(`SELECT ${primaryKey} AS id FROM ${table} ORDER BY ${primaryKey} LIMIT 1`);
       await client.query("ROLLBACK");
-      if ((denied.rowCount ?? denied.rows.length) !== 0) throw new Error("POSTGRES_RLS_CANARY_SCOPE_BYPASS");
+      const id = visible.rows[0]?.id;
+      if (id === undefined) throw new Error("POSTGRES_RLS_CANARY_NO_VISIBLE_ROW");
+
+      const deniedScopes: Array<[string, string]> = [
+        [`synapsor-canary-tenant-${crypto.randomUUID()}`, context.principal],
+        ...(scope.principal_setting
+          ? [[context.tenant_id, `synapsor-canary-principal-${crypto.randomUUID()}`] as [string, string]]
+          : []),
+      ];
+      for (const [tenantId, principal] of deniedScopes) {
+        await client.query("BEGIN");
+        const before = await client.query(
+          "SELECT current_setting($1, true) AS tenant, current_setting($2, true) AS principal",
+          [scope.tenant_setting, scope.principal_setting],
+        );
+        if (before.rows[0]?.tenant === context.tenant_id || before.rows[0]?.principal === context.principal) {
+          throw new Error("POSTGRES_RLS_CONTEXT_LEAKED_ACROSS_TRANSACTION");
+        }
+        await bind(tenantId, principal);
+        const denied = await client.query(`SELECT ${primaryKey} AS id FROM ${table} WHERE ${primaryKey} = $1`, [id]);
+        await client.query("ROLLBACK");
+        if ((denied.rowCount ?? denied.rows.length) !== 0) throw new Error("POSTGRES_RLS_CANARY_SCOPE_BYPASS");
+      }
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
     }
-  } catch (error) {
-    await client.query("ROLLBACK").catch(() => undefined);
-    throw error;
-  } finally {
-    client.release();
-    await pool.end();
-  }
+  });
 }
 
 
@@ -1134,8 +1268,7 @@ async function rollbackOnlyFreshnessDependencyProbe(
   if (engine === "postgres") {
     const pg = await dynamicImportModule<{ Pool: new (options: { connectionString: string }) => { connect(): Promise<PostgresProbeClient>; end(): Promise<void> } }>("pg");
     const pool = new pg.Pool({ connectionString: databaseUrl });
-    const client = await pool.connect();
-    try {
+    await withPostgresProbeClient(pool, async (client) => {
       await client.query("BEGIN");
       try {
         const table = `${quotePostgresIdentifier(capability.target.schema)}.${quotePostgresIdentifier(capability.target.table)}`;
@@ -1146,16 +1279,13 @@ async function rollbackOnlyFreshnessDependencyProbe(
         await client.query("ROLLBACK").catch(() => undefined);
         throw error;
       }
-    } finally {
-      client.release();
-      await pool.end();
-    }
+    });
     return;
   }
 
   const mysql = await dynamicImportModule<{ createConnection(options: { uri: string; dateStrings: boolean }): Promise<MysqlProbeConnection> }>("mysql2/promise");
   const connection = await mysql.createConnection({ uri: databaseUrl, dateStrings: true });
-  try {
+  await withMysqlProbeConnection(connection, async () => {
     await connection.beginTransaction();
     try {
       const table = `${quoteMysqlIdentifier(capability.target.schema)}.${quoteMysqlIdentifier(capability.target.table)}`;
@@ -1166,17 +1296,14 @@ async function rollbackOnlyFreshnessDependencyProbe(
       await connection.rollback().catch(() => undefined);
       throw error;
     }
-  } finally {
-    await connection.end();
-  }
+  });
 }
 
 
 async function rollbackOnlyPostgresTargetProbe(databaseUrl: string, capability: RunnerCapabilityConfig): Promise<void> {
   const pg = await dynamicImportModule<{ Pool: new (options: { connectionString: string }) => { connect(): Promise<PostgresProbeClient>; end(): Promise<void> } }>("pg");
   const pool = new pg.Pool({ connectionString: databaseUrl });
-  const client = await pool.connect();
-  try {
+  await withPostgresProbeClient(pool, async (client) => {
     await client.query("BEGIN");
     try {
       const table = `${quotePostgresIdentifier(capability.target.schema)}.${quotePostgresIdentifier(capability.target.table)}`;
@@ -1201,17 +1328,14 @@ async function rollbackOnlyPostgresTargetProbe(databaseUrl: string, capability: 
       await client.query("ROLLBACK").catch(() => undefined);
       throw error;
     }
-  } finally {
-    client.release();
-    await pool.end();
-  }
+  });
 }
 
 
 async function rollbackOnlyMysqlTargetProbe(databaseUrl: string, capability: RunnerCapabilityConfig): Promise<void> {
   const mysql = await dynamicImportModule<{ createConnection(options: { uri: string; dateStrings: boolean }): Promise<MysqlProbeConnection> }>("mysql2/promise");
   const connection = await mysql.createConnection({ uri: databaseUrl, dateStrings: true });
-  try {
+  await withMysqlProbeConnection(connection, async () => {
     await connection.beginTransaction();
     try {
       const table = `${quoteMysqlIdentifier(capability.target.schema)}.${quoteMysqlIdentifier(capability.target.table)}`;
@@ -1236,14 +1360,15 @@ async function rollbackOnlyMysqlTargetProbe(databaseUrl: string, capability: Run
       await connection.rollback().catch(() => undefined);
       throw error;
     }
-  } finally {
-    await connection.end();
-  }
+  });
 }
 
 
 type PostgresProbeClient = {
-  query(sql: string, values?: unknown[]): Promise<unknown>;
+  query(sql: string, values?: unknown[]): Promise<{
+    rows: Record<string, unknown>[];
+    rowCount: number | null;
+  }>;
   release(): void;
 };
 
@@ -1254,6 +1379,41 @@ type MysqlProbeConnection = {
   rollback(): Promise<void>;
   end(): Promise<void>;
 };
+
+
+export async function withPostgresProbeClient<T>(
+  pool: { connect(): Promise<PostgresProbeClient>; end(): Promise<void> },
+  callback: (client: PostgresProbeClient) => Promise<T>,
+): Promise<T> {
+  let client: PostgresProbeClient | undefined;
+  return withPreservedCleanup(async () => {
+    client = await pool.connect();
+    return await callback(client);
+  }, async () => runAllCleanups([
+    () => { client?.release(); },
+    () => pool.end(),
+  ], "PostgreSQL doctor probe cleanup failed"));
+}
+
+
+export async function withMysqlProbeConnection<T>(
+  connection: MysqlProbeConnection,
+  callback: () => Promise<T>,
+): Promise<T> {
+  let operationError: unknown;
+  try {
+    return await callback();
+  } catch (error) {
+    operationError = error;
+    throw error;
+  } finally {
+    try {
+      await connection.end();
+    } catch (error) {
+      if (operationError === undefined) throw error;
+    }
+  }
+}
 
 
 function proposalReadProbeColumns(capability: RunnerCapabilityConfig): string[] {

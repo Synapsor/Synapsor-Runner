@@ -54,23 +54,29 @@ export function buildEvidenceQuery(filters: EvidenceSearchFilters): SqlQuery {
   const clauses: string[] = [];
   const params: SqlParam[] = [];
   addEqual(clauses, params, "evidence_bundle_id", filters.evidence);
-  addEqual(clauses, params, "tenant_id", filters.tenant);
-  addEqual(clauses, params, "principal", filters.principal);
+  addEqualAny(clauses, params, "tenant_id", filters.tenants ?? (filters.tenant ? [filters.tenant] : []));
+  addEqualAny(clauses, params, "principal", filters.principals ?? (filters.principal ? [filters.principal] : []));
   addEqual(clauses, params, "capability", filters.capability);
   addEqual(clauses, params, "proposal_id", filters.proposal);
   addEqual(clauses, params, "source_id", filters.source);
   addTableFilter(clauses, params, "source_table", filters.table);
   addEqual(clauses, params, "query_fingerprint", filters.queryFingerprint);
+  addEvidenceStatusFilter(clauses, params, filters.status);
+  addExploreOutcomeFilter(clauses, params, filters.outcome, "outcome");
+  addJsonEqual(clauses, params, "boundary_digest", filters.boundary);
   addObjectFilter(clauses, params, "business_object", "source_table", "object_id", filters.objectType, filters.objectId);
+  addMetadataSearch(clauses, params, filters.search, [
+    "evidence_bundle_id", "source_table", "source_id", "capability", "query_fingerprint", "payload_json",
+  ]);
   addTimeRange(clauses, params, "created_at", filters.from, filters.to);
-  return finishQuery("SELECT * FROM evidence_bundles", clauses, params, filters.limit);
+  return finishQuery("SELECT * FROM evidence_bundles", clauses, params, filters.limit, filters.offset);
 }
 
 export function buildQueryAuditQuery(filters: QueryAuditSearchFilters): SqlQuery {
   const clauses: string[] = [];
   const params: SqlParam[] = [];
-  addEqual(clauses, params, "tenant_id", filters.tenant);
-  addEqual(clauses, params, "principal", filters.principal);
+  addEqualAny(clauses, params, "tenant_id", filters.tenants ?? (filters.tenant ? [filters.tenant] : []));
+  addEqualAny(clauses, params, "principal", filters.principals ?? (filters.principal ? [filters.principal] : []));
   addEqual(clauses, params, "capability", filters.capability);
   addEqual(clauses, params, "proposal_id", filters.proposal);
   addEqual(clauses, params, "evidence_bundle_id", filters.evidence);
@@ -79,8 +85,14 @@ export function buildQueryAuditQuery(filters: QueryAuditSearchFilters): SqlQuery
   addObjectFilter(clauses, params, "business_object", "table_name", "object_id", filters.objectType, filters.objectId);
   addEqual(clauses, params, "primary_key_value", filters.primaryKey);
   addEqual(clauses, params, "query_fingerprint", filters.queryFingerprint);
+  addJsonStatusFilter(clauses, params, filters.status);
+  addExploreOutcomeFilter(clauses, params, filters.outcome, "status");
+  addJsonEqual(clauses, params, "boundary_digest", filters.boundary);
+  addMetadataSearch(clauses, params, filters.search, [
+    "CAST(audit_id AS TEXT)", "table_name", "source_id", "capability", "evidence_bundle_id", "query_fingerprint", "payload_json",
+  ]);
   addTimeRange(clauses, params, "created_at", filters.from, filters.to);
-  return finishQuery("SELECT * FROM query_audit", clauses, params, filters.limit);
+  return finishQuery("SELECT * FROM query_audit", clauses, params, filters.limit, filters.offset);
 }
 
 export function buildReceiptQuery(filters: ReceiptSearchFilters): SqlQuery {
@@ -120,6 +132,56 @@ export function addEqual(clauses: string[], params: SqlParam[], column: string, 
   if (!value) return;
   clauses.push(`${column} = ?`);
   params.push(value);
+}
+
+
+function addEqualAny(clauses: string[], params: SqlParam[], column: string, values: string[]): void {
+  const distinct = [...new Set(values.filter(Boolean))];
+  const clause = inWhere(column, distinct);
+  if (!clause) return;
+  clauses.push(clause.sql);
+  params.push(...clause.params);
+}
+
+
+function addJsonEqual(clauses: string[], params: SqlParam[], key: string, value?: string): void {
+  if (!value) return;
+  clauses.push(`json_extract(payload_json, '$.${key}') = ?`);
+  params.push(value);
+}
+
+
+function addExploreOutcomeFilter(
+  clauses: string[],
+  params: SqlParam[],
+  outcome: "ok" | "refused" | "failed" | undefined,
+  payloadKey: "outcome" | "status",
+): void {
+  if (!outcome) return;
+  const expression = `json_extract(payload_json, '$.${payloadKey}')`;
+  if (outcome === "refused") {
+    clauses.push(`${expression} LIKE 'refused_%'`);
+    return;
+  }
+  if (outcome === "failed") {
+    clauses.push(`${expression} = 'failed'`);
+    return;
+  }
+  clauses.push(`${expression} IN ('ok', 'empty', 'fully_suppressed', 'incomplete_comparison')`);
+}
+
+
+function addJsonStatusFilter(clauses: string[], params: SqlParam[], value?: string): void {
+  if (!value) return;
+  clauses.push("json_extract(payload_json, '$.status') = ?");
+  params.push(value);
+}
+
+
+function addEvidenceStatusFilter(clauses: string[], params: SqlParam[], value?: string): void {
+  if (!value) return;
+  clauses.push("(json_extract(payload_json, '$.outcome') = ? OR json_extract(payload_json, '$.status') = ?)");
+  params.push(value, value);
 }
 
 export function addTableFilter(clauses: string[], params: SqlParam[], column: string, value?: string): void {
@@ -164,10 +226,38 @@ export function addTimeRange(clauses: string[], params: SqlParam[], column: stri
   }
 }
 
-export function finishQuery(base: string, clauses: string[], params: SqlParam[], limit?: number): SqlQuery {
+function addMetadataSearch(
+  clauses: string[],
+  params: SqlParam[],
+  value: string | undefined,
+  columns: string[],
+): void {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return;
+  const escaped = normalized.replace(/[\\%_]/g, (character) => `\\${character}`);
+  clauses.push(`(${columns.map((column) => `LOWER(COALESCE(${column}, '')) LIKE ? ESCAPE '\\'`).join(" OR ")})`);
+  params.push(...columns.map(() => `%${escaped}%`));
+}
+
+
+export function finishQuery(
+  base: string,
+  clauses: string[],
+  params: SqlParam[],
+  limit?: number,
+  offset?: number,
+): SqlQuery {
   const where = clauses.length ? ` WHERE ${clauses.join(" AND ")}` : "";
-  const sql = `${base}${where} ORDER BY created_at DESC${limit ? " LIMIT ?" : ""}`;
-  return { sql, params: limit ? [...params, limit] : params };
+  const boundedOffset = Number.isSafeInteger(offset) && Number(offset) > 0 ? Number(offset) : 0;
+  const sql = `${base}${where} ORDER BY created_at DESC${limit ? " LIMIT ?" : boundedOffset ? " LIMIT -1" : ""}${boundedOffset ? " OFFSET ?" : ""}`;
+  return {
+    sql,
+    params: [
+      ...params,
+      ...(limit ? [limit] : []),
+      ...(boundedOffset ? [boundedOffset] : []),
+    ],
+  };
 }
 
 export function objectTypeVariants(value: string): string[] {

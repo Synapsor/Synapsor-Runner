@@ -1,12 +1,15 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ActivatedExplorationBoundary } from "./auto-boundary.js";
+import type { ScopedExploreBoundarySetRuntime } from "./scoped-explore-boundary-set.js";
 import { formatTryExploreRefusal, tryCommand } from "./try-commands.js";
 
 const roots: string[] = [];
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(roots.splice(0).map((root) =>
     fs.rm(root, { recursive: true, force: true })));
 });
@@ -68,6 +71,50 @@ describe("Try command recovery", () => {
     expect(String(error)).not.toContain("ENOENT");
   });
 
+  it("canonicalizes one reviewed resource label before building a friendly Explore plan", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-try-resource-alias-"));
+    roots.push(root);
+    const boundary = friendlyBoundary("subscription_boundary", "public.subscriptions");
+    const explore = vi.fn(async () => ({
+      ok: true,
+      outcome: { type: "success" },
+      data: [],
+      source_database_changed: false,
+    }));
+    const close = vi.fn(async () => undefined);
+    const runtime = {
+      boundary,
+      boundaries: [boundary],
+      active_boundary_set_digest: `sha256:${"2".repeat(64)}`,
+      session_fingerprint: `sha256:${"3".repeat(64)}`,
+      describe: vi.fn(),
+      explore,
+      projectResultForModel: vi.fn(),
+      close,
+    } as unknown as ScopedExploreBoundarySetRuntime;
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+
+    await expect(tryCommand([
+      "explore",
+      "--project-root", root,
+      "--boundary", "subscription_boundary",
+      "--resource", "Subscriptions",
+      "--count",
+      "--group-by", "plan",
+      "--json",
+    ], {
+      createScopedExploreBoundarySetRuntimeFn: async () => runtime,
+    })).resolves.toBe(0);
+
+    expect(explore).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      dimensions: [{ field: "plan" }],
+    }), "subscription_boundary");
+    expect(close).toHaveBeenCalledOnce();
+    expect(stdout).toHaveBeenCalled();
+  });
+
   it("reports the same path-free recovery for explicit and latest Protect selection", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-protect-no-boundary-"));
     roots.push(root);
@@ -90,3 +137,29 @@ describe("Try command recovery", () => {
     }
   });
 });
+
+function friendlyBoundary(
+  name: string,
+  resourceId: string,
+): ActivatedExplorationBoundary {
+  const [schema, table] = resourceId.split(".");
+  return {
+    pack: {
+      name,
+      resources: [{
+        id: resourceId,
+        schema,
+        table,
+        groupable_fields: ["plan"],
+        count_distinct_fields: ["id"],
+        aggregate_measures: [],
+        time_bucket_fields: {},
+      }],
+    },
+    budgets: { max_top_n: 25 },
+    activation: {
+      state: "active",
+      digest: `sha256:${"1".repeat(64)}`,
+    },
+  } as unknown as ActivatedExplorationBoundary;
+}

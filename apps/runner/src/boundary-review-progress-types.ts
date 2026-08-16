@@ -1,4 +1,4 @@
-export const BOUNDARY_REVIEW_PROGRESS_VERSION = "synapsor.boundary-review-progress.v2" as const;
+export const BOUNDARY_REVIEW_PROGRESS_VERSION = "synapsor.boundary-review-progress.v3" as const;
 
 export type BoundaryReviewDecision = {
   id: string;
@@ -24,8 +24,19 @@ export type BoundaryReviewInvalidation = {
   invalidated_at: string;
 };
 
-export type BoundaryReviewProgressArtifact<TCandidate> = {
+export type BoundaryReviewPolicyMigration = {
+  status: "complete" | "review_required";
+  source: "native" | "legacy_exact_boundary_revision";
+  reason: string;
+};
+
+export type BoundaryReviewProgressArtifact<TCandidate, TReviewOverrides> = {
   schema_version: typeof BOUNDARY_REVIEW_PROGRESS_VERSION;
+  /** Stable local identity. Boundary names remain editable display labels. */
+  boundary_id: `bnd_${string}`;
+  /** Human policy owned by this exact boundary, never shared by resource id. */
+  review_overrides: TReviewOverrides;
+  policy_migration: BoundaryReviewPolicyMigration;
   revision: number;
   draft_digest: `sha256:${string}`;
   candidate: TCandidate;

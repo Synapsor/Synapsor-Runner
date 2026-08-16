@@ -13,6 +13,7 @@ import {
   type AttentionSeverity,
   type LocalProposalState,
   type ProposalSearchFilters,
+  type QueryAuditSearchFilters,
   type RecordAttentionEventInput,
   type StoredProposal,
   type WorkerControlAction,
@@ -30,14 +31,20 @@ import {
 import { renderBoundaryWorkbench } from "./boundary-workbench.js";
 import {
   AUTO_BOUNDARY_OVERRIDES_VERSION,
+  SHARED_REFERENCE_ACKNOWLEDGEMENT,
   activateExplorationBoundary,
   assertCurrentExplorationBoundaryAuthority,
   buildAutoBoundary,
+  databaseServerCompatibilityForLock,
+  deactivateExplorationBoundary,
+  emptyReviewOverrides,
   explorationBoundaryCandidateDigest,
-  loadAutoBoundaryReviewOverrides,
   loadActivatedExplorationBoundary,
   loadActivatedExplorationBoundaries,
   loadStructuredProjectEvidence,
+  normalizeExplorationAutoBandPolicy,
+  normalizeExplorationDerivedMeasure,
+  normalizeExplorationNumericBand,
   pruneAutoBoundaryReviewOverrides,
   reviewExplorationBoundaryCandidate,
   writeAutoBoundaryArtifacts,
@@ -72,12 +79,29 @@ import {
   type ExploreTrustedScope,
 } from "./explore-trusted-scope.js";
 import {
+  buildBoundaryCatalogDiagramExports,
+  buildBoundaryCatalogModel,
+  renderBoundaryCatalogMermaid,
+} from "./boundary-catalog.js";
+import {
   consumeGuidedGraduationTip,
+  recordGuidedBoundaryRescan,
   readGuidedOnboardingState,
   resetGuidedOnboardingForBoundaryReview,
   updateGuidedOnboardingState,
 } from "./guided-project.js";
+import {
+  commitBoundaryRescan,
+  prepareBoundaryRescan,
+  readBoundaryRescanReport,
+} from "./boundary-rescan.js";
+import { resolveConfiguredTrustedContextAuthority } from "./configured-trusted-context.js";
+import { blockedTenantScopeGuidance } from "./boundary-scope-guidance.js";
 import { buildInstantFirstValue } from "./instant-first-value.js";
+import {
+  derivedScopeStartSequence,
+  formatDerivedScopePath,
+} from "./derived-scope-display.js";
 import {
   instantLocalBoundaryCandidate,
   recommendedBoundaryReviewCandidate,
@@ -120,6 +144,9 @@ import {
   redactPlanLiterals,
 } from "./analytics-shell-render.js";
 import { inspectCompiledExplorePlan } from "./explore-operator-evidence.js";
+import { describeExploreAuditAttempt, describeExploreAuditPlan, reconstructExploreAuditQuery } from "./explore-audit-presentation.js";
+import { queryAuditFiltersFromArgs } from "./ledger-options.js";
+import { resolveExploreLedgerFilters } from "./ledger-search.js";
 import { createWorkbenchAskMcpGateway } from "./ask-mcp-gateway.js";
 import { resolveAskAccessGuidance } from "./ask-access-summary.js";
 import {
@@ -148,8 +175,10 @@ import {
   type ManagedBoundaryReviewDecision,
 } from "./boundary-review-domain.js";
 import {
+  boundaryResourceRemovalImpact,
   commitBoundaryReviewMutationBatch,
   commitBoundaryResourceReviewMutation,
+  formatBoundaryResourceRemovalBlocked,
   listBoundaryResourceReviews,
   prepareBoundaryReviewMutationBatch,
   prepareBoundaryResourceReviewMutation,
@@ -158,8 +187,13 @@ import {
   type BoundaryResourceReviewRequest,
 } from "./boundary-review-mutation.js";
 import {
+  backupLegacyBoundaryReviewOverrides,
+  boundaryReviewOverridesForCandidate,
+} from "./boundary-review-policy.js";
+import {
   createSavedBoundary,
   deleteSavedBoundary,
+  resolveSavedBoundaryReviewAuthority,
   switchSavedBoundary,
   synchronizeBoundaryLibrary,
 } from "./boundary-library.js";
@@ -194,6 +228,7 @@ export type LocalUiOptions = {
   boundaryRoot?: string;
   projectRoot?: string;
   storeAccess?: LocalUiStoreAccess;
+  ledgerSource?: WorkbenchLedgerSource;
   safeActionPreview?: SafeActionPreview;
   guidedActionPreview?: GuidedActionPreview;
   freshnessEvaluator?: ProposalFreshnessEvaluator;
@@ -216,6 +251,10 @@ export type LocalUiOptions = {
   sessionAbsoluteTimeoutMs?: number;
   now?: () => number;
 };
+
+export type WorkbenchLedgerSource =
+  | { kind: "local_sqlite"; path: string }
+  | { kind: "shared_postgres"; schema: string; url_env: string; read_only: true };
 
 const DEFAULT_WORKBENCH_IDLE_TIMEOUT_MS = 2 * 60 * 60 * 1_000;
 const DEFAULT_WORKBENCH_ABSOLUTE_TIMEOUT_MS = 8 * 60 * 60 * 1_000;
@@ -427,6 +466,10 @@ export async function startLocalUiServer(options: LocalUiOptions = {}): Promise<
         projectRoot,
         boundaryRoot,
         storeAccess,
+        ledgerSource: options.ledgerSource ?? {
+          kind: "local_sqlite",
+          path: storePath === ":memory:" ? storePath : path.resolve(storePath),
+        },
         safeActionPreview,
         guidedActionPreview,
         freshnessEvaluator,
@@ -514,6 +557,7 @@ async function handleRequest(input: {
   projectRoot: string;
   boundaryRoot?: string;
   storeAccess: LocalUiStoreAccess;
+  ledgerSource: WorkbenchLedgerSource;
   safeActionPreview: SafeActionPreview;
   guidedActionPreview: GuidedActionPreview;
   freshnessEvaluator: ProposalFreshnessEvaluator;
@@ -547,6 +591,7 @@ async function handleRequest(input: {
     projectRoot,
     boundaryRoot,
     storeAccess,
+    ledgerSource,
     safeActionPreview,
     guidedActionPreview,
     freshnessEvaluator,
@@ -664,19 +709,36 @@ async function handleRequest(input: {
       return;
     }
     const draft = JSON.parse(await fs.readFile(path.join(boundaryRoot, "exploration-boundary.draft.json"), "utf8")) as ExplorationBoundaryDraft;
-    const review = JSON.parse(await fs.readFile(path.join(boundaryRoot, "generation-review.json"), "utf8")) as Record<string, unknown>;
+    const generationLock = JSON.parse(await fs.readFile(
+      path.join(projectRoot, ".synapsor/generation-lock.json"),
+      "utf8",
+    )) as GenerationLock;
+    const serverCompatibility = databaseServerCompatibilityForLock(generationLock) ?? null;
+    const review = JSON.parse(await fs.readFile(
+      path.join(boundaryRoot, "generation-review.json"),
+      "utf8",
+    )) as AutoBoundaryBuild["review"];
+    const reviewForDisplay = {
+      ...review,
+      resources: review.resources.map((resource) => {
+        const guidance = blockedTenantScopeGuidance(resource);
+        return guidance ? { ...resource, scope_resolution_guidance: guidance } : resource;
+      }),
+    };
     let progress = await readBoundaryReviewProgress(projectRoot, draft);
     const hasReviewableResource = draft.pack.resources.length > 0;
     let candidate = progress?.candidate
       ?? (hasReviewableResource ? recommendedBoundaryReviewCandidate(draft) : structuredClone(draft));
-    const active = await readOptionalJson(path.join(projectRoot, ".synapsor/exploration-boundary.active.json"));
     let activeBoundaries: ActivatedExplorationBoundary[] = [];
     try {
       activeBoundaries = await loadActivatedExplorationBoundaries(projectRoot);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
-    const instantCandidate = hasReviewableResource ? instantWorkbenchCandidate(draft) : null;
+    const boundaryCatalog = buildBoundaryCatalogModel(activeBoundaries);
+    const instantCandidate = hasReviewableResource && instantOnboarding
+      ? instantWorkbenchCandidate(draft)
+      : null;
     const instantFirstValue = instantCandidate
       ? buildInstantFirstValue(instantCandidate)
       : null;
@@ -684,26 +746,27 @@ async function handleRequest(input: {
     let instantMissingBindings: string[] = [];
     let instantTenantScopeSource: ExploreTrustedScope["tenant_source"] | null = null;
     let instantScopeError: string | null = null;
-    if (instantCandidate && instantResource) {
+    if (instantCandidate
+      && instantResource
+      && instantCandidate.trusted_context.provider === "environment") {
       const configuredTenant = process.env[instantCandidate.trusted_context.tenant_env]?.trim();
       const configuredPrincipal = process.env[instantCandidate.trusted_context.principal_env]?.trim();
-      if (instantResource.principal_key && !configuredPrincipal) {
+      if ((instantResource.principal_key || instantResource.principal_scope) && !configuredPrincipal) {
         instantMissingBindings.push(instantCandidate.trusted_context.principal_env);
       }
       if (configuredTenant) {
         instantTenantScopeSource = "environment";
       } else if (instantCandidate.trusted_context.database_role_tenant && instantMissingBindings.length === 0) {
         try {
-          const lock = JSON.parse(await fs.readFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "utf8")) as GenerationLock;
           const inspection = await schemaInspector({
-            engine: lock.engine,
-            databaseUrlEnv: lock.source_env,
-            schema: lock.inspected_schema,
+            engine: generationLock.engine,
+            databaseUrlEnv: generationLock.source_env,
+            schema: generationLock.inspected_schema,
             env: process.env,
           });
           const scope = await resolveTrustedScopeFn({
             boundary: instantCandidate,
-            lock,
+            lock: generationLock,
             inspection,
             env: process.env,
           });
@@ -722,7 +785,7 @@ async function handleRequest(input: {
     }
     const instantAvailable = Boolean(instantCandidate)
       && instantOnboarding
-      && !active
+      && activeBoundaries.length === 0
       && !progress
       && !draft.pack.resources.some((resource) => resource.minimum_cohort_overridden === true)
       && isLocalHost(workbenchHost)
@@ -743,6 +806,8 @@ async function handleRequest(input: {
     progress = await readBoundaryReviewProgress(projectRoot, draft);
     candidate = progress?.candidate
       ?? (hasReviewableResource ? recommendedBoundaryReviewCandidate(draft) : structuredClone(draft));
+    const active = activeBoundaries.find((boundary) =>
+      boundary.pack.name === candidate.pack.name) ?? null;
     const reviewDecisions = boundaryReviewDecisions(candidate);
     const confirmedDecisions = progress?.confirmed_decisions ?? [];
     sendJson(response, 200, {
@@ -753,15 +818,21 @@ async function handleRequest(input: {
       review_decisions: reviewDecisions,
       review_progress: {
         revision: progress?.revision ?? 0,
+        policy_migration: progress?.policy_migration ?? null,
         invalidated_decisions: progress?.invalidated_decisions ?? [],
         outstanding_decisions: reviewDecisions
           .filter((decision) => !confirmedDecisions.includes(decision.decision)),
       },
-      review,
+      review: reviewForDisplay,
+      database_server_compatibility: serverCompatibility,
       candidate_digest: explorationBoundaryCandidateDigest(candidate),
       boundary_library: boundaryLibrary,
+      boundary_rescan_report: await readBoundaryRescanReport(projectRoot),
       active,
       active_boundaries: activeBoundaries,
+      boundary_catalog: boundaryCatalog,
+      boundary_mermaid: renderBoundaryCatalogMermaid(boundaryCatalog),
+      boundary_diagrams: buildBoundaryCatalogDiagramExports(boundaryCatalog),
       journey: await readGuidedOnboardingState(projectRoot),
       operator_identity: instantActivationActor(),
       operator_identity_mode: "dev_env",
@@ -774,7 +845,7 @@ async function handleRequest(input: {
         candidate: instantCandidate,
         candidate_digest: instantCandidate ? explorationBoundaryCandidateDigest(instantCandidate) : null,
         resource: instantResource?.id ?? null,
-        requires_principal: Boolean(instantResource?.principal_key),
+        requires_principal: Boolean(instantResource?.principal_key || instantResource?.principal_scope),
         missing_bindings: instantMissingBindings,
         tenant_scope_source: instantTenantScopeSource,
         scope_error: instantScopeError,
@@ -1046,6 +1117,40 @@ async function handleRequest(input: {
     let progress: BoundaryReviewProgress;
     if (url.pathname === "/api/boundary/library/create") {
       const resourceId = requiredReviewText(body.resource_id, "starting table");
+      const startingReview = (await listBoundaryResourceReviews(projectRoot)).find((resource) =>
+        resource.resource_id === resourceId);
+      if (startingReview?.first_table_startable === false
+        && startingReview.first_table_scope_kind === "shared_reference") {
+        throw new Error(
+          resourceId + " cannot be the first table in this authoring flow. "
+          + (startingReview.first_table_guidance
+            ?? "Start with a tenant-scoped table, then add this table and confirm Shared reference for the new boundary")
+          + ". The no-per-tenant-rows acknowledgement is reviewed separately for every boundary.",
+        );
+      }
+      const startingResource = currentCandidate.pack.resources.find((resource) =>
+        resource.id === resourceId);
+      const requiredScopes = [
+        ...(!currentCandidate.organization_scope && startingResource?.tenant_scope
+          ? [startingResource.tenant_scope]
+          : []),
+        ...(startingResource?.principal_scope ? [startingResource.principal_scope] : []),
+      ];
+      if (requiredScopes.length > 0) {
+        const guidance = requiredScopes.map((scope) => {
+          const sequence = derivedScopeStartSequence(scope);
+          const ancestor = sequence[0] ?? scope.ancestor_resource;
+          const intermediate = sequence.slice(1, -1);
+          return "start with " + ancestor
+            + (intermediate.length ? ", then add " + intermediate.join(", then ") : "")
+            + ", then add this table";
+        });
+        throw new Error(
+          resourceId + " cannot be the first table. " + guidance.join("; ") + ". "
+          + "Its required scope is derived through "
+          + requiredScopes.map(formatDerivedScopePath).join("; ") + ".",
+        );
+      }
       progress = await createSavedBoundary({
         ...context,
         name,
@@ -1116,7 +1221,42 @@ async function handleRequest(input: {
       });
       return;
     }
-    const preview = reviewExplorationBoundaryCandidate(draft, body.candidate as unknown as ExplorationBoundaryDraft);
+    const submittedCandidate = body.candidate as unknown as ExplorationBoundaryDraft;
+    const currentCandidate = existingProgress?.candidate
+      ?? (draft.pack.resources.length > 0
+        ? recommendedBoundaryReviewCandidate(draft)
+        : structuredClone(draft));
+    const submittedResourceIds = new Set(
+      submittedCandidate.pack.resources.map((resource) => resource.id),
+    );
+    const removedResourceIds = currentCandidate.pack.resources
+      .map((resource) => resource.id)
+      .filter((resourceId) => !submittedResourceIds.has(resourceId));
+    for (const resourceId of removedResourceIds) {
+      const impact = boundaryResourceRemovalImpact(currentCandidate, resourceId, {
+        also_removing: removedResourceIds,
+      });
+      if (!impact.blocking_dependencies.length) continue;
+      sendJson(response, 409, {
+        ok: false,
+        error_code: "BOUNDARY_RESOURCE_REMOVAL_DEPENDENCY",
+        error: formatBoundaryResourceRemovalBlocked(impact),
+        removal_impact: impact,
+        authority_changed: false,
+        source_database_changed: false,
+      });
+      return;
+    }
+    const reviewAuthority = await resolveSavedBoundaryReviewAuthority({
+      projectRoot,
+      draft,
+      candidate: submittedCandidate,
+      ...(existingProgress ? { progress: existingProgress } : {}),
+    });
+    const preview = reviewExplorationBoundaryCandidate(
+      reviewAuthority.reviewDraft,
+      submittedCandidate,
+    );
     const confirmed = normalizePartialReviewDecisions(
       preview.candidate.unresolved_decisions,
       body.confirmed_decisions as string[],
@@ -1180,13 +1320,16 @@ async function handleRequest(input: {
       path.join(boundaryRoot, "exploration-boundary.draft.json"),
       "utf8",
     )) as ExplorationBoundaryDraft;
-    const active = await readOptionalJson(
-      path.join(projectRoot, ".synapsor/exploration-boundary.active.json"),
-    ) as ActivatedExplorationBoundary | null;
-    if (!active || active.activation.digest !== expectedActiveDigest) {
+    const active = await loadActivatedExplorationBoundary(projectRoot, {
+      digest: expectedActiveDigest as `sha256:${string}`,
+    }).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
+    });
+    if (!active || active.generation_lock_fingerprint !== draft.generation_lock_fingerprint) {
       sendJson(response, 409, {
         ok: false,
-        error: "The active boundary changed after this refusal. Retry the analysis before reviewing a relationship.",
+        error: "The active boundary or its catalog proof changed after this refusal. Retry the analysis before reviewing a relationship.",
       });
       return;
     }
@@ -1217,7 +1360,19 @@ async function handleRequest(input: {
       source: active.source,
       compiler_version: active.compiler_version,
       spec_version: active.spec_version,
+      ...(active.database_server_version
+        ? { database_server_version: active.database_server_version }
+        : {}),
+      ...(active.database_server_tier
+        ? { database_server_tier: active.database_server_tier }
+        : {}),
+      ...(active.database_server_authority
+        ? { database_server_authority: structuredClone(active.database_server_authority) }
+        : {}),
       ...(active.reporting_timezone ? { reporting_timezone: active.reporting_timezone } : {}),
+      ...(active.organization_scope
+        ? { organization_scope: structuredClone(active.organization_scope) }
+        : {}),
       trusted_context: structuredClone(active.trusted_context),
       generation_lock_fingerprint: active.generation_lock_fingerprint,
       role_posture_fingerprint: active.role_posture_fingerprint,
@@ -1244,13 +1399,24 @@ async function handleRequest(input: {
       candidateSource.relationships.sort((left, right) =>
         (left.path_depth ?? 1) - (right.path_depth ?? 1) || left.id.localeCompare(right.id));
     }
-    const preview = reviewExplorationBoundaryCandidate(draft, candidate);
+    const relationshipDecision =
+      `${resourceId}: review relationship ${relationshipId} cardinality and scope on ${reviewedRelationship.target_resource}`;
+    // This endpoint constructs the only permitted widening from the active pack
+    // after proving the catalog relationship and every resource in its path.
+    // Reconstitute that boundary's own review requirements without borrowing a
+    // policy-bound draft from another saved boundary.
+    const reviewDraft = structuredClone(candidate);
+    reviewDraft.unresolved_decisions = [...new Set([
+      ...active.activation.reviewed_decisions
+        .filter((decision) => decision.confirmed)
+        .map((decision) => decision.decision),
+      relationshipDecision,
+    ])].sort();
+    const preview = reviewExplorationBoundaryCandidate(reviewDraft, candidate);
     const confirmedDecisions = active.activation.reviewed_decisions
       .filter((decision) => decision.confirmed)
       .map((decision) => decision.decision)
       .filter((decision) => preview.candidate.unresolved_decisions.includes(decision));
-    const relationshipDecision =
-      `${resourceId}: review relationship ${relationshipId} cardinality and scope on ${reviewedRelationship.target_resource}`;
     if (reviewedRelationship.unmatched_rows !== "review_required"
       && preview.candidate.unresolved_decisions.includes(relationshipDecision)
       && !confirmedDecisions.includes(relationshipDecision)) {
@@ -1296,9 +1462,6 @@ async function handleRequest(input: {
       return;
     }
     const body = await readJsonBody(request);
-    const activeBeforeReview = await readOptionalJson(
-      path.join(projectRoot, ".synapsor/exploration-boundary.active.json"),
-    );
     let preview: BoundaryReviewMutationPreview | BoundaryReviewMutationBatchPreview;
     let committed: Awaited<ReturnType<typeof commitBoundaryResourceReviewMutation>>
       | Awaited<ReturnType<typeof commitBoundaryReviewMutationBatch>>;
@@ -1333,6 +1496,12 @@ async function handleRequest(input: {
       committed = await commitBoundaryResourceReviewMutation(projectRoot, preview);
     }
     const build = preview.build;
+    const activeBeforeReview = await loadActivatedExplorationBoundary(projectRoot, {
+      name: build.exploration_boundary.pack.name,
+    }).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw error;
+    });
     const progress = await readSharedBoundaryReviewProgress(projectRoot, build.exploration_boundary);
     const journey = activeBeforeReview
       ? await updateGuidedOnboardingState({
@@ -1429,16 +1598,15 @@ async function handleRequest(input: {
       sendJson(response, 403, { ok: false, error: "CSRF token required to preview schema drift." });
       return;
     }
-    const prepared = await prepareAutoBoundaryRescan({
+    const prepared = await prepareBoundaryRescan({
       projectRoot,
       boundaryRoot,
       schemaInspector,
-      resetOverrides: false,
     });
     sendJson(response, 200, {
       ok: true,
       preview_digest: prepared.previewDigest,
-      diff: prepared.diff,
+      diff: prepared.report,
       source_database_changed: false,
       message: "Rescan preview completed. No generated file, active boundary, protected capability, ledger record, or source row was changed.",
     });
@@ -1458,45 +1626,40 @@ async function handleRequest(input: {
     if (typeof body.expected_digest !== "string" || typeof body.confirmation !== "string") {
       throw new Error("Applying a rescan requires the exact preview digest and confirmation.");
     }
-    const prepared = await prepareAutoBoundaryRescan({
+    const prepared = await prepareBoundaryRescan({
       projectRoot,
       boundaryRoot,
       schemaInspector,
-      resetOverrides: false,
     });
     if (body.expected_digest !== prepared.previewDigest || body.confirmation !== `RESCAN ${prepared.previewDigest}`) {
       throw new Error("Schema or review inputs changed after preview; preview the rescan again.");
     }
-    const previousActive = activeBoundaryEventMetadata(
-      await readOptionalJson(path.join(projectRoot, ".synapsor/exploration-boundary.active.json")),
-    );
-    const previousDraft = JSON.parse(
-      await fs.readFile(path.join(boundaryRoot, "exploration-boundary.draft.json"), "utf8"),
-    ) as ExplorationBoundaryDraft;
-    const previousProgress = await readBoundaryReviewProgress(projectRoot, previousDraft);
-    const progress = reconcileBoundaryReviewProgress(
-      previousProgress,
-      prepared.build.exploration_boundary,
-    );
-    await writeAutoBoundaryArtifacts({
-      projectRoot,
-      outputRoot: path.relative(projectRoot, boundaryRoot),
-      build: prepared.build,
-      force: true,
-      preserveReviewProgress: true,
-      ...(progress ? { reviewProgress: progress } : {}),
+    const previousActiveBoundary = await loadActivatedExplorationBoundary(projectRoot, {
+      name: prepared.selectedProgress.candidate.pack.name,
+    }).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw error;
     });
-    const journey = await resetGuidedOnboardingForBoundaryReview({
+    const previousActive = activeBoundaryEventMetadata(previousActiveBoundary);
+    await commitBoundaryRescan(prepared);
+    const progress = prepared.selectedProgress;
+    const authorityActive = (await loadActivatedExplorationBoundaries(projectRoot).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    })).length > 0;
+    const journey = await recordGuidedBoundaryRescan({
       projectRoot,
-      schemaFingerprint: prepared.build.lock.schema_fingerprint,
-      rolePostureFingerprint: prepared.build.lock.role_posture_fingerprint,
+      schemaFingerprint: prepared.selectedBuild.lock.schema_fingerprint,
+      rolePostureFingerprint: prepared.selectedBuild.lock.role_posture_fingerprint,
+      pendingReview: prepared.report.changed,
+      authorityActive,
     }).catch(() => undefined);
-    const candidateDigest = explorationBoundaryCandidateDigest(prepared.build.exploration_boundary);
-    if (prepared.diff.schema_changed === true) {
+    const candidateDigest = progress.candidate_digest;
+    if (prepared.report.schema_changed || prepared.report.role_posture_changed) {
       await recordWorkbenchAttention(storeAccess, {
         event_type: "schema.drift_detected",
         severity: "critical",
-        environment: deploymentProfile ?? prepared.build.exploration_boundary.deployment_profile,
+        environment: deploymentProfile ?? prepared.selectedBuild.exploration_boundary.deployment_profile,
         capability: "app.explore_data",
         ...(previousActive ? { contract_digest: previousActive.digest } : {}),
         attention_key: `schema-drift:${prepared.previewDigest}`,
@@ -1504,51 +1667,50 @@ async function handleRequest(input: {
         immediate_default: true,
         summary: "Schema drift invalidated generated authoring authority",
         workbench_path: "/",
-        details: schemaDriftAttentionDetails(prepared.diff),
+        details: schemaDriftAttentionDetails(prepared.report as unknown as JsonRecord),
         source_event_key: `workbench-schema-drift:${prepared.previewDigest}`,
       });
     }
-    await recordWorkbenchAttention(storeAccess, {
-      event_type: "capability.review_required",
-      severity: "warning",
-      environment: deploymentProfile ?? prepared.build.exploration_boundary.deployment_profile,
-      capability: "app.explore_data",
-      contract_digest: candidateDigest,
-      attention_key: `boundary-review:${candidateDigest}`,
-      attention_required: true,
-      immediate_default: false,
-      summary: "The rescanned authoring boundary requires review",
-      workbench_path: "/",
-      details: {
-        authority_type: "scoped_explore",
-        reason_code: prepared.diff.schema_changed === true ? "schema_drift" : "operator_rescan",
-        source_database_changed: false,
-      },
-      source_event_key: `workbench-boundary-review:rescan:${candidateDigest}`,
-    });
-    if (previousActive) {
-      await recordWorkbenchAttention(storeAccess, capabilityRevokedAttention({
-        environment: deploymentProfile ?? prepared.build.exploration_boundary.deployment_profile,
+    if (prepared.report.changed) {
+      await recordWorkbenchAttention(storeAccess, {
+        event_type: "capability.review_required",
+        severity: "warning",
+        environment: deploymentProfile ?? prepared.selectedBuild.exploration_boundary.deployment_profile,
         capability: "app.explore_data",
-        digest: previousActive.digest,
-        reasonCode: prepared.diff.schema_changed === true ? "schema_drift" : "operator_rescan",
-        sourceEventKey: `workbench-boundary-revoked:rescan:${previousActive.digest}:${prepared.previewDigest}`,
-      }));
+        contract_digest: candidateDigest,
+        attention_key: `boundary-review:${candidateDigest}`,
+        attention_required: true,
+        immediate_default: false,
+        summary: "The rescanned authoring boundary requires review",
+        workbench_path: "/",
+        details: {
+          authority_type: "scoped_explore",
+          reason_code: prepared.report.schema_changed || prepared.report.role_posture_changed
+            ? "schema_drift"
+            : "operator_rescan",
+          source_database_changed: false,
+        },
+        source_event_key: `workbench-boundary-review:rescan:${candidateDigest}`,
+      });
     }
     sendJson(response, 200, {
       ok: true,
-      diff: prepared.diff,
+      diff: prepared.report,
       journey,
-      confirmed_decisions: progress?.confirmed_decisions ?? [],
+      confirmed_decisions: progress.confirmed_decisions,
       review_progress: {
-        revision: progress?.revision ?? 0,
-        invalidated_decisions: progress?.invalidated_decisions ?? [],
-        outstanding_decisions: boundaryReviewDecisions(prepared.build.exploration_boundary)
-          .filter((decision) => !(progress?.confirmed_decisions ?? []).includes(decision.decision)),
+        revision: progress.revision,
+        invalidated_decisions: progress.invalidated_decisions,
+        outstanding_decisions: boundaryReviewDecisions(progress.candidate)
+          .filter((decision) => !progress.confirmed_decisions.includes(decision.decision)),
       },
-      active: null,
+      active: previousActive ?? null,
       source_database_changed: false,
-      message: "The rescanned boundary is disabled and ready for review. Protected named capabilities and ledger history were preserved.",
+      message: prepared.report.changed
+        ? "The reconciled boundary revision is disabled and ready for review. Existing exact authority, protected capabilities, and ledger history were preserved."
+        : prepared.report.authoring_baseline_refreshed
+          ? "The private boundary-authoring baseline was repaired for CLI and Workbench. No active boundary or reviewed revision changed, and no boundary review is required."
+          : "The schema, role posture, and trusted context are unchanged. No boundary revision was created.",
     });
     return;
   }
@@ -1566,26 +1728,46 @@ async function handleRequest(input: {
     if (body.confirmation !== "START OVER REVIEW") {
       throw new Error("Start over requires the exact confirmation START OVER REVIEW.");
     }
-    const previousActive = activeBoundaryEventMetadata(
-      await readOptionalJson(path.join(projectRoot, ".synapsor/exploration-boundary.active.json")),
-    );
     const prepared = await prepareAutoBoundaryRescan({
       projectRoot,
       boundaryRoot,
       schemaInspector,
       resetOverrides: true,
     });
+    const boundaryName = prepared.build.exploration_boundary.pack.name;
+    const previousActiveBoundary = await loadActivatedExplorationBoundary(projectRoot, {
+      name: boundaryName,
+    }).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw error;
+    });
+    const previousActive = activeBoundaryEventMetadata(previousActiveBoundary);
     await writeAutoBoundaryArtifacts({
       projectRoot,
       outputRoot: path.relative(projectRoot, boundaryRoot),
       build: prepared.build,
       force: true,
+      preserveActiveBoundary: true,
     });
-    const journey = await resetGuidedOnboardingForBoundaryReview({
+    const deactivated = previousActiveBoundary
+      ? await deactivateExplorationBoundary(projectRoot, boundaryName)
+      : { disabled: [], remaining: await loadActivatedExplorationBoundaries(projectRoot).catch((error: unknown) => {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+          throw error;
+        }) };
+    let journey = await resetGuidedOnboardingForBoundaryReview({
       projectRoot,
       schemaFingerprint: prepared.build.lock.schema_fingerprint,
       rolePostureFingerprint: prepared.build.lock.role_posture_fingerprint,
     }).catch(() => undefined);
+    if (deactivated.remaining.length > 0) {
+      journey = await updateGuidedOnboardingState({
+        projectRoot,
+        status: "boundary_active",
+        authorityActive: true,
+        recommendedNextAction: `Review ${boundaryName} when ready; Ask remains available through ${deactivated.remaining.length} other active ${deactivated.remaining.length === 1 ? "boundary" : "boundaries"}.`,
+      }).catch(() => journey);
+    }
     const candidateDigest = explorationBoundaryCandidateDigest(prepared.build.exploration_boundary);
     await recordWorkbenchAttention(storeAccess, {
       event_type: "capability.review_required",
@@ -1618,9 +1800,12 @@ async function handleRequest(input: {
       ok: true,
       journey,
       active: null,
+      remaining_active_boundaries: deactivated.remaining.map((boundary) => boundary.pack.name),
       source_database_changed: false,
       preserved: ["local ledger", "protected named capabilities", "Runner config", "source database"],
-      message: "Managed boundary-review decisions were reset. The new zero-activation draft is ready for review.",
+      message: deactivated.remaining.length > 0
+        ? `Managed review decisions for ${boundaryName} were reset, and that boundary is inactive. Ask remains available through: ${deactivated.remaining.map((boundary) => boundary.pack.name).join(", ")}.`
+        : `Managed review decisions for ${boundaryName} were reset. Its new inactive draft is ready for review.`,
     });
     return;
   }
@@ -1648,6 +1833,19 @@ async function handleRequest(input: {
       await fs.readFile(path.join(boundaryRoot, "exploration-boundary.draft.json"), "utf8"),
     ) as ExplorationBoundaryDraft;
     const progress = await readBoundaryReviewProgress(projectRoot, draft);
+    if (progress?.policy_migration.status === "review_required") {
+      sendJson(response, 409, {
+        ok: false,
+        error_code: "BOUNDARY_POLICY_MIGRATION_REQUIRED",
+        error: [
+          `Boundary ${progress.candidate.pack.name} has legacy project-wide review settings that are not yet isolated to its immutable boundary identity.`,
+          "Runner preserved the exact saved boundary revision but will not activate it as newly reviewed policy.",
+          "Edit and save a reviewed setting for this boundary, or apply a Rescan, then review and activate the resulting disabled revision.",
+        ].join(" "),
+        source_database_changed: false,
+      });
+      return;
+    }
     const candidateDigest = explorationBoundaryCandidateDigest(
       body.candidate as unknown as ExplorationBoundaryDraft,
     );
@@ -1664,16 +1862,24 @@ async function handleRequest(input: {
       });
       return;
     }
-    const lock = JSON.parse(await fs.readFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "utf8")) as GenerationLock;
+    const candidate = body.candidate as unknown as ExplorationBoundaryDraft;
+    const reviewAuthority = await resolveSavedBoundaryReviewAuthority({
+      projectRoot,
+      draft,
+      candidate,
+      ...(progress ? { progress } : {}),
+    });
     const inspection = await schemaInspector({
-      engine: lock.engine,
-      databaseUrlEnv: lock.source_env,
-      schema: lock.inspected_schema,
+      engine: reviewAuthority.generationLock.engine,
+      databaseUrlEnv: reviewAuthority.generationLock.source_env,
+      schema: reviewAuthority.generationLock.inspected_schema,
       env: process.env,
     });
     const active = await activateExplorationBoundary({
       projectRoot,
-      candidate: body.candidate as unknown as ExplorationBoundaryDraft,
+      candidate,
+      reviewDraft: reviewAuthority.reviewDraft,
+      generationLock: reviewAuthority.generationLock,
       expectedDigest: body.expected_digest,
       actor: body.actor,
       confirmation: body.confirmation,
@@ -1778,9 +1984,16 @@ async function handleRequest(input: {
       });
       return;
     }
-    const reviewed = reviewExplorationBoundaryCandidate(
+    const submittedCandidate = body.candidate as unknown as ExplorationBoundaryDraft;
+    const reviewAuthority = await resolveSavedBoundaryReviewAuthority({
+      projectRoot,
       draft,
-      body.candidate as unknown as ExplorationBoundaryDraft,
+      candidate: submittedCandidate,
+      ...(progress ? { progress } : {}),
+    });
+    const reviewed = reviewExplorationBoundaryCandidate(
+      reviewAuthority.reviewDraft,
+      submittedCandidate,
     );
     if (!progress
       || explorationBoundaryCandidateDigest(progress.candidate) !== reviewed.digest) {
@@ -1803,17 +2016,14 @@ async function handleRequest(input: {
       });
       return;
     }
-    const lock = JSON.parse(
-      await fs.readFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "utf8"),
-    ) as GenerationLock;
     const inspection = await schemaInspector({
-      engine: lock.engine,
-      databaseUrlEnv: lock.source_env,
-      schema: lock.inspected_schema,
+      engine: reviewAuthority.generationLock.engine,
+      databaseUrlEnv: reviewAuthority.generationLock.source_env,
+      schema: reviewAuthority.generationLock.inspected_schema,
       env: process.env,
     });
     assertCurrentExplorationBoundaryAuthority({
-      lock,
+      lock: reviewAuthority.generationLock,
       inspection,
       candidate: reviewed.candidate,
     });
@@ -1859,14 +2069,238 @@ async function handleRequest(input: {
     return;
   }
 
+  if (request.method === "GET" && url.pathname === "/api/explore/history") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Explore history is available only in a local Auto Boundary Workbench." });
+      return;
+    }
+    const requestedAuditId = url.searchParams.get("audit_id");
+    if (requestedAuditId !== null) {
+      const auditId = Number(requestedAuditId);
+      if (!Number.isSafeInteger(auditId) || auditId < 1) {
+        sendJson(response, 400, { ok: false, error: "Explore history requires a positive audit_id." });
+        return;
+      }
+      const record = await storeAccess(
+        "read",
+        "workbench-explore-history-detail",
+        (store) => store.getQueryAudit(auditId),
+      );
+      const payload = asRecord(record?.payload);
+      if (!record || typeof payload.scoped_explore_version !== "string") {
+        sendJson(response, 404, { ok: false, error: "That Explore audit record was not found." });
+        return;
+      }
+      const reconstructedQuery = reconstructExploreAuditQuery({
+        normalizedPlan: payload.normalized_plan,
+        scopeApplication: payload.scope_application,
+        tenantRecorded: typeof record.tenant_id === "string",
+        principalRecorded: typeof record.principal === "string",
+      });
+      const attemptedAccess = asRecord(payload.attempted_access);
+      sendJson(response, 200, {
+        ok: true,
+        ledger_source: ledgerSource,
+        audit: {
+          audit_id: auditId,
+          created_at: String(record.created_at ?? payload.recorded_at ?? ""),
+          resource: String(record.table_name ?? "app.explore_data"),
+          status: String(payload.status ?? "recorded"),
+          error_code: typeof payload.error_code === "string" ? payload.error_code : null,
+          refusal_stage: typeof payload.refusal_stage === "string" ? payload.refusal_stage : null,
+          attempted_access: typeof attemptedAccess.resource === "string"
+            ? {
+                resource: attemptedAccess.resource,
+                field: typeof attemptedAccess.field === "string" ? attemptedAccess.field : null,
+                operation: typeof attemptedAccess.operation === "string" ? attemptedAccess.operation : null,
+              }
+            : null,
+          boundary_digest: typeof payload.boundary_digest === "string" ? payload.boundary_digest : null,
+          generation_lock_fingerprint: typeof payload.generation_lock_fingerprint === "string" ? payload.generation_lock_fingerprint : null,
+          role_posture_fingerprint: typeof payload.role_posture_fingerprint === "string" ? payload.role_posture_fingerprint : null,
+          query_fingerprint: String(record.query_fingerprint ?? ""),
+          result_fingerprint: typeof payload.result_fingerprint === "string" ? payload.result_fingerprint : null,
+          evidence_bundle_id: typeof record.evidence_bundle_id === "string"
+            ? record.evidence_bundle_id
+            : null,
+          tenant_scope_fingerprint: typeof record.tenant_id === "string" ? record.tenant_id : null,
+          principal_scope_fingerprint: typeof record.principal === "string" ? record.principal : null,
+          capability: typeof record.capability === "string"
+            ? record.capability
+            : typeof payload.capability === "string"
+              ? payload.capability
+              : null,
+          normalized_plan: isRecord(payload.normalized_plan) ? payload.normalized_plan : null,
+          returned_rows_or_groups: Number(payload.returned_rows_or_groups ?? record.row_count ?? 0),
+          returned_cells: Number(payload.returned_cells ?? 0),
+          suppressed_groups: Number(payload.suppressed_groups ?? 0),
+          execution_duration_ms: Number.isFinite(Number(payload.execution_duration_ms))
+            ? Number(payload.execution_duration_ms)
+            : null,
+          budget_reservation_id: typeof payload.budget_reservation_id === "string" ? payload.budget_reservation_id : null,
+          differencing_family: typeof payload.differencing_family === "string" ? payload.differencing_family : null,
+          differencing_variant: typeof payload.differencing_variant === "string" ? payload.differencing_variant : null,
+          source_query_executed: payload.source_query_executed === true,
+          result_values_persisted: payload.result_values_persisted === true,
+          trusted_scope_values_persisted: payload.trusted_scope_values_persisted === true,
+          raw_sql_included: payload.raw_sql_included === true,
+          source_database_changed: payload.source_database_changed === true,
+          reconstructed_query: reconstructedQuery ?? null,
+        },
+      });
+      return;
+    }
+    let recent: Awaited<ReturnType<typeof listProtectableQueries>> = [];
+    try {
+      recent = await listProtectableQueries({ projectRoot });
+    } catch (error) {
+      if (!isInactiveExplorationBoundary(error)) throw error;
+    }
+    const requestedLimit = Number(url.searchParams.get("limit") ?? 50);
+    if (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 200) {
+      sendJson(response, 400, { ok: false, error: "Explore history limit must be an integer from 1 to 200." });
+      return;
+    }
+    const requestedOffset = Number(url.searchParams.get("offset") ?? 0);
+    if (!Number.isSafeInteger(requestedOffset) || requestedOffset < 0 || requestedOffset > 10_000_000) {
+      sendJson(response, 400, { ok: false, error: "Explore history offset must be an integer from 0 through 10000000." });
+      return;
+    }
+    const filterArgs = ["--config", configPath, "--limit", String(requestedLimit)];
+    const appendFilter = (parameter: string, flag = `--${parameter}`) => {
+      const value = url.searchParams.get(parameter)?.trim();
+      if (value) filterArgs.push(flag, value);
+    };
+    appendFilter("tenant");
+    appendFilter("principal");
+    appendFilter("resource");
+    appendFilter("capability");
+    appendFilter("boundary");
+    appendFilter("outcome");
+    appendFilter("search");
+    appendFilter("since");
+    appendFilter("to");
+    let resolvedAuditFilters;
+    try {
+      resolvedAuditFilters = await resolveExploreLedgerFilters(
+        filterArgs,
+        queryAuditFiltersFromArgs(filterArgs),
+      );
+    } catch (error) {
+      sendJson(response, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+      return;
+    }
+    const auditFilters: QueryAuditSearchFilters = {
+      ...resolvedAuditFilters.filters,
+      limit: requestedLimit + 1,
+      offset: requestedOffset,
+    };
+    const durableRecords = await storeAccess(
+      "read",
+      "workbench-explore-history-list",
+      (store) => store.listQueryAudit(auditFilters),
+    );
+    const hasOlderRecords = durableRecords.length > requestedLimit;
+    const durable = durableRecords
+      .slice(0, requestedLimit)
+      .filter((record) => typeof asRecord(record.payload).scoped_explore_version === "string")
+      .map((record) => {
+        const payload = asRecord(record.payload);
+        return {
+          audit_id: Number(record.audit_id),
+          created_at: String(record.created_at ?? payload.recorded_at ?? ""),
+          resource: String(record.table_name ?? "app.explore_data"),
+          description: describeExploreAuditPlan(payload.normalized_plan)
+            ?? describeExploreAuditAttempt(payload.attempted_access)
+            ?? `Reviewed Explore on ${String(record.table_name ?? "an unknown resource")}.`,
+          status: String(payload.status ?? "recorded"),
+          returned_rows_or_groups: Number(payload.returned_rows_or_groups ?? record.row_count ?? 0),
+          suppressed_groups: Number(payload.suppressed_groups ?? 0),
+          source_query_executed: payload.source_query_executed === true,
+          evidence_bundle_id: typeof record.evidence_bundle_id === "string"
+            ? record.evidence_bundle_id
+            : null,
+          error_code: typeof payload.error_code === "string" ? payload.error_code : null,
+        };
+      });
+    sendJson(response, 200, {
+      ok: true,
+      ledger_source: ledgerSource,
+      recent: recent.map(({ token, ...query }) => ({ ...query, query_ref: token })),
+      durable,
+      durable_limit: requestedLimit,
+      durable_offset: requestedOffset,
+      has_newer_records: requestedOffset > 0,
+      has_older_records: hasOlderRecords,
+      filters: {
+        tenant: url.searchParams.has("tenant") ? "applied (value not echoed)" : null,
+        principal: url.searchParams.has("principal") ? "applied (value not echoed)" : null,
+        resource: url.searchParams.get("resource")?.trim() || null,
+        capability: url.searchParams.get("capability")?.trim() || null,
+        boundary: url.searchParams.get("boundary")?.trim() || null,
+        outcome: url.searchParams.get("outcome")?.trim() || null,
+        search: url.searchParams.get("search")?.trim() || null,
+        from: auditFilters.from ?? null,
+        to: auditFilters.to ?? null,
+        limit: requestedLimit,
+        offset: requestedOffset,
+      },
+      notices: resolvedAuditFilters.notes,
+      persisted: {
+        model_conversation: false,
+        result_values: false,
+        trusted_scope_values: false,
+        raw_sql: false,
+      },
+    });
+    return;
+  }
+
   if (request.method === "GET" && url.pathname === "/api/explore/evidence") {
     if (!boundaryRoot) {
       sendJson(response, 404, { ok: false, error: "Explore evidence is available only in a local Auto Boundary Workbench." });
       return;
     }
+    const evidenceId = url.searchParams.get("evidence_id");
+    if (evidenceId) {
+      const evidence = await storeAccess(
+        "read",
+        "workbench-explore-evidence-detail",
+        (store) => store.getEvidenceBundle(evidenceId),
+      );
+      if (!evidence || evidence.payload.schema_version !== "synapsor.analytics-evidence.v1") {
+        sendJson(response, 404, { ok: false, error: "That Explore evidence bundle was not found in the configured ledger." });
+        return;
+      }
+      const reconstructedQuery = reconstructExploreAuditQuery({
+        normalizedPlan: evidence.payload.normalized_plan,
+        scopeApplication: evidence.payload.scope_application,
+        trustedScope: evidence.payload.trusted_scope,
+        tenantRecorded: Boolean(evidence.tenant_id),
+        principalRecorded: Boolean(evidence.principal),
+      });
+      sendJson(response, 200, {
+        ok: true,
+        ledger_source: ledgerSource,
+        evidence: {
+          evidence_bundle_id: evidence.evidence_bundle_id,
+          created_at: evidence.created_at,
+          tenant_scope_fingerprint: evidence.tenant_id,
+          capability: evidence.capability ?? null,
+          source_id: evidence.source_id ?? null,
+          source_table: evidence.source_table ?? null,
+          query_fingerprint: evidence.query_fingerprint ?? null,
+          payload: evidence.payload,
+          query_audit: evidence.query_audit,
+          result_values_persisted: evidence.payload.result_values_persisted === true,
+          reconstructed_query: reconstructedQuery ?? null,
+        },
+      });
+      return;
+    }
     const queryRef = url.searchParams.get("query_ref");
     if (!queryRef) {
-      sendJson(response, 400, { ok: false, error: "Explore evidence requires an analysis reference." });
+      sendJson(response, 400, { ok: false, error: "Explore evidence requires an evidence_id or an active analysis query_ref." });
       return;
     }
     const query = (await listProtectableQueries({ projectRoot }))
@@ -1883,6 +2317,7 @@ async function handleRequest(input: {
     const includeSql = url.searchParams.get("include_sql") === "1";
     sendJson(response, 200, {
       ok: true,
+      ledger_source: ledgerSource,
       analysis_reference: query.token,
       original_question: null,
       original_question_status: "The server does not persist host conversations. The current Workbench transcript may still show the question locally.",
@@ -2225,8 +2660,12 @@ async function handleRequest(input: {
     const body = await readJsonBody(request);
     const activeBoundaries = await loadActivatedExplorationBoundaries(projectRoot);
     const active = activeBoundaries.at(-1)!;
+    if (active.trusted_context.provider !== "environment") {
+      sendJson(response, 409, { ok: false, error: "Production HTTP claim scope cannot be changed in the local Workbench." });
+      return;
+    }
     const principalRequired = activeBoundaries.some((boundary) =>
-      boundary.pack.resources.some((resource) => Boolean(resource.principal_key)));
+      boundary.pack.resources.some((resource) => Boolean(resource.principal_key || resource.principal_scope)));
     const tenant = active.trusted_context.database_role_tenant
       ? undefined
       : trustedScopeValue(body.tenant, "tenant");
@@ -2268,7 +2707,11 @@ async function handleRequest(input: {
         : [runtime.boundary];
       const principalRequired = runtimeBoundaries.some((boundary) =>
         boundary.pack.resources.some((resource) =>
-          typeof resource.principal_key === "string" && resource.principal_key.length > 0));
+          (typeof resource.principal_key === "string" && resource.principal_key.length > 0)
+          || Boolean(resource.principal_scope)));
+      if (runtime.boundary.trusted_context.provider !== "environment") {
+        throw new Error("The local Workbench cannot bind production HTTP claim scope.");
+      }
       const tenantScope = runtime.trusted_scope?.tenant ?? {
         source: "environment" as const,
         binding: runtime.boundary.trusted_context.tenant_env,
@@ -2572,6 +3015,12 @@ async function handleRequest(input: {
     }
     let gateway: AskToolGateway | undefined;
     try {
+      const activeBoundaries = await loadActivatedExplorationBoundaries(projectRoot)
+        .catch((error: unknown) => {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+          throw error;
+        });
+      const boundaryCatalog = buildBoundaryCatalogModel(activeBoundaries);
       gateway = await askGatewayFactory({
         configPath,
         storePath,
@@ -2602,6 +3051,9 @@ async function handleRequest(input: {
         active_boundary_digest: authority.active_boundary_digest,
         active_boundary_set_digest: authority.active_boundary_set_digest,
         active_boundary_digests: authority.active_boundary_digests,
+        boundary_catalog: boundaryCatalog,
+        boundary_mermaid: renderBoundaryCatalogMermaid(boundaryCatalog),
+        boundary_diagrams: buildBoundaryCatalogDiagramExports(boundaryCatalog),
         runtime_config_digest: authority.runtime_config_digest,
         authority_matches_consent: session.configuration?.authority_digest === authorityDigest,
         tools: tools.map((tool) => ({
@@ -2674,6 +3126,15 @@ async function handleRequest(input: {
         ...(body.base_url === undefined ? {} : { base_url: askStringValue(body.base_url) }),
         ...(body.api_key === undefined ? {} : { api_key: askStringValue(body.api_key) }),
         ...(body.api_key_env === undefined ? {} : { api_key_env: askStringValue(body.api_key_env) }),
+        ...(body.request_timeout_seconds === undefined
+          ? {}
+          : { request_timeout_seconds: askNumberValue(body.request_timeout_seconds) }),
+        ...(body.session_token_budget === undefined
+          ? {}
+          : { session_token_budget: askNumberValue(body.session_token_budget) }),
+        ...(body.max_output_tokens === undefined
+          ? {}
+          : { max_output_tokens: askNumberValue(body.max_output_tokens) }),
         authority_digest: authorityDigest,
         egress_acknowledged: body.egress_acknowledged === true,
       }, process.env);
@@ -2692,6 +3153,52 @@ async function handleRequest(input: {
       sendAskFailure(response, error);
     } finally {
       await gateway?.close().catch(() => undefined);
+    }
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/ask/limits") {
+    const profile = await resolveWorkbenchDeploymentProfile(projectRoot, deploymentProfile);
+    const unavailable = askWorkbenchAccessFailure(profile, workbenchHost);
+    if (unavailable) {
+      sendJson(response, 404, {
+        ok: false,
+        error_code: "ASK_SURFACE_UNAVAILABLE",
+        error: unavailable,
+        source_database_changed: false,
+      });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, {
+        ok: false,
+        error_code: "ASK_CSRF_REQUIRED",
+        error: "CSRF token required for Ask limit changes.",
+      });
+      return;
+    }
+    const body = await readJsonBody(request);
+    try {
+      const status = askSession.updateTokenLimits({
+        ...(body.session_token_budget === undefined
+          ? {}
+          : { session_token_budget: askNumberValue(body.session_token_budget) }),
+        ...(body.max_output_tokens === undefined
+          ? {}
+          : {
+              max_output_tokens: body.max_output_tokens === null
+                ? null
+                : askNumberValue(body.max_output_tokens),
+            }),
+      });
+      sendJson(response, 200, {
+        ok: true,
+        session: status,
+        source_database_changed: false,
+        next_action: "Continue the same Ask conversation with the updated client-side limits.",
+      });
+    } catch (error) {
+      sendAskFailure(response, error);
     }
     return;
   }
@@ -4626,14 +5133,39 @@ function sensitiveFieldOverrideEvent(
 
 function schemaDriftAttentionDetails(diff: JsonRecord): Record<string, string | number | boolean | null> {
   const count = (value: unknown): number => Array.isArray(value) ? value.length : 0;
+  const totals = isRecord(diff.totals) ? diff.totals : {};
+  const preserved = isRecord(totals.preserved_authority) ? totals.preserved_authority : {};
+  const resourcesPreserved = typeof preserved.resources === "number" ? preserved.resources : 0;
+  const pathsPreserved = typeof preserved.reviewed_paths === "number" ? preserved.reviewed_paths : 0;
+  const fieldPoliciesPreserved = typeof preserved.field_policies === "number"
+    ? preserved.field_policies
+    : 0;
   return {
     reason_code: "generation_lock_schema_changed",
-    resources_before: typeof diff.resources_before === "number" ? diff.resources_before : 0,
-    resources_after: typeof diff.resources_after === "number" ? diff.resources_after : 0,
-    resources_added: count(diff.added_resources),
-    resources_removed: count(diff.removed_resources),
-    resources_changed: count(diff.changed_resources),
-    review_inputs_pruned: count(diff.pruned_review_inputs),
+    boundaries_checked: typeof totals.boundaries === "number" ? totals.boundaries : 0,
+    decisions_kept: resourcesPreserved + pathsPreserved + fieldPoliciesPreserved,
+    resources_preserved: resourcesPreserved,
+    reviewed_paths_preserved: pathsPreserved,
+    field_policies_preserved: fieldPoliciesPreserved,
+    confirmation_records_retained: typeof totals.kept_confirmations === "number"
+      ? totals.kept_confirmations
+      : 0,
+    decisions_requiring_review: typeof totals.invalidated_decisions === "number"
+      ? totals.invalidated_decisions
+      : 0,
+    resources_added: typeof totals.newly_available_resources === "number"
+      ? totals.newly_available_resources
+      : count(diff.added_resources),
+    resources_removed: typeof totals.removed_resources === "number"
+      ? totals.removed_resources
+      : count(diff.removed_resources),
+    fields_added: typeof totals.newly_available_fields === "number" ? totals.newly_available_fields : 0,
+    value_allowlists_added: typeof totals.newly_proven_value_allowlists === "number"
+      ? totals.newly_proven_value_allowlists
+      : 0,
+    relationships_added: typeof totals.newly_available_relationships === "number"
+      ? totals.newly_available_relationships
+      : 0,
     source_database_changed: false,
   };
 }
@@ -5189,7 +5721,10 @@ async function resolveWorkbenchDeploymentProfile(
   configured: WorkbenchDeploymentProfile | undefined,
 ): Promise<WorkbenchDeploymentProfile> {
   if (configured) return configured;
-  const active = await readOptionalJson(path.join(projectRoot, ".synapsor/exploration-boundary.active.json"));
+  const active = await loadActivatedExplorationBoundary(projectRoot).catch((error) => {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  });
   const draft = await readOptionalJson(path.join(projectRoot, "synapsor/generated/exploration-boundary.draft.json"));
   const profile = isRecord(active)
     ? active.deployment_profile
@@ -5390,71 +5925,9 @@ export async function saveBoundaryReviewProgress(
 function reconcileBoundaryReviewProgress(
   previous: BoundaryReviewProgress | undefined,
   draft: ExplorationBoundaryDraft,
+  reviewOverrides?: AutoBoundaryReviewOverrides,
 ): BoundaryReviewProgress | undefined {
-  return reconcileSharedBoundaryReviewProgress(previous, draft);
-}
-
-function normalizeStoredBoundaryReviewProgress(
-  raw: JsonRecord,
-  candidate: ExplorationBoundaryDraft,
-): BoundaryReviewProgress {
-  const decisions = boundaryReviewDecisions(candidate);
-  const decisionById = new Map(decisions.map((decision) => [decision.id, decision]));
-  const confirmations: BoundaryReviewConfirmation[] = [];
-  for (const item of raw.confirmations as unknown[]) {
-    if (!isRecord(item)
-      || typeof item.id !== "string"
-      || typeof item.decision !== "string"
-      || typeof item.input_digest !== "string"
-      || item.status !== "confirmed"
-      || typeof item.actor !== "string"
-      || typeof item.reason !== "string"
-      || typeof item.confirmed_at !== "string") {
-      throw new Error("Saved boundary-review confirmations are invalid.");
-    }
-    const current = decisionById.get(item.id);
-    if (!current || current.input_digest !== item.input_digest) continue;
-    confirmations.push({
-      ...current,
-      status: "confirmed",
-      actor: item.actor,
-      reason: item.reason,
-      confirmed_at: item.confirmed_at,
-    });
-  }
-  const invalidatedDecisions = (raw.invalidated_decisions as unknown[])
-    .flatMap((item): BoundaryReviewInvalidation[] => {
-      if (!isRecord(item)
-        || typeof item.id !== "string"
-        || typeof item.decision !== "string"
-        || typeof item.previous_input_digest !== "string"
-        || (item.current_input_digest !== undefined && typeof item.current_input_digest !== "string")
-        || (item.reason !== "reviewed_input_changed" && item.reason !== "decision_removed")
-        || typeof item.invalidated_at !== "string") return [];
-      return [{
-        id: item.id,
-        decision: item.decision,
-        previous_input_digest: item.previous_input_digest as `sha256:${string}`,
-        ...(item.current_input_digest
-          ? { current_input_digest: item.current_input_digest as `sha256:${string}` }
-          : {}),
-        reason: item.reason,
-        invalidated_at: item.invalidated_at,
-      }];
-    });
-  return {
-    schema_version: BOUNDARY_REVIEW_PROGRESS_VERSION,
-    revision: raw.revision as number,
-    draft_digest: raw.draft_digest as `sha256:${string}`,
-    candidate,
-    candidate_digest: explorationBoundaryCandidateDigest(candidate),
-    confirmed_decisions: decisions
-      .filter((decision) => confirmations.some((confirmation) => confirmation.id === decision.id))
-      .map((decision) => decision.decision),
-    confirmations,
-    invalidated_decisions: invalidatedDecisions,
-    updated_at: raw.updated_at as string,
-  };
+  return reconcileSharedBoundaryReviewProgress(previous, draft, reviewOverrides);
 }
 
 function mergeBoundaryReviewInvalidations(
@@ -5858,6 +6331,13 @@ function askStringValue(value: unknown): string {
   return value.trim();
 }
 
+function askNumberValue(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new AskError("ASK_TIMEOUT_INVALID", "Model request timeout must be a number of seconds.");
+  }
+  return value;
+}
+
 function askProviderDisplayName(provider: AskProvider): string {
   if (provider === "openai") return "OpenAI";
   if (provider === "anthropic") return "Anthropic";
@@ -5924,6 +6404,10 @@ function askFailureNextAction(code: string): string {
   if (code === "ASK_PROVIDER_PERMISSION_DENIED") {
     return "Review the provider key's project and model permissions, or choose another provider or model.";
   }
+  if (code === "ASK_SESSION_TOKEN_BUDGET_EXCEEDED"
+    || code === "ASK_SESSION_TOKEN_BUDGET_BELOW_USAGE") {
+    return "Open Ask limits and raise the reported-token session budget without clearing the conversation, or clear only when you intend to discard its context.";
+  }
   if (code === "ASK_PROVIDER_RATE_LIMITED") {
     return "Wait for the provider limit to reset, review provider quota, or choose another configured model.";
   }
@@ -5987,7 +6471,7 @@ function renderBoundaryShell(csrfToken: string): string {
   <style>
     :root{color-scheme:light dark;--bg:#f4f7f7;--surface:#fff;--text:#172126;--muted:#5d6b70;--line:#d5dfe1;--accent:#087f73;--warn:#9a6700;--bad:#b42318;--good:#137333}
     @media(prefers-color-scheme:dark){:root{--bg:#111718;--surface:#192124;--text:#edf3f2;--muted:#aab7b8;--line:#344247;--accent:#55c9b9;--warn:#f4c86a;--bad:#ff8d84;--good:#70d58c}}
-    *{box-sizing:border-box;letter-spacing:0}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,sans-serif}header{background:var(--surface);border-bottom:1px solid var(--line)}header div,main{width:min(1180px,calc(100% - 32px));margin:auto}header div{min-height:64px;display:flex;align-items:center;justify-content:space-between;gap:16px}h1{font-size:20px;margin:0}h2{font-size:16px;margin:28px 0 10px}h3{font-size:15px;margin:0}main{padding:24px 0 48px}.state{color:var(--warn);font-weight:700}.notice{background:var(--surface);border-left:3px solid var(--warn);padding:12px 14px}.summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));background:var(--surface);border:1px solid var(--line)}.metric{padding:14px;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}.metric strong{display:block;font-size:22px}.metric span,.scope{color:var(--muted)}.resource{padding:16px 0;border-top:1px solid var(--line)}.resource-head{display:flex;justify-content:space-between;gap:12px}.resource-toggle,.relationship{display:flex;align-items:center;gap:8px}.relationships{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:12px;padding:10px;background:var(--bg)}.panel{background:var(--surface);border:1px solid var(--line);padding:16px}.posture{display:grid;grid-template-columns:minmax(180px,260px) minmax(0,1fr);gap:16px;align-items:start}.posture>*{min-width:0}.posture label{display:flex;flex-direction:column;gap:6px;color:var(--muted)}.posture code{overflow-wrap:anywhere;word-break:break-all}.query{display:block;width:100%;text-align:left;margin:8px 0;background:transparent;color:var(--text);border-color:var(--line)}.query.selected{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 20%,transparent)}table{width:100%;table-layout:fixed;border-collapse:collapse;margin-top:10px}th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}th{color:var(--muted);font-size:12px}th:first-child{width:30%}code,pre{font:12px ui-monospace,monospace}pre{white-space:pre-wrap;overflow:auto;max-height:360px;background:var(--bg);border:1px solid var(--line);padding:12px}input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent)}input[type=text],input[type=number],textarea,select{width:100%;min-height:36px;padding:7px 9px;border:1px solid var(--line);border-radius:4px;background:var(--surface);color:var(--text)}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid var(--accent);outline-offset:2px}.budgets,.protect-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.budgets label,.protect-fields label{display:flex;flex-direction:column;gap:5px;color:var(--muted)}.literal{margin:10px 0;padding:10px;border:1px solid var(--line)}.literal label:first-child{display:flex;flex-direction:row;align-items:center;gap:8px}.actions{position:sticky;bottom:0;display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:24px;padding:14px;background:var(--surface);border:1px solid var(--line)}button{min-height:38px;padding:8px 14px;border:1px solid var(--accent);border-radius:4px;background:var(--accent);color:#fff;font-weight:700;cursor:pointer}button.secondary{background:transparent;color:var(--accent)}button:disabled{opacity:.5;cursor:not-allowed}#message,#protect-message{flex:1 1 260px;min-height:20px;color:var(--muted)}.error{color:var(--bad)!important}.success{color:var(--good)!important}
+    *{box-sizing:border-box;letter-spacing:0}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,sans-serif}header{background:var(--surface);border-bottom:1px solid var(--line)}header div,main{width:min(1180px,calc(100% - 32px));margin:auto}header div{min-height:64px;display:flex;align-items:center;justify-content:space-between;gap:16px}h1{font-size:20px;margin:0}h2{font-size:16px;margin:28px 0 10px}h3{font-size:15px;margin:0}main{padding:24px 0 48px}.state{color:var(--warn);font-weight:700}.notice{background:var(--surface);border-left:3px solid var(--warn);padding:12px 14px}.notice.compatibility{margin-top:12px}.notice.compatibility.full{border-left-color:var(--good)}.summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));background:var(--surface);border:1px solid var(--line)}.metric{padding:14px;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}.metric strong{display:block;font-size:22px}.metric span,.scope{color:var(--muted)}.resource{padding:16px 0;border-top:1px solid var(--line)}.resource-head{display:flex;justify-content:space-between;gap:12px}.resource-toggle,.relationship{display:flex;align-items:center;gap:8px}.relationships{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:12px;padding:10px;background:var(--bg)}.panel{background:var(--surface);border:1px solid var(--line);padding:16px}.posture{display:grid;grid-template-columns:minmax(180px,260px) minmax(0,1fr);gap:16px;align-items:start}.posture>*{min-width:0}.posture label{display:flex;flex-direction:column;gap:6px;color:var(--muted)}.posture code{overflow-wrap:anywhere;word-break:break-all}.query{display:block;width:100%;text-align:left;margin:8px 0;background:transparent;color:var(--text);border-color:var(--line)}.query.selected{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 20%,transparent)}table{width:100%;table-layout:fixed;border-collapse:collapse;margin-top:10px}th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}th{color:var(--muted);font-size:12px}th:first-child{width:30%}code,pre{font:12px ui-monospace,monospace}pre{white-space:pre-wrap;overflow:auto;max-height:360px;background:var(--bg);border:1px solid var(--line);padding:12px}input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent)}input[type=text],input[type=number],textarea,select{width:100%;min-height:36px;padding:7px 9px;border:1px solid var(--line);border-radius:4px;background:var(--surface);color:var(--text)}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid var(--accent);outline-offset:2px}.budgets,.protect-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.budgets label,.protect-fields label{display:flex;flex-direction:column;gap:5px;color:var(--muted)}.literal{margin:10px 0;padding:10px;border:1px solid var(--line)}.literal label:first-child{display:flex;flex-direction:row;align-items:center;gap:8px}.actions{position:sticky;bottom:0;display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:24px;padding:14px;background:var(--surface);border:1px solid var(--line)}button{min-height:38px;padding:8px 14px;border:1px solid var(--accent);border-radius:4px;background:var(--accent);color:#fff;font-weight:700;cursor:pointer}button.secondary{background:transparent;color:var(--accent)}button:disabled{opacity:.5;cursor:not-allowed}#message,#protect-message{flex:1 1 260px;min-height:20px;color:var(--muted)}.error{color:var(--bad)!important}.success{color:var(--good)!important}
     ${WORKBENCH_SYNTAX_CSS}
     @media(max-width:760px){.summary,.budgets{grid-template-columns:1fr 1fr}.posture{grid-template-columns:1fr}.actions{position:static}table{font-size:12px}th:first-child{width:38%}}@media(max-width:480px){header div,main{width:calc(100% - 20px)}.summary,.budgets,.protect-fields{grid-template-columns:1fr}.metric{border-right:0;border-bottom:1px solid var(--line)}.resource-head{flex-direction:column}}
   </style>
@@ -5997,6 +6481,7 @@ function renderBoundaryShell(csrfToken: string): string {
   <main>
     <p>Review a temporary local authoring boundary. Existing active Runner tools remain unchanged.</p>
     <div class="notice">Source rows remain unavailable until this exact digest is activated. Approval, apply, and commit are never added to MCP.</div>
+    <div id="database-compatibility" class="notice compatibility" role="status" hidden></div>
     <h2>Application Summary</h2><div id="summary" class="summary"></div>
     <h2>Authoring Posture</h2>
     <section class="panel posture">
@@ -6033,6 +6518,9 @@ function renderBoundaryShell(csrfToken: string): string {
     const post=async(url,body)=>{const r=await fetch(url,{method:"POST",headers:{"content-type":"application/json","x-synapsor-csrf":csrf},body:JSON.stringify(body)});const p=await r.json();if(!r.ok||!p.ok)throw new Error(p.error||"Request failed");return p};
     const has=(r,f,k)=>k==="filterable_fields"||k==="time_bucket_fields"?Object.hasOwn(r[k],f):r[k].includes(f);
     const currentResource=id=>candidate.pack.resources.find(r=>r.id===id);
+    const scopePathLabel=scope=>{const links=scope?.proof?.links||[];const resources=[];if(links[0]?.source_resource)resources.push(links[0].source_resource);links.forEach(link=>{if(resources.at(-1)!==link.source_resource)resources.push(link.source_resource);if(resources.at(-1)!==link.target_resource)resources.push(link.target_resource)});if(resources.at(-1)!==scope.ancestor_resource)resources.push(scope.ancestor_resource);if(!resources.length)resources.push(scope.ancestor_resource);const shown=resources.map(resource=>resource.startsWith("public.")?resource.slice(7):resource);shown[shown.length-1]=shown.at(-1)+"."+scope.ancestor_column;return shown.join(" → ")};
+    const scopeLabel=(resource,kind)=>{const direct=resource[kind+"_key"];if(direct)return direct;if(kind==="tenant"&&resource.shared_reference_scope)return "Shared reference; no tenant predicate";const scope=resource[kind+"_scope"];return scope?"mandatory relationship path "+scopePathLabel(scope):"not configured"};
+    const reviewDecisionLabel=item=>{const separator=item.indexOf(":");if(separator<1)return item;const resource=currentResource(item.slice(0,separator));if(item.includes(": confirm mandatory derived tenant scope ")&&resource?.tenant_scope)return resource.id+": confirm customer isolation through "+scopePathLabel(resource.tenant_scope);if(item.includes(": confirm mandatory derived principal scope ")&&resource?.principal_scope)return resource.id+": confirm user/owner isolation through "+scopePathLabel(resource.principal_scope);return item};
     function allDecisionsConfirmed(){return reviewDecisions.length>0&&document.querySelectorAll("[data-review-decision]:checked").length===reviewDecisions.length}
     function updateActivationState(){document.getElementById("activate").disabled=!digest||!allDecisionsConfirmed()}
     function changed(){digest=undefined;updateActivationState()}
@@ -6041,8 +6529,9 @@ function renderBoundaryShell(csrfToken: string): string {
     function setResource(source,checked){if(checked&&!currentResource(source.id)){candidate.pack.resources.push(structuredClone(source));candidate.pack.resources.sort((a,b)=>a.id.localeCompare(b.id))}else if(!checked){candidate.pack.resources=candidate.pack.resources.filter(r=>r.id!==source.id);candidate.pack.resources.forEach(r=>{r.relationships=r.relationships.filter(rel=>rel.target_resource!==source.id)})}changed();renderResources()}
     function setKeptOut(source,field,checked){const resource=currentResource(source.id);if(!resource)return;if(source.kept_out_fields.includes(field)&&!checked)return;if(checked){if(!resource.kept_out_fields.includes(field))resource.kept_out_fields.push(field);removeFieldAuthority(resource,field);candidate.pack.resources.forEach(r=>{r.relationships=r.relationships.filter(rel=>!(rel.target_resource===resource.id&&rel.target_columns.includes(field)))})}else resource.kept_out_fields=resource.kept_out_fields.filter(v=>v!==field);changed();renderResources()}
     function setRelationship(source,relationship,checked){const resource=currentResource(source.id);if(!resource)return;if(checked){const target=currentResource(relationship.target_resource);if(!target||relationship.local_columns.some(field=>resource.kept_out_fields.includes(field))||relationship.target_columns.some(field=>target.kept_out_fields.includes(field)))return;if(!resource.relationships.some(item=>item.id===relationship.id))resource.relationships.push(structuredClone(relationship))}else resource.relationships=resource.relationships.filter(item=>item.id!==relationship.id);changed();renderResources()}
-    function renderResources(){document.getElementById("resources").innerHTML=original.pack.resources.map((source,i)=>{const resource=currentResource(source.id);const included=Boolean(resource);const fields=Object.keys(source.field_types).sort();const relations=included&&source.relationships.length?'<div class="relationships">'+source.relationships.map((relationship,j)=>{const target=currentResource(relationship.target_resource);const blocked=!target||relationship.local_columns.some(field=>resource.kept_out_fields.includes(field))||relationship.target_columns.some(field=>target.kept_out_fields.includes(field));const checked=resource.relationships.some(item=>item.id===relationship.id);return '<label class="relationship"><input type="checkbox" data-relationship-resource="'+i+'" data-relationship="'+j+'" '+(checked?"checked":"")+(blocked?" disabled":"")+'> '+esc(relationship.id)+' → '+esc(relationship.target_resource)+' · many-to-one · max fan-out 1</label>'}).join("")+'</div>':"";return '<section class="resource"><div class="resource-head"><label class="resource-toggle"><input type="checkbox" data-resource-enabled="'+i+'" '+(included?"checked":"")+'> <h3>'+esc(source.id)+'</h3></label><span class="scope">tenant: '+esc(source.tenant_key)+(source.principal_key?' · principal: '+esc(source.principal_key):'')+'</span></div>'+(!included?'<p class="scope">Excluded from this model-visible authoring pack.</p>':'<table><thead><tr><th>Field</th>'+permissions.map(([l])=>'<th>'+esc(l)+'</th>').join("")+'<th>kept out</th></tr></thead><tbody>'+fields.map(field=>'<tr><td><code>'+esc(field)+'</code></td>'+permissions.map(([label,key])=>'<td>'+(has(source,field,key)?'<input type="checkbox" aria-label="'+esc(label)+' '+esc(field)+' for '+esc(source.id)+'" data-permission-resource="'+i+'" data-field="'+esc(field)+'" data-key="'+key+'" '+(has(resource,field,key)?"checked":"")+(resource.kept_out_fields.includes(field)?" disabled":"")+'>':'—')+'</td>').join("")+'<td><input type="checkbox" aria-label="Keep '+esc(field)+' out" data-kept-out-resource="'+i+'" data-kept-out-field="'+esc(field)+'" '+(resource.kept_out_fields.includes(field)?"checked":"")+(source.kept_out_fields.includes(field)?" disabled":"")+'></td></tr>').join("")+'</tbody></table>'+relations)+'</section>'}).join("");document.querySelectorAll("[data-resource-enabled]").forEach(input=>input.addEventListener("change",e=>{const t=e.currentTarget;setResource(original.pack.resources[Number(t.dataset.resourceEnabled)],t.checked)}));document.querySelectorAll("[data-permission-resource]").forEach(input=>input.addEventListener("change",e=>{const t=e.currentTarget;setPermission(currentResource(original.pack.resources[Number(t.dataset.permissionResource)].id),t.dataset.field,t.dataset.key,t.checked)}));document.querySelectorAll("[data-kept-out-resource]").forEach(input=>input.addEventListener("change",e=>{const t=e.currentTarget;setKeptOut(original.pack.resources[Number(t.dataset.keptOutResource)],t.dataset.keptOutField,t.checked)}));document.querySelectorAll("[data-relationship-resource]").forEach(input=>input.addEventListener("change",e=>{const t=e.currentTarget;const source=original.pack.resources[Number(t.dataset.relationshipResource)];setRelationship(source,source.relationships[Number(t.dataset.relationship)],t.checked)}))}
+    function renderResources(){document.getElementById("resources").innerHTML=original.pack.resources.map((source,i)=>{const resource=currentResource(source.id);const included=Boolean(resource);const fields=Object.keys(source.field_types).sort();const relations=included&&source.relationships.length?'<div class="relationships">'+source.relationships.map((relationship,j)=>{const target=currentResource(relationship.target_resource);const blocked=!target||relationship.local_columns.some(field=>resource.kept_out_fields.includes(field))||relationship.target_columns.some(field=>target.kept_out_fields.includes(field));const checked=resource.relationships.some(item=>item.id===relationship.id);return '<label class="relationship"><input type="checkbox" data-relationship-resource="'+i+'" data-relationship="'+j+'" '+(checked?"checked":"")+(blocked?" disabled":"")+'> '+esc(relationship.id)+' → '+esc(relationship.target_resource)+' · many-to-one · max fan-out 1</label>'}).join("")+'</div>':"";return '<section class="resource"><div class="resource-head"><label class="resource-toggle"><input type="checkbox" data-resource-enabled="'+i+'" '+(included?"checked":"")+'> <h3>'+esc(source.id)+'</h3></label><span class="scope">tenant: '+esc(scopeLabel(source,"tenant"))+(source.principal_key||source.principal_scope?' · principal: '+esc(scopeLabel(source,"principal")):'')+'</span></div>'+(!included?'<p class="scope">Excluded from this model-visible authoring pack.</p>':'<table><thead><tr><th>Field</th>'+permissions.map(([l])=>'<th>'+esc(l)+'</th>').join("")+'<th>kept out</th></tr></thead><tbody>'+fields.map(field=>'<tr><td><code>'+esc(field)+'</code></td>'+permissions.map(([label,key])=>'<td>'+(has(source,field,key)?'<input type="checkbox" aria-label="'+esc(label)+' '+esc(field)+' for '+esc(source.id)+'" data-permission-resource="'+i+'" data-field="'+esc(field)+'" data-key="'+key+'" '+(has(resource,field,key)?"checked":"")+(resource.kept_out_fields.includes(field)?" disabled":"")+'>':'—')+'</td>').join("")+'<td><input type="checkbox" aria-label="Keep '+esc(field)+' out" data-kept-out-resource="'+i+'" data-kept-out-field="'+esc(field)+'" '+(resource.kept_out_fields.includes(field)?"checked":"")+(source.kept_out_fields.includes(field)?" disabled":"")+'></td></tr>').join("")+'</tbody></table>'+relations)+'</section>'}).join("");document.querySelectorAll("[data-resource-enabled]").forEach(input=>input.addEventListener("change",e=>{const t=e.currentTarget;setResource(original.pack.resources[Number(t.dataset.resourceEnabled)],t.checked)}));document.querySelectorAll("[data-permission-resource]").forEach(input=>input.addEventListener("change",e=>{const t=e.currentTarget;setPermission(currentResource(original.pack.resources[Number(t.dataset.permissionResource)].id),t.dataset.field,t.dataset.key,t.checked)}));document.querySelectorAll("[data-kept-out-resource]").forEach(input=>input.addEventListener("change",e=>{const t=e.currentTarget;setKeptOut(original.pack.resources[Number(t.dataset.keptOutResource)],t.dataset.keptOutField,t.checked)}));document.querySelectorAll("[data-relationship-resource]").forEach(input=>input.addEventListener("change",e=>{const t=e.currentTarget;const source=original.pack.resources[Number(t.dataset.relationshipResource)];setRelationship(source,source.relationships[Number(t.dataset.relationship)],t.checked)}))}
     function renderBudgets(){document.getElementById("budgets").innerHTML=Object.entries(candidate.budgets).map(([key,value])=>'<label>'+esc(key.replaceAll("_"," "))+'<input type="number" min="1" max="'+original.budgets[key]+'" value="'+value+'" data-budget="'+key+'"></label>').join("");document.querySelectorAll("[data-budget]").forEach(input=>input.addEventListener("change",e=>{candidate.budgets[e.currentTarget.dataset.budget]=Number(e.currentTarget.value);changed()}))}
+    function renderDatabaseCompatibility(value){const panel=document.getElementById("database-compatibility");if(!value){panel.hidden=true;return}const limited=value.tier==="compatible_limited";const limits=[];if(value.authority?.features?.schema_check_constraints===false)limits.push("Text grouping and filtering require a bounded native ENUM.");if(value.authority?.features?.automatic_numeric_bands===false)limits.push("Automatic numeric bands are unavailable.");const profile=value.authority?.version_line?' Reviewed capability profile: '+value.authority.version_line+'.':'';panel.hidden=false;panel.className="notice compatibility"+(limited?"":" full");panel.innerHTML='<strong>Reviewed database compatibility: '+esc(value.detected_version)+'</strong><br>'+(limited?'Supported limited grammar. '+esc(limits.join(" ")):'Full reviewed grammar is available for this supported server line.')+esc(profile)}
     function renderPosture(){const role=reviewReport.database_role||{};document.getElementById("deployment-profile").value=candidate.deployment_profile;document.getElementById("role-posture").innerHTML='<strong>Exact database role posture</strong><p class="scope">role: '+esc(role.name||"unknown")+' · verified: '+esc(role.verified===true?"yes":"no")+' · read only: '+esc(role.read_only===true?"yes":"no")+' · superuser: '+esc(String(role.superuser))+' · BYPASSRLS: '+esc(String(role.bypass_rls))+'</p><p class="scope">role/grant/RLS fingerprint: <code>'+esc(role.fingerprint||candidate.role_posture_fingerprint)+'</code></p>'}
     function renderBlocked(){const resources=(reviewReport.resources||[]).filter(resource=>resource.status!=="draft_read");const actions=reviewReport.structured_actions||[];const resourceRows=resources.map(resource=>'<li><strong>'+esc(resource.id)+'</strong>: '+esc(resource.blockers.join("; ")||"scope unresolved")+'</li>').join("");const actionRows=actions.map(action=>'<li><strong>'+esc(action.name)+'</strong>: disabled, business review required · source '+esc(action.source)+'</li>').join("");document.getElementById("blocked").innerHTML=(resourceRows?'<h3>Blocked objects</h3><ul>'+resourceRows+'</ul>':'<p>No blocked objects.</p>')+(actionRows?'<h3>Disabled action candidates</h3><ul>'+actionRows+'</ul>':'<p>No structured action candidates were detected.</p>')}
     function renderProtect(){
@@ -6087,7 +6576,7 @@ function renderBoundaryShell(csrfToken: string): string {
       }catch(e){status.className="error";status.textContent=e.message}
     }
     async function loadProtect(){const status=document.getElementById("protect-message");try{const p=await fetch("/api/protect").then(r=>r.json());if(!p.ok)throw new Error(p.error||"Could not load recent queries");protectQueries=p.queries;selectedProtect=protectQueries.length?0:null;renderProtect();status.className="";status.textContent=protectQueries.length?protectQueries.length+" recent query or analysis result(s) ready for review.":p.message||"No recent query is ready yet."}catch(e){protectQueries=[];selectedProtect=null;renderProtect();status.className="error";status.textContent=e.message}}
-    async function load(){const p=await fetch("/api/boundary").then(r=>r.json());if(!p.ok)throw new Error(p.error||"Could not load review");original=p.draft;candidate=structuredClone(p.draft);reviewReport=p.review;reviewDecisions=[...p.review.unresolved_decisions];const s=p.review.summary;document.getElementById("summary").innerHTML=[[s.objects,"objects"],[s.draft_reads,"draft reads"],[s.blocked_objects,"blocked"],[s.sensitive_fields_kept_out,"kept-out fields"],[s.rls_policies,"RLS policies"],[s.structured_write_candidates,"disabled actions"]].map(([v,l])=>'<div class="metric"><strong>'+v+'</strong><span>'+l+'</span></div>').join("");document.getElementById("decisions").innerHTML=reviewDecisions.map((item,index)=>'<p><label><input type="checkbox" data-review-decision="'+index+'"> '+esc(item)+"</label></p>").join("");document.querySelectorAll("[data-review-decision]").forEach(input=>input.addEventListener("change",updateActivationState));document.getElementById("deployment-profile").addEventListener("change",event=>{candidate.deployment_profile=event.currentTarget.value;changed();renderPosture()});document.getElementById("state").textContent=p.active?"Active reviewed boundary":"Disabled · review required";renderPosture();renderBlocked();renderResources();renderBudgets()}
+    async function load(){const p=await fetch("/api/boundary").then(r=>r.json());if(!p.ok)throw new Error(p.error||"Could not load review");original=p.draft;candidate=structuredClone(p.draft);reviewReport=p.review;reviewDecisions=[...p.review.unresolved_decisions];const s=p.review.summary;document.getElementById("summary").innerHTML=[[s.objects,"objects"],[s.draft_reads,"draft reads"],[s.blocked_objects,"blocked"],[s.sensitive_fields_kept_out,"kept-out fields"],[s.rls_policies,"RLS policies"],[s.structured_write_candidates,"disabled actions"]].map(([v,l])=>'<div class="metric"><strong>'+v+'</strong><span>'+l+'</span></div>').join("");document.getElementById("decisions").innerHTML=reviewDecisions.map((item,index)=>'<p><label><input type="checkbox" data-review-decision="'+index+'"> '+esc(reviewDecisionLabel(item))+"</label></p>").join("");document.querySelectorAll("[data-review-decision]").forEach(input=>input.addEventListener("change",updateActivationState));document.getElementById("deployment-profile").addEventListener("change",event=>{candidate.deployment_profile=event.currentTarget.value;changed();renderPosture()});document.getElementById("state").textContent=p.active?"Active reviewed boundary":"Disabled · review required";renderDatabaseCompatibility(p.database_server_compatibility);renderPosture();renderBlocked();renderResources();renderBudgets()}
     document.getElementById("preview").onclick=async()=>{try{msg.className="";msg.textContent="Validating narrowed boundary…";const p=await post("/api/boundary/preview",{candidate});digest=p.digest;msg.textContent="Exact digest: "+digest;updateActivationState()}catch(e){msg.className="error";msg.textContent=e.message}};
     document.getElementById("activate").onclick=async()=>{try{const actor=document.getElementById("actor").value.trim();if(!actor)throw new Error("Enter the local operator identity.");const confirmedDecisions=[...document.querySelectorAll("[data-review-decision]:checked")].map(input=>reviewDecisions[Number(input.dataset.reviewDecision)]);msg.className="";msg.textContent="Rechecking schema lock and database-role posture…";await post("/api/boundary/activate",{candidate,expected_digest:digest,actor,confirmation:"ACTIVATE "+digest,confirmed_decisions:confirmedDecisions});msg.className="success";msg.textContent="Activated. Reconnect the local authoring MCP session to use Scoped Explore.";document.getElementById("state").textContent="Active reviewed boundary";document.getElementById("activate").disabled=true}catch(e){msg.className="error";msg.textContent=e.message}};
     document.getElementById("refresh-protect").onclick=loadProtect;
@@ -7740,7 +8229,8 @@ function isInactiveExplorationBoundary(error: unknown): boolean {
   return error.message === "Exploration boundary is not active."
     || (fsError.code === "ENOENT"
       && typeof fsError.path === "string"
-      && path.basename(fsError.path) === "exploration-boundary.active.json");
+      && ["exploration-boundary.active.json", "exploration-boundaries.active.json"]
+        .includes(path.basename(fsError.path)));
 }
 
 async function prepareAutoBoundaryRescan(input: {
@@ -7761,20 +8251,57 @@ async function prepareAutoBoundaryRescan(input: {
     schema: lock.inspected_schema,
     env: process.env,
   });
-  const currentOverrides = input.resetOverrides
-    ? { overrides: { schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION, resources: {} } as AutoBoundaryReviewOverrides, removed: [] }
-    : pruneAutoBoundaryReviewOverrides(inspection, await loadAutoBoundaryReviewOverrides(input.projectRoot));
   const project = await detectProjectContext(input.projectRoot);
   const evidence = await loadStructuredProjectEvidence(project);
-  const build = buildAutoBoundary({
+  const previousProgress = await readSharedBoundaryReviewProgress(input.projectRoot, oldDraft);
+  const configuredTrustedContext = await resolveConfiguredTrustedContextAuthority({
+    projectRoot: input.projectRoot,
+    sourceEnv: lock.source_env,
+    candidate: previousProgress?.candidate ?? oldDraft,
+    fallbackAuthority: lock.trusted_context_authority,
+  });
+  const buildInput = {
     inspection,
     project,
     parsedEvidence: evidence.parsed,
     existingContracts: evidence.existingContracts,
     sourceEnv: lock.source_env,
     inspectedSchema: lock.inspected_schema,
+    deploymentProfile: oldDraft.deployment_profile,
+    configuredTrustedContext,
+    ...(oldDraft.trusted_context.provider === "http_claims" ? {
+      httpClaims: {
+        tenantClaim: oldDraft.trusted_context.tenant_claim,
+        principalClaim: oldDraft.trusted_context.principal_claim,
+      },
+    } : {}),
+    ...(oldDraft.organization_scope ? {
+      singleOrganization: { organizationId: oldDraft.organization_scope.organization_id },
+    } : {}),
+  } satisfies Parameters<typeof buildAutoBoundary>[0];
+  const cleanBuild = buildAutoBoundary(buildInput);
+  const currentOverrides = input.resetOverrides
+    ? { overrides: emptyReviewOverrides(), removed: [] }
+    : pruneAutoBoundaryReviewOverrides(
+      inspection,
+      boundaryReviewOverridesForCandidate({
+        progress: previousProgress,
+        baseline: cleanBuild.exploration_boundary,
+        candidate: previousProgress?.candidate ?? oldDraft,
+      }),
+      {
+        project,
+        parsedEvidence: evidence.parsed,
+        existingContracts: evidence.existingContracts,
+        configuredTrustedContext,
+      },
+    );
+  const build = buildAutoBoundary({
+    ...buildInput,
     overrides: currentOverrides.overrides,
   });
+  build.exploration_boundary.pack.name = oldDraft.pack.name;
+  build.policy_baseline.boundary.pack.name = oldDraft.pack.name;
   const diff = boundarySemanticDiff(oldDraft, build, currentOverrides.removed);
   const previewDigest = canonicalJsonDigest({
     schema_version: "synapsor.boundary-rescan-preview.v1",
@@ -7821,6 +8348,25 @@ function managedReviewMutationRequest(
     reason: decision.reason,
     ...(decision.decided_at ? { decided_at: decision.decided_at } : {}),
   };
+  if (decision.kind === "resource_metadata") {
+    return {
+      ...common,
+      metadata: {
+        ...(decision.label !== undefined ? { label: decision.label } : {}),
+        ...(decision.description !== undefined ? { description: decision.description } : {}),
+      },
+    };
+  }
+  if (decision.kind === "field_metadata") {
+    return {
+      ...common,
+      field_metadata: [{
+        field: decision.field,
+        ...(decision.label !== undefined ? { label: decision.label } : {}),
+        ...(decision.description !== undefined ? { description: decision.description } : {}),
+      }],
+    };
+  }
   if (decision.kind === "field_exposure") {
     return {
       ...common,
@@ -7831,16 +8377,117 @@ function managedReviewMutationRequest(
           : { allow_reviewed_fields: [decision.field] }),
     };
   }
+  if (decision.kind === "field_enum") {
+    return {
+      ...common,
+      field_enum: {
+        field: decision.field,
+        values: [...decision.values],
+      },
+    };
+  }
+  if (decision.kind === "derived_measure") {
+    if (decision.definition === null) {
+      throw new Error("Workbench derived-measure removal requires the reviewed resource editor.");
+    }
+    if ("base_measure" in decision.definition) {
+      return {
+        ...common,
+        derived_measure: {
+          name: decision.name,
+          label: decision.definition.label,
+          shape: decision.definition.shape,
+          base_measure: structuredClone(decision.definition.base_measure),
+          ...(decision.definition.direction ? { direction: decision.definition.direction } : {}),
+          ...(decision.definition.window_size !== undefined
+            ? { window_size: decision.definition.window_size }
+            : {}),
+          ...(decision.remove ? { remove: true } : {}),
+        },
+      };
+    }
+    if ("child_resource" in decision.definition) {
+      return {
+        ...common,
+        derived_measure: {
+          name: decision.name,
+          label: decision.definition.label,
+          shape: decision.definition.shape,
+          child_resource: decision.definition.child_resource,
+          relationship: decision.definition.relationship,
+          ...(decision.remove ? { remove: true } : {}),
+        },
+      };
+    }
+    return {
+      ...common,
+      derived_measure: {
+        name: decision.name,
+        label: decision.definition.label,
+        shape: decision.definition.shape,
+        numerator: structuredClone(decision.definition.numerator),
+        denominator: structuredClone(decision.definition.denominator),
+        ...(decision.remove ? { remove: true } : {}),
+      },
+    };
+  }
+  if (decision.kind === "numeric_band") {
+    if (decision.definition === null) {
+      throw new Error("Workbench numeric-band removal requires the reviewed resource editor.");
+    }
+    return {
+      ...common,
+      numeric_band: {
+        name: decision.name,
+        label: decision.definition.label,
+        field: decision.definition.field,
+        ...(decision.definition.relationship
+          ? { relationship: decision.definition.relationship }
+          : {}),
+        edges: [...decision.definition.edges],
+        bucket_labels: [...decision.definition.bucket_labels],
+        ...(decision.remove ? { remove: true } : {}),
+      },
+    };
+  }
+  if (decision.kind === "auto_band") {
+    if (decision.definition === null) {
+      throw new Error("Workbench automatic-band removal requires the reviewed resource editor.");
+    }
+    return {
+      ...common,
+      auto_band: {
+        ...structuredClone(decision.definition),
+        ...(decision.remove ? { remove: true } : {}),
+      },
+    };
+  }
   if (decision.kind === "row_identity") {
     return { ...common, include: true, row_identity: decision.value };
   }
   if (decision.kind === "tenant_key") {
     return { ...common, include: true, tenant_key: decision.value };
   }
+  if (decision.kind === "tenant_scope_path") {
+    return { ...common, include: true, tenant_scope_path: decision.value };
+  }
+  if (decision.kind === "shared_reference_scope") {
+    return {
+      ...common,
+      include: true,
+      shared_reference_scope: decision.acknowledgement,
+    };
+  }
   if (decision.kind === "principal_key") {
     return { ...common, principal_key: decision.value };
   }
-  return { ...common, minimum_cohort_size: Number(decision.value) };
+  if (decision.kind === "principal_scope_path") {
+    return { ...common, principal_scope_path: decision.value };
+  }
+  if (decision.kind === "minimum_cohort") {
+    return { ...common, minimum_cohort_size: decision.value };
+  }
+  throw new Error(`Unsupported managed review decision ${decision.kind}.`);
 }
 
 function applyManagedBoundaryReviewDecision(
@@ -7876,7 +8523,93 @@ function applyManagedBoundaryReviewDecision(
         decided_at: decidedAt,
       },
     };
-  } else if (kind === "row_identity" || kind === "tenant_key") {
+  } else if (kind === "field_enum") {
+    const field = requiredReviewText(body.field, "field");
+    if (!Array.isArray(body.values)
+      || body.values.length > 64
+      || body.values.some((value) => typeof value !== "string" || [...value].length > 64)
+      || new Set(body.values).size !== body.values.length
+      || Buffer.byteLength(JSON.stringify(body.values), "utf8") > 2_048) {
+      throw new Error(
+        "field_enum review requires at most 64 unique values, at most 64 characters each and 2048 bytes total.",
+      );
+    }
+    resource.field_enums = {
+      ...(resource.field_enums ?? {}),
+      [field]: {
+        values: body.values.map(String),
+        actor,
+        reason,
+        decided_at: decidedAt,
+      },
+    };
+  } else if (kind === "derived_measure") {
+    const name = requiredReviewText(body.name, "name");
+    if (!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name)) {
+      throw new Error("derived_measure review requires a safe name of at most 64 characters.");
+    }
+    if (body.remove === true || body.definition === null) {
+      if (resource.derived_measures) {
+        delete resource.derived_measures[name];
+        if (Object.keys(resource.derived_measures).length === 0) delete resource.derived_measures;
+      }
+    } else {
+      const definition = normalizeExplorationDerivedMeasure(
+        body.definition,
+        `${resourceId}.${name} derived measure`,
+      );
+      if (definition.name !== name) {
+        throw new Error("derived_measure review name must match its fixed definition name.");
+      }
+      resource.derived_measures = {
+        ...(resource.derived_measures ?? {}),
+        [name]: { definition, actor, reason, decided_at: decidedAt },
+      };
+    }
+  } else if (kind === "numeric_band") {
+    const name = requiredReviewText(body.name, "name");
+    if (!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name)) {
+      throw new Error("numeric_band review requires a safe name of at most 64 characters.");
+    }
+    if (body.remove === true || body.definition === null) {
+      if (resource.numeric_bands) {
+        delete resource.numeric_bands[name];
+        if (Object.keys(resource.numeric_bands).length === 0) delete resource.numeric_bands;
+      }
+    } else {
+      const definition = normalizeExplorationNumericBand(
+        body.definition,
+        `${resourceId}.${name} numeric band`,
+      );
+      if (definition.name !== name) {
+        throw new Error("numeric_band review name must match its fixed definition name.");
+      }
+      resource.numeric_bands = {
+        ...(resource.numeric_bands ?? {}),
+        [name]: { definition, actor, reason, decided_at: decidedAt },
+      };
+    }
+  } else if (kind === "auto_band") {
+    const field = requiredReviewText(body.field, "field");
+    if (body.remove === true || body.definition === null) {
+      if (resource.auto_bands) {
+        delete resource.auto_bands[field];
+        if (Object.keys(resource.auto_bands).length === 0) delete resource.auto_bands;
+      }
+    } else {
+      const definition = normalizeExplorationAutoBandPolicy(
+        body.definition,
+        `${resourceId}.${field} auto band`,
+      );
+      if (definition.field !== field) {
+        throw new Error("auto_band review field must match its policy field.");
+      }
+      resource.auto_bands = {
+        ...(resource.auto_bands ?? {}),
+        [field]: { definition, actor, reason, decided_at: decidedAt },
+      };
+    }
+  } else if (kind === "row_identity" || kind === "tenant_key" || kind === "tenant_scope_path") {
     const decision = {
       value: requiredReviewText(body.value, "value"),
       actor,
@@ -7884,10 +8617,38 @@ function applyManagedBoundaryReviewDecision(
       decided_at: decidedAt,
     };
     if (kind === "row_identity") resource.row_identity = decision;
-    else resource.tenant_key = decision;
-  } else if (kind === "principal_key") {
+    else if (kind === "tenant_key") {
+      resource.tenant_key = decision;
+      delete resource.tenant_scope_path;
+      delete resource.shared_reference_scope;
+    } else {
+      resource.tenant_scope_path = decision;
+      delete resource.tenant_key;
+      delete resource.shared_reference_scope;
+    }
+  } else if (kind === "shared_reference_scope") {
+    if (body.acknowledgement !== SHARED_REFERENCE_ACKNOWLEDGEMENT) {
+      throw new Error(
+        `shared_reference_scope review requires acknowledgement ${SHARED_REFERENCE_ACKNOWLEDGEMENT}.`,
+      );
+    }
+    resource.shared_reference_scope = {
+      value: SHARED_REFERENCE_ACKNOWLEDGEMENT,
+      actor,
+      reason,
+      decided_at: decidedAt,
+    };
+    delete resource.tenant_key;
+    delete resource.tenant_scope_path;
+  } else if (kind === "principal_key" || kind === "principal_scope_path") {
     const value = body.value === null ? null : requiredReviewText(body.value, "value");
-    resource.principal_key = { value, actor, reason, decided_at: decidedAt };
+    if (kind === "principal_key") {
+      resource.principal_key = { value, actor, reason, decided_at: decidedAt };
+      delete resource.principal_scope_path;
+    } else {
+      resource.principal_scope_path = { value, actor, reason, decided_at: decidedAt };
+      delete resource.principal_key;
+    }
   } else if (kind === "minimum_cohort") {
     if (!Number.isSafeInteger(body.value) || Number(body.value) < 1 || Number(body.value) > 5) {
       throw new Error("minimum_cohort review requires an integer from 1 through 5.");
@@ -7904,7 +8665,7 @@ function applyManagedBoundaryReviewDecision(
     }
   } else {
     throw new Error(
-      "Managed boundary review kind must be field_exposure, row_identity, tenant_key, principal_key, or minimum_cohort.",
+      "Managed boundary review kind must be field_exposure, field_enum, derived_measure, numeric_band, auto_band, row_identity, tenant_key, tenant_scope_path, shared_reference_scope, principal_key, principal_scope_path, or minimum_cohort.",
     );
   }
 
@@ -7917,7 +8678,12 @@ function requiredReviewText(value: unknown, label: string): string {
   return value.trim();
 }
 
-function trustedScopeLabel(source: "environment" | "postgres_role_setting", binding: string): string {
+function trustedScopeLabel(
+  source: "environment" | "postgres_role_setting" | "verified_http_claim" | "reviewed_organization",
+  binding: string,
+): string {
+  if (source === "verified_http_claim") return `verified HTTP claim ${binding}`;
+  if (source === "reviewed_organization") return binding;
   return source === "postgres_role_setting"
     ? `the read-only database credential (${binding})`
     : `the operator environment (${binding})`;

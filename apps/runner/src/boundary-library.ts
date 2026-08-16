@@ -1,24 +1,41 @@
 import fs from "node:fs/promises";
+import crypto from "node:crypto";
 import path from "node:path";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
+  emptyReviewOverrides,
   explorationBoundaryCandidateDigest,
+  generationLockSharedFactsDigest,
+  loadAutoBoundaryPolicyBaseline,
+  loadGenerationLockSnapshot,
   loadActivatedExplorationBoundaries,
+  ownerReviewableExplorationBudgetCeiling,
   reviewExplorationBoundaryCandidate,
   type ActivatedExplorationBoundary,
   type ExplorationBoundaryDraft,
+  type GenerationLock,
 } from "./auto-boundary.js";
 import {
   boundaryReviewDecisions,
   createBoundaryReviewProgress,
+  legacyBoundaryReviewId,
+  legacyPolicyMigration,
+  normalizeStoredBoundaryReviewProgress,
   saveBoundaryReviewProgress,
   type BoundaryReviewProgress,
 } from "./boundary-review-domain.js";
+import { resolveBoundaryRevisionState } from "./boundary-revision-state.js";
 
 const BOUNDARY_LIBRARY_VERSION = "synapsor.boundary-library.v1" as const;
 
 type BoundaryLibraryFile = {
   schema_version: typeof BOUNDARY_LIBRARY_VERSION;
+  selected_name: string;
+  boundaries: Record<string, BoundaryReviewProgress>;
+  updated_at: string;
+};
+
+export type BoundaryLibraryReconciliationState = {
   selected_name: string;
   boundaries: Record<string, BoundaryReviewProgress>;
   updated_at: string;
@@ -32,6 +49,7 @@ export type BoundaryLibraryEntry = {
   table_count: number;
   candidate_digest: `sha256:${string}`;
   outstanding_decisions: number;
+  policy_review_required: boolean;
 };
 
 export type BoundaryLibrarySnapshot = {
@@ -47,6 +65,55 @@ type BoundaryLibraryContext = {
 };
 
 type BoundaryResource = ExplorationBoundaryDraft["pack"]["resources"][number];
+
+export async function resolveSavedBoundaryReviewAuthority(input: {
+  projectRoot: string;
+  draft: ExplorationBoundaryDraft;
+  candidate: ExplorationBoundaryDraft;
+  progress?: BoundaryReviewProgress;
+}): Promise<{
+  reviewDraft: ExplorationBoundaryDraft;
+  generationLock: GenerationLock;
+}> {
+  const projectRoot = path.resolve(input.projectRoot);
+  const [generationLock, currentLock] = await Promise.all([
+    loadGenerationLockSnapshot(projectRoot, input.candidate.generation_lock_fingerprint),
+    loadGenerationLockSnapshot(projectRoot, input.draft.generation_lock_fingerprint),
+  ]);
+  if (generationLockSharedFactsDigest(generationLock)
+    !== generationLockSharedFactsDigest(currentLock)) {
+    throw new Error(
+      `Saved boundary ${input.candidate.pack.name} is bound to different schema, role, or trusted-context facts. Rescan it before review or activation.`,
+    );
+  }
+
+  if (input.candidate.generation_lock_fingerprint
+    === input.draft.generation_lock_fingerprint) {
+    return { reviewDraft: input.draft, generationLock };
+  }
+
+  const baseline = await loadAutoBoundaryPolicyBaseline(projectRoot).catch((error) => {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  });
+  if (baseline?.boundary.generation_lock_fingerprint
+    === input.candidate.generation_lock_fingerprint) {
+    return { reviewDraft: baseline.boundary, generationLock };
+  }
+
+  const saved = input.progress;
+  if (saved
+    && saved.candidate.pack.name === input.candidate.pack.name
+    && saved.candidate.generation_lock_fingerprint
+      === input.candidate.generation_lock_fingerprint
+    && saved.candidate_digest === explorationBoundaryCandidateDigest(saved.candidate)) {
+    return { reviewDraft: saved.candidate, generationLock };
+  }
+
+  throw new Error(
+    `Saved boundary ${input.candidate.pack.name} has no matching generated review authority. Rescan it before review or activation.`,
+  );
+}
 
 export async function synchronizeBoundaryLibrary(
   input: BoundaryLibraryContext,
@@ -68,7 +135,71 @@ export async function synchronizeBoundaryLibrary(
     await saveBoundaryReviewProgress(input.projectRoot, selected);
   }
   await writeBoundaryLibrary(input.projectRoot, library);
-  return snapshot(library, active);
+  return snapshot(input.projectRoot, library, active);
+}
+
+export async function loadBoundaryLibraryForReconciliation(
+  input: BoundaryLibraryContext,
+): Promise<BoundaryLibraryReconciliationState> {
+  const library = await readOrCreateLibrary(input);
+  return {
+    selected_name: library.selected_name,
+    boundaries: structuredClone(library.boundaries),
+    updated_at: library.updated_at,
+  };
+}
+
+export async function saveBoundaryLibraryAfterReconciliation(input: {
+  projectRoot: string;
+  state: BoundaryLibraryReconciliationState;
+}): Promise<void> {
+  await writeBoundaryLibrary(
+    input.projectRoot,
+    boundaryLibraryFileAfterReconciliation(input.state),
+  );
+}
+
+export function serializeBoundaryLibraryAfterReconciliation(
+  state: BoundaryLibraryReconciliationState,
+): string {
+  return `${JSON.stringify(boundaryLibraryFileAfterReconciliation(state), null, 2)}\n`;
+}
+
+function boundaryLibraryFileAfterReconciliation(
+  state: BoundaryLibraryReconciliationState,
+): BoundaryLibraryFile {
+  if (!state.boundaries[state.selected_name]) {
+    throw new Error("A reconciled boundary library must retain its selected boundary.");
+  }
+  const boundaryIds = new Set<string>();
+  for (const [name, progress] of Object.entries(state.boundaries)) {
+    assertBoundaryName(name);
+    if (progress.candidate.pack.name !== name) {
+      throw new Error(`Reconciled boundary ${name} has a mismatched internal name.`);
+    }
+    if (boundaryIds.has(progress.boundary_id)) {
+      throw new Error(`Reconciled boundary identity ${progress.boundary_id} is duplicated.`);
+    }
+    boundaryIds.add(progress.boundary_id);
+  }
+  return {
+    schema_version: BOUNDARY_LIBRARY_VERSION,
+    selected_name: state.selected_name,
+    boundaries: structuredClone(state.boundaries),
+    updated_at: state.updated_at,
+  };
+}
+
+export function rebaseSavedBoundaryForRescan(input: {
+  generatedDraft: ExplorationBoundaryDraft;
+  previousCandidate: ExplorationBoundaryDraft;
+  boundaryName: string;
+}): ExplorationBoundaryDraft {
+  return rebaseDisabledBoundary(
+    input.generatedDraft,
+    input.previousCandidate,
+    input.boundaryName,
+  );
 }
 
 export async function createSavedBoundary(input: BoundaryLibraryContext & {
@@ -81,19 +212,23 @@ export async function createSavedBoundary(input: BoundaryLibraryContext & {
   if (library.boundaries[input.name]) {
     throw new Error(`A saved boundary named ${input.name} already exists.`);
   }
-  const selectedResource = input.draft.pack.resources.find((resource) =>
+  const policyBaseline = await policyNeutralBoundaryForCurrentFacts(
+    input.projectRoot,
+    input.draft,
+  );
+  const selectedResource = policyBaseline.pack.resources.find((resource) =>
     resource.id === input.resourceId);
   if (!selectedResource) {
     throw new Error(
       `Starting table ${input.resourceId} is not an available generated boundary resource.`,
     );
   }
-  const candidate = structuredClone(input.draft);
+  const candidate = structuredClone(policyBaseline);
   const active = await readActiveBoundaryIdentities(input.projectRoot);
   const compatibleActive = findCompatibleActiveBoundary(input.draft, active);
   if (active.length && !compatibleActive) {
     throw new Error(
-      "A new boundary cannot join the current Ask session because its generated source or trusted scope differs from the active reviewed boundaries.",
+      "A new boundary cannot join the current Ask session because its generated source, trusted scope, or database capability tier differs from the active reviewed boundaries. Rescan stale boundaries before adding another one.",
     );
   }
   if (compatibleActive) {
@@ -104,12 +239,13 @@ export async function createSavedBoundary(input: BoundaryLibraryContext & {
     ...structuredClone(selectedResource),
     relationships: [],
   }];
-  const reviewed = reviewExplorationBoundaryCandidate(input.draft, candidate).candidate;
+  const reviewed = reviewExplorationBoundaryCandidate(policyBaseline, candidate).candidate;
   const progress = createBoundaryReviewProgress({
     draft: input.draft,
     candidate: reviewed,
     confirmedDecisions: [],
     actor: input.actor,
+    reviewOverrides: emptyReviewOverrides(),
     reason: `Created disabled boundary ${input.name} with operator-selected starting table ${input.resourceId}.`,
     revision: 1,
   });
@@ -156,9 +292,15 @@ function findCompatibleActiveBoundary(
   active: Awaited<ReturnType<typeof readActiveBoundaryIdentities>>,
 ): ActivatedExplorationBoundary | undefined {
   const trustedContextDigest = canonicalJsonDigest(draft.trusted_context);
+  const databaseServerAuthorityDigest = canonicalJsonDigest(
+    draft.database_server_authority ?? null,
+  );
   return active.find(({ boundary }) =>
     boundary.source === draft.source
-    && canonicalJsonDigest(boundary.trusted_context) === trustedContextDigest)?.boundary;
+    && canonicalJsonDigest(boundary.trusted_context) === trustedContextDigest
+    && boundary.database_server_tier === draft.database_server_tier
+    && canonicalJsonDigest(boundary.database_server_authority ?? null)
+      === databaseServerAuthorityDigest)?.boundary;
 }
 
 export async function switchSavedBoundary(input: BoundaryLibraryContext & {
@@ -167,7 +309,12 @@ export async function switchSavedBoundary(input: BoundaryLibraryContext & {
   const library = await readOrCreateLibrary(input);
   const stored = library.boundaries[input.name];
   if (!stored) throw new Error(`Saved boundary ${input.name} was not found.`);
-  const progress = normalizeStoredProgress(input.draft, stored, input.name);
+  const progress = await normalizeStoredProgress(
+    input.projectRoot,
+    input.draft,
+    stored,
+    input.name,
+  );
   library.boundaries[input.name] = progress;
   library.selected_name = input.name;
   library.updated_at = new Date().toISOString();
@@ -237,7 +384,8 @@ export async function deleteSavedBoundary(input: BoundaryLibraryContext & {
   if (library.selected_name === input.name) {
     library.selected_name = Object.keys(library.boundaries).sort()[0]!;
   }
-  const progress = normalizeStoredProgress(
+  const progress = await normalizeStoredProgress(
+    input.projectRoot,
     input.draft,
     library.boundaries[library.selected_name]!,
     library.selected_name,
@@ -256,6 +404,7 @@ async function readOrCreateLibrary(input: BoundaryLibraryContext): Promise<Bound
       draft: input.draft,
       candidate: input.currentCandidate,
       confirmedDecisions: [],
+      boundaryId: legacyBoundaryReviewId(input.currentCandidate),
       actor: "local-boundary-library",
       reason: "Registered the existing disabled boundary without changing authority.",
       revision: 1,
@@ -264,7 +413,7 @@ async function readOrCreateLibrary(input: BoundaryLibraryContext): Promise<Bound
   let library: BoundaryLibraryFile;
   try {
     const raw = JSON.parse(await fs.readFile(filePath, "utf8")) as unknown;
-    library = normalizeLibrary(raw, input.draft, current);
+    library = await normalizeLibrary(input.projectRoot, raw, input.draft, current);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     library = {
@@ -294,11 +443,12 @@ async function readOrCreateLibrary(input: BoundaryLibraryContext): Promise<Bound
   return library;
 }
 
-function normalizeLibrary(
+async function normalizeLibrary(
+  projectRoot: string,
   raw: unknown,
   draft: ExplorationBoundaryDraft,
   current: BoundaryReviewProgress,
-): BoundaryLibraryFile {
+): Promise<BoundaryLibraryFile> {
   if (!isRecord(raw)
     || raw.schema_version !== BOUNDARY_LIBRARY_VERSION
     || typeof raw.selected_name !== "string"
@@ -312,7 +462,7 @@ function normalizeLibrary(
     assertBoundaryName(name);
     boundaries[name] = name === current.candidate.pack.name
       ? current
-      : normalizeStoredProgress(draft, value, name);
+      : await normalizeStoredProgress(projectRoot, draft, value, name);
   }
   if (!boundaries[raw.selected_name]) {
     throw new Error("Saved boundary library does not contain its selected boundary.");
@@ -325,11 +475,12 @@ function normalizeLibrary(
   };
 }
 
-function normalizeStoredProgress(
+async function normalizeStoredProgress(
+  projectRoot: string,
   draft: ExplorationBoundaryDraft,
   raw: unknown,
   expectedName: string,
-): BoundaryReviewProgress {
+): Promise<BoundaryReviewProgress> {
   if (!isRecord(raw)
     || !isRecord(raw.candidate)
     || !isRecord(raw.candidate.pack)
@@ -344,24 +495,95 @@ function normalizeStoredProgress(
     throw new Error(`Saved boundary ${expectedName} has invalid review state.`);
   }
   const storedCandidate = raw.candidate as unknown as ExplorationBoundaryDraft;
-  const candidate = storedCandidate.generation_lock_fingerprint === draft.generation_lock_fingerprint
-    && storedCandidate.role_posture_fingerprint === draft.role_posture_fingerprint
-    ? reviewExplorationBoundaryCandidate(draft, storedCandidate).candidate
-    : rebaseDisabledBoundary(draft, storedCandidate, expectedName);
+  const policyBaseline = await optionalPolicyNeutralBoundaryForCurrentFacts(
+    projectRoot,
+    draft,
+  );
+  const sharedFactsStatus = await boundarySharedFactsStatus(
+    projectRoot,
+    storedCandidate,
+    draft,
+  );
+  const candidate = sharedFactsStatus === "changed" && policyBaseline
+    ? rebaseDisabledBoundary(policyBaseline, storedCandidate, expectedName)
+    : sharedFactsStatus === "unchanged"
+      && storedCandidate.generation_lock_fingerprint === draft.generation_lock_fingerprint
+      ? reviewExplorationBoundaryCandidate(draft, storedCandidate).candidate
+      : structuredClone(storedCandidate);
   if (candidate.pack.name !== expectedName) {
     throw new Error(`Saved boundary ${expectedName} has a mismatched internal name.`);
   }
+  const previous = normalizeStoredBoundaryReviewProgress(raw, candidate);
   return createBoundaryReviewProgress({
     draft,
     candidate,
     confirmedDecisions: (raw.confirmed_decisions as string[])
       .filter((decision) => candidate.unresolved_decisions.includes(decision)),
-    previous: raw as unknown as BoundaryReviewProgress,
+    previous,
     actor: "local-boundary-library",
     reason: "Restored an operator-selected saved boundary.",
     revision: Number(raw.revision),
     now: raw.updated_at,
   });
+}
+
+async function policyNeutralBoundaryForCurrentFacts(
+  projectRoot: string,
+  current: ExplorationBoundaryDraft,
+): Promise<ExplorationBoundaryDraft> {
+  const baseline = await optionalPolicyNeutralBoundaryForCurrentFacts(projectRoot, current);
+  if (!baseline) {
+    throw new Error(
+      "Creating an independent boundary requires a policy-neutral schema baseline. Run Rescan, then create the boundary again.",
+    );
+  }
+  return baseline;
+}
+
+async function optionalPolicyNeutralBoundaryForCurrentFacts(
+  projectRoot: string,
+  current: ExplorationBoundaryDraft,
+): Promise<ExplorationBoundaryDraft | undefined> {
+  try {
+    const baseline = await loadAutoBoundaryPolicyBaseline(projectRoot);
+    const currentLock = await loadGenerationLockSnapshot(
+      projectRoot,
+      current.generation_lock_fingerprint,
+    );
+    if (generationLockSharedFactsDigest(baseline.lock)
+      !== generationLockSharedFactsDigest(currentLock)) {
+      throw new Error(
+        "The saved policy-neutral schema baseline is stale. Run Rescan before changing saved boundaries.",
+      );
+    }
+    return baseline.boundary;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
+async function boundarySharedFactsStatus(
+  projectRoot: string,
+  stored: ExplorationBoundaryDraft,
+  current: ExplorationBoundaryDraft,
+): Promise<"unchanged" | "changed" | "unavailable"> {
+  if (stored.generation_lock_fingerprint === current.generation_lock_fingerprint) {
+    return "unchanged";
+  }
+  try {
+    const [storedLock, currentLock] = await Promise.all([
+      loadGenerationLockSnapshot(projectRoot, stored.generation_lock_fingerprint),
+      loadGenerationLockSnapshot(projectRoot, current.generation_lock_fingerprint),
+    ]);
+    return generationLockSharedFactsDigest(storedLock)
+      === generationLockSharedFactsDigest(currentLock)
+      ? "unchanged"
+      : "changed";
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "unavailable";
+    throw error;
+  }
 }
 
 function rebaseDisabledBoundary(
@@ -371,7 +593,9 @@ function rebaseDisabledBoundary(
 ): ExplorationBoundaryDraft {
   const candidate = structuredClone(draft);
   candidate.pack.name = expectedName;
-  if (stored.deployment_profile === "development" || stored.deployment_profile === "staging") {
+  if (stored.deployment_profile === "development"
+    || stored.deployment_profile === "staging"
+    || stored.deployment_profile === "production") {
     candidate.deployment_profile = stored.deployment_profile;
   }
   candidate.budgets = narrowStoredBudgets(draft, stored);
@@ -436,6 +660,60 @@ function rebaseBoundaryResource(current: BoundaryResource, stored: BoundaryResou
     current.aggregate_measures,
     selectable,
   );
+  if (stored.aggregate_measure_functions) {
+    resource.aggregate_measure_functions = intersectStoredMap(
+      stored.aggregate_measure_functions,
+      current.aggregate_measure_functions ?? {},
+      new Set(resource.aggregate_measures),
+    );
+  } else {
+    delete resource.aggregate_measure_functions;
+  }
+  if (stored.presence_measure_fields) {
+    resource.presence_measure_fields = intersectStoredList(
+      stored.presence_measure_fields,
+      current.presence_measure_fields ?? [],
+      new Set([...selectable].filter((field) => !(resource.model_withheld_fields ?? []).includes(field))),
+    );
+  } else {
+    delete resource.presence_measure_fields;
+  }
+  if (stored.derived_measures?.length && current.derived_measures?.length) {
+    const currentlyValid = new Map(current.derived_measures.map((definition) => [
+      definition.name,
+      definition,
+    ]));
+    resource.derived_measures = stored.derived_measures
+      .filter((definition) => JSON.stringify(currentlyValid.get(definition.name)) === JSON.stringify(definition))
+      .map((definition) => structuredClone(definition));
+    if (!resource.derived_measures.length) delete resource.derived_measures;
+  } else {
+    delete resource.derived_measures;
+  }
+  if (stored.numeric_bands?.length && current.numeric_bands?.length) {
+    const currentlyValid = new Map(current.numeric_bands.map((definition) => [
+      definition.name,
+      definition,
+    ]));
+    resource.numeric_bands = stored.numeric_bands
+      .filter((definition) => JSON.stringify(currentlyValid.get(definition.name)) === JSON.stringify(definition))
+      .map((definition) => structuredClone(definition));
+    if (!resource.numeric_bands.length) delete resource.numeric_bands;
+  } else {
+    delete resource.numeric_bands;
+  }
+  if (stored.auto_bands?.length && current.auto_bands?.length) {
+    const currentlyValid = new Map(current.auto_bands.map((definition) => [
+      definition.field,
+      definition,
+    ]));
+    resource.auto_bands = stored.auto_bands
+      .filter((definition) => JSON.stringify(currentlyValid.get(definition.field)) === JSON.stringify(definition))
+      .map((definition) => structuredClone(definition));
+    if (!resource.auto_bands.length) delete resource.auto_bands;
+  } else {
+    delete resource.auto_bands;
+  }
   resource.count_distinct_fields = intersectStoredList(
     stored.count_distinct_fields,
     current.count_distinct_fields,
@@ -446,6 +724,13 @@ function rebaseBoundaryResource(current: BoundaryResource, stored: BoundaryResou
     current.filterable_fields,
     selectable,
   );
+  resource.field_enums = rebaseStoredFieldEnums({
+    stored,
+    current,
+    selectable,
+    retainedFilterableFields: resource.filterable_fields,
+    retainedGroupableFields: resource.groupable_fields,
+  });
   resource.time_bucket_fields = intersectStoredMap(
     stored.time_bucket_fields,
     current.time_bucket_fields,
@@ -483,51 +768,103 @@ function intersectStoredMap<T extends string>(
   return result;
 }
 
+function rebaseStoredFieldEnums(input: {
+  stored: BoundaryResource;
+  current: BoundaryResource;
+  selectable: Set<string>;
+  retainedFilterableFields: BoundaryResource["filterable_fields"];
+  retainedGroupableFields: string[];
+}): BoundaryResource["field_enums"] {
+  const result = intersectStoredMap(
+    input.stored.field_enums,
+    input.current.field_enums,
+    input.selectable,
+  );
+  for (const [field, values] of Object.entries(input.current.field_enums)) {
+    if (Object.hasOwn(input.stored.field_enums, field)
+      || !input.selectable.has(field)
+      || values.length === 0) {
+      continue;
+    }
+    const hadLegacyCategoricalAuthority = Object.hasOwn(input.stored.filterable_fields, field)
+      || input.stored.groupable_fields.includes(field);
+    const retainsCategoricalAuthority = Object.hasOwn(input.retainedFilterableFields, field)
+      || input.retainedGroupableFields.includes(field);
+    if (hadLegacyCategoricalAuthority && retainsCategoricalAuthority) {
+      result[field] = [...values];
+    }
+  }
+  return result;
+}
+
 function narrowStoredBudgets(
   draft: ExplorationBoundaryDraft,
   stored: ExplorationBoundaryDraft,
 ): ExplorationBoundaryDraft["budgets"] {
   const old = stored.budgets;
-  const bounded = <T extends number>(current: T, previous: unknown): T =>
+  const bounded = <T extends number>(
+    key: keyof ExplorationBoundaryDraft["budgets"],
+    current: T,
+    previous: unknown,
+  ): T =>
     (Number.isSafeInteger(previous) && Number(previous) >= 1
-      ? Math.min(current, Number(previous))
+      ? Math.min(ownerReviewableExplorationBudgetCeiling(key) ?? current, Number(previous))
       : current) as T;
-  const maxGroups = bounded(draft.budgets.max_groups, old?.max_groups);
+  const maxGroups = bounded("max_groups", draft.budgets.max_groups, old?.max_groups);
   const maxRankedGroups = draft.budgets.max_ranked_groups === undefined
     ? undefined
     : Math.max(
       maxGroups,
-      bounded(draft.budgets.max_ranked_groups, old?.max_ranked_groups),
+      bounded("max_ranked_groups", draft.budgets.max_ranked_groups, old?.max_ranked_groups),
     );
   return {
-    max_rows: bounded(draft.budgets.max_rows, old?.max_rows),
+    max_rows: bounded("max_rows", draft.budgets.max_rows, old?.max_rows),
     max_groups: maxGroups,
     ...(maxRankedGroups === undefined ? {} : { max_ranked_groups: maxRankedGroups }),
-    max_top_n: bounded(draft.budgets.max_top_n, old?.max_top_n),
-    max_measures: bounded(draft.budgets.max_measures, old?.max_measures),
-    max_dimensions: bounded(draft.budgets.max_dimensions, old?.max_dimensions),
-    max_time_ranges: bounded(draft.budgets.max_time_ranges, old?.max_time_ranges),
+    max_top_n: bounded("max_top_n", draft.budgets.max_top_n, old?.max_top_n),
+    max_measures: bounded("max_measures", draft.budgets.max_measures, old?.max_measures),
+    max_dimensions: bounded("max_dimensions", draft.budgets.max_dimensions, old?.max_dimensions),
+    max_time_ranges: bounded("max_time_ranges", draft.budgets.max_time_ranges, old?.max_time_ranges),
     max_relationship_hops: bounded(
+      "max_relationship_hops",
       draft.budgets.max_relationship_hops,
       old?.max_relationship_hops,
     ),
-    max_response_cells: bounded(draft.budgets.max_response_cells, old?.max_response_cells),
-    max_response_bytes: bounded(draft.budgets.max_response_bytes, old?.max_response_bytes),
-    statement_timeout_ms: bounded(draft.budgets.statement_timeout_ms, old?.statement_timeout_ms),
-    max_complexity: bounded(draft.budgets.max_complexity, old?.max_complexity),
+    ...(draft.budgets.max_derived_scope_hops === undefined ? {} : {
+      max_derived_scope_hops: bounded(
+        "max_derived_scope_hops",
+        draft.budgets.max_derived_scope_hops,
+        old?.max_derived_scope_hops ?? old?.max_relationship_hops,
+      ),
+    }),
+    ...(draft.budgets.max_analysis_relationship_hops === undefined ? {} : {
+      max_analysis_relationship_hops: bounded(
+        "max_analysis_relationship_hops",
+        draft.budgets.max_analysis_relationship_hops,
+        old?.max_analysis_relationship_hops ?? old?.max_relationship_hops,
+      ),
+    }),
+    max_response_cells: bounded("max_response_cells", draft.budgets.max_response_cells, old?.max_response_cells),
+    max_response_bytes: bounded("max_response_bytes", draft.budgets.max_response_bytes, old?.max_response_bytes),
+    statement_timeout_ms: bounded("statement_timeout_ms", draft.budgets.statement_timeout_ms, old?.statement_timeout_ms),
+    max_complexity: bounded("max_complexity", draft.budgets.max_complexity, old?.max_complexity),
     max_queries_per_session: bounded(
+      "max_queries_per_session",
       draft.budgets.max_queries_per_session,
       old?.max_queries_per_session,
     ),
     max_extracted_cells_per_session: bounded(
+      "max_extracted_cells_per_session",
       draft.budgets.max_extracted_cells_per_session,
       old?.max_extracted_cells_per_session,
     ),
     max_differencing_queries: bounded(
+      "max_differencing_queries",
       draft.budgets.max_differencing_queries,
       old?.max_differencing_queries,
     ),
     rate_limit_per_minute: bounded(
+      "rate_limit_per_minute",
       draft.budgets.rate_limit_per_minute,
       old?.rate_limit_per_minute,
     ),
@@ -541,27 +878,44 @@ function relationshipTargetResources(
     ?? [relationship.target_resource];
 }
 
-function snapshot(
+async function snapshot(
+  projectRoot: string,
   library: BoundaryLibraryFile,
-  active: Array<{ name: string; digest: `sha256:${string}` }>,
-): BoundaryLibrarySnapshot {
-  const activeByName = new Map(active.map((identity) => [identity.name, identity.digest]));
+  active: Array<{
+    name: string;
+    digest: `sha256:${string}`;
+    boundary: ActivatedExplorationBoundary;
+  }>,
+): Promise<BoundaryLibrarySnapshot> {
+  const activeByName = new Map(active.map((identity) => [identity.name, identity]));
+  const entries: BoundaryLibraryEntry[] = [];
+  for (const [name, progress] of Object.entries(library.boundaries)) {
+    const activeIdentity = activeByName.get(name);
+    const revisionState = activeIdentity
+      ? await resolveBoundaryRevisionState({
+          projectRoot,
+          candidate: progress.candidate,
+          active: activeIdentity.boundary,
+        })
+      : undefined;
+    entries.push({
+      name,
+      selected: name === library.selected_name,
+      active: Boolean(activeIdentity),
+      matches_active_digest: revisionState?.matches_active_authority ?? false,
+      table_count: progress.candidate.pack.resources.length,
+      candidate_digest: explorationBoundaryCandidateDigest(progress.candidate),
+      outstanding_decisions: progress.candidate.unresolved_decisions.length
+        - progress.confirmed_decisions.length
+        + (progress.policy_migration.status === "review_required" ? 1 : 0),
+      policy_review_required: progress.policy_migration.status === "review_required",
+    });
+  }
   return {
     selected_name: library.selected_name,
-    entries: Object.entries(library.boundaries)
-      .map(([name, progress]) => ({
-        name,
-        selected: name === library.selected_name,
-        active: activeByName.has(name),
-        matches_active_digest: activeByName.get(name) === explorationBoundaryCandidateDigest(progress.candidate),
-        table_count: progress.candidate.pack.resources.length,
-        candidate_digest: explorationBoundaryCandidateDigest(progress.candidate),
-        outstanding_decisions: progress.candidate.unresolved_decisions.length
-          - progress.confirmed_decisions.length,
-      }))
-      .sort((left, right) => Number(right.selected) - Number(left.selected)
-        || Number(right.active) - Number(left.active)
-        || left.name.localeCompare(right.name)),
+    entries: entries.sort((left, right) => Number(right.selected) - Number(left.selected)
+      || Number(right.active) - Number(left.active)
+      || left.name.localeCompare(right.name)),
   };
 }
 
@@ -600,7 +954,19 @@ async function readActiveBoundaryProgress(
     source: active.source,
     compiler_version: active.compiler_version,
     spec_version: active.spec_version,
+    ...(active.database_server_version
+      ? { database_server_version: active.database_server_version }
+      : {}),
+    ...(active.database_server_tier
+      ? { database_server_tier: active.database_server_tier }
+      : {}),
+    ...(active.database_server_authority
+      ? { database_server_authority: structuredClone(active.database_server_authority) }
+      : {}),
     ...(active.reporting_timezone ? { reporting_timezone: active.reporting_timezone } : {}),
+    ...(active.organization_scope
+      ? { organization_scope: structuredClone(active.organization_scope) }
+      : {}),
     trusted_context: structuredClone(active.trusted_context),
     generation_lock_fingerprint: active.generation_lock_fingerprint,
     role_posture_fingerprint: active.role_posture_fingerprint,
@@ -615,6 +981,8 @@ async function readActiveBoundaryProgress(
       .filter((decision) => decision.confirmed)
       .map((decision) => decision.decision),
     actor: active.activation.actor,
+    reviewOverrides: emptyReviewOverrides(),
+    policyMigration: legacyPolicyMigration(),
     reason: "Registered the current active Explore boundary in the local saved-boundary list.",
     revision: 1,
     now: active.activation.activated_at,
@@ -624,9 +992,18 @@ async function readActiveBoundaryProgress(
 async function writeBoundaryLibrary(projectRoot: string, value: BoundaryLibraryFile): Promise<void> {
   const filePath = boundaryLibraryPath(projectRoot);
   await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
-  const temporary = `${filePath}.${process.pid}.tmp`;
-  await fs.writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-  await fs.rename(temporary, filePath);
+  const temporary = `${filePath}.${process.pid}.${crypto.randomBytes(8).toString("hex")}.tmp`;
+  try {
+    await fs.writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, {
+      mode: 0o600,
+      flag: "wx",
+    });
+    await fs.rename(temporary, filePath);
+    await fs.chmod(filePath, 0o600);
+  } catch (error) {
+    await fs.rm(temporary, { force: true }).catch(() => undefined);
+    throw error;
+  }
 }
 
 function boundaryLibraryPath(projectRoot: string): string {

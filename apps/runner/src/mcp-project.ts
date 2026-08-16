@@ -52,11 +52,12 @@ async function mcpProjectInstall(args: string[]): Promise<number> {
     throw new Error(`mcp install ${client} requires --project so Runner changes only the current project's ${definition.destination}`);
   }
   const projectRoot = path.resolve(optionalArg(rest, "--project-root") ?? process.cwd());
-  const authoring = rest.includes("--authoring");
+  const requestedAuthoring = rest.includes("--authoring");
   const configPath = runnerConfigPath(rest, "./synapsor.runner.json");
   const storePath = resolvedLocalStorePath(rest);
+  let authoring = requestedAuthoring;
   let toolNames: string[];
-  if (authoring) {
+  if (requestedAuthoring) {
     const runtime = await createScopedExploreBoundarySetRuntime({
       projectRoot,
       transport: "stdio",
@@ -76,6 +77,20 @@ async function mcpProjectInstall(args: string[]): Promise<number> {
       throw new Error(`${definition.displayName} install refused because the reviewed model-facing boundary failed: ${boundary.checks.filter((check) => !check.ok).map((check) => check.name).join(", ")}`);
     }
     toolNames = boundary.names;
+    if (boundary.surface === "local_explore") {
+      authoring = true;
+      const localExploreRoot = path.dirname(absoluteConfig);
+      const runtime = await createScopedExploreBoundarySetRuntime({
+        projectRoot: localExploreRoot,
+        transport: "stdio",
+        env: process.env,
+      });
+      try {
+        await runtime.describe({ limit: 10, include_time_coverage: false });
+      } finally {
+        await runtime.close();
+      }
+    }
   }
   const preview = await previewManagedMcpProjectInstall({ client, projectRoot, configPath, storePath, authoring });
   const report = managedMcpProjectLifecycleReport(client, preview, toolNames, authoring);

@@ -3,6 +3,7 @@ import {
   analyticalToolOutputSchema,
   schemaAsJsonSchema,
   scopedExploreDescribeOutputSchema,
+  scopedExploreDescribeToolOutputSchema,
   scopedExploreQueryOutputSchema,
   scopedExploreQueryToolOutputSchema,
 } from "./analytics-output-schema.js";
@@ -20,6 +21,11 @@ describe("analytical MCP output schemas", () => {
       outcome: { type: "success" },
       boundary_digest: digest,
       pack: "reviewed_staging",
+      organization_scope: {
+        mode: "single_organization",
+        tenant_filter: "not_applicable",
+        organization_identity: "fixed_outside_model_arguments",
+      },
       reporting_timezone: { name: "UTC", authority_bound: true },
       resources: [],
       next_cursor: null,
@@ -38,12 +44,162 @@ describe("analytical MCP output schemas", () => {
       source_database_changed: false,
     };
     expect(scopedExploreDescribeOutputSchema.safeParse(success).success).toBe(true);
+    expect(JSON.stringify(success)).not.toContain("internal-finance");
     expect(scopedExploreDescribeOutputSchema.safeParse(refusal).success).toBe(true);
     expect(scopedExploreDescribeOutputSchema.safeParse({
       ...refusal,
       outcome: { type: "success", code: "EXPLORE_DISABLED" },
     }).success).toBe(false);
     expect(JSON.stringify(schemaAsJsonSchema(scopedExploreDescribeOutputSchema))).toContain("\"const\":\"refusal\"");
+
+    const canonicalResource = {
+      id: "public.orders",
+      label: "Customer orders",
+      description: "Reviewed customer orders available for aggregate analysis.",
+      primary_key: "id",
+      fields: [
+        { id: "id" },
+        {
+          id: "status",
+          label: "Order status",
+          description: "Reviewed order lifecycle status.",
+        },
+      ],
+      field_egress: {
+        id: { model_egress: "visible" },
+        status: { model_egress: "visible" },
+      },
+      selectable_fields: ["id", "status"],
+      filterable_fields: ["status"],
+      filter_operators: { status: ["eq", "neq", "in"] },
+      sortable_fields: [],
+      groupable_fields: ["status"],
+      aggregate_measures: [],
+      aggregate_measure_functions: {},
+      presence_measure_fields: [],
+      presence_measure_functions: [],
+      derived_measures: [],
+      numeric_bands: [],
+      count_distinct_fields: ["id"],
+      time_bucket_fields: {},
+      time_coverage: {},
+      field_types: { id: "text", status: "text" },
+      field_enums: { status: ["open", "paid"] },
+      kept_out_field_count: 0,
+      relationships: [],
+      minimum_cohort_size: 5,
+      maximum_rows: 25,
+      maximum_groups: 25,
+      suggested_questions: [],
+    };
+    expect(scopedExploreDescribeOutputSchema.safeParse({
+      ...success,
+      resources: [canonicalResource],
+    }).success).toBe(true);
+    expect(scopedExploreDescribeOutputSchema.safeParse({
+      ...success,
+      resources: [{ ...canonicalResource, label: "x".repeat(65) }],
+    }).success).toBe(false);
+    expect(scopedExploreDescribeOutputSchema.safeParse({
+      ...success,
+      resources: [{ ...canonicalResource, plan_resource: "public.orders" }],
+    }).success).toBe(false);
+    expect(scopedExploreDescribeOutputSchema.safeParse({
+      ...success,
+      resources: [{
+        ...canonicalResource,
+        derived_measures: [{
+          name: "order_item_count",
+          label: "Order item count",
+          shape: "child_count_total",
+          calculation_stage: "scoped child count aggregated over reviewed parent cohorts",
+          child_resource: "public.order_items",
+          relationship: "order_items_order_id_fkey",
+          parent_contributor_floor: "applied before release",
+          raw_child_rows_returned: false,
+          effective_minimum_cohort_size: 5,
+        }],
+      }],
+    }).success).toBe(true);
+    expect(scopedExploreDescribeOutputSchema.safeParse({
+      ...success,
+      resources: [{
+        ...canonicalResource,
+        derived_measures: [{
+          name: "unsafe_child_count",
+          label: "Unsafe child count",
+          shape: "child_count_total",
+          calculation_stage: "scoped child count aggregated over reviewed parent cohorts",
+          child_resource: "public.order_items",
+          relationship: "order_items_order_id_fkey",
+          parent_contributor_floor: "applied before release",
+          raw_child_rows_returned: true,
+          effective_minimum_cohort_size: 5,
+        }],
+      }],
+    }).success).toBe(false);
+    expect(scopedExploreDescribeOutputSchema.safeParse({
+      ...success,
+      resources: [{
+        ...canonicalResource,
+        derived_measures: [{
+          name: "revenue_running_total",
+          label: "Revenue running total",
+          shape: "running_total",
+          calculation_stage: "after small-group suppression",
+          required_grain: "one reviewed ordered time_bucket; dimensions are optional partitions",
+          records_without_reviewed_time: "omitted",
+          suppressed_groups_included: false,
+          effective_minimum_cohort_size: 5,
+        }],
+      }],
+    }).success).toBe(true);
+    expect(scopedExploreDescribeToolOutputSchema.safeParse({
+      ...success,
+      catalog_view: "resource_index",
+      metadata_only: true,
+      contains_source_values: false,
+      next_action: "Call app.explore_data for values.",
+      resources: [{
+        id: "public.orders",
+        label: "Customer orders",
+        description: "Reviewed customer orders available for aggregate analysis.",
+        fields: [{
+          id: "status",
+          label: "Order status",
+          description: "Reviewed order lifecycle status.",
+        }],
+        selectable_fields: ["id", "status"],
+        filter_operators: { status: ["eq", "neq", "in"] },
+        sortable_fields: [],
+        groupable_fields: ["status"],
+        aggregate_measure_functions: {},
+        presence_measure_fields: [],
+        presence_measure_functions: [],
+        derived_measures: [],
+        numeric_bands: [],
+        count_distinct_fields: ["id"],
+        time_bucket_fields: {},
+        time_coverage: {},
+        field_enums: { status: ["open", "paid"] },
+        relationships: [],
+        minimum_cohort_size: 5,
+        maximum_rows: 25,
+        maximum_groups: 25,
+        valid_plan_example: {
+          kind: "aggregate",
+          resource: "public.orders",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "status" }],
+        },
+      }],
+    }).success).toBe(true);
+    expect(scopedExploreDescribeToolOutputSchema.safeParse({
+      ...success,
+      resources: [{ id: undefined }],
+    }).success).toBe(false);
+    expect(Buffer.byteLength(JSON.stringify(schemaAsJsonSchema(scopedExploreDescribeToolOutputSchema))))
+      .toBeLessThan(Buffer.byteLength(JSON.stringify(schemaAsJsonSchema(scopedExploreDescribeOutputSchema))));
   });
 
   it("validates success, suppression, empty, comparison, and refusal variants from one schema", () => {
@@ -100,6 +256,56 @@ describe("analytical MCP output schemas", () => {
     expect(clientBytes).toBeLessThan(fullBytes);
     expect(JSON.stringify(schemaAsJsonSchema(scopedExploreQueryToolOutputSchema)))
       .toContain("query_audit_handle");
+  });
+
+  it("accepts complete reviewed-value controls without allowing source values", () => {
+    const success = queryResult("ok");
+    const controls = {
+      bucketed_fields: [{
+        resource: "public.subscriptions",
+        field: "plan",
+        output_field: "plan",
+        bucket_returned: true,
+        bucket_token: "[outside-reviewed-values]",
+      }],
+      excluded_fields: [{
+        resource: "public.subscriptions",
+        field: "plan",
+        effect: "rows_outside_reviewed_values_excluded",
+      }],
+      source_values_exposed: false,
+    } as const;
+    const outcome = success.outcome as Record<string, unknown>;
+    const result = outcome.result as Record<string, unknown>;
+    result.reviewed_value_controls = controls;
+    const privacy = success.privacy as Record<string, unknown>;
+    privacy.reviewed_value_controls = controls;
+
+    expect(scopedExploreQueryOutputSchema.safeParse(success).success).toBe(true);
+    expect(scopedExploreQueryToolOutputSchema.safeParse(success).success).toBe(true);
+    expect(scopedExploreQueryToolOutputSchema.safeParse({
+      ...success,
+      privacy: {
+        ...privacy,
+        reviewed_value_controls: {
+          ...controls,
+          source_values_exposed: true,
+        },
+      },
+    }).success).toBe(false);
+    expect(scopedExploreQueryToolOutputSchema.safeParse({
+      ...success,
+      privacy: {
+        ...privacy,
+        reviewed_value_controls: {
+          ...controls,
+          bucketed_fields: [{
+            ...controls.bucketed_fields[0],
+            bucket_token: "south",
+          }],
+        },
+      },
+    }).success).toBe(false);
   });
 
   it("covers protected rows, protected aggregates, and legacy aggregates in v1 and v2", () => {
@@ -222,6 +428,7 @@ function queryResult(
       function: "count",
       field: null,
       relationship: null,
+      contributor_cohort: "reviewed root rows",
       comparison_outputs: {
         period_1: "count_period_1",
         period_2: "count_period_2",
@@ -252,6 +459,8 @@ function queryResult(
     },
     suppression: {
       minimum_cohort_size: 5,
+      effective_minimum_cohort_size: 5,
+      contributor_aware: false,
       outcome: status,
       suppressed_groups: status === "fully_suppressed" ? 1 : 0,
       incomplete_comparison_groups: status === "incomplete_comparison" ? 1 : 0,
@@ -267,6 +476,14 @@ function queryResult(
       rate_window_requests: 19,
       extracted_cells: 3995,
       differencing_queries: 5,
+      differencing_variants_for_root_resource: {
+        resource: "public.sessions",
+        used: 3,
+        limit: 8,
+        remaining: 5,
+        window: "rolling_24_hours",
+        persists_across_sessions: true,
+      },
     },
     query_audit_handle: digest,
     source_database_changed: false,
@@ -295,6 +512,8 @@ function queryResult(
       : [],
     privacy: {
       minimum_cohort_size: 5,
+      effective_minimum_cohort_size: 5,
+      contributor_aware_measures: [],
       suppressed_groups: status === "fully_suppressed" ? 1 : 0,
       totals_returned: false,
     },

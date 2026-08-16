@@ -113,8 +113,53 @@ synapsor-runner try ask \
 synapsor-runner try ask \
   --provider openai-compatible \
   --model local-model \
-  --base-url http://127.0.0.1:11434/v1
+  --base-url http://127.0.0.1:11434/v1 \
+  --timeout 180
 ```
+
+The guided provider picker performs one bounded request to a loopback
+OpenAI-compatible `/models` endpoint and offers the returned model IDs instead
+of silently choosing an unrelated vendor default. Direct scripted
+`try ask --provider openai-compatible` remains explicit: pass `--model` and
+`--base-url` so automation never changes model because a local server changed.
+
+For smaller local models, the model-facing catalog is a compact resource index
+followed by focused details for one exact resource. Each resource includes one
+valid reviewed plan example. Declared optional arguments may arrive as `null`,
+clean integer strings, or JSON-encoded arrays/objects and are normalized before
+the original strict schema runs. Required fields, enum values, cardinality
+bounds, unknown-key rejection, reviewed resource/relationship allowlists, and
+trusted scope are never relaxed.
+
+If a loopback model describes catalog metadata instead of querying data, Runner
+allows one focused correction and one JSON-plan response. Runner compares that
+plan with exact terms in the question and reviewed catalog before source
+execution. A mismatch runs no query. A matching rescued plan executes through
+the normal validator/compiler, and Runner renders the verified result directly
+instead of asking the weak model to summarize values it may misread. Models that
+use the tool protocol correctly keep the normal model-prose path.
+
+The pre-execution substitution check is not limited to local models. Official
+OpenAI and Anthropic Ask calls pass through the same focused reviewed-metadata
+check before `app.explore_data` reaches the gateway. If a question explicitly
+names an unavailable entity or grouping and the model substitutes a different
+reviewed table or field, Runner returns `ASK_PLAN_INTENT_MISMATCH`. The
+substituted plan executes no source query, consumes no Explore query or
+differencing budget, and is never returned to the provider for a prose summary.
+Exact field IDs can be written with their original separators (`encounter_type`),
+hyphens (`encounter-type`), or spaces (`encounter type`). A reviewed field label
+is also valid intent evidence. A trailing term may be used when the question
+names the resource and exactly one of its reviewed direct grouping fields or
+labels ends with that term. For example, `shipments by mode` identifies
+`carrier_mode` and `shipments per zone` identifies `warehouse_zone`. If both
+`carrier_mode` and `delivery_mode` are reviewed, `shipments by mode` refuses
+before execution and names both choices. Use the full ID or a reviewed label to
+disambiguate. This resolution is derived from reviewed metadata; it contains no
+domain vocabulary.
+This is a correctness guard in Runner's built-in Ask client. An external MCP
+host sends only a structured plan to production HTTP Runner, so that host must
+retain the original question and apply its own semantic evaluation; server-side
+scope, grammar, suppression, and budgets remain fail-closed regardless.
 
 Without a positional question, the command opens the conversational
 `Synapsor Analytics` shell. Ask natural-language follow-ups directly. The
@@ -166,6 +211,9 @@ The shell keeps short project-local references silently for governance:
 /analyses
 /details [last|A2]
 /attempts
+/limits
+/limits --session-tokens 400000
+/limits --max-output-tokens 2048
 /protect
 /protect A2 as analytics.weekly_churn_by_channel
 /clear
@@ -445,7 +493,7 @@ Runner:
 
 No URL, model, header, or destination comes from model output.
 
-## Fixed Session Bounds
+## Bounded Session Controls
 
 The current release enforces:
 
@@ -462,8 +510,9 @@ The current release enforces:
 | Reserved OpenAI-compatible final pass | 4,096 completion tokens, no tools |
 | Conversation history | 4 completed turns, 16 KiB |
 | Final answer | 16 KiB |
-| Provider request timeout | 30 seconds |
-| Reported session token usage | 50,000 tokens |
+| Provider request timeout | 30 seconds remote; 120 seconds loopback; operator override 1-600 seconds |
+| Ordinary provider-call output request | 1,200 tokens by default; explicit override 256-16,384 |
+| Reported session token usage | 200,000 by default; operator ceiling 1,000-5,000,000 |
 
 One Workbench Ask session runs one request at a time. Runner does not
 automatically retry provider calls in this release. A developer may retry a
@@ -471,16 +520,39 @@ known safe failure from the UI; every retry begins with current authority
 validation. Token accounting depends on usage reported by the provider and is
 not a monetary spend guarantee.
 
+Set the initial client limits with
+`try ask --session-token-budget <tokens> --max-output-tokens <tokens>` or the
+parallel `start --cli` flags. In the terminal shell, `/limits` reports usage and
+`/limits --session-tokens <higher-value>` raises the cumulative ceiling without
+clearing the conversation. Workbench's **Ask limits** panel performs the same
+in-memory update. Leaving the output override blank or selecting `automatic`
+retains the existing call-specific defaults, including the separately reserved
+OpenAI final explanation pass. These settings control model-provider context
+and operator spend exposure; they do not alter the boundary digest, database
+scope, small-group suppression, or Explore query/differencing budgets.
+
+The timeout applies separately to each provider call in the bounded tool loop,
+not to the complete question. Set it with CLI `--timeout <seconds>`, with
+`start --cli --timeout <seconds>`, or in Workbench provider settings. Runner
+keeps a 600-second wall-clock ceiling even for local endpoints.
+
+Runner does not inject vendor-specific request fields into a generic
+OpenAI-compatible endpoint. For Ollama, keep a model resident with the Ollama
+server setting before starting it, for example
+`OLLAMA_KEEP_ALIVE=10m ollama serve`; warming the model can reduce its first-call
+latency but does not replace a suitable Runner request timeout.
+
 ## Tested Provider Matrix
 
-Status as of the prepared 1.6.6 source:
+Status as of the prepared 1.7.0 source:
 
 | Provider surface | Verification | Claim |
 | --- | --- | --- |
 | OpenAI `gpt-5-mini` | Live packed Community Solar and TrailPeak runs against real local PostgreSQL; the 2026-08-01 TrailPeak run proved a 12-week aggregate explanation, independently rendered values, and an unavailable relationship review path | Live tested |
 | Anthropic Messages/tool-use protocol | Deterministic mock server, normal/refusal/error paths | Protocol tested; no live Anthropic account run |
 | Custom OpenAI-compatible loopback | Deterministic real HTTP server plus tool/refusal/proposal and endpoint-security paths | Protocol tested against the documented Chat Completions subset |
-| Ollama, LM Studio, or another named local server | No engine/model installed or running in the release environment | Real engine not verified; compatibility is not implied by the label |
+| Ollama `qwen2.5:7b` | Live local PostgreSQL matrix plus a real RS256/JWT-authenticated production Streamable HTTP MCP run; simple enum filtering, a two-hop relationship aggregate, kept-out refusal, exact two-tool surface, and no model-supplied scope | Live tested through Ollama's OpenAI-compatible API |
+| LM Studio or another named local server | No live engine run in this release | Compatibility requires the documented Chat Completions and tool-call subset; the label alone is not a claim |
 
 The live OpenAI run used `app.describe_data` and `app.explore_data`, matched the
 official MCP aggregate result, changed no source rows, and passed exact-key

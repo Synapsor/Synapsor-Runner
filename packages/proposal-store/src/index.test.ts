@@ -616,7 +616,7 @@ describe("proposal store", () => {
     }
   }, 15_000);
 
-  it("persists exact-replay privacy reservations through shared-ledger round trips", () => {
+  it("persists exact-replay privacy reservations through shared-ledger round trips and scopes variants per root resource", () => {
     const store = new ProposalStore();
     const restored = new ProposalStore();
     const base = {
@@ -672,6 +672,18 @@ describe("proposal store", () => {
       })).toMatchObject({
         allowed: false,
         code: "DIFFERENCING_BUDGET_EXHAUSTED",
+        usage: { differencing_attempts: 1 },
+      });
+
+      expect(restored.claimExploreBudgetReservation({
+        ...base,
+        reservation_id: "budget-4",
+        resource_id: "public.members",
+        variant_fingerprint: `sha256:${"3".repeat(64)}`,
+      })).toMatchObject({
+        allowed: true,
+        usage_after_reservation: { differencing_attempts: 1 },
+        variant_already_counted: false,
       });
     } finally {
       restored.close();

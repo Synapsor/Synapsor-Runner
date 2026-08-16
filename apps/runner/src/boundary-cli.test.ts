@@ -4,8 +4,11 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
+import { loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
 import {
+  AUTO_BOUNDARY_OVERRIDES_VERSION,
+  CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION,
   activateExplorationBoundary,
   buildAutoBoundary,
   explorationBoundaryCandidateDigest,
@@ -21,10 +24,12 @@ import {
 import {
   boundaryActivateCommand as boundaryActivateCommandInternal,
   boundaryReviewCommand as boundaryReviewCommandInternal,
+  formatFocusedBoundaryActivationReview,
   loadBoundaryReviewContext,
 } from "./boundary-commands.js";
 import {
   createSavedBoundary,
+  renameSavedBoundary,
   switchSavedBoundary,
   synchronizeBoundaryLibrary,
 } from "./boundary-library.js";
@@ -39,12 +44,17 @@ import {
 } from "./boundary-review-domain.js";
 import {
   commitBoundaryResourceReviewMutation,
+  inspectBoundaryResourceReview,
   listBoundaryResourceReviews,
   prepareBoundaryResourceReviewMutation,
+  reviewedBoundaryOperationRepairFields,
 } from "./boundary-review-mutation.js";
+import { loadCompletedBoundaryReviewOverrides } from "./boundary-review-policy.js";
 import { boundaryCommand } from "./guided-start.js";
 import { initializeGuidedProject, readGuidedOnboardingState } from "./guided-project.js";
 import { prepareScopedExplore } from "./scoped-explore.js";
+import { selectActiveExploreBoundary } from "./scoped-explore-boundary-set.js";
+import { inspectProductionExploreStartup } from "./mcp-runtime.js";
 
 describe("boundary operator-plane CLI", () => {
   afterEach(() => {
@@ -185,7 +195,7 @@ describe("boundary operator-plane CLI", () => {
         outstanding_decision_ids: [],
         explore_budget_state: {
           queries_used: 0,
-          queries_limit: 40,
+          queries_limit: 1000,
           extracted_cells_used: 0,
           extracted_cells_limit: 4000,
           state_persists_across_tabs_processes_and_provider_sessions: true,
@@ -312,11 +322,33 @@ describe("boundary operator-plane CLI", () => {
         "--no-principal",
         "--visible-fields", "id,status,scheduled_at",
         "--withhold-from-model", "status",
+        "--label", "Service visits",
+        "--description", "Reviewed customer service appointments.",
+        "--field-label", "status=Visit state",
+        "--field-description", "status=Reviewed appointment lifecycle state.",
         "--max-ranked-groups", "200",
+        "--max-rows", "75",
+        "--max-groups", "200",
+        "--max-top-n", "50",
+        "--max-response-cells", "1000",
+        "--max-response-bytes", "131072",
+        "--statement-timeout-ms", "5000",
+        "--max-measures", "4",
+        "--max-dimensions", "4",
+        "--max-derived-scope-hops", "3",
+        "--max-analysis-relationship-hops", "3",
+        "--max-queries-per-24-hours", "800",
+        "--requests-per-minute", "90",
         "--actor", "alice",
         "--reason", "Service visits are isolated by the reviewed tenant column.",
         "--json",
       ];
+      const excessiveAnalysisDepth = mutationArgs.map((value, index) =>
+        mutationArgs[index - 1] === "--max-analysis-relationship-hops" ? "4" : value);
+      await expect(boundaryReviewCommand(
+        excessiveAnalysisDepth,
+        async () => inspection,
+      )).rejects.toThrow(/--max-analysis-relationship-hops must be an integer from 1 through 3/i);
       await expect(boundaryReviewCommand(mutationArgs, async () => inspection)).resolves.toBe(0);
       const preview = JSON.parse(output);
       expect(preview).toMatchObject({
@@ -328,6 +360,18 @@ describe("boundary operator-plane CLI", () => {
           selected_tenant_key: "tenant_id",
           max_ranked_groups_before: 500,
           max_ranked_groups_after: 200,
+          max_queries_per_session_before: 1000,
+          max_queries_per_session_after: 800,
+          rate_limit_per_minute_before: 120,
+          rate_limit_per_minute_after: 90,
+          reviewed_budget_changes: expect.arrayContaining([
+            { name: "max_rows", before: 50, after: 75 },
+            { name: "max_groups", before: 50, after: 200 },
+            { name: "max_top_n", before: 25, after: 50 },
+            { name: "statement_timeout_ms", before: 3000, after: 5000 },
+            { name: "max_derived_scope_hops", before: 2, after: 3 },
+            { name: "max_analysis_relationship_hops", before: 2, after: 3 },
+          ]),
         },
         authority_activated: false,
         source_database_changed: false,
@@ -360,6 +404,14 @@ describe("boundary operator-plane CLI", () => {
       expect(regenerated.pack.resources).toEqual([
         expect.objectContaining({
           id: "public.service_visits",
+          label: "Service visits",
+          description: "Reviewed customer service appointments.",
+          field_metadata: {
+            status: {
+              label: "Visit state",
+              description: "Reviewed appointment lifecycle state.",
+            },
+          },
           tenant_key: "tenant_id",
         }),
       ]);
@@ -370,9 +422,23 @@ describe("boundary operator-plane CLI", () => {
       expect(progress).toMatchObject({
         revision: 1,
         candidate: {
+          budgets: {
+            max_queries_per_session: 800,
+            rate_limit_per_minute: 90,
+            max_extracted_cells_per_session: 4000,
+            max_differencing_queries: 16,
+          },
           pack: {
             resources: [{
               id: "public.service_visits",
+              label: "Service visits",
+              description: "Reviewed customer service appointments.",
+              field_metadata: {
+                status: {
+                  label: "Visit state",
+                  description: "Reviewed appointment lifecycle state.",
+                },
+              },
               selectable_fields: ["id", "status", "scheduled_at"],
               model_withheld_fields: ["status"],
             }],
@@ -493,16 +559,98 @@ describe("boundary operator-plane CLI", () => {
       })).resolves.toBe(0);
       expect(JSON.parse(output)).toMatchObject({
         ok: true,
-        activation: "disabled_unreviewed",
-        guided_project_created: false,
-        config_path: path.join(root, "synapsor.runner.json"),
-        store_path: path.join(root, ".synapsor/local.db"),
-        next_action: `synapsor-runner boundary review --project-root '${root}'`,
-        visual_alternative:
-          `synapsor-runner ui --boundary-root '${path.join(root, "synapsor/generated")}' ` +
-          `--config '${path.join(root, "synapsor.runner.json")}' ` +
-          `--store '${path.join(root, ".synapsor/local.db")}' --open`,
+        reconciled: true,
+        destructive_regeneration: false,
+        report: {
+          changed: false,
+          source_database_changed: false,
+        },
       });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 15_000);
+
+  it("points a production boundary draft directly to the secured runtime config generator", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-production-boundary-config-handoff-"));
+    const inspection = boundaryInspection();
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    try {
+      await expect(main([
+        "boundary",
+        "draft",
+        "--from-env", "DATABASE_URL",
+        "--project-root", root,
+        "--profile", "production",
+        "--tenant-claim", "tenant_id",
+        "--principal-claim", "sub",
+      ], {
+        boundarySchemaInspector: async () => inspection,
+      })).resolves.toBe(0);
+
+      expect(output).toContain("Then generate the secured production runtime config:");
+      expect(output).toContain("synapsor-runner config init --production-explore");
+      expect(output).toContain("--engine postgres");
+      expect(output).toContain(`--project-root '${root}'`);
+      expect(output).toContain("--issuer https://identity.example");
+      expect(output).toContain("--audience https://runner.example/mcp");
+      expect(output).toContain("--accounting-namespace your_org.analytics.production");
+      expect(output).toContain("reuses the reviewed source and JWT claim names");
+      await expect(fs.access(path.join(root, "synapsor.runner.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 15_000);
+
+  it("drafts explicit single-organization Explore without adding fake tenant columns", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-single-org-boundary-cli-"));
+    const inspection = structuredClone(boundaryInspection());
+    for (const table of inspection.tables) {
+      const tenantFields = new Set(table.suggestions.tenant_columns);
+      table.columns = table.columns.filter((column) => !tenantFields.has(column.name));
+      table.suggestions.tenant_columns = [];
+      table.suggestions.default_visible_columns = table.suggestions.default_visible_columns
+        .filter((field) => !tenantFields.has(field));
+      table.row_level_security = false;
+      table.row_level_security_policies = [];
+      if (table.role_posture) table.role_posture.row_security_effective_for_current_role = false;
+    }
+    try {
+      await expect(main([
+        "boundary",
+        "draft",
+        "--from-env", "DATABASE_URL",
+        "--project-root", root,
+        "--single-tenant",
+        "--organization-id", "internal-finance",
+      ], {
+        boundarySchemaInspector: async () => inspection,
+      })).resolves.toBe(0);
+      const draft = JSON.parse(await fs.readFile(
+        path.join(root, "synapsor/generated/exploration-boundary.draft.json"),
+        "utf8",
+      ));
+      expect(draft.organization_scope).toEqual({
+        mode: "single_organization",
+        organization_id: "internal-finance",
+        acknowledgement: "all_rows_belong_to_one_organization",
+      });
+      expect(draft.pack.resources.length).toBeGreaterThan(0);
+      expect(draft.pack.resources.every((resource: Record<string, unknown>) =>
+        resource.tenant_key === undefined && resource.tenant_scope === undefined)).toBe(true);
+      const reviews = await listBoundaryResourceReviews(root);
+      expect(reviews.length).toBeGreaterThan(0);
+      expect(reviews.every((resource) => resource.first_table_startable === true)).toBe(true);
+      expect(reviews.every((resource) =>
+        resource.database_server_compatibility?.detected_version === "PostgreSQL 16"
+        && resource.database_server_compatibility.tier === "full"
+        && resource.database_server_compatibility.authority?.version_line === "16"))
+        .toBe(true);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -729,6 +877,16 @@ describe("boundary operator-plane CLI", () => {
         boundarySchemaInspector: async () => inspection,
       })).rejects.toThrow(/--all is available only with --map/i);
 
+      await expect(main([
+        "boundary",
+        "review",
+        "--project-root", root,
+        "--map",
+        "--details",
+      ], {
+        boundarySchemaInspector: async () => inspection,
+      })).rejects.toThrow(/--details requires --map --all/i);
+
       stdout = "";
       await expect(main([
         "boundary",
@@ -741,10 +899,29 @@ describe("boundary operator-plane CLI", () => {
         boundarySchemaInspector: async () => inspection,
       })).resolves.toBe(0);
       expect(stdout).toContain("TABLE ACCESS MAP - public.service_visits");
-      expect(stdout).toContain("Model + Runner fields");
-      expect(stdout).toContain("status: return, filter(eq/neq/in), sort");
-      expect(stdout).toContain("Trusted tenant scope: tenant_id (bound outside model arguments)");
+      expect(stdout).toContain("FIELD AUTHORITY");
+      expect(stdout).toContain("Reviewed operations");
+      expect(stdout).toMatch(/\| status\s+\| text\s+\| Model \+ Runner\s+\| Return value/u);
+      expect(stdout).toContain("Filter");
+      expect(stdout).toContain("Sort");
+      expect(stdout).toContain("tenant scope      tenant_id (direct; trusted runtime value)");
+      expect(stdout).not.toContain("filter: eq, neq, in");
       expect(stdout).not.toContain("\u001b[");
+
+      stdout = "";
+      await expect(main([
+        "boundary",
+        "review",
+        "resource",
+        "public.service_visits",
+        "--project-root", root,
+        "--map",
+        "--details",
+      ], {
+        boundarySchemaInspector: async () => inspection,
+      })).resolves.toBe(0);
+      expect(stdout).toContain("EXACT OPERATION DETAILS");
+      expect(stdout).toContain("status  filter: eq, neq, in");
       await expect(main([
         "boundary",
         "review",
@@ -772,6 +949,7 @@ describe("boundary operator-plane CLI", () => {
       expect(stderr).toContain("No boundary decision was supplied");
       expect(stderr).toContain("--withhold-from-model");
       expect(stdout).toContain("Resource decision flags:");
+      expect(stdout).toContain("--principal-scope-path <path-id>");
       await expect(fs.access(path.join(root, ".synapsor/boundary-review-progress.json")))
         .rejects.toMatchObject({ code: "ENOENT" });
     } finally {
@@ -822,6 +1000,240 @@ describe("boundary operator-plane CLI", () => {
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
+  });
+
+  it("points a production draft with a local trusted-context config to the production scaffold", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-production-config-mismatch-"));
+    const configPath = path.join(root, "synapsor.runner.json");
+    await fs.writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "read_only",
+      storage: { sqlite_path: "./.synapsor/local.db" },
+      sources: {
+        local_postgres: {
+          engine: "postgres",
+          read_url_env: "DATABASE_URL",
+          read_only: true,
+          statement_timeout_ms: 3000,
+        },
+      },
+      trusted_context: {
+        provider: "environment",
+        values: {
+          tenant_id_env: "SYNAPSOR_TENANT_ID",
+          principal_env: "SYNAPSOR_PRINCIPAL",
+        },
+        tenant_binding: "tenant_id",
+        principal_binding: "principal",
+      },
+      capabilities: [],
+      strict: true,
+      result_format: 2,
+    }), "utf8");
+    try {
+      await expect(boundaryCommand([
+        "draft",
+        "--from-env", "DATABASE_URL",
+        "--project-root", root,
+        "--profile", "production",
+        "--tenant-claim", "tenant_id",
+        "--principal-claim", "sub",
+      ], async () => boundaryInspection())).rejects.toThrow(
+        /config init --production-explore --engine postgres.*retry the production boundary draft/i,
+      );
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("turns a trusted config principal binding into a disabled reviewed column decision", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-config-principal-"));
+    const configPath = path.join(root, "synapsor.runner.json");
+    const config = `${JSON.stringify({
+      version: 1,
+      mode: "read_only",
+      storage: { sqlite_path: "./.synapsor/local.db" },
+      sources: {
+        local_postgres: {
+          engine: "postgres",
+          read_url_env: "DATABASE_URL",
+          read_only: true,
+          statement_timeout_ms: 3000,
+        },
+      },
+      trusted_context: {
+        provider: "environment",
+        values: {
+          tenant_id_env: "SYNAPSOR_TENANT_ID",
+          principal_env: "SYNAPSOR_PRINCIPAL",
+        },
+        tenant_binding: "tenant_id",
+        principal_binding: "rep",
+      },
+      capabilities: [],
+      strict: true,
+      result_format: 2,
+    }, null, 2)}\n`;
+    const inspection = boundaryInspection();
+    inspection.tables[0]!.columns.push({
+      name: "rep",
+      data_type: "text",
+      nullable: false,
+      generated: false,
+      ordinal_position: inspection.tables[0]!.columns.length + 1,
+      suggestions: {
+        tenant: false,
+        conflict: false,
+        sensitive: false,
+        immutable: false,
+        large_or_binary: false,
+      },
+    });
+    inspection.tables[0]!.suggestions.default_visible_columns.push("rep");
+    try {
+      await fs.writeFile(configPath, config, "utf8");
+      await expect(boundaryCommand([
+        "draft",
+        "--from-env", "DATABASE_URL",
+        "--project-root", root,
+      ], async () => inspection)).resolves.toBe(0);
+
+      const draft = JSON.parse(await fs.readFile(
+        path.join(root, "synapsor/generated/exploration-boundary.draft.json"),
+        "utf8",
+      ));
+      const resource = draft.pack.resources.find((candidate: { id: string }) =>
+        candidate.id === "public.service_visits");
+      expect(resource.principal_key).toBe("rep");
+      expect(draft.unresolved_decisions).toContain(
+        "public.service_visits: confirm principal scope rep",
+      );
+      await expect(fs.readFile(configPath, "utf8")).resolves.toBe(config);
+      await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("gives boundary diff a copy-paste regeneration command for the reviewed source env", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-stale-diff-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: [],
+        schema_inputs: [],
+        database_env_names: ["WAREHOUSE_DATABASE_URL"],
+      },
+      sourceEnv: "WAREHOUSE_DATABASE_URL",
+    });
+    const drifted = structuredClone(inspection);
+    drifted.tables[0]!.role_posture!.owner = "replacement_owner";
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await expect(boundaryCommand([
+        "diff",
+        "--project-root", root,
+      ], async () => drifted)).resolves.toBe(1);
+
+      expect(output).toContain("Generation lock is stale:");
+      expect(output).toContain(
+        "synapsor-runner boundary rescan --from-env WAREHOUSE_DATABASE_URL",
+      );
+      expect(output).toContain("preserves unchanged review decisions");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("routes boundary rescan and force-draft through the same non-destructive reconciliation", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-rescan-command-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: [],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+    });
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await expect(boundaryCommand([
+        "rescan",
+        "--from-env", "DATABASE_URL",
+        "--project-root", root,
+      ], async () => structuredClone(inspection))).resolves.toBe(0);
+      expect(output).toContain(
+        "schema, database-server capabilities, database-role posture, and trusted-context authority are unchanged",
+      );
+
+      output = "";
+      await expect(boundaryCommand([
+        "draft",
+        "--from-env", "DATABASE_URL",
+        "--project-root", root,
+        "--force",
+      ], async () => structuredClone(inspection))).resolves.toBe(0);
+      expect(output).toContain("boundary draft used the reconciling rescan path");
+      expect(output).toContain("No curated review state was discarded");
+
+      const changed = structuredClone(inspection);
+      changed.tables[0]!.columns.push({
+        ...structuredClone(changed.tables[0]!.columns.at(-1)!),
+        name: "reviewed_source_note",
+        ordinal_position: changed.tables[0]!.columns.length + 1,
+      });
+      output = "";
+      await expect(boundaryCommand([
+        "rescan",
+        "--from-env", "DATABASE_URL",
+        "--project-root", root,
+      ], async () => changed)).resolves.toBe(0);
+      expect(output).toContain("Review and activate in the focused access editor (no second rescan)");
+      expect(output).toContain("boundary review --project-root");
+      expect(output).toContain("--access opens the same table, column, and path editor as /access");
+      expect(output).toContain("resume guided review, activate, and continue to Ask (no second rescan)");
+      expect(output).toContain(`cd '${root}' && synapsor-runner start --from-env DATABASE_URL --cli`);
+      expect(output).toContain("start --from-env DATABASE_URL --cli");
+      expect(output).not.toContain("start --from-env DATABASE_URL --cli --rescan");
+      expect(output).toContain("Use start --rescan only when you want to inspect the database again");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("distinguishes rescan, focused access review, and guided rescan in boundary help", async () => {
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+
+    await expect(main(["boundary", "--help"])).resolves.toBe(0);
+
+    expect(output).toContain("Choose the boundary workflow by intent:");
+    expect(output).toContain("boundary rescan\n    Inspects the current schema");
+    expect(output).toContain("boundary review --access\n    Opens the focused table");
+    expect(output).toContain("same editor as /access inside the Ask shell");
+    expect(output).toContain("start --from-env DATABASE_URL --cli --rescan");
+    expect(output).toContain("omit --rescan");
   });
 
   it("renames the one disabled multi-table boundary without activating authority", async () => {
@@ -979,6 +1391,81 @@ describe("boundary operator-plane CLI", () => {
     }
   });
 
+  it("keeps /access open when the last boundary is deactivated and supports immediate reactivation", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-disable-reactivate-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const digest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+    const choices = [
+      { action: "disable" as const, boundary_name: build.exploration_boundary.pack.name },
+      { action: "confirm" as const },
+      undefined,
+    ];
+    let chooseCalls = 0;
+    const previousUser = process.env.USER;
+    process.env.USER = "access-reviewer";
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => {
+        chooseCalls += 1;
+        return choices.shift();
+      },
+      editFieldTiers: async () => undefined,
+      promptText: async () => undefined,
+      confirm: async () => true,
+      confirmActivation: async () => true,
+    };
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await activateExplorationBoundary({
+        projectRoot: root,
+        candidate: build.exploration_boundary,
+        expectedDigest: digest,
+        actor: "initial-reviewer",
+        confirmation: `ACTIVATE ${digest}`,
+        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        currentInspection: inspection,
+      });
+
+      await expect(boundaryReviewCommandInternal(
+        ["--project-root", root, "--access"],
+        async () => inspection,
+        session,
+        undefined,
+        { startAtBoundaryList: true },
+      )).resolves.toBe(0);
+
+      expect(chooseCalls).toBe(3);
+      expect(output).toContain("No active boundary. Stay in /access");
+      expect(output).toContain("/access is still open.");
+      const reactivated = JSON.parse(await fs.readFile(
+        path.join(root, ".synapsor/exploration-boundary.active.json"),
+        "utf8",
+      ));
+      expect(reactivated.activation.state).toBe("active");
+      expect(reactivated.pack.name).toBe(build.exploration_boundary.pack.name);
+    } finally {
+      if (previousUser === undefined) delete process.env.USER;
+      else process.env.USER = previousUser;
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
   it("returns from column review to the table list without saving", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-picker-back-"));
     const inspection = boundaryInspection();
@@ -1110,7 +1597,7 @@ describe("boundary operator-plane CLI", () => {
           : view.candidate?.model_withheld_fields?.includes(field.name)
             ? "withheld_from_model"
             : "visible",
-      ])),
+      ])) as Record<string, BoundaryFieldTier>,
       promptText: async () => "alice",
       confirm: async (_prompt, options) => {
         confirmations += 1;
@@ -1167,6 +1654,8 @@ describe("boundary operator-plane CLI", () => {
       },
       sourceEnv: "DATABASE_URL",
       inspectedSchema: "public",
+      deploymentProfile: "production",
+      httpClaims: { tenantClaim: "tenant_id", principalClaim: "sub" },
     });
     let confirmations = 0;
     const confirmationDefaults: Array<boolean | undefined> = [];
@@ -1199,6 +1688,9 @@ describe("boundary operator-plane CLI", () => {
       ));
       expect(confirmations).toBe(3);
       expect(confirmationDefaults).toEqual([true, true, true]);
+      expect(confirmationPrompts[0]).toBe(
+        "Confirm these boundary-wide production HTTP and trusted JWT scope settings?",
+      );
       expect(confirmationPrompts.at(-1)).toBe(
         `Activate "${build.exploration_boundary.pack.name}" now?`,
       );
@@ -1207,6 +1699,9 @@ describe("boundary operator-plane CLI", () => {
       );
       expect(output).toContain("FINAL REVIEW");
       expect(output).toContain("Boundary settings");
+      expect(output).toContain("production HTTP + JWT");
+      expect(output).toContain("production over secured Streamable HTTP");
+      expect(output).not.toContain("local authoring + trusted scope");
       expect(output).toContain("TABLE SIGN-OFF - public.service_visits");
       expect(output).toContain("REVIEWED - NOT ACTIVE");
       expect(output).toContain("REVIEW");
@@ -1215,12 +1710,12 @@ describe("boundary operator-plane CLI", () => {
       expect(output).toContain(
         `Reviewed boundary "${build.exploration_boundary.pack.name}" is active`,
       );
+      expect(output).toContain("\uD83D\uDC90 ACTIVATION SUCCEEDED");
+      expect(output).toContain("active for secured production HTTP Explore");
+      expect(output).toContain("initialize its shared accounting ledger, and run doctor");
+      expect(output).not.toContain("active for local read-only Explore");
       expect(output).not.toContain("Next: synapsor-runner try ask");
-      expect(activationHandoff).toHaveBeenCalledWith({
-        projectRoot: root,
-        boundaryName: build.exploration_boundary.pack.name,
-        boundaryDigest: explorationBoundaryCandidateDigest(build.exploration_boundary),
-      });
+      expect(activationHandoff).not.toHaveBeenCalled();
       expect(output).not.toContain("Stable ID:");
       expect(output).not.toContain("Type CONFIRM");
       const active = JSON.parse(await fs.readFile(
@@ -1230,6 +1725,100 @@ describe("boundary operator-plane CLI", () => {
       expect(active.activation.digest).toBe(
         explorationBoundaryCandidateDigest(build.exploration_boundary),
       );
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reports live boundary refresh after production runtime setup is already ready", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-production-activation-refresh-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+      deploymentProfile: "production",
+      httpClaims: { tenantClaim: "tenant_id", principalClaim: "sub" },
+    });
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const firstDigest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+      await activateExplorationBoundary({
+        projectRoot: root,
+        candidate: build.exploration_boundary,
+        expectedDigest: firstDigest,
+        actor: "first-reviewer",
+        confirmation: `ACTIVATE ${firstDigest}`,
+        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        currentInspection: inspection,
+      });
+      const second = await createSavedBoundary({
+        projectRoot: root,
+        draft: build.exploration_boundary,
+        currentCandidate: build.exploration_boundary,
+        name: "reviewed_catalog",
+        resourceId: "public.service_visits",
+        actor: "second-reviewer",
+      });
+      await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({
+        draft: build.exploration_boundary,
+        candidate: second.candidate,
+        confirmedDecisions: second.candidate.unresolved_decisions,
+        previous: second,
+        actor: "second-reviewer",
+        revision: second.revision + 1,
+      }));
+      const session: BoundaryReviewInteractiveSession = {
+        chooseResource: async () => undefined,
+        editFieldTiers: async () => undefined,
+        promptText: async () => "second-reviewer",
+        confirm: async () => true,
+      };
+      const inspectProductionReadiness = vi.fn(async () => ({
+        ready: true,
+        config_valid: true,
+        shared_ledger_initialized: true,
+        config_path: path.join(root, "synapsor.runner.json"),
+      }));
+
+      await expect(boundaryActivateCommandInternal(
+        ["--project-root", root, "--actor", "second-reviewer"],
+        async () => inspection,
+        session,
+        undefined,
+        { inspectProductionReadiness },
+      )).resolves.toBe(0);
+
+      expect(inspectProductionReadiness).toHaveBeenCalledWith({
+        args: ["--project-root", root, "--actor", "second-reviewer"],
+        projectRoot: root,
+      });
+      expect(output).toContain("\uD83D\uDC90 ACTIVATION SUCCEEDED");
+      expect(output).toContain("NEXT - PRODUCTION ACCESS UPDATED");
+      expect(output).toContain(
+        'Boundary "reviewed_catalog" is in the active production Explore set.',
+      );
+      expect(output).toContain("reloads the active set on its next tool call");
+      expect(output).toContain("no restart is required");
+      expect(output).toContain(
+        "do not rerun config initialization or the ledger migration for this activation",
+      );
+      expect(output).not.toContain(
+        "Next: configure the secured production HTTP runtime, initialize its shared accounting ledger",
+      );
+      await expect(loadActivatedExplorationBoundaries(root)).resolves.toHaveLength(2);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -1263,6 +1852,9 @@ describe("boundary operator-plane CLI", () => {
     const session: BoundaryReviewInteractiveSession = {
       chooseResource: async (_resources, _overview, options) => {
         resourceSelections += 1;
+        if (resourceSelections === 3) {
+          expect(activationHandoff).not.toHaveBeenCalled();
+        }
         expect(options?.initialView).toBe("access");
         expect(options?.startAtBoundaryList).toBe(
           resourceSelections === 1 ? undefined : false,
@@ -1297,14 +1889,16 @@ describe("boundary operator-plane CLI", () => {
             : view.candidate?.kept_out_fields.includes(field.name)
               ? "kept_out"
               : "visible",
-        ]));
+        ])) as Record<string, BoundaryFieldTier>;
       },
       promptText: async () => {
         throw new Error("Routine focused edits must not ask for repeated actor or reason input.");
       },
-      confirm: async (prompt, options) => {
+      confirm: async () => {
+        throw new Error("Focused activation must use the raw-key activation prompt.");
+      },
+      confirmActivation: async (prompt) => {
         confirmationPrompts.push(prompt);
-        expect(options?.defaultValue).toBe(true);
         return true;
       },
     };
@@ -1347,8 +1941,9 @@ describe("boundary operator-plane CLI", () => {
       })).resolves.toBe(0);
 
       expect(confirmationPrompts).toEqual([
-        `Activate "${build.exploration_boundary.pack.name}" exactly as shown and continue to Ask?`,
+        `Activate "${build.exploration_boundary.pack.name}" exactly as shown now? You will stay in /access.`,
       ]);
+      expect(resourceSelections).toBe(3);
       expect(output).toContain("Draft updated: public.service_visits");
       expect(output).toContain("REVIEW EXACT BOUNDARY");
       expect(output).toContain("Runner only");
@@ -1359,7 +1954,24 @@ describe("boundary operator-plane CLI", () => {
       expect(output.indexOf("MODEL CONTINUATION TEST")).toBeLessThan(
         output.indexOf(`Reviewed boundary "${build.exploration_boundary.pack.name}" is active`),
       );
+      expect(output).toContain("/access is still open.");
+      expect(output).toContain("press Q/Esc when finished to return to Ask");
       expect(output).not.toContain("TABLE SIGN-OFF");
+      const styledReviewContext = await loadBoundaryReviewContext(root);
+      const plainReview = formatFocusedBoundaryActivationReview(
+        styledReviewContext.bundle,
+        false,
+      );
+      const styledReview = formatFocusedBoundaryActivationReview(
+        styledReviewContext.bundle,
+        true,
+      );
+      expect(styledReview).toContain("\u001b[1;36mTable");
+      expect(styledReview).toContain("\u001b[1;35mpublic.service_visits\u001b[0m");
+      expect(styledReview).toContain("\u001b[1;32m");
+      expect(styledReview).toContain("\u001b[1;33m");
+      expect(styledReview).toContain("\u001b[2m");
+      expect(stripAnsi(styledReview)).toBe(plainReview);
       const active = JSON.parse(await fs.readFile(
         path.join(root, ".synapsor/exploration-boundary.active.json"),
         "utf8",
@@ -1375,6 +1987,270 @@ describe("boundary operator-plane CLI", () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   }, 15_000);
+
+  it("saves an enum review with pending column edits and returns to the column screen", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-enum-columns-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const choices = [
+      { resource_id: "public.service_visits", action: "review" as const },
+      undefined,
+    ];
+    let editorVisits = 0;
+    let output = "";
+    const previousUser = process.env.USER;
+    process.env.USER = "enum-reviewer";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    const tiersFor = (
+      view: Parameters<BoundaryReviewInteractiveSession["editFieldTiers"]>[0],
+      statusTier: BoundaryFieldTier,
+    ) => Object.fromEntries(view.fields.map((field) => [
+      field.name,
+      field.name === "status"
+        ? statusTier
+        : view.candidate?.kept_out_fields.includes(field.name)
+          ? "kept_out"
+          : view.candidate?.model_withheld_fields?.includes(field.name)
+            ? "withheld_from_model"
+            : "visible",
+    ])) as Record<string, BoundaryFieldTier>;
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => choices.shift(),
+      editFieldTiers: async (view, options) => {
+        editorVisits += 1;
+        expect(options?.focusedAccess).toBe(true);
+        if (editorVisits === 1) {
+          const tiers = tiersFor(view, "withheld_from_model");
+          return { action: "enum", field: "status", tiers };
+        }
+        expect(view.candidate?.field_enums.status).toEqual(["completed"]);
+        expect(view.candidate?.model_withheld_fields).toContain("status");
+        return tiersFor(view, "withheld_from_model");
+      },
+      editFieldEnumValues: async () => ["completed"],
+      promptText: async (prompt) => {
+        expect(prompt).toContain("Required reason for this allowed-value change");
+        return "Use completed statuses and keep raw labels local.";
+      },
+      confirm: async () => {
+        throw new Error("Saving a disabled enum review must not activate authority.");
+      },
+    };
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await expect(boundaryReviewCommandInternal([
+        "--project-root", root,
+        "--access",
+      ], async () => inspection, session)).resolves.toBe(0);
+
+      expect(editorVisits).toBe(2);
+      const context = await loadBoundaryReviewContext(root);
+      const resource = context.candidate.pack.resources[0]!;
+      expect(resource.field_enums.status).toEqual(["completed"]);
+      expect(resource.model_withheld_fields).toContain("status");
+      expect(output).toContain("these column access changes will be saved with the allowed-value review");
+      expect(output).toContain("Recorded: public.service_visits.status allowed values -> completed");
+      expect(output).toContain("Saved in disabled boundary revision");
+      expect(output).toContain("Agent authority changed: no");
+      await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      if (previousUser === undefined) delete process.env.USER;
+      else process.env.USER = previousUser;
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 15_000);
+
+  it("reports deterministic outcomes when focused access widens a sensitive field", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-sensitive-outcome-"));
+    const inspection = boundaryInspection();
+    const table = inspection.tables[0]!;
+    const contactName = structuredClone(table.columns.find((field) => field.name === "status")!);
+    contactName.name = "contact_name";
+    contactName.suggestions.sensitive = true;
+    contactName.suggestions.sensitivity = {
+      state: "high_confidence_sensitive",
+      reason_codes: ["person_name"],
+      reasons: ["The field name indicates a person's name."],
+      evidence_source: "database",
+    };
+    table.columns.push(contactName);
+    table.suggestions.sensitive_columns.push("contact_name");
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    expect(build.exploration_boundary.pack.resources[0]?.kept_out_fields)
+      .toContain("contact_name");
+
+    const previousUser = process.env.USER;
+    process.env.USER = "sensitive-reviewer";
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    const selectedTiers = (
+      view: Parameters<BoundaryReviewInteractiveSession["editFieldTiers"]>[0],
+      contactTier: BoundaryFieldTier,
+    ) => Object.fromEntries(view.fields.map((field) => [
+      field.name,
+      field.name === "contact_name"
+        ? contactTier
+        : view.candidate?.kept_out_fields.includes(field.name)
+          ? "kept_out"
+          : view.candidate?.model_withheld_fields?.includes(field.name)
+            ? "withheld_from_model"
+            : "visible",
+    ])) as Record<string, BoundaryFieldTier>;
+
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+
+      const firstChoices = [
+        { resource_id: "public.service_visits", action: "review" as const },
+        undefined,
+      ];
+      const reasonPrompts: string[] = [];
+      let reasonAttempt = 0;
+      const firstSession: BoundaryReviewInteractiveSession = {
+        chooseResource: async () => firstChoices.shift(),
+        editFieldTiers: async (view) => selectedTiers(view, "withheld_from_model"),
+        promptText: async (prompt) => {
+          reasonPrompts.push(prompt);
+          reasonAttempt += 1;
+          if (reasonAttempt === 1) return "";
+          expect(await readBoundaryReviewProgress(root, build.exploration_boundary))
+            .toBeUndefined();
+          return "Support analytics needs local unique counts.";
+        },
+        confirm: async () => {
+          throw new Error("A focused visibility edit must not activate authority implicitly.");
+        },
+      };
+      await expect(boundaryReviewCommandInternal([
+        "--project-root", root,
+        "--access",
+      ], async () => inspection, firstSession)).resolves.toBe(0);
+
+      expect(reasonPrompts).toEqual([
+        "Required reason for this sensitive-field access change: ",
+        "Required reason for this sensitive-field access change: ",
+      ]);
+      expect(output).toContain(
+        "This widens sensitive-field access:\n  public.service_visits.contact_name -> Runner only (withheld from model)",
+      );
+      expect(output).toContain("Reviewer: sensitive-reviewer");
+      expect(output).toContain("A concrete reason is required before Runner can save this change.");
+      expect(output).toContain("Rejected: a concrete reason is required; no change was made.");
+      expect(output).toContain(
+        "Recorded: public.service_visits.contact_name -> Runner only (withheld from model); " +
+        "actor=sensitive-reviewer; reason=\"Support analytics needs local unique counts.\"",
+      );
+      expect(output).toContain(
+        "Restored only the operations currently supported by the field's inspected type",
+      );
+      expect(output).toMatch(
+        /public\.service_visits\.contact_name: return, filter\([^)]*\), sort, group, count distinct/,
+      );
+      expect(output).toContain("These grants are staged, not active.");
+
+      const progressPath = path.join(root, ".synapsor/boundary-review-progress.json");
+      const applied = JSON.parse(await fs.readFile(progressPath, "utf8")) as {
+        revision: number;
+        candidate: { pack: { resources: Array<{
+          id: string;
+          model_withheld_fields?: string[];
+          filterable_fields: Record<string, string[]>;
+          sortable_fields: string[];
+          groupable_fields: string[];
+          count_distinct_fields: string[];
+        }> } };
+      };
+      const appliedResource = applied.candidate.pack.resources.find((resource) =>
+        resource.id === "public.service_visits")!;
+      expect(appliedResource.model_withheld_fields).toContain("contact_name");
+      expect(appliedResource.filterable_fields.contact_name)
+        .toEqual(expect.arrayContaining(["eq", "in"]));
+      expect(appliedResource.sortable_fields).toContain("contact_name");
+      expect(appliedResource.groupable_fields).toContain("contact_name");
+      expect(appliedResource.count_distinct_fields).toContain("contact_name");
+      const appliedRevision = applied.revision;
+
+      output = "";
+      const repeatChoices = [
+        { resource_id: "public.service_visits", action: "review" as const },
+        undefined,
+      ];
+      const repeatSession: BoundaryReviewInteractiveSession = {
+        chooseResource: async () => repeatChoices.shift(),
+        editFieldTiers: async (view) => selectedTiers(view, "withheld_from_model"),
+        promptText: async () => {
+          throw new Error("An idempotent repeat must not ask for another reason.");
+        },
+        confirm: async () => {
+          throw new Error("An idempotent repeat must not activate authority.");
+        },
+      };
+      await expect(boundaryReviewCommandInternal([
+        "--project-root", root,
+        "--access",
+      ], async () => inspection, repeatSession)).resolves.toBe(0);
+      expect(output).toContain(
+        "Unchanged: public.service_visits already has the access levels shown; no change was made.",
+      );
+      expect(JSON.parse(await fs.readFile(progressPath, "utf8")).revision).toBe(appliedRevision);
+
+      output = "";
+      const cancelChoices = [
+        { resource_id: "public.service_visits", action: "review" as const },
+        undefined,
+      ];
+      const cancelSession: BoundaryReviewInteractiveSession = {
+        chooseResource: async () => cancelChoices.shift(),
+        editFieldTiers: async (view) => selectedTiers(view, "visible"),
+        promptText: async () => undefined,
+        confirm: async () => {
+          throw new Error("Cancelling a sensitive-field edit must not activate authority.");
+        },
+      };
+      await expect(boundaryReviewCommandInternal([
+        "--project-root", root,
+        "--access",
+      ], async () => inspection, cancelSession)).resolves.toBe(0);
+      expect(output).toContain("Cancelled - no sensitive-field access change was made.");
+      const cancelled = JSON.parse(await fs.readFile(progressPath, "utf8"));
+      expect(cancelled.revision).toBe(appliedRevision);
+      expect(cancelled.candidate.pack.resources.find((resource: { id: string }) =>
+        resource.id === "public.service_visits").model_withheld_fields).toContain("contact_name");
+    } finally {
+      if (previousUser === undefined) delete process.env.USER;
+      else process.env.USER = previousUser;
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
 
   it("returns from a focused column editor to the selected boundary's table list", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-column-back-"));
@@ -1423,6 +2299,96 @@ describe("boundary operator-plane CLI", () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   }, 15_000);
+
+  it("reviews an ordinary principal column inline and returns to the same column editor", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-principal-column-"));
+    const inspection = boundaryInspection();
+    const table = inspection.tables[0]!;
+    table.columns.push({
+      name: "rep",
+      data_type: "text",
+      nullable: false,
+      generated: false,
+      ordinal_position: table.columns.length + 1,
+      suggestions: {
+        tenant: false,
+        conflict: false,
+        sensitive: false,
+        immutable: false,
+        large_or_binary: false,
+      },
+    });
+    table.suggestions.default_visible_columns.push("rep");
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const choices = [
+      { resource_id: "public.service_visits", action: "review" as const },
+      undefined,
+    ];
+    let editCalls = 0;
+    const prompts = ["6", "Limit each user to rows assigned to their reviewed rep identity."];
+    const previousUser = process.env.USER;
+    process.env.USER = "principal-reviewer";
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => choices.shift(),
+      editFieldTiers: async (view, options) => {
+        editCalls += 1;
+        expect(options?.focusedAccess).toBe(true);
+        if (editCalls === 1) {
+          return {
+            action: "principal",
+            tiers: Object.fromEntries(view.fields.map((field) => [
+              field.name,
+              view.candidate?.kept_out_fields.includes(field.name) ? "kept_out" : "visible",
+            ])) as Record<string, BoundaryFieldTier>,
+          };
+        }
+        expect(options?.initialTiers).toBeDefined();
+        return "back";
+      },
+      promptText: async () => prompts.shift(),
+      confirm: async () => {
+        throw new Error("A principal policy edit must not activate authority.");
+      },
+    };
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await expect(boundaryReviewCommandInternal([
+        "--project-root", root,
+        "--access",
+      ], async () => inspection, session)).resolves.toBe(0);
+      const progress = JSON.parse(await fs.readFile(
+        path.join(root, ".synapsor/boundary-review-progress.json"),
+        "utf8",
+      ));
+      expect(progress.candidate.pack.resources.find((resource: { id: string }) =>
+        resource.id === "public.service_visits").principal_key).toBe("rep");
+      expect(output).toContain("Saved: public.service_visits user/owner row limit -> Direct column rep.");
+      expect(output).toContain("Returning to this table's columns.");
+      expect(editCalls).toBe(2);
+      await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      if (previousUser === undefined) delete process.env.USER;
+      else process.env.USER = previousUser;
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
 
   it("keeps a completed review inactive when the operator declines the default-yes activation handoff", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-activation-decline-"));
@@ -1481,6 +2447,59 @@ describe("boundary operator-plane CLI", () => {
       expect(output).not.toContain("Type ACTIVATE");
       await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
         .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("prints direct routes back to guided or explicit Ask after standalone activation", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-activation-resume-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => undefined,
+      editFieldTiers: async () => undefined,
+      promptText: async () => "alice",
+      confirm: async () => true,
+    };
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({
+        draft: build.exploration_boundary,
+        candidate: build.exploration_boundary,
+        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        actor: "alice",
+        revision: 1,
+      }));
+
+      await expect(boundaryActivateCommandInternal(
+        ["--project-root", root, "--actor", "alice"],
+        async () => inspection,
+        session,
+      )).resolves.toBe(0);
+
+      expect(output).toContain("Resume the guided CLI and choose a model or MCP client:");
+      expect(output).toContain(`cd '${root}' && synapsor-runner start --from-env DATABASE_URL --cli`);
+      expect(output).toContain("start --from-env DATABASE_URL --cli");
+      expect(output).toContain("Or open Ask directly with an explicit provider:");
+      expect(output).toContain("try ask --project-root");
+      expect(output).toContain("--provider openai --model gpt-5-mini");
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -1611,7 +2630,7 @@ describe("boundary operator-plane CLI", () => {
           view.generated_candidate?.kept_out_fields.includes(field.name)
             ? "kept_out"
             : "visible",
-        ]));
+        ])) as Record<string, BoundaryFieldTier>;
       },
       promptText: async () => answers.shift() ?? "",
       confirm: async () => true,
@@ -1711,6 +2730,296 @@ describe("boundary operator-plane CLI", () => {
         .toMatchObject({ included: true, status: "draft_read" });
       await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
         .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 25_000);
+
+  it("keeps identical shared-reference review previews digest-stable across reviewer timestamps", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-shared-reference-digest-"));
+    const inspection = sharedReferenceInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const request = {
+      resource_id: "public.service_visits",
+      include: true,
+      shared_reference_scope: "table_has_no_per_tenant_rows" as const,
+      actor: "owner@example.test",
+      reason: "This reference data is centrally maintained and identical for every tenant.",
+    };
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-08-12T12:00:00.000Z"));
+      const first = await prepareBoundaryResourceReviewMutation(
+        root,
+        request,
+        async () => inspection,
+      );
+      vi.setSystemTime(new Date("2026-08-12T12:05:00.000Z"));
+      const second = await prepareBoundaryResourceReviewMutation(
+        root,
+        request,
+        async () => inspection,
+      );
+      expect(second.build.graph.resources[0]?.shared_reference_scope?.review_override?.decided_at)
+        .not.toBe(first.build.graph.resources[0]?.shared_reference_scope?.review_override?.decided_at);
+      expect(second.candidate_digest).toBe(first.candidate_digest);
+      expect(second.decision_digest).toBe(first.decision_digest);
+      expect(second.build.lock.evidence_fingerprint).toBe(first.build.lock.evidence_fingerprint);
+    } finally {
+      vi.useRealTimers();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 25_000);
+
+  it("requires a fresh shared-reference acknowledgement when adding the table to a second boundary", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-second-boundary-shared-reference-"));
+    const inspection = scopedAndSharedReferenceInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+      overrides: {
+        schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+        resources: {
+          "public.reference_catalog": {
+            shared_reference_scope: {
+              value: "table_has_no_per_tenant_rows",
+              actor: "first-reviewer",
+              reason: "The first boundary reviewed this centrally maintained catalog.",
+              decided_at: "2026-08-12T12:00:00.000Z",
+            },
+          },
+        },
+      },
+    });
+    const choices = [
+      { resource_id: "public.reference_catalog", action: "add" as const },
+      undefined,
+    ];
+    let pickerCalls = 0;
+    let resolverCalls = 0;
+    const prompts: string[] = [];
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => {
+        pickerCalls += 1;
+        return choices.shift();
+      },
+      resolveBlockedResource: async (view) => {
+        resolverCalls += 1;
+        expect(view.candidate).toBeNull();
+        expect(view.generated_candidate?.shared_reference_scope).toEqual({
+          mode: "shared_reference",
+          acknowledgement: "table_has_no_per_tenant_rows",
+        });
+        expect(view.shared_reference_scope).toMatchObject({ eligible: true });
+        return {
+          row_identity: "id",
+          shared_reference_scope: "table_has_no_per_tenant_rows",
+        };
+      },
+      editFieldTiers: async (view) => {
+        expect(view.candidate?.shared_reference_scope).toEqual({
+          mode: "shared_reference",
+          acknowledgement: "table_has_no_per_tenant_rows",
+        });
+        return "back";
+      },
+      promptText: async (prompt) => {
+        prompts.push(prompt);
+        return "This second boundary independently reviews the same tenant-neutral catalog.";
+      },
+      confirm: async (_prompt, options) => {
+        expect(options?.defaultValue).toBe(false);
+        return true;
+      },
+    };
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    try {
+      expect(build.exploration_boundary.pack.resources.map((resource) => resource.id).sort()).toEqual([
+        "public.reference_catalog",
+        "public.service_visits",
+      ]);
+      expect(build.policy_baseline.boundary.pack.resources.map((resource) => resource.id))
+        .toEqual(["public.service_visits"]);
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const firstDigest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+      await activateExplorationBoundary({
+        projectRoot: root,
+        candidate: build.exploration_boundary,
+        expectedDigest: firstDigest,
+        actor: "first-reviewer",
+        confirmation: `ACTIVATE ${firstDigest}`,
+        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        currentInspection: inspection,
+      });
+      await createSavedBoundary({
+        projectRoot: root,
+        draft: build.exploration_boundary,
+        currentCandidate: build.exploration_boundary,
+        name: "reviewed_catalog",
+        resourceId: "public.service_visits",
+        actor: "second-reviewer",
+      });
+
+      const before = await listBoundaryResourceReviews(root);
+      expect(before.find((resource) => resource.resource_id === "public.reference_catalog"))
+        .toMatchObject({
+          included: false,
+          inline_resolution_available: true,
+          first_table_startable: false,
+          first_table_scope_kind: "shared_reference",
+          first_table_guidance: expect.stringContaining("confirm Shared reference for this boundary"),
+        });
+
+      await expect(boundaryReviewCommandInternal([
+        "--project-root", root,
+        "--access",
+      ], async () => inspection, session)).resolves.toBe(0);
+      expect(resolverCalls).toBe(1);
+      expect(pickerCalls).toBe(2);
+      expect(prompts[0]).toContain("SHARED REFERENCE REVIEW");
+      expect(output).toContain("Row scope: Shared reference (no tenant predicate");
+      expect(output).toContain("Access editor closed. Reviewed authority is unchanged.");
+
+      const progress = await readBoundaryReviewProgress(root, build.exploration_boundary);
+      expect(progress?.candidate.pack.resources.map((resource) => resource.id).sort()).toEqual([
+        "public.reference_catalog",
+        "public.service_visits",
+      ]);
+      expect(progress?.review_overrides.resources["public.reference_catalog"]?.shared_reference_scope)
+        .toMatchObject({
+          value: "table_has_no_per_tenant_rows",
+          reason: "This second boundary independently reviews the same tenant-neutral catalog.",
+        });
+      const active = await loadActivatedExplorationBoundaries(root);
+      expect(active).toHaveLength(1);
+      expect(active[0]?.pack.name).toBe(build.exploration_boundary.pack.name);
+      expect(active[0]?.activation.digest).toBe(firstDigest);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("requires a reason and explicit confirmation before adding a shared reference", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-shared-reference-"));
+    const inspection = sharedReferenceInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    expect(build.exploration_boundary.pack.resources).toEqual([]);
+    const choices = [
+      { resource_id: "public.service_visits", action: "add" as const },
+      undefined,
+    ];
+    const prompts: string[] = [];
+    const confirmations: string[] = [];
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => choices.shift(),
+      resolveBlockedResource: async (view) => {
+        expect(view.shared_reference_scope).toMatchObject({ eligible: true });
+        return {
+          row_identity: "id",
+          shared_reference_scope: "table_has_no_per_tenant_rows",
+        };
+      },
+      editFieldTiers: async () => "back",
+      promptText: async (prompt) => {
+        prompts.push(prompt);
+        return "This reference data is centrally maintained and identical for every tenant.";
+      },
+      confirm: async (prompt, options) => {
+        confirmations.push(prompt);
+        expect(options?.defaultValue).toBe(false);
+        return true;
+      },
+    };
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await expect(boundaryReviewCommand([
+        "resource",
+        "public.service_visits",
+        "--project-root", root,
+        "--include",
+        "--shared-reference",
+        "--acknowledge-table-has-no-per-tenant-rows",
+        "--actor", "owner@example.test",
+        "--reason", "This reference data is centrally maintained and identical for every tenant.",
+        "--json",
+      ], async () => inspection)).resolves.toBe(0);
+      expect(JSON.parse(output)).toMatchObject({
+        ok: true,
+        semantic_diff: {
+          resource_id: "public.service_visits",
+          before_included: false,
+          after_included: true,
+          selected_shared_reference_scope: true,
+        },
+        authority_activated: false,
+        source_database_changed: false,
+      });
+      output = "";
+      await expect(boundaryReviewCommandInternal([
+        "--project-root", root,
+      ], async () => inspection, session)).resolves.toBe(0);
+      expect(prompts[0]).toContain("SHARED REFERENCE REVIEW");
+      expect(prompts[0]).toContain("Table: public.service_visits");
+      expect(prompts[0]).toContain("Explain why this table contains the same rows for every tenant.");
+      expect(prompts[0]?.split("\n").at(-1)).toBe("Required reason");
+      expect(confirmations[0]).toMatch(/has no per-tenant rows.*every tenant/i);
+      expect(output).toContain("Row scope: Shared reference (no tenant predicate");
+      const reviews = await listBoundaryResourceReviews(root);
+      expect(reviews[0]).toMatchObject({ included: true, status: "draft_read" });
+      const progress = JSON.parse(await fs.readFile(
+        path.join(root, ".synapsor/boundary-review-progress.json"),
+        "utf8",
+      ));
+      expect(progress.candidate.pack.resources[0].shared_reference_scope).toEqual({
+        mode: "shared_reference",
+        acknowledgement: "table_has_no_per_tenant_rows",
+      });
+      expect(progress.review_overrides.resources["public.service_visits"].shared_reference_scope)
+        .toMatchObject({
+          value: "table_has_no_per_tenant_rows",
+          actor: expect.any(String),
+          reason: "This reference data is centrally maintained and identical for every tenant.",
+        });
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -1840,12 +3149,98 @@ describe("boundary operator-plane CLI", () => {
       expect(chooseCalls).toBe(3);
       expect(output).toContain("Draft added: public.service_routes");
       expect(output).toContain("Draft removed: public.service_routes");
+      expect(output).toContain(
+        "Related-data relationship removed from the disabled draft: service_visits -> service_routes " +
+        "(path ID: service_visits_route_id_fkey)",
+      );
       expect(output).toContain("Access editor closed. Reviewed authority is unchanged.");
       expect(output).toContain("Returning to Ask.");
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
   }, 20_000);
+
+  it("explains a scope-dependent removal and stays in the focused access editor", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-dependent-remove-"));
+    const inspection = derivedFirstTableInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const child = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.order_items",
+        include: true,
+        row_identity: "id",
+        tenant_scope_path: "order_items_order_id_fkey",
+        principal_key: null,
+        actor: "owner@example.test",
+        reason: "Each order item belongs to its required reviewed order.",
+      }, async () => inspection);
+      await commitBoundaryResourceReviewMutation(root, child);
+      const before = await loadBoundaryReviewContext(root);
+      const actions = [
+        { resource_id: "public.orders", action: "remove" as const },
+        undefined,
+      ];
+      let chooseCalls = 0;
+      let blockedNotice: Parameters<BoundaryReviewInteractiveSession["chooseResource"]>[2];
+      const session: BoundaryReviewInteractiveSession = {
+        chooseResource: async (_resources, _overview, options) => {
+          chooseCalls += 1;
+          if (chooseCalls === 2) blockedNotice = options;
+          return actions.shift();
+        },
+        editFieldTiers: async () => {
+          throw new Error("A rejected table removal must return to the table list.");
+        },
+        promptText: async () => {
+          throw new Error("Focused removal must not open a line-mode prompt.");
+        },
+        confirm: async () => {
+          throw new Error("A blocked removal must not request activation or confirmation.");
+        },
+      };
+
+      await expect(boundaryReviewCommandInternal([
+        "--project-root", root,
+        "--access",
+      ], async () => inspection, session)).resolves.toBe(0);
+      expect(chooseCalls).toBe(2);
+      expect(blockedNotice?.notice).toMatchObject({
+        tone: "danger",
+        title: "REMOVE BLOCKED - public.orders",
+      });
+      expect(blockedNotice?.notice?.lines.join("\n")).toContain(
+        "public.order_items: tenant scope through order_items -> orders.tenant_id " +
+        "(path ID: order_items_order_id_fkey)",
+      );
+      expect(blockedNotice?.notice?.lines.join("\n"))
+        .toContain("Suggested leaf-first order: public.order_items -> public.orders");
+      expect(blockedNotice?.notice?.footer).toContain("No draft or active authority changed");
+      const after = await loadBoundaryReviewContext(root);
+      expect(explorationBoundaryCandidateDigest(after.candidate))
+        .toBe(explorationBoundaryCandidateDigest(before.candidate));
+      expect(after.candidate.pack.resources.map((resource) => resource.id).sort())
+        .toEqual(["public.order_items", "public.orders"]);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 25_000);
 
   it("changes one table's minimum group size with default-Yes save and activation", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-group-size-one-"));
@@ -1869,6 +3264,7 @@ describe("boundary operator-plane CLI", () => {
     const text = ["1", "Owner-reviewed local analysis may show groups of one."];
     const confirmationPrompts: string[] = [];
     const confirmationDefaults: Array<boolean | undefined> = [];
+    const activationHandoff = vi.fn(async () => 0);
     let chooseCalls = 0;
     const session: BoundaryReviewInteractiveSession = {
       chooseResource: async (_resources, _overview, options) => {
@@ -1885,7 +3281,7 @@ describe("boundary operator-plane CLI", () => {
       confirm: async (prompt, options) => {
         confirmationPrompts.push(prompt);
         confirmationDefaults.push(options?.defaultValue);
-        return confirmationDefaults.length === 1;
+        return true;
       },
     };
     let output = "";
@@ -1898,7 +3294,7 @@ describe("boundary operator-plane CLI", () => {
       await expect(boundaryReviewCommandInternal([
         "--project-root", root,
         "--access",
-      ], async () => inspection, session)).resolves.toBe(0);
+      ], async () => inspection, session, activationHandoff)).resolves.toBe(0);
       const progress = JSON.parse(await fs.readFile(
         path.join(root, ".synapsor/boundary-review-progress.json"),
         "utf8",
@@ -1906,19 +3302,27 @@ describe("boundary operator-plane CLI", () => {
       expect(progress.candidate.pack.resources[0].minimum_cohort_size).toBe(1);
       expect(output).toContain("PRIVACY - public.service_visits");
       expect(output).toContain("Current minimum group size: 5");
-      expect(output).toContain("press C (Review + activate)");
       expect(confirmationPrompts).toEqual([
         "Save this privacy change for public.service_visits?",
         "Review and activate this boundary change now?",
+        `Activate "${build.exploration_boundary.pack.name}" exactly as shown now? You will stay in /access.`,
       ]);
-      expect(confirmationDefaults).toEqual([true, true]);
+      expect(confirmationDefaults).toEqual([true, true, false]);
       expect(chooseCalls).toBe(2);
+      expect(activationHandoff).toHaveBeenCalledOnce();
+      expect(output).toContain("/access is still open.");
+      expect(output).toContain("press Q/Esc when finished to return to Ask");
+      const active = JSON.parse(await fs.readFile(
+        path.join(root, ".synapsor/exploration-boundary.active.json"),
+        "utf8",
+      ));
+      expect(active.pack.resources[0].minimum_cohort_size).toBe(1);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
   }, 20_000);
 
-  it("sets one cohort threshold across the boundary and makes pending activation explicit", async () => {
+  it("sets one cohort threshold across the boundary, activates it, and keeps access open", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-cohort-all-"));
     const inspection = boundaryInspection();
     const second = structuredClone(inspection.tables[0]!);
@@ -1940,12 +3344,17 @@ describe("boundary operator-plane CLI", () => {
     });
     const choices = [{ action: "privacy_all" as const }, undefined];
     const text = ["1", "Local owner review for this non-production demonstration."];
-    const confirmations = [true, false];
+    const confirmations = [true, true, true];
     const prompts: string[] = [];
     const confirmationPrompts: string[] = [];
     const confirmationDefaults: Array<boolean | undefined> = [];
+    const activationHandoff = vi.fn(async () => 0);
+    let chooseCalls = 0;
     const session: BoundaryReviewInteractiveSession = {
-      chooseResource: async () => choices.shift(),
+      chooseResource: async () => {
+        chooseCalls += 1;
+        return choices.shift();
+      },
       editFieldTiers: async () => {
         throw new Error("Boundary-wide privacy must not open one table's column editor.");
       },
@@ -1969,7 +3378,7 @@ describe("boundary operator-plane CLI", () => {
       await expect(boundaryReviewCommandInternal([
         "--project-root", root,
         "--access",
-      ], async () => inspection, session)).resolves.toBe(0);
+      ], async () => inspection, session, activationHandoff)).resolves.toBe(0);
       const progress = JSON.parse(await fs.readFile(
         path.join(root, ".synapsor/boundary-review-progress.json"),
         "utf8",
@@ -1981,8 +3390,8 @@ describe("boundary operator-plane CLI", () => {
       expect(output).toContain("Enter a whole number from 1 through 5");
       expect(output).toContain("Consequence: aggregate output may contain groups with one person or record");
       expect(output).toContain("Saved minimum group size 1 (small-group suppression off) for 2 tables");
-      expect(output).toContain("1 pending boundary change is not active");
-      expect(output).toContain("press C (Review + activate)");
+      expect(output).toContain("/access is still open.");
+      expect(output).toContain("press Q/Esc when finished to return to Ask");
       expect(prompts).toEqual([
         "New minimum group size for all tables [current 5]: ",
         "Reason for setting 2 tables to minimum group size 1 (recorded with this decision): ",
@@ -1990,11 +3399,19 @@ describe("boundary operator-plane CLI", () => {
       expect(confirmationPrompts).toEqual([
         "Save this privacy change for 2 tables?",
         "Review and activate this boundary change now?",
+        `Activate "${build.exploration_boundary.pack.name}" exactly as shown now? You will stay in /access.`,
       ]);
-      expect(confirmationDefaults).toEqual([true, true]);
+      expect(confirmationDefaults).toEqual([true, true, false]);
       expect(confirmations).toHaveLength(0);
-      await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
-        .rejects.toMatchObject({ code: "ENOENT" });
+      expect(chooseCalls).toBe(2);
+      expect(activationHandoff).toHaveBeenCalledOnce();
+      const active = JSON.parse(await fs.readFile(
+        path.join(root, ".synapsor/exploration-boundary.active.json"),
+        "utf8",
+      ));
+      expect(active.pack.resources).toHaveLength(2);
+      expect(active.pack.resources.every((resource: { minimum_cohort_size: number }) =>
+        resource.minimum_cohort_size === 1)).toBe(true);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -2149,6 +3566,266 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 20_000);
 
+  it("marks derived-only tables as add-after-ancestor and refuses them before first-table review", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-derived-first-table-"));
+    const inspection = derivedFirstTableInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    let chooseCall = 0;
+    const resolveBlockedResource = vi.fn();
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async (resources, _overview, options) => {
+        chooseCall += 1;
+        if (chooseCall === 1) return { action: "create" };
+        if (options?.startingBoundaryName) {
+          const child = resources.find((resource) => resource.resource_id === "public.order_items")!;
+          const ancestor = resources.find((resource) => resource.resource_id === "public.orders")!;
+          expect(child).toMatchObject({
+            first_table_startable: false,
+            first_table_scope_label: "order_items -> orders.tenant_id",
+          });
+          expect(child.first_table_guidance).toContain("start with public.orders");
+          expect(ancestor.first_table_startable).toBe(true);
+          return { resource_id: child.resource_id, action: "add" };
+        }
+        return undefined;
+      },
+      editFieldTiers: async () => undefined,
+      resolveBlockedResource,
+      promptText: async () => "line_item_analytics",
+      confirm: async () => true,
+    };
+
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await expect(boundaryReviewCommand([
+        "resource", "public.order_items",
+        "--project-root", root,
+        "--include",
+        "--row-identity", "id",
+        "--tenant-scope-path", "order_items_order_id_fkey",
+        "--no-principal",
+        "--actor", "owner@example.test",
+        "--reason", "Order items inherit tenant isolation through their required order.",
+        "--json",
+      ], async () => inspection)).resolves.toBe(0);
+      expect(JSON.parse(output)).toMatchObject({
+        semantic_diff: {
+          resource_id: "public.order_items",
+          selected_tenant_scope_path: "order_items_order_id_fkey",
+        },
+        authority_activated: false,
+      });
+      output = "";
+      const resources = await listBoundaryResourceReviews(root);
+      expect(resources.find((resource) => resource.resource_id === "public.order_items"))
+        .toMatchObject({
+          first_table_startable: false,
+          first_table_scope_label: "order_items -> orders.tenant_id",
+          derived_tenant_scope: {
+            candidates: [{ path_id: "order_items_order_id_fkey" }],
+          },
+        });
+      await expect(boundaryReviewCommandInternal([
+        "--project-root", root,
+        "--access",
+      ], async () => inspection, session)).resolves.toBe(0);
+      expect(resolveBlockedResource).not.toHaveBeenCalled();
+      expect(output).toContain("public.order_items cannot be the first table");
+      expect(output).toContain("start with public.orders, then add this table");
+      expect(output).toContain("No table review was started, and nothing was saved or activated.");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("adds a genuine depth-three derived resource through the reviewed CLI mutation path", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-derived-depth-three-cli-"));
+    const inspection = depthThreeDerivedCliInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const apply = async (request: Parameters<typeof prepareBoundaryResourceReviewMutation>[1]) => {
+      const preview = await prepareBoundaryResourceReviewMutation(
+        root,
+        request,
+        async () => inspection,
+      );
+      await commitBoundaryResourceReviewMutation(root, preview);
+      return preview;
+    };
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await apply({
+        resource_id: "public.order_items",
+        include: true,
+        tenant_scope_path: "order_items_order_id_fkey",
+        principal_key: null,
+        actor: "owner@example.test",
+        reason: "Order items inherit tenant isolation through their required order.",
+      });
+      await apply({
+        resource_id: "public.order_events",
+        include: true,
+        tenant_scope_path: "order_events_order_item_id_fkey__order_items_order_id_fkey",
+        principal_key: null,
+        actor: "owner@example.test",
+        reason: "Order events inherit tenant isolation through the reviewed item path.",
+      });
+      const leafRequest = {
+        resource_id: "public.event_notes",
+        include: true,
+        tenant_scope_path:
+          "event_notes_order_event_id_fkey__order_events_order_item_id_fkey__order_items_order_id_fkey",
+        principal_key: null,
+        actor: "owner@example.test",
+        reason: "Event notes use the exact reviewed three-hop path to their tenant-owned order.",
+      } as const;
+      await expect(prepareBoundaryResourceReviewMutation(
+        root,
+        leafRequest,
+        async () => inspection,
+      )).rejects.toThrow(/uses 3 hops.*max_derived_scope_hops is 2.*Raise.*to 3/i);
+
+      const leaf = await apply({
+        ...leafRequest,
+        max_derived_scope_hops: 3,
+        max_analysis_relationship_hops: 3,
+      });
+      expect(leaf.candidate.budgets).toMatchObject({
+        max_derived_scope_hops: 3,
+        max_analysis_relationship_hops: 3,
+      });
+      expect(leaf.candidate.pack.resources.find((resource) =>
+        resource.id === "public.event_notes")?.tenant_scope?.proof.links).toHaveLength(3);
+      const reviews = await listBoundaryResourceReviews(root);
+      expect(reviews.find((resource) => resource.resource_id === "public.event_notes"))
+        .toMatchObject({ included: true });
+
+      await expect(prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.order_events",
+        exclude: true,
+        actor: "owner@example.test",
+        reason: "An intermediate scope table cannot disappear beneath its reviewed leaf.",
+      }, async () => inspection)).rejects.toThrow(
+        /public\.event_notes: tenant scope through event_notes -> order_events -> order_items -> orders\.tenant_id \(path ID: event_notes_order_event_id_fkey__order_events_order_item_id_fkey__order_items_order_id_fkey\)[\s\S]*leaf-first order: public\.event_notes -> public\.order_events/i,
+      );
+
+      const removeLeaf = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.event_notes",
+        exclude: true,
+        actor: "owner@example.test",
+        reason: "Remove the deepest dependent table first.",
+      }, async () => inspection);
+      expect(removeLeaf.resource_removal_impact?.blocking_dependencies).toEqual([]);
+      await commitBoundaryResourceReviewMutation(root, removeLeaf);
+      const removeMiddle = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.order_events",
+        exclude: true,
+        actor: "owner@example.test",
+        reason: "The intermediate table is removable after its dependent leaf is gone.",
+      }, async () => inspection);
+      expect(removeMiddle.resource_removal_impact?.blocking_dependencies).toEqual([]);
+      expect(removeMiddle.candidate.pack.resources.map((resource) => resource.id))
+        .not.toContain("public.order_events");
+
+      await expect(prepareBoundaryResourceReviewMutation(root, {
+        ...leafRequest,
+        resource_id: "public.not_visible_to_reader",
+      }, async () => inspection)).rejects.toThrow(
+        /schema visible to the reviewed read role.*USAGE.*SELECT grants.*rescan/i,
+      );
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("also blocks a selected derived principal path from starting a boundary alone", async () => {
+    for (const singleOrganization of [false, true]) {
+      const root = await fs.mkdtemp(path.join(
+        os.tmpdir(),
+        singleOrganization
+          ? "synapsor-derived-principal-single-org-first-table-"
+          : "synapsor-derived-principal-first-table-",
+      ));
+      const inspection = derivedPrincipalFirstTableInspection(singleOrganization);
+      const decision = (value: string, reason: string) => ({
+        value,
+        actor: "owner@example.test",
+        reason,
+        decided_at: "2026-08-07T12:00:00.000Z",
+      });
+      const build = buildAutoBoundary({
+        inspection,
+        project: {
+          root,
+          package_manager: "npm",
+          frameworks: ["node"],
+          schema_inputs: [],
+          database_env_names: ["DATABASE_URL"],
+        },
+        sourceEnv: "DATABASE_URL",
+        inspectedSchema: "public",
+        overrides: {
+          schema_version: "synapsor.auto-boundary-overrides.v1",
+          resources: {
+            "public.orders": {
+              principal_key: decision(
+                "owner_id",
+                "Each order is owned by the reviewed application principal.",
+              ),
+            },
+            "public.order_items": {
+              principal_scope_path: decision(
+                "order_items_order_id_fkey",
+                "Each item inherits principal scope through its required order.",
+              ),
+            },
+          },
+        },
+        ...(singleOrganization
+          ? { singleOrganization: { organizationId: "internal-analytics" } }
+          : {}),
+      });
+      try {
+        await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+        const resources = await listBoundaryResourceReviews(root);
+        expect(resources.find((resource) => resource.resource_id === "public.order_items"))
+          .toMatchObject({
+            first_table_startable: false,
+            first_table_scope_label: "order_items -> orders.owner_id",
+            first_table_guidance: "start with public.orders, then add this table",
+          });
+      } finally {
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    }
+  });
+
   it("keeps invalid interactive boundary names inside review and normalizes ordinary capitalization", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-name-cli-"));
     const inspection = boundaryInspection();
@@ -2213,7 +3890,7 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 20_000);
 
-  it("conservatively rebases another saved draft after reviewed generation inputs change", async () => {
+  it("conservatively rebases another saved draft only after shared schema facts change", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-library-rebase-"));
     const inspection = boundaryInspection();
     const build = buildAutoBoundary({
@@ -2230,6 +3907,16 @@ describe("boundary operator-plane CLI", () => {
     });
     try {
       await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const activeDigest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+      await activateExplorationBoundary({
+        projectRoot: root,
+        candidate: build.exploration_boundary,
+        expectedDigest: activeDigest,
+        actor: "original-reviewer",
+        confirmation: `ACTIVATE ${activeDigest}`,
+        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        currentInspection: inspection,
+      });
       let context = await loadBoundaryReviewContext(root);
       await synchronizeBoundaryLibrary({
         projectRoot: root,
@@ -2253,13 +3940,40 @@ describe("boundary operator-plane CLI", () => {
         name: build.exploration_boundary.pack.name,
       });
 
+      const driftedInspection = structuredClone(inspection);
+      const table = driftedInspection.tables[0]!;
+      table.columns.push({
+        name: "priority",
+        data_type: "text",
+        nullable: false,
+        generated: false,
+        ordinal_position: table.columns.length + 1,
+        suggestions: {
+          tenant: false,
+          conflict: false,
+          sensitive: false,
+          immutable: false,
+          large_or_binary: false,
+        },
+      });
+      table.suggestions.default_visible_columns.push("priority");
       const preview = await prepareBoundaryResourceReviewMutation(root, {
         resource_id: "public.service_visits",
         keep_out_fields: ["status"],
         actor: "alice",
         reason: "Keep status unavailable in this reviewed analytics boundary.",
-      }, async () => inspection);
+      }, async () => driftedInspection);
       await commitBoundaryResourceReviewMutation(root, preview);
+
+      const libraryAfterMutation = JSON.parse(await fs.readFile(
+        path.join(root, ".synapsor/boundary-library.json"),
+        "utf8",
+      ));
+      expect(libraryAfterMutation.selected_name).toBe(build.exploration_boundary.pack.name);
+      expect(
+        libraryAfterMutation.boundaries[build.exploration_boundary.pack.name]
+          .candidate.pack.resources[0].kept_out_fields,
+      ).toContain("status");
 
       context = await loadBoundaryReviewContext(root);
       const snapshot = await synchronizeBoundaryLibrary({
@@ -2276,21 +3990,981 @@ describe("boundary operator-plane CLI", () => {
         currentProgress: context.progress,
         name: "support_analytics",
       });
+      const policyBaseline = JSON.parse(await fs.readFile(
+        path.join(root, ".synapsor/auto-boundary-policy-baseline.json"),
+        "utf8",
+      ));
       expect(restored.candidate).toMatchObject({
-        generation_lock_fingerprint: context.draft.generation_lock_fingerprint,
+        generation_lock_fingerprint: policyBaseline.boundary.generation_lock_fingerprint,
         pack: {
           name: "support_analytics",
           resources: [{
             id: "public.service_visits",
-            kept_out_fields: expect.arrayContaining(["status"]),
+            kept_out_fields: expect.arrayContaining(["priority"]),
           }],
         },
       });
+      expect(restored.candidate.pack.resources[0]!.kept_out_fields).not.toContain("status");
       expect(restored.confirmed_decisions).not.toEqual(
         restored.candidate.unresolved_decisions,
       );
-      await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
-        .rejects.toMatchObject({ code: "ENOENT" });
+      const active = (await loadActivatedExplorationBoundaries(root))
+        .find((boundary) => boundary.pack.name === build.exploration_boundary.pack.name)!;
+      expect(active.activation.digest).toBe(activeDigest);
+      expect(active.pack.resources[0]!.kept_out_fields).not.toContain("status");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("keeps overlapping table policy isolated by immutable boundary identity", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-policy-isolation-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const activeDigest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+      await activateExplorationBoundary({
+        projectRoot: root,
+        candidate: build.exploration_boundary,
+        expectedDigest: activeDigest,
+        actor: "original-reviewer",
+        confirmation: `ACTIVATE ${activeDigest}`,
+        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        currentInspection: inspection,
+      });
+      let context = await loadBoundaryReviewContext(root);
+      const originalName = context.candidate.pack.name;
+      const originalCandidate = structuredClone(context.candidate);
+      await synchronizeBoundaryLibrary({
+        projectRoot: root,
+        draft: context.draft,
+        currentCandidate: context.candidate,
+        currentProgress: context.progress,
+      });
+      const second = await createSavedBoundary({
+        projectRoot: root,
+        draft: context.draft,
+        currentCandidate: context.candidate,
+        currentProgress: context.progress,
+        name: "finance_lens",
+        resourceId: "public.service_visits",
+        actor: "finance-reviewer",
+      });
+      const secondBoundaryId = second.boundary_id;
+
+      const withhold = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.service_visits",
+        withhold_from_model_fields: ["scheduled_at"],
+        field_enum: { field: "status", values: ["completed"] },
+        groupable_fields: [],
+        minimum_cohort_size: 2,
+        actor: "finance-reviewer",
+        reason: "Use a narrower finance-only view and owner-reviewed cohort in this boundary.",
+      }, async () => inspection);
+      await commitBoundaryResourceReviewMutation(root, withhold);
+      const privacyEdit = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.service_visits",
+        minimum_cohort_size: 3,
+        actor: "finance-reviewer",
+        reason: "Adjust only this boundary's privacy threshold without changing its operation grants.",
+      }, async () => inspection);
+      await commitBoundaryResourceReviewMutation(root, privacyEdit);
+      context = await loadBoundaryReviewContext(root);
+      expect(context.candidate.pack.resources[0]).toMatchObject({
+        model_withheld_fields: expect.arrayContaining(["scheduled_at"]),
+        field_enums: { status: ["completed"] },
+        groupable_fields: [],
+        minimum_cohort_size: 3,
+        minimum_cohort_overridden: true,
+      });
+      const stillActive = (await loadActivatedExplorationBoundaries(root))
+        .find((boundary) => boundary.pack.name === originalName)!;
+      expect(stillActive.pack.resources[0]!.model_withheld_fields ?? []).not.toContain("scheduled_at");
+      expect(stillActive.pack.resources[0]!.field_enums.status).toEqual(["scheduled", "completed"]);
+      expect(stillActive.pack.resources[0]!.minimum_cohort_size).toBe(5);
+      expect(stillActive.activation.digest).toBe(activeDigest);
+      await synchronizeBoundaryLibrary({
+        projectRoot: root,
+        draft: context.draft,
+        currentCandidate: context.candidate,
+        currentProgress: context.progress,
+      });
+
+      const restored = await switchSavedBoundary({
+        projectRoot: root,
+        draft: context.draft,
+        currentCandidate: context.candidate,
+        currentProgress: context.progress,
+        name: originalName,
+      });
+      expect(restored.candidate).toEqual(originalCandidate);
+      expect(restored.candidate.pack.resources[0]!.model_withheld_fields ?? [])
+        .not.toContain("scheduled_at");
+      expect(restored.invalidated_decisions).toEqual([]);
+      expect(restored.boundary_id).not.toBe(secondBoundaryId);
+
+      context = await loadBoundaryReviewContext(root);
+      const finance = await switchSavedBoundary({
+        projectRoot: root,
+        draft: context.draft,
+        currentCandidate: context.candidate,
+        currentProgress: context.progress,
+        name: "finance_lens",
+      });
+      expect(finance.candidate.pack.resources[0]!.model_withheld_fields).toContain("scheduled_at");
+      const renamed = await renameSavedBoundary({
+        projectRoot: root,
+        draft: context.draft,
+        currentCandidate: finance.candidate,
+        currentProgress: finance,
+        name: "finance_lens",
+        newName: "finance_reviewed",
+        actor: "finance-reviewer",
+        reason: "Use the reviewed finance boundary label.",
+      });
+      expect(renamed.boundary_id).toBe(secondBoundaryId);
+      expect(renamed.review_overrides.resources["public.service_visits"]?.fields?.scheduled_at)
+        .toMatchObject({ exposure: "withhold_from_model" });
+      expect(renamed.review_overrides.resources["public.service_visits"]?.field_enums?.status)
+        .toMatchObject({ values: ["completed"] });
+      expect(renamed.review_overrides.resources["public.service_visits"]?.minimum_cohort)
+        .toMatchObject({ value: 3 });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("starts an overlapping boundary from policy-neutral schema facts instead of the selected policy", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-neutral-start-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const selectedPolicy = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.service_visits",
+        withhold_from_model_fields: ["scheduled_at"],
+        field_enum: { field: "status", values: ["completed"] },
+        minimum_cohort_size: 2,
+        actor: "support-reviewer",
+        reason: "Use a narrow support view only in the selected boundary.",
+      }, async () => inspection);
+      await commitBoundaryResourceReviewMutation(root, selectedPolicy);
+      const context = await loadBoundaryReviewContext(root);
+      await synchronizeBoundaryLibrary({
+        projectRoot: root,
+        draft: context.draft,
+        currentCandidate: context.candidate,
+        currentProgress: context.progress,
+      });
+      const created = await createSavedBoundary({
+        projectRoot: root,
+        draft: context.draft,
+        currentCandidate: context.candidate,
+        currentProgress: context.progress,
+        name: "independent_lens",
+        resourceId: "public.service_visits",
+        actor: "finance-reviewer",
+      });
+      const resource = created.candidate.pack.resources[0]!;
+      expect(resource.model_withheld_fields ?? []).not.toContain("scheduled_at");
+      expect(resource.field_enums.status).toEqual(["scheduled", "completed"]);
+      expect(resource.minimum_cohort_size).toBe(5);
+      expect(created.review_overrides.resources).toEqual({});
+      expect(created.boundary_id).not.toBe(context.progress!.boundary_id);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("migrates legacy review state from the exact boundary without trusting a conflicting global override", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-policy-migration-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const digest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+      await activateExplorationBoundary({
+        projectRoot: root,
+        candidate: build.exploration_boundary,
+        expectedDigest: digest,
+        actor: "legacy-reviewer",
+        confirmation: `ACTIVATE ${digest}`,
+        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        currentInspection: inspection,
+      });
+      const current = createBoundaryReviewProgress({
+        draft: build.exploration_boundary,
+        candidate: build.exploration_boundary,
+        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        actor: "legacy-reviewer",
+        revision: 1,
+        now: "2026-08-07T12:00:00.000Z",
+      });
+      const {
+        boundary_id: _boundaryId,
+        review_overrides: _reviewOverrides,
+        policy_migration: _policyMigration,
+        ...legacyProgress
+      } = current;
+      await fs.writeFile(
+        path.join(root, ".synapsor/boundary-review-progress.json"),
+        `${JSON.stringify({
+          ...legacyProgress,
+          schema_version: "synapsor.boundary-review-progress.v2",
+        }, null, 2)}\n`,
+      );
+      const conflictingGlobal = structuredClone(build.overrides);
+      conflictingGlobal.resources["public.service_visits"] = {
+        fields: {
+          scheduled_at: {
+            exposure: "withhold_from_model",
+            actor: "different-boundary-reviewer",
+            reason: "This project-global decision belongs to a different legacy boundary.",
+            decided_at: "2026-08-07T12:30:00.000Z",
+          },
+        },
+      };
+      await fs.writeFile(
+        path.join(root, ".synapsor/review-overrides.json"),
+        `${JSON.stringify(conflictingGlobal, null, 2)}\n`,
+      );
+
+      const conflictingDraft = buildAutoBoundary({
+        inspection,
+        project: {
+          root,
+          package_manager: "npm",
+          frameworks: ["node"],
+          schema_inputs: [],
+          database_env_names: ["DATABASE_URL"],
+        },
+        sourceEnv: "DATABASE_URL",
+        inspectedSchema: "public",
+        overrides: conflictingGlobal,
+      }).exploration_boundary;
+      const preservedLegacy = await readBoundaryReviewProgress(root, conflictingDraft);
+      expect(preservedLegacy).toMatchObject({
+        policy_migration: { status: "review_required" },
+        candidate: build.exploration_boundary,
+      });
+      expect(preservedLegacy!.candidate.pack.resources[0]!.model_withheld_fields ?? [])
+        .not.toContain("scheduled_at");
+
+      await expect(boundaryActivateCommandInternal([
+        "--project-root", root,
+      ], async () => inspection)).rejects.toThrow(
+        /legacy project-wide review settings.*not yet isolated.*save a reviewed setting.*Rescan/s,
+      );
+
+      const migratedPreview = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.service_visits",
+        minimum_cohort_size: 2,
+        actor: "boundary-owner",
+        reason: "Record this boundary's reviewed cohort independently.",
+      }, async () => inspection);
+      await commitBoundaryResourceReviewMutation(root, migratedPreview);
+
+      const context = await loadBoundaryReviewContext(root);
+      expect(context.progress).toMatchObject({
+        schema_version: "synapsor.boundary-review-progress.v3",
+        boundary_id: expect.stringMatching(/^bnd_[a-f0-9]{32}$/),
+        policy_migration: {
+          status: "complete",
+          source: "legacy_exact_boundary_revision",
+        },
+        review_overrides: {
+          resources: {
+            "public.service_visits": {
+              minimum_cohort: { value: 2 },
+            },
+          },
+        },
+      });
+      expect(context.progress!.review_overrides.resources["public.service_visits"]?.fields)
+        .toBeUndefined();
+      expect(context.candidate.pack.resources[0]!.model_withheld_fields ?? [])
+        .not.toContain("scheduled_at");
+      const active = (await loadActivatedExplorationBoundaries(root))[0]!;
+      expect(active.activation.digest).toBe(digest);
+      expect(active.pack.resources[0]!.minimum_cohort_size).toBe(5);
+      expect(active.pack.resources[0]!.model_withheld_fields ?? []).not.toContain("scheduled_at");
+      const backup = JSON.parse(await fs.readFile(
+        path.join(root, ".synapsor/review-overrides.legacy-backup.json"),
+        "utf8",
+      ));
+      expect(backup.resources["public.service_visits"].fields.scheduled_at.exposure)
+        .toBe("withhold_from_model");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("never assigns one ambiguous legacy override to either overlapping boundary", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-policy-ambiguous-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    try {
+      await fs.mkdir(path.join(root, ".synapsor"), { recursive: true });
+      const progress = createBoundaryReviewProgress({
+        draft: build.exploration_boundary,
+        candidate: build.exploration_boundary,
+        confirmedDecisions: [],
+        actor: "legacy-reviewer",
+        revision: 1,
+      });
+      const {
+        boundary_id: _boundaryId,
+        review_overrides: _reviewOverrides,
+        policy_migration: _policyMigration,
+        ...legacyProgress
+      } = progress;
+      const first = {
+        ...legacyProgress,
+        schema_version: "synapsor.boundary-review-progress.v2",
+      };
+      const secondCandidate = structuredClone(build.exploration_boundary);
+      secondCandidate.pack.name = "finance_lens";
+      const second = {
+        ...first,
+        candidate: secondCandidate,
+        candidate_digest: explorationBoundaryCandidateDigest(secondCandidate),
+      };
+      await fs.writeFile(
+        path.join(root, ".synapsor/boundary-review-progress.json"),
+        `${JSON.stringify(first, null, 2)}\n`,
+      );
+      await fs.writeFile(path.join(root, ".synapsor/boundary-library.json"), `${JSON.stringify({
+        schema_version: "synapsor.boundary-library.v1",
+        selected_name: build.exploration_boundary.pack.name,
+        boundaries: {
+          [build.exploration_boundary.pack.name]: first,
+          finance_lens: second,
+        },
+        updated_at: "2026-08-07T12:00:00.000Z",
+      }, null, 2)}\n`);
+      const global = structuredClone(build.overrides);
+      global.resources["public.service_visits"] = {
+        fields: {
+          scheduled_at: {
+            exposure: "withhold_from_model",
+            actor: "unknown-legacy-owner",
+            reason: "Ownership is ambiguous across the two saved boundaries.",
+            decided_at: "2026-08-07T12:00:00.000Z",
+          },
+        },
+      };
+      await fs.writeFile(
+        path.join(root, ".synapsor/review-overrides.json"),
+        `${JSON.stringify(global, null, 2)}\n`,
+      );
+
+      await expect(loadCompletedBoundaryReviewOverrides({
+        projectRoot: root,
+        boundaryName: build.exploration_boundary.pack.name,
+      })).resolves.toBeUndefined();
+      await expect(loadCompletedBoundaryReviewOverrides({
+        projectRoot: root,
+        boundaryName: "finance_lens",
+      })).resolves.toBeUndefined();
+      const normalized = await readBoundaryReviewProgress(root, build.exploration_boundary);
+      expect(normalized).toMatchObject({
+        policy_migration: { status: "review_required" },
+        review_overrides: { resources: {} },
+        candidate: build.exploration_boundary,
+      });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a self-consistent saved policy candidate bound to different shared database facts", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-policy-lock-"));
+    const inspection = boundaryInspection();
+    const project = {
+      root,
+      package_manager: "npm" as const,
+      frameworks: ["node"],
+      schema_inputs: [],
+      database_env_names: ["DATABASE_URL"],
+    };
+    const original = buildAutoBoundary({
+      inspection,
+      project,
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const driftedInspection = structuredClone(inspection);
+    driftedInspection.tables[0]!.columns.push({
+      name: "new_schema_field",
+      data_type: "text",
+      nullable: true,
+      generated: false,
+      ordinal_position: 99,
+      suggestions: {
+        tenant: false,
+        conflict: false,
+        sensitive: false,
+        immutable: false,
+        large_or_binary: false,
+      },
+    });
+    const drifted = buildAutoBoundary({
+      inspection: driftedInspection,
+      project,
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build: original });
+      await writeAutoBoundaryArtifacts({
+        projectRoot: root,
+        build: drifted,
+        force: true,
+        preserveReviewProgress: true,
+      });
+      const invalid = createBoundaryReviewProgress({
+        draft: original.exploration_boundary,
+        candidate: drifted.exploration_boundary,
+        confirmedDecisions: [],
+        actor: "local-boundary-library",
+        revision: 1,
+      });
+      await saveBoundaryReviewProgress(root, invalid);
+      await expect(readBoundaryReviewProgress(root, original.exploration_boundary))
+        .rejects.toThrow("different schema or role facts");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("records a narrow schema-enum allowlist and disables value operations when none remain", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-enum-review-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      expect(build.exploration_boundary.pack.resources[0]!.field_enums.status)
+        .toEqual(["scheduled", "completed"]);
+
+      const narrowed = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.service_visits",
+        field_enum: { field: "status", values: ["completed"] },
+        actor: "alice",
+        reason: "Keep the agent on completed service visits only.",
+      }, async () => inspection);
+      expect(narrowed.semantic_diff.reviewed_enum_changes).toEqual([{
+        field: "status",
+        before: ["scheduled", "completed"],
+        after: ["completed"],
+      }]);
+      await commitBoundaryResourceReviewMutation(root, narrowed);
+      let context = await loadBoundaryReviewContext(root);
+      expect(context.candidate.pack.resources[0]!.field_enums.status).toEqual(["completed"]);
+
+      await expect(prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.service_visits",
+        field_enum: { field: "status", values: ["completed", "invented"] },
+        actor: "alice",
+        reason: "This must not widen the database-declared set.",
+      }, async () => inspection)).rejects.toThrow(/may only remove schema-declared values.*invented/i);
+
+      const disabled = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.service_visits",
+        field_enum: { field: "status", values: [] },
+        actor: "alice",
+        reason: "Do not let this boundary filter or group by service status.",
+      }, async () => inspection);
+      await commitBoundaryResourceReviewMutation(root, disabled);
+      context = await loadBoundaryReviewContext(root);
+      const resource = context.candidate.pack.resources[0]!;
+      expect(resource.field_enums).not.toHaveProperty("status");
+      expect(resource.filterable_fields).not.toHaveProperty("status");
+      expect(resource.groupable_fields).not.toContain("status");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("restores current inspected operation suggestions when a kept-out enum becomes model-visible again", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-field-restore-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const fieldOperations = (
+      resource: typeof build.exploration_boundary.pack.resources[number],
+      field: string,
+    ) => ({
+      selectable: resource.selectable_fields.includes(field),
+      filters: resource.filterable_fields[field] ?? null,
+      sortable: resource.sortable_fields.includes(field),
+      groupable: resource.groupable_fields.includes(field),
+      aggregate: resource.aggregate_measures.includes(field),
+      aggregate_functions: resource.aggregate_measure_functions?.[field] ?? null,
+      presence: resource.presence_measure_fields?.includes(field) ?? false,
+      count_distinct: resource.count_distinct_fields.includes(field),
+      time_buckets: resource.time_bucket_fields[field] ?? null,
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const keepOut = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.service_visits",
+        keep_out_fields: ["status"],
+        actor: "owner@example.test",
+        reason: "Temporarily remove lifecycle status from this boundary.",
+      }, async () => inspection);
+      await commitBoundaryResourceReviewMutation(root, keepOut);
+
+      let context = await loadBoundaryReviewContext(root);
+      const keptOutResource = context.candidate.pack.resources[0]!;
+      expect(keptOutResource.kept_out_fields).toContain("status");
+      expect(fieldOperations(keptOutResource, "status")).toEqual({
+        selectable: false,
+        filters: null,
+        sortable: false,
+        groupable: false,
+        aggregate: false,
+        aggregate_functions: null,
+        presence: false,
+        count_distinct: false,
+        time_buckets: null,
+      });
+
+      const keptOutDigest = explorationBoundaryCandidateDigest(context.candidate);
+      await activateExplorationBoundary({
+        projectRoot: root,
+        candidate: context.candidate,
+        expectedDigest: keptOutDigest,
+        actor: "owner@example.test",
+        confirmation: `ACTIVATE ${keptOutDigest}`,
+        confirmedDecisions: context.candidate.unresolved_decisions,
+        currentInspection: inspection,
+      });
+
+      const restore = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.service_visits",
+        allow_reviewed_fields: ["status"],
+        actor: "owner@example.test",
+        reason: "Restore reviewed categorical analysis for lifecycle status.",
+      }, async () => inspection);
+      const restoredResource = restore.candidate.pack.resources[0]!;
+      const generatedResource = restore.build.exploration_boundary.pack.resources[0]!;
+      expect(restoredResource.kept_out_fields).not.toContain("status");
+      expect(fieldOperations(restoredResource, "status"))
+        .toEqual(fieldOperations(generatedResource, "status"));
+      expect(fieldOperations(restoredResource, "status")).toMatchObject({
+        selectable: true,
+        filters: expect.arrayContaining(["eq", "in"]),
+        sortable: true,
+        groupable: true,
+        presence: true,
+        count_distinct: true,
+      });
+      await commitBoundaryResourceReviewMutation(root, restore);
+
+      const stillActive = (await loadActivatedExplorationBoundaries(root))[0]!;
+      expect(stillActive.activation.digest).toBe(keptOutDigest);
+      expect(fieldOperations(stillActive.pack.resources[0]!, "status").selectable).toBe(false);
+
+      context = await loadBoundaryReviewContext(root);
+      const restoredDigest = explorationBoundaryCandidateDigest(context.candidate);
+      const activated = await activateExplorationBoundary({
+        projectRoot: root,
+        candidate: context.candidate,
+        expectedDigest: restoredDigest,
+        actor: "owner@example.test",
+        confirmation: `ACTIVATE ${restoredDigest}`,
+        confirmedDecisions: context.candidate.unresolved_decisions,
+        currentInspection: inspection,
+      });
+      expect(fieldOperations(activated.pack.resources[0]!, "status"))
+        .toEqual(fieldOperations(restoredResource, "status"));
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("repairs a legacy model-visible field with no analytical operations without changing active authority", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-field-repair-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const narrowedCandidate = structuredClone(build.exploration_boundary);
+      const narrowedResource = narrowedCandidate.pack.resources[0]!;
+      expect(narrowedResource.selectable_fields).toContain("status");
+      narrowedResource.sortable_fields = narrowedResource.sortable_fields.filter((field) => field !== "status");
+      narrowedResource.groupable_fields = narrowedResource.groupable_fields.filter((field) => field !== "status");
+      narrowedResource.aggregate_measures = narrowedResource.aggregate_measures.filter((field) => field !== "status");
+      if (narrowedResource.aggregate_measure_functions) {
+        delete narrowedResource.aggregate_measure_functions.status;
+      }
+      narrowedResource.presence_measure_fields = (narrowedResource.presence_measure_fields ?? [])
+        .filter((field) => field !== "status");
+      narrowedResource.count_distinct_fields = narrowedResource.count_distinct_fields
+        .filter((field) => field !== "status");
+      delete narrowedResource.time_bucket_fields.status;
+      await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({
+        draft: build.exploration_boundary,
+        candidate: narrowedCandidate,
+        confirmedDecisions: narrowedCandidate.unresolved_decisions,
+        actor: "narrowing-owner@example.test",
+        revision: 1,
+        now: "2026-08-15T11:00:00.000Z",
+      }));
+      const unchangedNarrowing = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.service_visits",
+        allow_reviewed_fields: ["status"],
+        actor: "owner@example.test",
+        reason: "Repeat the visible tier without changing deliberate analytical narrowing.",
+      }, async () => inspection);
+      expect(unchangedNarrowing.semantic_diff.analytical_operation_changes).toEqual([]);
+      expect(unchangedNarrowing.candidate.pack.resources[0]!.filterable_fields.status)
+        .toEqual(expect.arrayContaining(["eq", "in"]));
+      expect(unchangedNarrowing.candidate.pack.resources[0]!.groupable_fields).not.toContain("status");
+
+      const legacyCandidate = structuredClone(narrowedCandidate);
+      const legacyResource = legacyCandidate.pack.resources[0]!;
+      delete legacyResource.filterable_fields.status;
+      const legacyProgress = createBoundaryReviewProgress({
+        draft: build.exploration_boundary,
+        candidate: legacyCandidate,
+        confirmedDecisions: legacyCandidate.unresolved_decisions,
+        actor: "legacy-owner@example.test",
+        revision: 2,
+        now: "2026-08-15T12:00:00.000Z",
+      });
+      await saveBoundaryReviewProgress(root, legacyProgress);
+
+      const legacyDigest = explorationBoundaryCandidateDigest(legacyCandidate);
+      await activateExplorationBoundary({
+        projectRoot: root,
+        candidate: legacyCandidate,
+        expectedDigest: legacyDigest,
+        actor: "legacy-owner@example.test",
+        confirmation: `ACTIVATE ${legacyDigest}`,
+        confirmedDecisions: legacyCandidate.unresolved_decisions,
+        currentInspection: inspection,
+      });
+
+      const strandedView = await inspectBoundaryResourceReview(root, "public.service_visits");
+      expect(strandedView.operation_repair_fields).toEqual(["status"]);
+      const generatedWithoutReturn = structuredClone(strandedView.generated_candidate!);
+      generatedWithoutReturn.selectable_fields = generatedWithoutReturn.selectable_fields
+        .filter((field) => field !== "status");
+      expect(reviewedBoundaryOperationRepairFields(
+        strandedView.candidate,
+        generatedWithoutReturn,
+      )).toEqual([]);
+      const summaries = await listBoundaryResourceReviews(root);
+      expect(summaries.find((resource) => resource.resource_id === "public.service_visits")
+        ?.operation_repair_fields).toEqual(["status"]);
+
+      const repair = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.service_visits",
+        allow_reviewed_fields: ["status"],
+        actor: "owner@example.test",
+        reason: "Repair the analytical grants missing from the legacy review.",
+      }, async () => inspection);
+      expect(repair.semantic_diff.added_visible_fields).toEqual([]);
+      expect(repair.semantic_diff.removed_visible_fields).toEqual([]);
+      expect(repair.semantic_diff.analytical_operation_changes).toEqual([{
+        field: "status",
+        before: [],
+        after: expect.arrayContaining(["filter(eq/neq/in)", "sort", "group", "presence measures", "count distinct"]),
+      }]);
+      expect(repair.candidate_digest).not.toBe(legacyDigest);
+      await commitBoundaryResourceReviewMutation(root, repair);
+
+      const repairedView = await inspectBoundaryResourceReview(root, "public.service_visits");
+      expect(repairedView.operation_repair_fields).toEqual([]);
+      expect(repairedView.candidate?.filterable_fields.status)
+        .toEqual(expect.arrayContaining(["eq", "in"]));
+      expect(repairedView.candidate?.groupable_fields).toContain("status");
+      expect(repairedView.candidate?.presence_measure_fields).toContain("status");
+
+      const stillActive = (await loadActivatedExplorationBoundaries(root))[0]!;
+      expect(stillActive.activation.digest).toBe(legacyDigest);
+      expect(stillActive.pack.resources[0]!.groupable_fields).not.toContain("status");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("records a reviewed child-count metric through the shared CLI and Workbench mutation path", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-child-count-review-"));
+    const inspection = derivedFirstTableInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const childReview = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.order_items",
+        include: true,
+        row_identity: "id",
+        tenant_scope_path: "order_items_order_id_fkey",
+        actor: "analytics-owner",
+        reason: "Every item belongs to its required reviewed order.",
+      }, async () => inspection);
+      await commitBoundaryResourceReviewMutation(root, childReview);
+      const preview = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.orders",
+        derived_measure: {
+          name: "order_item_count",
+          label: "Order item count",
+          shape: "child_count_total",
+          child_resource: "public.order_items",
+          relationship: "order_items_order_id_fkey",
+        },
+        actor: "analytics-owner",
+        reason: "Count scoped item rows without exposing a one-to-many join.",
+      }, async () => inspection);
+      expect(preview.candidate.pack.resources.find((resource) =>
+        resource.id === "public.orders")?.derived_measures).toEqual([{
+        name: "order_item_count",
+        label: "Order item count",
+        shape: "child_count_total",
+        child_resource: "public.order_items",
+        relationship: "order_items_order_id_fkey",
+      }]);
+      expect(preview.build.overrides.resources["public.orders"]?.derived_measures)
+        .toMatchObject({
+          order_item_count: {
+            actor: "analytics-owner",
+            reason: "Count scoped item rows without exposing a one-to-many join.",
+          },
+        });
+      await commitBoundaryResourceReviewMutation(root, preview);
+      const context = await loadBoundaryReviewContext(root);
+      expect(context.candidate.pack.resources.find((resource) =>
+        resource.id === "public.orders")?.derived_measures?.[0]?.name).toBe("order_item_count");
+      await expect(prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.order_items",
+        exclude: true,
+        actor: "analytics-owner",
+        reason: "Attempting to remove a reviewed metric dependency must fail closed.",
+      }, async () => inspection)).rejects.toThrow(
+        /public\.orders: reviewed metric order_item_count uses child public\.order_items/i,
+      );
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("records and removes reviewed automatic numeric bands through the shared CLI and Workbench mutation path", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-auto-band-review-"));
+    const inspection = boundaryInspection();
+    inspection.tables[0]!.columns.push({
+      name: "duration_ms",
+      data_type: "integer",
+      nullable: false,
+      generated: false,
+      ordinal_position: inspection.tables[0]!.columns.length + 1,
+      suggestions: {
+        tenant: false,
+        conflict: false,
+        sensitive: false,
+        immutable: false,
+        large_or_binary: false,
+      },
+    });
+    inspection.tables[0]!.suggestions.default_visible_columns.push("duration_ms");
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const policy = {
+      field: "duration_ms",
+      methods: ["quantile", "equal_width"] as Array<"quantile" | "equal_width">,
+      min_buckets: 3,
+      max_buckets: 8,
+      min_bucket_width: 100,
+      label_style: "ordinal" as const,
+    };
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const preview = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.service_visits",
+        auto_band: policy,
+        actor: "analytics-owner",
+        reason: "Allow bounded duration groups without model-authored edges.",
+      }, async () => inspection);
+      expect(preview.candidate.pack.resources[0]!.auto_bands).toEqual([policy]);
+      expect(preview.build.overrides.resources["public.service_visits"]?.auto_bands)
+        .toMatchObject({
+          duration_ms: {
+            actor: "analytics-owner",
+            reason: "Allow bounded duration groups without model-authored edges.",
+          },
+        });
+      await commitBoundaryResourceReviewMutation(root, preview);
+
+      let context = await loadBoundaryReviewContext(root);
+      expect(context.candidate.pack.resources[0]!.auto_bands).toEqual([policy]);
+      expect(formatFocusedBoundaryActivationReview(context.bundle, false)).toContain(
+        "duration_ms: automatic quantile or equal_width, 3-8 buckets, ordinal labels",
+      );
+
+      const removal = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.service_visits",
+        auto_band: { ...policy, remove: true },
+        actor: "analytics-owner",
+        reason: "Return duration grouping to fixed reviewed bands only.",
+      }, async () => inspection);
+      await commitBoundaryResourceReviewMutation(root, removal);
+      context = await loadBoundaryReviewContext(root);
+      expect(context.candidate.pack.resources[0]!.auto_bands).toBeUndefined();
+      expect(context.progress?.review_overrides.resources["public.service_visits"]?.auto_bands)
+        .toBeUndefined();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("refuses automatic numeric-band review on MySQL 5.7 through the shared CLI and Workbench mutation path", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-mysql57-auto-band-"));
+    const inspection = boundaryInspection();
+    inspection.engine = "mysql";
+    inspection.server_version = "MySQL 5.7.44-log";
+    inspection.tables[0]!.columns.push({
+      name: "duration_ms",
+      data_type: "integer",
+      nullable: false,
+      generated: false,
+      ordinal_position: inspection.tables[0]!.columns.length + 1,
+      suggestions: {
+        tenant: false,
+        conflict: false,
+        sensitive: false,
+        immutable: false,
+        large_or_binary: false,
+      },
+    });
+    inspection.tables[0]!.suggestions.default_visible_columns.push("duration_ms");
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await expect(prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.service_visits",
+        auto_band: {
+          field: "duration_ms",
+          methods: ["quantile"],
+          min_buckets: 3,
+          max_buckets: 8,
+          label_style: "ordinal",
+        },
+        actor: "analytics-owner",
+        reason: "This request must be rejected before it can become authority.",
+      }, async () => inspection)).rejects.toThrow(
+        /automatic numeric bands.*unavailable.*MySQL 5\.7/i,
+      );
+      const context = await loadBoundaryReviewContext(root);
+      expect(context.candidate.pack.resources[0]!.auto_bands).toBeUndefined();
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -2363,6 +5037,187 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 20_000);
 
+  it("lists the exact two tools for an active local Explore-only project", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-explore-tools-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const guided = await initializeGuidedProject({
+        projectRoot: root,
+        build,
+        runnerVersion: "1.7.0",
+      });
+      await expect(main([
+        "mcp", "client-config",
+        "--client", "claude-code",
+        "--config", guided.config_path,
+      ])).rejects.toThrow(
+        /Local Explore client config requires an active reviewed development\/staging boundary.*start --cli/s,
+      );
+      const digest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+      await activateExplorationBoundary({
+        projectRoot: root,
+        candidate: build.exploration_boundary,
+        expectedDigest: digest,
+        actor: "reviewer",
+        confirmation: `ACTIVATE ${digest}`,
+        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        currentInspection: inspection,
+      });
+
+      let output = "";
+      vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+        output += String(chunk);
+        return true;
+      });
+      await expect(main([
+        "tools", "list",
+        "--config", guided.config_path,
+        "--store", ":memory:",
+        "--json",
+      ])).resolves.toBe(0);
+      const preview = JSON.parse(output);
+      expect(preview).toMatchObject({
+        ok: true,
+        surface: "local_explore",
+        alias_mode: "canonical",
+        exposed_to_mcp: ["app.describe_data", "app.explore_data"],
+      });
+      expect(preview.checks).toContainEqual({
+        name: "model-facing tools present",
+        ok: true,
+        detail: "app.describe_data, app.explore_data",
+      });
+      expect(JSON.stringify(preview)).not.toContain("semantic tools present");
+
+      output = "";
+      await expect(main([
+        "mcp", "client-config",
+        "--client", "claude-code",
+        "--config", guided.config_path,
+        "--include-instructions",
+      ])).resolves.toBe(0);
+      const clientConfig = JSON.parse(output);
+      expect(clientConfig.mcpServers.synapsor).toEqual({
+        command: "synapsor-runner",
+        args: [
+          "mcp", "serve",
+          "--authoring",
+          "--project-root", root,
+        ],
+      });
+      expect(clientConfig.agent_instructions).toMatchObject({
+        alias_mode: "canonical",
+        recommended_system_prompt: expect.stringContaining(
+          "Use app.describe_data only to discover exact reviewed",
+        ),
+      });
+      expect(clientConfig.agent_instructions.recommended_system_prompt).not.toContain("propose-first");
+
+      await expect(main([
+        "mcp", "client-config",
+        "--client", "claude-code",
+        "--config", guided.config_path,
+        "--alias-mode", "openai",
+      ])).rejects.toThrow(/Local Explore client config uses fixed app\.describe_data\/app\.explore_data names/);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("reports serving boundaries separately from the disabled boundary being edited", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-status-active-set-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const activeDigest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+      await activateExplorationBoundary({
+        projectRoot: root,
+        candidate: build.exploration_boundary,
+        expectedDigest: activeDigest,
+        actor: "first-reviewer",
+        confirmation: `ACTIVATE ${activeDigest}`,
+        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        currentInspection: inspection,
+      });
+      const disabled = await createSavedBoundary({
+        projectRoot: root,
+        draft: build.exploration_boundary,
+        currentCandidate: build.exploration_boundary,
+        name: "reviewed_catalog",
+        resourceId: "public.service_visits",
+        actor: "second-reviewer",
+      });
+
+      await expect(boundaryCommand([
+        "status", "--project-root", root, "--json",
+      ])).resolves.toBe(0);
+      const status = JSON.parse(output);
+      expect(status).toMatchObject({
+        activation: "active",
+        deployment_state: "active",
+        active_boundaries: [{
+          name: build.exploration_boundary.pack.name,
+          tables: ["public.service_visits"],
+          digest: activeDigest,
+        }],
+        active_boundary_name: build.exploration_boundary.pack.name,
+        active_tables: ["public.service_visits"],
+        editing: {
+          name: "reviewed_catalog",
+          state: "disabled_draft",
+          tables: ["public.service_visits"],
+          decisions_confirmed: 0,
+          decisions_total: disabled.candidate.unresolved_decisions.length,
+        },
+      });
+
+      output = "";
+      await expect(boundaryCommand([
+        "status", "--project-root", root,
+      ])).resolves.toBe(0);
+      expect(output).toContain("Deployment state: active");
+      expect(output).toContain(
+        `Active boundaries: ${build.exploration_boundary.pack.name} (1 table)`,
+      );
+      expect(output).toContain(
+        `Editing: reviewed_catalog (1 table, disabled draft, 0/${disabled.candidate.unresolved_decisions.length} decisions)`,
+      );
+      expect(output).not.toContain("Active boundary: none");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
   it("creates and activates an additional boundary in the active development profile", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-profile-"));
     const inspection = boundaryInspection();
@@ -2377,6 +5232,21 @@ describe("boundary operator-plane CLI", () => {
       },
       sourceEnv: "DATABASE_URL",
       inspectedSchema: "public",
+      overrides: {
+        schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+        resources: {
+          "public.service_visits": {
+            fields: {
+              scheduled_at: {
+                exposure: "withhold_from_model",
+                actor: "first-reviewer",
+                reason: "Keep exact visit timestamps out of the first boundary only.",
+                decided_at: "2026-08-12T12:00:00.000Z",
+              },
+            },
+          },
+        },
+      },
     });
     try {
       await writeAutoBoundaryArtifacts({ projectRoot: root, build });
@@ -2407,23 +5277,395 @@ describe("boundary operator-plane CLI", () => {
         actor: "second-reviewer",
       });
       expect(progress.candidate.deployment_profile).toBe("development");
-
-      const secondDigest = explorationBoundaryCandidateDigest(progress.candidate);
-      await activateExplorationBoundary({
-        projectRoot: root,
+      expect(progress.candidate.generation_lock_fingerprint)
+        .not.toBe(build.exploration_boundary.generation_lock_fingerprint);
+      const completed = createBoundaryReviewProgress({
+        draft: build.exploration_boundary,
         candidate: progress.candidate,
-        expectedDigest: secondDigest,
-        actor: "second-reviewer",
-        confirmation: `ACTIVATE ${secondDigest}`,
         confirmedDecisions: progress.candidate.unresolved_decisions,
-        currentInspection: inspection,
-        activeSetMode: "add",
+        previous: progress,
+        actor: "second-reviewer",
+        revision: progress.revision + 1,
       });
+      await saveBoundaryReviewProgress(root, completed);
+      const session: BoundaryReviewInteractiveSession = {
+        chooseResource: async () => undefined,
+        editFieldTiers: async () => undefined,
+        promptText: async () => "second-reviewer",
+        confirm: async () => true,
+      };
+      await expect(boundaryActivateCommandInternal(
+        ["--project-root", root, "--actor", "second-reviewer"],
+        async () => inspection,
+        session,
+      )).resolves.toBe(0);
       const active = await loadActivatedExplorationBoundaries(root);
       expect(active).toHaveLength(2);
       expect(active.map((boundary) => boundary.deployment_profile)).toEqual([
         "development",
         "development",
+      ]);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("creates and activates a second MySQL boundary from explicit trusted bindings", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-mysql-second-boundary-"));
+    const inspection = boundaryInspection();
+    inspection.engine = "mysql";
+    inspection.server_version = "MySQL 8.4";
+    inspection.schemas = ["clinicdb"];
+    inspection.tables[0]!.schema = "clinicdb";
+    inspection.tables[0]!.row_level_security = false;
+    inspection.tables[0]!.row_level_security_policies = [];
+    inspection.tables[0]!.role_posture = {
+      ...inspection.tables[0]!.role_posture!,
+      row_security_forced: false,
+      row_security_effective_for_current_role: false,
+    };
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "clinicdb",
+      configuredTrustedContext: {
+        schema_version: CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION,
+        provider: "environment",
+        tenant_binding: "tenant_id",
+        tenant_env: "SYNAPSOR_TENANT_ID",
+        principal_env: "SYNAPSOR_PRINCIPAL",
+      },
+      overrides: {
+        schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+        resources: {
+          "clinicdb.service_visits": {
+            fields: {
+              scheduled_at: {
+                exposure: "withhold_from_model",
+                actor: "first-reviewer",
+                reason: "Keep exact timestamps out of the first boundary only.",
+                decided_at: "2026-08-12T20:00:00.000Z",
+              },
+            },
+          },
+        },
+      },
+    });
+    try {
+      expect(build.policy_baseline.boundary.pack.resources).toEqual([
+        expect.objectContaining({
+          id: "clinicdb.service_visits",
+          tenant_key: "tenant_id",
+        }),
+      ]);
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const reviewed = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "clinicdb.service_visits",
+        minimum_cohort_size: 4,
+        actor: "first-reviewer",
+        reason: "Use a reviewed four-row aggregate cohort in the first boundary.",
+      }, async () => inspection);
+      await commitBoundaryResourceReviewMutation(root, reviewed);
+      const firstContext = await loadBoundaryReviewContext(root);
+      const baselineAfterReview = JSON.parse(await fs.readFile(
+        path.join(root, ".synapsor/auto-boundary-policy-baseline.json"),
+        "utf8",
+      ));
+      expect(baselineAfterReview.boundary.pack.resources).toEqual([
+        expect.objectContaining({
+          id: "clinicdb.service_visits",
+          tenant_key: "tenant_id",
+        }),
+      ]);
+      const firstDigest = explorationBoundaryCandidateDigest(firstContext.candidate);
+      await activateExplorationBoundary({
+        projectRoot: root,
+        candidate: firstContext.candidate,
+        expectedDigest: firstDigest,
+        actor: "first-reviewer",
+        confirmation: `ACTIVATE ${firstDigest}`,
+        confirmedDecisions: firstContext.candidate.unresolved_decisions,
+        currentInspection: inspection,
+      });
+      const second = await createSavedBoundary({
+        projectRoot: root,
+        draft: firstContext.draft,
+        currentCandidate: firstContext.candidate,
+        currentProgress: firstContext.progress,
+        name: "visits_secondary",
+        resourceId: "clinicdb.service_visits",
+        actor: "second-reviewer",
+      });
+      expect(second.candidate.pack.resources[0]).toMatchObject({
+        id: "clinicdb.service_visits",
+        tenant_key: "tenant_id",
+      });
+      expect(second.candidate.pack.resources[0]!.model_withheld_fields ?? [])
+        .not.toContain("scheduled_at");
+      expect(second.review_overrides.resources).toEqual({});
+
+      const completed = createBoundaryReviewProgress({
+        draft: firstContext.draft,
+        candidate: second.candidate,
+        confirmedDecisions: second.candidate.unresolved_decisions,
+        previous: second,
+        actor: "second-reviewer",
+        revision: second.revision + 1,
+      });
+      await saveBoundaryReviewProgress(root, completed);
+      const session: BoundaryReviewInteractiveSession = {
+        chooseResource: async () => undefined,
+        editFieldTiers: async () => undefined,
+        promptText: async () => "second-reviewer",
+        confirm: async () => true,
+      };
+      await expect(boundaryActivateCommandInternal(
+        ["--project-root", root, "--actor", "second-reviewer"],
+        async () => inspection,
+        session,
+      )).resolves.toBe(0);
+
+      const active = await loadActivatedExplorationBoundaries(root);
+      expect(active.map((boundary) => boundary.pack.name).sort()).toEqual([
+        "reviewed_staging",
+        "visits_secondary",
+      ]);
+      expect(() => selectActiveExploreBoundary(
+        active,
+        undefined,
+        "clinicdb.service_visits",
+      )).toThrowError(expect.objectContaining({ code: "EXPLORE_BOUNDARY_REQUIRED" }));
+      expect(selectActiveExploreBoundary(
+        active,
+        "reviewed_staging",
+        "clinicdb.service_visits",
+      ).pack.name).toBe("reviewed_staging");
+      expect(selectActiveExploreBoundary(
+        active,
+        "visits_secondary",
+        "clinicdb.service_visits",
+      ).pack.name).toBe("visits_secondary");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("preserves reviewed MySQL HTTP bindings and its authoring baseline through review mutation", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-mysql-production-review-bindings-"));
+    const inspection = boundaryInspection();
+    inspection.engine = "mysql";
+    inspection.server_version = "MySQL 8.4";
+    inspection.schemas = ["clinicdb"];
+    const table = inspection.tables[0]!;
+    table.schema = "clinicdb";
+    table.row_level_security = false;
+    table.row_level_security_policies = [];
+    table.role_posture = {
+      ...table.role_posture!,
+      row_security_forced: false,
+      row_security_effective_for_current_role: false,
+    };
+    table.columns.push({
+      name: "attending",
+      data_type: "varchar",
+      nullable: false,
+      generated: false,
+      ordinal_position: table.columns.length + 1,
+      suggestions: {
+        tenant: false,
+        conflict: false,
+        sensitive: false,
+        immutable: false,
+        large_or_binary: false,
+      },
+    });
+    table.suggestions.default_visible_columns.push("attending");
+    const configuredTrustedContext = {
+      schema_version: CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION,
+      provider: "http_claims" as const,
+      tenant_binding: "tenant_id",
+      principal_binding: "attending",
+      tenant_claim: "tenant_id",
+      principal_claim: "sub",
+    } as const;
+    const configPath = path.join(root, "synapsor.runner.json");
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await expect(main([
+      "config", "init", "--production-explore",
+      "--project-root", root,
+      "--output", configPath,
+      "--engine", "mysql",
+      "--source", "local_mysql",
+      "--read-url-env", "DATABASE_URL",
+      "--tenant-binding", "tenant_id",
+      "--principal-binding", "attending",
+      "--tenant-claim", "tenant_id",
+      "--principal-claim", "sub",
+      "--issuer", "https://identity.example.test",
+      "--audience", "https://runner.example.test/mcp",
+      "--accounting-namespace", "clinic.production",
+    ])).resolves.toBe(0);
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      sourceName: "local_mysql",
+      inspectedSchema: "clinicdb",
+      deploymentProfile: "production",
+      httpClaims: { tenantClaim: "tenant_id", principalClaim: "sub" },
+      configuredTrustedContext,
+    });
+    try {
+      expect(build.policy_baseline.boundary.pack.resources).toEqual([
+        expect.objectContaining({
+          id: "clinicdb.service_visits",
+          tenant_key: "tenant_id",
+          principal_key: "attending",
+        }),
+      ]);
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const preview = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "clinicdb.service_visits",
+        minimum_cohort_size: 4,
+        actor: "production-reviewer@example.test",
+        reason: "Require four contributing rows before releasing an aggregate.",
+      }, async () => inspection);
+      await commitBoundaryResourceReviewMutation(root, preview);
+
+      const [baseline, lock, context] = await Promise.all([
+        fs.readFile(path.join(root, ".synapsor/auto-boundary-policy-baseline.json"), "utf8").then(JSON.parse),
+        fs.readFile(path.join(root, ".synapsor/generation-lock.json"), "utf8").then(JSON.parse),
+        loadBoundaryReviewContext(root),
+      ]);
+      expect(baseline.boundary.pack.resources).toEqual([
+        expect.objectContaining({
+          id: "clinicdb.service_visits",
+          tenant_key: "tenant_id",
+          principal_key: "attending",
+        }),
+      ]);
+      expect(lock.trusted_context_authority).toEqual(configuredTrustedContext);
+      expect(lock.trusted_context_fingerprint).toBe(build.lock.trusted_context_fingerprint);
+      expect(context.candidate).toMatchObject({
+        deployment_profile: "production",
+        trusted_context: {
+          provider: "http_claims",
+          tenant_claim: "tenant_id",
+          principal_claim: "sub",
+        },
+        budgets: expect.any(Object),
+        pack: {
+          resources: [expect.objectContaining({
+            id: "clinicdb.service_visits",
+            tenant_key: "tenant_id",
+            principal_key: "attending",
+            minimum_cohort_size: 4,
+          })],
+        },
+      });
+
+      const candidateDigest = explorationBoundaryCandidateDigest(context.candidate);
+      await activateExplorationBoundary({
+        projectRoot: root,
+        candidate: context.candidate,
+        expectedDigest: candidateDigest,
+        actor: "production-reviewer@example.test",
+        confirmation: `ACTIVATE ${candidateDigest}`,
+        confirmedDecisions: context.candidate.unresolved_decisions,
+        currentInspection: inspection,
+      });
+      const active = await loadActivatedExplorationBoundaries(root);
+      const runtimeConfig = loadRuntimeConfigFromFile(configPath);
+      const startup = await inspectProductionExploreStartup(
+        runtimeConfig,
+        {
+          DATABASE_URL: "mysql://reviewed:secret@mysql.internal/clinicdb",
+          SYNAPSOR_CONTROL_DATABASE_URL: "postgresql://control:secret@control.internal/synapsor",
+          SYNAPSOR_EXPLORE_BUDGET_HMAC_KEY: "production-budget-hmac-key-material-1234567890",
+          SYNAPSOR_SESSION_JWKS_URL: "https://identity.example.test/.well-known/jwks.json",
+        },
+        async () => active,
+        async () => ({ boundary: active[0]!, lock }) as Awaited<ReturnType<typeof prepareScopedExplore>>,
+      );
+      expect(startup.ok).toBe(true);
+      expect(startup.checks).toContainEqual(expect.objectContaining({
+        name: "active-production-boundaries",
+        ok: true,
+      }));
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("writes a startable MySQL baseline through the standalone boundary draft command", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-mysql-boundary-draft-command-"));
+    const inspection = boundaryInspection();
+    inspection.engine = "mysql";
+    inspection.server_version = "MySQL 8.4";
+    inspection.schemas = ["clinicdb"];
+    inspection.tables[0]!.schema = "clinicdb";
+    inspection.tables[0]!.row_level_security = false;
+    inspection.tables[0]!.row_level_security_policies = [];
+    inspection.tables[0]!.role_posture = {
+      ...inspection.tables[0]!.role_posture!,
+      row_security_forced: false,
+      row_security_effective_for_current_role: false,
+    };
+    try {
+      await expect(boundaryCommand([
+        "draft",
+        "--from-env", "DATABASE_URL",
+        "--engine", "mysql",
+        "--schema", "clinicdb",
+        "--project-root", root,
+      ], async () => inspection)).resolves.toBe(0);
+
+      const generatedConfig = JSON.parse(await fs.readFile(
+        path.join(root, "synapsor.runner.json"),
+        "utf8",
+      ));
+      expect(generatedConfig.trusted_context).toMatchObject({
+        provider: "environment",
+        tenant_binding: "tenant_id",
+      });
+      const draft = JSON.parse(await fs.readFile(
+        path.join(root, "synapsor/generated/exploration-boundary.draft.json"),
+        "utf8",
+      ));
+      const baseline = JSON.parse(await fs.readFile(
+        path.join(root, ".synapsor/auto-boundary-policy-baseline.json"),
+        "utf8",
+      ));
+      expect(draft.pack.resources).toEqual([
+        expect.objectContaining({ id: "clinicdb.service_visits", tenant_key: "tenant_id" }),
+      ]);
+      expect(baseline.boundary.pack.resources).toEqual([
+        expect.objectContaining({ id: "clinicdb.service_visits", tenant_key: "tenant_id" }),
+      ]);
+
+      const second = await createSavedBoundary({
+        projectRoot: root,
+        draft,
+        currentCandidate: draft,
+        name: "visits_from_cli_draft",
+        resourceId: "clinicdb.service_visits",
+        actor: "second-reviewer",
+      });
+      expect(second.candidate.pack.resources).toEqual([
+        expect.objectContaining({ id: "clinicdb.service_visits", tenant_key: "tenant_id" }),
       ]);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
@@ -2521,7 +5763,7 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 20_000);
 
-  it("applies a versioned multi-resource decision file atomically without activating authority", async () => {
+  it("applies a versioned multi-resource decision file and headlessly activates its exact result", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-cli-batch-"));
     const inspection = batchBoundaryInspection();
     const project = {
@@ -2681,6 +5923,43 @@ describe("boundary operator-plane CLI", () => {
       await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
         .rejects.toMatchObject({ code: "ENOENT" });
 
+      const reviewedContext = await loadBoundaryReviewContext(root);
+      const completedProgress = createBoundaryReviewProgress({
+        draft: reviewedContext.draft,
+        candidate: reviewedContext.candidate,
+        confirmedDecisions: reviewedContext.candidate.unresolved_decisions,
+        previous: reviewedContext.progress,
+        actor: "alice",
+        reason: "Confirmed the exact post-review authority for both resources.",
+        revision: (reviewedContext.progress?.revision ?? 0) + 1,
+        now: "2026-08-12T12:00:00.000Z",
+      });
+      await saveBoundaryReviewProgress(root, completedProgress);
+      const activationBundlePath = path.join(root, "post-review-boundary.json");
+      await boundaryReviewCommand([
+        "--project-root", root,
+        "--output", activationBundlePath,
+      ], async () => inspection);
+      const activationBundle = JSON.parse(await fs.readFile(activationBundlePath, "utf8"));
+      expect(activationBundle.outstanding_decision_ids).toEqual([]);
+      await expect(boundaryActivateCommandInternal([
+        "--project-root", root,
+        "--config", guided.config_path,
+        "--review-bundle", activationBundlePath,
+        "--headless",
+        "--confirm", `ACTIVATE ${activationBundle.candidate_digest}`,
+        "--identity", "alice",
+        "--identity-key", privatePath,
+        "--required-role", "boundary_reviewer",
+        "--reason", "Activate the exact reviewed multi-resource authority.",
+        "--environment", "staging",
+        "--nonce", "batch-activation-nonce-0001",
+        "--json",
+      ], async () => inspection)).resolves.toBe(0);
+      const active = await loadActivatedExplorationBoundaries(root);
+      expect(active.map((boundary) => boundary.pack.resources.map((resource) => resource.id)))
+        .toEqual([["public.service_routes", "public.service_visits"]]);
+
       await expect(boundaryReviewCommand([
         "--project-root", root,
         "--apply-decisions", decisionPath,
@@ -2772,6 +6051,204 @@ function boundaryInspection(): SchemaInspection {
   };
 }
 
+function derivedFirstTableInspection(): SchemaInspection {
+  const inspection = boundaryInspection();
+  const orders = structuredClone(inspection.tables[0]!);
+  orders.name = "orders";
+  orders.unique_constraints = [{ name: "orders_pkey", columns: ["id"] }];
+  orders.indexes = [{ name: "orders_pkey", columns: ["id"], unique: true }];
+  const orderItems = structuredClone(orders);
+  orderItems.name = "order_items";
+  orderItems.columns = orderItems.columns.filter((field) =>
+    field.name !== "tenant_id" && field.name !== "status" && field.name !== "scheduled_at");
+  orderItems.columns.push({
+    name: "order_id",
+    data_type: "uuid",
+    nullable: false,
+    generated: false,
+    ordinal_position: orderItems.columns.length + 1,
+    suggestions: {
+      tenant: false,
+      conflict: false,
+      sensitive: false,
+      immutable: true,
+      large_or_binary: false,
+    },
+  });
+  orderItems.suggestions.tenant_columns = [];
+  orderItems.suggestions.default_visible_columns = ["id", "order_id"];
+  orderItems.row_level_security = false;
+  orderItems.row_level_security_policies = [];
+  orderItems.role_posture!.row_security_effective_for_current_role = false;
+  orderItems.unique_constraints = [{ name: "order_items_pkey", columns: ["id"] }];
+  orderItems.indexes = [{ name: "order_items_pkey", columns: ["id"], unique: true }];
+  orderItems.foreign_keys = [{
+    name: "order_items_order_id_fkey",
+    columns: ["order_id"],
+    referenced_schema: "public",
+    referenced_table: "orders",
+    referenced_columns: ["id"],
+    delete_rule: "RESTRICT",
+  }];
+  inspection.tables = [orderItems, orders];
+  return inspection;
+}
+
+function depthThreeDerivedCliInspection(): SchemaInspection {
+  const inspection = derivedFirstTableInspection();
+  const orderItems = inspection.tables.find((table) => table.name === "order_items")!;
+  const orders = inspection.tables.find((table) => table.name === "orders")!;
+  const derivedChild = (
+    source: typeof orderItems,
+    name: string,
+    foreignKeyField: string,
+    target: string,
+    constraint: string,
+  ) => {
+    const table = structuredClone(source);
+    table.name = name;
+    table.columns = table.columns.filter((field) => field.name === "id");
+    const foreignKey = structuredClone(source.columns.find((field) => field.name !== "id")!);
+    foreignKey.name = foreignKeyField;
+    foreignKey.ordinal_position = 2;
+    table.columns.push(foreignKey);
+    table.primary_key = ["id"];
+    table.unique_constraints = [{ name: `${name}_pkey`, columns: ["id"] }];
+    table.indexes = [{ name: `${name}_pkey`, columns: ["id"], unique: true }];
+    table.foreign_keys = [{
+      name: constraint,
+      columns: [foreignKeyField],
+      referenced_schema: "public",
+      referenced_table: target,
+      referenced_columns: ["id"],
+      delete_rule: "RESTRICT",
+    }];
+    table.suggestions.default_visible_columns = ["id", foreignKeyField];
+    return table;
+  };
+  const orderEvents = derivedChild(
+    orderItems,
+    "order_events",
+    "order_item_id",
+    "order_items",
+    "order_events_order_item_id_fkey",
+  );
+  const eventNotes = derivedChild(
+    orderEvents,
+    "event_notes",
+    "order_event_id",
+    "order_events",
+    "event_notes_order_event_id_fkey",
+  );
+  inspection.tables = [eventNotes, orderEvents, orderItems, orders];
+  return inspection;
+}
+
+function derivedPrincipalFirstTableInspection(singleOrganization: boolean): SchemaInspection {
+  const inspection = boundaryInspection();
+  const orders = structuredClone(inspection.tables[0]!);
+  orders.name = "orders";
+  orders.columns.push({
+    name: "owner_id",
+    data_type: "uuid",
+    nullable: false,
+    generated: false,
+    ordinal_position: orders.columns.length + 1,
+    suggestions: {
+      tenant: false,
+      conflict: false,
+      sensitive: false,
+      immutable: true,
+      large_or_binary: false,
+    },
+  });
+  orders.suggestions.default_visible_columns.push("owner_id");
+  orders.unique_constraints = [{ name: "orders_pkey", columns: ["id"] }];
+  orders.indexes = [{ name: "orders_pkey", columns: ["id"], unique: true }];
+
+  const orderItems = structuredClone(orders);
+  orderItems.name = "order_items";
+  orderItems.columns = orderItems.columns.filter((field) =>
+    field.name !== "owner_id" && field.name !== "status" && field.name !== "scheduled_at");
+  orderItems.columns.push({
+    name: "order_id",
+    data_type: "uuid",
+    nullable: false,
+    generated: false,
+    ordinal_position: orderItems.columns.length + 1,
+    suggestions: {
+      tenant: false,
+      conflict: false,
+      sensitive: false,
+      immutable: true,
+      large_or_binary: false,
+    },
+  });
+  orderItems.suggestions.default_visible_columns = orderItems.columns.map((field) => field.name);
+  orderItems.unique_constraints = [{ name: "order_items_pkey", columns: ["id"] }];
+  orderItems.indexes = [{ name: "order_items_pkey", columns: ["id"], unique: true }];
+  orderItems.foreign_keys = [{
+    name: "order_items_order_id_fkey",
+    columns: ["order_id"],
+    referenced_schema: "public",
+    referenced_table: "orders",
+    referenced_columns: ["id"],
+    delete_rule: "RESTRICT",
+  }];
+  if (singleOrganization) {
+    for (const table of [orders, orderItems]) {
+      table.columns = table.columns.filter((field) => field.name !== "tenant_id");
+      table.suggestions.tenant_columns = [];
+      table.suggestions.default_visible_columns =
+        table.suggestions.default_visible_columns.filter((field) => field !== "tenant_id");
+      table.row_level_security = false;
+      table.row_level_security_policies = [];
+      if (table.role_posture) {
+        table.role_posture.row_security_effective_for_current_role = false;
+      }
+    }
+  }
+  inspection.tables = [orderItems, orders];
+  return inspection;
+}
+
+function sharedReferenceInspection(): SchemaInspection {
+  const inspection = boundaryInspection();
+  const table = inspection.tables[0]!;
+  table.columns = table.columns.filter((column) => column.name !== "tenant_id");
+  table.suggestions.tenant_columns = [];
+  table.suggestions.default_visible_columns = table.suggestions.default_visible_columns
+    .filter((column) => column !== "tenant_id");
+  table.row_level_security = false;
+  table.row_level_security_policies = [];
+  table.role_posture = {
+    ...table.role_posture!,
+    row_security_effective_for_current_role: false,
+  };
+  return inspection;
+}
+
+function scopedAndSharedReferenceInspection(): SchemaInspection {
+  const inspection = boundaryInspection();
+  const catalog = structuredClone(inspection.tables[0]!);
+  catalog.name = "reference_catalog";
+  catalog.columns = catalog.columns.filter((column) => column.name !== "tenant_id");
+  catalog.primary_key = ["id"];
+  catalog.unique_constraints = [{ name: "reference_catalog_pkey", columns: ["id"] }];
+  catalog.indexes = [{ name: "reference_catalog_pkey", columns: ["id"], unique: true }];
+  catalog.suggestions.tenant_columns = [];
+  catalog.suggestions.default_visible_columns = catalog.suggestions.default_visible_columns
+    .filter((column) => column !== "tenant_id");
+  catalog.row_level_security = false;
+  catalog.row_level_security_policies = [];
+  catalog.role_posture = {
+    ...catalog.role_posture!,
+    row_security_effective_for_current_role: false,
+  };
+  inspection.tables.push(catalog);
+  return inspection;
+}
+
 function batchBoundaryInspection(): SchemaInspection {
   const inspection = boundaryInspection();
   const visits = inspection.tables[0]!;
@@ -2840,4 +6317,8 @@ async function initializeSignedReviewProject(
     configPath: guided.config_path,
     privateKeyPath,
   };
+}
+
+function stripAnsi(value: string): string {
+  return value.replace(/\u001b\[[0-9;]*m/g, "");
 }

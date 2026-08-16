@@ -145,14 +145,21 @@ try {
   human-reviewed local Explore plan
 - `BOUNDARY DIGEST` and `GENERATION LOCK` for exact reviewed authority
 - legacy one-hop `PROTECTED RELATIONSHIP name ON ... REFERENCES ...`
-- additive `PROTECTED RELATIONSHIP name LINK 1|2 ON ... REFERENCES ...
+- additive `PROTECTED RELATIONSHIP name LINK 1|2|3 ON ... REFERENCES ...
   UNMATCHED EXCLUDE|KEEP NULL` for up to three reviewed paths containing at
   most two catalog-proven many-to-one links each
 - fixed `PROTECTED FILTER`, reviewed `MEASURE`, `GROUP DIMENSION`,
-  `TIME DIMENSION`, `COMPARE RANGE`, aggregate ordering/top-N, row ordering,
+  `TIME DIMENSION`, fixed `PROTECTED TIME WINDOW field FROM FIXED '<UTC>' TO
+  FIXED '<UTC>'`, `COMPARE RANGE`, aggregate ordering/top-N, row ordering,
   and `PROTECTED LIMITS`; protected aggregates may use a separately reviewed
   `RANKED GROUPS` candidate ceiling and, with exactly two comparison ranges,
   order by signed `ABSOLUTE CHANGE` or `PERCENTAGE CHANGE`
+
+`PROTECTED TIME WINDOW` is deliberately fixed. Protect resolves a relative
+Explore request first and emits its canonical half-open UTC range as literals;
+the timestamps cannot be `ARG` values. A moving protected capability such as
+"previous month whenever invoked" is not part of this grammar.
+
 - `PROPOSE ACTION`
 - `PROPOSE ACTION name UPDATE|INSERT|DELETE` (operation defaults to `UPDATE`)
 - `PROPOSE ACTION name UPDATE|INSERT|DELETE SET` for bounded-set authoring

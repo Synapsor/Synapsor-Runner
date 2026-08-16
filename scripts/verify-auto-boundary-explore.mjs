@@ -269,7 +269,7 @@ async function main() {
       [{ ...goldenPlan, top_n: 11 }, "top-N overflow"],
       [{ ...goldenPlan, measures: [...goldenPlan.measures, { function: "count" }] }, "measure-count overflow"],
       [{ ...goldenPlan, dimensions: [...goldenPlan.dimensions, { field: "churned_at" }] }, "dimension-count overflow"],
-      [{ ...goldenPlan, time_bucket: { field: "churned_at", bucket: "quarter" } }, "unreviewed time bucket"],
+      [{ ...goldenPlan, time_bucket: { field: "churned_at", bucket: "minute" } }, "unreviewed time bucket"],
       [{ ...goldenPlan, measures: [{ function: "median", field: "monthly_revenue_cents" }] }, "arbitrary aggregate function"],
       [{ ...goldenPlan, sql: "SELECT * FROM public.churn_events" }, "raw SQL field"],
       [{

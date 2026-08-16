@@ -40,6 +40,7 @@ describe("generated protected-authority preflight", () => {
     ["1.6.4", "1.7.0"],
     ["1.6.6", "1.7.0"],
     ["1.6.6", "1.8.0"],
+    ["1.7.0", "1.9.0"],
   ])("accepts supported compiler/spec lock %s/%s and fails closed on schema drift", async (compilerVersion, specVersion) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-generation-lock-"));
     try {

@@ -2,7 +2,9 @@ import type { InspectEngine, SchemaInspection } from "@synapsor-runner/schema-in
 import process from "node:process";
 import {
   activateExplorationBoundary,
+  compareGenerationLock,
   explorationBoundaryCandidateDigest,
+  generationLockRemediation,
   type ActivatedExplorationBoundary,
   type ExplorationBoundaryDraft,
   type GenerationLock,
@@ -16,7 +18,6 @@ import { updateGuidedOnboardingState } from "./guided-project.js";
 import { buildInstantFirstValue } from "./instant-first-value.js";
 import {
   choosePostActivationAskSelection,
-  defaultPostActivationAskSelection,
   formatPostActivationAskSelection,
   type PostActivationAskSelection,
 } from "./post-activation-ask.js";
@@ -29,6 +30,7 @@ import {
   resolveExploreTrustedScope,
   type ExploreTrustedScope,
 } from "./explore-trusted-scope.js";
+import { cliCommandName } from "./cli-command-meta.js";
 import { padTerminalBlock } from "./terminal-layout.js";
 
 export type InstantCliBoundaryActivationResult =
@@ -53,9 +55,18 @@ export type InstantCliBoundaryActivationInput = {
     env: NodeJS.ProcessEnv;
   }): Promise<SchemaInspection>;
   initialInspection?: SchemaInspection;
+  regenerateBoundary?: (input: {
+    inspection: SchemaInspection;
+    draft: ExplorationBoundaryDraft;
+    lock: GenerationLock;
+  }) => Promise<{
+    inspection: SchemaInspection;
+    draft: ExplorationBoundaryDraft;
+    lock: GenerationLock;
+  }>;
   session: Pick<BoundaryReviewInteractiveSession, "promptText">;
   chooseAskSelection?: (
-    defaultSelection: PostActivationAskSelection,
+    currentSelection: PostActivationAskSelection | undefined,
   ) => Promise<PostActivationAskSelection | undefined>;
   resolveTrustedScopeFn?: typeof resolveExploreTrustedScope;
   env?: NodeJS.ProcessEnv;
@@ -65,12 +76,20 @@ export type InstantCliBoundaryActivationInput = {
 export async function activateInstantCliBoundary(
   input: InstantCliBoundaryActivationInput,
 ): Promise<InstantCliBoundaryActivationResult> {
+  return activateInstantCliBoundaryAttempt(input, undefined);
+}
+
+async function activateInstantCliBoundaryAttempt(
+  input: InstantCliBoundaryActivationInput,
+  initialAskSelection: PostActivationAskSelection | undefined,
+): Promise<InstantCliBoundaryActivationResult> {
   const env = input.env ?? process.env;
   const stdout = input.stdout ?? process.stdout;
   const write = (value: string) => stdout.write(
     stdout.isTTY === true ? padTerminalBlock(value) : value,
   );
   const candidate = instantLocalBoundaryCandidate(input.draft);
+  const theme = terminalTheme(stdout.isTTY === true && !("NO_COLOR" in env));
   const resource = candidate.pack.resources[0];
   if (!resource) {
     write([
@@ -99,6 +118,17 @@ export async function activateInstantCliBoundary(
       schema: input.lock.inspected_schema,
       env,
     });
+    const comparison = compareGenerationLock(input.lock, inspection);
+    if (!comparison.current) {
+      return handleStaleGenerationLock({
+        input,
+        inspection,
+        changes: comparison.changes,
+        askSelection: initialAskSelection,
+        write,
+        theme,
+      });
+    }
     trustedScope = await trustedScopeResolver({
       boundary: candidate,
       lock: input.lock,
@@ -109,9 +139,23 @@ export async function activateInstantCliBoundary(
     const missingBindings = error instanceof ExploreTrustedScopeError
       ? error.missingBindings
       : [];
+    if (missingBindings.length > 0) {
+      write([
+        "Quick Start needs trusted row scope before it can read source data.",
+        `Missing operator binding: ${missingBindings.join(", ")}`,
+        error instanceof Error ? error.message : "Runner could not verify the database credential's row scope.",
+        "Trusted values stay outside model arguments; Runner will not guess them from source rows.",
+        "Quick Start paused. Nothing was activated.",
+        "Set the missing value in the operator environment, then resume:",
+        ...missingBindings.map((binding) => `  export ${binding}='<trusted value>'`),
+        `  ${cliCommandName()} start --from-env ${input.lock.source_env} --cli`,
+        "Workbench enforces the same requirement and keeps activation disabled until its process receives the value.",
+        "",
+      ].join("\n"));
+      return { accepted: false, reason: "operator_cancelled" };
+    }
     write([
       "Quick Start needs trusted row scope before it can read source data.",
-      ...(missingBindings.length ? [`Missing operator binding: ${missingBindings.join(", ")}`] : []),
       error instanceof Error ? error.message : "Runner could not verify the database credential's row scope.",
       "Trusted values stay outside model arguments; Runner will not guess them from source rows.",
       "Opening the detailed boundary editor. Nothing is active.",
@@ -123,8 +167,7 @@ export async function activateInstantCliBoundary(
   const firstValue = buildInstantFirstValue(candidate);
   const actor = operatorActor(env);
   const digest = explorationBoundaryCandidateDigest(candidate);
-  let askSelection: PostActivationAskSelection = defaultPostActivationAskSelection(env);
-  const theme = terminalTheme(stdout.isTTY === true && !("NO_COLOR" in env));
+  let askSelection = initialAskSelection;
   write(formatInstantCliBoundaryReview({
     draft: input.draft,
     candidate,
@@ -147,15 +190,39 @@ export async function activateInstantCliBoundary(
       return { accepted: false, reason: "operator_cancelled" };
     }
     const action = actionInput.trim().toLowerCase();
-    if (!action || action === "y" || action === "yes") break;
+    if (!action || action === "y" || action === "yes") {
+      if (!askSelection) {
+        const selected = input.chooseAskSelection
+          ? await input.chooseAskSelection(undefined)
+          : await choosePostActivationAskSelection({ env });
+        if (!selected) {
+          write([
+            "Model selection cancelled. Nothing was activated.",
+            theme.dim("Back at Quick Start. Press Enter or M to choose a provider."),
+            "",
+          ].join("\n"));
+          continue;
+        }
+        askSelection = selected;
+        write([
+          "",
+          `${theme.success("Model")} ${formatPostActivationAskSelection(askSelection)}`,
+          theme.dim("Provider selected. Continuing with the boundary activation you requested."),
+          "",
+        ].join("\n"));
+      }
+      break;
+    }
     if (action === "m" || action === "model") {
       const selected: PostActivationAskSelection | undefined = input.chooseAskSelection
         ? await input.chooseAskSelection(askSelection)
         : await choosePostActivationAskSelection({ env });
       if (!selected) {
         write([
-          "Model selection cancelled. Your previous model is unchanged.",
-          theme.dim("Back at Quick Start. Press Enter to start, or M to choose again."),
+          askSelection
+            ? "Model selection cancelled. Your previous model is unchanged."
+            : "Model selection cancelled. No model is selected yet.",
+          theme.dim("Back at Quick Start. Press Enter to choose, or M to choose again."),
           "",
         ].join("\n"));
         continue;
@@ -186,6 +253,9 @@ export async function activateInstantCliBoundary(
     }
     write("Use Enter, M, or E.\n");
   }
+  if (!askSelection) {
+    throw new Error("Quick Start cannot activate for Ask without an explicit model or MCP route.");
+  }
   if (askSelection.route === "later") {
     write("The boundary will activate now; model setup will remain available for later.\n");
   } else if (askSelection.route === "mcp-client") {
@@ -197,6 +267,17 @@ export async function activateInstantCliBoundary(
     schema: input.lock.inspected_schema,
     env,
   });
+  const comparison = compareGenerationLock(input.lock, inspection);
+  if (!comparison.current) {
+    return handleStaleGenerationLock({
+      input,
+      inspection,
+      changes: comparison.changes,
+      askSelection,
+      write,
+      theme,
+    });
+  }
   trustedScope = await trustedScopeResolver({
     boundary: candidate,
     lock: input.lock,
@@ -241,12 +322,79 @@ export async function activateInstantCliBoundary(
   return { accepted: true, active, askSelection };
 }
 
+async function handleStaleGenerationLock(input: {
+  input: InstantCliBoundaryActivationInput;
+  inspection: SchemaInspection;
+  changes: string[];
+  askSelection: PostActivationAskSelection | undefined;
+  write(value: string): boolean;
+  theme: ReturnType<typeof terminalTheme>;
+}): Promise<InstantCliBoundaryActivationResult> {
+  input.write([
+    "",
+    input.theme.title("DATABASE POSTURE CHANGED"),
+    "Runner stopped before activation because the reviewed database posture changed:",
+    ...input.changes.map((change) => `  - ${change}`),
+    "",
+    input.theme.dim("Nothing was activated. The stale boundary remains unavailable."),
+    input.input.regenerateBoundary
+      ? input.theme.dim("Regeneration creates a new disabled draft; you must review and activate it separately.")
+      : generationLockRemediation(input.input.lock),
+    "",
+  ].join("\n"));
+  if (!input.input.regenerateBoundary) {
+    return { accepted: false, reason: "operator_cancelled" };
+  }
+  while (true) {
+    const actionInput = await input.input.session.promptText(
+      `${input.theme.key("R")} Regenerate against current posture   ${input.theme.key("Q")} Pause\n${input.theme.dim("Choice [R]:")} `,
+    );
+    if (actionInput === undefined) {
+      input.write([
+        "Regeneration paused. Nothing was activated.",
+        generationLockRemediation(input.input.lock),
+        "",
+      ].join("\n"));
+      return { accepted: false, reason: "operator_cancelled" };
+    }
+    const action = actionInput.trim().toLowerCase();
+    if (!action || action === "r" || action === "regenerate") {
+      const regenerated = await input.input.regenerateBoundary({
+        inspection: input.inspection,
+        draft: input.input.draft,
+        lock: input.input.lock,
+      });
+      input.write([
+        "",
+        input.theme.success("✓ Regenerated disabled boundary against the current posture."),
+        input.theme.dim("No authority is active. Review the new boundary, then press Enter separately to activate it."),
+        "",
+      ].join("\n"));
+      return activateInstantCliBoundaryAttempt({
+        ...input.input,
+        draft: regenerated.draft,
+        lock: regenerated.lock,
+        initialInspection: regenerated.inspection,
+      }, input.askSelection);
+    }
+    if (action === "q" || action === "quit" || action === "pause") {
+      input.write([
+        "Regeneration paused. Nothing was activated.",
+        generationLockRemediation(input.input.lock),
+        "",
+      ].join("\n"));
+      return { accepted: false, reason: "operator_cancelled" };
+    }
+    input.write("Use R to regenerate, or Q to pause.\n");
+  }
+}
+
 function formatInstantCliBoundaryReview(input: {
   draft: ExplorationBoundaryDraft;
   candidate: ExplorationBoundaryDraft;
   question: string;
   actor: string;
-  askSelection: PostActivationAskSelection;
+  askSelection: PostActivationAskSelection | undefined;
   trustedScope: ExploreTrustedScope;
   color?: boolean;
 }): string {
@@ -277,9 +425,11 @@ function formatInstantCliBoundaryReview(input: {
   ));
   const keptOutSummary = `${keptOutFields} field${keptOutFields === 1 ? "" : "s"}`;
   const label = (value: string) => theme.dim(value.padEnd(12));
-  const tenantScope = input.trustedScope.tenant_source === "postgres_role_setting"
-    ? "tenant fixed by read-only login"
-    : "tenant from operator environment";
+  const tenantScope = input.trustedScope.tenant_source === "reviewed_organization"
+    ? `whole reviewed organization (${input.candidate.organization_scope!.organization_id}); no tenant filter`
+    : input.trustedScope.tenant_source === "postgres_role_setting"
+      ? "tenant fixed by read-only login"
+      : "tenant from operator environment";
   return [
     "",
     theme.title("YOUR FIRST SAFE QUESTION"),
@@ -296,12 +446,14 @@ function formatInstantCliBoundaryReview(input: {
       otherTables ? `${otherTables} other ${otherTables === 1 ? "table" : "tables"}` : "",
     ].filter(Boolean).join(" · "))}`,
     `  ${label("ACCESS")} read-only · ${tenantScope}`,
-    `  ${label("MODEL")} ${formatPostActivationAskSelection(input.askSelection)}`,
+    `  ${label("MODEL")} ${input.askSelection
+      ? formatPostActivationAskSelection(input.askSelection)
+      : "Choose OpenAI, Anthropic, a local model, or an MCP client"}`,
     "",
     theme.bold("Suggested from this boundary:"),
     `  "${input.question}"`,
     "",
-    theme.dim("Enter records one review, activates only this read-only boundary, and opens Ask."),
+    theme.dim("Enter opens model choice first, then records one review and activates only this read-only boundary."),
     theme.dim("Use /access later to add tables or boundaries without restarting this model session."),
     theme.dim("The model cannot review, activate, or widen access."),
     "",

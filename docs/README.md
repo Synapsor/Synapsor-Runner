@@ -1,8 +1,10 @@
 # Synapsor Runner Docs
 
 Start with the README. Use this index when you need the task-specific next
-step. The order is intentional: audit the model-facing risk first, run the
-no-database demo, wire your database, then read deeper concepts.
+step. For the architecture and category, read [Database Authority And
+Application Guardrails](why-synapsor-vs-app-guardrails.md). The remaining order
+is intentional: audit the model-facing risk, run the no-database proof, wire
+your database, then read deeper concepts.
 
 ## 01 Quickstart
 
@@ -22,9 +24,11 @@ no-database demo, wire your database, then read deeper concepts.
   five-minute first read, repeated bounded Explore, optional Protect, first
   proposal, resumable setup, guarded development writeback, and host-neutral
   client handoff.
-- [Workbench Ask With Your Model](workbench-ask.md): optional local OpenAI,
-  Anthropic, and custom-provider chat over the exact reviewed tool surface,
-  with direct-egress consent, session-only credentials, and no added authority.
+- [Workbench Ask With Your Model](workbench-ask.md): preview browser UI for
+  optional local OpenAI, Anthropic, and custom-provider chat over the exact
+  reviewed tool surface, with direct-egress consent, session-only credentials,
+  and no added authority. The terminal CLI remains the preferred operator
+  interface.
 - [Troubleshooting First Run](troubleshooting-first-run.md): common first-run
   failures, redacted diagnostics, and fixes.
 
@@ -154,10 +158,17 @@ no-database demo, wire your database, then read deeper concepts.
   propose-only fixtures that catch changed capability calls, business diffs,
   policy outcomes, tenant handling, and hidden-field behavior.
 - [Bounded Aggregate Reads](aggregate-reads.md): fixed production scalar
-  aggregates plus the separate authoring-only reviewed aggregate Explore path.
+  aggregates plus reviewed aggregate Explore.
+- [Database Server Compatibility](database-server-compatibility.md): supported
+  PostgreSQL/MySQL source lines, older-MySQL capability tiers, version-lock
+  behavior, and the exact live release matrix.
+- [Production Scoped Explore Over HTTP](production-scoped-explore-http.md):
+  opt-in ad-hoc production analytics with verified JWT scope, per-principal and
+  tenant budgets, atomic accounting, and the exact two-tool surface.
 - [Reviewed Relationship Paths](reviewed-relationships.md): catalog-proven
-  star/depth-two aggregate paths, demand-driven operator review, nullable-link
-  semantics, per-relation scope, and the permanent no-general-join boundary.
+  bounded many-to-one aggregate paths, demand-driven operator review,
+  default-depth-two and explicit depth-three limits, nullable-link semantics,
+  per-relation scope, and the permanent no-general-join boundary.
 - [Reviewed Database Views](reviewed-database-views.md): expose a reviewed
   derived measure without adding formulas or SQL to the model-facing planner.
 
@@ -225,9 +236,11 @@ no-database demo, wire your database, then read deeper concepts.
 - [Store Lifecycle](store-lifecycle.md): active-store leases, prune safety,
   deleted-store behavior, and concurrent server guardrails.
 - `synapsor-runner activity search`, `evidence`, `query-audit`, `receipts`,
-  `events tail`, `attention show`, and `notifications status`: local evidence,
-  audit, receipt, replay, complete lifecycle history, and human-attention
-  inspection. The legacy development lifecycle webhook remains documented in
+  `events tail`, `attention show`, and `notifications status`: config-selected
+  local SQLite or shared PostgreSQL evidence, audit, receipt, replay, complete
+  lifecycle history, and human-attention inspection. Production HTTP Explore
+  uses the shared PostgreSQL control ledger even when its application source is
+  MySQL. The legacy development lifecycle webhook remains documented in
   [Local Mode](local-mode.md); production attention delivery uses the signed,
   quiet notification pipeline.
 - `examples/mysql-refund-agent/`: MySQL order/refund review example using the

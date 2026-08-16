@@ -1,5 +1,6 @@
+import { Buffer } from "node:buffer";
 import mysql from "mysql2/promise";
-import { Pool } from "pg";
+import { Pool, type PoolClient } from "pg";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
   classifySensitivity,
@@ -16,6 +17,547 @@ export {
 
 export type SourceEngine = "postgres" | "mysql";
 export type InspectEngine = SourceEngine | "auto";
+
+export const DATABASE_SERVER_AUTHORITY_VERSION =
+  "synapsor.database-server-authority.v1";
+export type DatabaseGrammarFeature =
+  | "automatic_numeric_bands"
+  | "schema_check_constraints";
+export type DatabaseServerAuthority = {
+  schema_version: typeof DATABASE_SERVER_AUTHORITY_VERSION;
+  engine: SourceEngine;
+  /** PostgreSQL major, or the stable MySQL grammar profile (5.7, pre-CHECK 8.0, or 8.x). */
+  version_line: string;
+  features: Record<DatabaseGrammarFeature, boolean>;
+};
+
+export const DATABASE_SERVER_SUPPORT = {
+  postgres: {
+    product: "PostgreSQL",
+    minimum_compatible_version: "13.0",
+    full_feature_version: "13.0",
+    maximum_supported_major: 18,
+    supported_range: "PostgreSQL 13 through 18",
+  },
+  mysql: {
+    product: "MySQL",
+    minimum_compatible_version: "5.7",
+    full_feature_version: "8.0.16",
+    maximum_supported_major: 8,
+    supported_range: "MySQL 5.7, or GA MySQL 8.0.11 and newer 8.x releases; complete grammar starts at 8.0.16",
+  },
+} as const;
+
+export type DatabaseServerCompatibility = {
+  engine: SourceEngine;
+  detected_version: string;
+  normalized_version?: string;
+  minimum_compatible_version: string;
+  full_feature_version: string;
+  supported_range: string;
+  supported: boolean;
+  tier: "full" | "compatible_limited" | "unsupported";
+  authority?: DatabaseServerAuthority;
+  limitations: string[];
+  reason?:
+    | "unrecognized_version"
+    | "unsupported_product"
+    | "below_minimum"
+    | "above_tested_range"
+    | "unsupported_release_line";
+};
+
+/**
+ * Resolve one deterministic grammar profile before authoring. A reviewed pack
+ * can contain only features supported by this profile, so query compilation
+ * never guesses at runtime or silently downgrades a model request.
+ */
+export function databaseServerCompatibility(input: {
+  engine: SourceEngine;
+  server_version: string;
+}): DatabaseServerCompatibility {
+  const support = DATABASE_SERVER_SUPPORT[input.engine];
+  const detected = input.server_version.trim();
+  const common = {
+    engine: input.engine,
+    detected_version: detected || "unknown",
+    minimum_compatible_version: support.minimum_compatible_version,
+    full_feature_version: support.full_feature_version,
+    supported_range: support.supported_range,
+  };
+  if (input.engine === "mysql" && /mariadb/i.test(detected)) {
+    return {
+      ...common,
+      supported: false,
+      tier: "unsupported",
+      limitations: ["MariaDB is not in the tested MySQL compatibility matrix."],
+      reason: "unsupported_product",
+    };
+  }
+  const match = input.engine === "postgres"
+    ? detected.match(/(?:PostgreSQL\s+)?(\d+)(?:\.(\d+))?(?:\.(\d+))?/i)
+    : detected.match(/^(?:MySQL\s+)?(\d+)(?:\.(\d+))?(?:\.(\d+))?/i);
+  if (!match) {
+    return {
+      ...common,
+      supported: false,
+      tier: "unsupported",
+      limitations: ["Runner could not determine a supported database release line."],
+      reason: "unrecognized_version",
+    };
+  }
+  const major = Number(match[1]);
+  const minor = Number(match[2] ?? 0);
+  const patch = Number(match[3] ?? 0);
+  const prerelease = /(?:^|[0-9._-])(?:alpha|beta|rc|devel|snapshot)\d*(?:$|[^a-z])/i.test(detected);
+  const [minimumMajor, minimumMinor] = support.minimum_compatible_version.split(".").map(Number) as [number, number];
+  const supported = major > minimumMajor || (major === minimumMajor && minor >= minimumMinor);
+  if (!supported) {
+    return {
+      ...common,
+      normalized_version: `${major}.${minor}`,
+      supported: false,
+      tier: "unsupported",
+      limitations: ["The detected server is below the minimum compatible release line."],
+      reason: "below_minimum",
+    };
+  }
+  const releaseLineSupported = input.engine === "postgres"
+    ? major <= support.maximum_supported_major && !prerelease
+    : !prerelease && (
+      (major === 5 && minor === 7)
+      || (major === 8 && (minor > 0 || patch >= 11))
+    );
+  if (!releaseLineSupported) {
+    return {
+      ...common,
+      normalized_version: `${major}.${minor}`,
+      supported: false,
+      tier: "unsupported",
+      limitations: [
+        major > support.maximum_supported_major
+          ? "The detected server is newer than the release lines verified for this Runner version."
+          : "The detected server is not one of the explicitly supported release lines.",
+      ],
+      reason: major > support.maximum_supported_major
+        ? "above_tested_range"
+        : "unsupported_release_line",
+    };
+  }
+  const mysql57 = input.engine === "mysql" && major === 5 && minor === 7;
+  const mysql80 = input.engine === "mysql" && major === 8 && minor === 0;
+  const mysql80BeforeEnforcedChecks = mysql80 && patch < 16;
+  const automaticNumericBands = !mysql57;
+  const schemaCheckConstraints = !mysql57 && !mysql80BeforeEnforcedChecks;
+  const limited = !automaticNumericBands || !schemaCheckConstraints;
+  const authority: DatabaseServerAuthority = {
+    schema_version: DATABASE_SERVER_AUTHORITY_VERSION,
+    engine: input.engine,
+    version_line: input.engine === "postgres"
+      ? String(major)
+      : mysql57
+        ? "5.7"
+        : mysql80BeforeEnforcedChecks
+          ? "8.0-pre-check"
+          : "8.x",
+    features: {
+      automatic_numeric_bands: automaticNumericBands,
+      schema_check_constraints: schemaCheckConstraints,
+    },
+  };
+  const limitations = [
+    ...(!automaticNumericBands
+      ? ["Automatic numeric bands are unavailable because this release has no usable window-function and common-table-expression support."]
+      : []),
+    ...(!schemaCheckConstraints
+      ? ["CHECK constraints are not reliable reviewed vocabulary evidence on this release; text-like categorical fields cannot be grouped or categorically filtered unless a bounded native ENUM is present."]
+      : []),
+  ];
+  return {
+    ...common,
+    normalized_version: `${major}.${minor}`,
+    supported: true,
+    tier: limited ? "compatible_limited" : "full",
+    authority,
+    limitations,
+  };
+}
+
+export function databaseServerCompatibilityMessage(
+  compatibility: DatabaseServerCompatibility,
+): string {
+  if (compatibility.tier === "full") {
+    return `Detected ${compatibility.detected_version}; the complete reviewed Explore grammar is available.`;
+  }
+  if (compatibility.tier === "compatible_limited") {
+    return [
+      `Detected ${compatibility.detected_version}; this is a supported compatibility tier.`,
+      ...compatibility.limitations,
+      "Unavailable features are omitted during review and cannot enter the model-facing boundary.",
+    ].join(" ");
+  }
+  const reason = compatibility.reason === "unsupported_product"
+    ? "MariaDB and other MySQL-compatible products are not in the tested support matrix."
+    : compatibility.reason === "unrecognized_version"
+      ? "Runner could not determine a supported server version from the database response."
+      : compatibility.reason === "above_tested_range"
+        ? "The detected server is newer than the release lines verified for this Runner version."
+        : compatibility.reason === "unsupported_release_line"
+          ? "The detected release line is not in this Runner version's explicit compatibility matrix."
+          : "The detected server is below the minimum supported version.";
+  return [
+    `Database server version ${compatibility.detected_version} is unsupported.`,
+    reason,
+    `Synapsor Runner requires ${compatibility.supported_range}.`,
+    "Use a supported source release before drafting, activating, or serving reviewed Explore authority.",
+  ].join(" ");
+}
+
+export function databaseGrammarFeatureAvailable(
+  input: { engine: SourceEngine; server_version: string } | DatabaseServerAuthority,
+  feature: DatabaseGrammarFeature,
+): boolean {
+  const authority = "features" in input
+    ? input
+    : databaseServerCompatibility(input).authority;
+  return authority?.features[feature] === true;
+}
+
+export function assertDatabaseGrammarFeature(
+  input: { engine: SourceEngine; server_version: string } | DatabaseServerAuthority,
+  feature: DatabaseGrammarFeature,
+): void {
+  if (databaseGrammarFeatureAvailable(input, feature)) return;
+  const label = feature === "automatic_numeric_bands"
+    ? "Automatic numeric bands"
+    : "Schema CHECK-constraint vocabularies";
+  const version = "server_version" in input
+    ? input.server_version
+    : `${input.engine} ${input.version_line}`;
+  throw new Error(
+    `${label} are unavailable on ${version}. `
+    + "Runner omits unsupported grammar during review; no authority was changed.",
+  );
+}
+
+export function assertSupportedDatabaseServerVersion(input: {
+  engine: SourceEngine;
+  server_version: string;
+}): DatabaseServerCompatibility {
+  const compatibility = databaseServerCompatibility(input);
+  if (!compatibility.supported) {
+    const error = new Error(databaseServerCompatibilityMessage(compatibility));
+    error.name = "DATABASE_SERVER_VERSION_UNSUPPORTED";
+    throw error;
+  }
+  return compatibility;
+}
+
+const MAX_SCHEMA_ENUM_VALUES = 64;
+const MAX_SCHEMA_ENUM_VALUE_CHARACTERS = 64;
+const MAX_SCHEMA_ENUM_SERIALIZED_BYTES = 2_048;
+
+type SqlMetadataToken = {
+  kind: "word" | "identifier" | "string" | "symbol";
+  value: string;
+};
+
+export function deriveSchemaDeclaredEnumValues(input: {
+  engine: SourceEngine;
+  column_name: string;
+  column_type?: string;
+  native_values?: unknown;
+  check_definitions?: string[];
+}): string[] | undefined {
+  const declaredSets: string[][] = [];
+  if (Array.isArray(input.native_values) && input.native_values.length) {
+    declaredSets.push(input.native_values.map(String));
+  }
+  if (input.engine === "mysql" && input.column_type) {
+    const nativeMysqlValues = parseMysqlEnumOrSet(input.column_type);
+    if (nativeMysqlValues) declaredSets.push(nativeMysqlValues);
+  }
+  for (const definition of input.check_definitions ?? []) {
+    const normalizedDefinition = input.engine === "mysql"
+      ? decodeMysqlInformationSchemaCheck(definition)
+      : definition;
+    const values = parseSimpleMembershipCheck(normalizedDefinition, input.column_name);
+    if (values) declaredSets.push(values);
+  }
+  if (!declaredSets.length) return undefined;
+
+  let values = unique(declaredSets[0]!);
+  for (const declared of declaredSets.slice(1)) {
+    const allowed = new Set(declared);
+    values = values.filter((value) => allowed.has(value));
+  }
+  if (!values.length || values.length > MAX_SCHEMA_ENUM_VALUES) return undefined;
+  if (values.some((value) => [...value].length > MAX_SCHEMA_ENUM_VALUE_CHARACTERS)) {
+    return undefined;
+  }
+  if (Buffer.byteLength(JSON.stringify(values), "utf8") > MAX_SCHEMA_ENUM_SERIALIZED_BYTES) {
+    return undefined;
+  }
+  return values;
+}
+
+function decodeMysqlInformationSchemaCheck(definition: string): string {
+  let decoded = "";
+  for (let index = 0; index < definition.length; index += 1) {
+    const character = definition[index]!;
+    const next = definition[index + 1];
+    if (character === "\\" && (next === "\\" || next === "'")) {
+      decoded += next;
+      index += 1;
+      continue;
+    }
+    decoded += character;
+  }
+  return decoded;
+}
+
+function parseMysqlEnumOrSet(columnType: string): string[] | undefined {
+  const tokens = tokenizeSqlMetadata(columnType);
+  if (!tokens?.length || tokens[0]?.kind !== "word") return undefined;
+  const kind = tokens[0].value.toLowerCase();
+  if (kind !== "enum" && kind !== "set") return undefined;
+  const members = parseStringList(tokens.slice(1));
+  if (!members?.length) return undefined;
+  if (kind === "enum") return members;
+
+  const combinationCount = 2 ** members.length;
+  if (!Number.isSafeInteger(combinationCount) || combinationCount > MAX_SCHEMA_ENUM_VALUES) {
+    return undefined;
+  }
+  return Array.from({ length: combinationCount }, (_, mask) => members
+    .filter((_member, index) => (mask & (1 << index)) !== 0)
+    .join(","));
+}
+
+function parseSimpleMembershipCheck(
+  definition: string,
+  expectedColumn: string,
+): string[] | undefined {
+  let tokens = tokenizeSqlMetadata(definition);
+  if (!tokens?.length) return undefined;
+  if (tokens[0]?.kind === "word" && tokens[0].value.toLowerCase() === "check") {
+    tokens = stripExactOuterPair(tokens.slice(1), "(", ")");
+    if (!tokens) return undefined;
+  }
+  tokens = stripOuterParentheses(tokens);
+
+  const inIndex = findTopLevelToken(tokens, (token) =>
+    token.kind === "word" && token.value.toLowerCase() === "in");
+  if (inIndex > 0) {
+    if (!isColumnOperand(tokens.slice(0, inIndex), expectedColumn)) return undefined;
+    return parseStringList(tokens.slice(inIndex + 1));
+  }
+
+  const equalsIndex = findTopLevelToken(tokens, (token) =>
+    token.kind === "symbol" && token.value === "=");
+  if (equalsIndex <= 0 || !isColumnOperand(tokens.slice(0, equalsIndex), expectedColumn)) {
+    return undefined;
+  }
+  const right = tokens.slice(equalsIndex + 1);
+  if (right[0]?.kind !== "word" || right[0].value.toLowerCase() !== "any") {
+    return undefined;
+  }
+  let arrayExpression = stripExactOuterPair(right.slice(1), "(", ")");
+  if (!arrayExpression) return undefined;
+  arrayExpression = stripCastsAndParentheses(arrayExpression);
+  if (arrayExpression[0]?.kind !== "word"
+    || arrayExpression[0].value.toLowerCase() !== "array") {
+    return undefined;
+  }
+  return parseStringList(arrayExpression.slice(1), "[", "]");
+}
+
+function tokenizeSqlMetadata(value: string): SqlMetadataToken[] | undefined {
+  const tokens: SqlMetadataToken[] = [];
+  for (let index = 0; index < value.length;) {
+    const character = value[index]!;
+    if (/\s/.test(character)) {
+      index += 1;
+      continue;
+    }
+    if (character === "'") {
+      let parsed = "";
+      let closed = false;
+      index += 1;
+      while (index < value.length) {
+        const next = value[index]!;
+        if (next === "'" && value[index + 1] === "'") {
+          parsed += "'";
+          index += 2;
+          continue;
+        }
+        if (next === "'") {
+          index += 1;
+          closed = true;
+          break;
+        }
+        if (next === "\\" && index + 1 < value.length) {
+          parsed += value[index + 1]!;
+          index += 2;
+          continue;
+        }
+        parsed += next;
+        index += 1;
+      }
+      if (!closed) return undefined;
+      tokens.push({ kind: "string", value: parsed });
+      continue;
+    }
+    if (character === '"' || character === "`") {
+      const quote = character;
+      let parsed = "";
+      let closed = false;
+      index += 1;
+      while (index < value.length) {
+        const next = value[index]!;
+        if (next === quote && value[index + 1] === quote) {
+          parsed += quote;
+          index += 2;
+          continue;
+        }
+        if (next === quote) {
+          index += 1;
+          closed = true;
+          break;
+        }
+        parsed += next;
+        index += 1;
+      }
+      if (!closed) return undefined;
+      tokens.push({ kind: "identifier", value: parsed });
+      continue;
+    }
+    if (character === ":" && value[index + 1] === ":") {
+      tokens.push({ kind: "symbol", value: "::" });
+      index += 2;
+      continue;
+    }
+    if ("()[],=".includes(character)) {
+      tokens.push({ kind: "symbol", value: character });
+      index += 1;
+      continue;
+    }
+    const word = /^[A-Za-z_][A-Za-z0-9_$]*/.exec(value.slice(index));
+    if (!word) return undefined;
+    tokens.push({ kind: "word", value: word[0] });
+    index += word[0].length;
+  }
+  return tokens;
+}
+
+function parseStringList(
+  tokens: SqlMetadataToken[],
+  open = "(",
+  close = ")",
+): string[] | undefined {
+  const inner = stripExactOuterPair(tokens, open, close);
+  if (!inner) return undefined;
+  const items = splitTopLevelTokens(inner, ",");
+  if (!items?.length) return undefined;
+  const values: string[] = [];
+  for (const item of items) {
+    let literal = stripCastsAndParentheses(item);
+    if (literal.length === 2
+      && literal[0]?.kind === "word"
+      && literal[0].value.startsWith("_")
+      && literal[1]?.kind === "string") {
+      literal = literal.slice(1);
+    }
+    if (literal.length !== 1 || literal[0]?.kind !== "string") return undefined;
+    values.push(literal[0].value);
+  }
+  return values;
+}
+
+function isColumnOperand(tokens: SqlMetadataToken[], expectedColumn: string): boolean {
+  const operand = stripCastsAndParentheses(tokens);
+  return operand.length === 1
+    && (operand[0]?.kind === "word" || operand[0]?.kind === "identifier")
+    && operand[0].value.toLowerCase() === expectedColumn.toLowerCase();
+}
+
+function stripCastsAndParentheses(tokens: SqlMetadataToken[]): SqlMetadataToken[] {
+  let current = stripOuterParentheses(tokens);
+  while (true) {
+    const castIndex = findTopLevelToken(current, (token) =>
+      token.kind === "symbol" && token.value === "::");
+    if (castIndex < 0) return current;
+    current = stripOuterParentheses(current.slice(0, castIndex));
+  }
+}
+
+function stripOuterParentheses(tokens: SqlMetadataToken[]): SqlMetadataToken[] {
+  let current = tokens;
+  while (true) {
+    const inner = stripExactOuterPair(current, "(", ")");
+    if (!inner) return current;
+    current = inner;
+  }
+}
+
+function stripExactOuterPair(
+  tokens: SqlMetadataToken[],
+  open: string,
+  close: string,
+): SqlMetadataToken[] | undefined {
+  if (tokens[0]?.value !== open || tokens.at(-1)?.value !== close) return undefined;
+  let depth = 0;
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (tokens[index]?.value === open) depth += 1;
+    if (tokens[index]?.value === close) depth -= 1;
+    if (depth < 0 || (depth === 0 && index !== tokens.length - 1)) return undefined;
+  }
+  return depth === 0 ? tokens.slice(1, -1) : undefined;
+}
+
+function findTopLevelToken(
+  tokens: SqlMetadataToken[],
+  predicate: (token: SqlMetadataToken) => boolean,
+): number {
+  let parentheses = 0;
+  let brackets = 0;
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index]!;
+    if (token.value === "(") parentheses += 1;
+    else if (token.value === ")") parentheses -= 1;
+    else if (token.value === "[") brackets += 1;
+    else if (token.value === "]") brackets -= 1;
+    else if (parentheses === 0 && brackets === 0 && predicate(token)) return index;
+    if (parentheses < 0 || brackets < 0) return -1;
+  }
+  return -1;
+}
+
+function splitTopLevelTokens(
+  tokens: SqlMetadataToken[],
+  separator: string,
+): SqlMetadataToken[][] | undefined {
+  const output: SqlMetadataToken[][] = [];
+  let start = 0;
+  let parentheses = 0;
+  let brackets = 0;
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index]!;
+    if (token.value === "(") parentheses += 1;
+    else if (token.value === ")") parentheses -= 1;
+    else if (token.value === "[") brackets += 1;
+    else if (token.value === "]") brackets -= 1;
+    else if (token.value === separator && parentheses === 0 && brackets === 0) {
+      if (index === start) return undefined;
+      output.push(tokens.slice(start, index));
+      start = index + 1;
+    }
+    if (parentheses < 0 || brackets < 0) return undefined;
+  }
+  if (parentheses !== 0 || brackets !== 0 || start === tokens.length) return undefined;
+  output.push(tokens.slice(start));
+  return output;
+}
 
 export type ColumnInfo = {
   name: string;
@@ -72,6 +614,14 @@ export type IndexInfo = {
   columns?: string[];
   unique?: boolean;
   definition?: string;
+  /** Live-catalog key order used by advisory checks; excluded from authority fingerprints. */
+  catalog_key_columns?: string[];
+  /** Live-catalog leading key column; undefined for expression-leading indexes. */
+  catalog_leading_column?: string;
+  /** False for an index the database cannot currently use. */
+  catalog_usable?: boolean;
+  /** Partial indexes do not cover every row and cannot satisfy general scope probes. */
+  catalog_partial?: boolean;
 };
 
 export type CheckConstraintInfo = {
@@ -113,6 +663,8 @@ export type TableInfo = {
   type: "table" | "view";
   writable: boolean;
   comment?: string;
+  /** Approximate catalog statistic only; never used for authority or result semantics. */
+  approximate_row_count?: number;
   columns: ColumnInfo[];
   primary_key: string[];
   unique_constraints: UniqueConstraintInfo[];
@@ -240,6 +792,11 @@ export type SchemaInspection = {
   schemas: string[];
   tables: TableInfo[];
   warnings: string[];
+  /**
+   * A scoped live inspection can retain the whole-database single-organization
+   * refusal guard without fetching every unrelated column into the result.
+   */
+  global_tenant_isolation_evidence?: string[];
 };
 
 export type InspectOptions = {
@@ -248,7 +805,15 @@ export type InspectOptions = {
   schema?: string;
   statementTimeoutMs?: number;
   env?: NodeJS.ProcessEnv;
+  /** Fetch complete metadata only for these relations. Omit for discovery. */
+  resources?: Array<{ schema: string; table: string }>;
+  /** Retain the whole-database tenant-evidence guard during a scoped inspection. */
+  verifySingleOrganization?: boolean;
 };
+
+export type SchemaInspectionConnection =
+  | { engine: "postgres"; connection: PoolClient }
+  | { engine: "mysql"; connection: mysql.PoolConnection };
 
 export function schemaFingerprintForInspection(inspection: SchemaInspection): `sha256:${string}` {
   return canonicalJsonDigest({
@@ -425,6 +990,38 @@ export async function inspectDatabase(options: InspectOptions): Promise<SchemaIn
   }
 }
 
+/**
+ * Run the same read-only inspection using a connection borrowed from a caller-owned
+ * pool. Production HTTP Explore uses this so drift checks and data queries share one
+ * configured source-connection ceiling.
+ */
+export async function inspectDatabaseWithConnection(
+  options: InspectOptions,
+  source: SchemaInspectionConnection,
+): Promise<SchemaInspection> {
+  const env = options.env ?? process.env;
+  if (!isEnvName(options.databaseUrlEnv)) {
+    throw new Error("database-url-env must be an environment variable name.");
+  }
+  const url = env[options.databaseUrlEnv];
+  if (!url) {
+    throw new Error(`${options.databaseUrlEnv} is not set.`);
+  }
+  const engine = options.engine && options.engine !== "auto" ? options.engine : inferEngine(url);
+  if (engine !== source.engine) {
+    throw new Error(
+      `schema inspection connection engine ${source.engine} does not match requested engine ${engine}.`,
+    );
+  }
+  try {
+    return source.engine === "postgres"
+      ? await inspectPostgres({ ...options, env, engine: "postgres", url }, source.connection)
+      : await inspectMysql({ ...options, env, engine: "mysql", url }, source.connection);
+  } catch (error) {
+    throw new Error(`schema inspection failed for ${engine} using ${options.databaseUrlEnv}: ${sanitizeError(error)}`);
+  }
+}
+
 export function generateRunnerConfigFromSpec(spec: OnboardingSelectionSpec): GeneratedOnboardingFiles {
   validateSelectionSpec(spec);
   const mode = spec.mode ?? "shadow";
@@ -546,9 +1143,11 @@ export function generateRunnerConfigFromSpec(spec: OnboardingSelectionSpec): Gen
 
 export function summarizeInspection(inspection: SchemaInspection): string {
   const rolePosture = inspection.role_posture;
+  const compatibility = databaseServerCompatibility(inspection);
   const lines = [
     `Engine: ${inspection.engine}`,
     `Server: ${inspection.server_version}`,
+    `Server support: ${compatibility.tier === "full" ? "FULL" : compatibility.tier === "compatible_limited" ? "COMPATIBLE - LIMITED GRAMMAR" : "UNSUPPORTED"} - ${databaseServerCompatibilityMessage(compatibility)}`,
     `Current user: ${inspection.current_user}`,
     `Role posture: ${rolePosture?.verified ? "verified" : "unverified"}; ${rolePosture?.read_only ? "read-only" : "not read-only"}`,
     `Role posture fingerprint: ${rolePostureFingerprint(inspection)}`,
@@ -572,12 +1171,73 @@ export function summarizeInspection(inspection: SchemaInspection): string {
   return `${lines.join("\n")}\n`;
 }
 
-async function inspectPostgres(options: InspectOptions & { engine: "postgres"; url: string }): Promise<SchemaInspection> {
-  const pool = new Pool({ connectionString: options.url, connectionTimeoutMillis: options.statementTimeoutMs ?? 3000 });
-  const client = await pool.connect();
+function normalizedInspectionResources(
+  resources: InspectOptions["resources"],
+): Array<{ schema: string; table: string }> | undefined {
+  if (resources === undefined) return undefined;
+  if (!Array.isArray(resources) || resources.length < 1 || resources.length > 500) {
+    throw new Error("scoped schema inspection requires 1-500 relation descriptors.");
+  }
+  const normalized = new Map<string, { schema: string; table: string }>();
+  for (const resource of resources) {
+    const schema = resource?.schema?.trim();
+    const table = resource?.table?.trim();
+    if (!schema || !table || schema.length > 128 || table.length > 128) {
+      throw new Error("scoped schema inspection relation names must be 1-128 characters.");
+    }
+    normalized.set(JSON.stringify([schema, table]), { schema, table });
+  }
+  return [...normalized.values()].sort((left, right) =>
+    left.schema.localeCompare(right.schema) || left.table.localeCompare(right.table));
+}
+
+function postgresResourcePredicate(
+  schemaExpression: string,
+  tableExpression: string,
+): string {
+  return `AND ($2::text[] IS NULL OR EXISTS (
+           SELECT 1
+           FROM unnest($2::text[], $3::text[]) AS selected(selected_schema_name, selected_table_name)
+           WHERE selected.selected_schema_name = ${schemaExpression}
+             AND selected.selected_table_name = ${tableExpression}
+         ))`;
+}
+
+function mysqlResourcePredicate(
+  resources: Array<{ schema: string; table: string }> | undefined,
+  schemaExpression: string,
+  tableExpression: string,
+): { sql: string; params: string[] } {
+  if (!resources) return { sql: "", params: [] };
+  return {
+    sql: `AND (${resources.map(() =>
+      `(${schemaExpression} = ? AND ${tableExpression} = ?)`
+    ).join(" OR ")})`,
+    params: resources.flatMap((resource) => [resource.schema, resource.table]),
+  };
+}
+
+async function inspectPostgres(
+  options: InspectOptions & { engine: "postgres"; url: string },
+  borrowedClient?: PoolClient,
+): Promise<SchemaInspection> {
+  const pool = borrowedClient
+    ? undefined
+    : new Pool({
+      connectionString: options.url,
+      connectionTimeoutMillis: options.statementTimeoutMs ?? 3000,
+    });
+  let client = borrowedClient;
   try {
+    client ??= await pool!.connect();
     await client.query("BEGIN READ ONLY");
     await client.query(`SET LOCAL statement_timeout = ${Number(options.statementTimeoutMs ?? 3000)}`);
+    const selectedResources = normalizedInspectionResources(options.resources);
+    const resourceParams = [
+      options.schema ?? null,
+      selectedResources?.map((resource) => resource.schema) ?? null,
+      selectedResources?.map((resource) => resource.table) ?? null,
+    ];
     const version = await client.query<{
       version: string;
       current_user: string;
@@ -596,13 +1256,19 @@ async function inspectPostgres(options: InspectOptions & { engine: "postgres"; u
     );
     const tables = await client.query<RawTable>(
       `SELECT table_schema AS schema, table_name AS name, table_type AS type,
-              pg_catalog.obj_description((quote_ident(table_schema) || '.' || quote_ident(table_name))::regclass, 'pg_class') AS comment
+              pg_catalog.obj_description((quote_ident(table_schema) || '.' || quote_ident(table_name))::regclass, 'pg_class') AS comment,
+              (SELECT CASE WHEN c.reltuples >= 0 THEN ROUND(c.reltuples)::bigint END
+               FROM pg_catalog.pg_class c
+               JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+               WHERE n.nspname = table_schema AND c.relname = table_name
+               LIMIT 1) AS approximate_row_count
        FROM information_schema.tables
        WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
          AND ($1::text IS NULL OR table_schema = $1)
          AND table_type IN ('BASE TABLE', 'VIEW')
+         ${postgresResourcePredicate("table_schema", "table_name")}
        ORDER BY table_schema, table_name`,
-      [options.schema ?? null],
+      resourceParams,
     );
     const columns = await client.query<RawColumn>(
       `SELECT table_schema AS schema, table_name AS table_name, column_name AS name,
@@ -613,7 +1279,7 @@ async function inspectPostgres(options: InspectOptions & { engine: "postgres"; u
                 ordinal_position
               ) AS comment,
               CASE WHEN data_type = 'USER-DEFINED' THEN (
-                SELECT array_agg(enum_value.enumlabel ORDER BY enum_value.enumsortorder)
+                SELECT array_agg(enum_value.enumlabel::text ORDER BY enum_value.enumsortorder)
                 FROM pg_catalog.pg_type enum_type
                 JOIN pg_catalog.pg_namespace enum_ns ON enum_ns.oid = enum_type.typnamespace
                 JOIN pg_catalog.pg_enum enum_value ON enum_value.enumtypid = enum_type.oid
@@ -623,8 +1289,9 @@ async function inspectPostgres(options: InspectOptions & { engine: "postgres"; u
        FROM information_schema.columns
        WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
          AND ($1::text IS NULL OR table_schema = $1)
+         ${postgresResourcePredicate("table_schema", "table_name")}
        ORDER BY table_schema, table_name, ordinal_position`,
-      [options.schema ?? null],
+      resourceParams,
     );
     const keyColumns = await client.query<RawKeyColumn>(
       `SELECT n.nspname AS schema, c.relname AS table_name, con.conname AS constraint_name,
@@ -638,8 +1305,9 @@ async function inspectPostgres(options: InspectOptions & { engine: "postgres"; u
        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
          AND ($1::text IS NULL OR n.nspname = $1)
          AND con.contype IN ('p', 'u')
+         ${postgresResourcePredicate("n.nspname", "c.relname")}
        ORDER BY n.nspname, c.relname, con.conname, key_column.ordinal_position`,
-      [options.schema ?? null],
+      resourceParams,
     );
     const foreignKeys = await client.query<RawForeignKey>(
       `SELECT source_ns.nspname AS schema, source.relname AS table_name,
@@ -662,8 +1330,9 @@ async function inspectPostgres(options: InspectOptions & { engine: "postgres"; u
        WHERE con.contype = 'f'
          AND source_ns.nspname NOT IN ('pg_catalog', 'information_schema')
          AND ($1::text IS NULL OR source_ns.nspname = $1 OR target_ns.nspname = $1)
+         ${postgresResourcePredicate("source_ns.nspname", "source.relname")}
        ORDER BY source_ns.nspname, source.relname, con.conname, key_column.ordinal_position`,
-      [options.schema ?? null],
+      resourceParams,
     );
     const triggers = await client.query<RawTrigger>(
       `SELECT n.nspname AS schema, c.relname AS table_name, t.tgname AS name,
@@ -680,8 +1349,9 @@ async function inspectPostgres(options: InspectOptions & { engine: "postgres"; u
        WHERE NOT t.tgisinternal
          AND n.nspname NOT IN ('pg_catalog', 'information_schema')
          AND ($1::text IS NULL OR n.nspname = $1)
+         ${postgresResourcePredicate("n.nspname", "c.relname")}
        ORDER BY n.nspname, c.relname, t.tgname, event.event`,
-      [options.schema ?? null],
+      resourceParams,
     );
     const rowSecurity = await client.query<RawRowSecurity>(
       `SELECT n.nspname AS schema, c.relname AS table_name,
@@ -691,8 +1361,9 @@ async function inspectPostgres(options: InspectOptions & { engine: "postgres"; u
        WHERE c.relkind IN ('r', 'p')
          AND n.nspname NOT IN ('pg_catalog', 'information_schema')
          AND ($1::text IS NULL OR n.nspname = $1)
+         ${postgresResourcePredicate("n.nspname", "c.relname")}
        ORDER BY n.nspname, c.relname`,
-      [options.schema ?? null],
+      resourceParams,
     );
     const checks = await client.query<RawCheckConstraint>(
       `SELECT n.nspname AS schema, c.relname AS table_name, con.conname AS name,
@@ -701,10 +1372,12 @@ async function inspectPostgres(options: InspectOptions & { engine: "postgres"; u
        JOIN pg_catalog.pg_class c ON c.oid = con.conrelid
        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
        WHERE con.contype = 'c'
+         AND con.convalidated
          AND n.nspname NOT IN ('pg_catalog', 'information_schema')
          AND ($1::text IS NULL OR n.nspname = $1)
+         ${postgresResourcePredicate("n.nspname", "c.relname")}
        ORDER BY n.nspname, c.relname, con.conname`,
-      [options.schema ?? null],
+      resourceParams,
     );
     const rlsPolicies = await client.query<RawRlsPolicy>(
       `SELECT schemaname AS schema, tablename AS table_name, policyname AS name,
@@ -713,8 +1386,9 @@ async function inspectPostgres(options: InspectOptions & { engine: "postgres"; u
        FROM pg_catalog.pg_policies
        WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
          AND ($1::text IS NULL OR schemaname = $1)
+         ${postgresResourcePredicate("schemaname", "tablename")}
        ORDER BY schemaname, tablename, policyname`,
-      [options.schema ?? null],
+      resourceParams,
     );
     const relationRolePosture = await client.query<RawRelationRolePosture>(
       `SELECT n.nspname AS schema, c.relname AS table_name,
@@ -734,17 +1408,130 @@ async function inspectPostgres(options: InspectOptions & { engine: "postgres"; u
        WHERE c.relkind IN ('r', 'p', 'v', 'm')
          AND n.nspname NOT IN ('pg_catalog', 'information_schema')
          AND ($1::text IS NULL OR n.nspname = $1)
+         ${postgresResourcePredicate("n.nspname", "c.relname")}
        ORDER BY n.nspname, c.relname`,
-      [options.schema ?? null],
+      resourceParams,
     );
     const indexes = await client.query<RawIndex>(
-      `SELECT schemaname AS schema, tablename AS table_name, indexname AS name, indexdef AS definition
-       FROM pg_indexes
-       WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
-         AND ($1::text IS NULL OR schemaname = $1)
-       ORDER BY schemaname, tablename, indexname`,
-      [options.schema ?? null],
+      `SELECT table_ns.nspname AS schema, source_table.relname AS table_name,
+              index_relation.relname AS name,
+              pg_catalog.pg_get_indexdef(index_definition.indexrelid) AS definition,
+              leading_attribute.attname AS catalog_leading_column,
+              ARRAY(
+                SELECT COALESCE(key_attribute.attname, '')
+                FROM unnest(index_definition.indkey::smallint[]) WITH ORDINALITY AS key_column(attnum, ordinal_position)
+                LEFT JOIN pg_catalog.pg_attribute key_attribute
+                  ON key_attribute.attrelid = source_table.oid
+                 AND key_attribute.attnum = key_column.attnum
+                WHERE key_column.ordinal_position <= index_definition.indnkeyatts
+                ORDER BY key_column.ordinal_position
+              ) AS catalog_key_columns,
+              (index_definition.indisvalid AND index_definition.indisready) AS catalog_usable,
+              (index_definition.indpred IS NOT NULL) AS catalog_partial
+       FROM pg_catalog.pg_index index_definition
+       JOIN pg_catalog.pg_class source_table ON source_table.oid = index_definition.indrelid
+       JOIN pg_catalog.pg_namespace table_ns ON table_ns.oid = source_table.relnamespace
+       JOIN pg_catalog.pg_class index_relation ON index_relation.oid = index_definition.indexrelid
+       LEFT JOIN pg_catalog.pg_attribute leading_attribute
+         ON leading_attribute.attrelid = source_table.oid
+        AND leading_attribute.attnum = index_definition.indkey[0]
+       WHERE table_ns.nspname NOT IN ('pg_catalog', 'information_schema')
+         AND ($1::text IS NULL OR table_ns.nspname = $1)
+         ${postgresResourcePredicate("table_ns.nspname", "source_table.relname")}
+       ORDER BY table_ns.nspname, source_table.relname, index_relation.relname`,
+      resourceParams,
     );
+    let globalRolePosture: {
+      writable_relations: string[];
+      owned_relations: string[];
+    } | undefined;
+    if (selectedResources) {
+      const unsafePosture = await client.query<{
+        owns_relation: boolean;
+        can_write_relation: boolean;
+      }>(
+        `SELECT
+           EXISTS (
+             SELECT 1
+             FROM pg_catalog.pg_class c
+             JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+             WHERE c.relkind IN ('r', 'p', 'v')
+               AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+               AND ($1::text IS NULL OR n.nspname = $1)
+               AND (c.relowner = (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = current_user)
+                 OR pg_catalog.pg_has_role(current_user, c.relowner, 'MEMBER'))
+           ) AS owns_relation,
+           EXISTS (
+             SELECT 1
+             FROM pg_catalog.pg_class c
+             JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+             WHERE c.relkind IN ('r', 'p', 'v')
+               AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+               AND ($1::text IS NULL OR n.nspname = $1)
+               AND (pg_catalog.has_table_privilege(current_user, c.oid, 'INSERT')
+                 OR pg_catalog.has_table_privilege(current_user, c.oid, 'UPDATE')
+                 OR pg_catalog.has_table_privilege(current_user, c.oid, 'DELETE')
+                 OR pg_catalog.has_table_privilege(current_user, c.oid, 'TRUNCATE')
+                 OR pg_catalog.has_table_privilege(current_user, c.oid, 'TRIGGER'))
+           ) AS can_write_relation`,
+        [options.schema ?? null],
+      );
+      const posture = unsafePosture.rows[0];
+      globalRolePosture = {
+        // Activated boundaries always lock an empty list here. A sentinel is
+        // enough to fail closed if global posture later becomes unsafe, without
+        // materializing every unrelated relation name on every query.
+        writable_relations: posture?.can_write_relation
+          ? ["<global write authority detected>"]
+          : [],
+        owned_relations: posture?.owns_relation
+          ? ["<global relation ownership detected>"]
+          : [],
+      };
+    }
+    let globalTenantIsolationEvidence: string[] | undefined;
+    if (selectedResources && options.verifySingleOrganization) {
+      const tenantColumns = await client.query<{
+        schema: string;
+        table_name: string;
+        column_name: string;
+      }>(
+        `SELECT n.nspname AS schema, c.relname AS table_name, a.attname AS column_name
+         FROM pg_catalog.pg_attribute a
+         JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+         WHERE c.relkind IN ('r', 'p', 'v')
+           AND a.attnum > 0
+           AND NOT a.attisdropped
+           AND lower(a.attname) = ANY($2::text[])
+           AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+           AND ($1::text IS NULL OR n.nspname = $1)
+         ORDER BY n.nspname, c.relname, a.attname`,
+        [options.schema ?? null, [...TENANT_COLUMNS].sort()],
+      );
+      const rlsRelations = await client.query<{
+        schema: string;
+        table_name: string;
+      }>(
+        `SELECT n.nspname AS schema, c.relname AS table_name
+         FROM pg_catalog.pg_class c
+         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+         WHERE c.relkind IN ('r', 'p')
+           AND (c.relrowsecurity OR EXISTS (
+             SELECT 1 FROM pg_catalog.pg_policy policy WHERE policy.polrelid = c.oid
+           ))
+           AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+           AND ($1::text IS NULL OR n.nspname = $1)
+         ORDER BY n.nspname, c.relname`,
+        [options.schema ?? null],
+      );
+      globalTenantIsolationEvidence = unique([
+        ...tenantColumns.rows.map((row) =>
+          `${row.schema}.${row.table_name}.${row.column_name} is a tenant-scope candidate`),
+        ...rlsRelations.rows.map((row) =>
+          `${row.schema}.${row.table_name} has row-level security metadata`),
+      ]).sort();
+    }
     await client.query("COMMIT");
     return normalizeInspection({
       engine: "postgres",
@@ -766,23 +1553,55 @@ async function inspectPostgres(options: InspectOptions & { engine: "postgres"; u
       checks: checks.rows,
       rlsPolicies: rlsPolicies.rows,
       relationRolePosture: relationRolePosture.rows,
+      ...(globalRolePosture ? { globalRolePosture } : {}),
+      ...(globalTenantIsolationEvidence
+        ? { globalTenantIsolationEvidence }
+        : {}),
     });
   } catch (error) {
-    await client.query("ROLLBACK").catch(() => undefined);
+    await client?.query("ROLLBACK").catch(() => undefined);
     throw error;
   } finally {
-    client.release();
-    await pool.end();
+    if (!borrowedClient) {
+      try { client?.release(); } catch { /* preserve the inspection outcome */ }
+      await pool!.end().catch(() => undefined);
+    }
   }
 }
 
-async function inspectMysql(options: InspectOptions & { engine: "mysql"; url: string }): Promise<SchemaInspection> {
-  const connection = await mysql.createConnection({ uri: options.url, connectTimeout: options.statementTimeoutMs ?? 3000, dateStrings: true });
+async function inspectMysql(
+  options: InspectOptions & { engine: "mysql"; url: string },
+  borrowedConnection?: mysql.PoolConnection,
+): Promise<SchemaInspection> {
+  const connection = borrowedConnection ?? await mysql.createConnection({
+    uri: options.url,
+    connectTimeout: options.statementTimeoutMs ?? 3000,
+    dateStrings: true,
+  });
+  let inspectionFailed = false;
   try {
     await connection.query("START TRANSACTION READ ONLY").catch(() => connection.query("START TRANSACTION"));
     await connection.query("SET SESSION max_execution_time = ?", [Number(options.statementTimeoutMs ?? 3000)]).catch(() => undefined);
     const [versionRows] = await connection.query<mysql.RowDataPacket[]>("SELECT VERSION() AS version, CURRENT_USER() AS `current_user`");
+    const serverVersion = String(versionRows[0]?.version ?? "unknown");
+    const schemaCheckConstraintsAvailable = databaseServerCompatibility({
+      engine: "mysql",
+      server_version: serverVersion,
+    }).authority?.features.schema_check_constraints === true;
     const schemaParam = options.schema ?? null;
+    const selectedResources = normalizedInspectionResources(options.resources);
+    const tableFilter = mysqlResourcePredicate(selectedResources, "table_schema", "table_name");
+    const keyFilter = mysqlResourcePredicate(selectedResources, "tc.table_schema", "tc.table_name");
+    const triggerFilter = mysqlResourcePredicate(
+      selectedResources,
+      "trigger_schema",
+      "event_object_table",
+    );
+    const foreignKeyFilter = mysqlResourcePredicate(
+      selectedResources,
+      "tc.table_schema",
+      "tc.table_name",
+    );
     const [schemaRows] = await connection.query<mysql.RowDataPacket[]>(
       `SELECT schema_name AS schema_name FROM information_schema.schemata
        WHERE schema_name NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
@@ -790,13 +1609,14 @@ async function inspectMysql(options: InspectOptions & { engine: "mysql"; url: st
     );
     const [tableRows] = await connection.query<mysql.RowDataPacket[]>(
       `SELECT table_schema AS \`schema\`, table_name AS name, table_type AS type,
-              table_comment AS comment
+              table_comment AS comment, table_rows AS approximate_row_count
        FROM information_schema.tables
        WHERE table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
          AND (? IS NULL OR table_schema = ?)
          AND table_type IN ('BASE TABLE', 'VIEW')
+         ${tableFilter.sql}
        ORDER BY table_schema, table_name`,
-      [schemaParam, schemaParam],
+      [schemaParam, schemaParam, ...tableFilter.params],
     );
     const [columnRows] = await connection.query<mysql.RowDataPacket[]>(
       `SELECT table_schema AS \`schema\`, table_name AS table_name, column_name AS name,
@@ -806,8 +1626,9 @@ async function inspectMysql(options: InspectOptions & { engine: "mysql"; url: st
        FROM information_schema.columns
        WHERE table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
          AND (? IS NULL OR table_schema = ?)
+         ${tableFilter.sql}
        ORDER BY table_schema, table_name, ordinal_position`,
-      [schemaParam, schemaParam],
+      [schemaParam, schemaParam, ...tableFilter.params],
     );
     const [keyRows] = await connection.query<mysql.RowDataPacket[]>(
       `SELECT tc.table_schema AS \`schema\`, tc.table_name AS table_name, tc.constraint_name AS constraint_name, tc.constraint_type AS constraint_type,
@@ -821,8 +1642,9 @@ async function inspectMysql(options: InspectOptions & { engine: "mysql"; url: st
        WHERE tc.table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
          AND (? IS NULL OR tc.table_schema = ?)
          AND tc.constraint_type IN ('PRIMARY KEY', 'UNIQUE')
+         ${keyFilter.sql}
        ORDER BY tc.table_schema, tc.table_name, tc.constraint_name, kcu.ordinal_position`,
-      [schemaParam, schemaParam],
+      [schemaParam, schemaParam, ...keyFilter.params],
     );
     const [fkRows] = await connection.query<mysql.RowDataPacket[]>(
       `SELECT tc.table_schema AS \`schema\`, tc.table_name AS table_name, tc.constraint_name AS constraint_name,
@@ -842,8 +1664,9 @@ async function inspectMysql(options: InspectOptions & { engine: "mysql"; url: st
        WHERE tc.constraint_type = 'FOREIGN KEY'
          AND tc.table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
          AND (? IS NULL OR tc.table_schema = ? OR kcu.referenced_table_schema = ?)
+         ${foreignKeyFilter.sql}
        ORDER BY tc.table_schema, tc.table_name, tc.constraint_name, kcu.ordinal_position`,
-      [schemaParam, schemaParam, schemaParam],
+      [schemaParam, schemaParam, schemaParam, ...foreignKeyFilter.params],
     );
     const [triggerRows] = await connection.query<mysql.RowDataPacket[]>(
       `SELECT trigger_schema AS \`schema\`, event_object_table AS table_name,
@@ -852,23 +1675,51 @@ async function inspectMysql(options: InspectOptions & { engine: "mysql"; url: st
        FROM information_schema.triggers
        WHERE trigger_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
          AND (? IS NULL OR trigger_schema = ?)
+         ${triggerFilter.sql}
        ORDER BY trigger_schema, event_object_table, trigger_name, event_manipulation`,
-      [schemaParam, schemaParam],
+      [schemaParam, schemaParam, ...triggerFilter.params],
     );
     const [indexRows] = await connection.query<mysql.RowDataPacket[]>(
       `SELECT table_schema AS \`schema\`, table_name AS table_name, index_name AS name,
               GROUP_CONCAT(column_name ORDER BY seq_in_index) AS columns,
+              MAX(CASE WHEN seq_in_index = 1 THEN column_name END) AS catalog_leading_column,
               MIN(non_unique) AS non_unique
        FROM information_schema.statistics
        WHERE table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
          AND (? IS NULL OR table_schema = ?)
+         ${tableFilter.sql}
        GROUP BY table_schema, table_name, index_name
        ORDER BY table_schema, table_name, index_name`,
-      [schemaParam, schemaParam],
+      [schemaParam, schemaParam, ...tableFilter.params],
     );
+    let checkRows: mysql.RowDataPacket[] = [];
+    if (schemaCheckConstraintsAvailable) {
+      try {
+        const [rows] = await connection.query<mysql.RowDataPacket[]>(
+          `SELECT tc.table_schema AS \`schema\`, tc.table_name AS table_name,
+                  tc.constraint_name AS name, cc.check_clause AS definition
+           FROM information_schema.table_constraints tc
+           JOIN information_schema.check_constraints cc
+           ON cc.constraint_schema = tc.constraint_schema
+          AND cc.constraint_name = tc.constraint_name
+           WHERE tc.constraint_type = 'CHECK'
+             AND tc.enforced = 'YES'
+             AND tc.table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
+             AND (? IS NULL OR tc.table_schema = ?)
+             ${keyFilter.sql}
+           ORDER BY tc.table_schema, tc.table_name, tc.constraint_name`,
+          [schemaParam, schemaParam, ...keyFilter.params],
+        );
+        checkRows = rows;
+      } catch {
+        // A supported server may still hide CHECK_CONSTRAINTS from this role.
+        // Native ENUM/SET metadata remains available through COLUMN_TYPE.
+      }
+    }
     const [grantRows] = await connection.query<mysql.RowDataPacket[]>("SHOW GRANTS FOR CURRENT_USER");
+    const normalizedMysqlGrants = grantRows.map((row) => String(Object.values(row)[0] ?? ""));
     const mysqlGrants = mysqlGrantPosture(
-      grantRows.map((row) => String(Object.values(row)[0] ?? "")),
+      normalizedMysqlGrants,
       (tableRows as Array<Record<string, unknown>>).map((row) => ({
         schema: String(row.schema),
         table: String(row.name),
@@ -889,10 +1740,34 @@ async function inspectMysql(options: InspectOptions & { engine: "mysql"; url: st
       can_trigger: mysqlGrants.relations[`${String(row.schema)}.${String(row.name)}`]?.trigger ?? false,
       row_security_forced: false,
     }));
+    const globalRolePosture = selectedResources
+      ? {
+        writable_relations: mysqlGrantsIncludeWriteAuthority(normalizedMysqlGrants)
+          ? ["<global write authority detected>"]
+          : [],
+        owned_relations: [],
+      }
+      : undefined;
+    let globalTenantIsolationEvidence: string[] | undefined;
+    if (selectedResources && options.verifySingleOrganization) {
+      const tenantNames = [...TENANT_COLUMNS].sort();
+      const [rows] = await connection.query<mysql.RowDataPacket[]>(
+        `SELECT table_schema AS \`schema\`, table_name AS table_name,
+                column_name AS column_name
+         FROM information_schema.columns
+         WHERE table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
+           AND (? IS NULL OR table_schema = ?)
+           AND lower(column_name) IN (${tenantNames.map(() => "?").join(", ")})
+         ORDER BY table_schema, table_name, column_name`,
+        [schemaParam, schemaParam, ...tenantNames],
+      );
+      globalTenantIsolationEvidence = (rows as Array<Record<string, unknown>>).map((row) =>
+        `${String(row.schema)}.${String(row.table_name)}.${String(row.column_name)} is a tenant-scope candidate`);
+    }
     await connection.query("COMMIT").catch(() => undefined);
     return normalizeInspection({
       engine: "mysql",
-      server_version: String(versionRows[0]?.version ?? "unknown"),
+      server_version: serverVersion,
       current_user: String(versionRows[0]?.current_user ?? "unknown"),
       role: {
         verified: mysqlGrants.verified,
@@ -909,21 +1784,43 @@ async function inspectMysql(options: InspectOptions & { engine: "mysql"; url: st
         table_name: String(row.table_name),
         name: String(row.name),
         columns: typeof row.columns === "string" ? row.columns.split(",") : undefined,
+        catalog_key_columns: typeof row.columns === "string" ? row.columns.split(",") : undefined,
+        catalog_leading_column: typeof row.catalog_leading_column === "string"
+          ? row.catalog_leading_column
+          : undefined,
+        catalog_usable: true,
+        catalog_partial: false,
         unique: Number(row.non_unique) === 0,
       })),
       triggers: triggerRows as RawTrigger[],
       rowSecurity: [],
+      checks: checkRows as RawCheckConstraint[],
       relationRolePosture,
+      ...(globalRolePosture ? { globalRolePosture } : {}),
+      ...(globalTenantIsolationEvidence
+        ? { globalTenantIsolationEvidence }
+        : {}),
     });
   } catch (error) {
+    inspectionFailed = true;
     await connection.query("ROLLBACK").catch(() => undefined);
     throw error;
   } finally {
-    await connection.end();
+    if (!borrowedConnection) {
+      await connection.end().catch((error) => {
+        if (!inspectionFailed) throw error;
+      });
+    }
   }
 }
 
-type RawTable = { schema: string; name: string; type: string; comment?: string | null };
+type RawTable = {
+  schema: string;
+  name: string;
+  type: string;
+  comment?: string | null;
+  approximate_row_count?: string | number | bigint | null;
+};
 type RawColumn = {
   schema: string;
   table_name: string;
@@ -936,7 +1833,7 @@ type RawColumn = {
   is_identity?: string | null;
   ordinal_position: number;
   comment?: string | null;
-  enum_values?: string[] | null;
+  enum_values?: unknown;
 };
 type RawKeyColumn = { schema: string; table_name: string; constraint_name: string; constraint_type: string; column_name: string; ordinal_position: number };
 type RawForeignKey = {
@@ -950,7 +1847,18 @@ type RawForeignKey = {
   ordinal_position: number;
   delete_rule?: string;
 };
-type RawIndex = { schema: string; table_name: string; name: string; definition?: string; columns?: string[]; unique?: boolean };
+type RawIndex = {
+  schema: string;
+  table_name: string;
+  name: string;
+  definition?: string;
+  columns?: string[];
+  unique?: boolean;
+  catalog_key_columns?: string[];
+  catalog_leading_column?: string;
+  catalog_usable?: boolean;
+  catalog_partial?: boolean;
+};
 type RawTrigger = { schema: string; table_name: string; name: string; timing: string; orientation: string; event: string };
 type RawRowSecurity = { schema: string; table_name: string; enabled: boolean; forced?: boolean };
 type RawCheckConstraint = { schema: string; table_name: string; name: string; definition: string };
@@ -1000,6 +1908,11 @@ function normalizeInspection(input: {
   checks?: RawCheckConstraint[];
   rlsPolicies?: RawRlsPolicy[];
   relationRolePosture?: RawRelationRolePosture[];
+  globalRolePosture?: {
+    writable_relations: string[];
+    owned_relations: string[];
+  };
+  globalTenantIsolationEvidence?: string[];
 }): SchemaInspection {
   const columnsByTable = groupBy(input.columns, (row) => tableKey(row.schema, row.table_name));
   const keysByTable = groupBy(input.keyColumns, (row) => tableKey(row.schema, row.table_name));
@@ -1016,9 +1929,19 @@ function normalizeInspection(input: {
   const tables = input.tables.map((raw): TableInfo => {
     const key = tableKey(raw.schema, raw.name);
     const rawColumns = columnsByTable.get(key) ?? [];
+    const tableChecks = checksByTable.get(key) ?? [];
     const primary_key = constraintColumns(keysByTable.get(key) ?? [], "PRIMARY KEY")[0]?.columns ?? [];
     const unique_constraints = constraintColumns(keysByTable.get(key) ?? [], "UNIQUE");
-    const columns = rawColumns.map((column) => normalizeColumn(column, primary_key));
+    const columns = rawColumns.map((column) => normalizeColumn({
+      ...column,
+      enum_values: deriveSchemaDeclaredEnumValues({
+        engine: input.engine,
+        column_name: String(column.name),
+        column_type: column.udt_name,
+        native_values: column.enum_values,
+        check_definitions: tableChecks.map((check) => check.definition),
+      }),
+    }, primary_key));
     const sensitive = columns.filter((column) => column.suggestions.sensitive).map((column) => column.name);
     const default_visible_columns = columns
       .filter((column) => !column.suggestions.sensitive && !column.suggestions.large_or_binary)
@@ -1040,10 +1963,13 @@ function normalizeInspection(input: {
       type: raw.type.toUpperCase().includes("VIEW") ? "view" : "table",
       writable: raw.type.toUpperCase().includes("TABLE"),
       ...(raw.comment ? { comment: raw.comment } : {}),
+      ...(catalogRowEstimate(raw.approximate_row_count) === undefined
+        ? {}
+        : { approximate_row_count: catalogRowEstimate(raw.approximate_row_count) }),
       columns,
       primary_key,
       unique_constraints,
-      check_constraints: (checksByTable.get(key) ?? []).map((check) => ({ name: check.name, definition: check.definition })),
+      check_constraints: tableChecks.map((check) => ({ name: check.name, definition: check.definition })),
       foreign_keys: normalizeForeignKeys(fksByTable.get(key) ?? []),
       referenced_by: normalizeReferencingForeignKeys(incomingFksByTable.get(key) ?? []),
       write_triggers: normalizeTriggers(triggersByTable.get(key) ?? []),
@@ -1055,6 +1981,10 @@ function normalizeInspection(input: {
         columns: index.columns,
         unique: index.unique,
         definition: index.definition,
+        catalog_key_columns: index.catalog_key_columns,
+        catalog_leading_column: index.catalog_leading_column,
+        catalog_usable: index.catalog_usable,
+        catalog_partial: index.catalog_partial,
       })),
       suggestions: {
         tenant_columns: columns.filter((column) => column.suggestions.tenant).map((column) => column.name),
@@ -1064,12 +1994,16 @@ function normalizeInspection(input: {
       },
     };
   });
-  const writableRelations = tables
-    .filter((table) => relationIsWriteCapable(table))
-    .map((table) => `${table.schema}.${table.name}`);
-  const ownedRelations = tables
-    .filter((table) => table.role_posture?.current_role_is_owner || table.role_posture?.current_role_can_assume_owner)
-    .map((table) => `${table.schema}.${table.name}`);
+  const writableRelations = input.globalRolePosture
+    ? [...input.globalRolePosture.writable_relations].sort()
+    : tables
+      .filter((table) => relationIsWriteCapable(table))
+      .map((table) => `${table.schema}.${table.name}`);
+  const ownedRelations = input.globalRolePosture
+    ? [...input.globalRolePosture.owned_relations].sort()
+    : tables
+      .filter((table) => table.role_posture?.current_role_is_owner || table.role_posture?.current_role_can_assume_owner)
+      .map((table) => `${table.schema}.${table.name}`);
   const roleVerified = input.role?.verified === true && tables.every((table) => table.role_posture !== undefined);
   const roleReasons = [
     ...(superuser === true ? ["current role is a database superuser"] : []),
@@ -1078,6 +2012,10 @@ function normalizeInspection(input: {
     ...(writableRelations.length ? [`current role has write authority on ${writableRelations.length} inspected relation(s)`] : []),
     ...(!roleVerified ? ["effective role posture could not be fully verified"] : []),
   ];
+  const compatibility = databaseServerCompatibility({
+    engine: input.engine,
+    server_version: input.server_version,
+  });
   return {
     engine: input.engine,
     server_version: input.server_version,
@@ -1094,8 +2032,24 @@ function normalizeInspection(input: {
     inspected_at: new Date().toISOString(),
     schemas: input.schemas,
     tables,
-    warnings: ["Inspection reads metadata only. Column classifications are suggestions, not a complete data-classification system."],
+    warnings: [
+      "Inspection reads metadata only. Column classifications are suggestions, not a complete data-classification system.",
+      ...(compatibility.tier === "full"
+        ? []
+        : [`Database compatibility: ${databaseServerCompatibilityMessage(compatibility)}`]),
+    ],
+    ...(input.globalTenantIsolationEvidence
+      ? { global_tenant_isolation_evidence: [...input.globalTenantIsolationEvidence].sort() }
+      : {}),
   };
+}
+
+function catalogRowEstimate(
+  value: string | number | bigint | null | undefined,
+): number | undefined {
+  if (value === null || value === undefined) return undefined;
+  const numeric = typeof value === "bigint" ? Number(value) : Number(value);
+  return Number.isSafeInteger(numeric) && numeric >= 0 ? numeric : undefined;
 }
 
 function normalizePolicyRoles(value: unknown): string[] {
@@ -1113,6 +2067,9 @@ function normalizeColumn(column: RawColumn, primaryKey: string[]): ColumnInfo {
   const sensitivity = classifySensitivity({
     name,
     dataType: String(column.data_type || column.udt_name || "unknown"),
+    ...(Array.isArray(column.enum_values) && column.enum_values.length
+      ? { constrainedValues: column.enum_values.map(String) }
+      : {}),
     description: column.comment ?? undefined,
     source: "database",
   });
@@ -1120,7 +2077,9 @@ function normalizeColumn(column: RawColumn, primaryKey: string[]): ColumnInfo {
     name,
     data_type: String(column.data_type || column.udt_name || "unknown"),
     ...(column.comment ? { comment: column.comment } : {}),
-    ...(column.enum_values?.length ? { enum_values: column.enum_values.map(String) } : {}),
+    ...(Array.isArray(column.enum_values) && column.enum_values.length
+      ? { enum_values: column.enum_values.map(String) }
+      : {}),
     nullable: String(column.is_nullable).toUpperCase() === "YES",
     default: column.column_default ?? undefined,
     generated: /always|stored|virtual|generated/i.test(String(column.is_generated ?? "")),
@@ -1240,6 +2199,22 @@ export function mysqlGrantPosture(
     relationMap[`${relation.schema}.${relation.table}`] = posture;
   }
   return { verified, elevated, relations: relationMap };
+}
+
+function mysqlGrantsIncludeWriteAuthority(grants: string[]): boolean {
+  for (const raw of grants) {
+    const match = raw.trim().match(/^GRANT\s+(.+?)\s+ON\s+(.+?)\s+TO\s+/i);
+    if (!match || !parseMysqlGrantTarget(match[2]!)) continue;
+    const privileges = parseMysqlGrantPrivileges(match[1]!);
+    if (privileges.relation.insert
+      || privileges.relation.update
+      || privileges.relation.delete
+      || privileges.relation.truncate
+      || privileges.relation.trigger) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function parseMysqlGrantTarget(

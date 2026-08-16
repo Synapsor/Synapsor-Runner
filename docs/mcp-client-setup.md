@@ -112,6 +112,7 @@ Supported client names:
 generic-stdio
 generic
 claude-desktop
+claude-code
 cursor
 vscode
 openai-agents
@@ -126,6 +127,23 @@ synapsor-runner mcp client-config \
   --config ./synapsor.runner.json \
   --store ./.synapsor/local.db
 ```
+
+For a deployed production HTTP Explore endpoint, generate a native remote
+configuration instead of hand-writing an `Authorization` header:
+
+```bash
+synapsor-runner mcp client-config --client claude-code --transport streamable-http --config ./synapsor.runner.json
+synapsor-runner mcp client-config --client cursor      --transport streamable-http --config ./synapsor.runner.json
+synapsor-runner mcp client-config --client vscode      --transport streamable-http --config ./synapsor.runner.json
+```
+
+Each output references `SYNAPSOR_MCP_ACCESS_TOKEN` by name and contains no token
+value. The endpoint comes from the configured OAuth protected-resource URI.
+Set the variable in the client process with a short-lived token from the
+configured authorization server, then reload the client. Claude Code uses
+`${SYNAPSOR_MCP_ACCESS_TOKEN}` interpolation; Cursor and VS Code use
+`${env:SYNAPSOR_MCP_ACCESS_TOKEN}`. Do not replace those placeholders with a
+literal bearer token in a project file.
 
 The older form is still supported:
 

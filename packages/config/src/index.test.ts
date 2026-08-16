@@ -532,8 +532,37 @@ describe("runner capability config validation", () => {
       },
     };
     const notifications = notificationConfig();
+    const productionExplore = structuredClone(sharedHttp) as any;
+    productionExplore.mode = "read_only";
+    delete productionExplore.capabilities;
+    productionExplore.trusted_context = { provider: "http_claims" };
+    productionExplore.storage = {
+      shared_postgres: {
+        mode: "runtime_store",
+        url_env: "SYNAPSOR_CONTROL_DATABASE_URL",
+        schema: "synapsor_runner",
+      },
+    };
+    productionExplore.http_security.oauth_resource.scopes_supported = ["synapsor.explore"];
+    productionExplore.http_security.oauth_resource.required_scopes = ["synapsor.explore"];
+    productionExplore.production_explore = {
+      enabled: true,
+      project_root: "./production-explore",
+      required_oauth_scope: "synapsor.explore",
+      budget_hmac_key_env: "SYNAPSOR_EXPLORE_BUDGET_HMAC_KEY",
+      accounting_namespace: "example.analytics.production",
+      source_max_connections: 8,
+      max_sessions_per_principal: 4,
+      tenant_limits: {
+        max_queries_per_rolling_24_hours: 10_000,
+        max_extracted_cells_per_rolling_24_hours: 1_000_000,
+        max_differencing_queries_per_rolling_24_hours: 2_000,
+        requests_per_minute: 1_000,
+        max_response_cells_per_response: 500,
+      },
+    };
 
-    for (const accepted of [safeConfig, contractOnly, aggregateLimited, perSession, asymmetricSession, sharedHttp, sharedLedger, sharedRuntimeStore, operationallyBounded, databaseScoped, boundedSet, batchInsert, aggregateRead, aggregateReadWithOwnerThreshold, modelWithheld, graduatedTrust, freshnessRequired, notifications]) {
+    for (const accepted of [safeConfig, contractOnly, aggregateLimited, perSession, asymmetricSession, sharedHttp, sharedLedger, sharedRuntimeStore, operationallyBounded, databaseScoped, boundedSet, batchInsert, aggregateRead, aggregateReadWithOwnerThreshold, modelWithheld, graduatedTrust, freshnessRequired, notifications, productionExplore]) {
       expect(validateRunnerCapabilityConfig(accepted).ok).toBe(true);
       expect(schemaValidate(accepted), JSON.stringify(schemaValidate.errors)).toBe(true);
     }
@@ -758,6 +787,104 @@ describe("runner capability config validation", () => {
     config.http_security.allowed_origins = ["https://agent.example"];
     config.http_security.static_token = { active_env: "literal secret", previous_env: "SYNAPSOR_PREVIOUS_HTTP_TOKEN" };
     expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code)).toContain("INVALID_HTTP_TOKEN_ENV");
+  });
+
+  it("requires the complete production Explore security posture", () => {
+    const config = mutableConfig();
+    config.storage = {
+      sqlite_path: "./.synapsor/local.db",
+      shared_postgres: {
+        mode: "runtime_store",
+        url_env: "SYNAPSOR_CONTROL_DATABASE_URL",
+      },
+    };
+    config.trusted_context = {
+      provider: "http_claims",
+    };
+    config.session_auth = {
+      provider: "jwt_asymmetric",
+      algorithms: ["RS256"],
+      jwks_url_env: "SYNAPSOR_SESSION_JWKS_URL",
+      issuer: "https://identity.example",
+      audience: "https://runner.example/mcp",
+      tenant_claim: "tenant_id",
+      principal_claim: "sub",
+    };
+    config.http_security = {
+      deployment: "shared",
+      channel: "trusted_tls_proxy",
+      oauth_resource: {
+        resource: "https://runner.example/mcp",
+        authorization_servers: ["https://identity.example"],
+        scopes_supported: ["synapsor.explore"],
+        required_scopes: ["synapsor.explore"],
+      },
+      allowed_hosts: ["runner.example"],
+    };
+    config.production_explore = {
+      enabled: true,
+      project_root: "./production-explore",
+      required_oauth_scope: "synapsor.explore",
+      budget_hmac_key_env: "SYNAPSOR_EXPLORE_BUDGET_HMAC_KEY",
+      accounting_namespace: "example.analytics.production",
+      tenant_limits: {
+        max_queries_per_rolling_24_hours: 10_000,
+        max_extracted_cells_per_rolling_24_hours: 1_000_000,
+        max_differencing_queries_per_rolling_24_hours: 2_000,
+        requests_per_minute: 1_000,
+      },
+    };
+
+    expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code))
+      .toContain("PRODUCTION_EXPLORE_READ_ONLY_REQUIRED");
+
+    config.mode = "read_only";
+    delete config.capabilities;
+    expect(validateRunnerCapabilityConfig(config)).toMatchObject({ ok: true, errors: [] });
+
+    config.production_explore.source_max_connections = 0;
+    expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code))
+      .toContain("INVALID_PRODUCTION_EXPLORE_AVAILABILITY_LIMIT");
+    config.production_explore.source_max_connections = 8;
+    config.production_explore.max_sessions_per_principal = 101;
+    expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code))
+      .toContain("INVALID_PRODUCTION_EXPLORE_AVAILABILITY_LIMIT");
+    config.production_explore.max_sessions_per_principal = 4;
+    config.production_explore.tenant_limits.max_response_cells_per_response = 0;
+    expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code))
+      .toContain("INVALID_PRODUCTION_EXPLORE_TENANT_LIMIT");
+    config.production_explore.tenant_limits.max_response_cells_per_response = 500;
+
+    config.session_auth.provider = "jwt_hs256";
+    config.session_auth.secret_env = "SYNAPSOR_SESSION_JWT_SECRET";
+    delete config.session_auth.algorithms;
+    delete config.session_auth.jwks_url_env;
+    expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code)).toContain("PRODUCTION_EXPLORE_ASYMMETRIC_JWT_REQUIRED");
+
+    config.session_auth.provider = "jwt_asymmetric";
+    config.session_auth.algorithms = ["RS256"];
+    config.session_auth.jwks_url_env = "SYNAPSOR_SESSION_JWKS_URL";
+    delete config.session_auth.secret_env;
+    config.storage.shared_postgres.mode = "mirror";
+    expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code)).toContain("PRODUCTION_EXPLORE_SHARED_STORE_REQUIRED");
+
+    config.storage.shared_postgres.mode = "runtime_store";
+    config.http_security.channel = "insecure_http_break_glass";
+    expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code)).toContain("PRODUCTION_EXPLORE_SECURE_CHANNEL_REQUIRED");
+
+    config.http_security.channel = "trusted_tls_proxy";
+    delete config.session_auth.tenant_claim;
+    expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code))
+      .toContain("PRODUCTION_EXPLORE_TENANT_CLAIM_REQUIRED");
+    config.production_explore.single_organization_id = "internal-finance";
+    expect(validateRunnerCapabilityConfig(config)).toMatchObject({ ok: true, errors: [] });
+    config.session_auth.tenant_claim = "tenant_id";
+    expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code))
+      .toContain("PRODUCTION_EXPLORE_SINGLE_ORGANIZATION_TENANT_CLAIM_FORBIDDEN");
+    delete config.session_auth.tenant_claim;
+    config.production_explore.single_organization_id = "bad organization id";
+    expect(validateRunnerCapabilityConfig(config).errors.map((error) => error.code))
+      .toContain("PRODUCTION_EXPLORE_SINGLE_ORGANIZATION_ID_INVALID");
   });
 
   it("requires signed claims and RFC 9728 metadata for shared HTTP deployment", () => {

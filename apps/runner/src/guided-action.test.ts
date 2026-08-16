@@ -104,6 +104,37 @@ describe("guided write actions", () => {
     await expect(fs.readFile(path.join(fixture.root, created.draft.dsl_path), "utf8")).resolves.toBe(created.dsl);
   });
 
+  it("does not advertise or accept guarded writes with relationship-carried principal scope", async () => {
+    const fixture = await activatedDerivedPrincipalWriteFixture();
+    const options = await guidedActionOptions({
+      projectRoot: fixture.root,
+      inspection: fixture.inspection,
+    });
+    expect(options.resources.map((resource) => resource.id)).not.toContain("public.members");
+
+    await expect(createGuidedActionDraft({
+      projectRoot: fixture.root,
+      inspection: fixture.inspection,
+      action: {
+        capability_name: "membership.set_derived_loyalty_balance",
+        description: "Propose a reviewed loyalty balance.",
+        resource: "public.members",
+        operation: "update",
+        conflict_column: "version",
+        version_advance: "integer_increment",
+        approval_role: "membership_reviewer",
+        patches: [{
+          column: "loyalty_balance",
+          value_source: "argument",
+          argument_name: "loyalty_balance",
+          minimum: 0,
+          maximum: 500,
+        }],
+        confirmed_trusted_scope: true,
+      },
+    })).rejects.toThrow(/GUIDED_ACTION_DIRECT_PRINCIPAL_REQUIRED/);
+  });
+
   it("emits reversible human-reviewed transitions and blocks unsafe policy combinations", async () => {
     const fixture = await activatedFitFlowFixture();
     const base = {
@@ -410,6 +441,75 @@ async function activatedFitFlowFixture(): Promise<{ root: string; inspection: Sc
   return { root, inspection };
 }
 
+async function activatedDerivedPrincipalWriteFixture(): Promise<{
+  root: string;
+  inspection: SchemaInspection;
+}> {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-guided-derived-principal-"));
+  temporaryRoots.push(root);
+  const inspection = derivedPrincipalWriteInspection();
+  const build = buildAutoBoundary({
+    inspection,
+    project: {
+      root,
+      package_manager: "pnpm",
+      frameworks: ["nextjs", "prisma"],
+      schema_inputs: [],
+      database_env_names: ["DATABASE_URL"],
+    },
+    sourceEnv: "DATABASE_URL",
+    overrides: {
+      schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+      resources: {
+        "public.members": {
+          principal_key: {
+            value: null,
+            actor: "reviewer@example.test",
+            reason: "Principal scope is inherited from the required trainer relationship.",
+            decided_at: "2026-08-05T18:00:00.000Z",
+          },
+          principal_scope_path: {
+            value: "members_assigned_trainer_id_fkey",
+            actor: "reviewer@example.test",
+            reason: "Every member belongs to exactly one reviewed trainer principal.",
+            decided_at: "2026-08-05T18:00:00.000Z",
+          },
+        },
+        "public.staff": {
+          principal_key: {
+            value: "trainer_id",
+            actor: "reviewer@example.test",
+            reason: "The authenticated trainer id is the direct principal on this table.",
+            decided_at: "2026-08-05T18:00:00.000Z",
+          },
+          fields: {
+            trainer_id: {
+              exposure: "keep_out",
+              actor: "reviewer@example.test",
+              reason: "The trusted principal binding must stay outside model arguments.",
+              decided_at: "2026-08-05T18:00:00.000Z",
+            },
+          },
+        },
+      },
+    },
+  });
+  await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+  await initializeGuidedProject({ projectRoot: root, build, runnerVersion: "1.7.0" });
+  const candidate = structuredClone(build.exploration_boundary);
+  const digest = explorationBoundaryCandidateDigest(candidate);
+  await activateExplorationBoundary({
+    projectRoot: root,
+    candidate,
+    expectedDigest: digest,
+    actor: "reviewer@example.test",
+    confirmation: `ACTIVATE ${digest}`,
+    confirmedDecisions: candidate.unresolved_decisions,
+    currentInspection: inspection,
+  });
+  return { root, inspection };
+}
+
 function fitFlowInspection(): SchemaInspection {
   return {
     engine: "postgres",
@@ -481,6 +581,55 @@ function fitFlowInspection(): SchemaInspection {
       },
     }],
   };
+}
+
+function derivedPrincipalWriteInspection(): SchemaInspection {
+  const inspection = fitFlowInspection();
+  const members = inspection.tables[0]!;
+  members.foreign_keys = [{
+    name: "members_assigned_trainer_id_fkey",
+    columns: ["assigned_trainer_id"],
+    referenced_schema: "public",
+    referenced_table: "staff",
+    referenced_columns: ["trainer_id"],
+    delete_rule: "RESTRICT",
+  }];
+
+  const trainers = structuredClone(members);
+  trainers.name = "staff";
+  trainers.columns = [
+    column("id", "uuid", { immutable: true }),
+    column("trainer_id", "uuid", { immutable: true }),
+    column("organization_id", "uuid", { tenant: true, immutable: true }),
+    column("display_label", "text"),
+  ];
+  trainers.primary_key = ["id"];
+  trainers.unique_constraints = [
+    { name: "trainers_pkey", columns: ["id"] },
+    { name: "trainers_trainer_id_key", columns: ["trainer_id"] },
+  ];
+  trainers.foreign_keys = [];
+  trainers.referenced_by = [];
+  trainers.write_triggers = [];
+  trainers.indexes = [
+    { name: "trainers_pkey", columns: ["id"], unique: true },
+    { name: "trainers_trainer_id_key", columns: ["trainer_id"], unique: true },
+  ];
+  trainers.row_level_security_policies = [{
+    name: "trainer_scope",
+    command: "SELECT",
+    permissive: true,
+    roles: ["fitflow_reader"],
+    using_expression: "(organization_id = current_setting('app.organization_id')::uuid AND trainer_id = current_setting('app.principal')::uuid)",
+  }];
+  trainers.suggestions = {
+    tenant_columns: ["organization_id"],
+    conflict_columns: [],
+    sensitive_columns: [],
+    default_visible_columns: ["id", "trainer_id", "organization_id", "display_label"],
+  };
+  inspection.tables.push(trainers);
+  return inspection;
 }
 
 function column(

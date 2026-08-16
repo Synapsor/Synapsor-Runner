@@ -1,5 +1,11 @@
 # Why Synapsor Over Prompt And Application Guardrails
 
+**Synapsor Runner is a database-authority layer for AI agents.** MCP defines how
+a client calls tools, identity verifies who is calling, and database grants
+constrain the credential. Runner adds the reviewed authority between them: what
+data grammar or named effects the model may request, which trusted scope is
+injected, and which decisions and execution paths remain outside the model.
+
 You can build a safe database tool in application code. The important question
 is not whether the code is custom or packaged. It is where authority lives and
 which safety properties are enforced outside the model.
@@ -12,6 +18,29 @@ receipts, replay, and opt-in reviewed compensation.
 
 It does not make prompts trustworthy, prevent prompt injection, replace
 database permissions, or make an application compliant by itself.
+
+## The Authority Path
+
+```text
+Explore -> Protect -> Propose -> outside-model decision -> Commit -> Receipt
+```
+
+- **Explore** compiles only the activated read grammar, injects trusted scope,
+  and returns bounded, suppression-aware results. It is flexible without being
+  raw SQL.
+- **Protect** optionally freezes one useful analysis into a disabled,
+  digest-bound named capability for separate review and activation.
+- **Propose** records an exact business effect and evidence while leaving the
+  source unchanged.
+- **Decide** is a human or separately reviewed policy action outside the
+  model-facing MCP surface.
+- **Commit and receipt** belong to trusted execution. Runner-managed direct
+  writes revalidate current authority and conflicts; app-owned executors own
+  their final transaction and external effects.
+
+Protect is optional. Reviewed production HTTP Explore can remain the read
+surface for ad-hoc analytics, while named capabilities remain the narrowest
+choice for stable production questions.
 
 ## Prompt Instructions Are Not A Security Boundary
 
@@ -98,6 +127,26 @@ This is structural enforcement only for traffic that actually passes through
 Runner and its reviewed capabilities. An unrestricted credential, a second raw
 SQL MCP server, or a bypass path in the application remains outside the
 boundary.
+
+## Approve The Effect, Not Merely The Tool Call
+
+A host can ask a person whether a tool invocation should run. That is not
+always the same as showing the exact database effect or binding approval to the
+current source state. If the tool writes during that invocation, proposal,
+decision, and commit remain one operation.
+
+Runner separates them. The model creates a proposal bound to the exact active
+capability digest, trusted owner, target, before/after change, evidence, limits,
+and idempotency identity. Approval refers to that proposal rather than to a
+generic tool name. A later contract activation cannot reinterpret it.
+
+The execution guarantee is intentionally executor-specific:
+
+| Executor | Runner guarantee | Remaining boundary |
+| --- | --- | --- |
+| Direct SQL with source-database receipts | Final scope, freshness, conflict, bounds, and idempotency checks occur in the source transaction; mutation and receipt commit atomically | Database permissions, triggers, and administrator access remain outside Runner |
+| Direct SQL with Runner-ledger receipts | Durable intent and guarded source execution; ambiguous post-commit crashes stop for reconciliation | No distributed exactly-once claim across ledger and source |
+| App-owned HTTP or command handler | Runner validates the exact approved proposal before invoking the trusted handler | The application must enforce final scope, conflict, idempotency, transaction/rollback, external effects, and safe receipts |
 
 The local SQLite or shared Postgres ledger is durable through Runner's
 supported interfaces, but a trusted host or database administrator can alter

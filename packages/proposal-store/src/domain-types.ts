@@ -232,6 +232,14 @@ export type QueryAuditRecordInput = {
   primary_key_value?: string;
   row_count: number;
   payload: Record<string, unknown>;
+  created_at?: string;
+};
+
+export type ProductionExploreAuditEventInput = {
+  event_id: string;
+  event_kind: "query_audit" | "evidence_bundle";
+  payload: Record<string, unknown>;
+  created_at: string;
 };
 
 export type ExplorePrivacyReleaseKind = "scalar_total" | "suppressed_grouping";
@@ -247,6 +255,19 @@ export type ExplorePrivacyReleaseInput = {
 export type ExplorePrivacyReleaseDecision =
   | { allowed: true }
   | { allowed: false; conflicting_release_kind: ExplorePrivacyReleaseKind };
+
+export type ProductionExplorePrivacyReleaseInput = Omit<ExplorePrivacyReleaseInput, "scope_fingerprint"> & {
+  principal_scope_fingerprint: `sha256:${string}`;
+  tenant_scope_fingerprint: `sha256:${string}`;
+};
+
+export type ProductionExplorePrivacyReleaseDecision =
+  | { allowed: true }
+  | {
+    allowed: false;
+    conflicting_release_kind: ExplorePrivacyReleaseKind;
+    conflicting_scope: "principal" | "tenant";
+  };
 
 export type ExploreBudgetLimits = {
   max_queries_per_session: number;
@@ -302,6 +323,33 @@ export type CompleteExploreBudgetReservationInput = {
 export type CompleteExploreBudgetReservationDecision =
   | { completed: true }
   | { completed: false; reason: "reservation_missing" | "response_exceeded_reservation" | "reservation_already_finalized" };
+
+export type ProductionExploreBudgetReservationInput = Omit<ExploreBudgetReservationInput, "scope_fingerprint" | "legacy_session_fingerprints" | "limits"> & {
+  principal_scope_fingerprint: `sha256:${string}`;
+  tenant_scope_fingerprint: `sha256:${string}`;
+  principal_limits: ExploreBudgetLimits;
+  tenant_limits: ExploreBudgetLimits;
+};
+
+export type ProductionExploreBudgetReservationDecision =
+  | {
+    allowed: true;
+    principal_usage_after_reservation: ExploreBudgetUsage;
+    tenant_usage_after_reservation: ExploreBudgetUsage;
+    principal_variant_already_counted: boolean;
+    tenant_variant_already_counted: boolean;
+  }
+  | {
+    allowed: false;
+    code:
+      | "QUERY_BUDGET_EXHAUSTED"
+      | "RATE_LIMIT_EXHAUSTED"
+      | "EXTRACTION_BUDGET_EXHAUSTED"
+      | "DIFFERENCING_BUDGET_EXHAUSTED";
+    message: string;
+    exhausted_scope: "principal" | "tenant";
+    usage: ExploreBudgetUsage;
+  };
 
 export type CloudOutboxKind = "proposal" | "activity" | "result";
 export type CloudOutboxStatus = "pending" | "leased" | "acknowledged" | "dead_letter" | "reconciliation_required";
@@ -510,7 +558,9 @@ export type ProposalSearchFilters = LocalListOptions & {
 export type EvidenceSearchFilters = LocalListOptions & {
   evidence?: string;
   tenant?: string;
+  tenants?: string[];
   principal?: string;
+  principals?: string[];
   capability?: string;
   proposal?: string;
   objectType?: string;
@@ -518,11 +568,18 @@ export type EvidenceSearchFilters = LocalListOptions & {
   source?: string;
   table?: string;
   queryFingerprint?: string;
+  status?: string;
+  outcome?: "ok" | "refused" | "failed";
+  boundary?: string;
+  search?: string;
+  offset?: number;
 };
 
 export type QueryAuditSearchFilters = LocalListOptions & {
   tenant?: string;
+  tenants?: string[];
   principal?: string;
+  principals?: string[];
   capability?: string;
   proposal?: string;
   evidence?: string;
@@ -532,6 +589,11 @@ export type QueryAuditSearchFilters = LocalListOptions & {
   objectId?: string;
   primaryKey?: string;
   queryFingerprint?: string;
+  status?: string;
+  outcome?: "ok" | "refused" | "failed";
+  boundary?: string;
+  search?: string;
+  offset?: number;
 };
 
 export type ReceiptSearchFilters = LocalListOptions & {
@@ -1014,8 +1076,10 @@ export type ProposalRuntimeStore = {
     payload: Record<string, unknown>;
     items?: Record<string, unknown>[];
     query_audit?: QueryAuditRecordInput[];
+    created_at?: string;
   }): MaybePromise<void>;
   recordQueryAudit(input: QueryAuditRecordInput): MaybePromise<void>;
+  recordProductionExploreAuditEvent?(input: ProductionExploreAuditEventInput): MaybePromise<void>;
   findActiveProposal(input: ActiveProposalLookup): MaybePromise<StoredProposal | undefined>;
   createProposal(input: unknown): MaybePromise<StoredProposal>;
   recordFreshnessProof(input: unknown): MaybePromise<FreshnessProofV1>;
@@ -1052,8 +1116,12 @@ export type ProposalRuntimeStore = {
   getEvidenceBundle(evidenceBundleId: string): MaybePromise<StoredEvidenceBundle | undefined>;
   listEvidenceBundles?(filters?: EvidenceSearchFilters): MaybePromise<StoredEvidenceBundle[]>;
   listQueryAudit?(filters?: QueryAuditSearchFilters): MaybePromise<Record<string, unknown>[]>;
+  claimExplorePrivacyRelease?(input: ExplorePrivacyReleaseInput): MaybePromise<ExplorePrivacyReleaseDecision>;
   claimExploreBudgetReservation?(input: ExploreBudgetReservationInput): MaybePromise<ExploreBudgetReservationDecision>;
   completeExploreBudgetReservation?(input: CompleteExploreBudgetReservationInput): MaybePromise<CompleteExploreBudgetReservationDecision>;
+  claimProductionExploreBudgetReservation?(input: ProductionExploreBudgetReservationInput): MaybePromise<ProductionExploreBudgetReservationDecision>;
+  completeProductionExploreBudgetReservation?(input: CompleteExploreBudgetReservationInput): MaybePromise<CompleteExploreBudgetReservationDecision>;
+  claimProductionExplorePrivacyRelease?(input: ProductionExplorePrivacyReleaseInput): MaybePromise<ProductionExplorePrivacyReleaseDecision>;
   replay(proposalId: string): MaybePromise<ProposalReplayRecord>;
   claimWritebackIntent?(job: WritebackJob, runnerId: string): MaybePromise<WritebackIntentClaim>;
   markWritebackIntentApplying?(intentId: string, runnerId: string): MaybePromise<void>;

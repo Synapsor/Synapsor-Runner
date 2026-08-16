@@ -51,14 +51,15 @@ try {
     assert.ok(resource, `${fixture.engine} did not activate ${fixture.resource}`);
     assert.equal(resource.primary_key, fixture.identity);
     assert.equal(resource.tenant_key, fixture.tenant);
-    assert.equal(active.deployment_profile, "staging");
+    assert.equal(active.deployment_profile, "development");
     assertProjectHasNoCredential(projectRoot, fixture.databaseUrl);
 
     results.push({
       engine: fixture.engine,
       fresh_project: true,
       packed_artifact: true,
-      blocked_scope_resolved_inline: true,
+      missing_trusted_scope_paused_with_guidance: true,
+      trusted_scope_supplied_outside_model: true,
       column_review_remained_open: true,
       boundary_activated: true,
       reached_model_choice: true,
@@ -135,20 +136,106 @@ async function resetFixture(fixture) {
 
 async function runFirstUseJourney({ cli, fixture, projectRoot }) {
   const started = Date.now();
-  const env = {
+  const baseEnv = {
     ...process.env,
     DATABASE_URL: fixture.databaseUrl,
     TERM: "xterm-256color",
     COLUMNS: "120",
     LINES: "40",
   };
-  delete env.SYNAPSOR_TENANT_ID;
-  delete env.SYNAPSOR_PRINCIPAL;
-  delete env.OPENAI_API_KEY;
-  delete env.ANTHROPIC_API_KEY;
-  delete env.NO_COLOR;
+  delete baseEnv.SYNAPSOR_TENANT_ID;
+  delete baseEnv.SYNAPSOR_PRINCIPAL;
+  delete baseEnv.OPENAI_API_KEY;
+  delete baseEnv.ANTHROPIC_API_KEY;
+  delete baseEnv.NO_COLOR;
 
   const command = `stty cols 120 rows 40; ${shellQuote(cli)} start --from-env DATABASE_URL --cli`;
+  const missingBindingSession = spawnCliSession({ command, projectRoot, env: baseEnv });
+  await waitForValue(
+    () => /Missing operator binding:\s*SYNAPSOR_TENANT_ID/i.test(missingBindingSession.transcript())
+      ? true
+      : undefined,
+    60_000,
+    () => `${fixture.engine} first-run did not identify its missing trusted binding.\n${tail(missingBindingSession.transcript())}`,
+  );
+  assert.match(missingBindingSession.transcript(), /Quick Start paused\. Nothing was activated\./i);
+  assert.match(missingBindingSession.transcript(), /export SYNAPSOR_TENANT_ID='<trusted value>'/i);
+  assert.match(missingBindingSession.transcript(), /start --from-env DATABASE_URL --cli/i);
+  assert.doesNotMatch(missingBindingSession.transcript(), /Opening the detailed boundary editor/i);
+  const paused = await waitForExit(
+    missingBindingSession.child,
+    15_000,
+    () => `${fixture.engine} first-run did not pause cleanly for its missing trusted binding.\n${tail(missingBindingSession.transcript())}`,
+  );
+  assert.equal(paused.code, 0, `${fixture.engine} missing-binding pause exited with ${paused.code ?? paused.signal}`);
+  await assert.rejects(
+    fsp.access(path.join(projectRoot, ".synapsor", "exploration-boundary.active.json")),
+    (error) => error?.code === "ENOENT",
+    `${fixture.engine} activated authority without its trusted tenant binding`,
+  );
+
+  const env = { ...baseEnv, SYNAPSOR_TENANT_ID: "acme" };
+  const session = spawnCliSession({ command, projectRoot, env });
+  const { child, transcript } = session;
+
+  const checkpoint = async (pattern, label, timeoutMs = 60_000) => {
+    await waitForValue(
+      () => pattern.test(transcript()) ? true : undefined,
+      timeoutMs,
+      () => `${fixture.engine} first-run did not reach ${label}.\n${tail(transcript())}`,
+    );
+  };
+
+  try {
+    await checkpoint(/YOUR FIRST SAFE QUESTION/i, "resumed Quick Start review");
+    await checkpoint(/ENTER Start asking\s+E Change access/i, "Quick Start decision");
+    child.stdin.write("e\r");
+
+    await checkpoint(new RegExp(`EDIT ACCESS - reviewed_staging[\\s\\S]*${escapeRegExp(fixture.resource)}`), "focused boundary editor");
+    child.stdin.write("\r");
+
+    await checkpoint(new RegExp(`REVIEW COLUMNS - ${escapeRegExp(fixture.resource)}`), "column review");
+    child.stdin.write("\r");
+
+    await checkpoint(
+      /Agent authority (?:is unchanged|changed: no)\.[\s\S]*EDIT ACCESS - reviewed_staging/i,
+      "parent table editor after column review",
+    );
+    child.stdin.write("c");
+
+    await checkpoint(/REVIEW EXACT BOUNDARY/i, "whole-boundary review");
+    await checkpoint(
+      /Activate "reviewed_staging" exactly as shown(?: now\? You will stay in \/access\.| and continue to Ask\?) \[y\/N\]/i,
+      "explicit activation prompt",
+    );
+    child.stdin.write("y\r");
+
+    await checkpoint(/Reviewed boundary "reviewed_staging" is active/i, "exact boundary activation");
+    await checkpoint(/\/access is still open\./i, "access editor after activation");
+    child.stdin.write("q");
+
+    await checkpoint(/ASK YOUR REVIEWED DATA/i, "model and MCP continuation chooser");
+    child.stdin.write("\u001b[B\u001b[B\u001b[B\u001b[B\r");
+    await checkpoint(/Your reviewed boundaries remain active\./i, "Later handoff");
+
+    const result = await waitForExit(child, 15_000, () =>
+      `${fixture.engine} first-run did not exit cleanly after the Later handoff.\n${tail(transcript())}`);
+    assert.equal(result.code, 0, `${fixture.engine} first-run exited with ${result.code ?? result.signal}`);
+    assert.doesNotMatch(transcript(), /cannot be added because record identity or trusted scope is unresolved/i);
+    assert.doesNotMatch(transcript(), /Ask did not start:/i);
+    assert.doesNotMatch(transcript(), new RegExp(escapeRegExp(fixture.databaseUrl)));
+    return { elapsedMs: Date.now() - started };
+  } finally {
+    if (child.exitCode === null) {
+      killProcessGroup(child.pid, "SIGTERM");
+      await waitForExit(child, 3_000, () => "").catch(() => {
+        killProcessGroup(child.pid, "SIGKILL");
+      });
+    }
+  }
+}
+
+function spawnCliSession({ command, projectRoot, env }) {
   const child = spawn("script", ["-qefc", command, "/dev/null"], {
     cwd: projectRoot,
     env,
@@ -163,53 +250,7 @@ async function runFirstUseJourney({ cli, fixture, projectRoot }) {
   child.stderr.on("data", (chunk) => { stderr += chunk; });
 
   const transcript = () => stripTerminal(`${output}\n${stderr}`);
-  const checkpoint = async (pattern, label, timeoutMs = 60_000) => {
-    await waitForValue(
-      () => pattern.test(transcript()) ? true : undefined,
-      timeoutMs,
-      () => `${fixture.engine} first-run did not reach ${label}.\n${tail(transcript())}`,
-    );
-  };
-
-  try {
-    await checkpoint(/Quick Start could not prove a conservative connected starter boundary/i, "blocked Quick Start handoff");
-    await checkpoint(/blocked:\s*1\s+issue/i, "blocked table row");
-    child.stdin.write("\r");
-
-    await checkpoint(new RegExp(`RESOLVE TABLE ACCESS - ${escapeRegExp(fixture.resource)}`), "inline scope resolver");
-    await checkpoint(/Record ID\s+id[\s\S]*Tenant isolation\s+tenant_id/i, "source-inspected scope choices");
-    child.stdin.write("\r");
-
-    await checkpoint(new RegExp(`REVIEW COLUMNS - ${escapeRegExp(fixture.resource)}`), "column review after scope resolution");
-    await checkpoint(/Saved structural review[\s\S]*Agent authority activated: no/i, "disabled structural decision");
-    child.stdin.write("\r");
-
-    await checkpoint(/draft changed - activate to use/i, "parent table editor after column review");
-    child.stdin.write("c");
-
-    await checkpoint(/REVIEW EXACT BOUNDARY/i, "whole-boundary review");
-    await checkpoint(/Activate "reviewed_staging" exactly as shown and continue to Ask\? \[Y\/n\]/i, "explicit activation prompt");
-    child.stdin.write("\r");
-
-    await checkpoint(/ASK YOUR REVIEWED DATA/i, "model and MCP continuation chooser");
-    child.stdin.write("\u001b[B\u001b[B\u001b[B\u001b[B\r");
-    await checkpoint(/Your reviewed boundaries remain active\./i, "Later handoff");
-
-    const result = await waitForExit(child, 15_000, () =>
-      `${fixture.engine} first-run did not exit cleanly after choosing Later.\n${tail(transcript())}`);
-    assert.equal(result.code, 0, `${fixture.engine} first-run exited with ${result.code ?? result.signal}`);
-    assert.doesNotMatch(transcript(), /cannot be added because record identity or trusted scope is unresolved/i);
-    assert.doesNotMatch(transcript(), /Ask did not start:/i);
-    assert.doesNotMatch(transcript(), new RegExp(escapeRegExp(fixture.databaseUrl)));
-    return { elapsedMs: Date.now() - started };
-  } finally {
-    if (child.exitCode === null) {
-      killProcessGroup(child.pid, "SIGTERM");
-      await waitForExit(child, 3_000, () => "").catch(() => {
-        killProcessGroup(child.pid, "SIGKILL");
-      });
-    }
-  }
+  return { child, transcript };
 }
 
 function sourceSnapshot(fixture) {
