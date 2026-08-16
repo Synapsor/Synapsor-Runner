@@ -544,6 +544,11 @@ export async function createScopedExploreRuntime(input: {
   );
   const tenantFingerprint = hmac(privacyHmacKey, trustedTenant);
   const principalFingerprint = principal ? hmac(privacyHmacKey, principal) : "not_configured";
+  const auditScopeKey = mode === "production_http" ? privacyHmacKey : auditKey;
+  const auditIdentity = {
+    tenantAuditFingerprint: `keyed:${hmac(auditScopeKey, trustedTenant)}`,
+    ...(principal ? { principalAuditFingerprint: `keyed:${hmac(auditScopeKey, principal)}` } : {}),
+  };
   const tenantPrivacyScopeFingerprint = canonicalJsonDigest({
     version: "synapsor.explore-privacy-tenant-scope.v1",
     project: projectFingerprint,
@@ -636,6 +641,7 @@ export async function createScopedExploreRuntime(input: {
       } catch (error) {
         await recordPreExecutionRefusalAudit(store, {
           mode,
+          ...auditIdentity,
           boundary: prepared.boundary,
           sessionFingerprint,
           budgetScopeFingerprint: privacyScopeFingerprint,
@@ -665,6 +671,7 @@ export async function createScopedExploreRuntime(input: {
         );
         await recordPreExecutionRefusalAudit(store, {
           mode,
+          ...auditIdentity,
           boundary: prepared.boundary,
           sessionFingerprint,
           budgetScopeFingerprint: privacyScopeFingerprint,
@@ -681,6 +688,7 @@ export async function createScopedExploreRuntime(input: {
       } catch (error) {
         await recordPreExecutionRefusalAudit(store, {
           mode,
+          ...auditIdentity,
           boundary: prepared.boundary,
           sessionFingerprint,
           budgetScopeFingerprint: privacyScopeFingerprint,
@@ -801,6 +809,7 @@ export async function createScopedExploreRuntime(input: {
           );
         await recordPreExecutionRefusalAudit(store, {
           mode,
+          ...auditIdentity,
           boundary: prepared.boundary,
           sessionFingerprint,
           budgetScopeFingerprint: privacyScopeFingerprint,
@@ -831,6 +840,7 @@ export async function createScopedExploreRuntime(input: {
         await releaseExploreBudgetReservation(store, reservationId, clock(), mode);
         await recordExploreAudit(store, {
           mode,
+          ...auditIdentity,
           boundary: prepared.boundary,
           sessionFingerprint,
           budgetScopeFingerprint: privacyScopeFingerprint,
@@ -861,6 +871,7 @@ export async function createScopedExploreRuntime(input: {
         await releaseExploreBudgetReservation(store, reservationId, clock(), mode);
         await recordExploreAudit(store, {
           mode,
+          ...auditIdentity,
           boundary: prepared.boundary,
           sessionFingerprint,
           budgetScopeFingerprint: privacyScopeFingerprint,
@@ -884,6 +895,7 @@ export async function createScopedExploreRuntime(input: {
         await releaseExploreBudgetReservation(store, reservationId, clock(), mode);
         await recordExploreAudit(store, {
           mode,
+          ...auditIdentity,
           boundary: prepared.boundary,
           sessionFingerprint,
           budgetScopeFingerprint: privacyScopeFingerprint,
@@ -917,6 +929,7 @@ export async function createScopedExploreRuntime(input: {
         await releaseExploreBudgetReservation(store, reservationId, clock(), mode);
         await recordExploreAudit(store, {
           mode,
+          ...auditIdentity,
           boundary: prepared.boundary,
           sessionFingerprint,
           budgetScopeFingerprint: privacyScopeFingerprint,
@@ -950,6 +963,7 @@ export async function createScopedExploreRuntime(input: {
       if (!completedBudget.completed) {
         await recordExploreAudit(store, {
           mode,
+          ...auditIdentity,
           boundary: prepared.boundary,
           sessionFingerprint,
           budgetScopeFingerprint: privacyScopeFingerprint,
@@ -989,11 +1003,10 @@ export async function createScopedExploreRuntime(input: {
       }
       const evidence = await recordExploreEvidence(store, {
         mode,
+        ...auditIdentity,
         boundary: prepared.boundary,
         generationLockFingerprint: prepared.boundary.generation_lock_fingerprint,
         rolePostureFingerprint: prepared.boundary.role_posture_fingerprint,
-        auditKey,
-        tenant: trustedTenant,
         sessionFingerprint,
         budgetScopeFingerprint: privacyScopeFingerprint,
         budgetReservationId: reservationId,
@@ -4488,6 +4501,8 @@ async function recordPreExecutionRefusalAudit(
   store: ProposalRuntimeStore,
   input: {
     mode: ScopedExploreMode;
+    tenantAuditFingerprint: string;
+    principalAuditFingerprint?: string;
     boundary: ActivatedExplorationBoundary;
     sessionFingerprint: string;
     budgetScopeFingerprint: `sha256:${string}`;
@@ -4513,6 +4528,9 @@ async function recordPreExecutionRefusalAudit(
     ? input.error.code
     : "EXPLORE_PLAN_INVALID";
   await recordExploreQueryAudit(store, input.mode, {
+    tenant_id: input.tenantAuditFingerprint,
+    ...(input.principalAuditFingerprint ? { principal: input.principalAuditFingerprint } : {}),
+    capability: "app.explore_data",
     source_id: input.boundary.source,
     query_fingerprint: queryFingerprint,
     table_name: input.plan?.resource ?? "app.explore_data",
@@ -4542,6 +4560,8 @@ async function recordExploreAudit(
   store: ProposalRuntimeStore,
   input: {
     mode: ScopedExploreMode;
+    tenantAuditFingerprint: string;
+    principalAuditFingerprint?: string;
     boundary: ActivatedExplorationBoundary;
     sessionFingerprint: string;
     budgetScopeFingerprint: `sha256:${string}`;
@@ -4560,6 +4580,9 @@ async function recordExploreAudit(
   },
 ): Promise<void> {
   await recordExploreQueryAudit(store, input.mode, {
+    tenant_id: input.tenantAuditFingerprint,
+    ...(input.principalAuditFingerprint ? { principal: input.principalAuditFingerprint } : {}),
+    capability: "app.explore_data",
     source_id: input.boundary.source,
     query_fingerprint: input.queryFingerprint,
     table_name: resourceFor(input.boundary, input.plan.resource).id,
@@ -4608,11 +4631,11 @@ async function recordExploreEvidence(
   store: ProposalRuntimeStore,
   input: {
     mode: ScopedExploreMode;
+    tenantAuditFingerprint: string;
+    principalAuditFingerprint?: string;
     boundary: ActivatedExplorationBoundary;
     generationLockFingerprint: `sha256:${string}`;
     rolePostureFingerprint: `sha256:${string}`;
-    auditKey: Buffer;
-    tenant: string;
     sessionFingerprint: string;
     budgetScopeFingerprint: `sha256:${string}`;
     budgetReservationId: string;
@@ -4662,15 +4685,17 @@ async function recordExploreEvidence(
     trusted_scope_values_persisted: false,
     raw_sql_included: false,
     source_database_changed: false,
+    result_fingerprint: `hmac-sha256:${input.resultFingerprint}`,
     execution_duration_ms: Math.max(0, input.completedAt - input.executionStartedAt),
     recorded_at: recordedAt,
   };
   await recordExploreEvidenceBundle(store, input.mode, {
     evidence_bundle_id: evidenceBundleId,
-    tenant_id: `keyed:${hmac(input.auditKey, input.tenant)}`,
+    tenant_id: input.tenantAuditFingerprint,
     payload: {
       schema_version: "synapsor.analytics-evidence.v1",
       capability: "app.explore_data",
+      ...(input.principalAuditFingerprint ? { principal: input.principalAuditFingerprint } : {}),
       source_id: input.boundary.source,
       source_table: resource.id,
       query_fingerprint: input.queryFingerprint,
@@ -4704,6 +4729,9 @@ async function recordExploreEvidence(
     },
     items: [],
     query_audit: [{
+      tenant_id: input.tenantAuditFingerprint,
+      ...(input.principalAuditFingerprint ? { principal: input.principalAuditFingerprint } : {}),
+      capability: "app.explore_data",
       source_id: input.boundary.source,
       query_fingerprint: input.queryFingerprint,
       table_name: resource.id,

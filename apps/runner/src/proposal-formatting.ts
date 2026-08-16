@@ -113,8 +113,9 @@ export function formatProposalDebug(proposal: StoredProposal, storePath: string 
 
 
 export function formatEvidenceSummary(evidence: StoredEvidenceBundle): string {
+  const outcome = stringField(evidence.payload, "outcome") ?? "recorded";
   return [
-    `${evidence.created_at}  ${evidence.evidence_bundle_id}`,
+    `${evidence.created_at}  ${evidence.evidence_bundle_id}  ${outcome}`,
     `  tenant: ${evidence.tenant_id}  capability: ${evidence.capability ?? "unknown"}  proposal: ${evidence.proposal_id ?? "none"}`,
     `  source: ${evidence.source_id ?? "unknown"}/${evidence.source_table ?? "unknown"}  object: ${evidence.business_object ?? "object"}:${evidence.object_id ?? "unknown"}`,
   ].join("\n") + "\n";
@@ -154,27 +155,66 @@ export function formatEvidenceFirstLook(evidence: StoredEvidenceBundle, storeSuf
 
 export function formatEvidenceDetail(evidence: StoredEvidenceBundle): string {
   const audit = evidence.query_audit[0];
+  const payload = evidence.payload;
+  const trustedScope = isRecord(payload.trusted_scope) ? payload.trusted_scope : {};
+  const normalizedPlan = isRecord(payload.normalized_plan)
+    ? payload.normalized_plan
+    : isRecord(audit?.payload) && isRecord(audit.payload.normalized_plan)
+      ? audit.payload.normalized_plan
+      : undefined;
+  const principal = evidence.principal
+    ?? (trustedScope.principal_bound === false ? "not applicable (this resource has no reviewed principal scope)" : "not recorded");
   const lines = [
     `Evidence bundle: ${evidence.evidence_bundle_id}`,
     `Tenant: ${evidence.tenant_id}`,
     `Proposal: ${evidence.proposal_id ?? "none"}`,
-    `Principal: ${evidence.principal ?? "unknown"}`,
+    `Principal: ${principal}`,
     `Capability: ${evidence.capability ?? "unknown"}`,
     `Source: ${evidence.source_id ?? "unknown"}`,
     `Table: ${evidence.source_table ?? "unknown"}`,
+    `Boundary digest: ${stringField(payload, "boundary_digest") ?? "not recorded"}`,
+    `Generation lock: ${stringField(payload, "generation_lock_fingerprint") ?? "not recorded"}`,
+    `Role posture: ${stringField(payload, "role_posture_fingerprint") ?? "not recorded"}`,
     `Query fingerprint: ${evidence.query_fingerprint ?? stringField(audit, "query_fingerprint") ?? "unknown"}`,
+    `Result fingerprint: ${stringField(payload, "result_fingerprint") ?? "not recorded"}`,
+    `Outcome: ${stringField(payload, "outcome") ?? "recorded"}`,
+    `Returned rows or groups: ${formatMetadataValue(payload.returned_rows_or_groups)}`,
+    `Returned cells: ${formatMetadataValue(payload.returned_cells)}`,
+    `Suppressed groups: ${formatMetadataValue(payload.suppressed_groups)}`,
+    `Execution duration: ${formatMetadataValue(payload.execution_duration_ms, " ms")}`,
     `Rows captured: ${evidence.items.length}`,
+    `Source query executed: ${formatMetadataBoolean(payload.source_query_executed)}`,
+    `Source database changed: ${formatMetadataBoolean(payload.source_database_changed)}`,
+    `Result values persisted: ${formatMetadataBoolean(payload.result_values_persisted)}`,
+    `Trusted scope values persisted: ${formatMetadataBoolean(payload.trusted_scope_values_persisted ?? trustedScope.values_persisted)}`,
     `Created at: ${evidence.created_at}`,
-    "Projection: captured visible fields only; credentials and secret-looking values are rejected before persistence.",
+    "Persistence: evidence contains bounded metadata and keyed fingerprints, not result rows, raw SQL, credentials, or trusted tenant/principal values.",
     "",
-    "Items:",
-    ...evidence.items.flatMap((item, index) => formatEvidenceItem(item, index + 1)),
+    "Normalized reviewed plan:",
+    normalizedPlan ? renderTerminalJson(normalizedPlan, false) : "not recorded",
+    "",
+    "Stored evidence items:",
+    ...(evidence.items.length
+      ? evidence.items.flatMap((item, index) => formatEvidenceItem(item, index + 1))
+      : ["none (Explore result values are not persisted)"]),
     "",
     "Related:",
     ...(evidence.proposal_id ? [`  ${cliCommandName()} proposals show ${evidence.proposal_id}`, `  ${cliCommandName()} replay show --proposal ${evidence.proposal_id}`] : []),
     `  ${cliCommandName()} query-audit list --evidence ${evidence.evidence_bundle_id}`,
   ];
   return `${lines.join("\n")}\n`;
+}
+
+
+function formatMetadataValue(value: unknown, suffix = ""): string {
+  if (typeof value === "number" && Number.isFinite(value)) return `${value}${suffix}`;
+  if (typeof value === "string" && value) return `${value}${suffix}`;
+  return "not recorded";
+}
+
+
+function formatMetadataBoolean(value: unknown): string {
+  return value === true ? "yes" : value === false ? "no" : "not recorded";
 }
 
 
@@ -235,8 +275,11 @@ export function formatEvidenceMarkdown(evidence: StoredEvidenceBundle): string {
 
 
 export function formatQueryAuditSummary(row: Record<string, unknown>, details = false, storeSuffix = ""): string {
+  const payload = isRecord(row.payload) ? row.payload : {};
+  const status = stringField(payload, "status") ?? "recorded";
+  const errorCode = stringField(payload, "error_code");
   const lines = [
-    `${row.created_at}  audit ${row.audit_id}`,
+    `${row.created_at}  audit ${row.audit_id}  ${status}${errorCode ? ` (${errorCode})` : ""}`,
     `  source: ${row.source_id}/${row.table_name}  rows: ${row.row_count}`,
     `  proposal: ${row.proposal_id ?? "none"}  evidence: ${row.evidence_bundle_id ?? "none"}`,
     ...(details ? [`  query fingerprint: ${row.query_fingerprint}`] : []),
@@ -279,8 +322,12 @@ export function formatQueryAuditDetail(row: Record<string, unknown>, color = fal
     `Query fingerprint: ${row.query_fingerprint}`,
     `Proposal: ${row.proposal_id ?? "none"}`,
     `Evidence: ${row.evidence_bundle_id ?? "none"}`,
-    `Tenant: ${row.tenant_id ?? "unknown"}`,
+    `Tenant: ${row.tenant_id ?? "not recorded"}`,
+    `Principal: ${row.principal ?? "not recorded (legacy records may only state whether principal scope was bound)"}`,
     `Capability: ${row.capability ?? payload.capability ?? "unknown"}`,
+    `Status: ${payload.status ?? "recorded"}`,
+    `Error code: ${payload.error_code ?? "none"}`,
+    `Boundary digest: ${payload.boundary_digest ?? "not recorded"}`,
     `Parameters redacted: ${payload.parameters_redacted === true ? "yes" : "unknown"}`,
     "",
     "Payload:",

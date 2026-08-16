@@ -1123,21 +1123,37 @@ the source changed, and the next safe command. --details prints the linked
 causal timeline; --json emits the versioned synapsor.lifecycle-view.v1 document.
 `,
     evidence: `Usage:
-	  ${cmd} evidence list [--tenant acme] [--capability billing.inspect_invoice] [--object invoice:INV-3001]
+	  ${cmd} evidence list [--tenant acme] [--principal analyst@example.org] [--resource public.orders]
+	    [--boundary sha256:...] [--outcome ok] [--since 24h|<ISO>] [--to <ISO>] [--limit 20] [--json]
+	  ${cmd} evidence browse [the same filters]
+	  ${cmd} evidence list --follow [the same filters] [--interval-ms 2000] [--json]
 	  ${cmd} evidence show ev_...
 	  ${cmd} evidence show ev_... --details
 	  ${cmd} evidence export ev_... --format json --output evidence.json
   ${cmd} evidence export ev_... --format markdown --output evidence.md
 
-Inspect captured local evidence bundles and query-audit links without rerunning external DB reads.
+Inspect released-result evidence without rerunning source reads. Refused and failed
+attempts have query-audit records but no evidence bundle; use query-audit list.
+Tenant and principal filters accept a plaintext identity or an existing keyed:<HMAC>
+fingerprint. Plaintext values are HMACed locally and are never printed or persisted.
+With a production runtime_store config, these commands read the shared PostgreSQL
+control ledger read-only. --follow emits NDJSON when combined with --json.
 `,
     "query-audit": `Usage:
-	  ${cmd} query-audit list [--evidence ev_...] [--source app_postgres] [--table invoices]
+	  ${cmd} query-audit list [--tenant acme] [--principal analyst@example.org] [--resource public.orders]
+	    [--boundary sha256:...] [--outcome ok|refused|failed] [--since 24h|<ISO>] [--to <ISO>]
+	    [--evidence ev_...] [--source app_postgres] [--limit 20] [--json]
+	  ${cmd} query-audit browse [the same filters]
+	  ${cmd} query-audit list --follow [the same filters] [--interval-ms 2000] [--json]
 	  ${cmd} query-audit show <audit_id>
 	  ${cmd} query-audit show <audit_id> --details
 	  ${cmd} query-audit export <audit_id> --format json --output audit.json
 
-Inspect local query fingerprints, table names, row counts, and redacted-parameter metadata.
+Inspect every recorded Explore attempt, including refusals before source execution,
+released results, privacy refusals after execution, and source failures. Metadata
+includes the exact boundary digest, normalized keyed plan, result fingerprint where
+one exists, suppression/cell/timing facts, and persistence guarantees. Result values,
+raw SQL, and raw trusted-scope values are not stored.
 `,
     receipts: `Usage:
 	  ${cmd} receipts list [--proposal wrp_...] [--status applied]
@@ -1203,8 +1219,12 @@ never exposed as a model-facing MCP tool.
 	  ${cmd} activity search --tenant acme --object invoice:INV-3001
 	  ${cmd} activity search --tenant acme --object invoice:INV-3001 --details
 	  ${cmd} activity search --capability billing.propose_late_fee_waiver --from 2026-06-01 --to 2026-06-23
+	  ${cmd} activity search --principal analyst@example.org --resource public.orders --outcome refused --since 24h
 
-Search the local SQLite evidence/replay ledger across proposals, evidence, query audit, receipts, and replay records.
+Search across proposals, evidence, query audit, and receipts. A production
+runtime_store config selects the shared PostgreSQL control ledger read-only;
+otherwise this reads local SQLite. Plaintext Explore tenant/principal filters
+use the same local HMAC lookup as evidence and query-audit.
 `,
     events: `Usage:
   ${cmd} events tail --store ./.synapsor/local.db

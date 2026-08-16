@@ -658,9 +658,9 @@ export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & Prop
       `).run(
         input.proposal_id ?? null,
         input.evidence_bundle_id ?? null,
-        metadata.tenant_id ?? null,
-        metadata.principal ?? null,
-        metadata.capability ?? null,
+        input.tenant_id ?? metadata.tenant_id ?? null,
+        input.principal ?? metadata.principal ?? null,
+        input.capability ?? metadata.capability ?? null,
         metadata.business_object ?? null,
         metadata.object_id ?? null,
         metadata.primary_key_value ?? null,

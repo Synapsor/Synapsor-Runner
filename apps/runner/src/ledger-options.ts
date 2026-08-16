@@ -9,6 +9,7 @@ import {
 } from "@synapsor-runner/proposal-store";
 import { limitFromArgs, objectFilterFromArgs, optionalArg, positional, runtimeStoreBridgeFlag } from "./cli-options.js";
 import { resolveProposalIdFromStore } from "./cli-project.js";
+import { ledgerBoundaryFromArgs, ledgerOutcomeFromArgs, ledgerResourceFromArgs, ledgerTimeRangeFromArgs } from "./ledger-search.js";
 
 
 const commonReadOptions = new Set(["--store", "--config", "--json", "--details", "--debug", runtimeStoreBridgeFlag]);
@@ -61,12 +62,18 @@ export const evidenceListAllowedOptions = new Set([
   "--object-id",
   "--source",
   "--table",
+  "--resource",
+  "--boundary",
   "--query-fingerprint",
   "--from",
   "--since",
   "--to",
   "--status",
+  "--outcome",
   "--limit",
+  "--follow",
+  "--interval-ms",
+  "--interactive",
 ]);
 
 export const queryAuditListAllowedOptions = new Set([
@@ -78,6 +85,8 @@ export const queryAuditListAllowedOptions = new Set([
   "--evidence",
   "--source",
   "--table",
+  "--resource",
+  "--boundary",
   "--object",
   "--object-type",
   "--object-id",
@@ -87,7 +96,11 @@ export const queryAuditListAllowedOptions = new Set([
   "--since",
   "--to",
   "--status",
+  "--outcome",
   "--limit",
+  "--follow",
+  "--interval-ms",
+  "--interactive",
 ]);
 
 export const receiptListAllowedOptions = new Set([
@@ -160,10 +173,14 @@ export const activitySearchAllowedOptions = new Set([
   "--receipt",
   "--source",
   "--table",
+  "--resource",
+  "--boundary",
+  "--outcome",
   "--query-fingerprint",
   "--status",
   "--state",
   "--from",
+  "--since",
   "--to",
   "--limit",
 ]);
@@ -252,6 +269,7 @@ function lifecyclePositionalHandle(args: string[]): string | undefined {
 
 export function evidenceFiltersFromArgs(args: string[]): EvidenceSearchFilters {
   const object = objectFilterFromArgs(args);
+  const range = ledgerTimeRangeFromArgs(args);
   return {
     evidence: optionalArg(args, "--evidence"),
     tenant: optionalArg(args, "--tenant"),
@@ -261,11 +279,12 @@ export function evidenceFiltersFromArgs(args: string[]): EvidenceSearchFilters {
     objectType: optionalArg(args, "--object-type") ?? object.type,
     objectId: optionalArg(args, "--object-id") ?? object.id,
     source: optionalArg(args, "--source"),
-    table: optionalArg(args, "--table"),
+    table: ledgerResourceFromArgs(args),
     queryFingerprint: optionalArg(args, "--query-fingerprint"),
-    from: optionalArg(args, "--from") ?? optionalArg(args, "--since"),
-    to: optionalArg(args, "--to"),
+    ...range,
     status: optionalArg(args, "--status"),
+    outcome: ledgerOutcomeFromArgs(args),
+    boundary: ledgerBoundaryFromArgs(args),
     limit: limitFromArgs(args),
   };
 }
@@ -273,6 +292,7 @@ export function evidenceFiltersFromArgs(args: string[]): EvidenceSearchFilters {
 
 export function queryAuditFiltersFromArgs(args: string[]): QueryAuditSearchFilters {
   const object = objectFilterFromArgs(args);
+  const range = ledgerTimeRangeFromArgs(args);
   return {
     tenant: optionalArg(args, "--tenant"),
     principal: optionalArg(args, "--principal"),
@@ -280,14 +300,15 @@ export function queryAuditFiltersFromArgs(args: string[]): QueryAuditSearchFilte
     proposal: optionalArg(args, "--proposal"),
     evidence: optionalArg(args, "--evidence"),
     source: optionalArg(args, "--source"),
-    table: optionalArg(args, "--table"),
+    table: ledgerResourceFromArgs(args),
     objectType: optionalArg(args, "--object-type") ?? object.type,
     objectId: optionalArg(args, "--object-id") ?? object.id,
     primaryKey: optionalArg(args, "--primary-key"),
     queryFingerprint: optionalArg(args, "--query-fingerprint"),
-    from: optionalArg(args, "--from") ?? optionalArg(args, "--since"),
-    to: optionalArg(args, "--to"),
+    ...range,
     status: optionalArg(args, "--status"),
+    outcome: ledgerOutcomeFromArgs(args),
+    boundary: ledgerBoundaryFromArgs(args),
     limit: limitFromArgs(args),
   };
 }
@@ -315,6 +336,7 @@ export function proposalFiltersFromReplayArgs(args: string[], store: ProposalSto
 export function proposalFiltersFromActivityArgs(args: string[], store?: ProposalStore): ProposalSearchFilters {
   const object = objectFilterFromArgs(args);
   const linkedProposal = linkedProposalFilter(args, store);
+  const range = ledgerTimeRangeFromArgs(args);
   return {
     proposal: optionalArg(args, "--proposal") ?? linkedProposal,
     tenant: optionalArg(args, "--tenant"),
@@ -326,9 +348,8 @@ export function proposalFiltersFromActivityArgs(args: string[], store?: Proposal
     status: optionalArg(args, "--status") as LocalProposalState | undefined,
     state: optionalArg(args, "--state") as LocalProposalState | undefined,
     source: optionalArg(args, "--source"),
-    table: optionalArg(args, "--table"),
-    from: optionalArg(args, "--from"),
-    to: optionalArg(args, "--to"),
+    table: ledgerResourceFromArgs(args),
+    ...range,
     limit: limitFromArgs(args),
   };
 }
@@ -337,6 +358,7 @@ export function proposalFiltersFromActivityArgs(args: string[], store?: Proposal
 export function evidenceFiltersFromActivityArgs(args: string[], store?: ProposalStore): EvidenceSearchFilters {
   const object = objectFilterFromArgs(args);
   const linkedProposal = linkedProposalFilter(args, store, { includeEvidence: false });
+  const range = ledgerTimeRangeFromArgs(args);
   return {
     evidence: optionalArg(args, "--evidence"),
     tenant: optionalArg(args, "--tenant"),
@@ -346,10 +368,11 @@ export function evidenceFiltersFromActivityArgs(args: string[], store?: Proposal
     objectType: optionalArg(args, "--object-type") ?? object.type,
     objectId: optionalArg(args, "--object-id") ?? object.id,
     source: optionalArg(args, "--source"),
-    table: optionalArg(args, "--table"),
+    table: ledgerResourceFromArgs(args),
     queryFingerprint: optionalArg(args, "--query-fingerprint"),
-    from: optionalArg(args, "--from"),
-    to: optionalArg(args, "--to"),
+    ...range,
+    outcome: ledgerOutcomeFromArgs(args),
+    boundary: ledgerBoundaryFromArgs(args),
     limit: limitFromArgs(args),
   };
 }
@@ -358,6 +381,7 @@ export function evidenceFiltersFromActivityArgs(args: string[], store?: Proposal
 export function queryAuditFiltersFromActivityArgs(args: string[], store?: ProposalStore): QueryAuditSearchFilters {
   const object = objectFilterFromArgs(args);
   const linkedProposal = linkedProposalFilter(args, store, { includeEvidence: false });
+  const range = ledgerTimeRangeFromArgs(args);
   return {
     tenant: optionalArg(args, "--tenant"),
     principal: optionalArg(args, "--principal"),
@@ -365,12 +389,13 @@ export function queryAuditFiltersFromActivityArgs(args: string[], store?: Propos
     proposal: optionalArg(args, "--proposal") ?? linkedProposal,
     evidence: optionalArg(args, "--evidence"),
     source: optionalArg(args, "--source"),
-    table: optionalArg(args, "--table"),
+    table: ledgerResourceFromArgs(args),
     objectType: optionalArg(args, "--object-type") ?? object.type,
     objectId: optionalArg(args, "--object-id") ?? object.id,
     queryFingerprint: optionalArg(args, "--query-fingerprint"),
-    from: optionalArg(args, "--from"),
-    to: optionalArg(args, "--to"),
+    ...range,
+    outcome: ledgerOutcomeFromArgs(args),
+    boundary: ledgerBoundaryFromArgs(args),
     limit: limitFromArgs(args),
   };
 }
@@ -379,6 +404,7 @@ export function queryAuditFiltersFromActivityArgs(args: string[], store?: Propos
 export function receiptFiltersFromActivityArgs(args: string[], store?: ProposalStore): ReceiptSearchFilters {
   const object = objectFilterFromArgs(args);
   const linkedProposal = linkedProposalFilter(args, store, { includeReceipt: false });
+  const range = ledgerTimeRangeFromArgs(args);
   return {
     receipt: optionalArg(args, "--receipt"),
     proposal: optionalArg(args, "--proposal") ?? linkedProposal,
@@ -389,9 +415,8 @@ export function receiptFiltersFromActivityArgs(args: string[], store?: ProposalS
     objectType: optionalArg(args, "--object-type") ?? object.type,
     objectId: optionalArg(args, "--object-id") ?? object.id,
     source: optionalArg(args, "--source"),
-    table: optionalArg(args, "--table"),
-    from: optionalArg(args, "--from"),
-    to: optionalArg(args, "--to"),
+    table: ledgerResourceFromArgs(args),
+    ...range,
     limit: limitFromArgs(args),
   };
 }

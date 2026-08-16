@@ -354,14 +354,27 @@ synapsor-runner evidence list \
   --config ./synapsor-production-explore/synapsor.runner.json
 synapsor-runner evidence show <evidence-id> --details \
   --config ./synapsor-production-explore/synapsor.runner.json
-synapsor-runner query-audit list --table public.orders \
+synapsor-runner query-audit list --principal analyst@example.org \
+  --resource public.orders --outcome refused --since 24h \
+  --config ./synapsor-production-explore/synapsor.runner.json
+synapsor-runner query-audit browse --since 24h \
   --config ./synapsor-production-explore/synapsor.runner.json
 synapsor-runner query-audit show <audit-id> --details \
   --config ./synapsor-production-explore/synapsor.runner.json
 ```
 
-The list/export filters for tenant fingerprint, table, capability, status, and
-time work against both local SQLite and shared PostgreSQL. These commands open
+The list filters accept plaintext or keyed tenant/principal identity,
+resource, boundary digest, capability, outcome, and time range against both
+local SQLite and shared PostgreSQL. `--since` accepts an ISO timestamp or a
+duration such as `24h`; `--limit` defaults to 20 and is capped at 200. `--json`
+is suitable for automation, `browse` is the interactive terminal view, and
+`--follow --json` emits newline-delimited JSON for a live metadata feed.
+Plaintext scope filters are HMACed locally and are never echoed or persisted.
+Existing `keyed:<HMAC>` values remain accepted. Records created before keyed
+principal metadata was introduced cannot be attributed retroactively because
+they only recorded whether principal scope was active.
+
+These commands open
 a bounded read-only PostgreSQL snapshot and do not take the serving writer's
 advisory lock. They never print the control URL, credentials, raw tenant or
 principal claims, source rows, result values, SQL, or SQL parameters. If the
@@ -382,18 +395,28 @@ application source as well: production MySQL Explore still requires a separate
 PostgreSQL control database because there is no shared-MySQL accounting store.
 
 Evidence and query audit begin only after a request passes the MCP tool's strict
-argument schema and enters the reviewed Explore handler. Every successful source
+argument schema and Runner has established the exact reviewed boundary and trusted
+scope needed to enter the Explore handler. Every successful source
 execution has one evidence bundle with its normalized query-audit record. A plan
 that reaches Runner and is refused before source execution has a standalone,
 metadata-only query-audit record. An unknown top-level argument such as a
 model-supplied tenant or principal is rejected earlier by the locked MCP schema;
-there is no normalized plan to persist, so no query-audit record is created.
+authentication, HTTP-session, and runtime-bootstrap failures likewise happen before
+a reviewed plan exists. Those cases have no normalized plan to persist, so no
+query-audit record is created.
 When Runner is attached to an interactive terminal, its metadata-only HTTP
 access log still records the request lifecycle. That access log never records
 tokens, claims, tool arguments, SQL, parameters, or result values. Operators
 running under a non-interactive process supervisor should use that supervisor's
 ordinary request/process observability; Runner does not persist rejected raw MCP
 arguments into the control ledger.
+
+The practical rule is: search `query-audit` for attempts and `evidence` for
+released-result proof. `query-audit --outcome refused` includes requests that
+Runner stopped before source execution as well as post-execution privacy
+refusals; the detail record states `source_query_executed`. `evidence` rejects
+`--outcome refused` with the exact `query-audit` command to use because a
+refused request did not release a result and therefore has no evidence bundle.
 
 Tenant ceilings remain a deliberate deployment-wide abuse backstop in addition
 to per-principal budgets. If a tenant reaches one of those explicit ceilings,

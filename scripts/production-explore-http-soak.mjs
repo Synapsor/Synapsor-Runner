@@ -783,6 +783,10 @@ export async function verifyProductionExploreAuditSink(input) {
       )::int AS keyed_tenant_bundles,
       COUNT(*) FILTER (
         WHERE event_kind = 'evidence_bundle'
+          AND payload_json #>> '{evidence_bundle,payload,principal}' ~ '^keyed:[a-f0-9]{64}$'
+      )::int AS keyed_principal_bundles,
+      COUNT(*) FILTER (
+        WHERE event_kind = 'evidence_bundle'
           AND payload_json #>> '{evidence_bundle,payload,result_fingerprint}' ~ '^hmac-sha256:[a-f0-9]{64}$'
           AND payload_json #>> '{evidence_bundle,payload,result_values_persisted}' = 'false'
           AND payload_json #>> '{evidence_bundle,payload,trusted_scope,values_persisted}' = 'false'
@@ -795,6 +799,11 @@ export async function verifyProductionExploreAuditSink(input) {
           AND payload_json #>> '{evidence_bundle,query_audit,0,payload,trusted_scope_values_persisted}' = 'false'
           AND payload_json #>> '{evidence_bundle,query_audit,0,payload,source_database_changed}' = 'false'
       )::int AS redacted_embedded_query_audits,
+      COUNT(*) FILTER (
+        WHERE event_kind = 'query_audit'
+          AND payload_json #>> '{query_audit,tenant_id}' ~ '^keyed:[a-f0-9]{64}$'
+          AND payload_json #>> '{query_audit,principal}' ~ '^keyed:[a-f0-9]{64}$'
+      )::int AS keyed_scope_query_audits,
       COUNT(*) FILTER (
         WHERE event_kind = 'query_audit'
           AND payload_json #>> '{query_audit,payload,result_values_persisted}' = 'false'
@@ -820,6 +829,7 @@ export async function verifyProductionExploreAuditSink(input) {
     );
   }
   if (Number(summary.keyed_tenant_bundles) !== Number(summary.evidence_bundles)
+    || Number(summary.keyed_principal_bundles) !== Number(summary.evidence_bundles)
     || Number(summary.redacted_evidence_bundles) !== Number(summary.evidence_bundles)
     || Number(summary.redacted_embedded_query_audits) !== Number(summary.evidence_bundles)) {
     throw new Error(
@@ -828,6 +838,7 @@ export async function verifyProductionExploreAuditSink(input) {
   }
   if (Number(summary.query_audits) < expectedStandaloneAudits.minimum
     || Number(summary.query_audits) > expectedStandaloneAudits.maximum
+    || Number(summary.keyed_scope_query_audits) !== Number(summary.query_audits)
     || Number(summary.redacted_query_audits) !== Number(summary.query_audits)) {
     throw new Error(
       `Production standalone query-audit rows did not match the expected handler-refusal range `
@@ -905,6 +916,17 @@ export function verifyProductionExploreOperatorLedger(input) {
       throw new Error(`Production ledger command returned invalid JSON: ${args.join(" ")}\n${result.stdout ?? ""}`);
     }
   };
+  const expectCommandFailure = (args, expected) => {
+    const result = input.invoke(args);
+    const output = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
+    if (result.status === 0 || !expected.test(output)) {
+      throw new Error(`Production ledger command did not fail as expected: ${args.join(" ")}\n${output}`);
+    }
+    if (/Could not read shared PostgreSQL ledger/i.test(output)) {
+      throw new Error(`A command/argument error was mislabeled as a shared-ledger connectivity failure: ${args.join(" ")}\n${output}`);
+    }
+    return output;
+  };
   const configArgs = ["--config", input.config_path];
   const evidenceList = readJson(["evidence", "list", ...configArgs, "--json"]);
   const evidence = evidenceList.payload.evidence ?? [];
@@ -913,18 +935,38 @@ export function verifyProductionExploreOperatorLedger(input) {
     || evidence.length === 0) {
     throw new Error(`Production evidence CLI did not read shared PostgreSQL schema ${input.schema}: ${evidenceList.result.stdout}`);
   }
-  const selectedEvidence = evidence.find((item) => item.source_id === input.source_id) ?? evidence[0];
+  const identityArgs = [
+    ...(input.tenant ? ["--tenant", input.tenant] : []),
+    ...(input.principal ? ["--principal", input.principal] : []),
+  ];
+  const identityList = identityArgs.length
+    ? readJson(["evidence", "list", ...configArgs, "--json", ...identityArgs, "--limit", "200"])
+    : evidenceList;
+  const identityEvidence = identityList.payload.evidence ?? [];
+  if (identityArgs.length && identityEvidence.length === 0) {
+    throw new Error(`Production evidence CLI could not resolve the plaintext tenant/principal through the configured HMAC key: ${identityList.result.stdout}`);
+  }
+  const selectedEvidence = identityEvidence.find((item) => item.source_id === input.source_id)
+    ?? evidence.find((item) => item.source_id === input.source_id)
+    ?? identityEvidence[0]
+    ?? evidence[0];
   if (!selectedEvidence?.evidence_bundle_id || !selectedEvidence?.source_table || !selectedEvidence?.tenant_id) {
     throw new Error(`Production evidence CLI returned an incomplete evidence record: ${JSON.stringify(selectedEvidence)}`);
+  }
+  const boundaryDigest = selectedEvidence.payload?.boundary_digest;
+  if (!/^sha256:[a-f0-9]{64}$/.test(String(boundaryDigest ?? ""))) {
+    throw new Error(`Production evidence CLI omitted the exact boundary digest: ${JSON.stringify(selectedEvidence)}`);
   }
   const since = new Date(Date.parse(selectedEvidence.created_at) - 1_000).toISOString();
   const evidenceFilteredResult = readJson([
     "evidence", "list", ...configArgs, "--json",
-    "--tenant", selectedEvidence.tenant_id,
-    "--table", selectedEvidence.source_table,
+    ...identityArgs,
+    "--resource", selectedEvidence.source_table,
+    "--boundary", boundaryDigest,
     "--capability", "app.explore_data",
-    "--status", selectedEvidence.payload?.outcome ?? "ok",
+    "--outcome", "ok",
     "--since", since,
+    "--limit", "5",
   ]);
   const evidenceFiltered = evidenceFilteredResult.payload.evidence ?? [];
   if (!evidenceFiltered.some((item) => item.evidence_bundle_id === selectedEvidence.evidence_bundle_id)) {
@@ -934,16 +976,25 @@ export function verifyProductionExploreOperatorLedger(input) {
     "evidence", "show", selectedEvidence.evidence_bundle_id, ...configArgs, "--details",
   ]);
   if (!evidenceShow.stdout.includes(`Ledger: shared PostgreSQL schema ${input.schema}`)
-    || !evidenceShow.stdout.includes(selectedEvidence.evidence_bundle_id)) {
+    || !evidenceShow.stdout.includes(selectedEvidence.evidence_bundle_id)
+    || !evidenceShow.stdout.includes("Boundary digest:")
+    || !evidenceShow.stdout.includes("Generation lock:")
+    || !evidenceShow.stdout.includes("Role posture:")
+    || !evidenceShow.stdout.includes("Result fingerprint:")
+    || !evidenceShow.stdout.includes("Execution duration:")
+    || !evidenceShow.stdout.includes("Normalized reviewed plan:")) {
     throw new Error(`Production evidence show did not identify the shared ledger: ${evidenceShow.stdout}`);
   }
 
   const auditList = readJson([
     "query-audit", "list", ...configArgs, "--json",
-    "--table", selectedEvidence.source_table,
+    ...identityArgs,
+    "--resource", selectedEvidence.source_table,
+    "--boundary", boundaryDigest,
     "--capability", "app.explore_data",
-    "--status", selectedEvidence.payload?.outcome ?? "ok",
+    "--outcome", "ok",
     "--since", since,
+    "--limit", "5",
   ]);
   const audits = auditList.payload.query_audit ?? [];
   if (auditList.payload.ledger_source?.kind !== "shared_postgres" || audits.length === 0) {
@@ -957,13 +1008,44 @@ export function verifyProductionExploreOperatorLedger(input) {
     throw new Error(`Production query-audit show was incomplete: ${auditShow.stdout}`);
   }
 
+  const refusedAudit = readJson([
+    "query-audit", "list", ...configArgs, "--json",
+    "--outcome", "refused",
+    "--limit", "200",
+  ]);
+  const refusedRows = refusedAudit.payload.query_audit ?? [];
+  if (refusedRows.length === 0
+    || refusedRows.some((row) => !String(row.payload?.status ?? "").startsWith("refused_"))) {
+    throw new Error(`Production query-audit refusal search did not return only recorded refusals: ${refusedAudit.result.stdout}`);
+  }
+
+  expectCommandFailure(
+    ["evidence", "show", "ev_explore_missing", ...configArgs, "--details"],
+    /evidence bundle not found: ev_explore_missing/i,
+  );
+  expectCommandFailure(
+    ["evidence", "list", ...configArgs, "--outcome", "refused"],
+    /query-audit list --outcome refused/i,
+  );
+  expectCommandFailure(
+    ["query-audit", "list", ...configArgs, "--tenant", "keyed:not-a-fingerprint"],
+    /--tenant keyed fingerprints must use keyed:/i,
+  );
+
   const serialized = [
     evidenceList.result.stdout,
+    identityList.result.stdout,
+    evidenceFilteredResult.result.stdout,
     evidenceShow.stdout,
     auditList.result.stdout,
     auditShow.stdout,
+    refusedAudit.result.stdout,
   ].join("\n");
-  for (const forbidden of input.forbidden_values ?? []) {
+  for (const forbidden of [
+    ...(input.forbidden_values ?? []),
+    input.tenant,
+    input.principal,
+  ]) {
     if (forbidden && serialized.includes(forbidden)) {
       throw new Error("Production ledger operator output exposed a forbidden value.");
     }
@@ -972,7 +1054,9 @@ export function verifyProductionExploreOperatorLedger(input) {
     ledger_source: evidenceList.payload.ledger_source,
     evidence_records: evidence.length,
     query_audit_records: audits.length,
-    filters_verified: ["tenant", "table", "capability", "status", "since"],
+    filters_verified: ["tenant", "principal", "resource", "boundary", "capability", "outcome", "since", "limit"],
+    refusal_records: refusedRows.length,
+    command_errors_preserved: true,
     read_only: true,
   };
 }

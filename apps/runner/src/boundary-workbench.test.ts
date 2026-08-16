@@ -583,6 +583,11 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain('id="ask-history" class="ask-history"');
     expect(html).toContain("Query history");
     expect(html).toContain("Load query history");
+    expect(html).toContain('id="ask-history-principal"');
+    expect(html).toContain('id="ask-history-resource"');
+    expect(html).toContain('id="ask-history-boundary"');
+    expect(html).toContain('id="ask-history-outcome"');
+    expect(html).toContain('id="ask-history-limit"');
     expect(html).toContain('getJson("/api/explore/history"+(params.size?"?"+params.toString():""))');
     expect(html).toContain('getJson("/api/explore/history?audit_id="');
     expect(html).toContain('getJson("/api/explore/evidence?evidence_id="');

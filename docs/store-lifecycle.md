@@ -134,10 +134,13 @@ consulted. Shared reads use a bounded read-only snapshot and do not block the
 live production writer with its advisory mutation lock.
 
 ```bash
-synapsor-runner evidence list --config ./synapsor.runner.json
+synapsor-runner evidence list --principal librarian@example.org \
+  --resource public.orders --since 24h --config ./synapsor.runner.json
 synapsor-runner evidence show <evidence-id> --details \
   --config ./synapsor.runner.json
-synapsor-runner query-audit list --table public.orders --since 2026-08-01 \
+synapsor-runner query-audit list --outcome refused --resource public.orders \
+  --since 24h --config ./synapsor.runner.json
+synapsor-runner query-audit browse --since 24h \
   --config ./synapsor.runner.json
 synapsor-runner query-audit show <audit-id> --details \
   --config ./synapsor.runner.json
@@ -146,6 +149,26 @@ synapsor-runner query-audit show <audit-id> --details \
 Production Explore records plans, outcome/count metadata, keyed scope
 fingerprints, and result fingerprints. It does not persist result values, raw
 tenant/principal claims, SQL, parameters, credentials, or source rows.
+
+`--tenant` and `--principal` accept either the operator-known plaintext value
+or an existing `keyed:<HMAC>` fingerprint. For plaintext input, Runner derives
+candidate fingerprints locally from the project's audit key and configured
+production HMAC key; the plaintext is not printed or persisted. Principal
+lookup applies to records created after keyed principal metadata was added.
+Older records only say whether principal scope was active, so they cannot be
+attributed to a principal retroactively.
+
+Use `query-audit` when the question is "what was attempted?" It includes
+refusals before source execution, privacy refusals after execution, source
+failures, and released results. Use `evidence` when the question is "what
+metadata proves this released result?" A refusal has no evidence bundle because
+no result was released. Both list commands support `--resource`, `--boundary`,
+`--outcome`, `--since` (ISO timestamp or `24h`/`7d` style duration), `--to`,
+`--limit`, `--json`, and `--follow`. `browse` opens the same filtered records in
+an interactive terminal viewer. `--follow --json` emits newline-delimited JSON.
+`activity search` uses the same production-store selection and keyed Explore
+identity lookup when one combined lifecycle view is more useful than a focused
+record type.
 
 ## Focused inspection commands
 

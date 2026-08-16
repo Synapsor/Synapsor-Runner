@@ -144,6 +144,8 @@ import {
   redactPlanLiterals,
 } from "./analytics-shell-render.js";
 import { inspectCompiledExplorePlan } from "./explore-operator-evidence.js";
+import { queryAuditFiltersFromArgs } from "./ledger-options.js";
+import { resolveExploreLedgerFilters } from "./ledger-search.js";
 import { createWorkbenchAskMcpGateway } from "./ask-mcp-gateway.js";
 import { resolveAskAccessGuidance } from "./ask-access-summary.js";
 import {
@@ -2097,15 +2099,32 @@ async function handleRequest(input: {
           resource: String(record.table_name ?? "app.explore_data"),
           status: String(payload.status ?? "recorded"),
           error_code: typeof payload.error_code === "string" ? payload.error_code : null,
+          refusal_stage: typeof payload.refusal_stage === "string" ? payload.refusal_stage : null,
           boundary_digest: typeof payload.boundary_digest === "string" ? payload.boundary_digest : null,
+          generation_lock_fingerprint: typeof payload.generation_lock_fingerprint === "string" ? payload.generation_lock_fingerprint : null,
+          role_posture_fingerprint: typeof payload.role_posture_fingerprint === "string" ? payload.role_posture_fingerprint : null,
           query_fingerprint: String(record.query_fingerprint ?? ""),
+          result_fingerprint: typeof payload.result_fingerprint === "string" ? payload.result_fingerprint : null,
           evidence_bundle_id: typeof record.evidence_bundle_id === "string"
             ? record.evidence_bundle_id
             : null,
+          tenant_scope_fingerprint: typeof record.tenant_id === "string" ? record.tenant_id : null,
+          principal_scope_fingerprint: typeof record.principal === "string" ? record.principal : null,
+          capability: typeof record.capability === "string"
+            ? record.capability
+            : typeof payload.capability === "string"
+              ? payload.capability
+              : null,
           normalized_plan: isRecord(payload.normalized_plan) ? payload.normalized_plan : null,
           returned_rows_or_groups: Number(payload.returned_rows_or_groups ?? record.row_count ?? 0),
           returned_cells: Number(payload.returned_cells ?? 0),
           suppressed_groups: Number(payload.suppressed_groups ?? 0),
+          execution_duration_ms: Number.isFinite(Number(payload.execution_duration_ms))
+            ? Number(payload.execution_duration_ms)
+            : null,
+          budget_reservation_id: typeof payload.budget_reservation_id === "string" ? payload.budget_reservation_id : null,
+          differencing_family: typeof payload.differencing_family === "string" ? payload.differencing_family : null,
+          differencing_variant: typeof payload.differencing_variant === "string" ? payload.differencing_variant : null,
           source_query_executed: payload.source_query_executed === true,
           result_values_persisted: payload.result_values_persisted === true,
           trusted_scope_values_persisted: payload.trusted_scope_values_persisted === true,
@@ -2121,21 +2140,35 @@ async function handleRequest(input: {
     } catch (error) {
       if (!isInactiveExplorationBoundary(error)) throw error;
     }
-    const auditFilters: QueryAuditSearchFilters = { limit: 50 };
-    const tenantFilter = url.searchParams.get("tenant")?.trim();
-    const tableFilter = url.searchParams.get("table")?.trim();
-    const capabilityFilter = url.searchParams.get("capability")?.trim();
-    const sinceFilter = url.searchParams.get("since")?.trim();
-    if (tenantFilter) auditFilters.tenant = tenantFilter;
-    if (tableFilter) auditFilters.table = tableFilter;
-    if (capabilityFilter) auditFilters.capability = capabilityFilter;
-    if (sinceFilter) {
-      if (!Number.isFinite(Date.parse(sinceFilter))) {
-        sendJson(response, 400, { ok: false, error: "Explore history since must be an ISO timestamp." });
-        return;
-      }
-      auditFilters.from = new Date(sinceFilter).toISOString();
+    const requestedLimit = Number(url.searchParams.get("limit") ?? 50);
+    if (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 200) {
+      sendJson(response, 400, { ok: false, error: "Explore history limit must be an integer from 1 to 200." });
+      return;
     }
+    const filterArgs = ["--config", configPath, "--limit", String(requestedLimit)];
+    const appendFilter = (parameter: string, flag = `--${parameter}`) => {
+      const value = url.searchParams.get(parameter)?.trim();
+      if (value) filterArgs.push(flag, value);
+    };
+    appendFilter("tenant");
+    appendFilter("principal");
+    appendFilter("resource");
+    appendFilter("capability");
+    appendFilter("boundary");
+    appendFilter("outcome");
+    appendFilter("since");
+    appendFilter("to");
+    let resolvedAuditFilters;
+    try {
+      resolvedAuditFilters = await resolveExploreLedgerFilters(
+        filterArgs,
+        queryAuditFiltersFromArgs(filterArgs),
+      );
+    } catch (error) {
+      sendJson(response, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+      return;
+    }
+    const auditFilters: QueryAuditSearchFilters = resolvedAuditFilters.filters;
     const durableRecords = await storeAccess(
       "read",
       "workbench-explore-history-list",
@@ -2164,8 +2197,19 @@ async function handleRequest(input: {
       ledger_source: ledgerSource,
       recent: recent.map(({ token, ...query }) => ({ ...query, query_ref: token })),
       durable,
-      durable_limit: 50,
-      filters: auditFilters,
+      durable_limit: requestedLimit,
+      filters: {
+        tenant: url.searchParams.has("tenant") ? "applied (value not echoed)" : null,
+        principal: url.searchParams.has("principal") ? "applied (value not echoed)" : null,
+        resource: url.searchParams.get("resource")?.trim() || null,
+        capability: url.searchParams.get("capability")?.trim() || null,
+        boundary: url.searchParams.get("boundary")?.trim() || null,
+        outcome: url.searchParams.get("outcome")?.trim() || null,
+        from: auditFilters.from ?? null,
+        to: auditFilters.to ?? null,
+        limit: requestedLimit,
+      },
+      notices: resolvedAuditFilters.notes,
       persisted: {
         model_conversation: false,
         result_values: false,

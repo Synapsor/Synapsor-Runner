@@ -558,7 +558,9 @@ export type ProposalSearchFilters = LocalListOptions & {
 export type EvidenceSearchFilters = LocalListOptions & {
   evidence?: string;
   tenant?: string;
+  tenants?: string[];
   principal?: string;
+  principals?: string[];
   capability?: string;
   proposal?: string;
   objectType?: string;
@@ -567,11 +569,15 @@ export type EvidenceSearchFilters = LocalListOptions & {
   table?: string;
   queryFingerprint?: string;
   status?: string;
+  outcome?: "ok" | "refused" | "failed";
+  boundary?: string;
 };
 
 export type QueryAuditSearchFilters = LocalListOptions & {
   tenant?: string;
+  tenants?: string[];
   principal?: string;
+  principals?: string[];
   capability?: string;
   proposal?: string;
   evidence?: string;
@@ -582,6 +588,8 @@ export type QueryAuditSearchFilters = LocalListOptions & {
   primaryKey?: string;
   queryFingerprint?: string;
   status?: string;
+  outcome?: "ok" | "refused" | "failed";
+  boundary?: string;
 };
 
 export type ReceiptSearchFilters = LocalListOptions & {

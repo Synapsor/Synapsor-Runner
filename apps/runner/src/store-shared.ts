@@ -593,11 +593,11 @@ async function runtimeStoreTemporaryDirectory(prefix: string): Promise<string> {
 }
 
 
-export async function maybeSharedPostgresRuntimeStoreRead(
+export async function maybeSharedPostgresRuntimeStoreRead<T>(
   args: string[],
   command: string,
-  callback: (storePath: string) => Promise<number>,
-): Promise<number | undefined> {
+  callback: (storePath: string) => Promise<T>,
+): Promise<T | undefined> {
   const configPath = runnerConfigPath(args);
   const config = await optionalRuntimeConfig(configPath);
   if (!config || !runtimeStoreBridgeRequired(args, config)) return undefined;

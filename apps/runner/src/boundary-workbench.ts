@@ -599,10 +599,15 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
               <div class="ask-history-body">
                 <p>Recent references can still be inspected or protected. Durable history contains bounded audit metadata only; Runner does not persist model conversations, result values, trusted scope values, or raw SQL.</p>
                 <div class="grid two ask-history-filters">
-                  <label class="field">Tenant fingerprint<input id="ask-history-tenant" type="text" maxlength="160" placeholder="Optional keyed scope"></label>
-                  <label class="field">Resource<input id="ask-history-table" type="text" maxlength="256" placeholder="Optional schema.table"></label>
-                  <label class="field">Capability<input id="ask-history-capability" type="text" maxlength="160" placeholder="Optional exact capability"></label>
-                  <label class="field">Since<input id="ask-history-since" type="datetime-local"></label>
+                  <label class="field">Tenant<input id="ask-history-tenant" type="text" maxlength="160" placeholder="Plain tenant ID or keyed fingerprint"></label>
+                  <label class="field">Principal<input id="ask-history-principal" type="text" maxlength="160" placeholder="Plain principal ID or keyed fingerprint"></label>
+                  <label class="field">Resource<input id="ask-history-resource" type="text" maxlength="256" placeholder="schema.table"></label>
+                  <label class="field">Capability<input id="ask-history-capability" type="text" maxlength="160" placeholder="Exact capability"></label>
+                  <label class="field">Boundary digest<input id="ask-history-boundary" type="text" maxlength="96" placeholder="sha256:..."></label>
+                  <label class="field">Outcome<select id="ask-history-outcome"><option value="">Any outcome</option><option value="ok">Released</option><option value="refused">Refused</option><option value="failed">Source failed</option></select></label>
+                  <label class="field">From<input id="ask-history-since" type="datetime-local"></label>
+                  <label class="field">To<input id="ask-history-to" type="datetime-local"></label>
+                  <label class="field">Maximum records<input id="ask-history-limit" type="number" min="1" max="200" step="1" value="50"></label>
                 </div>
                 <div class="actions"><button id="load-ask-history" class="secondary" type="button">Load query history</button></div>
                 <div id="ask-history-status" class="status-message" role="status" aria-live="polite"></div>
@@ -4807,13 +4812,23 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       try{
         const params=new URLSearchParams();
         const tenant=byId("ask-history-tenant").value.trim();
-        const table=byId("ask-history-table").value.trim();
+        const principal=byId("ask-history-principal").value.trim();
+        const resource=byId("ask-history-resource").value.trim();
         const capability=byId("ask-history-capability").value.trim();
+        const boundary=byId("ask-history-boundary").value.trim();
+        const outcome=byId("ask-history-outcome").value;
         const since=byId("ask-history-since").value;
+        const to=byId("ask-history-to").value;
+        const limit=byId("ask-history-limit").value;
         if(tenant)params.set("tenant",tenant);
-        if(table)params.set("table",table);
+        if(principal)params.set("principal",principal);
+        if(resource)params.set("resource",resource);
         if(capability)params.set("capability",capability);
+        if(boundary)params.set("boundary",boundary);
+        if(outcome)params.set("outcome",outcome);
         if(since)params.set("since",new Date(since).toISOString());
+        if(to)params.set("to",new Date(to).toISOString());
+        if(limit)params.set("limit",limit);
         const payload=await getJson("/api/explore/history"+(params.size?"?"+params.toString():""));
         const sourceLabel=ledgerSourceSentence(payload.ledger_source);
         const recent=payload.recent||[];
@@ -4824,7 +4839,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         const durableHtml=durable.length
           ?'<h4>Durable query ledger</h4><div class="ask-history-table-wrap"><table class="history-durable-table"><thead><tr><th>Audit</th><th>When</th><th>Resource</th><th>Outcome</th><th>Rows / groups</th><th>Evidence</th></tr></thead><tbody>'+durable.map(audit=>'<tr><td data-label="Audit"><button class="quiet" data-history-audit="'+esc(audit.audit_id)+'" type="button">'+esc(audit.audit_id)+'</button></td><td data-label="When">'+esc(new Date(audit.created_at).toLocaleString())+'</td><td data-label="Resource"><code>'+esc(audit.resource)+'</code></td><td data-label="Outcome" class="'+(String(audit.status).startsWith("refused")?'history-status-refused':'')+'">'+esc(String(audit.status).replaceAll("_"," "))+(audit.error_code?' · '+esc(audit.error_code):'')+'</td><td data-label="Rows / groups">'+esc(audit.returned_rows_or_groups)+'</td><td data-label="Evidence">'+(audit.evidence_bundle_id?'<button class="quiet" data-history-evidence="'+esc(audit.evidence_bundle_id)+'" type="button">'+esc(audit.evidence_bundle_id)+'</button>':'None')+'</td></tr>').join("")+'</tbody></table></div><div id="ask-history-detail"></div>'
           :'<h4>Durable query ledger</h4><p class="muted">No Explore audit metadata was found in '+esc(sourceLabel)+'.</p>';
-        content.innerHTML='<p><strong>Ledger source</strong><br>'+esc(sourceLabel)+'</p>'+recentHtml+durableHtml;
+        const notices=(payload.notices||[]).map(note=>'<p class="muted"><strong>Note:</strong> '+esc(note)+'</p>').join("");
+        content.innerHTML='<p><strong>Ledger source</strong><br>'+esc(sourceLabel)+'</p>'+notices+recentHtml+durableHtml;
         content.querySelectorAll("[data-history-audit]").forEach(item=>item.onclick=()=>loadAskHistoryDetail(item.dataset.historyAudit));
         content.querySelectorAll("[data-history-evidence]").forEach(item=>item.onclick=()=>loadAskEvidenceDetail(item.dataset.historyEvidence));
         status.textContent=recent.length+" recent "+(recent.length===1?"reference":"references")+" · "+durable.length+" durable audit "+(durable.length===1?"record":"records")+" · "+sourceLabel+". Result and trusted-scope values are not persisted.";

@@ -35,6 +35,12 @@ for the Synapsor Cloud CLI.
   explicitly states that token renewal, reconnects, and restarts do not reset it;
   compact result metadata retains bounded budget status, never identity or
   credential values.
+- Production and local audit history is now searchable from CLI and Workbench
+  by plaintext-or-keyed tenant/principal, resource, boundary digest, outcome,
+  and time range. `query-audit` shows refusals and failures as well as releases;
+  `evidence` shows released-result proof. Interactive browse, bounded JSON,
+  live NDJSON follow, and complete metadata detail require no raw SQL against
+  the control ledger and never persist or echo raw trusted-scope values.
 - Per-query drift checks now fetch complete catalog metadata only for exact
   generation-lock dependencies while retaining fresh global credential,
   read-only, grant, and ownership checks, dependency-scoped RLS proof, and the

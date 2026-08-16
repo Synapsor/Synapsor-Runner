@@ -1755,7 +1755,9 @@ async function showHistory(
         theme,
       );
   const commands = [
+    `${command} query-audit browse --since 24h ${ledgerSuffix}`,
     `${command} query-audit list ${ledgerSuffix}`,
+    `${command} query-audit list --outcome refused --since 24h ${ledgerSuffix}`,
     `${command} query-audit show <audit_id> --details ${ledgerSuffix}`,
     `${command} evidence list ${ledgerSuffix}`,
   ];
@@ -1777,7 +1779,10 @@ async function showHistory(
     "",
     renderTerminalCommandFrame(commands, {
       title: "COPY-PASTE COMMANDS",
-      metadata: ["Filter query-audit list with --table <schema.table> when needed."],
+      metadata: [
+        "browse opens the interactive metadata viewer.",
+        "Filters: --tenant, --principal, --resource, --boundary, --outcome, --since, --to, and --limit.",
+      ],
       color,
       columns: input.io.columns(),
     }),

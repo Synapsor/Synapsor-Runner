@@ -511,6 +511,24 @@ describe("local UI", () => {
       const historyText = JSON.stringify(history);
       expect(historyText).not.toContain("tenant-secret-value");
       expect(historyText).not.toContain("postgresql://fixture.invalid");
+      const filteredHistoryResponse = await fetch(
+        `http://${server.host}:${server.port}/api/explore/history?tenant=${encodeURIComponent("tenant-secret-value")}&resource=public.members&boundary=${encodeURIComponent(digest)}&outcome=ok&since=3650d&limit=1`,
+        { headers: { "x-synapsor-ui-token": "explore-evidence-token" } },
+      );
+      expect(filteredHistoryResponse.status).toBe(200);
+      const filteredHistory = await filteredHistoryResponse.json();
+      expect(filteredHistory).toMatchObject({
+        durable_limit: 1,
+        filters: {
+          tenant: "applied (value not echoed)",
+          resource: "public.members",
+          boundary: digest,
+          outcome: "ok",
+          limit: 1,
+        },
+        durable: [expect.objectContaining({ resource: "public.members", status: "ok" })],
+      });
+      expect(JSON.stringify(filteredHistory)).not.toContain("tenant-secret-value");
       const auditId = history.durable[0].audit_id;
       const auditResponse = await fetch(
         `http://${server.host}:${server.port}/api/explore/history?audit_id=${auditId}`,
@@ -524,6 +542,9 @@ describe("local UI", () => {
           audit_id: auditId,
           resource: "public.members",
           status: "ok",
+          boundary_digest: digest,
+          result_fingerprint: expect.stringMatching(/^hmac-sha256:/),
+          execution_duration_ms: expect.any(Number),
           result_values_persisted: false,
           trusted_scope_values_persisted: false,
           raw_sql_included: false,

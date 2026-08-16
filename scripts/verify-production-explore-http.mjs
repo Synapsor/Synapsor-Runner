@@ -2810,6 +2810,8 @@ async function main() {
       schema: controlSchema,
       config_path: configPath,
       source_id: "local_postgres",
+      tenant: "acme",
+      principal: "pm-1",
       forbidden_values: [readUrl, adminUrl, controlUrl, env.SYNAPSOR_EXPLORE_BUDGET_HMAC_KEY],
       invoke: (args) => {
         const invocation = productionExploreRunnerInvocation(args);
@@ -2824,6 +2826,9 @@ async function main() {
       schema: controlSchema,
       url_env: "SYNAPSOR_CONTROL_DATABASE_URL",
       control_url: controlUrl,
+      tenant: "acme",
+      principal: "pm-1",
+      hmac_key: env.SYNAPSOR_EXPLORE_BUDGET_HMAC_KEY,
     });
     const auditStorageAfterOperatorRead = await control.query(`
       SELECT

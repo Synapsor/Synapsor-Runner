@@ -2665,6 +2665,8 @@ async function main() {
       schema: controlSchema,
       config_path: configPath,
       source_id: candidate.source,
+      tenant: "acme",
+      principal: "alice",
       forbidden_values: [mysqlReadUrl, mysqlAdminUrl, controlUrl, env.SYNAPSOR_EXPLORE_BUDGET_HMAC_KEY],
       invoke: (args) => {
         const invocation = productionExploreRunnerInvocation(root, args);
@@ -2679,6 +2681,9 @@ async function main() {
       schema: controlSchema,
       url_env: "SYNAPSOR_CONTROL_DATABASE_URL",
       control_url: controlUrl,
+      tenant: "acme",
+      principal: "alice",
+      hmac_key: env.SYNAPSOR_EXPLORE_BUDGET_HMAC_KEY,
     });
     const operatorLedgerCountsAfter = await control.query(`
       SELECT

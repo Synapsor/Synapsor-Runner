@@ -111,6 +111,12 @@
   persisting result values or revealing raw trusted scope. Generates secret-free
   Streamable HTTP setup for Claude Code, Cursor, and VS Code using environment
   token references and the exact two-tool surface.
+- Makes that audit trail operationally searchable: CLI and Workbench accept
+  plaintext-or-keyed tenant/principal filters plus resource, boundary digest,
+  outcome, and time range; `query-audit` includes pre-execution refusals while
+  `evidence` remains released-result proof. Adds interactive browsing, bounded
+  JSON listing, live NDJSON follow mode, complete evidence detail, and distinct
+  command/not-found errors that are never mislabeled as control-store failures.
 - Keeps whole-organization databases simple through explicit boundary-wide
   single-organization review, while mixed databases can add only individually
   acknowledged shared-reference tables. Neither posture is inferred, and field

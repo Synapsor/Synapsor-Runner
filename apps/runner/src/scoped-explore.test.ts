@@ -2142,6 +2142,17 @@ describe("Scoped Explore", () => {
       expect(store.listEvidenceBundles()).toHaveLength(0);
       const records = store.listQueryAudit();
       expect(records).toHaveLength(1);
+      expect(records[0]).toMatchObject({
+        tenant_id: expect.stringMatching(/^keyed:[a-f0-9]{64}$/),
+        principal: expect.stringMatching(/^keyed:[a-f0-9]{64}$/),
+        capability: "app.explore_data",
+      });
+      expect(store.listQueryAudit({
+        tenants: [String(records[0]?.tenant_id)],
+        principals: [String(records[0]?.principal)],
+        outcome: "refused",
+        boundary: fixture.boundary.activation.digest,
+      })).toHaveLength(1);
       expect(records[0]?.payload).toMatchObject({
         status: "refused_before_source_execution",
         refusal_stage: "validation",
@@ -4108,8 +4119,19 @@ describe("Scoped Explore", () => {
 
       const auditText = JSON.stringify(store.listQueryAudit());
       const evidenceId = String(result.evidence_bundle_id);
-      const evidenceText = JSON.stringify(store.getEvidenceBundle(evidenceId));
+      const storedEvidence = store.getEvidenceBundle(evidenceId);
+      const evidenceText = JSON.stringify(storedEvidence);
       expect(store.listQueryAudit({ evidence: evidenceId })).toHaveLength(1);
+      expect(storedEvidence).toMatchObject({
+        tenant_id: expect.stringMatching(/^keyed:[a-f0-9]{64}$/),
+        principal: expect.stringMatching(/^keyed:[a-f0-9]{64}$/),
+      });
+      expect(store.listEvidenceBundles({
+        tenants: [String(storedEvidence?.tenant_id)],
+        principals: [String(storedEvidence?.principal)],
+        outcome: "ok",
+        boundary: fixture.boundary.activation.digest,
+      })).toHaveLength(1);
       expect(auditText).not.toContain("private-literal");
       expect(auditText).not.toContain("tenant-acme");
       expect(auditText).not.toContain("pm-1");

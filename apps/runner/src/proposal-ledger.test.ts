@@ -2,10 +2,11 @@ import { type RuntimeConfig } from "@synapsor-runner/mcp-server";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
 import { canonicalJsonDigest, parseFreshnessProof, protocolVersions } from "@synapsor-runner/protocol";
 import fs from "node:fs/promises";
+import crypto from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { evidenceList, queryAuditList, reusableRecordedFreshness } from "./proposal-ledger.js";
+import { activitySearch, evidenceList, evidenceShow, queryAuditList, reusableRecordedFreshness } from "./proposal-ledger.js";
 
 
 const proposalHash = canonicalJsonDigest({ proposal: "freshness-reuse" });
@@ -257,6 +258,82 @@ describe("proposal approval freshness reuse", () => {
       write.mockClear();
       await evidenceList(["--store", storePath, "--table", "public.missing"]);
       expect(write.mock.calls.flat().join("")).toContain("No evidence bundles found in the consulted ledger");
+    } finally {
+      write.mockRestore();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("resolves plaintext Explore scope filters and reports command errors as command errors", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-ledger-filter-"));
+    const storePath = path.join(tempDir, "local.db");
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    const key = crypto.randomBytes(32);
+    const tenant = `keyed:${crypto.createHmac("sha256", key).update("northgate").digest("hex")}`;
+    const principal = `keyed:${crypto.createHmac("sha256", key).update("librarian@example.org").digest("hex")}`;
+    await fs.mkdir(path.join(tempDir, ".synapsor"), { recursive: true });
+    await fs.writeFile(path.join(tempDir, ".synapsor/explore-audit.key"), key.toString("base64url"));
+    const store = new ProposalStore(storePath);
+    store.recordEvidenceBundle({
+      evidence_bundle_id: "ev_scope_filter",
+      tenant_id: tenant,
+      payload: {
+        schema_version: "synapsor.analytics-evidence.v1",
+        principal,
+        capability: "app.explore_data",
+        source_id: "library_mysql",
+        source_table: "librarydb.members",
+        boundary_digest: `sha256:${"a".repeat(64)}`,
+        query_fingerprint: "sha256:query",
+        outcome: "ok",
+        result_values_persisted: false,
+      },
+      query_audit: [],
+    });
+    store.close();
+    const write = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      await evidenceList([
+        "--store", storePath,
+        "--config", configPath,
+        "--tenant", "northgate",
+        "--principal", "librarian@example.org",
+        "--resource", "librarydb.members",
+        "--boundary", `sha256:${"a".repeat(64)}`,
+        "--since", "3650d",
+        "--json",
+      ]);
+      const output = JSON.parse(write.mock.calls.flat().join(""));
+      expect(output.evidence).toEqual([expect.objectContaining({ evidence_bundle_id: "ev_scope_filter" })]);
+      expect(JSON.stringify(output)).not.toContain("northgate");
+      expect(JSON.stringify(output)).not.toContain("librarian@example.org");
+
+      write.mockClear();
+      await activitySearch([
+        "--store", storePath,
+        "--config", configPath,
+        "--tenant", "northgate",
+        "--principal", "librarian@example.org",
+        "--resource", "librarydb.members",
+        "--outcome", "ok",
+        "--since", "3650d",
+        "--json",
+      ]);
+      const activity = JSON.parse(write.mock.calls.flat().join(""));
+      expect(activity.interactions).toEqual([
+        expect.objectContaining({ kind: "evidence", evidence: "ev_scope_filter" }),
+      ]);
+      expect(JSON.stringify(activity)).not.toContain("northgate");
+      expect(JSON.stringify(activity)).not.toContain("librarian@example.org");
+
+      await expect(evidenceList([
+        "--store", storePath,
+        "--outcome", "refused",
+      ])).rejects.toThrow(/query-audit list --outcome refused/);
+      await expect(evidenceShow([
+        "ev_missing",
+        "--store", storePath,
+      ])).rejects.toThrow("evidence bundle not found: ev_missing");
     } finally {
       write.mockRestore();
       await fs.rm(tempDir, { recursive: true, force: true });

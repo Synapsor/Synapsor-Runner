@@ -281,7 +281,10 @@ synapsor-runner evidence list \
   --store ./.synapsor/local.db
 
 synapsor-runner evidence show ev_123 --store ./.synapsor/local.db
-synapsor-runner query-audit list --evidence ev_123 --store ./.synapsor/local.db
+synapsor-runner query-audit list --outcome refused --resource public.orders \
+  --since 24h --store ./.synapsor/local.db
+synapsor-runner query-audit browse --since 24h --store ./.synapsor/local.db
+synapsor-runner query-audit list --follow --json --store ./.synapsor/local.db
 synapsor-runner receipts list --proposal wrp_123 --store ./.synapsor/local.db
 synapsor-runner receipts show <receipt_id> --store ./.synapsor/local.db
 ```
@@ -294,6 +297,15 @@ Read-only MCP tools record evidence bundles and query-audit rows and return an
 evidence handle. Use `evidence show`, `evidence list`, and `query-audit list`
 to inspect those captured rows and fingerprints later without rerunning the
 external database read.
+
+Explore evidence contains only released-result metadata. Query audit is the
+complete attempt history and includes pre-execution refusals, post-execution
+privacy refusals, source failures, and successful releases. Tenant/principal
+filters accept plaintext or `keyed:<HMAC>` values; Runner derives the keyed
+candidate locally and never echoes or stores the plaintext filter. Use
+`--resource`, `--boundary`, `--outcome`, `--since`, `--to`, and `--limit` to
+narrow a list, `--json` for scripts, `browse` for an interactive terminal view,
+or `--follow --json` for newline-delimited live metadata.
 
 This is local indexed search over the runner's SQLite ledger. It is not
 external Postgres/MySQL time travel, not native branching, and not a hosted
