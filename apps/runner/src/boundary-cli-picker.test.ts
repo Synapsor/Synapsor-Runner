@@ -1005,6 +1005,69 @@ describe("boundary review terminal picker", () => {
     expect(rendered).toContain("Remove");
   });
 
+  it("renders blocked scope evidence as an indented decision map in local and production editors", async () => {
+    for (const boundaryName of ["reviewed_staging", "reviewed_production"]) {
+      const blocked = summary("librarydb.transfer_requests", 0);
+      blocked.candidate_boundary_name = boundaryName;
+      blocked.status = "blocked_scope";
+      blocked.included = false;
+      blocked.model_visible_fields = 0;
+      blocked.runner_output_only_fields = 0;
+      blocked.kept_out_fields = 4;
+      blocked.blockers = ["trusted tenant scope is unresolved"];
+      blocked.scope_resolution_guidance = {
+        why: [
+          "Direct tenant scope unavailable: no trusted tenant column was found.",
+          "Derived tenant scope unavailable: loan_id -> librarydb.loans.id is nullable, so some rows can have no owning tenant.",
+          "Shared reference unavailable: relationship transfer_loan_fk reaches tenant-scoped resource librarydb.loans.",
+        ],
+        remediation: [
+          "Add and populate a trusted tenant column on librarydb.transfer_requests, then rescan.",
+          "If every row must belong to librarydb.loans, make librarydb.transfer_requests.loan_id NOT NULL, then rescan.",
+        ],
+      };
+
+      const exhaustive = formatBoundaryOverviewMap([blocked], { exhaustive: true });
+      expect(exhaustive).toContain("librarydb.transfer_requests [BLOCKED]");
+      expect(exhaustive).toContain("tenant scope  UNRESOLVED");
+      expect(exhaustive).toContain("direct     no trusted tenant column was found");
+      expect(exhaustive).toContain("derived    loan_id -> loans.id is nullable");
+      expect(exhaustive).toContain("shared     relationship transfer_loan_fk reaches tenant-scoped resource loans");
+      expect(exhaustive).toContain("next 1     Add and populate a trusted tenant column on transfer_requests");
+      expect(exhaustive).not.toContain("why:");
+      expect(exhaustive).not.toContain("next:");
+      expect(exhaustive).not.toContain("librarydb.loans");
+
+      const { input, output } = fakeTerminal(72);
+      const session = createBoundaryReviewInteractiveSession(input, output);
+      const selected = session.chooseResource([blocked]);
+      await send(input, "m");
+      await send(input, "q");
+      await expect(selected).resolves.toBeUndefined();
+
+      const rendered = stripAnsi(output.read()?.toString() ?? "");
+      expect(rendered).toContain("WHOLE BOUNDARY MAP");
+      expect(rendered).toContain("tenant scope  UNRESOLVED");
+      const wrappedEvidence = rendered.split("\n").find((line) => line.includes("owning tenant"));
+      expect(wrappedEvidence).toMatch(/^\s{4,}/u);
+      const wrappedRemediation = rendered.split("\n").find((line) => line.includes("NOT NULL"));
+      expect(wrappedRemediation).toMatch(/^\s{4,}/u);
+    }
+
+    const sharedReferenceReview = summary("librarydb.nums", 0);
+    sharedReferenceReview.status = "blocked_scope";
+    sharedReferenceReview.included = false;
+    sharedReferenceReview.blockers = [
+      "trusted tenant scope is unresolved; review Shared reference only if this table has no per-tenant rows",
+    ];
+    const sharedReferenceMap = formatBoundaryOverviewMap(
+      [sharedReferenceReview],
+      { exhaustive: true },
+    );
+    expect(sharedReferenceMap).toContain("review     Shared reference only if this table has no per-tenant rows");
+    expect(sharedReferenceMap).not.toContain("review     review Shared reference");
+  });
+
   it("renders included multi-hop relationships as readable chains before canonical IDs", () => {
     const resource = summary("librarydb.event_notes", 0);
     resource.relationships = [{
@@ -1105,7 +1168,8 @@ describe("boundary review terminal picker", () => {
 
     const rendered = formatBoundaryResourceMap(view);
     expect(rendered).toContain("event_note_id");
-    expect(rendered).toMatch(/event_note_id\s+integer[^\n]+needs review/);
+    expect(rendered).toMatch(/\| event_note_id\s+\| integer\s+\| Kept out\s+\| None/u);
+    expect(rendered).toMatch(/\| event_note_id\s+\| needs review/u);
     expect(rendered).not.toContain("[free text]");
   });
 
@@ -1158,7 +1222,7 @@ describe("boundary review terminal picker", () => {
     expect(overview).toContain("fields: 1 model | 0 raw Runner-only | 2 kept out");
 
     const detail = formatBoundaryResourceMap(view);
-    expect(detail).toMatch(/note_source\s+enum\s+-\s+-\s+-\s+-\s+-\s+-\s+-\s+-\s+KEPT/);
+    expect(detail).toMatch(/\| note_source\s+\| enum\s+\| Kept out\s+\| None/u);
     expect(detail).not.toContain("low structural risk");
   });
 
@@ -1264,8 +1328,10 @@ describe("boundary review terminal picker", () => {
       expect(rendered).toContain("Space cycles: MODEL + RUNNER -> RUNNER ONLY -> KEPT OUT");
       expect(rendered).toContain("TABLE ACCESS MAP - public.check_ins");
       expect(rendered).toContain("Preview includes unsaved access choices.");
-      expect(rendered).toContain("RET FLT SRT GRP MEA PRE DST TIM");
-      expect(rendered).toMatch(/outcome\s+text\s+Y\s+Y\s+Y\s+-\s+-\s+-\s+Y\s+-\s+RUNNER/);
+      expect(rendered).toContain("Reviewed operations");
+      expect(rendered).toContain("Return value");
+      expect(rendered).toContain("Distinct count");
+      expect(rendered).toMatch(/\| outcome\s+\| text\s+\| Runner only/u);
       expect(rendered).toContain("tenant scope      tenant_id (direct; trusted runtime value)");
       expect(rendered).not.toContain("tenant-secret");
     } finally {
@@ -1293,7 +1359,7 @@ describe("boundary review terminal picker", () => {
     await expect(edit).resolves.toBe("back");
 
     const rendered = stripAnsi(terminal.output.read()?.toString() ?? "");
-    expect(rendered).toContain("outcome: record ID; restores on save");
+    expect(rendered).toContain("record ID; restores on save");
     expect(rendered).not.toContain("outcome: no reviewed operation");
   });
 
@@ -1794,7 +1860,7 @@ describe("boundary review terminal picker", () => {
   });
 });
 
-function fakeTerminal(): {
+function fakeTerminal(columns = 100): {
   input: ReadStream;
   output: WriteStream & PassThrough;
 } {
@@ -1809,7 +1875,7 @@ function fakeTerminal(): {
     input.isRaw = value;
   };
   const output = new PassThrough() as WriteStream & PassThrough;
-  Object.assign(output, { isTTY: true, columns: 100 });
+  Object.assign(output, { isTTY: true, columns });
   return {
     input: input as unknown as ReadStream,
     output,

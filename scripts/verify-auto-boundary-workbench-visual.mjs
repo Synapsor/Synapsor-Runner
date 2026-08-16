@@ -477,9 +477,12 @@ try {
       const wrapper=map?.querySelector('.boundary-field-matrix-wrap');
       const nodes=map?.querySelector('.boundary-catalog-nodes');
       const headers=[...(matrix?.querySelectorAll('thead th')||[])].map(node=>(node.textContent||'').trim());
+      const operations=[...(matrix?.querySelectorAll('.boundary-operation-list li')||[])]
+        .map(node=>(node.textContent||'').trim());
       return {
         visible:Boolean(map?.offsetParent&&matrix?.offsetParent),
         headers,
+        operations,
         pageFits:document.documentElement.scrollWidth<=document.documentElement.clientWidth+1,
         matrixContained:Boolean(wrapper&&wrapper.clientWidth<=map.clientWidth+1),
         tableColumns:nodes?getComputedStyle(nodes).gridTemplateColumns:'missing',
@@ -491,13 +494,16 @@ try {
     })()`);
     assert(
       desktopMap.visible
-        && desktopMap.headers.join('|') === 'Field|RET|FLT|SRT|GRP|MEA|PRE|DST|TIM'
+        && desktopMap.headers.join('|') === 'Field and database type|Reviewed operations'
+        && desktopMap.operations.includes('Return value')
+        && desktopMap.operations.includes('Group / band')
+        && desktopMap.operations.includes('Missing-data measure')
         && desktopMap.pageFits
         && desktopMap.matrixContained
         && desktopMap.tableColumns.trim().split(/\s+/).length === 1
         && desktopMap.exactDetailsCollapsed
         && desktopMap.pathIdsCollapsed,
-      "reviewed data map was not a contained scan-first operation matrix",
+      "reviewed data map was not a contained plain-language operation table",
       desktopMap,
     );
     await evaluate(page, `(() => {
@@ -523,13 +529,13 @@ try {
       const wrapper=document.querySelector('#view-explore .boundary-field-matrix-wrap');
       return {
         pageFits:document.documentElement.scrollWidth<=document.documentElement.clientWidth+1,
-        matrixScrolls:Boolean(wrapper&&wrapper.scrollWidth>wrapper.clientWidth),
+        matrixFits:Boolean(wrapper&&wrapper.scrollWidth<=wrapper.clientWidth+1),
         overflow:getComputedStyle(wrapper).overflowX,
       };
     })()`);
     assert(
-      mobileMap.pageFits && mobileMap.matrixScrolls && /auto|scroll/.test(mobileMap.overflow),
-      "mobile reviewed data map escaped the viewport instead of scrolling inside its matrix",
+      mobileMap.pageFits && mobileMap.matrixFits && /auto|scroll/.test(mobileMap.overflow),
+      "mobile reviewed data map did not fit inside its bordered operation table",
       mobileMap,
     );
     await screenshot(page, "workbench-reviewed-data-map-mobile.png");

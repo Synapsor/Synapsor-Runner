@@ -2563,15 +2563,7 @@ function boundaryOverviewMapLines(
         : []),
     ];
     if (resource.status !== "draft_read") {
-      lines.push(`  ${theme.danger(`blocked: ${safeTerminalText(resource.blockers[0] ?? "review blocked")}`)}`);
-      if (resource.scope_resolution_guidance) {
-        lines.push(
-          ...resource.scope_resolution_guidance.why.map((line) =>
-            `      why: ${safeTerminalText(line)}`),
-          ...resource.scope_resolution_guidance.remediation.slice(0, 2).map((line) =>
-            `      next: ${safeTerminalText(line)}`),
-        );
-      }
+      lines.push(...blockedBoundaryOverviewLines(resource, theme));
       lines.push(...availableDerivedTenantScopeSummaryLines(
         resource,
         theme,
@@ -2627,6 +2619,81 @@ function boundaryOverviewMapLines(
     }
     return lines;
   });
+}
+
+function blockedBoundaryOverviewLines(
+  resource: BoundaryResourceReviewSummary,
+  theme: TerminalTheme,
+): string[] {
+  const lines: string[] = [];
+  const blockers = resource.blockers.length ? resource.blockers : ["review blocked"];
+  for (const blocker of blockers) {
+    const normalized = compactMapReferenceText(resource.resource_id, blocker);
+    const tenantScope = /^trusted tenant scope is unresolved(?:;\s*(.+))?\.?$/iu.exec(normalized);
+    if (tenantScope) {
+      lines.push(`  ${theme.dim("tenant scope")}  ${theme.danger("UNRESOLVED")}`);
+      if (tenantScope[1]) {
+        lines.push(mapDecisionLine(
+          "review",
+          tenantScope[1].replace(/^review\s+/iu, ""),
+          theme.warning,
+        ));
+      }
+      continue;
+    }
+    lines.push(mapDecisionLine("blocked", normalized, theme.danger, 2));
+  }
+
+  for (const reason of resource.scope_resolution_guidance?.why ?? []) {
+    const presentation = blockedScopeReasonPresentation(reason);
+    lines.push(mapDecisionLine(
+      presentation.label,
+      compactMapReferenceText(resource.resource_id, presentation.message),
+      theme.scope,
+    ));
+  }
+  for (const [index, remediation] of (
+    resource.scope_resolution_guidance?.remediation.slice(0, 2) ?? []
+  ).entries()) {
+    lines.push(mapDecisionLine(
+      `next ${index + 1}`,
+      compactMapReferenceText(resource.resource_id, remediation),
+      theme.warning,
+    ));
+  }
+  return lines;
+}
+
+function blockedScopeReasonPresentation(value: string): { label: string; message: string } {
+  const match = /^(Direct tenant scope|Derived tenant scope|Shared reference) unavailable:\s*(.+)$/iu.exec(
+    value.trim(),
+  );
+  if (!match) return { label: "why", message: value };
+  const labels: Record<string, string> = {
+    "direct tenant scope": "direct",
+    "derived tenant scope": "derived",
+    "shared reference": "shared",
+  };
+  return {
+    label: labels[match[1]!.toLowerCase()] ?? "why",
+    message: match[2]!,
+  };
+}
+
+function mapDecisionLine(
+  label: string,
+  message: string,
+  styleLabel: (value: string) => string,
+  indent = 4,
+): string {
+  return `${" ".repeat(indent)}${styleLabel(label.padEnd(11))}${safeTerminalText(message)}`;
+}
+
+function compactMapReferenceText(resourceId: string, value: string): string {
+  const schemaSeparator = resourceId.indexOf(".");
+  const schemaPrefix = schemaSeparator > 0 ? `${resourceId.slice(0, schemaSeparator)}.` : undefined;
+  const compact = schemaPrefix ? value.split(schemaPrefix).join("") : value;
+  return compact.trim().replace(/[.]+$/u, "");
 }
 
 function availableDerivedTenantScopeSummaryLines(
@@ -3028,6 +3095,11 @@ function wrapTerminalLine(value: string, width: number): string[] {
   const lines: string[] = [];
   let current: typeof tokens = [];
   let visible = 0;
+  const continuationIndent = styledContinuationIndent(safe, width);
+  const continuationPrefix = Array.from({ length: continuationIndent }, () => ({
+    raw: " ",
+    visible: true,
+  }));
   for (const token of tokens) {
     current.push(token);
     if (token.visible) visible += 1;
@@ -3038,12 +3110,23 @@ function wrapTerminalLine(value: string, width: number): string[] {
       ? wordBreak
       : styledTokenIndexAfterVisibleWidth(current, width);
     const head = current.slice(0, splitAt);
-    current = current.slice(splitAt + (wordBreak >= 0 ? 1 : 0));
+    current = [
+      ...continuationPrefix,
+      ...current.slice(splitAt + (wordBreak >= 0 ? 1 : 0)),
+    ];
     lines.push(head.map((item) => item.raw).join("").trimEnd());
     visible = current.filter((item) => item.visible).length;
   }
   lines.push(current.map((item) => item.raw).join("").trimEnd());
   return lines;
+}
+
+function styledContinuationIndent(value: string, width: number): number {
+  const plain = value.replace(/\u001b\[[0-9;]*m/g, "");
+  const leading = plain.match(/^ */u)?.[0].length ?? 0;
+  const labeledColumn = plain.slice(leading).match(/^\S.{0,18}? {2,}/u);
+  const desired = labeledColumn ? leading + labeledColumn[0].length : leading;
+  return Math.min(desired, Math.max(0, Math.floor(width / 3)));
 }
 
 function findStyledWordBreak(

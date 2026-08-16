@@ -19,17 +19,16 @@ export type BoundaryMapFieldRow = {
 
 const operationColumns: Array<{
   label: string;
-  compact: string;
   key: keyof BoundaryMapOperationFlags;
 }> = [
-  { label: "RET", compact: "R", key: "return_value" },
-  { label: "FLT", compact: "F", key: "filter" },
-  { label: "SRT", compact: "S", key: "sort" },
-  { label: "GRP", compact: "G", key: "group" },
-  { label: "MEA", compact: "M", key: "measure" },
-  { label: "PRE", compact: "P", key: "presence" },
-  { label: "DST", compact: "D", key: "distinct" },
-  { label: "TIM", compact: "T", key: "time" },
+  { label: "Return value", key: "return_value" },
+  { label: "Filter", key: "filter" },
+  { label: "Sort", key: "sort" },
+  { label: "Group / band", key: "group" },
+  { label: "Numeric measure", key: "measure" },
+  { label: "Missing-data measure", key: "presence" },
+  { label: "Distinct count", key: "distinct" },
+  { label: "Time bucket", key: "time" },
 ];
 
 export function renderBoundaryMapFieldMatrix(
@@ -40,100 +39,152 @@ export function renderBoundaryMapFieldMatrix(
   const indent = options.indent ?? "";
   const contentWidth = Math.max(32, options.width - indent.length);
   return contentWidth >= 72
-    ? renderWideMatrix(rows, contentWidth, indent)
-    : renderCompactMatrix(rows, contentWidth, indent);
+    ? renderWideTable(rows, contentWidth, indent)
+    : renderNarrowTable(rows, contentWidth, indent);
 }
 
 export function boundaryMapOperationLegend(): string[] {
   return [
-    "Y = reviewed; - = unavailable. MODEL may return values to the model; RUNNER keeps raw output local or tokenized; KEPT is unavailable.",
-    "RET return | FLT filter | SRT sort | GRP group or band | MEA numeric measure | PRE missing-data measure | DST distinct count | TIM time bucket",
+    "Access: Model + Runner may return reviewed values to the model; Runner only keeps raw output local or tokenized; Kept out is unavailable.",
+    "Reviewed operations are listed by name. Any operation omitted from a field is unavailable.",
   ];
 }
 
-function renderWideMatrix(
+function renderWideTable(
   rows: BoundaryMapFieldRow[],
   contentWidth: number,
   indent: string,
 ): string[] {
-  const includeNote = contentWidth >= 90;
-  const typeWidth = contentWidth >= 108 ? 13 : 10;
-  const accessWidth = 6;
-  const flagsWidth = operationColumns.reduce((total, column) => total + column.label.length, 0)
-    + operationColumns.length - 1;
-  const noteWidth = includeNote ? Math.min(24, Math.max(18, Math.floor(contentWidth * 0.2))) : 0;
-  const separators = includeNote ? 8 : 6;
-  const fieldWidth = Math.max(
-    10,
-    contentWidth - typeWidth - accessWidth - flagsWidth - noteWidth - separators,
+  const tableContentWidth = contentWidth - 13;
+  const typeWidth = 13;
+  const accessWidth = 14;
+  const fieldWidth = Math.min(22, Math.max(
+    12,
+    tableContentWidth - typeWidth - accessWidth - 20,
+  ));
+  const operationWidth = tableContentWidth - fieldWidth - typeWidth - accessWidth;
+  const lines = renderAsciiTable(
+    ["Field", "Database type", "Access", "Reviewed operations"],
+    rows.map((row) => [
+      row.field,
+      row.data_type,
+      accessLabel(row.access),
+      packOperationLabels(row, operationWidth).join("\n") || "None",
+    ]),
+    [fieldWidth, typeWidth, accessWidth, operationWidth],
+    indent,
   );
-  const header = [
-    fitCell("FIELD", fieldWidth),
-    fitCell("TYPE", typeWidth),
-    operationColumns.map((column) => column.label).join(" "),
-    fitCell("ACCESS", accessWidth),
-    ...(includeNote ? [fitCell("NOTE", noteWidth)] : []),
-  ].join("  ").trimEnd();
-  const lines = [indent + header];
-  for (const row of rows) {
-    lines.push(indent + [
-      fitCell(row.field, fieldWidth),
-      fitCell(row.data_type, typeWidth),
-      operationColumns.map((column) => row.operations[column.key] ? "Y".padEnd(3) : "-".padEnd(3))
-        .join(" ")
-        .trimEnd(),
-      fitCell(row.access, accessWidth),
-      ...(includeNote ? [fitCell(row.note ?? "", noteWidth)] : []),
-    ].join("  ").trimEnd());
-  }
-  const notes = rows.filter((row) => row.note && (!includeNote || row.note.length > noteWidth));
-  if (notes.length) {
-    if (!includeNote || notes.some((row) => row.note!.length > noteWidth)) {
-      lines.push(
-        indent + "NOTES",
-        ...notes.map((row) => `${indent}  ${row.field}: ${row.note}`),
-      );
-    }
-  }
-  return lines;
+  const notes = rows.filter((row) => row.note);
+  if (!notes.length) return lines;
+  const notesContentWidth = contentWidth - 7;
+  const notesFieldWidth = Math.min(22, Math.max(12, Math.floor(notesContentWidth * 0.28)));
+  return [
+    ...lines,
+    indent + "Reviewer notes",
+    ...renderAsciiTable(
+      ["Field", "Review note"],
+      notes.map((row) => [row.field, row.note!]),
+      [notesFieldWidth, notesContentWidth - notesFieldWidth],
+      indent,
+    ),
+  ];
 }
 
-function renderCompactMatrix(
+function renderNarrowTable(
   rows: BoundaryMapFieldRow[],
   contentWidth: number,
   indent: string,
 ): string[] {
-  const typeWidth = Math.min(10, Math.max(7, Math.floor(contentWidth * 0.22)));
-  const accessWidth = 6;
-  const fieldWidth = Math.max(10, contentWidth - typeWidth - accessWidth - 4);
-  const lines = [
-    indent + [
-      fitCell("FIELD", fieldWidth),
-      fitCell("TYPE", typeWidth),
-      fitCell("ACCESS", accessWidth),
-    ].join("  ").trimEnd(),
-  ];
-  for (const row of rows) {
-    lines.push(indent + [
-      fitCell(row.field, fieldWidth),
-      fitCell(row.data_type, typeWidth),
-      fitCell(row.access, accessWidth),
-    ].join("  ").trimEnd());
-    const flags = operationColumns.map((column) =>
-      `${column.compact}:${row.operations[column.key] ? "Y" : "-"}`);
-    if (contentWidth >= 48) {
-      lines.push(`${indent}  ops  ${flags.join(" ")}`);
+  const tableContentWidth = contentWidth - 7;
+  const propertyWidth = contentWidth >= 42
+    ? 19
+    : Math.max(12, Math.floor(tableContentWidth * 0.46));
+  const valueWidth = tableContentWidth - propertyWidth;
+  const tableRows = rows.flatMap((row) => [
+    ["Field", row.field],
+    ["Database type", row.data_type],
+    ["Access", accessLabel(row.access)],
+    ["Reviewed operations", packOperationLabels(row, valueWidth).join("\n") || "None"],
+    ...(row.note ? [["Review note", row.note]] : []),
+  ]);
+  return renderAsciiTable(
+    ["Property", "Reviewed value"],
+    tableRows,
+    [propertyWidth, valueWidth],
+    indent,
+  );
+}
+
+function reviewedOperationLabels(row: BoundaryMapFieldRow): string[] {
+  return operationColumns
+    .filter((operation) => row.operations[operation.key])
+    .map((operation) => operation.label);
+}
+
+function packOperationLabels(row: BoundaryMapFieldRow, width: number): string[] {
+  const lines: string[] = [];
+  let current = "";
+  for (const label of reviewedOperationLabels(row)) {
+    const candidate = current ? `${current}, ${label}` : label;
+    if (current && candidate.length > width) {
+      lines.push(current);
+      current = label;
     } else {
-      lines.push(`${indent}  ops  ${flags.slice(0, 4).join(" ")}`);
-      lines.push(`${indent}       ${flags.slice(4).join(" ")}`);
+      current = candidate;
     }
-    if (row.note) lines.push(`${indent}  note ${row.note}`);
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
+function accessLabel(access: BoundaryMapFieldRow["access"]): string {
+  if (access === "MODEL") return "Model + Runner";
+  if (access === "RUNNER") return "Runner only";
+  return "Kept out";
+}
+
+function renderAsciiTable(
+  headers: string[],
+  rows: string[][],
+  widths: number[],
+  indent: string,
+): string[] {
+  const border = indent + "+" + widths.map((width) => "-".repeat(width + 2)).join("+") + "+";
+  const lines = [border, ...renderAsciiRow(headers, widths, indent), border];
+  for (const row of rows) {
+    lines.push(...renderAsciiRow(row, widths, indent), border);
   }
   return lines;
 }
 
-function fitCell(value: string, width: number): string {
-  if (value.length <= width) return value.padEnd(width);
-  if (width <= 3) return value.slice(0, width);
-  return `${value.slice(0, width - 3)}...`;
+function renderAsciiRow(values: string[], widths: number[], indent: string): string[] {
+  const wrapped = widths.map((width, index) => wrapCell(values[index] ?? "", width));
+  const height = Math.max(...wrapped.map((cell) => cell.length));
+  return Array.from({ length: height }, (_, lineIndex) =>
+    indent + "| " + wrapped.map((cell, index) =>
+      (cell[lineIndex] ?? "").padEnd(widths[index]!)).join(" | ") + " |");
+}
+
+function wrapCell(value: string, width: number): string[] {
+  return value.split("\n").flatMap((part) => wrapCellLine(part, width));
+}
+
+function wrapCellLine(value: string, width: number): string[] {
+  let remaining = value.trim();
+  if (!remaining) return [""];
+  const lines: string[] = [];
+  while (remaining.length > width) {
+    const candidate = remaining.slice(0, width + 1);
+    const wordBreak = candidate.lastIndexOf(" ");
+    const identifierBreak = candidate.lastIndexOf("_");
+    const splitAt = wordBreak > 0
+      ? wordBreak
+      : identifierBreak > 0
+        ? identifierBreak + 1
+        : width;
+    lines.push(remaining.slice(0, splitAt).trimEnd());
+    remaining = remaining.slice(splitAt).trimStart();
+  }
+  lines.push(remaining);
+  return lines;
 }

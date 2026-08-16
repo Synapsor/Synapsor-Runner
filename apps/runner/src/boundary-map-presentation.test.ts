@@ -6,27 +6,35 @@ import {
 } from "./boundary-map-presentation.js";
 
 describe("boundary map field matrix", () => {
-  it("makes one-operation differences visible in aligned ASCII columns at 80 characters", () => {
+  it("renders plain-language reviewed operations in a bordered table at 80 characters", () => {
     const lines = renderBoundaryMapFieldMatrix(rows(), { width: 80, indent: "  " });
-    const source = lines.find((line) => line.includes("note_source"))!;
-    const sentiment = lines.find((line) => line.includes("sentiment"))!;
+    const sourceIndex = lines.findIndex((line) => line.includes("note_source"));
+    const sentimentIndex = lines.findIndex((line) => line.includes("sentiment"));
+    const source = lines.slice(sourceIndex, sentimentIndex).join(" ");
+    const sentiment = lines.slice(sentimentIndex).join(" ");
 
-    expect(lines[0]).toContain("RET FLT SRT GRP MEA PRE DST TIM");
-    expect(source).toMatch(/Y\s+Y\s+Y\s+Y\s+-\s+Y\s+Y\s+-\s+MODEL/);
-    expect(sentiment).toMatch(/Y\s+Y\s+Y\s+Y\s+-\s+Y\s+-\s+-\s+MODEL/);
-    expect(source.indexOf("Y", source.indexOf("note_source"))).toBe(
-      sentiment.indexOf("Y", sentiment.indexOf("sentiment")),
-    );
+    expect(lines[0]).toMatch(/^  \+-+\+-+\+-+\+-+\+$/u);
+    expect(lines.join("\n")).toContain("Database type");
+    expect(lines.join("\n")).toContain("Reviewed operations");
+    expect(source).toContain("Return value");
+    expect(source).toContain("Group / band");
+    expect(source).toContain("Missing-data measure");
+    expect(source).toContain("Distinct count");
+    expect(sentiment).not.toContain("Distinct count");
     expect(lines.every((line) => line.length <= 80)).toBe(true);
-    expect(lines.join("\n")).not.toMatch(/[●·✓→]/u);
+    expect(lines.join("\n")).not.toMatch(/\b(?:RET|FLT|SRT|GRP|MEA|PRE|DST|TIM)\b/u);
   });
 
-  it("falls back to a readable two-line field layout on narrow terminals", () => {
+  it("uses a bordered property table with full names on narrow terminals", () => {
     const lines = renderBoundaryMapFieldMatrix(rows(), { width: 44 });
-    expect(lines).toContain("  ops  R:Y F:Y S:Y G:Y");
-    expect(lines).toContain("       M:- P:Y D:Y T:-");
+    const rendered = lines.join("\n");
+    expect(lines[0]).toMatch(/^\+-+\+-+\+$/u);
+    expect(rendered).toContain("Reviewed value");
+    expect(rendered).toContain("Reviewed operations");
+    expect(rendered).toContain("Missing-data");
+    expect(rendered).toContain("measure");
     expect(lines.every((line) => line.length <= 44)).toBe(true);
-    expect(boundaryMapOperationLegend().join(" ")).toContain("RET return");
+    expect(boundaryMapOperationLegend().join(" ")).toContain("Any operation omitted");
   });
 });
 

@@ -78,7 +78,8 @@ describe("active boundary catalog", () => {
     const ascii = renderBoundaryCatalogAscii(model, { width: 88 });
     expect(ascii).toContain("3 tables | 2 physical joins | 3 reviewed paths");
     expect(ascii).toContain("TABLES AND REVIEWED FIELD AUTHORITY");
-    expect(ascii).toContain("RET FLT SRT GRP MEA PRE DST TIM");
+    expect(ascii).toContain("Reviewed operations");
+    expect(ascii).toMatch(/\+-+\+-+\+-+\+-+\+/u);
     expect(ascii).toContain("REVIEWED RELATIONSHIPS");
     expect(ascii).toContain("invoices -> orders -> customers");
     expect(ascii).toMatch(/via order_id -> \[reviewed hidden join\s+key\]/);
@@ -155,9 +156,11 @@ describe("active boundary catalog", () => {
     });
 
     const ascii = renderBoundaryCatalogAscii(model);
-    expect(ascii).toContain("RET FLT SRT GRP MEA PRE DST TIM");
-    expect(ascii).toMatch(/status\s+text\s+Y\s+-\s+-\s+Y/);
-    expect(ascii).toMatch(/total_cents\s+integer\s+Y\s+-\s+-\s+-\s+Y/);
+    expect(ascii).toContain("Reviewed operations");
+    expect(ascii).toMatch(/\| status\s+\| text\s+\| Model \+ Runner\s+\| Return value/u);
+    expect(ascii).toMatch(/\| total_cents\s+\| integer\s+\| Model \+ Runner\s+\| Return value/u);
+    expect(ascii).toContain("Group / band");
+    expect(ascii).toContain("Numeric measure");
     expect(ascii).toContain("Runner-only analysis: unique counts of risk_band (raw values withheld); group by");
     expect(ascii).toContain("group by risk_band");
     expect(ascii).toContain("(labels tokenized)");

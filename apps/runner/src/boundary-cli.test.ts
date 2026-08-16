@@ -900,8 +900,10 @@ describe("boundary operator-plane CLI", () => {
       })).resolves.toBe(0);
       expect(stdout).toContain("TABLE ACCESS MAP - public.service_visits");
       expect(stdout).toContain("FIELD AUTHORITY");
-      expect(stdout).toContain("RET FLT SRT GRP MEA PRE DST TIM");
-      expect(stdout).toMatch(/status\s+text\s+Y\s+Y\s+Y/);
+      expect(stdout).toContain("Reviewed operations");
+      expect(stdout).toMatch(/\| status\s+\| text\s+\| Model \+ Runner\s+\| Return value/u);
+      expect(stdout).toContain("Filter");
+      expect(stdout).toContain("Sort");
       expect(stdout).toContain("tenant scope      tenant_id (direct; trusted runtime value)");
       expect(stdout).not.toContain("filter: eq, neq, in");
       expect(stdout).not.toContain("\u001b[");

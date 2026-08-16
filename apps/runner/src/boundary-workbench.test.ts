@@ -484,7 +484,10 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("renderBoundaryGraphSvg");
     expect(html).toContain("boundary-catalog-graph");
     expect(html).toContain("Reviewed fields and relationships");
-    expect(html).toContain("RET return · FLT filter · SRT sort · GRP group/band");
+    expect(html).toContain("Operations are written out by name");
+    expect(html).toContain("Field and database type");
+    expect(html).toContain("Missing-data measure");
+    expect(html).not.toContain("RET return · FLT filter");
     expect(html).toContain("boundaryRelationshipDisplay");
     expect(html).toContain("commonSchema");
     expect(html).toContain("field.operations||{}");
