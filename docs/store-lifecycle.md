@@ -155,7 +155,9 @@ tenant/principal claims, SQL, parameters, credentials, or source rows.
 entire result set. It supports pages, timestamp jumps, metadata search, and live
 scope/resource/outcome/time filters. Up/Down moves the current selection, Enter
 opens it, Esc returns, and `/` opens a dedicated search prompt. Record numbers
-remain continuous across pages. Search covers redacted plan metadata, record and
+remain continuous across pages. `C` clears all active filters and returns to the
+newest page. The browser redraws in a dedicated terminal screen so list, search,
+and detail transitions do not append repeated output. Search covers redacted plan metadata, record and
 resource/source IDs, capability, and query fingerprint; an empty search result
 states both the term and the fields searched. A selected record starts with a
 compact, plan-derived English description; use its D, Q, and P commands for
@@ -168,6 +170,13 @@ use `--debug` only when the structured snapshot event is needed.
 Workbench Query history presents the same reconstructed descriptions, filters,
 and paged shared-ledger records with Newer records and Older records controls.
 Use the CLI browser for a long audit investigation and `--json` for automation.
+
+For a refusal before source execution, the query-audit payload may include
+`attempted_access.resource`, `.field`, and `.operation`. Runner writes these only
+when they resolve to metadata in the activated boundary; it does not persist an
+unknown name supplied by the client. The top-level `table_name` uses that
+validated resource, so resource filters find both successful queries and
+refusals against the same reviewed table.
 
 `--tenant` and `--principal` accept either the operator-known plaintext value
 or an existing `keyed:<HMAC>` fingerprint. For plaintext input, Runner derives

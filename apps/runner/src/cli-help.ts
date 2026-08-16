@@ -1139,7 +1139,9 @@ fingerprint. Plaintext values are HMACed locally and are never printed or persis
 With a production runtime_store config, these commands read the shared PostgreSQL
 control ledger read-only. browse opens a paged audit session with live search and
 filters: Up/Down selects, Enter opens, Esc returns, and / opens a text-search
-prompt. Stable record numbers continue across pages. Search checks redacted plan
+prompt. C clears every active filter and returns to the newest page. The browser
+uses an in-place terminal screen, so paging, search, and detail navigation do not
+append duplicate lists to scrollback. Stable record numbers continue across pages. Search checks redacted plan
 metadata, resource/source/capability and record IDs, and query fingerprints.
 Selected records separate compact, authority, reconstructed-query, and raw-plan
 views. --follow emits NDJSON when combined with --json. Routine shared-store

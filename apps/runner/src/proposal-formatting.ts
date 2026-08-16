@@ -9,7 +9,7 @@ import { protocolVersions } from "@synapsor-runner/protocol";
 import process from "node:process";
 import { cliCommandName } from "./cli-command-meta.js";
 import { approvalBoundary, boundedSetReviewLines, currentApprovalStatus, currentWritebackStatus, formatChangeLines, formatReceiptId, formatScalar, humanStatus, isRecord, plural, proposalNextCommands, receiptOperationLabel, stringField } from "./cli-format.js";
-import { describeExploreAuditPlan, reconstructExploreAuditQuery } from "./explore-audit-presentation.js";
+import { describeExploreAuditAttempt, describeExploreAuditPlan, reconstructExploreAuditQuery } from "./explore-audit-presentation.js";
 import { renderTerminalFact, renderTerminalJson, renderTerminalSectionHeading, renderTerminalSqlFrame, renderTerminalStyledText } from "./terminal-syntax.js";
 
 
@@ -484,8 +484,7 @@ export function formatQueryAuditSummary(
   const payload = isRecord(row.payload) ? row.payload : {};
   const status = stringField(payload, "status") ?? "recorded";
   const errorCode = stringField(payload, "error_code");
-  const description = describeExploreAuditPlan(payload.normalized_plan)
-    ?? `Reviewed Explore on ${String(row.table_name ?? "an unknown resource")}.`;
+  const description = queryAuditDescription(row, payload);
   const lines = [
     `${renderTerminalStyledText(outcomeLabel(status).padEnd(28), color, auditOutcomeTone(status))} ${renderTerminalStyledText(description, color, "value")}`,
     `  ${renderTerminalStyledText(String(row.created_at ?? "unknown time"), color, "muted")}  ${renderTerminalStyledText(`audit ${String(row.audit_id ?? "unknown")}`, color, "identifier")}${errorCode ? `  ${renderTerminalStyledText(errorCode, color, "danger")}` : ""}`,
@@ -528,8 +527,7 @@ export function formatQueryAuditBrowserRow(
 ): string {
   const payload = isRecord(row.payload) ? row.payload : {};
   const status = stringField(payload, "status") ?? "recorded";
-  const description = describeExploreAuditPlan(payload.normalized_plan)
-    ?? `Reviewed Explore on ${String(row.table_name ?? "an unknown resource")}.`;
+  const description = queryAuditDescription(row, payload);
   return [
     `${renderTerminalStyledText(`#${String(index).padStart(2)}`, color, "identifier")}  ${renderTerminalStyledText(outcomeLabel(status).padEnd(32), color, auditOutcomeTone(status))} ${renderTerminalStyledText(description, color, "value")}`,
     `    ${renderTerminalStyledText(String(row.created_at ?? "unknown time"), color, "muted")}  ${renderTerminalStyledText(String(row.table_name ?? "unknown"), color, "identifier")}  ${renderTerminalStyledText(`audit ${String(row.audit_id ?? "unknown")}`, color, "muted")}`,
@@ -543,8 +541,7 @@ export function formatQueryAuditBrowserSummary(row: Record<string, unknown>, col
   return [
     renderTerminalSectionHeading("Query audit summary", color),
     renderTerminalStyledText(
-      describeExploreAuditPlan(payload.normalized_plan)
-        ?? `Reviewed Explore on ${String(row.table_name ?? "an unknown resource")}.`,
+      queryAuditDescription(row, payload),
       color,
       "value",
     ),
@@ -552,6 +549,9 @@ export function formatQueryAuditBrowserSummary(row: Record<string, unknown>, col
     auditFact("Outcome", outcomeLabel(status), color, auditOutcomeTone(status)),
     auditFact("When", String(row.created_at ?? "not recorded"), color, "muted"),
     auditFact("Resource", String(row.table_name ?? "unknown"), color, "identifier"),
+    ...(attemptedAccessLabel(payload.attempted_access)
+      ? [auditFact("Attempted access", attemptedAccessLabel(payload.attempted_access)!, color, "warning")]
+      : []),
     auditFact("Error code", String(payload.error_code ?? "none"), color, payload.error_code ? "danger" : "muted"),
     auditFact("Rows or groups", formatMetadataValue(payload.returned_rows_or_groups ?? row.row_count), color),
     auditFact("Suppressed groups", formatMetadataValue(payload.suppressed_groups), color, Number(payload.suppressed_groups) > 0 ? "warning" : "value"),
@@ -571,6 +571,9 @@ export function formatQueryAuditBrowserFacts(row: Record<string, unknown>, color
     auditFact("Capability", String(row.capability ?? payload.capability ?? "unknown"), color, "identifier"),
     auditFact("Source", String(row.source_id ?? "unknown"), color, "identifier"),
     auditFact("Resource", String(row.table_name ?? "unknown"), color, "identifier"),
+    ...(attemptedAccessLabel(payload.attempted_access)
+      ? [auditFact("Attempted access", attemptedAccessLabel(payload.attempted_access)!, color, "warning")]
+      : []),
     "",
     renderTerminalSectionHeading("Authority and outcome", color),
     auditFact("Status", outcomeLabel(status), color, auditOutcomeTone(status)),
@@ -584,7 +587,7 @@ export function formatQueryAuditBrowserFacts(row: Record<string, unknown>, color
     auditFact("Returned rows or groups", formatMetadataValue(payload.returned_rows_or_groups ?? row.row_count), color),
     auditFact("Returned cells", formatMetadataValue(payload.returned_cells), color),
     auditFact("Suppressed groups", formatMetadataValue(payload.suppressed_groups), color, Number(payload.suppressed_groups) > 0 ? "warning" : "value"),
-    auditFact("Source query executed", formatMetadataBoolean(payload.source_query_executed), color, payload.source_query_executed === true ? "success" : "warning"),
+    auditFact("Source query executed", formatMetadataBoolean(sourceQueryExecuted(payload)), color, sourceQueryExecuted(payload) === true ? "success" : "warning"),
     auditFact("Result values persisted", formatMetadataBoolean(payload.result_values_persisted), color, payload.result_values_persisted === false ? "success" : "danger"),
     auditFact("Source database changed", formatMetadataBoolean(payload.source_database_changed), color, payload.source_database_changed === false ? "success" : "danger"),
   ].join("\n") + "\n";
@@ -637,6 +640,9 @@ export function formatQueryAuditDetail(row: Record<string, unknown>, color = fal
     auditFact("Capability", String(row.capability ?? payload.capability ?? "unknown"), color, "identifier"),
     auditFact("Source", String(row.source_id ?? "unknown"), color, "identifier"),
     auditFact("Resource", String(row.table_name ?? "unknown"), color, "identifier"),
+    ...(attemptedAccessLabel(payload.attempted_access)
+      ? [auditFact("Attempted access", attemptedAccessLabel(payload.attempted_access)!, color, "warning")]
+      : []),
     "",
     renderTerminalSectionHeading("Authority and outcome", color),
     auditFact("Status", status, color, auditOutcomeTone(status)),
@@ -652,7 +658,7 @@ export function formatQueryAuditDetail(row: Record<string, unknown>, color = fal
     auditFact("Returned cells", formatMetadataValue(payload.returned_cells), color),
     auditFact("Suppressed groups", formatMetadataValue(payload.suppressed_groups), color, Number(payload.suppressed_groups) > 0 ? "warning" : "value"),
     auditFact("Parameters redacted", formatMetadataBoolean(payload.parameters_redacted), color, payload.parameters_redacted === true ? "success" : "muted"),
-    auditFact("Source query executed", formatMetadataBoolean(payload.source_query_executed), color, payload.source_query_executed === true ? "success" : "warning"),
+    auditFact("Source query executed", formatMetadataBoolean(sourceQueryExecuted(payload)), color, sourceQueryExecuted(payload) === true ? "success" : "warning"),
     auditFact("Result values persisted", formatMetadataBoolean(payload.result_values_persisted), color, payload.result_values_persisted === false ? "success" : "danger"),
     auditFact("Source database changed", formatMetadataBoolean(payload.source_database_changed), color, payload.source_database_changed === false ? "success" : "danger"),
     auditFact("Created at", String(row.created_at ?? "not recorded"), color),
@@ -669,6 +675,31 @@ export function formatQueryAuditDetail(row: Record<string, unknown>, color = fal
     renderTerminalSectionHeading("Raw metadata payload (reference)", color),
     renderTerminalJson(payload, color),
   ].join("\n") + "\n";
+}
+
+
+function queryAuditDescription(
+  row: Record<string, unknown>,
+  payload: Record<string, unknown>,
+): string {
+  return describeExploreAuditPlan(payload.normalized_plan)
+    ?? describeExploreAuditAttempt(payload.attempted_access)
+    ?? `Reviewed Explore on ${String(row.table_name ?? "an unknown resource")}.`;
+}
+
+
+function attemptedAccessLabel(value: unknown): string | undefined {
+  if (!isRecord(value) || typeof value.resource !== "string") return undefined;
+  const field = typeof value.field === "string" ? `.${value.field}` : "";
+  const operation = typeof value.operation === "string" ? ` (${value.operation})` : "";
+  return `${value.resource}${field}${operation}`;
+}
+
+
+function sourceQueryExecuted(payload: Record<string, unknown>): unknown {
+  return typeof payload.source_query_executed === "boolean"
+    ? payload.source_query_executed
+    : payload.source_execution_started;
 }
 
 

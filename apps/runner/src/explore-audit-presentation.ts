@@ -37,6 +37,23 @@ export function describeExploreAuditPlan(normalizedPlan: unknown): string | unde
   return sentence(`${subject}${grouping}${comparison}${auditFilterSuffix(plan)}`);
 }
 
+/**
+ * Describes a refused operation using only boundary-validated metadata that
+ * Runner chose to persist. It never falls back to the original request.
+ */
+export function describeExploreAuditAttempt(attemptedAccess: unknown): string | undefined {
+  const attempt = record(attemptedAccess);
+  const resourceId = identifier(attempt.resource);
+  if (!resourceId) return undefined;
+  const resource = humanWords(resourceId.split(".").pop() ?? resourceId);
+  const field = humanWords(identifier(attempt.field));
+  const operation = humanWords(identifier(attempt.operation));
+  if (field && operation) return sentence(`Refused ${operation} on ${field} in ${resource}`);
+  if (field) return sentence(`Refused access to ${field} in ${resource}`);
+  if (operation) return sentence(`Refused ${operation} on ${resource}`);
+  return sentence(`Refused reviewed Explore request on ${resource}`);
+}
+
 
 function describeMeasure(value: AuditRecord): string {
   const derived = identifier(value.derived_measure);

@@ -2101,7 +2101,7 @@ describe("Scoped Explore", () => {
     }
   });
 
-  it("audits pre-execution refusals without source access, evidence, or rejected input", async () => {
+  it("audits pre-execution refusals without source access, rejected values, or unknown identifiers", async () => {
     const fixture = await activatedFixture();
     const store = new ProposalStore(path.join(fixture.root, ".synapsor/local.db"));
     let executions = 0;
@@ -2138,25 +2138,44 @@ describe("Scoped Explore", () => {
           operation: "select",
         },
       });
+      await expect(runtime.explore({
+        kind: "rows",
+        resource: "public.subscriptions",
+        select: ["model_invented_secret_field"],
+        limit: 1,
+      })).rejects.toMatchObject({
+        code: "EXPLORE_FIELD_FORBIDDEN",
+      });
       expect(executions).toBe(0);
       expect(store.listEvidenceBundles()).toHaveLength(0);
       const records = store.listQueryAudit();
-      expect(records).toHaveLength(1);
-      expect(records[0]).toMatchObject({
+      expect(records).toHaveLength(2);
+      const reviewedAttempt = records.find((record) =>
+        (record.payload as Record<string, unknown>).attempted_access
+        && ((record.payload as Record<string, unknown>).attempted_access as Record<string, unknown>).field === "billing_token");
+      const unknownAttempt = records.find((record) => record !== reviewedAttempt);
+      expect(reviewedAttempt).toMatchObject({
         tenant_id: expect.stringMatching(/^keyed:[a-f0-9]{64}$/),
         principal: expect.stringMatching(/^keyed:[a-f0-9]{64}$/),
         capability: "app.explore_data",
+        table_name: "public.subscriptions",
       });
       expect(store.listQueryAudit({
-        tenants: [String(records[0]?.tenant_id)],
-        principals: [String(records[0]?.principal)],
+        tenants: [String(reviewedAttempt?.tenant_id)],
+        principals: [String(reviewedAttempt?.principal)],
+        table: "public.subscriptions",
         outcome: "refused",
         boundary: fixture.boundary.activation.digest,
-      })).toHaveLength(1);
-      expect(records[0]?.payload).toMatchObject({
+      })).toHaveLength(2);
+      expect(reviewedAttempt?.payload).toMatchObject({
         status: "refused_before_source_execution",
         refusal_stage: "validation",
         error_code: "EXPLORE_FIELD_FORBIDDEN",
+        attempted_access: {
+          resource: "public.subscriptions",
+          field: "billing_token",
+          operation: "select",
+        },
         scope_application: {
           tenant: { kind: "direct", predicate_applied: false, column: "tenant_id" },
           principal: { kind: "not_configured", predicate_applied: false },
@@ -2166,8 +2185,18 @@ describe("Scoped Explore", () => {
         result_values_persisted: false,
         source_database_changed: false,
       });
+      expect(unknownAttempt).toMatchObject({
+        table_name: "public.subscriptions",
+        payload: {
+          attempted_access: {
+            resource: "public.subscriptions",
+            operation: "select",
+          },
+        },
+      });
       const persisted = JSON.stringify(records);
-      expect(persisted).not.toContain("billing_token");
+      expect(persisted).toContain("billing_token");
+      expect(persisted).not.toContain("model_invented_secret_field");
       expect(persisted).not.toContain("tenant-acme");
       expect(persisted).not.toContain("pm-1");
     } finally {

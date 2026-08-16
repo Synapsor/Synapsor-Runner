@@ -4527,12 +4527,9 @@ async function recordPreExecutionRefusalAudit(
   const errorCode = input.error instanceof ScopedExploreError
     ? input.error.code
     : "EXPLORE_PLAN_INVALID";
-  const requestedResource = input.plan?.resource
-    ?? (isRecord(input.unknownPlan) && typeof input.unknownPlan.resource === "string"
-      ? input.unknownPlan.resource
-      : undefined);
-  const scopeApplication = requestedResource
-    ? auditScopeApplication(input.boundary, requestedResource, false)
+  const attemptedAccess = reviewedRefusalAttempt(input);
+  const scopeApplication = attemptedAccess
+    ? auditScopeApplication(input.boundary, attemptedAccess.resource, false)
     : undefined;
   await recordExploreQueryAudit(store, input.mode, {
     tenant_id: input.tenantAuditFingerprint,
@@ -4540,7 +4537,7 @@ async function recordPreExecutionRefusalAudit(
     capability: "app.explore_data",
     source_id: input.boundary.source,
     query_fingerprint: queryFingerprint,
-    table_name: input.plan?.resource ?? "app.explore_data",
+    table_name: attemptedAccess?.resource ?? "app.explore_data",
     row_count: 0,
     payload: {
       scoped_explore_version: SCOPED_EXPLORE_VERSION,
@@ -4549,6 +4546,7 @@ async function recordPreExecutionRefusalAudit(
       budget_scope_fingerprint: input.budgetScopeFingerprint,
       request_shape_fingerprint: `hmac-sha256:${requestShapeFingerprint}`,
       ...(input.plan ? { normalized_plan: normalizedAudit(input.plan, input.auditKey) } : {}),
+      ...(attemptedAccess ? { attempted_access: attemptedAccess } : {}),
       ...(scopeApplication ? { scope_application: scopeApplication } : {}),
       status: "refused_before_source_execution",
       refusal_stage: input.stage,
@@ -4562,6 +4560,51 @@ async function recordPreExecutionRefusalAudit(
       recorded_at: new Date(input.now).toISOString(),
     },
   });
+}
+
+function reviewedRefusalAttempt(input: {
+  boundary: ActivatedExplorationBoundary;
+  unknownPlan: unknown;
+  plan?: ExplorePlan;
+  error: unknown;
+}): { resource: string; field?: string; operation?: string } | undefined {
+  const details = input.error instanceof ScopedExploreError && isRecord(input.error.details)
+    ? input.error.details
+    : {};
+  const unknownPlan = isRecord(input.unknownPlan) ? input.unknownPlan : {};
+  const resourceId = [details.resource, input.plan?.resource, unknownPlan.resource]
+    .find((value): value is string =>
+      typeof value === "string"
+      && input.boundary.pack.resources.some((resource) => resource.id === value));
+  if (!resourceId) return undefined;
+
+  const resource = input.boundary.pack.resources.find((candidate) => candidate.id === resourceId)!;
+  const field = typeof details.field === "string" && reviewedResourceField(resource, details.field)
+    ? details.field
+    : undefined;
+  const operation = typeof details.operation === "string"
+    && details.operation.length <= 80
+    && /^[a-z][a-z0-9_]*(?: [a-z][a-z0-9_]*){0,3}$/.test(details.operation)
+    ? details.operation
+    : undefined;
+  return {
+    resource: resource.id,
+    ...(field ? { field } : {}),
+    ...(operation ? { operation } : {}),
+  };
+}
+
+function reviewedResourceField(resource: BoundaryResource, field: string): boolean {
+  return Object.hasOwn(resource.field_types, field)
+    || resource.kept_out_fields.includes(field)
+    || (resource.model_withheld_fields?.includes(field) ?? false)
+    || resource.selectable_fields.includes(field)
+    || Object.hasOwn(resource.filterable_fields, field)
+    || resource.sortable_fields.includes(field)
+    || resource.groupable_fields.includes(field)
+    || resource.aggregate_measures.includes(field)
+    || resource.count_distinct_fields.includes(field)
+    || Object.hasOwn(resource.time_bucket_fields, field);
 }
 
 async function recordExploreAudit(

@@ -17,6 +17,19 @@ export type TerminalKeypress = {
 
 type PromptKey = TerminalKeypress;
 
+export async function withAlternateTerminalScreen<T>(
+  output: WriteStream,
+  operation: () => Promise<T>,
+): Promise<T> {
+  if (!output.isTTY) return operation();
+  output.write("\u001b[?1049h\u001b[H\u001b[2J");
+  try {
+    return await operation();
+  } finally {
+    output.write("\u001b[?25h\u001b[?1049l");
+  }
+}
+
 export async function readTerminalTextWithEscape(
   prompt: string,
   input: ReadStream,

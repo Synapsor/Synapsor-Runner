@@ -169,6 +169,11 @@ describe("Explore audit presentation", () => {
       payload: {
         status: "refused_before_source_execution",
         error_code: "EXPLORE_FIELD_FORBIDDEN",
+        attempted_access: {
+          resource: "librarydb.members",
+          field: "membership_tier",
+          operation: "group",
+        },
         boundary_digest: evidence.payload.boundary_digest,
         normalized_plan: evidence.payload.normalized_plan,
         scope_application: evidence.payload.scope_application,
@@ -178,6 +183,7 @@ describe("Explore audit presentation", () => {
       },
     }, true);
     expect(refused).toContain("EXPLORE_FIELD_FORBIDDEN");
+    expect(refused).toContain("librarydb.members.membership_tier (group)");
     expect(refused).toMatch(/\u001b\[[0-9;]*31m/);
     expect(refused).toContain("Reconstructed reviewed query");
 
@@ -194,19 +200,24 @@ describe("Explore audit presentation", () => {
       payload: {
         status: "refused_before_source_execution",
         error_code: "EXPLORE_FIELD_FORBIDDEN",
+        attempted_access: {
+          resource: "librarydb.members",
+          field: "membership_tier",
+          operation: "group",
+        },
         boundary_digest: evidence.payload.boundary_digest,
-        normalized_plan: evidence.payload.normalized_plan,
         scope_application: evidence.payload.scope_application,
         source_query_executed: false,
         result_values_persisted: false,
         source_database_changed: false,
       },
     };
-    expect(formatQueryAuditBrowserRow(refusedRecord, 1, false)).toContain("Members grouped by membership tier.");
+    expect(formatQueryAuditBrowserRow(refusedRecord, 1, false)).toContain("Refused group on membership tier in members.");
     expect(formatQueryAuditBrowserSummary(refusedRecord, false)).toContain("EXPLORE_FIELD_FORBIDDEN");
+    expect(formatQueryAuditBrowserSummary(refusedRecord, false)).toContain("librarydb.members.membership_tier (group)");
     expect(formatQueryAuditBrowserFacts(refusedRecord, false)).toContain("Source query executed: no");
-    expect(formatQueryAuditBrowserQuery(refusedRecord, false)).toContain("RUNNER_TENANT_PREDICATE");
-    expect(formatQueryAuditBrowserPlan(refusedRecord, false)).toContain('"membership_tier"');
+    expect(formatQueryAuditBrowserQuery(refusedRecord, false)).toContain("not recorded");
+    expect(formatQueryAuditBrowserPlan(refusedRecord, false)).toContain("not recorded");
 
     const legacyWithoutTopLevelResource = {
       ...evidence,

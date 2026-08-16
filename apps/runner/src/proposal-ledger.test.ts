@@ -8,7 +8,8 @@ import path from "node:path";
 import { PassThrough } from "node:stream";
 import type { ReadStream, WriteStream } from "node:tty";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { activitySearch, auditBrowserEmptyLines, auditBrowserSearchScope, evidenceBrowserCommand, evidenceBrowserFilterSummary, evidenceList, evidenceShow, normalizeAuditBrowserSearch, queryAuditList, reusableRecordedFreshness, selectAuditBrowserPage } from "./proposal-ledger.js";
+import { activitySearch, auditBrowserEmptyLines, auditBrowserHasActiveFilters, auditBrowserSearchScope, evidenceBrowserCommand, evidenceBrowserFilterSummary, evidenceList, evidenceShow, normalizeAuditBrowserSearch, queryAuditList, reusableRecordedFreshness, selectAuditBrowserPage } from "./proposal-ledger.js";
+import { withAlternateTerminalScreen } from "./terminal-prompt.js";
 
 
 const proposalHash = canonicalJsonDigest({ proposal: "freshness-reuse" });
@@ -425,6 +426,7 @@ describe("proposal approval freshness reuse", () => {
         "12  OK  Members grouped by membership tier\n    ev_explore_12",
       ],
       filters: "Filters: all released evidence",
+      hasActiveFilters: false,
       notes: [],
       emptyLines: [],
       helpLines: ["BROWSER COMMANDS", "Search checks redacted metadata."],
@@ -452,6 +454,7 @@ describe("proposal approval freshness reuse", () => {
       selectedIndex: 0,
       rows: [],
       filters: 'Filters: search "borrowed"',
+      hasActiveFilters: true,
       notes: [],
       emptyLines: auditBrowserEmptyLines("evidence", ["--search", "borrowed"]),
       helpLines: ["BROWSER COMMANDS"],
@@ -475,6 +478,7 @@ describe("proposal approval freshness reuse", () => {
       selectedIndex: 0,
       rows: [" 1  OK  First reviewed query"],
       filters: "Filters: all released evidence",
+      hasActiveFilters: false,
       notes: [],
       emptyLines: [],
       helpLines: ["BROWSER COMMANDS"],
@@ -497,6 +501,7 @@ describe("proposal approval freshness reuse", () => {
       selectedIndex: 0,
       rows: ["11  OK  Oldest reviewed query"],
       filters: "Filters: all released evidence",
+      hasActiveFilters: false,
       notes: [],
       emptyLines: [],
       helpLines: ["BROWSER COMMANDS"],
@@ -509,6 +514,43 @@ describe("proposal approval freshness reuse", () => {
     await expect(atEnd).resolves.toEqual({ kind: "quit", selectedIndex: 0 });
     expect(stripAnsi(boundaryTerminal.output.read()?.toString() ?? ""))
       .toContain("No older record matches the current filters.");
+
+    const clearTerminal = fakeTerminal();
+    const clear = selectAuditBrowserPage({
+      title: "Evidence browser",
+      pageNumber: 1,
+      pageSize: 10,
+      hasNext: false,
+      hasPrevious: false,
+      selectedIndex: 0,
+      rows: [" 1  OK  Filtered reviewed query"],
+      filters: 'Filters: search "borrowed"',
+      hasActiveFilters: true,
+      notes: [],
+      emptyLines: [],
+      helpLines: ["BROWSER COMMANDS"],
+      color: false,
+      input: clearTerminal.input,
+      output: clearTerminal.output,
+    });
+    await emitKey(clearTerminal.input, { sequence: "c", name: "c" });
+    await expect(clear).resolves.toEqual({ kind: "clear", selectedIndex: 0 });
+    const clearRendered = stripAnsi(clearTerminal.output.read()?.toString() ?? "");
+    expect(clearRendered).toContain("C clears all");
+    expect(clearRendered).toContain("C Clear");
+    expect(auditBrowserHasActiveFilters(["--config", "runner.json", "--search", "borrowed"])).toBe(true);
+    expect(auditBrowserHasActiveFilters(["--config", "runner.json"])).toBe(false);
+  });
+
+  it("restores the operator terminal when an in-place browser operation fails", async () => {
+    const terminal = fakeTerminal();
+    await expect(withAlternateTerminalScreen(terminal.output, async () => {
+      terminal.output.write("browser content");
+      throw new Error("browser failed");
+    })).rejects.toThrow("browser failed");
+    const output = terminal.output.read()?.toString() ?? "";
+    expect(output.indexOf("\u001b[?1049h")).toBeLessThan(output.indexOf("browser content"));
+    expect(output.indexOf("browser content")).toBeLessThan(output.indexOf("\u001b[?1049l"));
   });
 });
 

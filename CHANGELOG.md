@@ -125,7 +125,13 @@
   operator diagnostics are enabled. Terminal browsing now follows the same
   Up/Down, Enter, Esc, and `/` interaction model as boundary review, keeps
   record numbers stable across pages, explains zero-result search scope, and
-  scrolls expanded evidence sections in place.
+  scrolls expanded evidence sections in place. A visible `C` action clears all
+  filters, and a dedicated terminal screen keeps list/search/detail transitions
+  from appending duplicate output to scrollback.
+- Attributes pre-execution Explore refusals to their boundary-validated
+  resource and records the attempted reviewed field and operation as metadata,
+  so CLI and Workbench resource filters can find refusals without persisting
+  rejected values, request text, or client-invented identifiers.
 - Makes plaintext production audit identity filters fail closed when their
   configured HMAC key is unavailable, distinguishes legacy unattributable
   principal records from a verified empty match, and renders grouped,

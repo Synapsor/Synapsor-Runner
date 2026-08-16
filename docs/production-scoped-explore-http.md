@@ -374,7 +374,10 @@ plan identifiers. `--json` is suitable for automation. `evidence browse` is a
 stateful terminal audit session with ten records per page by default,
 Up/Down selection, Enter to open, Esc to return, continuous record numbers,
 next/back/page controls, live filters, timestamp jumps, and `/` to open metadata
-search. Search covers the redacted normalized-plan identifiers used to build the
+search. `C` visibly clears every active filter and returns to the newest page.
+The browser uses a dedicated terminal screen, so paging, searching, opening a
+record, and returning to the list redraw in place instead of growing terminal
+scrollback. Search covers the redacted normalized-plan identifiers used to build the
 English description, evidence/audit IDs, resource/source IDs, capability, and
 query fingerprint. A zero-result view repeats the search term and those fields;
 `text` in older `/text` examples is treated as a placeholder rather than silently
@@ -385,6 +388,15 @@ user wording is not persisted, so lists show a deterministic plain-English
 description reconstructed from the reviewed plan rather than pretending to
 quote the original request. `--follow --json` emits newline-delimited JSON for
 a live metadata feed.
+
+Pre-execution refusals are query-audit records, not evidence bundles. When a
+refusal identifies a resource, field, and operation already present in the
+activated boundary metadata, Runner stores those identifiers as
+`attempted_access` and attributes `table_name` to that resource. This makes
+`query-audit list --resource <schema.table> --outcome refused` useful without
+persisting the rejected value, original request text, or an identifier invented
+outside the boundary. Unknown client-authored names remain represented only by
+the keyed request-shape fingerprint.
 
 The Workbench Query history view uses the same shared-ledger filters and
 plan-derived descriptions. Its Newer records and Older records controls page

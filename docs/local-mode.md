@@ -307,9 +307,11 @@ candidate locally and never echoes or stores the plaintext filter. Use
 narrow a list, `--json` for scripts, `browse` for an interactive terminal view,
 or `--follow --json` for newline-delimited live metadata. In `browse`, use
 Up/Down and Enter like the boundary picker, Esc to return, and `/` to search
-redacted plan metadata and record/resource identifiers. Record numbers remain
-continuous across pages, and empty searches identify the term and fields that
-were checked.
+redacted plan metadata and record/resource identifiers. `C` clears all active
+filters. The browser redraws inside a dedicated terminal screen, so paging,
+searching, and returning from a detail do not append duplicate lists to
+scrollback. Record numbers remain continuous across pages, and empty searches
+identify the term and fields that were checked.
 
 Detailed evidence and query-audit views group the fields an auditor usually
 needs first: identity/resource, authority, outcome/privacy, and execution. They

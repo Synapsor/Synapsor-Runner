@@ -1048,10 +1048,23 @@ export function verifyProductionExploreOperatorLedger(input) {
     || refusedRows.some((row) => !String(row.payload?.status ?? "").startsWith("refused_"))) {
     throw new Error(`Production query-audit refusal search did not return only recorded refusals: ${refusedAudit.result.stdout}`);
   }
-  if (!refusedRows.some((row) => row.payload?.error_code === "EXPLORE_FIELD_FORBIDDEN"
+  const fieldRefusal = refusedRows.find((row) => row.payload?.error_code === "EXPLORE_FIELD_FORBIDDEN"
     && row.payload?.source_execution_started === false
-    && row.payload?.evidence_bundle_created === false)) {
+    && row.payload?.evidence_bundle_created === false
+    && row.payload?.attempted_access?.resource === row.table_name
+    && typeof row.payload?.attempted_access?.field === "string"
+    && typeof row.payload?.attempted_access?.operation === "string");
+  if (!fieldRefusal) {
     throw new Error(`Production query-audit did not retain an EXPLORE_FIELD_FORBIDDEN no-source refusal: ${refusedAudit.result.stdout}`);
+  }
+  const refusedByResource = readJson([
+    "query-audit", "list", ...configArgs, "--json",
+    "--resource", fieldRefusal.table_name,
+    "--outcome", "refused",
+    "--limit", "200",
+  ]);
+  if (!(refusedByResource.payload.query_audit ?? []).some((row) => row.audit_id === fieldRefusal.audit_id)) {
+    throw new Error(`Production refusal could not be found through its attempted resource: ${refusedByResource.result.stdout}`);
   }
 
   expectCommandFailure(
@@ -1077,6 +1090,7 @@ export function verifyProductionExploreOperatorLedger(input) {
     auditList.result.stdout,
     auditShow.stdout,
     refusedAudit.result.stdout,
+    refusedByResource.result.stdout,
   ].join("\n");
   for (const forbidden of [
     ...(input.forbidden_values ?? []),
@@ -1098,6 +1112,7 @@ export function verifyProductionExploreOperatorLedger(input) {
     command_errors_preserved: true,
     missing_hmac_filter_failed_closed: Boolean(input.invoke_without_hmac),
     field_forbidden_refusal_recorded: true,
+    refusal_metadata_attributed: true,
     read_only: true,
   };
 }

@@ -144,7 +144,7 @@ import {
   redactPlanLiterals,
 } from "./analytics-shell-render.js";
 import { inspectCompiledExplorePlan } from "./explore-operator-evidence.js";
-import { describeExploreAuditPlan, reconstructExploreAuditQuery } from "./explore-audit-presentation.js";
+import { describeExploreAuditAttempt, describeExploreAuditPlan, reconstructExploreAuditQuery } from "./explore-audit-presentation.js";
 import { queryAuditFiltersFromArgs } from "./ledger-options.js";
 import { resolveExploreLedgerFilters } from "./ledger-search.js";
 import { createWorkbenchAskMcpGateway } from "./ask-mcp-gateway.js";
@@ -2097,6 +2097,7 @@ async function handleRequest(input: {
         tenantRecorded: typeof record.tenant_id === "string",
         principalRecorded: typeof record.principal === "string",
       });
+      const attemptedAccess = asRecord(payload.attempted_access);
       sendJson(response, 200, {
         ok: true,
         ledger_source: ledgerSource,
@@ -2107,6 +2108,13 @@ async function handleRequest(input: {
           status: String(payload.status ?? "recorded"),
           error_code: typeof payload.error_code === "string" ? payload.error_code : null,
           refusal_stage: typeof payload.refusal_stage === "string" ? payload.refusal_stage : null,
+          attempted_access: typeof attemptedAccess.resource === "string"
+            ? {
+                resource: attemptedAccess.resource,
+                field: typeof attemptedAccess.field === "string" ? attemptedAccess.field : null,
+                operation: typeof attemptedAccess.operation === "string" ? attemptedAccess.operation : null,
+              }
+            : null,
           boundary_digest: typeof payload.boundary_digest === "string" ? payload.boundary_digest : null,
           generation_lock_fingerprint: typeof payload.generation_lock_fingerprint === "string" ? payload.generation_lock_fingerprint : null,
           role_posture_fingerprint: typeof payload.role_posture_fingerprint === "string" ? payload.role_posture_fingerprint : null,
@@ -2203,6 +2211,7 @@ async function handleRequest(input: {
           created_at: String(record.created_at ?? payload.recorded_at ?? ""),
           resource: String(record.table_name ?? "app.explore_data"),
           description: describeExploreAuditPlan(payload.normalized_plan)
+            ?? describeExploreAuditAttempt(payload.attempted_access)
             ?? `Reviewed Explore on ${String(record.table_name ?? "an unknown resource")}.`,
           status: String(payload.status ?? "recorded"),
           returned_rows_or_groups: Number(payload.returned_rows_or_groups ?? record.row_count ?? 0),

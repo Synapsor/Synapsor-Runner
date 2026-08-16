@@ -4885,7 +4885,11 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         const payload=await getJson("/api/explore/history?audit_id="+encodeURIComponent(auditId));
         const audit=payload.audit;
         const statusClass=historyStatusClass(audit.status);
-        const facts=[["Outcome",String(audit.status).replaceAll("_"," ")],["Error code",audit.error_code||"None"],["Resource",audit.resource],["Boundary digest",audit.boundary_digest||"Not recorded"],["Tenant fingerprint",audit.tenant_scope_fingerprint||"Not recorded"],["Principal fingerprint",audit.principal_scope_fingerprint||"Not recorded"],["Rows / groups",audit.returned_rows_or_groups],["Suppressed groups",audit.suppressed_groups],["Result values persisted",audit.result_values_persisted?"Yes":"No"],["Source query executed",audit.source_query_executed?"Yes":"No"]];
+        const attempted=audit.attempted_access;
+        const attemptedLabel=attempted
+          ?attempted.resource+(attempted.field?"."+attempted.field:"")+(attempted.operation?" ("+attempted.operation+")":"")
+          :null;
+        const facts=[["Outcome",String(audit.status).replaceAll("_"," ")],["Error code",audit.error_code||"None"],["Resource",audit.resource],...(attemptedLabel?[["Attempted access",attemptedLabel]]:[]),["Boundary digest",audit.boundary_digest||"Not recorded"],["Tenant fingerprint",audit.tenant_scope_fingerprint||"Not recorded"],["Principal fingerprint",audit.principal_scope_fingerprint||"Not recorded"],["Rows / groups",audit.returned_rows_or_groups],["Suppressed groups",audit.suppressed_groups],["Result values persisted",audit.result_values_persisted?"Yes":"No"],["Source query executed",audit.source_query_executed?"Yes":"No"]];
         const factHtml='<dl class="history-detail-grid">'+facts.map((fact,index)=>'<dt>'+esc(fact[0])+'</dt><dd class="'+(index===0?statusClass:'')+'">'+esc(fact[1])+'</dd>').join("")+'</dl>';
         const reconstructed=audit.reconstructed_query;
         const queryHtml=reconstructed?'<h4>Reconstructed reviewed query</h4><p class="muted">'+reconstructed.caveats.map(esc).join(" ")+'</p><pre id="ask-history-sql"></pre>':'';

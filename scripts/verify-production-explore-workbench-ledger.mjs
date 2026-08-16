@@ -80,6 +80,33 @@ export async function verifyProductionExploreWorkbenchLedger(input) {
     `${input.engine} Workbench could not resolve plaintext production scope filters.`, identityResponse);
     const audit = identityResponse.payload.durable?.find((item) => item.evidence_bundle_id);
     assert(audit, `${input.engine} Workbench production history had no evidence-linked query audit.`, historyResponse.payload.durable);
+    const refusal = historyResponse.payload.durable?.find((item) =>
+      item.error_code === "EXPLORE_FIELD_FORBIDDEN" && item.resource !== "app.explore_data");
+    assert(refusal && /^Refused /i.test(String(refusal.description ?? "")),
+      `${input.engine} Workbench did not attribute the field refusal to a readable resource.`, historyResponse.payload.durable);
+
+    const refusalDetail = await jsonRequest(
+      server,
+      `/api/explore/history?audit_id=${encodeURIComponent(refusal.audit_id)}`,
+    );
+    assert(refusalDetail.status === 200
+      && refusalDetail.payload.audit?.attempted_access?.resource === refusal.resource
+      && typeof refusalDetail.payload.audit?.attempted_access?.field === "string"
+      && typeof refusalDetail.payload.audit?.attempted_access?.operation === "string"
+      && refusalDetail.payload.audit?.source_query_executed === false,
+    `${input.engine} Workbench refusal detail omitted the attempted reviewed metadata.`, refusalDetail);
+    const refusedResourceFilters = new URLSearchParams({
+      resource: refusal.resource,
+      outcome: "refused",
+      limit: "200",
+    });
+    const refusedResourceResponse = await jsonRequest(
+      server,
+      `/api/explore/history?${refusedResourceFilters}`,
+    );
+    assert(refusedResourceResponse.status === 200
+      && refusedResourceResponse.payload.durable?.some((item) => item.audit_id === refusal.audit_id),
+    `${input.engine} Workbench could not find a refusal through its attempted resource.`, refusedResourceResponse);
 
     const detailResponse = await jsonRequest(server, `/api/explore/history?audit_id=${encodeURIComponent(audit.audit_id)}`);
     assert(detailResponse.status === 200
@@ -147,6 +174,7 @@ export async function verifyProductionExploreWorkbenchLedger(input) {
       history: historyResponse.payload,
       identity: identityResponse.payload,
       detail: detailResponse.payload,
+      refusal_detail: refusalDetail.payload,
       evidence: evidenceResponse.payload,
     });
     assert(!serialized.includes(input.control_url),
@@ -170,6 +198,7 @@ export async function verifyProductionExploreWorkbenchLedger(input) {
       evidence_bundle_id: audit.evidence_bundle_id,
       filtered: true,
       paged: true,
+      refusal_metadata_attributed: true,
       unreachable_store_names_env_only: true,
       read_only: true,
     };
