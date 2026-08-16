@@ -481,9 +481,9 @@ async function chooseResource(
         const below = resources.length - end;
         const highlighted = resources[selected]!;
         const eligible = resources.filter(firstTableIsStartable).length;
-        const ancestorRequired = resources.filter((resource) =>
+        const sequencedAfterStart = resources.filter((resource) =>
           resource.first_table_startable === false).length;
-        const unavailable = resources.length - eligible - ancestorRequired;
+        const unavailable = resources.length - eligible - sequencedAfterStart;
         render([
           theme.title(`CHOOSE FIRST TABLE - ${safeTerminalText(startingBoundaryName)}`),
           "A new boundary starts with the table you choose. Nothing is copied from another boundary.",
@@ -492,7 +492,9 @@ async function chooseResource(
           ...visible.map((resource, index) => {
             const absolute = start + index;
             const details = resource.first_table_startable === false
-              ? `START FROM ANCESTOR · ${resource.first_table_guidance ?? "add its scoped ancestor first"}`
+              ? resource.first_table_scope_kind === "shared_reference"
+                ? `ADD AFTER SCOPED TABLE · ${resource.first_table_guidance ?? "review Shared reference inside the new boundary"}`
+                : `START FROM ANCESTOR · ${resource.first_table_guidance ?? "add its scoped ancestor first"}`
               : resource.status === "draft_read"
               ? `${resource.model_visible_fields} model · ` +
                 `${resource.runner_output_only_fields} Runner-only · ${resource.kept_out_fields} kept out`
@@ -508,7 +510,7 @@ async function chooseResource(
           }),
           theme.dim(
             `Inspected tables: ${resources.length} total · ${eligible} can start · ` +
-            `${ancestorRequired} add after ancestor · ${unavailable} unavailable.`,
+            `${sequencedAfterStart} add after required scope · ${unavailable} unavailable.`,
           ),
           ...(below > 0 || start > 0
             ? [theme.dim(
@@ -536,11 +538,15 @@ async function chooseResource(
         if (key.name === "return" || key.name === "enter") {
           if (!firstTableIsStartable(highlighted)) {
             if (highlighted.first_table_startable === false) {
-              startingTableNotice = `${safeTerminalText(highlighted.resource_id)} cannot be the first table. ` +
-                `${safeTerminalText(highlighted.first_table_guidance ?? "Add its directly scoped ancestor first.")}. ` +
-                `Required scope is derived through ${safeTerminalText(
-                  highlighted.first_table_scope_label ?? "a mandatory reviewed relationship path",
-                )}.`;
+              startingTableNotice = highlighted.first_table_scope_kind === "shared_reference"
+                ? `${safeTerminalText(highlighted.resource_id)} cannot be the first table in this authoring flow. ` +
+                  `${safeTerminalText(highlighted.first_table_guidance ?? "Start with a tenant-scoped table, then add it.")}. ` +
+                  "The no-per-tenant-rows acknowledgement is recorded separately for every boundary."
+                : `${safeTerminalText(highlighted.resource_id)} cannot be the first table. ` +
+                  `${safeTerminalText(highlighted.first_table_guidance ?? "Add its directly scoped ancestor first.")}. ` +
+                  `Required scope is derived through ${safeTerminalText(
+                    highlighted.first_table_scope_label ?? "a mandatory reviewed relationship path",
+                  )}.`;
               continue;
             }
             startingTableNotice = `${safeTerminalText(highlighted.resource_id)} cannot start a boundary: ` +

@@ -3204,6 +3204,133 @@ export default defineCapability({
     }
   }, 20_000);
 
+  it("reviews Shared reference separately when Workbench adds it to another boundary", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-shared-second-boundary-"));
+    const inspection = scopedAndSharedReferenceWorkbenchInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root: tempDir,
+        package_manager: "npm" as const,
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+      overrides: {
+        schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+        resources: {
+          "public.reference_catalog": {
+            shared_reference_scope: {
+              value: "table_has_no_per_tenant_rows",
+              actor: "first-reviewer@example.test",
+              reason: "The first boundary reviewed this global catalog.",
+              decided_at: "2026-08-12T12:00:00.000Z",
+            },
+          },
+        },
+      },
+    });
+    const written = await writeAutoBoundaryArtifacts({ projectRoot: tempDir, build });
+    const guided = await initializeGuidedProject({
+      projectRoot: tempDir,
+      build,
+      runnerVersion: "1.7.0",
+    });
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      boundaryRoot: written.root,
+      configPath: guided.config_path,
+      storePath: guided.store_path,
+      token: "shared-second-boundary-token",
+      csrfToken: "shared-second-boundary-csrf",
+      schemaInspector: async () => inspection,
+    });
+    const headers = {
+      "x-synapsor-ui-token": "shared-second-boundary-token",
+      "x-synapsor-csrf": "shared-second-boundary-csrf",
+    };
+    try {
+      const rejectedStart = await fetch(
+        `http://${server.host}:${server.port}/api/boundary/library/create`,
+        {
+          method: "POST",
+          headers: { ...headers, "content-type": "application/json" },
+          body: JSON.stringify({
+            name: "catalog_only",
+            resource_id: "public.reference_catalog",
+            actor: "second-reviewer@example.test",
+          }),
+        },
+      );
+      expect(rejectedStart.ok).toBe(false);
+      await expect(rejectedStart.json()).resolves.toMatchObject({
+        error: expect.stringMatching(
+          /cannot be the first table.*tenant-scoped table.*acknowledgement is reviewed separately/is,
+        ),
+      });
+
+      const created = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/library/create`,
+        headers,
+        {
+          name: "reviewed_catalog",
+          resource_id: "public.members",
+          actor: "second-reviewer@example.test",
+        },
+      );
+      expect(created.candidate.pack.resources.map((resource: { id: string }) => resource.id))
+        .toEqual(["public.members"]);
+
+      const reviewed = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        headers,
+        {
+          kind: "shared_reference_scope",
+          resource_id: "public.reference_catalog",
+          acknowledgement: "table_has_no_per_tenant_rows",
+          actor: "second-reviewer@example.test",
+          reason: "This boundary independently reviews the same global catalog.",
+        },
+      );
+      expect(reviewed).toMatchObject({
+        candidate: {
+          pack: {
+            name: "reviewed_catalog",
+            resources: expect.arrayContaining([
+              expect.objectContaining({ id: "public.members" }),
+              expect.objectContaining({
+                id: "public.reference_catalog",
+                shared_reference_scope: {
+                  mode: "shared_reference",
+                  acknowledgement: "table_has_no_per_tenant_rows",
+                },
+              }),
+            ]),
+          },
+        },
+        semantic_diff: {
+          before_included: false,
+          after_included: true,
+          selected_shared_reference_scope: true,
+        },
+        source_database_changed: false,
+      });
+      expect(reviewed.overrides.resources["public.reference_catalog"].shared_reference_scope)
+        .toMatchObject({
+          actor: "second-reviewer@example.test",
+          reason: "This boundary independently reviews the same global catalog.",
+        });
+      await expect(loadActivatedExplorationBoundaries(tempDir)).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  }, 25_000);
+
   it("reviews and activates a second Workbench boundary against its own generation lock", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-second-boundary-"));
     const inspection = relationshipReviewInspection();
@@ -5785,6 +5912,27 @@ function boundaryReviewInspection(): SchemaInspection {
       },
     }],
   };
+}
+
+function scopedAndSharedReferenceWorkbenchInspection(): SchemaInspection {
+  const inspection = boundaryReviewInspection();
+  const catalog = structuredClone(inspection.tables[0]!);
+  catalog.name = "reference_catalog";
+  catalog.columns = catalog.columns.filter((column) => column.name !== "tenant_id");
+  catalog.primary_key = ["id"];
+  catalog.unique_constraints = [{ name: "reference_catalog_pkey", columns: ["id"] }];
+  catalog.indexes = [{ name: "reference_catalog_pkey", columns: ["id"], unique: true }];
+  catalog.suggestions.tenant_columns = [];
+  catalog.suggestions.default_visible_columns = catalog.suggestions.default_visible_columns
+    .filter((column) => column !== "tenant_id");
+  catalog.row_level_security = false;
+  catalog.row_level_security_policies = [];
+  catalog.role_posture = {
+    ...catalog.role_posture!,
+    row_security_effective_for_current_role: false,
+  };
+  inspection.tables.push(catalog);
+  return inspection;
 }
 
 function derivedBoundaryReviewInspection(): SchemaInspection {

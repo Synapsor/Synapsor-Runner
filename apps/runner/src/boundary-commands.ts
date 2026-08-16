@@ -1172,7 +1172,7 @@ async function interactiveBoundaryReviewLoop(input: {
         && (resource.status === "draft_read" || resource.inline_resolution_available === true))) {
         process.stdout.write([
           "Boundary was not created because no inspected table can safely start it alone.",
-          "Start from a directly scoped ancestor. Derived tables can be added after their required ancestor is inside the boundary.",
+          "Start from a directly scoped table. Derived tables and Shared references can be added after the new boundary exists, with their own reviewed path or acknowledgement.",
           "",
         ].join("\n"));
         continue;
@@ -1192,7 +1192,9 @@ async function interactiveBoundaryReviewLoop(input: {
         process.stdout.write([
           `${startingSelection.resource_id} cannot be the first table in this boundary.`,
           `${startingSummary.first_table_guidance ?? "Add its directly scoped ancestor first."}.`,
-          `Its required scope is derived through ${startingSummary.first_table_scope_label ?? "a mandatory reviewed relationship path"}.`,
+          startingSummary.first_table_scope_kind === "shared_reference"
+            ? "The no-per-tenant-rows acknowledgement is reviewed separately for every boundary and will be offered when you add this table."
+            : `Its required scope is derived through ${startingSummary.first_table_scope_label ?? "a mandatory reviewed relationship path"}.`,
           "No table review was started, and nothing was saved or activated.",
           "",
         ].join("\n"));
@@ -1414,6 +1416,10 @@ async function interactiveBoundaryReviewLoop(input: {
         session: input.session,
         focusedAccess: input.initialView === "access",
       });
+      if (typeof result === "object") {
+        accessNotice = result;
+        continue;
+      }
       if (result === "review") {
         if (input.initialView === "access") {
           const activationResult = await confirmActivateAndKeepAccessOpen(accessActivationInput);
@@ -2451,7 +2457,7 @@ async function interactiveBoundaryResourceAddition(input: {
   schemaInspector: typeof inspectDatabase;
   session: BoundaryReviewInteractiveSession;
   focusedAccess?: boolean;
-}): Promise<number | "back" | "review"> {
+}): Promise<number | "back" | "review" | BoundaryAccessNotice> {
   if (input.view.candidate) {
     return interactiveBoundaryResourceReview({
       projectRoot: input.projectRoot,
@@ -2462,7 +2468,7 @@ async function interactiveBoundaryResourceAddition(input: {
       focusedAccess: input.focusedAccess,
     });
   }
-  if (!input.view.generated_candidate) {
+  if (!input.view.generated_candidate || requiresBoundarySpecificScopeReview(input.view)) {
     const resolved = await resolveBlockedBoundaryResource({
       projectRoot: input.projectRoot,
       view: input.view,
@@ -2481,17 +2487,22 @@ async function interactiveBoundaryResourceAddition(input: {
     });
   }
   const actor = localInteractiveActor();
-  const preview = await prepareBoundaryResourceReviewMutation(
-    input.projectRoot,
-    {
-      resource_id: input.view.resource_id,
-      include: true,
-      actor,
-      reason: "Added explicitly to the disabled boundary before reviewing its column access.",
-    },
-    input.schemaInspector,
-  );
-  const committed = await commitBoundaryResourceReviewMutation(input.projectRoot, preview);
+  let committed: Awaited<ReturnType<typeof commitBoundaryResourceReviewMutation>>;
+  try {
+    const preview = await prepareBoundaryResourceReviewMutation(
+      input.projectRoot,
+      {
+        resource_id: input.view.resource_id,
+        include: true,
+        actor,
+        reason: "Added explicitly to the disabled boundary before reviewing its column access.",
+      },
+      input.schemaInspector,
+    );
+    committed = await commitBoundaryResourceReviewMutation(input.projectRoot, preview);
+  } catch (error) {
+    return blockedBoundaryAdditionNotice(input.view, error);
+  }
   process.stdout.write(formatFocusedBoundaryEditSaved(
     input.view.resource_id,
     "added",
@@ -2507,6 +2518,33 @@ async function interactiveBoundaryResourceAddition(input: {
     session: input.session,
     focusedAccess: input.focusedAccess,
   });
+}
+
+function requiresBoundarySpecificScopeReview(view: BoundaryResourceReviewView): boolean {
+  return !view.candidate
+    && Boolean(view.generated_candidate?.shared_reference_scope)
+    && view.shared_reference_scope?.eligible === true;
+}
+
+function blockedBoundaryAdditionNotice(
+  view: BoundaryResourceReviewView,
+  error: unknown,
+): BoundaryAccessNotice {
+  const guidance = view.scope_resolution_guidance;
+  const blockers = guidance?.why.length
+    ? guidance.why
+    : view.blockers.length
+      ? view.blockers
+      : [redactCliErrorMessage(error instanceof Error ? error.message : String(error))];
+  return {
+    tone: "danger",
+    title: `${view.resource_id} was not added to the disabled draft.`,
+    lines: [
+      ...blockers.map((line) => `Why: ${line}`),
+      ...(guidance?.remediation ?? []).map((line) => `Next: ${line}`),
+    ],
+    footer: "You are still in /access. Nothing was saved or activated.",
+  };
 }
 
 async function resolveBlockedBoundaryResource(input: {

@@ -18,6 +18,7 @@ import {
   generationLockRemediation,
   generationLockRemediationCommand,
   loadActivatedExplorationBoundary,
+  loadActivatedExplorationBoundaries,
   loadStructuredProjectEvidence,
   seedConfiguredPrincipalBindingReview,
   writeAutoBoundaryArtifacts,
@@ -1109,17 +1110,40 @@ export async function boundaryCommand(
     assertKnownOptions(rest, new Set(["--project-root", "--json"]), "boundary status");
     const projectRoot = path.resolve(optionalArg(rest, "--project-root") ?? process.cwd());
     const context = await loadBoundaryReviewContext(projectRoot);
-    const active = await loadActivatedExplorationBoundary(projectRoot, {
-      name: context.bundle.candidate.pack.name,
-    }).catch((error) => {
+    const activeBoundaries = await loadActivatedExplorationBoundaries(projectRoot).catch((error) => {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
       throw error;
-    });
-    const operational = await boundaryOperationalStatus(projectRoot, context.bundle, active);
+    }) ?? [];
+    const sortedActiveBoundaries = [...activeBoundaries].sort((left, right) =>
+      left.pack.name.localeCompare(right.pack.name));
+    const editingActive = sortedActiveBoundaries.find((boundary) =>
+      boundary.pack.name === context.bundle.candidate.pack.name);
+    const operationalActive = editingActive ?? sortedActiveBoundaries[0];
+    const operational = await boundaryOperationalStatus(
+      projectRoot,
+      operationalActive
+        ? {
+            candidate: operationalActive,
+            outstanding_decision_ids: context.bundle.outstanding_decision_ids,
+          }
+        : context.bundle,
+      operationalActive,
+    );
     const unresolvedResources = [...new Set(context.bundle.decisions
       .filter((decision) => context.bundle.outstanding_decision_ids.includes(decision.id))
       .map((decision) => decision.resource_id)
       .filter((resource): resource is string => Boolean(resource)))].sort();
+    const candidateDigest = context.bundle.candidate_digest;
+    const editingState: "disabled_draft" | "active" | "active_with_disabled_draft_changes" = !editingActive
+      ? "disabled_draft"
+      : editingActive.activation.digest === candidateDigest
+        ? "active"
+        : "active_with_disabled_draft_changes";
+    const activeBoundarySummaries = sortedActiveBoundaries.map((boundary) => ({
+      name: boundary.pack.name,
+      tables: boundary.pack.resources.map((resource) => resource.id),
+      digest: boundary.activation.digest,
+    }));
     const payload = {
       ok: true,
       project: projectRoot,
@@ -1130,20 +1154,31 @@ export async function boundaryCommand(
         connection_value_returned: false,
       },
       config: operational.config,
-      activation: active ? "active" : "disabled_unreviewed",
+      activation: sortedActiveBoundaries.length ? "active" : "disabled_unreviewed",
+      deployment_state: sortedActiveBoundaries.length ? "active" : "disabled",
+      active_boundaries: activeBoundarySummaries,
       candidate_boundary_name: context.bundle.candidate.pack.name,
       candidate_tables: context.bundle.candidate.pack.resources.map((resource) => resource.id),
-      active_boundary_name: active && isRecord(active.pack)
-        ? (typeof active.pack.name === "string" ? active.pack.name : null)
+      editing: {
+        name: context.bundle.candidate.pack.name,
+        state: editingState,
+        tables: context.bundle.candidate.pack.resources.map((resource) => resource.id),
+        decisions_confirmed: context.bundle.decisions.length - context.bundle.outstanding_decision_ids.length,
+        decisions_total: context.bundle.decisions.length,
+      },
+      active_boundary_name: operationalActive && isRecord(operationalActive.pack)
+        ? (typeof operationalActive.pack.name === "string" ? operationalActive.pack.name : null)
         : null,
-      active_tables: active && isRecord(active.pack) && Array.isArray(active.pack.resources)
-        ? active.pack.resources
+      active_tables: operationalActive && isRecord(operationalActive.pack) && Array.isArray(operationalActive.pack.resources)
+        ? operationalActive.pack.resources
           .filter(isRecord)
           .map((resource) => resource.id)
           .filter((resource): resource is string => typeof resource === "string")
         : [],
-      candidate_digest: context.bundle.candidate_digest,
-      active_digest: active && isRecord(active.activation) ? active.activation.digest : undefined,
+      candidate_digest: candidateDigest,
+      active_digest: operationalActive && isRecord(operationalActive.activation)
+        ? operationalActive.activation.digest
+        : undefined,
       decisions_confirmed: context.bundle.decisions.length - context.bundle.outstanding_decision_ids.length,
       decisions_total: context.bundle.decisions.length,
       outstanding_decision_ids: context.bundle.outstanding_decision_ids,
@@ -1161,13 +1196,13 @@ export async function boundaryCommand(
     };
     if (rest.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
     else process.stdout.write([
-      `Auto Boundary state: ${payload.activation}`,
-      `Next boundary: ${payload.candidate_boundary_name} (${payload.candidate_tables.length} ${payload.candidate_tables.length === 1 ? "table" : "tables"})`,
-      payload.active_boundary_name
-        ? `Active boundary: ${payload.active_boundary_name} (${payload.active_tables.length} ${payload.active_tables.length === 1 ? "table" : "tables"})`
-        : "Active boundary: none",
+      `Deployment state: ${payload.deployment_state}`,
+      activeBoundarySummaries.length
+        ? `Active boundaries: ${activeBoundarySummaries.map((boundary) =>
+          `${boundary.name} (${boundary.tables.length} ${boundary.tables.length === 1 ? "table" : "tables"})`).join(", ")}`
+        : "Active boundaries: none",
+      `Editing: ${payload.editing.name} (${payload.editing.tables.length} ${payload.editing.tables.length === 1 ? "table" : "tables"}, ${editingBoundaryStateLabel(payload.editing.state)}, ${payload.editing.decisions_confirmed}/${payload.editing.decisions_total} decisions)`,
       `Candidate digest: ${payload.candidate_digest}`,
-      `Review decisions: ${payload.decisions_confirmed}/${payload.decisions_total}`,
       `Generated resources: ${payload.protected_authority.length}`,
       `Runner config: ${payload.config.state}`,
       `Explore budget: ${payload.explore_budget_state
@@ -1176,8 +1211,8 @@ export async function boundaryCommand(
       `Protectable recent analyses: ${payload.recent_analysis_references.length}`,
       `Disabled protected drafts: ${payload.disabled_protected_drafts.length}`,
       `Active named tools: ${payload.active_named_tools.length}`,
-      active
-        ? "The exact reviewed local authoring boundary is active."
+      sortedActiveBoundaries.length
+        ? `${sortedActiveBoundaries.length} exact reviewed ${sortedActiveBoundaries.length === 1 ? "boundary is" : "boundaries are"} serving.`
         : `Next: ${cliCommandName()} boundary review --project-root ${shellQuote(projectRoot)} ` +
           "(interactive), or use boundary review resource <table> with decision flags for scripts.",
       `Next action: ${payload.next_action}`,
@@ -1188,6 +1223,14 @@ export async function boundaryCommand(
   }
   usage(["boundary"]);
   return 2;
+}
+
+function editingBoundaryStateLabel(
+  state: "disabled_draft" | "active" | "active_with_disabled_draft_changes",
+): string {
+  if (state === "active") return "active";
+  if (state === "active_with_disabled_draft_changes") return "active with disabled draft changes";
+  return "disabled draft";
 }
 
 async function configuredExploreTrustedContext(input: {

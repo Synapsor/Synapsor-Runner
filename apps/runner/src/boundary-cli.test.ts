@@ -2688,6 +2688,146 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 25_000);
 
+  it("requires a fresh shared-reference acknowledgement when adding the table to a second boundary", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-second-boundary-shared-reference-"));
+    const inspection = scopedAndSharedReferenceInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+      overrides: {
+        schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+        resources: {
+          "public.reference_catalog": {
+            shared_reference_scope: {
+              value: "table_has_no_per_tenant_rows",
+              actor: "first-reviewer",
+              reason: "The first boundary reviewed this centrally maintained catalog.",
+              decided_at: "2026-08-12T12:00:00.000Z",
+            },
+          },
+        },
+      },
+    });
+    const choices = [
+      { resource_id: "public.reference_catalog", action: "add" as const },
+      undefined,
+    ];
+    let pickerCalls = 0;
+    let resolverCalls = 0;
+    const prompts: string[] = [];
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => {
+        pickerCalls += 1;
+        return choices.shift();
+      },
+      resolveBlockedResource: async (view) => {
+        resolverCalls += 1;
+        expect(view.candidate).toBeNull();
+        expect(view.generated_candidate?.shared_reference_scope).toEqual({
+          mode: "shared_reference",
+          acknowledgement: "table_has_no_per_tenant_rows",
+        });
+        expect(view.shared_reference_scope).toMatchObject({ eligible: true });
+        return {
+          row_identity: "id",
+          shared_reference_scope: "table_has_no_per_tenant_rows",
+        };
+      },
+      editFieldTiers: async (view) => {
+        expect(view.candidate?.shared_reference_scope).toEqual({
+          mode: "shared_reference",
+          acknowledgement: "table_has_no_per_tenant_rows",
+        });
+        return "back";
+      },
+      promptText: async (prompt) => {
+        prompts.push(prompt);
+        return "This second boundary independently reviews the same tenant-neutral catalog.";
+      },
+      confirm: async (_prompt, options) => {
+        expect(options?.defaultValue).toBe(false);
+        return true;
+      },
+    };
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    try {
+      expect(build.exploration_boundary.pack.resources.map((resource) => resource.id).sort()).toEqual([
+        "public.reference_catalog",
+        "public.service_visits",
+      ]);
+      expect(build.policy_baseline.boundary.pack.resources.map((resource) => resource.id))
+        .toEqual(["public.service_visits"]);
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const firstDigest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+      await activateExplorationBoundary({
+        projectRoot: root,
+        candidate: build.exploration_boundary,
+        expectedDigest: firstDigest,
+        actor: "first-reviewer",
+        confirmation: `ACTIVATE ${firstDigest}`,
+        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        currentInspection: inspection,
+      });
+      await createSavedBoundary({
+        projectRoot: root,
+        draft: build.exploration_boundary,
+        currentCandidate: build.exploration_boundary,
+        name: "reviewed_catalog",
+        resourceId: "public.service_visits",
+        actor: "second-reviewer",
+      });
+
+      const before = await listBoundaryResourceReviews(root);
+      expect(before.find((resource) => resource.resource_id === "public.reference_catalog"))
+        .toMatchObject({
+          included: false,
+          inline_resolution_available: true,
+          first_table_startable: false,
+          first_table_scope_kind: "shared_reference",
+          first_table_guidance: expect.stringContaining("confirm Shared reference for this boundary"),
+        });
+
+      await expect(boundaryReviewCommandInternal([
+        "--project-root", root,
+        "--access",
+      ], async () => inspection, session)).resolves.toBe(0);
+      expect(resolverCalls).toBe(1);
+      expect(pickerCalls).toBe(2);
+      expect(prompts[0]).toContain("SHARED REFERENCE REVIEW");
+      expect(output).toContain("Row scope: Shared reference (no tenant predicate");
+      expect(output).toContain("Access editor closed. Reviewed authority is unchanged.");
+
+      const progress = await readBoundaryReviewProgress(root, build.exploration_boundary);
+      expect(progress?.candidate.pack.resources.map((resource) => resource.id).sort()).toEqual([
+        "public.reference_catalog",
+        "public.service_visits",
+      ]);
+      expect(progress?.review_overrides.resources["public.reference_catalog"]?.shared_reference_scope)
+        .toMatchObject({
+          value: "table_has_no_per_tenant_rows",
+          reason: "This second boundary independently reviews the same tenant-neutral catalog.",
+        });
+      const active = await loadActivatedExplorationBoundaries(root);
+      expect(active).toHaveLength(1);
+      expect(active[0]?.pack.name).toBe(build.exploration_boundary.pack.name);
+      expect(active[0]?.activation.digest).toBe(firstDigest);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   it("requires a reason and explicit confirmation before adding a shared reference", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-shared-reference-"));
     const inspection = sharedReferenceInspection();
@@ -4902,6 +5042,87 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 20_000);
 
+  it("reports serving boundaries separately from the disabled boundary being edited", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-status-active-set-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const activeDigest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+      await activateExplorationBoundary({
+        projectRoot: root,
+        candidate: build.exploration_boundary,
+        expectedDigest: activeDigest,
+        actor: "first-reviewer",
+        confirmation: `ACTIVATE ${activeDigest}`,
+        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        currentInspection: inspection,
+      });
+      const disabled = await createSavedBoundary({
+        projectRoot: root,
+        draft: build.exploration_boundary,
+        currentCandidate: build.exploration_boundary,
+        name: "reviewed_catalog",
+        resourceId: "public.service_visits",
+        actor: "second-reviewer",
+      });
+
+      await expect(boundaryCommand([
+        "status", "--project-root", root, "--json",
+      ])).resolves.toBe(0);
+      const status = JSON.parse(output);
+      expect(status).toMatchObject({
+        activation: "active",
+        deployment_state: "active",
+        active_boundaries: [{
+          name: build.exploration_boundary.pack.name,
+          tables: ["public.service_visits"],
+          digest: activeDigest,
+        }],
+        active_boundary_name: build.exploration_boundary.pack.name,
+        active_tables: ["public.service_visits"],
+        editing: {
+          name: "reviewed_catalog",
+          state: "disabled_draft",
+          tables: ["public.service_visits"],
+          decisions_confirmed: 0,
+          decisions_total: disabled.candidate.unresolved_decisions.length,
+        },
+      });
+
+      output = "";
+      await expect(boundaryCommand([
+        "status", "--project-root", root,
+      ])).resolves.toBe(0);
+      expect(output).toContain("Deployment state: active");
+      expect(output).toContain(
+        `Active boundaries: ${build.exploration_boundary.pack.name} (1 table)`,
+      );
+      expect(output).toContain(
+        `Editing: reviewed_catalog (1 table, disabled draft, 0/${disabled.candidate.unresolved_decisions.length} decisions)`,
+      );
+      expect(output).not.toContain("Active boundary: none");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
   it("creates and activates an additional boundary in the active development profile", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-profile-"));
     const inspection = boundaryInspection();
@@ -5909,6 +6130,27 @@ function sharedReferenceInspection(): SchemaInspection {
     ...table.role_posture!,
     row_security_effective_for_current_role: false,
   };
+  return inspection;
+}
+
+function scopedAndSharedReferenceInspection(): SchemaInspection {
+  const inspection = boundaryInspection();
+  const catalog = structuredClone(inspection.tables[0]!);
+  catalog.name = "reference_catalog";
+  catalog.columns = catalog.columns.filter((column) => column.name !== "tenant_id");
+  catalog.primary_key = ["id"];
+  catalog.unique_constraints = [{ name: "reference_catalog_pkey", columns: ["id"] }];
+  catalog.indexes = [{ name: "reference_catalog_pkey", columns: ["id"], unique: true }];
+  catalog.suggestions.tenant_columns = [];
+  catalog.suggestions.default_visible_columns = catalog.suggestions.default_visible_columns
+    .filter((column) => column !== "tenant_id");
+  catalog.row_level_security = false;
+  catalog.row_level_security_policies = [];
+  catalog.role_posture = {
+    ...catalog.role_posture!,
+    row_security_effective_for_current_role: false,
+  };
+  inspection.tables.push(catalog);
   return inspection;
 }
 

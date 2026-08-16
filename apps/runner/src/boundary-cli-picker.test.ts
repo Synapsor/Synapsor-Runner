@@ -832,7 +832,7 @@ describe("boundary review terminal picker", () => {
     const rendered = output.read()?.toString() ?? "";
     expect(rendered).toContain("public.audit_log");
     expect(rendered).toContain("UNAVAILABLE");
-    expect(rendered).toContain("Inspected tables: 2 total · 1 can start · 0 add after ancestor · 1 unavailable.");
+    expect(rendered).toContain("Inspected tables: 2 total · 1 can start · 0 add after required scope · 1 unavailable.");
     expect(rendered).toContain("public.audit_log cannot start a boundary");
   });
 
@@ -859,9 +859,38 @@ describe("boundary review terminal picker", () => {
     await expect(selected).resolves.toEqual({ resource_id: "public.orders", action: "add" });
     const rendered = output.read()?.toString() ?? "";
     expect(rendered).toContain("START FROM ANCESTOR");
-    expect(rendered).toContain("1 can start · 1 add after ancestor · 0 unavailable");
+    expect(rendered).toContain("1 can start · 1 add after required scope · 0 unavailable");
     expect(rendered).toContain("public.order_items cannot be the first table");
     expect(rendered).toContain("order_items -> orders.tenant_id");
+  });
+
+  it("explains that Shared reference review is boundary-specific before choosing a first table", async () => {
+    const { input, output } = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const shared = summary("public.product_catalog", 0);
+    shared.included = false;
+    shared.first_table_startable = false;
+    shared.first_table_scope_kind = "shared_reference";
+    shared.first_table_guidance =
+      "start with a tenant-scoped table, then add this table and confirm Shared reference for this boundary";
+    const scoped = summary("public.orders", 0);
+    scoped.included = false;
+    scoped.first_table_startable = true;
+    const selected = session.chooseResource(
+      [shared, scoped],
+      undefined,
+      { initialView: "access", startingBoundaryName: "catalog_analytics" },
+    );
+
+    await send(input, "\r");
+    await send(input, "\u001b[B");
+    await send(input, "\r");
+    await expect(selected).resolves.toEqual({ resource_id: "public.orders", action: "add" });
+    const rendered = output.read()?.toString() ?? "";
+    expect(rendered).toContain("ADD AFTER SCOPED TABLE");
+    expect(rendered).toContain("confirm Shared reference for this boundary");
+    expect(rendered).toContain("public.product_catalog cannot be the first table in this authoring flow");
+    expect(rendered).toContain("acknowledgement is recorded separately for every boundary");
   });
 
   it("uses colored selected text instead of inverse-video highlighting", () => {

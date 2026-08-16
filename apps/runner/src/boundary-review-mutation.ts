@@ -614,6 +614,7 @@ export type BoundaryResourceReviewSummary = {
   minimum_cohort_overridden?: boolean;
   inline_resolution_available?: boolean;
   first_table_startable?: boolean;
+  first_table_scope_kind?: "derived" | "shared_reference";
   first_table_guidance?: string;
   first_table_scope_label?: string;
   reviewed_max_derived_scope_hops?: number;
@@ -796,18 +797,33 @@ function firstTableAvailability(
   resource: BoundaryReviewFiles["review"]["resources"][number],
 ): Pick<
   BoundaryResourceReviewSummary,
-  "first_table_startable" | "first_table_guidance" | "first_table_scope_label"
+  "first_table_startable" | "first_table_scope_kind" | "first_table_guidance" | "first_table_scope_label"
 > {
   if (!resource.primary_key.selected && resource.primary_key.candidates.length === 0) {
     return { first_table_startable: true };
+  }
+
+  const hasDirectTenantScope = singleOrganization
+    || Boolean(resource.tenant_key.selected || resource.tenant_key.candidates.length);
+  const derivedTenantScope = resource.derived_tenant_scope?.selected
+    ?? resource.derived_tenant_scope?.candidates[0];
+  if (!hasDirectTenantScope
+    && !derivedTenantScope
+    && resource.shared_reference_scope?.eligible) {
+    return {
+      first_table_startable: false,
+      first_table_scope_kind: "shared_reference",
+      first_table_scope_label: "boundary-specific Shared reference acknowledgement",
+      first_table_guidance:
+        "start with a tenant-scoped table, then add this table and confirm Shared reference for this boundary",
+    };
   }
 
   const requiredScopes = [
     ...(!singleOrganization
       && !resource.tenant_key.selected
       && resource.tenant_key.candidates.length === 0
-      ? [resource.derived_tenant_scope?.selected
-        ?? resource.derived_tenant_scope?.candidates[0]]
+      ? [derivedTenantScope]
       : []),
     ...(!resource.principal_key.selected && resource.derived_principal_scope?.selected
       ? [resource.derived_principal_scope.selected]
@@ -828,6 +844,7 @@ function firstTableAvailability(
   });
   return {
     first_table_startable: false,
+    first_table_scope_kind: "derived",
     first_table_scope_label: paths.map(({ scope }) => formatDerivedScopePath(scope)).join("; "),
     first_table_guidance: paths.length === 1
       ? paths[0]!.guidance

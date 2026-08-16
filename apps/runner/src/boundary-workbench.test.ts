@@ -371,6 +371,8 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain('id="new-boundary-table"');
     expect(html).toContain("Showing all '+esc(inspectedStartingTables.length)+' inspected tables");
     expect(html).toContain("can be added after their scoped ancestor");
+    expect(html).toContain("after a boundary-specific Shared reference acknowledgement");
+    expect(html).toContain('return {kind:"shared_reference",reason:');
     expect(html).toContain("firstTableState");
     expect(html).toContain("derivedScopeStartGuidance");
     expect(html).toContain("resource.derived_principal_scope?.selected");
@@ -404,6 +406,8 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("I confirm this table has no per-tenant rows");
     expect(html).toContain('data-shared-reference-ack');
     expect(html).toContain('reviewRequest.acknowledgement="table_has_no_per_tenant_rows"');
+    expect(html).toContain("Boundary-specific Shared reference review required below");
+    expect(html).toContain("An acknowledgement recorded for another boundary is never copied");
     expect(html).toContain("explicitly review Shared reference only if ");
     expect(html).toContain('if(candidate.organization_scope)return {kind:"startable"}');
     expect(html).toContain('principal_scope_path');

@@ -1114,6 +1114,17 @@ async function handleRequest(input: {
     let progress: BoundaryReviewProgress;
     if (url.pathname === "/api/boundary/library/create") {
       const resourceId = requiredReviewText(body.resource_id, "starting table");
+      const startingReview = (await listBoundaryResourceReviews(projectRoot)).find((resource) =>
+        resource.resource_id === resourceId);
+      if (startingReview?.first_table_startable === false
+        && startingReview.first_table_scope_kind === "shared_reference") {
+        throw new Error(
+          resourceId + " cannot be the first table in this authoring flow. "
+          + (startingReview.first_table_guidance
+            ?? "Start with a tenant-scoped table, then add this table and confirm Shared reference for the new boundary")
+          + ". The no-per-tenant-rows acknowledgement is reviewed separately for every boundary.",
+        );
+      }
       const startingResource = currentCandidate.pack.resources.find((resource) =>
         resource.id === resourceId);
       const requiredScopes = [
