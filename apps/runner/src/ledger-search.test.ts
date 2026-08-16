@@ -13,7 +13,10 @@ import {
 } from "./ledger-search.js";
 
 describe("Explore ledger search", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
 
   it("expands plaintext scope values to local keyed fingerprints without persisting the plaintext", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-ledger-search-"));
@@ -37,7 +40,79 @@ describe("Explore ledger search", () => {
         "librarian@example.org",
         `keyed:${crypto.createHmac("sha256", key).update("librarian@example.org").digest("hex")}`,
       ]);
-      expect(resolved.notes.join(" ")).toMatch(/Older records/);
+      expect(resolved.notes).toEqual([]);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed before applying plaintext production filters when the configured HMAC key is unavailable", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-ledger-search-production-"));
+    const configPath = path.join(root, "synapsor.runner.json");
+    const keyedTenant = `keyed:${"a".repeat(64)}`;
+    await fs.writeFile(configPath, JSON.stringify({
+      version: 1,
+      mode: "read_only",
+      storage: {
+        sqlite_path: "./.synapsor/local.db",
+        shared_postgres: {
+          mode: "runtime_store",
+          url_env: "SYNAPSOR_CONTROL_DATABASE_URL",
+        },
+      },
+      sources: {
+        analytics: { engine: "postgres", read_url_env: "DATABASE_URL" },
+      },
+      trusted_context: { provider: "http_claims" },
+      session_auth: {
+        provider: "jwt_asymmetric",
+        algorithms: ["RS256"],
+        jwks_url_env: "SYNAPSOR_SESSION_JWKS_URL",
+        issuer: "https://identity.example",
+        audience: "https://runner.example/mcp",
+        tenant_claim: "tenant_id",
+        principal_claim: "sub",
+      },
+      http_security: {
+        deployment: "shared",
+        channel: "trusted_tls_proxy",
+        oauth_resource: {
+          resource: "https://runner.example/mcp",
+          authorization_servers: ["https://identity.example"],
+          scopes_supported: ["synapsor.explore"],
+          required_scopes: ["synapsor.explore"],
+        },
+        allowed_hosts: ["runner.example"],
+      },
+      production_explore: {
+        enabled: true,
+        project_root: root,
+        required_oauth_scope: "synapsor.explore",
+        budget_hmac_key_env: "SYNAPSOR_EXPLORE_BUDGET_HMAC_KEY",
+        accounting_namespace: "test.production",
+        tenant_limits: {
+          max_queries_per_rolling_24_hours: 1_000,
+          max_extracted_cells_per_rolling_24_hours: 100_000,
+          max_differencing_queries_per_rolling_24_hours: 100,
+          requests_per_minute: 120,
+          max_response_cells_per_response: 500,
+        },
+      },
+    }, null, 2));
+    vi.stubEnv("SYNAPSOR_EXPLORE_BUDGET_HMAC_KEY", "");
+    try {
+      await expect(resolveExploreLedgerFilters<EvidenceSearchFilters>([
+        "--config", configPath,
+        "--tenant", "northgate",
+      ], { tenant: "northgate" })).rejects.toThrow(
+        /Cannot apply.*--tenant.*SYNAPSOR_EXPLORE_BUDGET_HMAC_KEY.*No ledger records were returned/,
+      );
+
+      const keyed = await resolveExploreLedgerFilters<EvidenceSearchFilters>([
+        "--config", configPath,
+        "--tenant", keyedTenant,
+      ], { tenant: keyedTenant });
+      expect(keyed.filters.tenants).toEqual([keyedTenant]);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

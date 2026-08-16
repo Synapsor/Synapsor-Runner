@@ -41,6 +41,11 @@ for the Synapsor Cloud CLI.
   `evidence` shows released-result proof. Interactive browse, bounded JSON,
   live NDJSON follow, and complete metadata detail require no raw SQL against
   the control ledger and never persist or echo raw trusted-scope values.
+  Plaintext production scope filters now refuse when their configured HMAC key
+  is unavailable instead of returning unfiltered or ambiguous empty output.
+  Detail views group the auditor-critical fields and reconstruct a privacy-safe
+  SQL-like reviewed query with explicit Runner scope application; it remains
+  non-executable metadata, with keyed placeholders rather than stored values.
 - Per-query drift checks now fetch complete catalog metadata only for exact
   generation-lock dependencies while retaining fresh global credential,
   read-only, grant, and ownership checks, dependency-scoped RLS proof, and the

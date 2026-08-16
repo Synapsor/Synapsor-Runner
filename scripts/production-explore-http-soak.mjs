@@ -946,6 +946,18 @@ export function verifyProductionExploreOperatorLedger(input) {
   if (identityArgs.length && identityEvidence.length === 0) {
     throw new Error(`Production evidence CLI could not resolve the plaintext tenant/principal through the configured HMAC key: ${identityList.result.stdout}`);
   }
+  if (input.invoke_without_hmac && input.tenant) {
+    const missingKeyResult = input.invoke_without_hmac([
+      "evidence", "list", ...configArgs, "--tenant", input.tenant,
+    ]);
+    const output = `${missingKeyResult.stdout ?? ""}\n${missingKeyResult.stderr ?? ""}`;
+    if (missingKeyResult.status === 0
+      || !/Cannot apply.*--tenant.*SYNAPSOR_EXPLORE_BUDGET_HMAC_KEY.*No ledger records were returned/i.test(output)
+      || /ev_explore_/i.test(output)
+      || /Could not read shared PostgreSQL ledger/i.test(output)) {
+      throw new Error(`Plaintext production scope filtering did not fail closed when its HMAC key was absent:\n${output}`);
+    }
+  }
   const selectedEvidence = identityEvidence.find((item) => item.source_id === input.source_id)
     ?? evidence.find((item) => item.source_id === input.source_id)
     ?? identityEvidence[0]
@@ -982,7 +994,9 @@ export function verifyProductionExploreOperatorLedger(input) {
     || !evidenceShow.stdout.includes("Role posture:")
     || !evidenceShow.stdout.includes("Result fingerprint:")
     || !evidenceShow.stdout.includes("Execution duration:")
-    || !evidenceShow.stdout.includes("Normalized reviewed plan:")) {
+    || !evidenceShow.stdout.includes("Reconstructed reviewed query")
+    || !evidenceShow.stdout.includes("predicate applied by Runner")
+    || !/Normalized reviewed plan \(reference\)/i.test(evidenceShow.stdout)) {
     throw new Error(`Production evidence show did not identify the shared ledger: ${evidenceShow.stdout}`);
   }
 
@@ -1003,7 +1017,8 @@ export function verifyProductionExploreOperatorLedger(input) {
   const selectedAudit = audits.find((item) => item.evidence_bundle_id === selectedEvidence.evidence_bundle_id) ?? audits[0];
   const auditShow = invoke(["query-audit", "show", String(selectedAudit.audit_id), ...configArgs, "--details"]);
   if (!auditShow.stdout.includes(`Ledger: shared PostgreSQL schema ${input.schema}`)
-    || !auditShow.stdout.includes("Payload:")
+    || !auditShow.stdout.includes("Reconstructed reviewed query")
+    || !/Raw metadata payload \(reference\)/i.test(auditShow.stdout)
     || !auditShow.stdout.includes("normalized_plan")) {
     throw new Error(`Production query-audit show was incomplete: ${auditShow.stdout}`);
   }
@@ -1017,6 +1032,11 @@ export function verifyProductionExploreOperatorLedger(input) {
   if (refusedRows.length === 0
     || refusedRows.some((row) => !String(row.payload?.status ?? "").startsWith("refused_"))) {
     throw new Error(`Production query-audit refusal search did not return only recorded refusals: ${refusedAudit.result.stdout}`);
+  }
+  if (!refusedRows.some((row) => row.payload?.error_code === "EXPLORE_FIELD_FORBIDDEN"
+    && row.payload?.source_execution_started === false
+    && row.payload?.evidence_bundle_created === false)) {
+    throw new Error(`Production query-audit did not retain an EXPLORE_FIELD_FORBIDDEN no-source refusal: ${refusedAudit.result.stdout}`);
   }
 
   expectCommandFailure(
@@ -1057,6 +1077,8 @@ export function verifyProductionExploreOperatorLedger(input) {
     filters_verified: ["tenant", "principal", "resource", "boundary", "capability", "outcome", "since", "limit"],
     refusal_records: refusedRows.length,
     command_errors_preserved: true,
+    missing_hmac_filter_failed_closed: Boolean(input.invoke_without_hmac),
+    field_forbidden_refusal_recorded: true,
     read_only: true,
   };
 }

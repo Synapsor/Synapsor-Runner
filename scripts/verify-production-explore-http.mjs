@@ -766,6 +766,24 @@ function postgresSoakOperations() {
       validate_refusal: (result) => /not a reviewed value|EXPLORE_FIELD_ENUM_VALUE_FORBIDDEN/i.test(JSON.stringify(result)),
     },
     {
+      name: "unreviewed_field_refusal",
+      weight: 2,
+      expected_refusal: true,
+      request: () => ({
+        name: "app.explore_data",
+        arguments: {
+          plan: {
+            kind: "aggregate",
+            resource: "public.churn_events",
+            measures: [{ function: "count" }],
+            dimensions: [{ field: "national_id" }],
+            top_n: 10,
+          },
+        },
+      }),
+      validate_refusal: (result) => /EXPLORE_FIELD_FORBIDDEN/i.test(JSON.stringify(result)),
+    },
+    {
       name: "model_scope_refusal",
       weight: 2,
       expected_refusal: true,
@@ -2214,6 +2232,23 @@ async function main() {
     assert(!JSON.stringify(described).match(/event-p1-|pm-other-event|@example\.invalid|synthetic kept-out note|31415/i),
       "Production describe_data returned source-row data instead of metadata only.", described);
 
+    const unreviewedField = await alice.client.callTool({
+      name: "app.explore_data",
+      arguments: {
+        plan: {
+          kind: "aggregate",
+          resource: "public.churn_events",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "national_id" }],
+          top_n: 10,
+        },
+      },
+    });
+    assert(unreviewedField.isError === true
+      && /EXPLORE_FIELD_FORBIDDEN/i.test(JSON.stringify(unreviewedField)),
+    "Production Explore did not record a deterministic unreviewed-field refusal before source execution.",
+    unreviewedField);
+
     const ollamaModel = process.env.SYNAPSOR_TEST_OLLAMA_MODEL?.trim();
     const ollamaLocalAgent = ollamaModel
       ? await verifyOllamaAgentOverLocalExplore({
@@ -2816,6 +2851,12 @@ async function main() {
       invoke: (args) => {
         const invocation = productionExploreRunnerInvocation(args);
         return run(invocation.command, invocation.args, { env, allowFailure: true });
+      },
+      invoke_without_hmac: (args) => {
+        const invocation = productionExploreRunnerInvocation(args);
+        const withoutHmac = { ...env };
+        delete withoutHmac.SYNAPSOR_EXPLORE_BUDGET_HMAC_KEY;
+        return run(invocation.command, invocation.args, { env: withoutHmac, allowFailure: true });
       },
     });
     const operatorWorkbench = await verifyProductionExploreWorkbenchLedger({

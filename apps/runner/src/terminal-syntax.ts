@@ -94,6 +94,7 @@ export function renderTerminalFact(
   options: {
     color?: boolean;
     tone?: "value" | "identifier" | "success" | "warning" | "danger" | "muted";
+    labelTone?: "heading" | "muted";
   } = {},
 ): string {
   const safeLabel = safeTerminalText(label);
@@ -107,7 +108,13 @@ export function renderTerminalFact(
     danger: "1;31",
     muted: "2",
   }[options.tone ?? "value"];
-  return `${style("1;36", `${safeLabel}:`)} ${style(valueCode, safeValue)}`;
+  const labelCode = options.labelTone === "muted" ? "2" : "1;36";
+  return `${style(labelCode, `${safeLabel}:`)} ${style(valueCode, safeValue)}`;
+}
+
+export function renderTerminalSectionHeading(label: string, color = false): string {
+  const safe = safeTerminalText(label.toUpperCase());
+  return color ? style("1;36", safe) : safe;
 }
 
 function highlightTerminalJson(serialized: string): string {

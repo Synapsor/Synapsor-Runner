@@ -307,6 +307,13 @@ candidate locally and never echoes or stores the plaintext filter. Use
 narrow a list, `--json` for scripts, `browse` for an interactive terminal view,
 or `--follow --json` for newline-delimited live metadata.
 
+Detailed evidence and query-audit views group the fields an auditor usually
+needs first: identity/resource, authority, outcome/privacy, and execution. They
+also reconstruct a SQL-like reviewed query from the redacted normalized plan.
+It is labelled as reconstructed, never contains raw filter values, and is not
+captured or executable SQL. Interactive terminals use outcome-aware color and
+dim reference labels; `NO_COLOR` and piped output remain plain text.
+
 This is local indexed search over the runner's SQLite ledger. It is not
 external Postgres/MySQL time travel, not native branching, and not a hosted
 cross-runner audit ledger.

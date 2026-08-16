@@ -1,6 +1,8 @@
 import { evaluateProposalFreshness, resolveSupervisedWorkerEligibility, validateFreshnessAuthorityAgainstCurrentConfig, type ProposalFreshnessEvaluation, type RuntimeConfig } from "@synapsor-runner/mcp-server";
 import {
   ProposalStore,
+  type EvidenceSearchFilters,
+  type QueryAuditSearchFilters,
   type StoredEvidenceBundle,
   type StoredProposal,
   type WorkerQueueItem
@@ -69,7 +71,44 @@ type QueryAuditListResult = {
 };
 
 
+function principalEmptyResultNotes(
+  args: string[],
+  label: string,
+  rows: Array<{ principal?: unknown }>,
+  otherwiseMatching: Array<{ principal?: unknown }>,
+): string[] {
+  if (!optionalArg(args, "--principal") || rows.length > 0) return [];
+  if (otherwiseMatching.length === 0) {
+    return [`No ${label} records matched the non-principal filters, so there was no candidate activity to attribute to the requested principal.`];
+  }
+  if (otherwiseMatching.some((row) => typeof row.principal !== "string" || row.principal.length === 0)) {
+    return [
+      `No keyed principal record matched. At least one otherwise-matching legacy ${label} record only states whether principal scope was bound and cannot be attributed retroactively; this empty result does not rule out older activity by that principal.`,
+    ];
+  }
+  return [`The principal filter was applied successfully. Otherwise-matching ${label} records exist, but none match that principal fingerprint.`];
+}
+
+
+function evidenceFiltersWithoutPrincipal(filters: EvidenceSearchFilters): EvidenceSearchFilters {
+  const { principal: _principal, principals: _principals, ...rest } = filters;
+  return { ...rest, limit: 200 };
+}
+
+
+function queryAuditFiltersWithoutPrincipal(filters: QueryAuditSearchFilters): QueryAuditSearchFilters {
+  const { principal: _principal, principals: _principals, ...rest } = filters;
+  return { ...rest, limit: 200 };
+}
+
+
 async function readEvidenceList(args: string[]): Promise<EvidenceListResult> {
+  const resolved = await resolveExploreLedgerFilters(args, evidenceFiltersFromArgs(args));
+  if (resolved.filters.outcome === "refused" || resolved.filters.outcome === "failed") {
+    throw new Error(
+      `Evidence bundles exist only for released results. Use ${cliCommandName()} query-audit list --outcome ${resolved.filters.outcome} to inspect ${resolved.filters.outcome} Explore attempts.`,
+    );
+  }
   const bridged = await maybeSharedPostgresRuntimeStoreRead(
     args,
     "evidence list",
@@ -79,16 +118,17 @@ async function readEvidenceList(args: string[]): Promise<EvidenceListResult> {
   const ledgerSource = await ledgerReadSource(args);
   const store = await openLocalStore(args);
   try {
-    const resolved = await resolveExploreLedgerFilters(args, evidenceFiltersFromArgs(args));
-    if (resolved.filters.outcome === "refused" || resolved.filters.outcome === "failed") {
-      throw new Error(
-        `Evidence bundles exist only for released results. Use ${cliCommandName()} query-audit list --outcome ${resolved.filters.outcome} to inspect ${resolved.filters.outcome} Explore attempts.`,
-      );
-    }
+    const rows = store.listEvidenceBundles(resolved.filters);
+    const otherwiseMatching = optionalArg(args, "--principal") && rows.length === 0
+      ? store.listEvidenceBundles(evidenceFiltersWithoutPrincipal(resolved.filters))
+      : [];
     return {
       ledgerSource,
-      notes: resolved.notes,
-      rows: store.listEvidenceBundles(resolved.filters),
+      notes: [
+        ...resolved.notes,
+        ...principalEmptyResultNotes(args, "evidence", rows, otherwiseMatching),
+      ],
+      rows,
     };
   } finally {
     store.close();
@@ -97,6 +137,7 @@ async function readEvidenceList(args: string[]): Promise<EvidenceListResult> {
 
 
 async function readQueryAuditList(args: string[]): Promise<QueryAuditListResult> {
+  const resolved = await resolveExploreLedgerFilters(args, queryAuditFiltersFromArgs(args));
   const bridged = await maybeSharedPostgresRuntimeStoreRead(
     args,
     "query-audit list",
@@ -106,11 +147,17 @@ async function readQueryAuditList(args: string[]): Promise<QueryAuditListResult>
   const ledgerSource = await ledgerReadSource(args);
   const store = await openLocalStore(args);
   try {
-    const resolved = await resolveExploreLedgerFilters(args, queryAuditFiltersFromArgs(args));
+    const rows = store.listQueryAudit(resolved.filters);
+    const otherwiseMatching = optionalArg(args, "--principal") && rows.length === 0
+      ? store.listQueryAudit(queryAuditFiltersWithoutPrincipal(resolved.filters))
+      : [];
     return {
       ledgerSource,
-      notes: resolved.notes,
-      rows: store.listQueryAudit(resolved.filters),
+      notes: [
+        ...resolved.notes,
+        ...principalEmptyResultNotes(args, "query-audit", rows, otherwiseMatching),
+      ],
+      rows,
     };
   } finally {
     store.close();
@@ -222,6 +269,7 @@ async function browseEvidence(result: EvidenceListResult): Promise<number> {
   process.stdout.write("\nEVIDENCE BROWSER\n");
   result.rows.forEach((row, index) => {
     const outcome = stringField(row.payload, "outcome") ?? "recorded";
+    if (index > 0) process.stdout.write(`  ${"-".repeat(72)}\n`);
     process.stdout.write(`  ${index + 1}. ${row.created_at}  ${outcome}  ${row.source_table ?? "unknown resource"}\n      ${row.evidence_bundle_id}\n`);
   });
   while (true) {
@@ -238,7 +286,7 @@ async function browseEvidence(result: EvidenceListResult): Promise<number> {
       process.stdout.write(`No evidence in this filtered page matches ${answer}.\n`);
       continue;
     }
-    process.stdout.write(`\n${formatEvidenceDetail(selected)}\n`);
+    process.stdout.write(`\n${formatEvidenceDetail(selected, terminalSyntaxColorEnabled())}\n`);
   }
 }
 
@@ -254,20 +302,23 @@ async function browseQueryAudit(result: QueryAuditListResult): Promise<number> {
   process.stdout.write("\nQUERY AUDIT BROWSER\n");
   result.rows.forEach((row, index) => {
     const payload = isRecord(row.payload) ? row.payload : {};
+    if (index > 0) process.stdout.write(`  ${"-".repeat(72)}\n`);
     process.stdout.write(
-      `  ${index + 1}. ${row.created_at}  ${stringField(payload, "status") ?? "recorded"}  ${row.table_name}\n      audit ${row.audit_id}${row.evidence_bundle_id ? `  evidence ${row.evidence_bundle_id}` : ""}\n`,
+      `  #${index + 1}  ${row.created_at}  ${stringField(payload, "status") ?? "recorded"}  ${row.table_name}\n      audit ${row.audit_id}${row.evidence_bundle_id ? `  evidence ${row.evidence_bundle_id}` : ""}\n`,
     );
   });
   while (true) {
     const answer = await readTerminalTextWithEscape(
-      "Audit number or ID [Enter/Esc exits]: ",
+      "Audit ID or #page-number [Enter/Esc exits]: ",
       process.stdin,
       process.stdout,
     );
     if (!answer) return 0;
-    const selected = /^\d+$/.test(answer)
-      ? result.rows[Number(answer) - 1] ?? result.rows.find((row) => Number(row.audit_id) === Number(answer))
-      : undefined;
+    const selected = /^#\d+$/.test(answer)
+      ? result.rows[Number(answer.slice(1)) - 1]
+      : /^\d+$/.test(answer)
+        ? result.rows.find((row) => Number(row.audit_id) === Number(answer))
+        : undefined;
     if (!selected) {
       process.stdout.write(`No audit in this filtered page matches ${answer}.\n`);
       continue;
@@ -773,11 +824,16 @@ export async function evidenceShow(args: string[]): Promise<number> {
   const store = await openLocalStore(args);
   try {
     const evidence = store.getEvidenceBundle(evidenceId);
-    if (!evidence) throw new Error(`evidence bundle not found: ${evidenceId}`);
+    if (!evidence) {
+      const guidance = /^\d+$/.test(evidenceId)
+        ? ` ${evidenceId} looks like a query-audit ID; try ${cliCommandName()} query-audit show ${evidenceId} --details${storeOptionSuffix(args)}.`
+        : "";
+      throw new Error(`evidence bundle not found: ${evidenceId}.${guidance}`);
+    }
     if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ ...evidence, ledger_source: ledgerSource }, null, 2)}\n`);
     else {
       process.stdout.write(ledgerReadSourceLine(ledgerSource));
-      if (showDetails(args)) process.stdout.write(formatEvidenceDetail(evidence));
+      if (showDetails(args)) process.stdout.write(formatEvidenceDetail(evidence, terminalSyntaxColorEnabled()));
       else process.stdout.write(formatEvidenceFirstLook(evidence, storeOptionSuffix(args)));
     }
     return 0;
@@ -800,7 +856,12 @@ export async function evidenceExport(args: string[]): Promise<number> {
   const store = await openLocalStore(args);
   try {
     const evidence = store.getEvidenceBundle(evidenceId);
-    if (!evidence) throw new Error(`evidence bundle not found: ${evidenceId}`);
+    if (!evidence) {
+      const guidance = /^\d+$/.test(evidenceId)
+        ? ` ${evidenceId} looks like a query-audit ID; try ${cliCommandName()} query-audit show ${evidenceId} --details${storeOptionSuffix(args)}.`
+        : "";
+      throw new Error(`evidence bundle not found: ${evidenceId}.${guidance}`);
+    }
     const text = format === "json" ? `${JSON.stringify(evidence, null, 2)}\n` : formatEvidenceMarkdown(evidence);
     await fs.mkdir(path.dirname(path.resolve(output)), { recursive: true });
     await fs.writeFile(output, text, "utf8");

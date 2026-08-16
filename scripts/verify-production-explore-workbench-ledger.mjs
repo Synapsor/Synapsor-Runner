@@ -86,7 +86,9 @@ export async function verifyProductionExploreWorkbenchLedger(input) {
       && detailResponse.payload.audit?.audit_id === audit.audit_id
       && detailResponse.payload.audit?.result_values_persisted === false
       && detailResponse.payload.audit?.trusted_scope_values_persisted === false
-      && detailResponse.payload.audit?.raw_sql_included === false,
+      && detailResponse.payload.audit?.raw_sql_included === false
+      && /FROM\s+/i.test(String(detailResponse.payload.audit?.reconstructed_query?.statement ?? ""))
+      && /RUNNER_(?:TENANT|PRINCIPAL)_PREDICATE|predicate not applied/i.test(String(detailResponse.payload.audit?.reconstructed_query?.statement ?? "")),
     `${input.engine} Workbench query-audit detail violated production redaction.`, detailResponse);
 
     const evidenceResponse = await jsonRequest(
@@ -97,7 +99,8 @@ export async function verifyProductionExploreWorkbenchLedger(input) {
     assert(evidenceResponse.status === 200
       && evidence?.evidence_bundle_id === audit.evidence_bundle_id
       && evidence?.result_values_persisted === false
-      && /^keyed:[a-f0-9]{64}$/.test(String(evidence?.tenant_scope_fingerprint ?? "")),
+      && /^keyed:[a-f0-9]{64}$/.test(String(evidence?.tenant_scope_fingerprint ?? ""))
+      && /FROM\s+/i.test(String(evidence?.reconstructed_query?.statement ?? "")),
     `${input.engine} Workbench evidence detail omitted keyed scope or redaction.`, evidenceResponse);
 
     const since = new Date(Math.max(0, Date.parse(audit.created_at) - 1_000)).toISOString();

@@ -290,6 +290,22 @@ describe("proposal approval freshness reuse", () => {
       },
       query_audit: [],
     });
+    store.recordEvidenceBundle({
+      evidence_bundle_id: "ev_scope_filter_legacy",
+      tenant_id: tenant,
+      payload: {
+        schema_version: "synapsor.analytics-evidence.v1",
+        capability: "app.explore_data",
+        source_id: "library_mysql",
+        source_table: "librarydb.members",
+        boundary_digest: `sha256:${"a".repeat(64)}`,
+        query_fingerprint: "sha256:legacy-query",
+        outcome: "ok",
+        trusted_scope: { principal_bound: true, values_persisted: false },
+        result_values_persisted: false,
+      },
+      query_audit: [],
+    });
     store.close();
     const write = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     try {
@@ -326,6 +342,19 @@ describe("proposal approval freshness reuse", () => {
       expect(JSON.stringify(activity)).not.toContain("northgate");
       expect(JSON.stringify(activity)).not.toContain("librarian@example.org");
 
+      write.mockClear();
+      await evidenceList([
+        "--store", storePath,
+        "--config", configPath,
+        "--principal", "different-librarian@example.org",
+        "--resource", "librarydb.members",
+      ]);
+      const principalEmpty = write.mock.calls.flat().join("");
+      expect(principalEmpty).toMatch(/No keyed principal record matched/);
+      expect(principalEmpty).toMatch(/legacy evidence record only states whether principal scope was bound/);
+      expect(principalEmpty).toMatch(/does not rule out older activity/);
+      expect(principalEmpty).not.toContain("different-librarian@example.org");
+
       await expect(evidenceList([
         "--store", storePath,
         "--outcome", "refused",
@@ -334,6 +363,10 @@ describe("proposal approval freshness reuse", () => {
         "ev_missing",
         "--store", storePath,
       ])).rejects.toThrow("evidence bundle not found: ev_missing");
+      await expect(evidenceShow([
+        "8",
+        "--store", storePath,
+      ])).rejects.toThrow(/looks like a query-audit ID.*query-audit show 8 --details/);
     } finally {
       write.mockRestore();
       await fs.rm(tempDir, { recursive: true, force: true });

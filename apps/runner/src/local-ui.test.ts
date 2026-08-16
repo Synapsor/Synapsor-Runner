@@ -549,6 +549,13 @@ describe("local UI", () => {
           trusted_scope_values_persisted: false,
           raw_sql_included: false,
           source_database_changed: false,
+          reconstructed_query: {
+            statement: expect.stringContaining("RUNNER_TENANT_PREDICATE"),
+            caveats: expect.arrayContaining([
+              expect.stringMatching(/not captured or executable SQL/),
+              expect.stringMatching(/tenant scope: predicate applied by Runner/i),
+            ]),
+          },
         },
       });
       expect(JSON.stringify(audit)).not.toContain("tenant-secret-value");
@@ -567,6 +574,9 @@ describe("local UI", () => {
           evidence_bundle_id: evidenceId,
           source_table: "public.members",
           result_values_persisted: false,
+          reconstructed_query: {
+            statement: expect.stringContaining("FROM public.members"),
+          },
         },
       });
       expect(JSON.stringify(durableEvidence)).not.toContain("tenant-secret-value");

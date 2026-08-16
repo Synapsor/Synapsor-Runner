@@ -1165,6 +1165,24 @@ function mysqlSoakOperations() {
       validate_refusal: (result) => /not a reviewed value|EXPLORE_FIELD_ENUM_VALUE_FORBIDDEN/i.test(JSON.stringify(result)),
     },
     {
+      name: "unreviewed_field_refusal",
+      weight: 2,
+      expected_refusal: true,
+      request: () => ({
+        name: "app.explore_data",
+        arguments: {
+          plan: {
+            kind: "aggregate",
+            resource: sourceId,
+            measures: [{ function: "count" }],
+            dimensions: [{ field: "national_id" }],
+            top_n: 10,
+          },
+        },
+      }),
+      validate_refusal: (result) => /EXPLORE_FIELD_FORBIDDEN/i.test(JSON.stringify(result)),
+    },
+    {
       name: "model_scope_refusal",
       weight: 2,
       expected_refusal: true,
@@ -2184,6 +2202,23 @@ async function main() {
       && /not a reviewed value|growth.*retained.*private-small.*enterprise.*partner/i.test(JSON.stringify(invalidEnum)),
     "MySQL production Explore did not enforce the reviewed enum allowlist before execution.", invalidEnum);
 
+    const unreviewedField = await alice.client.callTool({
+      name: "app.explore_data",
+      arguments: {
+        plan: {
+          kind: "aggregate",
+          resource: sourceId,
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "national_id" }],
+          top_n: 10,
+        },
+      },
+    });
+    assert(unreviewedField.isError === true
+      && /EXPLORE_FIELD_FORBIDDEN/i.test(JSON.stringify(unreviewedField)),
+    "MySQL production Explore did not record a deterministic unreviewed-field refusal before source execution.",
+    unreviewedField);
+
     const aliceResult = resultPayload(await alice.client.callTool({ name: "app.explore_data", arguments: { plan } }));
     assert(aliceResult.ok === true && aliceResult.privacy?.suppressed_groups === 1,
       "MySQL production Explore did not return the expected suppressed aggregate.", aliceResult);
@@ -2671,6 +2706,12 @@ async function main() {
       invoke: (args) => {
         const invocation = productionExploreRunnerInvocation(root, args);
         return run(invocation.command, invocation.args, { env, allowFailure: true });
+      },
+      invoke_without_hmac: (args) => {
+        const invocation = productionExploreRunnerInvocation(root, args);
+        const withoutHmac = { ...env };
+        delete withoutHmac.SYNAPSOR_EXPLORE_BUDGET_HMAC_KEY;
+        return run(invocation.command, invocation.args, { env: withoutHmac, allowFailure: true });
       },
     });
     const operatorWorkbench = await verifyProductionExploreWorkbenchLedger({

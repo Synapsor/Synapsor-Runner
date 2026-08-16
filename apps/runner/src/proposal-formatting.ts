@@ -9,7 +9,8 @@ import { protocolVersions } from "@synapsor-runner/protocol";
 import process from "node:process";
 import { cliCommandName } from "./cli-command-meta.js";
 import { approvalBoundary, boundedSetReviewLines, currentApprovalStatus, currentWritebackStatus, formatChangeLines, formatReceiptId, formatScalar, humanStatus, isRecord, plural, proposalNextCommands, receiptOperationLabel, stringField } from "./cli-format.js";
-import { renderTerminalJson } from "./terminal-syntax.js";
+import { reconstructExploreAuditQuery } from "./explore-audit-presentation.js";
+import { renderTerminalFact, renderTerminalJson, renderTerminalSectionHeading, renderTerminalSqlFrame } from "./terminal-syntax.js";
 
 
 export function formatProposalSummary(proposal: StoredProposal): string {
@@ -153,7 +154,7 @@ export function formatEvidenceFirstLook(evidence: StoredEvidenceBundle, storeSuf
 }
 
 
-export function formatEvidenceDetail(evidence: StoredEvidenceBundle): string {
+export function formatEvidenceDetail(evidence: StoredEvidenceBundle, color = false): string {
   const audit = evidence.query_audit[0];
   const payload = evidence.payload;
   const trustedScope = isRecord(payload.trusted_scope) ? payload.trusted_scope : {};
@@ -164,36 +165,62 @@ export function formatEvidenceDetail(evidence: StoredEvidenceBundle): string {
       : undefined;
   const principal = evidence.principal
     ?? (trustedScope.principal_bound === false ? "not applicable (this resource has no reviewed principal scope)" : "not recorded");
+  const outcome = stringField(payload, "outcome") ?? "recorded";
+  const reconstructed = reconstructExploreAuditQuery({
+    normalizedPlan,
+    scopeApplication: payload.scope_application,
+    trustedScope,
+    tenantRecorded: Boolean(evidence.tenant_id),
+    principalRecorded: Boolean(evidence.principal),
+  });
   const lines = [
-    `Evidence bundle: ${evidence.evidence_bundle_id}`,
-    `Tenant: ${evidence.tenant_id}`,
-    `Proposal: ${evidence.proposal_id ?? "none"}`,
-    `Principal: ${principal}`,
-    `Capability: ${evidence.capability ?? "unknown"}`,
-    `Source: ${evidence.source_id ?? "unknown"}`,
-    `Table: ${evidence.source_table ?? "unknown"}`,
-    `Boundary digest: ${stringField(payload, "boundary_digest") ?? "not recorded"}`,
-    `Generation lock: ${stringField(payload, "generation_lock_fingerprint") ?? "not recorded"}`,
-    `Role posture: ${stringField(payload, "role_posture_fingerprint") ?? "not recorded"}`,
-    `Query fingerprint: ${evidence.query_fingerprint ?? stringField(audit, "query_fingerprint") ?? "unknown"}`,
-    `Result fingerprint: ${stringField(payload, "result_fingerprint") ?? "not recorded"}`,
-    `Outcome: ${stringField(payload, "outcome") ?? "recorded"}`,
-    `Returned rows or groups: ${formatMetadataValue(payload.returned_rows_or_groups)}`,
-    `Returned cells: ${formatMetadataValue(payload.returned_cells)}`,
-    `Suppressed groups: ${formatMetadataValue(payload.suppressed_groups)}`,
-    `Execution duration: ${formatMetadataValue(payload.execution_duration_ms, " ms")}`,
-    `Rows captured: ${evidence.items.length}`,
-    `Source query executed: ${formatMetadataBoolean(payload.source_query_executed)}`,
-    `Source database changed: ${formatMetadataBoolean(payload.source_database_changed)}`,
-    `Result values persisted: ${formatMetadataBoolean(payload.result_values_persisted)}`,
-    `Trusted scope values persisted: ${formatMetadataBoolean(payload.trusted_scope_values_persisted ?? trustedScope.values_persisted)}`,
-    `Created at: ${evidence.created_at}`,
-    "Persistence: evidence contains bounded metadata and keyed fingerprints, not result rows, raw SQL, credentials, or trusted tenant/principal values.",
+    renderTerminalFact("Evidence bundle", evidence.evidence_bundle_id, { color, tone: "identifier" }),
     "",
-    "Normalized reviewed plan:",
-    normalizedPlan ? renderTerminalJson(normalizedPlan, false) : "not recorded",
+    renderTerminalSectionHeading("Identity and resource", color),
+    auditFact("Tenant fingerprint", evidence.tenant_id, color, "identifier"),
+    auditFact("Principal fingerprint", principal, color, evidence.principal ? "identifier" : "muted"),
+    auditFact("Capability", evidence.capability ?? "unknown", color, "identifier"),
+    auditFact("Source", evidence.source_id ?? "unknown", color, "identifier"),
+    auditFact("Resource", evidence.source_table ?? "unknown", color, "identifier"),
+    auditFact("Proposal", evidence.proposal_id ?? "none", color, "muted"),
     "",
-    "Stored evidence items:",
+    renderTerminalSectionHeading("Authority", color),
+    auditFact("Boundary digest", stringField(payload, "boundary_digest") ?? "not recorded", color, "identifier"),
+    auditFact("Generation lock", stringField(payload, "generation_lock_fingerprint") ?? "not recorded", color, "identifier"),
+    auditFact("Role posture", stringField(payload, "role_posture_fingerprint") ?? "not recorded", color, "identifier"),
+    auditFact("Query fingerprint", evidence.query_fingerprint ?? stringField(audit, "query_fingerprint") ?? "unknown", color, "identifier"),
+    "",
+    renderTerminalSectionHeading("Outcome and privacy", color),
+    auditFact("Outcome", outcome, color, auditOutcomeTone(outcome)),
+    auditFact("Returned rows or groups", formatMetadataValue(payload.returned_rows_or_groups), color),
+    auditFact("Returned cells", formatMetadataValue(payload.returned_cells), color),
+    auditFact("Suppressed groups", formatMetadataValue(payload.suppressed_groups), color, Number(payload.suppressed_groups) > 0 ? "warning" : "value"),
+    auditFact("Result fingerprint", stringField(payload, "result_fingerprint") ?? "not recorded", color, "identifier"),
+    auditFact("Result values persisted", formatMetadataBoolean(payload.result_values_persisted), color, payload.result_values_persisted === false ? "success" : "danger"),
+    auditFact("Trusted scope values persisted", formatMetadataBoolean(payload.trusted_scope_values_persisted ?? trustedScope.values_persisted), color, (payload.trusted_scope_values_persisted ?? trustedScope.values_persisted) === false ? "success" : "danger"),
+    "",
+    renderTerminalSectionHeading("Execution", color),
+    auditFact("Source query executed", formatMetadataBoolean(payload.source_query_executed), color, payload.source_query_executed === true ? "success" : "warning"),
+    auditFact("Source database changed", formatMetadataBoolean(payload.source_database_changed), color, payload.source_database_changed === false ? "success" : "danger"),
+    auditFact("Execution duration", formatMetadataValue(payload.execution_duration_ms, " ms"), color),
+    auditFact("Rows captured", evidence.items.length, color),
+    auditFact("Created at", evidence.created_at, color),
+    "",
+    "Evidence contains bounded metadata and keyed fingerprints, not result rows, raw SQL, credentials, or trusted tenant/principal values.",
+    ...(reconstructed ? [
+      "",
+      renderTerminalSqlFrame(reconstructed.statement, {
+        title: "Reconstructed reviewed query",
+        metadata: reconstructed.caveats,
+        color,
+        columns: process.stdout.columns,
+      }),
+    ] : []),
+    "",
+    renderTerminalSectionHeading("Normalized reviewed plan (reference)", color),
+    normalizedPlan ? renderTerminalJson(normalizedPlan, color) : "not recorded",
+    "",
+    renderTerminalSectionHeading("Stored evidence items", color),
     ...(evidence.items.length
       ? evidence.items.flatMap((item, index) => formatEvidenceItem(item, index + 1))
       : ["none (Explore result values are not persisted)"]),
@@ -203,6 +230,24 @@ export function formatEvidenceDetail(evidence: StoredEvidenceBundle): string {
     `  ${cliCommandName()} query-audit list --evidence ${evidence.evidence_bundle_id}`,
   ];
   return `${lines.join("\n")}\n`;
+}
+
+
+function auditFact(
+  label: string,
+  value: string | number | boolean,
+  color: boolean,
+  tone: "value" | "identifier" | "success" | "warning" | "danger" | "muted" = "value",
+): string {
+  return renderTerminalFact(label, value, { color, tone, labelTone: "muted" });
+}
+
+
+function auditOutcomeTone(value: string): "success" | "warning" | "danger" | "value" {
+  if (value.startsWith("refused") || value === "failed") return "danger";
+  if (value === "fully_suppressed" || value === "incomplete_comparison") return "warning";
+  if (["ok", "empty"].includes(value)) return "success";
+  return "value";
 }
 
 
@@ -313,24 +358,53 @@ export function formatQueryAuditFirstLook(row: Record<string, unknown>, storeSuf
 
 export function formatQueryAuditDetail(row: Record<string, unknown>, color = false): string {
   const payload = isRecord(row.payload) ? row.payload : {};
+  const status = String(payload.status ?? "recorded");
+  const normalizedPlan = isRecord(payload.normalized_plan) ? payload.normalized_plan : undefined;
+  const reconstructed = reconstructExploreAuditQuery({
+    normalizedPlan,
+    scopeApplication: payload.scope_application,
+    tenantRecorded: typeof row.tenant_id === "string",
+    principalRecorded: typeof row.principal === "string",
+  });
   return [
-    `Query audit: ${row.audit_id}`,
-    `Created at: ${row.created_at}`,
-    `Source: ${row.source_id}`,
-    `Table: ${row.table_name}`,
-    `Rows: ${row.row_count}`,
-    `Query fingerprint: ${row.query_fingerprint}`,
-    `Proposal: ${row.proposal_id ?? "none"}`,
-    `Evidence: ${row.evidence_bundle_id ?? "none"}`,
-    `Tenant: ${row.tenant_id ?? "not recorded"}`,
-    `Principal: ${row.principal ?? "not recorded (legacy records may only state whether principal scope was bound)"}`,
-    `Capability: ${row.capability ?? payload.capability ?? "unknown"}`,
-    `Status: ${payload.status ?? "recorded"}`,
-    `Error code: ${payload.error_code ?? "none"}`,
-    `Boundary digest: ${payload.boundary_digest ?? "not recorded"}`,
-    `Parameters redacted: ${payload.parameters_redacted === true ? "yes" : "unknown"}`,
+    renderTerminalFact("Query audit", String(row.audit_id), { color, tone: "identifier" }),
     "",
-    "Payload:",
+    renderTerminalSectionHeading("Identity and resource", color),
+    auditFact("Tenant fingerprint", String(row.tenant_id ?? "not recorded"), color, "identifier"),
+    auditFact("Principal fingerprint", String(row.principal ?? "not recorded (legacy record)"), color, row.principal ? "identifier" : "muted"),
+    auditFact("Capability", String(row.capability ?? payload.capability ?? "unknown"), color, "identifier"),
+    auditFact("Source", String(row.source_id ?? "unknown"), color, "identifier"),
+    auditFact("Resource", String(row.table_name ?? "unknown"), color, "identifier"),
+    "",
+    renderTerminalSectionHeading("Authority and outcome", color),
+    auditFact("Status", status, color, auditOutcomeTone(status)),
+    auditFact("Error code", String(payload.error_code ?? "none"), color, payload.error_code ? "danger" : "muted"),
+    auditFact("Refusal stage", String(payload.refusal_stage ?? "not applicable"), color, payload.refusal_stage ? "warning" : "muted"),
+    auditFact("Boundary digest", String(payload.boundary_digest ?? "not recorded"), color, "identifier"),
+    auditFact("Query fingerprint", String(row.query_fingerprint ?? "not recorded"), color, "identifier"),
+    auditFact("Evidence", String(row.evidence_bundle_id ?? "none"), color, row.evidence_bundle_id ? "identifier" : "muted"),
+    auditFact("Proposal", String(row.proposal_id ?? "none"), color, "muted"),
+    "",
+    renderTerminalSectionHeading("Execution and privacy", color),
+    auditFact("Returned rows or groups", formatMetadataValue(payload.returned_rows_or_groups ?? row.row_count), color),
+    auditFact("Returned cells", formatMetadataValue(payload.returned_cells), color),
+    auditFact("Suppressed groups", formatMetadataValue(payload.suppressed_groups), color, Number(payload.suppressed_groups) > 0 ? "warning" : "value"),
+    auditFact("Parameters redacted", formatMetadataBoolean(payload.parameters_redacted), color, payload.parameters_redacted === true ? "success" : "muted"),
+    auditFact("Source query executed", formatMetadataBoolean(payload.source_query_executed), color, payload.source_query_executed === true ? "success" : "warning"),
+    auditFact("Result values persisted", formatMetadataBoolean(payload.result_values_persisted), color, payload.result_values_persisted === false ? "success" : "danger"),
+    auditFact("Source database changed", formatMetadataBoolean(payload.source_database_changed), color, payload.source_database_changed === false ? "success" : "danger"),
+    auditFact("Created at", String(row.created_at ?? "not recorded"), color),
+    ...(reconstructed ? [
+      "",
+      renderTerminalSqlFrame(reconstructed.statement, {
+        title: "Reconstructed reviewed query",
+        metadata: reconstructed.caveats,
+        color,
+        columns: process.stdout.columns,
+      }),
+    ] : []),
+    "",
+    renderTerminalSectionHeading("Raw metadata payload (reference)", color),
     renderTerminalJson(payload, color),
   ].join("\n") + "\n";
 }

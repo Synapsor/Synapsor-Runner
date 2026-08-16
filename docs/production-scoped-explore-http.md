@@ -374,6 +374,25 @@ Existing `keyed:<HMAC>` values remain accepted. Records created before keyed
 principal metadata was introduced cannot be attributed retroactively because
 they only recorded whether principal scope was active.
 
+Plaintext production filters fail closed when the configured accounting HMAC
+environment variable is unavailable or too short. Runner exits non-zero before
+printing any ledger records; it never degrades a tenant filter to an unfiltered
+list or presents a missing-key principal lookup as an empty match. Supply the
+configured key or use an already-known `keyed:<HMAC>` fingerprint. When a valid
+principal lookup is empty, the output distinguishes no matching current
+fingerprint from otherwise-matching legacy records that cannot be attributed.
+
+`evidence show --details` and `query-audit show --details` group identity,
+authority, outcome/privacy, and execution metadata. In a color terminal,
+successful outcomes are green, refusals are red, warnings are yellow, and
+reference labels are dimmed; pipes and `NO_COLOR` receive plain text. The detail
+view also renders a **reconstructed reviewed query** from the stored normalized
+plan. It is SQL-like operator guidance, not captured or executable SQL. Literal
+values remain `:keyed(...)`/`:redacted` placeholders. New records state whether
+direct or derived tenant/principal predicates were applied, or whether no tenant
+predicate was correct for a reviewed shared-reference/single-organization scope.
+Legacy records that lack that exact predicate metadata are labelled as such.
+
 These commands open
 a bounded read-only PostgreSQL snapshot and do not take the serving writer's
 advisory lock. They never print the control URL, credentials, raw tenant or

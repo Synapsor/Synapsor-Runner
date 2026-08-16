@@ -158,6 +158,14 @@ lookup applies to records created after keyed principal metadata was added.
 Older records only say whether principal scope was active, so they cannot be
 attributed to a principal retroactively.
 
+For a shared production ledger, plaintext tenant/principal lookup requires the
+configured production HMAC key. If it is unavailable, the command fails
+non-zero before returning records. It never silently ignores the tenant filter
+or turns an unresolved principal filter into an authoritative empty result.
+The `keyed:<HMAC>` form remains usable without plaintext resolution. An empty
+principal lookup explains whether no otherwise-matching records exist, current
+keyed records do not match, or legacy records cannot be attributed.
+
 Use `query-audit` when the question is "what was attempted?" It includes
 refusals before source execution, privacy refusals after execution, source
 failures, and released results. Use `evidence` when the question is "what
@@ -169,6 +177,15 @@ an interactive terminal viewer. `--follow --json` emits newline-delimited JSON.
 `activity search` uses the same production-store selection and keyed Explore
 identity lookup when one combined lifecycle view is more useful than a focused
 record type.
+
+Detailed evidence/audit views lead with grouped operator facts and a
+reconstructed reviewed query. That SQL-like rendering is derived solely from
+the normalized redacted plan: it is not captured SQL, is not executable, and
+shows filter values only as keyed/redacted placeholders. New events also record
+the value-free scope-application kind so the view can say whether Runner applied
+a direct/derived tenant or principal predicate, or intentionally applied none
+for shared-reference/single-organization scope. Raw JSON remains available as
+reference metadata below the readable view.
 
 ## Focused inspection commands
 

@@ -144,6 +144,7 @@ import {
   redactPlanLiterals,
 } from "./analytics-shell-render.js";
 import { inspectCompiledExplorePlan } from "./explore-operator-evidence.js";
+import { reconstructExploreAuditQuery } from "./explore-audit-presentation.js";
 import { queryAuditFiltersFromArgs } from "./ledger-options.js";
 import { resolveExploreLedgerFilters } from "./ledger-search.js";
 import { createWorkbenchAskMcpGateway } from "./ask-mcp-gateway.js";
@@ -2090,6 +2091,12 @@ async function handleRequest(input: {
         sendJson(response, 404, { ok: false, error: "That Explore audit record was not found." });
         return;
       }
+      const reconstructedQuery = reconstructExploreAuditQuery({
+        normalizedPlan: payload.normalized_plan,
+        scopeApplication: payload.scope_application,
+        tenantRecorded: typeof record.tenant_id === "string",
+        principalRecorded: typeof record.principal === "string",
+      });
       sendJson(response, 200, {
         ok: true,
         ledger_source: ledgerSource,
@@ -2130,6 +2137,7 @@ async function handleRequest(input: {
           trusted_scope_values_persisted: payload.trusted_scope_values_persisted === true,
           raw_sql_included: payload.raw_sql_included === true,
           source_database_changed: payload.source_database_changed === true,
+          reconstructed_query: reconstructedQuery ?? null,
         },
       });
       return;
@@ -2236,6 +2244,13 @@ async function handleRequest(input: {
         sendJson(response, 404, { ok: false, error: "That Explore evidence bundle was not found in the configured ledger." });
         return;
       }
+      const reconstructedQuery = reconstructExploreAuditQuery({
+        normalizedPlan: evidence.payload.normalized_plan,
+        scopeApplication: evidence.payload.scope_application,
+        trustedScope: evidence.payload.trusted_scope,
+        tenantRecorded: Boolean(evidence.tenant_id),
+        principalRecorded: Boolean(evidence.principal),
+      });
       sendJson(response, 200, {
         ok: true,
         ledger_source: ledgerSource,
@@ -2250,6 +2265,7 @@ async function handleRequest(input: {
           payload: evidence.payload,
           query_audit: evidence.query_audit,
           result_values_persisted: evidence.payload.result_values_persisted === true,
+          reconstructed_query: reconstructedQuery ?? null,
         },
       });
       return;

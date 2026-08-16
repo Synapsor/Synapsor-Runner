@@ -31,6 +31,17 @@ export async function resolveExploreLedgerFilters<T extends ExploreLedgerFilters
   const keyResolution = await ledgerScopeHmacKeys(args);
   const keys = keyResolution.keys;
   const notes: string[] = [];
+  const plaintextScopeFlags = [
+    ...(tenant && !tenant.startsWith("keyed:") ? ["--tenant"] : []),
+    ...(principal && !principal.startsWith("keyed:") ? ["--principal"] : []),
+  ];
+  if (keyResolution.productionKeyEnv
+    && !keyResolution.productionKeyAvailable
+    && plaintextScopeFlags.length > 0) {
+    throw new Error(
+      `Cannot apply the plaintext ${plaintextScopeFlags.join(" and ")} production Explore filter because ${keyResolution.productionKeyEnv} is not set or does not contain at least 32 bytes. Set that configured environment variable, or use keyed:<fingerprint>. No ledger records were returned.`,
+    );
+  }
   const resolved = { ...filters };
   if (tenant) {
     resolved.tenants = scopeFilterCandidates("--tenant", tenant, keys);
@@ -39,22 +50,12 @@ export async function resolveExploreLedgerFilters<T extends ExploreLedgerFilters
   if (principal) {
     resolved.principals = scopeFilterCandidates("--principal", principal, keys);
     delete resolved.principal;
-    notes.push(
-      "Principal lookup applies to Explore audit records created with keyed principal metadata. Older records that only recorded principal_bound cannot be attributed retroactively.",
-    );
   }
   if (keys.length === 0
     && !keyResolution.productionKeyEnv
     && [tenant, principal].some((value) => value && !value.startsWith("keyed:"))) {
     notes.push(
       "No Explore audit HMAC key was available, so plaintext scope filters can match plaintext ledger records only. Set the configured HMAC environment value or use keyed:<fingerprint> for keyed Explore records.",
-    );
-  }
-  if (keyResolution.productionKeyEnv
-    && !keyResolution.productionKeyAvailable
-    && [tenant, principal].some((value) => value && !value.startsWith("keyed:"))) {
-    notes.push(
-      `${keyResolution.productionKeyEnv} is not set, so plaintext scope lookup cannot derive current production Explore fingerprints. Set that configured environment variable or use keyed:<fingerprint>.`,
     );
   }
   return { filters: resolved as T, notes };

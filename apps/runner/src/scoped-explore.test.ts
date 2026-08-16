@@ -2157,6 +2157,10 @@ describe("Scoped Explore", () => {
         status: "refused_before_source_execution",
         refusal_stage: "validation",
         error_code: "EXPLORE_FIELD_FORBIDDEN",
+        scope_application: {
+          tenant: { kind: "direct", predicate_applied: false, column: "tenant_id" },
+          principal: { kind: "not_configured", predicate_applied: false },
+        },
         source_execution_started: false,
         evidence_bundle_created: false,
         result_values_persisted: false,

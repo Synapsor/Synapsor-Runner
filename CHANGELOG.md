@@ -117,6 +117,13 @@
   `evidence` remains released-result proof. Adds interactive browsing, bounded
   JSON listing, live NDJSON follow mode, complete evidence detail, and distinct
   command/not-found errors that are never mislabeled as control-store failures.
+- Makes plaintext production audit identity filters fail closed when their
+  configured HMAC key is unavailable, distinguishes legacy unattributable
+  principal records from a verified empty match, and renders grouped,
+  outcome-colored evidence with a privacy-safe reconstructed reviewed query in
+  both CLI and Workbench. New audit metadata records whether Runner attached a
+  direct/derived scope predicate or intentionally omitted one for reviewed
+  shared-reference/single-organization scope; no values or raw SQL are added.
 - Keeps whole-organization databases simple through explicit boundary-wide
   single-organization review, while mixed databases can add only individually
   acknowledged shared-reference tables. Neither posture is inferred, and field

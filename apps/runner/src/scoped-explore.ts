@@ -4527,6 +4527,13 @@ async function recordPreExecutionRefusalAudit(
   const errorCode = input.error instanceof ScopedExploreError
     ? input.error.code
     : "EXPLORE_PLAN_INVALID";
+  const requestedResource = input.plan?.resource
+    ?? (isRecord(input.unknownPlan) && typeof input.unknownPlan.resource === "string"
+      ? input.unknownPlan.resource
+      : undefined);
+  const scopeApplication = requestedResource
+    ? auditScopeApplication(input.boundary, requestedResource, false)
+    : undefined;
   await recordExploreQueryAudit(store, input.mode, {
     tenant_id: input.tenantAuditFingerprint,
     ...(input.principalAuditFingerprint ? { principal: input.principalAuditFingerprint } : {}),
@@ -4542,6 +4549,7 @@ async function recordPreExecutionRefusalAudit(
       budget_scope_fingerprint: input.budgetScopeFingerprint,
       request_shape_fingerprint: `hmac-sha256:${requestShapeFingerprint}`,
       ...(input.plan ? { normalized_plan: normalizedAudit(input.plan, input.auditKey) } : {}),
+      ...(scopeApplication ? { scope_application: scopeApplication } : {}),
       status: "refused_before_source_execution",
       refusal_stage: input.stage,
       error_code: errorCode,
@@ -4597,6 +4605,7 @@ async function recordExploreAudit(
       differencing_family: input.familyFingerprint,
       differencing_variant: input.variantFingerprint,
       normalized_plan: input.normalizedPlan,
+      scope_application: auditScopeApplication(input.boundary, input.plan.resource),
       ...(input.resolvedTimeWindows.length
         ? { resolved_time_windows: input.resolvedTimeWindows }
         : {}),
@@ -4657,6 +4666,7 @@ async function recordExploreEvidence(
   const evidenceBundleId = `ev_explore_${crypto.randomBytes(12).toString("hex")}`;
   const recordedAt = new Date(input.completedAt).toISOString();
   const resource = resourceFor(input.boundary, input.plan.resource);
+  const scopeApplication = auditScopeApplication(input.boundary, resource.id);
   const auditPayload = {
     scoped_explore_version: SCOPED_EXPLORE_VERSION,
     capability: "app.explore_data",
@@ -4670,6 +4680,7 @@ async function recordExploreEvidence(
     differencing_family: input.familyFingerprint,
     differencing_variant: input.variantFingerprint,
     normalized_plan: input.normalizedPlan,
+    scope_application: scopeApplication,
     ...(input.resolvedTimeWindows.length
       ? { resolved_time_windows: input.resolvedTimeWindows }
       : {}),
@@ -4708,6 +4719,7 @@ async function recordExploreEvidence(
         provenance: "trusted_runtime_context",
         values_persisted: false,
       },
+      scope_application: scopeApplication,
       normalized_plan: input.normalizedPlan,
       ...(input.resolvedTimeWindows.length
         ? { resolved_time_windows: input.resolvedTimeWindows }
@@ -4740,6 +4752,30 @@ async function recordExploreEvidence(
     }],
   });
   return { evidence_bundle_id: evidenceBundleId };
+}
+
+function auditScopeApplication(
+  boundary: ActivatedExplorationBoundary,
+  resourceId: string,
+  predicateApplied = true,
+): Record<string, unknown> | undefined {
+  const resource = boundary.pack.resources.find((candidate) => candidate.id === resourceId);
+  if (!resource) return undefined;
+  const tenant = resource.tenant_key
+    ? { kind: "direct", predicate_applied: predicateApplied, column: resource.tenant_key }
+    : resource.tenant_scope
+      ? { kind: "derived", predicate_applied: predicateApplied, path_id: resource.tenant_scope.path_id }
+      : resource.shared_reference_scope
+        ? { kind: "shared_reference", predicate_applied: false }
+        : boundary.organization_scope
+          ? { kind: "single_organization", predicate_applied: false }
+          : { kind: "unresolved", predicate_applied: false };
+  const principal = resource.principal_key
+    ? { kind: "direct", predicate_applied: predicateApplied, column: resource.principal_key }
+    : resource.principal_scope
+      ? { kind: "derived", predicate_applied: predicateApplied, path_id: resource.principal_scope.path_id }
+      : { kind: "not_configured", predicate_applied: false };
+  return { tenant, principal };
 }
 
 let lastProductionExploreAuditWarningAt = 0;

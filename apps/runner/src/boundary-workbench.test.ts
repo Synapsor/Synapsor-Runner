@@ -593,6 +593,9 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain('getJson("/api/explore/evidence?evidence_id="');
     expect(html).toContain("Recent references");
     expect(html).toContain("Durable query ledger");
+    expect(html).toContain("Reconstructed reviewed query");
+    expect(html).toContain('class="history-detail-grid"');
+    expect(html).toContain('renderSyntaxCode("ask-history-sql",reconstructed.statement,"SQL")');
     expect(html).toContain("Runner does not persist model conversations, result values, trusted scope values, or raw SQL.");
     expect(html).toContain('id="ask-submit-consent"');
     expect(html).toContain("Submitting your first question confirms");
