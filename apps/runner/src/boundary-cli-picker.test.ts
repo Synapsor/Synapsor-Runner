@@ -976,16 +976,23 @@ describe("boundary review terminal picker", () => {
 
     const exhaustive = formatBoundaryOverviewMap(resources, { exhaustive: true });
     expect(exhaustive).toContain("WHOLE BOUNDARY MAP (ALL TABLES)");
-    expect(exhaustive).toContain("R1  1 hop  analysis relationship [IN NEXT BOUNDARY]");
-    expect(exhaustive).toContain("check_ins -> locations");
+    expect(exhaustive).toMatch(/\+-+\+-+\+-+\+-+\+/u);
+    expect(exhaustive).toContain("Boundary status");
+    expect(exhaustive).toContain("Field access");
+    expect(exhaustive).toContain("Scope and relationships");
+    expect(asciiTableColumnText(exhaustive, 3)).toContain(
+      "R1: analysis relationship (1 hop) [IN NEXT BOUNDARY]",
+    );
+    expect(asciiTableColumnText(exhaustive, 3)).toContain("Path: check_ins -> locations");
     expect(exhaustive).not.toContain("check_ins_location");
     expect(exhaustive).toContain("Rerun with --details");
     const exhaustiveDetails = formatBoundaryOverviewMap(resources, {
       exhaustive: true,
       details: true,
     });
-    expect(exhaustiveDetails).toContain("PATH IDS (SCRIPTED REVIEW)");
-    expect(exhaustiveDetails).toContain("R1  check_ins_location");
+    expect(asciiTableColumnText(exhaustiveDetails, 3)).toContain(
+      "Path ID R1: check_ins_location",
+    );
     expect(exhaustive).not.toContain("path check_ins_location [");
 
     const { input, output } = fakeTerminal();
@@ -1005,7 +1012,7 @@ describe("boundary review terminal picker", () => {
     expect(rendered).toContain("Remove");
   });
 
-  it("renders blocked scope evidence as an indented decision map in local and production editors", async () => {
+  it("renders blocked scope evidence in a bordered map for local and production editors", async () => {
     for (const boundaryName of ["reviewed_staging", "reviewed_production"]) {
       const blocked = summary("librarydb.transfer_requests", 0);
       blocked.candidate_boundary_name = boundaryName;
@@ -1028,30 +1035,60 @@ describe("boundary review terminal picker", () => {
       };
 
       const exhaustive = formatBoundaryOverviewMap([blocked], { exhaustive: true });
-      expect(exhaustive).toContain("librarydb.transfer_requests [BLOCKED]");
-      expect(exhaustive).toContain("tenant scope  UNRESOLVED");
-      expect(exhaustive).toContain("direct     no trusted tenant column was found");
-      expect(exhaustive).toContain("derived    loan_id -> loans.id is nullable");
-      expect(exhaustive).toContain("shared     relationship transfer_loan_fk reaches tenant-scoped resource loans");
-      expect(exhaustive).toContain("next 1     Add and populate a trusted tenant column on transfer_requests");
+      expect(exhaustive).toMatch(/\+-+\+-+\+-+\+-+\+/u);
+      expect(asciiTableColumnText(exhaustive, 0)).toContain("librarydb.transfer_requests");
+      expect(asciiTableColumnText(exhaustive, 1)).toContain("BLOCKED");
+      const review = asciiTableColumnText(exhaustive, 3);
+      expect(review).toContain("Tenant scope: UNRESOLVED");
+      expect(review).toContain("Direct: no trusted tenant column was found");
+      expect(review).toContain("Derived: loan_id -> loans.id is nullable");
+      expect(review).toContain(
+        "Shared: relationship transfer_loan_fk reaches tenant-scoped resource loans",
+      );
+      expect(review).toContain(
+        "Next 1: Add and populate a trusted tenant column on transfer_requests",
+      );
       expect(exhaustive).not.toContain("why:");
       expect(exhaustive).not.toContain("next:");
       expect(exhaustive).not.toContain("librarydb.loans");
+
+      const medium = formatBoundaryOverviewMap([blocked], {
+        exhaustive: true,
+        columns: 72,
+      });
+      expect(medium).toContain("Reviewed boundary details");
+      expect(medium).toMatch(/\+-+\+-+\+-+\+/u);
+      expect(medium.split("\n").filter((line) => /^[+|]/u.test(line)).every(
+        (line) => line.length <= 72,
+      )).toBe(true);
+
+      const narrow = formatBoundaryOverviewMap([blocked], {
+        exhaustive: true,
+        columns: 52,
+      });
+      expect(narrow).toMatch(/\+-+\+-+\+/u);
+      expect(narrow).not.toContain("| Status ");
+      expect(narrow.split("\n").filter((line) => /^[+|]/u.test(line)).every(
+        (line) => line.length <= 52,
+      )).toBe(true);
 
       const { input, output } = fakeTerminal(72);
       const session = createBoundaryReviewInteractiveSession(input, output);
       const selected = session.chooseResource([blocked]);
       await send(input, "m");
+      for (let index = 0; index < 12; index += 1) {
+        await emitKey(input, { name: "down", sequence: "\u001b[B" });
+      }
       await send(input, "q");
       await expect(selected).resolves.toBeUndefined();
 
       const rendered = stripAnsi(output.read()?.toString() ?? "");
       expect(rendered).toContain("WHOLE BOUNDARY MAP");
-      expect(rendered).toContain("tenant scope  UNRESOLVED");
-      const wrappedEvidence = rendered.split("\n").find((line) => line.includes("owning tenant"));
-      expect(wrappedEvidence).toMatch(/^\s{4,}/u);
-      const wrappedRemediation = rendered.split("\n").find((line) => line.includes("NOT NULL"));
-      expect(wrappedRemediation).toMatch(/^\s{4,}/u);
+      expect(rendered).toMatch(/\+-+\+-+\+-+\+/u);
+      const renderedReview = asciiTableColumnText(rendered, 2);
+      expect(renderedReview).toContain("Tenant scope: UNRESOLVED");
+      expect(renderedReview).toContain("some rows can have no owning tenant");
+      expect(renderedReview).toContain("make transfer_requests.loan_id NOT NULL");
     }
 
     const sharedReferenceReview = summary("librarydb.nums", 0);
@@ -1064,8 +1101,10 @@ describe("boundary review terminal picker", () => {
       [sharedReferenceReview],
       { exhaustive: true },
     );
-    expect(sharedReferenceMap).toContain("review     Shared reference only if this table has no per-tenant rows");
-    expect(sharedReferenceMap).not.toContain("review     review Shared reference");
+    expect(asciiTableColumnText(sharedReferenceMap, 3)).toContain(
+      "Review: Shared reference only if this table has no per-tenant rows",
+    );
+    expect(sharedReferenceMap).not.toContain("Review: review Shared reference");
   });
 
   it("renders included multi-hop relationships as readable chains before canonical IDs", () => {
@@ -1095,15 +1134,18 @@ describe("boundary review terminal picker", () => {
     expect(concise).not.toContain("librarydb.event_notes -> librarydb.loan_events");
 
     const exhaustive = formatBoundaryOverviewMap([resource], { exhaustive: true });
-    expect(exhaustive).toContain("R1  2 hops  analysis relationship [IN NEXT BOUNDARY]");
-    expect(exhaustive).toContain("event_notes -> loan_events -> loans");
-    expect(exhaustive).toContain("via columns: loan_event_id -> loan_id");
+    const review = asciiTableColumnText(exhaustive, 3);
+    expect(review).toContain("R1: analysis relationship (2 hops) [IN NEXT BOUNDARY]");
+    expect(review).toContain("Path: event_notes -> loan_events -> loans");
+    expect(review).toContain("Via columns: loan_event_id -> loan_id");
     expect(exhaustive).not.toContain("event_notes_event_fk__loan_events_loan_fk");
     const detailed = formatBoundaryOverviewMap([resource], {
       exhaustive: true,
       details: true,
     });
-    expect(detailed).toContain("R1  event_notes_event_fk__loan_events_loan_fk");
+    expect(asciiTableColumnText(detailed, 3)).toContain(
+      "Path ID R1: event_notes_event_fk__loan_events_loan_fk",
+    );
     expect(exhaustive).not.toContain(
       "path event_notes_event_fk__loan_events_loan_fk [",
     );
@@ -1219,7 +1261,10 @@ describe("boundary review terminal picker", () => {
     const resource = summary(view.resource_id, 0);
     Object.assign(resource, counts);
     const overview = formatBoundaryOverviewMap([resource], { exhaustive: true });
-    expect(overview).toContain("fields: 1 model | 0 raw Runner-only | 2 kept out");
+    const fieldAccess = asciiTableColumnText(overview, 2);
+    expect(fieldAccess).toContain("Model + Runner: 1");
+    expect(fieldAccess).toContain("Runner only: 0");
+    expect(fieldAccess).toContain("Kept out: 2");
 
     const detail = formatBoundaryResourceMap(view);
     expect(detail).toMatch(/\| note_source\s+\| enum\s+\| Kept out\s+\| None/u);
@@ -1781,13 +1826,20 @@ describe("boundary review terminal picker", () => {
       details: true,
       commandName: "synapsor-runner",
     });
-    expect(overview).toContain("tenant scope available (3 hops)");
-    expect(overview).toContain("event_notes -> order_item_events -> order_items -> orders.tenant_id");
-    expect(overview).toContain("via columns: parent_id -> parent_id -> parent_id");
-    expect(overview).toContain("path ID A1: event_notes_event_fkey__events_item_fkey__items_order_fkey");
-    expect(overview).toContain("needs max_derived_scope_hops 3 (currently 2)");
+    const availableReview = asciiTableColumnText(overview, 3);
+    expect(availableReview).toContain("Available tenant scope: 3 hops");
+    expect(availableReview).toContain(
+      "Path: event_notes -> order_item_events -> order_items -> orders.tenant_id",
+    );
+    expect(availableReview).toContain("Via columns: parent_id -> parent_id -> parent_id");
+    expect(availableReview).toContain(
+      "Path ID A1: event_notes_event_fkey__events_item_fkey__items_order_fkey",
+    );
+    expect(availableReview).toContain("Needs: max_derived_scope_hops 3 (currently 2)");
     expect(overview).not.toContain("derive tenant scope via");
-    expect(overview).toContain("boundary review resource 'public.event_notes' --map shows the exact review command");
+    expect(availableReview).toContain(
+      "boundary review resource 'public.event_notes' --map shows the exact review command",
+    );
 
     const reviewedSummary = summary("public.event_notes", 0);
     reviewedSummary.derived_tenant_scope = structuredClone(threeHopView.derived_tenant_scope);
@@ -1798,11 +1850,12 @@ describe("boundary review terminal picker", () => {
       exhaustive: true,
     });
     expect(reviewedOverview).toContain("reviewed paths 1");
-    expect(reviewedOverview).toContain("S1  3 hops  reviewed tenant scope");
-    expect(reviewedOverview).toContain(
-      "event_notes -> order_item_events -> order_items -> orders.tenant_id",
+    const reviewedReview = asciiTableColumnText(reviewedOverview, 3);
+    expect(reviewedReview).toContain("S1: tenant scope (3 hops)");
+    expect(reviewedReview).toContain(
+      "Path: event_notes -> order_item_events -> order_items -> orders.tenant_id",
     );
-    expect(reviewedOverview).toContain("via columns: parent_id -> parent_id -> parent_id");
+    expect(reviewedReview).toContain("Via columns: parent_id -> parent_id -> parent_id");
     expect(reviewedOverview).not.toContain(
       "event_notes_event_fkey__events_item_fkey__items_order_fkey",
     );
@@ -1819,11 +1872,12 @@ describe("boundary review terminal picker", () => {
     const combinedOverview = formatBoundaryOverviewMap([reviewedSummary], {
       exhaustive: true,
     });
-    expect(combinedOverview).toContain(
-      "S1  3 hops  reviewed tenant scope + analysis relationship [IN NEXT BOUNDARY]",
+    const combinedReview = asciiTableColumnText(combinedOverview, 3);
+    expect(combinedReview).toContain(
+      "S1: tenant scope + analysis relationship (3 hops) [IN NEXT BOUNDARY]",
     );
     expect(combinedOverview).toContain("reviewed paths 1");
-    expect(combinedOverview.match(/event_notes -> order_item_events -> order_items -> orders/g))
+    expect(combinedReview.match(/event_notes -> order_item_events -> order_items -> orders/g))
       .toHaveLength(1);
   });
 
@@ -1884,6 +1938,17 @@ function fakeTerminal(columns = 100): {
 
 function stripAnsi(value: string): string {
   return value.replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, "");
+}
+
+function asciiTableColumnText(value: string, column: number): string {
+  return stripAnsi(value)
+    .split("\n")
+    .filter((line) => line.trimStart().startsWith("|"))
+    .map((line) => line.split("|")[column + 1]?.trim() ?? "")
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/gu, " ")
+    .replace(/([._])\s+/gu, "$1");
 }
 
 function withTerminalColors<T>(operation: () => T): T {

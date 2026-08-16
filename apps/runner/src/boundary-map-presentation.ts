@@ -50,6 +50,14 @@ export function boundaryMapOperationLegend(): string[] {
   ];
 }
 
+export function renderBoundaryMapTable(
+  headers: string[],
+  rows: string[][],
+  options: { widths: number[]; indent?: string },
+): string[] {
+  return renderAsciiTable(headers, rows, options.widths, options.indent ?? "");
+}
+
 function renderWideTable(
   rows: BoundaryMapFieldRow[],
   contentWidth: number,
@@ -177,7 +185,12 @@ function wrapCellLine(value: string, width: number): string[] {
     const candidate = remaining.slice(0, width + 1);
     const wordBreak = candidate.lastIndexOf(" ");
     const identifierBreak = candidate.lastIndexOf("_");
-    const splitAt = wordBreak > 0
+    const schemaBreak = candidate.lastIndexOf(".") + 1;
+    const splitAt = !remaining.includes(" ")
+      && schemaBreak > 0
+      && remaining.length - schemaBreak <= width
+      ? schemaBreak
+      : wordBreak > 0
       ? wordBreak
       : identifierBreak > 0
         ? identifierBreak + 1

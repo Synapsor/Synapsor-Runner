@@ -29,6 +29,7 @@ import { shellQuote } from "./cli-format.js";
 import {
   boundaryMapOperationLegend,
   renderBoundaryMapFieldMatrix,
+  renderBoundaryMapTable,
   type BoundaryMapFieldRow,
 } from "./boundary-map-presentation.js";
 
@@ -633,6 +634,7 @@ async function chooseResource(
           theme,
           "synapsor-runner",
           showMapDetails,
+          Math.max(36, Math.min(terminalContentWidth(output.columns), 116)),
         );
         const pageSize = 15;
         mapOffset = Math.min(mapOffset, Math.max(0, mapLines.length - pageSize));
@@ -1504,6 +1506,7 @@ export function formatBoundaryOverviewMap(
     exhaustive?: boolean;
     commandName?: string;
     details?: boolean;
+    columns?: number;
   } = {},
 ): string {
   const theme = terminalTheme(options.color === true && !("NO_COLOR" in process.env));
@@ -1529,6 +1532,7 @@ export function formatBoundaryOverviewMap(
       theme,
       options.commandName ?? "synapsor-runner",
       options.details === true,
+      Math.max(36, Math.min(terminalContentWidth(options.columns), 116)),
     ),
     ...(options.details ? [] : [
       "",
@@ -2540,90 +2544,119 @@ function boundaryOverviewMapLines(
   theme: TerminalTheme,
   commandName = "synapsor-runner",
   details = false,
+  width = 116,
 ): string[] {
   if (!resources.length) return [theme.warning("(no inspected tables or views)")];
-  return resources.flatMap((resource) => {
-    const status = resource.status !== "draft_read"
-      ? theme.danger("BLOCKED")
-      : resource.active && resource.included
-        ? theme.success("ACTIVE + NEXT BOUNDARY")
-        : resource.active
-          ? theme.success("ACTIVE")
-          : resource.included
-            ? theme.warning("IN NEXT BOUNDARY")
-            : theme.dim("NOT INCLUDED");
-    const lines = [
-      `${safeTerminalText(resource.resource_id)} [${status}]`,
-      `  fields: ${resource.model_visible_fields} model | ` +
-      `${resource.runner_output_only_fields} raw Runner-only | ${resource.kept_out_fields} kept out`,
-      ...((resource.operation_repair_fields?.length ?? 0) > 0
-        ? [theme.warning(
-            `  repair: usable fields missing analytical grants: ${resource.operation_repair_fields!.join(", ")}`,
-          )]
-        : []),
-    ];
-    if (resource.status !== "draft_read") {
-      lines.push(...blockedBoundaryOverviewLines(resource, theme));
-      lines.push(...availableDerivedTenantScopeSummaryLines(
-        resource,
-        theme,
-        commandName,
-        details,
-      ));
-      return lines;
-    }
-    const scopeEntries = selectedDerivedScopeEntries(resource);
-    const scopePathIds = new Set(scopeEntries.map((entry) => entry.scope.path_id));
-    const relationshipByPath = new Map(resource.relationships.map((relationship) => [
-      relationship.relationship_id,
-      relationship,
-    ]));
-    const pathIds: Array<{ label: string; id: string }> = [];
-    let entryIndex = 0;
-    for (const entry of scopeEntries) {
-      entryIndex += 1;
-      const relationship = relationshipByPath.get(entry.scope.path_id);
-      const depth = derivedScopeDepth(entry.scope);
-      const state = relationship ? relationshipStateLabel(relationship, theme) : undefined;
-      const label = `S${entryIndex}`;
-      lines.push(
-        `  ${label}  ${depth} ${plural(depth, "hop", "hops")}  reviewed ${entry.roles.join(" + ")} ` +
-        `${relationship ? "+ analysis relationship " : ""}` +
-        `${state ? `[${state}]` : ""}`,
-      );
-      lines.push(`      ${safeTerminalText(formatDerivedScopePath(entry.scope))}`);
-      const joinColumns = formatDerivedScopeJoinColumns(entry.scope);
-      if (joinColumns) lines.push(`      via columns: ${safeTerminalText(joinColumns)}`);
-      pathIds.push({ label, id: entry.scope.path_id });
-    }
-    const remainingRelationships = resource.relationships.filter(
-      (relationship) => !scopePathIds.has(relationship.relationship_id),
-    );
-    remainingRelationships.forEach((relationship, index) => {
-      const state = relationshipStateLabel(relationship, theme);
-      const display = summaryRelationshipDisplay(resource.resource_id, relationship);
-      const joinColumns = formatRelationshipJoinColumns(display);
-      const label = `R${index + 1}`;
-      lines.push(
-        `  ${label}  ${relationship.path_depth} ` +
-        `${plural(relationship.path_depth, "hop", "hops")}  analysis relationship [${state}]`,
-      );
-      lines.push(`      ${safeTerminalText(formatRelationshipPath(display))}`);
-      if (joinColumns) lines.push(`      via columns: ${safeTerminalText(joinColumns)}`);
-      pathIds.push({ label, id: relationship.relationship_id });
-    });
-    if (details && pathIds.length) {
-      lines.push(`  ${theme.dim("PATH IDS (SCRIPTED REVIEW)")}`);
-      lines.push(...pathIds.map((entry) =>
-        `    ${entry.label}  ${safeTerminalText(entry.id)}`));
-    }
-    return lines;
-  });
+  const tableRows = resources.map((resource) => boundaryOverviewTableRow(
+    resource,
+    commandName,
+    details,
+  ));
+  const normalizedWidth = Math.max(36, Math.min(width, 116));
+  const lines = normalizedWidth >= 96
+    ? renderWideBoundaryOverviewTable(tableRows, normalizedWidth)
+    : normalizedWidth >= 64
+      ? renderMediumBoundaryOverviewTable(tableRows, normalizedWidth)
+      : renderNarrowBoundaryOverviewTable(tableRows, normalizedWidth);
+  return lines.map((line) => styleBoundaryOverviewTableLine(line, theme));
 }
 
-function blockedBoundaryOverviewLines(
+type BoundaryOverviewTableRow = {
+  resource: string;
+  status: string;
+  fields: string[];
+  review: string[];
+};
+
+function boundaryOverviewTableRow(
   resource: BoundaryResourceReviewSummary,
-  theme: TerminalTheme,
+  commandName: string,
+  details: boolean,
+): BoundaryOverviewTableRow {
+  const fields = [
+    `Model + Runner: ${resource.model_visible_fields}`,
+    `Runner only: ${resource.runner_output_only_fields}`,
+    `Kept out: ${resource.kept_out_fields}`,
+  ];
+  if ((resource.operation_repair_fields?.length ?? 0) > 0) {
+    fields.push(
+      `Repair: restore operations for ${resource.operation_repair_fields!.join(", ")}`,
+    );
+  }
+  const review: string[] = [];
+  if (resource.status === "draft_read") {
+    review.push(...reviewedRelationshipTableLines(resource, details));
+  } else {
+    review.push(...blockedBoundaryTableLines(resource));
+    review.push(...availableDerivedTenantScopeTableLines(resource, commandName, details));
+  }
+  if (!review.length) review.push("No reviewed relationship paths");
+  return {
+    resource: safeTerminalText(resource.resource_id),
+    status: boundaryOverviewStatus(resource),
+    fields: fields.map(safeTerminalText),
+    review: review.map(safeTerminalText),
+  };
+}
+
+function boundaryOverviewStatus(resource: BoundaryResourceReviewSummary): string {
+  if (resource.status !== "draft_read") return "BLOCKED";
+  if (resource.active && resource.included) return "ACTIVE + NEXT";
+  if (resource.active) return "ACTIVE";
+  if (resource.included) return "IN NEXT";
+  return "NOT INCLUDED";
+}
+
+function reviewedRelationshipTableLines(
+  resource: BoundaryResourceReviewSummary,
+  details: boolean,
+): string[] {
+  const lines: string[] = [];
+  const scopeEntries = selectedDerivedScopeEntries(resource);
+  const scopePathIds = new Set(scopeEntries.map((entry) => entry.scope.path_id));
+  const relationshipByPath = new Map(resource.relationships.map((relationship) => [
+    relationship.relationship_id,
+    relationship,
+  ]));
+  const pathIds: Array<{ label: string; id: string }> = [];
+  scopeEntries.forEach((entry, index) => {
+    const relationship = relationshipByPath.get(entry.scope.path_id);
+    const depth = derivedScopeDepth(entry.scope);
+    const label = `S${index + 1}`;
+    const state = relationship ? plainRelationshipStateLabel(relationship) : undefined;
+    lines.push(
+      `${label}: ${entry.roles.join(" + ")}${relationship ? " + analysis relationship" : ""}` +
+      ` (${depth} ${plural(depth, "hop", "hops")})${state ? ` [${state}]` : ""}`,
+      `Path: ${formatDerivedScopePath(entry.scope)}`,
+    );
+    const joinColumns = formatDerivedScopeJoinColumns(entry.scope);
+    if (joinColumns) lines.push(`Via columns: ${joinColumns}`);
+    pathIds.push({ label, id: entry.scope.path_id });
+  });
+  const remainingRelationships = resource.relationships.filter(
+    (relationship) => !scopePathIds.has(relationship.relationship_id),
+  );
+  remainingRelationships.forEach((relationship, index) => {
+    const display = summaryRelationshipDisplay(resource.resource_id, relationship);
+    const label = `R${index + 1}`;
+    lines.push(
+      `${label}: analysis relationship (${relationship.path_depth} ` +
+      `${plural(relationship.path_depth, "hop", "hops")}) ` +
+      `[${plainRelationshipStateLabel(relationship)}]`,
+      `Path: ${formatRelationshipPath(display)}`,
+    );
+    const joinColumns = formatRelationshipJoinColumns(display);
+    if (joinColumns) lines.push(`Via columns: ${joinColumns}`);
+    pathIds.push({ label, id: relationship.relationship_id });
+  });
+  if (details && pathIds.length) {
+    lines.push(...pathIds.map((entry) => `Path ID ${entry.label}: ${entry.id}`));
+  }
+  return lines;
+}
+
+function blockedBoundaryTableLines(
+  resource: BoundaryResourceReviewSummary,
 ): string[] {
   const lines: string[] = [];
   const blockers = resource.blockers.length ? resource.blockers : ["review blocked"];
@@ -2631,35 +2664,28 @@ function blockedBoundaryOverviewLines(
     const normalized = compactMapReferenceText(resource.resource_id, blocker);
     const tenantScope = /^trusted tenant scope is unresolved(?:;\s*(.+))?\.?$/iu.exec(normalized);
     if (tenantScope) {
-      lines.push(`  ${theme.dim("tenant scope")}  ${theme.danger("UNRESOLVED")}`);
+      lines.push("Tenant scope: UNRESOLVED");
       if (tenantScope[1]) {
-        lines.push(mapDecisionLine(
-          "review",
-          tenantScope[1].replace(/^review\s+/iu, ""),
-          theme.warning,
-        ));
+        lines.push(`Review: ${tenantScope[1].replace(/^review\s+/iu, "")}`);
       }
       continue;
     }
-    lines.push(mapDecisionLine("blocked", normalized, theme.danger, 2));
+    lines.push(`Blocked: ${normalized}`);
   }
 
   for (const reason of resource.scope_resolution_guidance?.why ?? []) {
     const presentation = blockedScopeReasonPresentation(reason);
-    lines.push(mapDecisionLine(
-      presentation.label,
+    lines.push(
+      `${titleCaseMapLabel(presentation.label)}: ` +
       compactMapReferenceText(resource.resource_id, presentation.message),
-      theme.scope,
-    ));
+    );
   }
   for (const [index, remediation] of (
     resource.scope_resolution_guidance?.remediation.slice(0, 2) ?? []
   ).entries()) {
-    lines.push(mapDecisionLine(
-      `next ${index + 1}`,
-      compactMapReferenceText(resource.resource_id, remediation),
-      theme.warning,
-    ));
+    lines.push(
+      `Next ${index + 1}: ${compactMapReferenceText(resource.resource_id, remediation)}`,
+    );
   }
   return lines;
 }
@@ -2680,13 +2706,8 @@ function blockedScopeReasonPresentation(value: string): { label: string; message
   };
 }
 
-function mapDecisionLine(
-  label: string,
-  message: string,
-  styleLabel: (value: string) => string,
-  indent = 4,
-): string {
-  return `${" ".repeat(indent)}${styleLabel(label.padEnd(11))}${safeTerminalText(message)}`;
+function titleCaseMapLabel(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 function compactMapReferenceText(resourceId: string, value: string): string {
@@ -2696,9 +2717,8 @@ function compactMapReferenceText(resourceId: string, value: string): string {
   return compact.trim().replace(/[.]+$/u, "");
 }
 
-function availableDerivedTenantScopeSummaryLines(
+function availableDerivedTenantScopeTableLines(
   resource: BoundaryResourceReviewSummary,
-  theme: TerminalTheme,
   commandName: string,
   details = false,
 ): string[] {
@@ -2710,31 +2730,116 @@ function availableDerivedTenantScopeSummaryLines(
     const depth = derivedScopeDepth(scope);
     const joinColumns = formatDerivedScopeJoinColumns(scope);
     return [
-      `      ${theme.success(`tenant scope available (${depth} ${plural(depth, "hop", "hops")})`)}`,
-      `        ${safeTerminalText(formatDerivedScopePath(scope))}`,
+      `Available tenant scope: ${depth} ${plural(depth, "hop", "hops")}`,
+      `Path: ${formatDerivedScopePath(scope)}`,
       ...(joinColumns
-        ? [`        via columns: ${safeTerminalText(joinColumns)}`]
+        ? [`Via columns: ${joinColumns}`]
         : []),
       ...(details
-        ? [`        ${theme.dim(`path ID A${index + 1}: ${safeTerminalText(scope.path_id)}`)}`]
+        ? [`Path ID A${index + 1}: ${scope.path_id}`]
         : []),
       ...(depth > reviewedMaximum
-        ? [theme.warning(
-            `        needs max_derived_scope_hops ${depth} (currently ${reviewedMaximum})`,
-          )]
+        ? [`Needs: max_derived_scope_hops ${depth} (currently ${reviewedMaximum})`]
         : []),
     ];
   });
   if (paths.length > 3) {
-    lines.push(theme.success(`      ${paths.length - 3} more proven paths are available`));
+    lines.push(`${paths.length - 3} more proven paths are available`);
   }
   lines.push(
-    theme.warning(
-      `      next: ${safeTerminalText(commandName)} boundary review resource ` +
-      `${safeTerminalText(shellQuote(resource.resource_id))} --map shows the exact review command.`,
-    ),
+    `Next: ${commandName} boundary review resource ` +
+    `${shellQuote(resource.resource_id)} --map shows the exact review command`,
   );
   return lines;
+}
+
+function renderWideBoundaryOverviewTable(
+  rows: BoundaryOverviewTableRow[],
+  width: number,
+): string[] {
+  const contentWidth = width - 13;
+  const resourceWidth = Math.min(24, Math.max(18, Math.floor(contentWidth * 0.22)));
+  const statusWidth = Math.min(20, Math.max(15, Math.floor(contentWidth * 0.18)));
+  const fieldsWidth = Math.min(20, Math.max(18, Math.floor(contentWidth * 0.19)));
+  const reviewWidth = contentWidth - resourceWidth - statusWidth - fieldsWidth;
+  return renderBoundaryMapTable(
+    ["Table", "Boundary status", "Field access", "Scope and relationships"],
+    rows.map((row) => [
+      row.resource,
+      row.status,
+      row.fields.join("\n"),
+      row.review.join("\n"),
+    ]),
+    { widths: [resourceWidth, statusWidth, fieldsWidth, reviewWidth] },
+  );
+}
+
+function renderMediumBoundaryOverviewTable(
+  rows: BoundaryOverviewTableRow[],
+  width: number,
+): string[] {
+  const contentWidth = width - 10;
+  const resourceWidth = Math.min(23, Math.max(15, Math.floor(contentWidth * 0.28)));
+  const statusWidth = Math.min(18, Math.max(14, Math.floor(contentWidth * 0.2)));
+  const reviewWidth = contentWidth - resourceWidth - statusWidth;
+  return renderBoundaryMapTable(
+    ["Table", "Status", "Reviewed boundary details"],
+    rows.map((row) => [
+      row.resource,
+      row.status,
+      [...row.fields, ...row.review].join("\n"),
+    ]),
+    { widths: [resourceWidth, statusWidth, reviewWidth] },
+  );
+}
+
+function renderNarrowBoundaryOverviewTable(
+  rows: BoundaryOverviewTableRow[],
+  width: number,
+): string[] {
+  const contentWidth = width - 7;
+  const resourceWidth = Math.min(18, Math.max(12, Math.floor(contentWidth * 0.38)));
+  const detailWidth = contentWidth - resourceWidth;
+  return renderBoundaryMapTable(
+    ["Table", "Reviewed boundary details"],
+    rows.map((row) => [
+      row.resource,
+      [`Status: ${row.status}`, ...row.fields, ...row.review].join("\n"),
+    ]),
+    { widths: [resourceWidth, detailWidth] },
+  );
+}
+
+function styleBoundaryOverviewTableLine(line: string, theme: TerminalTheme): string {
+  if (line.startsWith("+")) return theme.dim(line);
+  let styled = line.replace(
+    /(ACTIVE \+ NEXT BOUNDARY|ACTIVE \+ NEXT|IN NEXT BOUNDARY|IN NEXT|NOT INCLUDED|BLOCKED|ACTIVE)/gu,
+    (status) => status === "BLOCKED"
+      ? theme.danger(status)
+      : status === "NOT INCLUDED"
+        ? theme.dim(status)
+        : status === "IN NEXT BOUNDARY" || status === "IN NEXT"
+          ? theme.warning(status)
+          : theme.success(status),
+  );
+  styled = styled.replace(/UNRESOLVED/gu, (value) => theme.danger(value));
+  styled = styled.replace(
+    /(Table|Boundary status|Status|Field access|Scope and relationships|Reviewed boundary details)/gu,
+    (header) => theme.bold(header),
+  );
+  styled = styled.replace(
+    /(Review|Next(?: \d+)?|Needs|Repair):/gu,
+    (label) => theme.warning(label),
+  );
+  return styled;
+}
+
+function plainRelationshipStateLabel(
+  relationship: BoundaryResourceReviewSummary["relationships"][number],
+): string {
+  if (relationship.state === "active") return "ACTIVE";
+  if (relationship.state === "included") return "IN NEXT BOUNDARY";
+  return "AVAILABLE";
 }
 
 function riskBadge(
