@@ -385,8 +385,8 @@ async function browseEvidence(args: string[]): Promise<number> {
     }
     const answer = await readTerminalTextWithEscape(
       action.kind === "search"
-        ? "Search redacted audit metadata: "
-        : "Filter or navigation command (Esc to return): ",
+        ? "Text search across persisted plan metadata and audit IDs: "
+        : `Structured filter (${auditBrowserStructuredFilterScope()}; Esc to return): `,
       process.stdin,
       process.stdout,
     );
@@ -540,7 +540,7 @@ export function evidenceBrowserFilterSummary(
 }
 
 
-function evidenceBrowserHelp(color: boolean): string {
+export function evidenceBrowserHelp(color: boolean): string {
   const lines = [
     renderTerminalSectionHeading("Browser commands", color),
     "  Up/Down + Enter         select and open a record; Esc returns",
@@ -548,7 +548,11 @@ function evidenceBrowserHelp(color: boolean): string {
     "  N / B                  next or previous page",
     "  page <n>                jump to a page",
     "  size <5-50>             change records per page",
-    "  / then type text        search redacted audit metadata",
+    "  / Text search           search persisted plan fields and audit identifiers",
+    `    Searches ${auditBrowserSearchScope("evidence")}.`,
+    "    Original question text is not stored and therefore is not searchable.",
+    `  F Structured filters    narrow by ${auditBrowserStructuredFilterScope()}`,
+    "    Private scope values are never echoed.",
     "  C                       clear all active filters and return to page 1",
     "  resource <schema.table> narrow to a resource",
     "  tenant <id>             narrow by tenant (value is never echoed)",
@@ -558,7 +562,6 @@ function evidenceBrowserHelp(color: boolean): string {
     "  to <ISO> / jump <ISO>   set the upper time bound",
     "  clear                   remove live audit filters",
     "  Add 'all' after one filter command to clear only that filter.",
-    `  Search checks ${auditBrowserSearchScope("evidence")}.`,
     "  Refused/failed attempts have no evidence bundle; inspect query-audit browse.",
   ];
   return lines.join("\n");
@@ -682,8 +685,8 @@ async function browseQueryAudit(args: string[]): Promise<number> {
     }
     const answer = await readTerminalTextWithEscape(
       action.kind === "search"
-        ? "Search redacted audit metadata: "
-        : "Filter or navigation command (Esc to return): ",
+        ? "Text search across persisted plan metadata and audit IDs: "
+        : `Structured filter (${auditBrowserStructuredFilterScope()}; Esc to return): `,
       process.stdin,
       process.stdout,
     );
@@ -960,12 +963,12 @@ function auditBrowserPageLines(
     lines.push(renderTerminalStyledText(`Open record ${numberBuffer}_ (Enter to open; Esc to clear)`, options.color, "identifier"));
   }
   lines.push(renderTerminalStyledText(
-    "Up/Down Select   Enter Open   N/B Page   / Search   F Filters",
+    "Up/Down Select   Enter Open   N/B Page",
     options.color,
     "identifier",
   ));
   lines.push(renderTerminalStyledText(
-    `${options.hasActiveFilters ? "C Clear filters   " : ""}? Help   Esc Quit`,
+    `/ Text search   F Structured filters   ${options.hasActiveFilters ? "C Clear filters   " : ""}? Help   Esc Quit`,
     options.color,
     "identifier",
   ));
@@ -1067,8 +1070,13 @@ export function normalizeAuditBrowserSearch(input: string): {
 
 export function auditBrowserSearchScope(kind: "evidence" | "query-audit"): string {
   return kind === "evidence"
-    ? "plan identifiers and redacted metadata used for the English description, evidence ID, resource/source IDs, capability, and query fingerprint"
-    : "plan identifiers and redacted metadata used for the English description, audit/evidence IDs, resource/source IDs, capability, and query fingerprint";
+    ? "persisted plan fields used to render the English description, evidence ID, resource/source IDs, capability, and query fingerprint"
+    : "persisted plan fields used to render the English description, audit/evidence IDs, resource/source IDs, capability, and query fingerprint";
+}
+
+
+export function auditBrowserStructuredFilterScope(): string {
+  return "tenant, principal, resource, capability, boundary, outcome, or time";
 }
 
 
@@ -1090,6 +1098,7 @@ export function auditBrowserEmptyLines(
   return [
     `No ${label} matched search ${JSON.stringify(search)}.`,
     `Searched fields: ${auditBrowserSearchScope(kind)}.`,
+    "Original question text is not stored, so it was not searched.",
     "Other active filters also apply. Press F to inspect or change them.",
   ];
 }
@@ -1110,19 +1119,22 @@ function isTerminalExitKey(key: TerminalKeypress): boolean {
 }
 
 
-function queryAuditBrowserHelp(color: boolean): string {
+export function queryAuditBrowserHelp(color: boolean): string {
   return [
     renderTerminalSectionHeading("Browser commands", color),
     "  Up/Down + Enter        select and open a record; Esc returns",
     "  Type a record number  open its stable number across pages",
     "  N / B                  next or previous page",
     "  page <n> / size <5-50> change the page",
-    "  / then type text       search redacted audit metadata",
+    "  / Text search          search persisted plan fields and audit identifiers",
+    `    Searches ${auditBrowserSearchScope("query-audit")}.`,
+    "    Original question text is not stored and therefore is not searchable.",
+    `  F Structured filters   narrow by ${auditBrowserStructuredFilterScope()}`,
+    "    Private scope values are never echoed.",
     "  C                      clear all active filters and return to page 1",
     "  resource, tenant, principal, outcome, since, to, and jump set live filters",
     "  outcome accepts ok, refused, failed, empty, fully_suppressed, or incomplete_comparison",
     "  clear                  remove live audit filters",
-    `  Search checks ${auditBrowserSearchScope("query-audit")}.`,
   ].join("\n");
 }
 

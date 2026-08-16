@@ -8,7 +8,7 @@ import path from "node:path";
 import { PassThrough } from "node:stream";
 import type { ReadStream, WriteStream } from "node:tty";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { activitySearch, auditBrowserEmptyLines, auditBrowserHasActiveFilters, auditBrowserSearchScope, evidenceBrowserCommand, evidenceBrowserFilterSummary, evidenceList, evidenceShow, normalizeAuditBrowserSearch, queryAuditList, reusableRecordedFreshness, selectAuditBrowserPage } from "./proposal-ledger.js";
+import { activitySearch, auditBrowserEmptyLines, auditBrowserHasActiveFilters, auditBrowserSearchScope, auditBrowserStructuredFilterScope, evidenceBrowserCommand, evidenceBrowserFilterSummary, evidenceBrowserHelp, evidenceList, evidenceShow, normalizeAuditBrowserSearch, queryAuditBrowserHelp, queryAuditList, reusableRecordedFreshness, selectAuditBrowserPage } from "./proposal-ledger.js";
 import { withAlternateTerminalScreen } from "./terminal-prompt.js";
 
 
@@ -405,9 +405,19 @@ describe("proposal approval freshness reuse", () => {
     });
     expect(normalizeAuditBrowserSearch("text").error).toMatch(/placeholder/);
     expect(auditBrowserSearchScope("evidence")).toMatch(/evidence ID.*query fingerprint/);
+    expect(auditBrowserStructuredFilterScope()).toBe(
+      "tenant, principal, resource, capability, boundary, outcome, or time",
+    );
+    for (const help of [evidenceBrowserHelp(false), queryAuditBrowserHelp(false)]) {
+      expect(help).toContain("/ Text search");
+      expect(help).toContain("F Structured filters");
+      expect(help).toContain("Original question text is not stored");
+      expect(help).toContain(auditBrowserStructuredFilterScope());
+    }
     expect(auditBrowserEmptyLines("evidence", ["--search", "borrowed"])).toEqual([
       'No released-result evidence matched search "borrowed".',
       expect.stringMatching(/^Searched fields: .*English description.*evidence ID.*query fingerprint\.$/),
+      "Original question text is not stored, so it was not searched.",
       "Other active filters also apply. Press F to inspect or change them.",
     ]);
   });
@@ -442,7 +452,8 @@ describe("proposal approval freshness reuse", () => {
     expect(rendered).toContain("Page 2 | records 11-12");
     expect(rendered).toContain("12  OK  Members grouped by membership tier");
     expect(rendered).toContain("Up/Down Select");
-    expect(rendered).toContain("/ Search");
+    expect(rendered).toContain("/ Text search");
+    expect(rendered).toContain("F Structured filters");
 
     const searchTerminal = fakeTerminal();
     const search = selectAuditBrowserPage({

@@ -154,16 +154,19 @@ tenant/principal claims, SQL, parameters, credentials, or source rows.
 `evidence browse` keeps a bounded audit session open instead of printing the
 entire result set. It supports pages, timestamp jumps, metadata search, and live
 scope/resource/outcome/time filters. Up/Down moves the current selection, Enter
-opens it, Esc returns, and `/` opens a dedicated search prompt. Record numbers
-remain continuous across pages. `C` clears all active filters and returns to the
-newest page. The browser redraws in a dedicated terminal screen so list, search,
-and detail transitions do not append repeated output. Search covers redacted plan metadata, record and
-resource/source IDs, capability, and query fingerprint; an empty search result
-states both the term and the fields searched. A selected record starts with a
-compact, plan-derived English description; use its D, Q, and P commands for
-authority facts, the privacy-safe reconstructed query, and the normalized plan,
-with Up/Down scrolling for long sections. The
-description is reconstructed from persisted reviewed-plan metadata, not from a
+opens it, and Esc returns. `/` opens free-text search over persisted plan fields
+and audit identifiers. `F` opens structured tenant, principal, resource,
+capability, boundary, outcome, and time filters. Record numbers remain
+continuous across pages. `C` clears all active filters and returns to the newest
+page. The browser redraws in a dedicated terminal screen so list, search, and
+detail transitions do not append repeated output. Search covers redacted plan
+metadata, record and resource/source IDs, capability, and query fingerprint; it
+does not search original question text because that text is not stored. An empty
+search result states both the term and the fields searched. A selected record
+starts with a compact, plan-derived English description; use its D, Q, and P
+commands for authority facts, the privacy-safe reconstructed query, and the
+normalized plan, with Up/Down scrolling for long sections. The description is
+reconstructed from persisted reviewed-plan metadata, not from a
 stored model conversation. Successful shared-store reads are quiet by default;
 use `--debug` only when the structured snapshot event is needed.
 

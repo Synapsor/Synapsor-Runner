@@ -373,13 +373,16 @@ timestamp or a duration such as `24h`; `--limit` defaults to 20 and is capped at
 plan identifiers. `--json` is suitable for automation. `evidence browse` is a
 stateful terminal audit session with ten records per page by default,
 Up/Down selection, Enter to open, Esc to return, continuous record numbers,
-next/back/page controls, live filters, timestamp jumps, and `/` to open metadata
-search. `C` visibly clears every active filter and returns to the newest page.
+next/back/page controls, and timestamp jumps. `/` opens free-text search over
+persisted plan fields and audit identifiers. `F` opens structured tenant,
+principal, resource, capability, boundary, outcome, and time filters. `C`
+visibly clears every active filter and returns to the newest page.
 The browser uses a dedicated terminal screen, so paging, searching, opening a
 record, and returning to the list redraw in place instead of growing terminal
-scrollback. Search covers the redacted normalized-plan identifiers used to build the
+scrollback. Search covers the redacted normalized-plan fields used to build the
 English description, evidence/audit IDs, resource/source IDs, capability, and
-query fingerprint. A zero-result view repeats the search term and those fields;
+query fingerprint. It does not search original question text because that text
+is not stored. A zero-result view repeats the search term and those fields;
 `text` in older `/text` examples is treated as a placeholder rather than silently
 becoming part of the query. Selecting a record opens a compact summary;
 authority details, reconstructed query, and normalized JSON plan are expanded

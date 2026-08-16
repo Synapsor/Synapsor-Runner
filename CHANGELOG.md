@@ -127,7 +127,9 @@
   record numbers stable across pages, explains zero-result search scope, and
   scrolls expanded evidence sections in place. A visible `C` action clears all
   filters, and a dedicated terminal screen keeps list/search/detail transitions
-  from appending duplicate output to scrollback.
+  from appending duplicate output to scrollback. Browser footers, prompts, help,
+  and empty results now distinguish free-text persisted-plan/identifier search
+  from structured scope/resource/outcome/time filters.
 - Attributes pre-execution Explore refusals to their boundary-validated
   resource and records the attempted reviewed field and operation as metadata,
   so CLI and Workbench resource filters can find refusals without persisting
