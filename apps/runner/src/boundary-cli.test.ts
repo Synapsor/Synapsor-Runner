@@ -1710,6 +1710,7 @@ describe("boundary operator-plane CLI", () => {
       expect(output).toContain(
         `Reviewed boundary "${build.exploration_boundary.pack.name}" is active`,
       );
+      expect(output).toContain("\uD83D\uDC90 ACTIVATION SUCCEEDED");
       expect(output).toContain("active for secured production HTTP Explore");
       expect(output).toContain("initialize its shared accounting ledger, and run doctor");
       expect(output).not.toContain("active for local read-only Explore");
@@ -1724,6 +1725,100 @@ describe("boundary operator-plane CLI", () => {
       expect(active.activation.digest).toBe(
         explorationBoundaryCandidateDigest(build.exploration_boundary),
       );
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reports live boundary refresh after production runtime setup is already ready", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-production-activation-refresh-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+      deploymentProfile: "production",
+      httpClaims: { tenantClaim: "tenant_id", principalClaim: "sub" },
+    });
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const firstDigest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+      await activateExplorationBoundary({
+        projectRoot: root,
+        candidate: build.exploration_boundary,
+        expectedDigest: firstDigest,
+        actor: "first-reviewer",
+        confirmation: `ACTIVATE ${firstDigest}`,
+        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        currentInspection: inspection,
+      });
+      const second = await createSavedBoundary({
+        projectRoot: root,
+        draft: build.exploration_boundary,
+        currentCandidate: build.exploration_boundary,
+        name: "reviewed_catalog",
+        resourceId: "public.service_visits",
+        actor: "second-reviewer",
+      });
+      await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({
+        draft: build.exploration_boundary,
+        candidate: second.candidate,
+        confirmedDecisions: second.candidate.unresolved_decisions,
+        previous: second,
+        actor: "second-reviewer",
+        revision: second.revision + 1,
+      }));
+      const session: BoundaryReviewInteractiveSession = {
+        chooseResource: async () => undefined,
+        editFieldTiers: async () => undefined,
+        promptText: async () => "second-reviewer",
+        confirm: async () => true,
+      };
+      const inspectProductionReadiness = vi.fn(async () => ({
+        ready: true,
+        config_valid: true,
+        shared_ledger_initialized: true,
+        config_path: path.join(root, "synapsor.runner.json"),
+      }));
+
+      await expect(boundaryActivateCommandInternal(
+        ["--project-root", root, "--actor", "second-reviewer"],
+        async () => inspection,
+        session,
+        undefined,
+        { inspectProductionReadiness },
+      )).resolves.toBe(0);
+
+      expect(inspectProductionReadiness).toHaveBeenCalledWith({
+        args: ["--project-root", root, "--actor", "second-reviewer"],
+        projectRoot: root,
+      });
+      expect(output).toContain("\uD83D\uDC90 ACTIVATION SUCCEEDED");
+      expect(output).toContain("NEXT - PRODUCTION ACCESS UPDATED");
+      expect(output).toContain(
+        'Boundary "reviewed_catalog" is in the active production Explore set.',
+      );
+      expect(output).toContain("reloads the active set on its next tool call");
+      expect(output).toContain("no restart is required");
+      expect(output).toContain(
+        "do not rerun config initialization or the ledger migration for this activation",
+      );
+      expect(output).not.toContain(
+        "Next: configure the secured production HTTP runtime, initialize its shared accounting ledger",
+      );
+      await expect(loadActivatedExplorationBoundaries(root)).resolves.toHaveLength(2);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

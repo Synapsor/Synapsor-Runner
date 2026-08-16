@@ -48,6 +48,7 @@ import {
   saveBoundaryReviewProgress
 } from "./boundary-review-domain.js";
 import { displayPath } from "./onboarding.js";
+import { sharedPostgresLedgerDoctorChecks } from "./doctor-domain.js";
 import {
   formatDerivedScopePath,
   formatRelationshipJoinColumns,
@@ -144,6 +145,20 @@ export type BoundaryReviewCommandOptions = {
     boundaryDigest: `sha256:${string}`;
   }) => string;
   startAtBoundaryList?: boolean;
+};
+
+type ProductionActivationReadiness = {
+  ready: boolean;
+  config_valid: boolean;
+  shared_ledger_initialized: boolean;
+  config_path?: string;
+};
+
+type BoundaryActivateCommandOptions = {
+  inspectProductionReadiness?: (input: {
+    args: string[];
+    projectRoot: string;
+  }) => Promise<ProductionActivationReadiness>;
 };
 
 export async function boundaryRenameCommand(args: string[]): Promise<number> {
@@ -4794,6 +4809,7 @@ export async function boundaryActivateCommand(
   schemaInspector: typeof inspectDatabase = inspectDatabase,
   interactiveSession?: BoundaryReviewInteractiveSession,
   activationHandoff?: BoundaryActivationHandoff,
+  options: BoundaryActivateCommandOptions = {},
 ): Promise<number> {
   if (args.includes("--yes")) {
     throw new Error("boundary activate does not accept --yes; activation requires exact digest confirmation and a human or cryptographically verified operator decision.");
@@ -4820,6 +4836,12 @@ export async function boundaryActivateCommand(
   );
   const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
   const context = await loadBoundaryReviewContext(projectRoot);
+  const activeBeforeActivation = context.candidate.deployment_profile === "production"
+    ? await loadActivatedExplorationBoundaries(projectRoot).catch((error) => {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+        throw error;
+      })
+    : [];
   if (context.progress?.policy_migration.status === "review_required") {
     throw new Error([
       `Boundary ${context.candidate.pack.name} has legacy project-wide review settings that are not yet isolated to its immutable boundary identity.`,
@@ -5033,6 +5055,7 @@ export async function boundaryActivateCommand(
   }
 
   let activatedBoundary: Awaited<ReturnType<typeof activateExplorationBoundary>> | undefined;
+  let productionReadiness: ProductionActivationReadiness | undefined;
   try {
     const reviewAuthority = await resolveSavedBoundaryReviewAuthority({
       projectRoot,
@@ -5058,13 +5081,26 @@ export async function boundaryActivateCommand(
       currentInspection: inspection,
       activeSetMode: "add",
     });
+    if (active.deployment_profile === "production") {
+      productionReadiness = await (
+        options.inspectProductionReadiness ?? inspectProductionActivationReadiness
+      )({ args, projectRoot }).catch(() => ({
+        ready: false,
+        config_valid: false,
+        shared_ledger_initialized: false,
+      }));
+    }
     await updateGuidedOnboardingState({
       projectRoot,
       status: "boundary_active",
       completedStep: "boundary_active",
       authorityActive: true,
       recommendedNextAction: active.deployment_profile === "production"
-        ? "Configure the secured production HTTP runtime, initialize shared accounting, and run doctor before serving."
+        ? productionReadiness?.ready
+          ? activeBeforeActivation.length > 0
+            ? "A running production HTTP server will load the updated active boundary set on its next tool call; no restart or setup rerun is required."
+            : "Production HTTP configuration and shared accounting are ready; run doctor --preflight before starting the server if it is not already running."
+          : "Configure the secured production HTTP runtime, initialize shared accounting, and run doctor before serving."
         : "Choose a model or MCP client and ask your first reviewed question.",
       now: active.activation.activated_at,
     }).catch(() => undefined);
@@ -5111,12 +5147,17 @@ export async function boundaryActivateCommand(
       source_database_changed: false,
       model_facing_activation_tool: false,
     };
+    const theme = terminalTheme(
+      process.stdout.isTTY === true && !("NO_COLOR" in process.env),
+    );
+    const activationMessage = active.deployment_profile === "production"
+      ? `Reviewed boundary "${active.pack.name}" is active for secured production HTTP Explore.`
+      : `Reviewed boundary "${active.pack.name}" is active for local read-only Explore.`;
     process.stdout.write(args.includes("--json")
       ? `${JSON.stringify(payload, null, 2)}\n`
       : [
-        active.deployment_profile === "production"
-          ? `Reviewed boundary "${active.pack.name}" is active for secured production HTTP Explore.`
-          : `Reviewed boundary "${active.pack.name}" is active for local read-only Explore.`,
+        theme.success("\uD83D\uDC90 ACTIVATION SUCCEEDED"),
+        theme.success(activationMessage),
         `Exact fingerprint: ${active.activation.digest}`,
         "Source database changed: no",
         "",
@@ -5157,11 +5198,12 @@ export async function boundaryActivateCommand(
       ? guidedStart
       : `cd ${shellQuote(displayedProjectRoot)} && ${guidedStart}`;
     process.stdout.write(activatedBoundary.deployment_profile === "production"
-      ? [
-        "Next: configure the secured production HTTP runtime, initialize its shared accounting ledger, and run doctor.",
-        "Guide: docs/production-scoped-explore-http.md",
-        "",
-      ].join("\n")
+      ? formatProductionActivationNextSteps({
+        boundaryName: activatedBoundary.pack.name,
+        activeBeforeActivation: activeBeforeActivation.map((boundary) => boundary.pack.name),
+        readiness: productionReadiness,
+        color: process.stdout.isTTY === true && !("NO_COLOR" in process.env),
+      })
       : [
         "NEXT",
         "Resume the guided CLI and choose a model or MCP client:",
@@ -5172,6 +5214,75 @@ export async function boundaryActivateCommand(
       ].join("\n"));
   }
   return 0;
+}
+
+async function inspectProductionActivationReadiness(input: {
+  args: string[];
+  projectRoot: string;
+}): Promise<ProductionActivationReadiness> {
+  const explicitConfigPath = optionalArg(input.args, "--config");
+  const resolvedProject = explicitConfigPath
+    ? undefined
+    : await resolveSynapsorProject(input.projectRoot, process.env);
+  const configPath = explicitConfigPath
+    ?? resolvedProject?.config_path
+    ?? path.join(input.projectRoot, "synapsor.runner.json");
+  if (!await fileExists(configPath)) {
+    return {
+      ready: false,
+      config_valid: false,
+      shared_ledger_initialized: false,
+    };
+  }
+  const config = await readRuntimeConfig(configPath);
+  const configValid = config.production_explore?.enabled === true
+    && config.storage?.shared_postgres?.mode === "runtime_store";
+  if (!configValid) {
+    return {
+      ready: false,
+      config_valid: false,
+      shared_ledger_initialized: false,
+      config_path: configPath,
+    };
+  }
+  const ledgerChecks = await sharedPostgresLedgerDoctorChecks(config);
+  const ledgerInitialized = ledgerChecks.some((check) =>
+    check.name === "shared-postgres-ledger:migration" && check.ok);
+  return {
+    ready: ledgerInitialized,
+    config_valid: true,
+    shared_ledger_initialized: ledgerInitialized,
+    config_path: configPath,
+  };
+}
+
+function formatProductionActivationNextSteps(input: {
+  boundaryName: string;
+  activeBeforeActivation: string[];
+  readiness: ProductionActivationReadiness | undefined;
+  color: boolean;
+}): string {
+  const theme = terminalTheme(input.color);
+  if (input.readiness?.ready) {
+    const priorAuthority = input.activeBeforeActivation.length > 0;
+    return [
+      theme.success("NEXT - PRODUCTION ACCESS UPDATED"),
+      theme.success(`Boundary "${input.boundaryName}" is in the active production Explore set.`),
+      "A running production HTTP server reloads the active set on its next tool call; no restart is required.",
+      priorAuthority
+        ? "Production configuration and shared accounting are already ready; do not rerun config initialization or the ledger migration for this activation."
+        : "Production HTTP configuration and the shared accounting ledger are ready. If the server is not running, run doctor --preflight before starting it.",
+      "Guide: docs/production-scoped-explore-http.md",
+      "",
+    ].join("\n");
+  }
+  return [
+    theme.warning("NEXT - PRODUCTION RUNTIME SETUP"),
+    "Activation succeeded, but production runtime readiness was not fully verified.",
+    "Next: configure the secured production HTTP runtime, initialize its shared accounting ledger, and run doctor.",
+    "Guide: docs/production-scoped-explore-http.md",
+    "",
+  ].join("\n");
 }
 
 
