@@ -52,11 +52,39 @@ function ledgerReadSourceLine(source: LedgerReadSource): string {
 }
 
 
-function emptyLedgerMessage(label: string, source: LedgerReadSource): string {
-  const selection = source.kind === "shared_postgres"
+function alternateLedgerSelection(source: LedgerReadSource): string {
+  return source.kind === "shared_postgres"
     ? "Use a development config without storage.shared_postgres.mode=runtime_store plus --store <path> to inspect local SQLite."
     : "Use --config <production-config> to inspect its configured shared PostgreSQL runtime store.";
-  return `No ${label} matched this view in the consulted ledger.\n${selection}\n`;
+}
+
+
+function emptyLedgerMessage(label: string, source: LedgerReadSource): string {
+  return `No ${label} matched this view in the consulted ledger.\n${alternateLedgerSelection(source)}\n`;
+}
+
+
+function emptyAuditListMessage(
+  kind: "evidence" | "query-audit",
+  args: string[],
+  source: LedgerReadSource,
+): string {
+  const search = optionalArg(args, "--search");
+  if (!search) {
+    return emptyLedgerMessage(
+      kind === "evidence" ? "evidence bundles" : "query audit records",
+      source,
+    );
+  }
+  const label = kind === "evidence" ? "evidence bundles" : "query audit records";
+  return [
+    `No ${label} matched search ${JSON.stringify(search)} in the consulted ledger.`,
+    `Searched fields: ${auditBrowserSearchScope(kind)}.`,
+    "Original question text is not stored, so it was not searched.",
+    "Other command-line filters also apply; adjust them and rerun the command if needed.",
+    alternateLedgerSelection(source),
+    "",
+  ].join("\n");
 }
 
 
@@ -188,7 +216,7 @@ async function readQueryAuditList(
 }
 
 
-function writeEvidenceList(result: EvidenceListResult, json: boolean): void {
+function writeEvidenceList(result: EvidenceListResult, json: boolean, args: string[]): void {
   if (json) {
     process.stdout.write(`${JSON.stringify({ ledger_source: result.ledgerSource, notices: result.notes, evidence: result.rows }, null, 2)}\n`);
     return;
@@ -197,7 +225,7 @@ function writeEvidenceList(result: EvidenceListResult, json: boolean): void {
   process.stdout.write(ledgerReadSourceLine(result.ledgerSource));
   process.stdout.write(auditDescriptionNotice(color));
   writeLedgerNotices(result.notes, color);
-  if (result.rows.length === 0) process.stdout.write(emptyLedgerMessage("evidence bundles", result.ledgerSource));
+  if (result.rows.length === 0) process.stdout.write(emptyAuditListMessage("evidence", args, result.ledgerSource));
   else for (const bundle of result.rows) process.stdout.write(formatEvidenceSummary(bundle, color));
 }
 
@@ -207,6 +235,7 @@ function writeQueryAuditList(
   json: boolean,
   details: boolean,
   storeSuffix: string,
+  args: string[],
 ): void {
   if (json) {
     process.stdout.write(`${JSON.stringify({ ledger_source: result.ledgerSource, notices: result.notes, query_audit: result.rows }, null, 2)}\n`);
@@ -216,7 +245,7 @@ function writeQueryAuditList(
   process.stdout.write(ledgerReadSourceLine(result.ledgerSource));
   process.stdout.write(auditDescriptionNotice(color));
   writeLedgerNotices(result.notes, color);
-  if (result.rows.length === 0) process.stdout.write(emptyLedgerMessage("query audit records", result.ledgerSource));
+  if (result.rows.length === 0) process.stdout.write(emptyAuditListMessage("query-audit", args, result.ledgerSource));
   else for (const row of result.rows) process.stdout.write(formatQueryAuditSummary(row, details, storeSuffix, color));
 }
 
@@ -1634,7 +1663,7 @@ export async function evidenceList(args: string[]): Promise<number> {
   if (args.includes("--follow")) return followEvidence(args);
   if (args.includes("--interactive")) return browseEvidence(args);
   const result = await readEvidenceList(args);
-  writeEvidenceList(result, args.includes("--json"));
+  writeEvidenceList(result, args.includes("--json"), args);
   return 0;
 }
 
@@ -1705,7 +1734,7 @@ export async function queryAuditList(args: string[]): Promise<number> {
   if (args.includes("--follow")) return followQueryAudit(args);
   if (args.includes("--interactive")) return browseQueryAudit(args);
   const result = await readQueryAuditList(args);
-  writeQueryAuditList(result, args.includes("--json"), showDetails(args), storeOptionSuffix(args));
+  writeQueryAuditList(result, args.includes("--json"), showDetails(args), storeOptionSuffix(args), args);
   return 0;
 }
 

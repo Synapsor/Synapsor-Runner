@@ -261,6 +261,32 @@ describe("proposal approval freshness reuse", () => {
       write.mockClear();
       await evidenceList(["--store", storePath, "--table", "public.missing"]);
       expect(write.mock.calls.flat().join("")).toContain("No evidence bundles matched this view in the consulted ledger");
+      write.mockClear();
+      await evidenceList(["--store", storePath, "--search", "zzzznomatch"]);
+      const emptyEvidenceSearch = write.mock.calls.flat().join("");
+      expect(emptyEvidenceSearch).toContain('No evidence bundles matched search "zzzznomatch"');
+      expect(emptyEvidenceSearch).toContain("Searched fields: persisted plan fields");
+      expect(emptyEvidenceSearch).toContain("evidence ID");
+      expect(emptyEvidenceSearch).toContain("Original question text is not stored");
+      write.mockClear();
+      await queryAuditList(["--store", storePath, "--search", "zzzznomatch"]);
+      const emptyAuditSearch = write.mock.calls.flat().join("");
+      expect(emptyAuditSearch).toContain('No query audit records matched search "zzzznomatch"');
+      expect(emptyAuditSearch).toContain("Searched fields: persisted plan fields");
+      expect(emptyAuditSearch).toContain("audit/evidence IDs");
+      expect(emptyAuditSearch).toContain("Original question text is not stored");
+      write.mockClear();
+      await evidenceList(["--store", storePath, "--search", "zzzznomatch", "--json"]);
+      expect(JSON.parse(write.mock.calls.flat().join(""))).toMatchObject({
+        evidence: [],
+        notices: [],
+      });
+      write.mockClear();
+      await queryAuditList(["--store", storePath, "--search", "zzzznomatch", "--json"]);
+      expect(JSON.parse(write.mock.calls.flat().join(""))).toMatchObject({
+        query_audit: [],
+        notices: [],
+      });
     } finally {
       write.mockRestore();
       await fs.rm(tempDir, { recursive: true, force: true });

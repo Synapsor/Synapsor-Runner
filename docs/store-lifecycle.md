@@ -170,6 +170,12 @@ reconstructed from persisted reviewed-plan metadata, not from a
 stored model conversation. Successful shared-store reads are quiet by default;
 use `--debug` only when the structured snapshot event is needed.
 
+The non-interactive `evidence list --search <text>` and
+`query-audit list --search <text>` commands use the same search definition. A
+text-mode empty result echoes the term, names the searched persisted fields, and
+states that original question text is not stored. JSON output remains an empty
+typed result set plus any existing ledger notices.
+
 Workbench Query history presents the same reconstructed descriptions, filters,
 and paged shared-ledger records with Newer records and Older records controls.
 Use the CLI browser for a long audit investigation and `--json` for automation.

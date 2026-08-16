@@ -129,7 +129,9 @@
   filters, and a dedicated terminal screen keeps list/search/detail transitions
   from appending duplicate output to scrollback. Browser footers, prompts, help,
   and empty results now distinguish free-text persisted-plan/identifier search
-  from structured scope/resource/outcome/time filters.
+  from structured scope/resource/outcome/time filters. Non-interactive list
+  searches now use the same term, searched-field, and question-retention
+  explanation when their text view is empty; automation JSON remains stable.
 - Attributes pre-execution Explore refusals to their boundary-validated
   resource and records the attempted reviewed field and operation as metadata,
   so CLI and Workbench resource filters can find refusals without persisting

@@ -392,6 +392,11 @@ description reconstructed from the reviewed plan rather than pretending to
 quote the original request. `--follow --json` emits newline-delimited JSON for
 a live metadata feed.
 
+Non-interactive `evidence list --search <text>` and
+`query-audit list --search <text>` print the same term, searched-field scope,
+and original-question retention warning when no text result matches. Their JSON
+shape remains unchanged for automation.
+
 Pre-execution refusals are query-audit records, not evidence bundles. When a
 refusal identifies a resource, field, and operation already present in the
 activated boundary metadata, Runner stores those identifiers as
