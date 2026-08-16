@@ -1124,7 +1124,7 @@ causal timeline; --json emits the versioned synapsor.lifecycle-view.v1 document.
 `,
     evidence: `Usage:
 	  ${cmd} evidence list [--tenant acme] [--principal analyst@example.org] [--resource public.orders]
-	    [--boundary sha256:...] [--outcome ok] [--since 24h|<ISO>] [--to <ISO>] [--limit 20] [--json]
+	    [--boundary sha256:...] [--outcome ok] [--search <text>] [--since 24h|<ISO>] [--to <ISO>] [--limit 20] [--json]
 	  ${cmd} evidence browse [the same filters]
 	  ${cmd} evidence list --follow [the same filters] [--interval-ms 2000] [--json]
 	  ${cmd} evidence show ev_...
@@ -1137,11 +1137,14 @@ attempts have query-audit records but no evidence bundle; use query-audit list.
 Tenant and principal filters accept a plaintext identity or an existing keyed:<HMAC>
 fingerprint. Plaintext values are HMACed locally and are never printed or persisted.
 With a production runtime_store config, these commands read the shared PostgreSQL
-control ledger read-only. --follow emits NDJSON when combined with --json.
+control ledger read-only. browse opens a paged audit session with live search and
+filters, then separates compact, authority, reconstructed-query, and raw-plan
+views. --follow emits NDJSON when combined with --json. Routine shared-store
+reads are quiet; add --debug for the operational snapshot event.
 `,
     "query-audit": `Usage:
 	  ${cmd} query-audit list [--tenant acme] [--principal analyst@example.org] [--resource public.orders]
-	    [--boundary sha256:...] [--outcome ok|refused|failed] [--since 24h|<ISO>] [--to <ISO>]
+	    [--boundary sha256:...] [--outcome ok|refused|failed] [--search <text>] [--since 24h|<ISO>] [--to <ISO>]
 	    [--evidence ev_...] [--source app_postgres] [--limit 20] [--json]
 	  ${cmd} query-audit browse [the same filters]
 	  ${cmd} query-audit list --follow [the same filters] [--interval-ms 2000] [--json]

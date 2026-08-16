@@ -111,6 +111,7 @@ export async function verifyProductionExploreWorkbenchLedger(input) {
       capability: "app.explore_data",
       boundary: detailResponse.payload.audit.boundary_digest,
       outcome: "ok",
+      search: audit.resource,
       since,
       limit: "5",
     });
@@ -118,6 +119,29 @@ export async function verifyProductionExploreWorkbenchLedger(input) {
     assert(filteredResponse.status === 200
       && filteredResponse.payload.durable?.some((item) => item.audit_id === audit.audit_id),
     `${input.engine} Workbench shared-ledger filters did not preserve the matching query audit.`, filteredResponse);
+
+    const firstPage = await jsonRequest(
+      server,
+      `/api/explore/history?resource=${encodeURIComponent(audit.resource)}&limit=1&offset=0`,
+    );
+    assert(firstPage.status === 200
+      && firstPage.payload.durable?.length === 1
+      && firstPage.payload.durable_offset === 0
+      && firstPage.payload.has_newer_records === false
+      && typeof firstPage.payload.durable[0]?.description === "string",
+    `${input.engine} Workbench did not return a compact first shared-ledger page.`, firstPage);
+    if (firstPage.payload.has_older_records) {
+      const secondPage = await jsonRequest(
+        server,
+        `/api/explore/history?resource=${encodeURIComponent(audit.resource)}&limit=1&offset=1`,
+      );
+      assert(secondPage.status === 200
+        && secondPage.payload.durable?.length === 1
+        && secondPage.payload.durable_offset === 1
+        && secondPage.payload.has_newer_records === true
+        && secondPage.payload.durable[0]?.audit_id !== firstPage.payload.durable[0]?.audit_id,
+      `${input.engine} Workbench older-record paging repeated or lost the next audit.`, secondPage);
+    }
 
     const serialized = JSON.stringify({
       history: historyResponse.payload,
@@ -145,6 +169,7 @@ export async function verifyProductionExploreWorkbenchLedger(input) {
       durable_query_audits: historyResponse.payload.durable.length,
       evidence_bundle_id: audit.evidence_bundle_id,
       filtered: true,
+      paged: true,
       unreachable_store_names_env_only: true,
       read_only: true,
     };

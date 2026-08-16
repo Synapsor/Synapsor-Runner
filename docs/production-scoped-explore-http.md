@@ -352,6 +352,8 @@ transparently and prints the ledger source and schema it consulted:
 ```bash
 synapsor-runner evidence list \
   --config ./synapsor-production-explore/synapsor.runner.json
+synapsor-runner evidence browse --since 24h \
+  --config ./synapsor-production-explore/synapsor.runner.json
 synapsor-runner evidence show <evidence-id> --details \
   --config ./synapsor-production-explore/synapsor.runner.json
 synapsor-runner query-audit list --principal analyst@example.org \
@@ -364,11 +366,25 @@ synapsor-runner query-audit show <audit-id> --details \
 ```
 
 The list filters accept plaintext or keyed tenant/principal identity,
-resource, boundary digest, capability, outcome, and time range against both
-local SQLite and shared PostgreSQL. `--since` accepts an ISO timestamp or a
-duration such as `24h`; `--limit` defaults to 20 and is capped at 200. `--json`
-is suitable for automation, `browse` is the interactive terminal view, and
-`--follow --json` emits newline-delimited JSON for a live metadata feed.
+resource, boundary digest, capability, outcome, metadata search, and time range
+against both local SQLite and shared PostgreSQL. `--since` accepts an ISO
+timestamp or a duration such as `24h`; `--limit` defaults to 20 and is capped at
+200. `--search` searches only stored, redacted audit metadata and normalized
+plan identifiers. `--json` is suitable for automation. `evidence browse` is a
+stateful terminal audit session with ten records per page by default,
+next/back/page controls, live filters, timestamp jumps, and metadata search.
+Selecting a record opens a compact summary; authority details, reconstructed
+query, and normalized JSON plan are expanded separately. The original model or
+user wording is not persisted, so lists show a deterministic plain-English
+description reconstructed from the reviewed plan rather than pretending to
+quote the original request. `--follow --json` emits newline-delimited JSON for
+a live metadata feed.
+
+The Workbench Query history view uses the same shared-ledger filters and
+plan-derived descriptions. Its Newer records and Older records controls page
+through the production audit ledger without loading or rendering the complete
+history. Workbench remains a preview authoring surface; the CLI is the preferred
+operator surface for exhaustive audit review and machine-readable exports.
 Plaintext scope filters are HMACed locally and are never echoed or persisted.
 Existing `keyed:<HMAC>` values remain accepted. Records created before keyed
 principal metadata was introduced cannot be attributed retroactively because
@@ -399,6 +415,11 @@ advisory lock. They never print the control URL, credentials, raw tenant or
 principal claims, source rows, result values, SQL, or SQL parameters. If the
 control store is unavailable, the error names only the configured environment
 variable and schema and never falls back to unrelated local data.
+
+Successful shared-ledger hydration is intentionally quiet because the human
+`Ledger:` line already identifies the consulted store. Add `--debug` (or set
+`SYNAPSOR_VERBOSE=1`) when the structured `shared_runtime_store_read` event is
+needed for diagnostics; failures are always logged.
 
 Internally, Runner materializes that bounded snapshot into a private temporary
 SQLite view and runs the same typed ledger readers and redaction rules used by

@@ -984,6 +984,21 @@ export function verifyProductionExploreOperatorLedger(input) {
   if (!evidenceFiltered.some((item) => item.evidence_bundle_id === selectedEvidence.evidence_bundle_id)) {
     throw new Error(`Production evidence CLI filters did not retain the matching shared-store record.\nSelected: ${JSON.stringify(selectedEvidence)}\nFiltered: ${evidenceFilteredResult.result.stdout}`);
   }
+  const evidenceSearchResult = readJson([
+    "evidence", "list", ...configArgs, "--json",
+    "--search", selectedEvidence.source_table,
+    "--limit", "5",
+  ]);
+  if (!(evidenceSearchResult.payload.evidence ?? []).some((item) => item.source_table === selectedEvidence.source_table)) {
+    throw new Error(`Production evidence metadata search did not retain the matching record: ${evidenceSearchResult.result.stdout}`);
+  }
+  const evidenceTextList = invoke(["evidence", "list", ...configArgs, "--limit", "2"]);
+  const evidenceTextOutput = `${evidenceTextList.stdout ?? ""}\n${evidenceTextList.stderr ?? ""}`;
+  if (evidenceTextOutput.includes('"event":"shared_runtime_store_read"')
+    || !evidenceTextList.stdout.includes(`Ledger: shared PostgreSQL schema ${input.schema}`)
+    || !/^\s*(?:OK|EMPTY|FULLY SUPPRESSED|INCOMPLETE COMPARISON)\s+.+\.$/m.test(evidenceTextList.stdout)) {
+    throw new Error(`Production evidence text listing was noisy or lacked a readable reviewed-plan description:\n${evidenceTextOutput}`);
+  }
   const evidenceShow = invoke([
     "evidence", "show", selectedEvidence.evidence_bundle_id, ...configArgs, "--details",
   ]);
@@ -1056,6 +1071,8 @@ export function verifyProductionExploreOperatorLedger(input) {
     evidenceList.result.stdout,
     identityList.result.stdout,
     evidenceFilteredResult.result.stdout,
+    evidenceSearchResult.result.stdout,
+    evidenceTextOutput,
     evidenceShow.stdout,
     auditList.result.stdout,
     auditShow.stdout,
@@ -1074,7 +1091,9 @@ export function verifyProductionExploreOperatorLedger(input) {
     ledger_source: evidenceList.payload.ledger_source,
     evidence_records: evidence.length,
     query_audit_records: audits.length,
-    filters_verified: ["tenant", "principal", "resource", "boundary", "capability", "outcome", "since", "limit"],
+    filters_verified: ["tenant", "principal", "resource", "boundary", "capability", "outcome", "search", "since", "limit"],
+    readable_text_listing: true,
+    routine_read_log_quiet: true,
     refusal_records: refusedRows.length,
     command_errors_preserved: true,
     missing_hmac_filter_failed_closed: Boolean(input.invoke_without_hmac),

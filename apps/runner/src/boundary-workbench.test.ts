@@ -585,6 +585,9 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("Load query history");
     expect(html).toContain('id="ask-history-principal"');
     expect(html).toContain('id="ask-history-resource"');
+    expect(html).toContain('id="ask-history-search"');
+    expect(html).toContain('id="ask-history-newer"');
+    expect(html).toContain('id="ask-history-older"');
     expect(html).toContain('id="ask-history-boundary"');
     expect(html).toContain('id="ask-history-outcome"');
     expect(html).toContain('id="ask-history-limit"');
@@ -593,6 +596,12 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain('getJson("/api/explore/evidence?evidence_id="');
     expect(html).toContain("Recent references");
     expect(html).toContain("Durable query ledger");
+    expect(html).toContain("Reviewed query");
+    expect(html).toContain("function historyStatusClass(value)");
+    expect(html).toContain('return "history-status-warning"');
+    expect(html).toContain('return "history-status-error"');
+    expect(html).toContain("historyStatusClass(audit.status)");
+    expect(html).toContain("historyStatusClass(evidencePayload.outcome)");
     expect(html).toContain("Reconstructed reviewed query");
     expect(html).toContain('class="history-detail-grid"');
     expect(html).toContain('renderSyntaxCode("ask-history-sql",reconstructed.statement,"SQL")');

@@ -5,6 +5,99 @@ export type ReconstructedExploreAuditQuery = {
   caveats: string[];
 };
 
+
+/**
+ * Describes a normalized plan without recovering literals or claiming that the
+ * original model/user wording was persisted.
+ */
+export function describeExploreAuditPlan(normalizedPlan: unknown): string | undefined {
+  const plan = record(normalizedPlan);
+  const kind = text(plan.kind);
+  const resourceId = identifier(plan.resource);
+  if (!resourceId || (kind !== "rows" && kind !== "aggregate")) return undefined;
+  const resource = humanWords(resourceId.split(".").pop() ?? resourceId);
+
+  if (kind === "rows") {
+    const fields = strings(plan.select).map(humanWords);
+    return sentence(`Rows from ${resource}${fields.length ? ` returning ${joinWords(fields)}` : ""}${auditFilterSuffix(plan)}`);
+  }
+
+  const measures = records(plan.measures).map(describeMeasure).filter(Boolean);
+  const dimensions = records(plan.dimensions).map(describeDimension).filter(Boolean);
+  const timeBucket = record(plan.time_bucket);
+  const timeField = identifier(timeBucket.field);
+  if (timeField) dimensions.push(`${humanWords(identifier(timeBucket.bucket)) || "time"} ${humanWords(timeField)}`);
+
+  const onlyCount = measures.length === 1 && measures[0] === "record count";
+  const subject = onlyCount
+    ? resource
+    : `${measures.length ? joinWords(measures) : "Reviewed aggregate"} for ${resource}`;
+  const grouping = dimensions.length ? ` grouped by ${joinWords(dimensions)}` : "";
+  const comparison = Object.keys(record(plan.comparison)).length ? " comparing two reviewed periods" : "";
+  return sentence(`${subject}${grouping}${comparison}${auditFilterSuffix(plan)}`);
+}
+
+
+function describeMeasure(value: AuditRecord): string {
+  const derived = identifier(value.derived_measure);
+  if (derived) return `reviewed ${humanWords(derived)}`;
+  const operation = identifier(value.function).toLowerCase() || "measure";
+  const field = humanWords(identifier(value.field));
+  if (operation === "count") return "record count";
+  if (operation === "count_distinct") return `unique ${field || "records"}`;
+  const prefix: Record<string, string> = {
+    sum: "total",
+    avg: "average",
+    stddev_samp: "sample standard deviation of",
+    stddev_pop: "population standard deviation of",
+    var_samp: "sample variance of",
+    var_pop: "population variance of",
+    null_count: "missing values in",
+    non_null_count: "present values in",
+    completion_rate: "completion rate for",
+  };
+  return `${prefix[operation] ?? humanWords(operation)}${field ? ` ${field}` : ""}`.trim();
+}
+
+
+function describeDimension(value: AuditRecord): string {
+  const field = identifier(value.field);
+  if (field) return humanWords(field);
+  if (typeof value.numeric_band === "string") return humanWords(value.numeric_band);
+  const band = record(value.numeric_band);
+  const bandField = identifier(band.field);
+  return bandField ? `${humanWords(bandField)} bands` : "";
+}
+
+
+function auditFilterSuffix(plan: AuditRecord): string {
+  const filterCount = records(plan.where).length;
+  const hasWindow = Object.keys(record(plan.time_window)).length > 0;
+  const parts = [
+    ...(filterCount ? [`${filterCount} reviewed ${filterCount === 1 ? "filter" : "filters"}`] : []),
+    ...(hasWindow ? ["one reviewed time window"] : []),
+  ];
+  return parts.length ? ` with ${joinWords(parts)}` : "";
+}
+
+
+function humanWords(value: string | undefined): string {
+  return (value ?? "").replace(/[_.-]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+
+function joinWords(values: string[]): string {
+  if (values.length < 2) return values[0] ?? "";
+  if (values.length === 2) return `${values[0]} and ${values[1]}`;
+  return `${values.slice(0, -1).join(", ")}, and ${values.at(-1)}`;
+}
+
+
+function sentence(value: string): string {
+  const normalized = value.trim();
+  return normalized ? `${normalized[0]!.toUpperCase()}${normalized.slice(1)}.` : normalized;
+}
+
 type ReconstructInput = {
   normalizedPlan: unknown;
   scopeApplication?: unknown;

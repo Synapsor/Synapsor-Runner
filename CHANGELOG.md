@@ -117,6 +117,12 @@
   `evidence` remains released-result proof. Adds interactive browsing, bounded
   JSON listing, live NDJSON follow mode, complete evidence detail, and distinct
   command/not-found errors that are never mislabeled as control-store failures.
+  Browser sessions now page, search, and change filters in place, lead with a
+  compact plain-English description reconstructed from the reviewed plan, and
+  expand authority facts, reconstructed SQL, or raw normalized metadata only on
+  request. Workbench history pages the same shared records, and routine
+  successful shared-ledger reads no longer emit a structured log line unless
+  operator diagnostics are enabled.
 - Makes plaintext production audit identity filters fail closed when their
   configured HMAC key is unavailable, distinguishes legacy unattributable
   principal records from a verified empty match, and renders grouped,

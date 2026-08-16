@@ -571,6 +571,8 @@ export type EvidenceSearchFilters = LocalListOptions & {
   status?: string;
   outcome?: "ok" | "refused" | "failed";
   boundary?: string;
+  search?: string;
+  offset?: number;
 };
 
 export type QueryAuditSearchFilters = LocalListOptions & {
@@ -590,6 +592,8 @@ export type QueryAuditSearchFilters = LocalListOptions & {
   status?: string;
   outcome?: "ok" | "refused" | "failed";
   boundary?: string;
+  search?: string;
+  offset?: number;
 };
 
 export type ReceiptSearchFilters = LocalListOptions & {

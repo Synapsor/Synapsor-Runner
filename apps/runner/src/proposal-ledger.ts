@@ -20,11 +20,11 @@ import { confirmDangerousAction, localStorePath, openLocalStore, operatorIdentit
 import { activitySearchAllowedOptions, eventFiltersFromArgs, eventTailAllowedOptions, eventWebhookAllowedOptions, evidenceFiltersFromActivityArgs, evidenceFiltersFromArgs, evidenceListAllowedOptions, exportAllowedOptions, proposalFiltersFromActivityArgs, proposalFiltersFromArgs, proposalFiltersFromReplayArgs, proposalListAllowedOptions, queryAuditFiltersFromActivityArgs, queryAuditFiltersFromArgs, queryAuditListAllowedOptions, receiptFiltersFromActivityArgs, receiptFiltersFromArgs, receiptListAllowedOptions, replayExportAllowedOptions, replayListAllowedOptions, replayShowAllowedOptions, resolveReplayProposalId, showAllowedOptions } from "./ledger-options.js";
 import { resolveExploreLedgerFilters } from "./ledger-search.js";
 import { TrustedOperatorInvocation } from "./operator-authority.js";
-import { formatEvidenceDetail, formatEvidenceFirstLook, formatEvidenceMarkdown, formatEvidenceSummary, formatProposalDebug, formatProposalDetail, formatProposalEventDetail, formatProposalFirstLook, formatProposalSummary, formatQueryAuditDetail, formatQueryAuditFirstLook, formatQueryAuditSummary, formatReceiptDetail, formatReceiptFirstLook, formatReceiptSummary, formatReplayDebug, formatReplayDetail, formatReplayFirstLook, formatReplayMarkdown, formatReplaySummary } from "./proposal-formatting.js";
+import { formatEvidenceBrowserFacts, formatEvidenceBrowserPlan, formatEvidenceBrowserQuery, formatEvidenceBrowserRow, formatEvidenceBrowserSummary, formatEvidenceDetail, formatEvidenceFirstLook, formatEvidenceMarkdown, formatEvidenceSummary, formatProposalDebug, formatProposalDetail, formatProposalEventDetail, formatProposalFirstLook, formatProposalSummary, formatQueryAuditBrowserFacts, formatQueryAuditBrowserPlan, formatQueryAuditBrowserQuery, formatQueryAuditBrowserRow, formatQueryAuditBrowserSummary, formatQueryAuditDetail, formatQueryAuditFirstLook, formatQueryAuditSummary, formatReceiptDetail, formatReceiptFirstLook, formatReceiptSummary, formatReplayDebug, formatReplayDetail, formatReplayFirstLook, formatReplayMarkdown, formatReplaySummary } from "./proposal-formatting.js";
 import { sharedPostgresLedgerMirrorOptions } from "./shared-ledger-domain.js";
 import { argsWithRuntimeStoreBridge, assertLocalGovernanceMutationAllowed, assertNoRuntimeStoreForLocalMutation, maybeSharedPostgresRuntimeStoreRead, runtimeStoreBridgeRequired, sharedPostgresLedgerMirrorRequested, withoutSharedPostgresLedgerMirror, withSharedPostgresLedgerMirror, withSharedPostgresRuntimeStoreBridge } from "./store-shared.js";
 import { findProposalCapability } from "./writeback-execution.js";
-import { terminalSyntaxColorEnabled } from "./terminal-syntax.js";
+import { renderTerminalSectionHeading, renderTerminalStyledText, safeTerminalText, terminalSyntaxColorEnabled } from "./terminal-syntax.js";
 import { readTerminalTextWithEscape } from "./terminal-prompt.js";
 
 type LedgerReadSource =
@@ -54,7 +54,20 @@ function emptyLedgerMessage(label: string, source: LedgerReadSource): string {
   const selection = source.kind === "shared_postgres"
     ? "Use a development config without storage.shared_postgres.mode=runtime_store plus --store <path> to inspect local SQLite."
     : "Use --config <production-config> to inspect its configured shared PostgreSQL runtime store.";
-  return `No ${label} found in the consulted ledger.\n${selection}\n`;
+  return `No ${label} matched this view in the consulted ledger.\n${selection}\n`;
+}
+
+
+function writeLedgerNotices(notes: string[], color: boolean): void {
+  if (notes.length === 0) return;
+  process.stdout.write(`${renderTerminalSectionHeading("Audit notice", color)}\n`);
+  for (const note of notes) {
+    const sentences = safeTerminalText(note).split(/(?<=\.)\s+/);
+    sentences.forEach((sentence, index) => {
+      process.stdout.write(`  ${renderTerminalStyledText(index === 0 ? `! ${sentence}` : `  ${sentence}`, color, "warning")}\n`);
+    });
+  }
+  process.stdout.write("\n");
 }
 
 
@@ -92,18 +105,22 @@ function principalEmptyResultNotes(
 
 function evidenceFiltersWithoutPrincipal(filters: EvidenceSearchFilters): EvidenceSearchFilters {
   const { principal: _principal, principals: _principals, ...rest } = filters;
-  return { ...rest, limit: 200 };
+  return { ...rest, limit: 200, offset: 0 };
 }
 
 
 function queryAuditFiltersWithoutPrincipal(filters: QueryAuditSearchFilters): QueryAuditSearchFilters {
   const { principal: _principal, principals: _principals, ...rest } = filters;
-  return { ...rest, limit: 200 };
+  return { ...rest, limit: 200, offset: 0 };
 }
 
 
-async function readEvidenceList(args: string[]): Promise<EvidenceListResult> {
+async function readEvidenceList(
+  args: string[],
+  page: { limit?: number; offset?: number } = {},
+): Promise<EvidenceListResult> {
   const resolved = await resolveExploreLedgerFilters(args, evidenceFiltersFromArgs(args));
+  const filters = { ...resolved.filters, ...page };
   if (resolved.filters.outcome === "refused" || resolved.filters.outcome === "failed") {
     throw new Error(
       `Evidence bundles exist only for released results. Use ${cliCommandName()} query-audit list --outcome ${resolved.filters.outcome} to inspect ${resolved.filters.outcome} Explore attempts.`,
@@ -112,21 +129,21 @@ async function readEvidenceList(args: string[]): Promise<EvidenceListResult> {
   const bridged = await maybeSharedPostgresRuntimeStoreRead(
     args,
     "evidence list",
-    (bridgeStorePath) => readEvidenceList(argsWithRuntimeStoreBridge(args, bridgeStorePath)),
+    (bridgeStorePath) => readEvidenceList(argsWithRuntimeStoreBridge(args, bridgeStorePath), page),
   );
   if (bridged !== undefined) return bridged;
   const ledgerSource = await ledgerReadSource(args);
   const store = await openLocalStore(args);
   try {
-    const rows = store.listEvidenceBundles(resolved.filters);
-    const otherwiseMatching = optionalArg(args, "--principal") && rows.length === 0
-      ? store.listEvidenceBundles(evidenceFiltersWithoutPrincipal(resolved.filters))
+    const rows = store.listEvidenceBundles(filters);
+    const otherwiseMatching = (page.offset ?? 0) === 0 && optionalArg(args, "--principal") && rows.length === 0
+      ? store.listEvidenceBundles(evidenceFiltersWithoutPrincipal(filters))
       : [];
     return {
       ledgerSource,
       notes: [
         ...resolved.notes,
-        ...principalEmptyResultNotes(args, "evidence", rows, otherwiseMatching),
+        ...((page.offset ?? 0) === 0 ? principalEmptyResultNotes(args, "evidence", rows, otherwiseMatching) : []),
       ],
       rows,
     };
@@ -136,26 +153,30 @@ async function readEvidenceList(args: string[]): Promise<EvidenceListResult> {
 }
 
 
-async function readQueryAuditList(args: string[]): Promise<QueryAuditListResult> {
+async function readQueryAuditList(
+  args: string[],
+  page: { limit?: number; offset?: number } = {},
+): Promise<QueryAuditListResult> {
   const resolved = await resolveExploreLedgerFilters(args, queryAuditFiltersFromArgs(args));
+  const filters = { ...resolved.filters, ...page };
   const bridged = await maybeSharedPostgresRuntimeStoreRead(
     args,
     "query-audit list",
-    (bridgeStorePath) => readQueryAuditList(argsWithRuntimeStoreBridge(args, bridgeStorePath)),
+    (bridgeStorePath) => readQueryAuditList(argsWithRuntimeStoreBridge(args, bridgeStorePath), page),
   );
   if (bridged !== undefined) return bridged;
   const ledgerSource = await ledgerReadSource(args);
   const store = await openLocalStore(args);
   try {
-    const rows = store.listQueryAudit(resolved.filters);
-    const otherwiseMatching = optionalArg(args, "--principal") && rows.length === 0
-      ? store.listQueryAudit(queryAuditFiltersWithoutPrincipal(resolved.filters))
+    const rows = store.listQueryAudit(filters);
+    const otherwiseMatching = (page.offset ?? 0) === 0 && optionalArg(args, "--principal") && rows.length === 0
+      ? store.listQueryAudit(queryAuditFiltersWithoutPrincipal(filters))
       : [];
     return {
       ledgerSource,
       notes: [
         ...resolved.notes,
-        ...principalEmptyResultNotes(args, "query-audit", rows, otherwiseMatching),
+        ...((page.offset ?? 0) === 0 ? principalEmptyResultNotes(args, "query-audit", rows, otherwiseMatching) : []),
       ],
       rows,
     };
@@ -170,10 +191,12 @@ function writeEvidenceList(result: EvidenceListResult, json: boolean): void {
     process.stdout.write(`${JSON.stringify({ ledger_source: result.ledgerSource, notices: result.notes, evidence: result.rows }, null, 2)}\n`);
     return;
   }
+  const color = terminalSyntaxColorEnabled();
   process.stdout.write(ledgerReadSourceLine(result.ledgerSource));
-  for (const note of result.notes) process.stdout.write(`Note: ${note}\n`);
+  process.stdout.write(auditDescriptionNotice(color));
+  writeLedgerNotices(result.notes, color);
   if (result.rows.length === 0) process.stdout.write(emptyLedgerMessage("evidence bundles", result.ledgerSource));
-  else for (const bundle of result.rows) process.stdout.write(formatEvidenceSummary(bundle));
+  else for (const bundle of result.rows) process.stdout.write(formatEvidenceSummary(bundle, color));
 }
 
 
@@ -187,10 +210,12 @@ function writeQueryAuditList(
     process.stdout.write(`${JSON.stringify({ ledger_source: result.ledgerSource, notices: result.notes, query_audit: result.rows }, null, 2)}\n`);
     return;
   }
+  const color = terminalSyntaxColorEnabled();
   process.stdout.write(ledgerReadSourceLine(result.ledgerSource));
-  for (const note of result.notes) process.stdout.write(`Note: ${note}\n`);
+  process.stdout.write(auditDescriptionNotice(color));
+  writeLedgerNotices(result.notes, color);
   if (result.rows.length === 0) process.stdout.write(emptyLedgerMessage("query audit records", result.ledgerSource));
-  else for (const row of result.rows) process.stdout.write(formatQueryAuditSummary(row, details, storeSuffix));
+  else for (const row of result.rows) process.stdout.write(formatQueryAuditSummary(row, details, storeSuffix, color));
 }
 
 
@@ -213,6 +238,7 @@ async function followEvidence(args: string[]): Promise<number> {
     const result = await readEvidenceList(readArgs);
     if (first && !args.includes("--json")) {
       process.stdout.write(ledgerReadSourceLine(result.ledgerSource));
+      process.stdout.write(auditDescriptionNotice(terminalSyntaxColorEnabled()));
       for (const note of result.notes) process.stdout.write(`Note: ${note}\n`);
       process.stdout.write(`Following released Explore evidence every ${intervalMs} ms. Press Ctrl+C to stop.\n`);
     }
@@ -221,7 +247,7 @@ async function followEvidence(args: string[]): Promise<number> {
       seen.add(row.evidence_bundle_id);
       if (args.includes("--json")) {
         process.stdout.write(`${JSON.stringify({ ledger_source: result.ledgerSource, evidence: row })}\n`);
-      } else process.stdout.write(formatEvidenceSummary(row));
+      } else process.stdout.write(formatEvidenceSummary(row, terminalSyntaxColorEnabled()));
     }
     first = false;
     await waitFor(intervalMs);
@@ -238,6 +264,7 @@ async function followQueryAudit(args: string[]): Promise<number> {
     const result = await readQueryAuditList(readArgs);
     if (first && !args.includes("--json")) {
       process.stdout.write(ledgerReadSourceLine(result.ledgerSource));
+      process.stdout.write(auditDescriptionNotice(terminalSyntaxColorEnabled()));
       for (const note of result.notes) process.stdout.write(`Note: ${note}\n`);
       process.stdout.write(`Following Explore query audit every ${intervalMs} ms. Press Ctrl+C to stop.\n`);
     }
@@ -250,7 +277,7 @@ async function followQueryAudit(args: string[]): Promise<number> {
       seen.add(auditId);
       if (args.includes("--json")) {
         process.stdout.write(`${JSON.stringify({ ledger_source: result.ledgerSource, query_audit: row })}\n`);
-      } else process.stdout.write(formatQueryAuditSummary(row, showDetails(args), storeOptionSuffix(args)));
+      } else process.stdout.write(formatQueryAuditSummary(row, showDetails(args), storeOptionSuffix(args), terminalSyntaxColorEnabled()));
     }
     first = false;
     await waitFor(intervalMs);
@@ -258,73 +285,432 @@ async function followQueryAudit(args: string[]): Promise<number> {
 }
 
 
-async function browseEvidence(result: EvidenceListResult): Promise<number> {
+async function browseEvidence(args: string[]): Promise<number> {
   assertInteractiveTerminal("evidence browse");
+  const bridged = await maybeSharedPostgresRuntimeStoreRead(
+    args,
+    "evidence browse",
+    (bridgeStorePath) => browseEvidence(argsWithRuntimeStoreBridge(args, bridgeStorePath)),
+  );
+  if (bridged !== undefined) return bridged;
+
+  const color = terminalSyntaxColorEnabled();
+  const explicitLimit = optionalArg(args, "--limit");
+  let pageSize = explicitLimit ? Math.min(limitFromArgs(args), 50) : 10;
+  let pageNumber = 1;
+  let filterArgs = withoutCliOptions(args, ["--interactive", "--limit"]);
+  let result = await readEvidenceList(filterArgs, { limit: pageSize + 1, offset: 0 });
   process.stdout.write(ledgerReadSourceLine(result.ledgerSource));
-  for (const note of result.notes) process.stdout.write(`Note: ${note}\n`);
-  if (result.rows.length === 0) {
-    process.stdout.write(emptyLedgerMessage("evidence bundles", result.ledgerSource));
-    return 0;
-  }
-  process.stdout.write("\nEVIDENCE BROWSER\n");
-  result.rows.forEach((row, index) => {
-    const outcome = stringField(row.payload, "outcome") ?? "recorded";
-    if (index > 0) process.stdout.write(`  ${"-".repeat(72)}\n`);
-    process.stdout.write(`  ${index + 1}. ${row.created_at}  ${outcome}  ${row.source_table ?? "unknown resource"}\n      ${row.evidence_bundle_id}\n`);
-  });
+  process.stdout.write(auditDescriptionNotice(color));
+
   while (true) {
+    const visible = result.rows.slice(0, pageSize);
+    const hasNext = result.rows.length > pageSize;
+    process.stdout.write(`\n${renderTerminalSectionHeading("Evidence browser", color)}\n`);
+    process.stdout.write(`${renderTerminalStyledText(`Page ${pageNumber} - ${visible.length} record${visible.length === 1 ? "" : "s"}${hasNext ? " - older records available" : ""}`, color, "muted")}\n`);
+    process.stdout.write(`${renderTerminalStyledText(evidenceBrowserFilterSummary(filterArgs), color, "muted")}\n\n`);
+    writeLedgerNotices(result.notes, color);
+    if (visible.length === 0) {
+      process.stdout.write(`${renderTerminalStyledText("No released-result evidence matches the current filters.", color, "warning")}\n`);
+    } else {
+      for (let index = 0; index < visible.length; index += 1) {
+        process.stdout.write(formatEvidenceBrowserRow(visible[index]!, index + 1, color));
+        if (index < visible.length - 1) process.stdout.write(auditBrowserSeparator(color));
+      }
+    }
+    process.stdout.write(`${renderTerminalStyledText("N next  B back  /text search  F filters  ? help  Q quit", color, "identifier")}\n`);
     const answer = await readTerminalTextWithEscape(
-      "Evidence number or ID [Enter/Esc exits]: ",
+      `Open 1-${Math.max(visible.length, 1)} or enter a command: `,
       process.stdin,
       process.stdout,
     );
-    if (!answer) return 0;
-    const selected = /^\d+$/.test(answer)
-      ? result.rows[Number(answer) - 1]
-      : result.rows.find((row) => row.evidence_bundle_id === answer);
-    if (!selected) {
-      process.stdout.write(`No evidence in this filtered page matches ${answer}.\n`);
+    if (!answer || answer.toLowerCase() === "q") return 0;
+
+    const normalized = answer.trim();
+    const lower = normalized.toLowerCase();
+    if (lower === "?" || lower === "help" || lower === "f" || lower === "filters") {
+      process.stdout.write(`\n${evidenceBrowserHelp(color)}\n`);
       continue;
     }
-    process.stdout.write(`\n${formatEvidenceDetail(selected, terminalSyntaxColorEnabled())}\n`);
+    if (lower === "n" || lower === "next") {
+      if (!hasNext) {
+        process.stdout.write(`${renderTerminalStyledText("No older evidence matches the current filters.", color, "warning")}\n`);
+        continue;
+      }
+      pageNumber += 1;
+      result = await readEvidenceList(filterArgs, {
+        limit: pageSize + 1,
+        offset: (pageNumber - 1) * pageSize,
+      });
+      continue;
+    }
+    if (lower === "b" || lower === "back" || lower === "previous" || lower === "prev") {
+      if (pageNumber === 1) {
+        process.stdout.write(`${renderTerminalStyledText("Already on the newest page.", color, "warning")}\n`);
+        continue;
+      }
+      pageNumber -= 1;
+      result = await readEvidenceList(filterArgs, {
+        limit: pageSize + 1,
+        offset: (pageNumber - 1) * pageSize,
+      });
+      continue;
+    }
+
+    const selected = /^\d+$/.test(normalized)
+      ? visible[Number(normalized) - 1]
+      : visible.find((row) => row.evidence_bundle_id === normalized);
+    if (selected) {
+      const shouldQuit = await browseOneEvidence(selected, color);
+      if (shouldQuit) return 0;
+      continue;
+    }
+
+    const update = evidenceBrowserCommand(filterArgs, pageSize, normalized);
+    if (!update) {
+      process.stdout.write(`${renderTerminalStyledText(`Unknown browser command: ${normalized}. Enter ? for help.`, color, "danger")}\n`);
+      continue;
+    }
+    const previousArgs = filterArgs;
+    const previousPageSize = pageSize;
+    const previousPageNumber = pageNumber;
+    filterArgs = update.args;
+    pageSize = update.pageSize;
+    pageNumber = update.pageNumber;
+    try {
+      result = await readEvidenceList(filterArgs, {
+        limit: pageSize + 1,
+        offset: (pageNumber - 1) * pageSize,
+      });
+    } catch (error) {
+      filterArgs = previousArgs;
+      pageSize = previousPageSize;
+      pageNumber = previousPageNumber;
+      process.stdout.write(`${renderTerminalStyledText(safeErrorMessage(error), color, "danger")}\n`);
+      result = await readEvidenceList(filterArgs, {
+        limit: pageSize + 1,
+        offset: (pageNumber - 1) * pageSize,
+      });
+    }
   }
 }
 
 
-async function browseQueryAudit(result: QueryAuditListResult): Promise<number> {
-  assertInteractiveTerminal("query-audit browse");
-  process.stdout.write(ledgerReadSourceLine(result.ledgerSource));
-  for (const note of result.notes) process.stdout.write(`Note: ${note}\n`);
-  if (result.rows.length === 0) {
-    process.stdout.write(emptyLedgerMessage("query audit records", result.ledgerSource));
-    return 0;
-  }
-  process.stdout.write("\nQUERY AUDIT BROWSER\n");
-  result.rows.forEach((row, index) => {
-    const payload = isRecord(row.payload) ? row.payload : {};
-    if (index > 0) process.stdout.write(`  ${"-".repeat(72)}\n`);
-    process.stdout.write(
-      `  #${index + 1}  ${row.created_at}  ${stringField(payload, "status") ?? "recorded"}  ${row.table_name}\n      audit ${row.audit_id}${row.evidence_bundle_id ? `  evidence ${row.evidence_bundle_id}` : ""}\n`,
-    );
-  });
+async function browseOneEvidence(evidence: StoredEvidenceBundle, color: boolean): Promise<boolean> {
+  process.stdout.write(`\n${formatEvidenceBrowserSummary(evidence, color)}\n`);
   while (true) {
+    process.stdout.write(`${renderTerminalStyledText("D audit details  Q reconstructed query  P normalized plan  B list  X quit", color, "identifier")}\n`);
     const answer = await readTerminalTextWithEscape(
-      "Audit ID or #page-number [Enter/Esc exits]: ",
+      "Evidence view: ",
       process.stdin,
       process.stdout,
     );
-    if (!answer) return 0;
-    const selected = /^#\d+$/.test(answer)
-      ? result.rows[Number(answer.slice(1)) - 1]
-      : /^\d+$/.test(answer)
-        ? result.rows.find((row) => Number(row.audit_id) === Number(answer))
-        : undefined;
-    if (!selected) {
-      process.stdout.write(`No audit in this filtered page matches ${answer}.\n`);
+    if (!answer || answer.toLowerCase() === "b") return false;
+    const command = answer.toLowerCase();
+    if (command === "x" || command === "quit" || command === "exit") return true;
+    if (command === "d" || command === "details") {
+      process.stdout.write(`\n${formatEvidenceBrowserFacts(evidence, color)}\n`);
       continue;
     }
-    process.stdout.write(`\n${formatQueryAuditDetail(selected, terminalSyntaxColorEnabled())}\n`);
+    if (command === "q" || command === "query") {
+      process.stdout.write(`\n${formatEvidenceBrowserQuery(evidence, color)}\n`);
+      continue;
+    }
+    if (command === "p" || command === "plan") {
+      process.stdout.write(`\n${formatEvidenceBrowserPlan(evidence, color)}\n`);
+      continue;
+    }
+    process.stdout.write(`${renderTerminalStyledText("Choose D, Q, P, B, or X.", color, "warning")}\n`);
   }
+}
+
+
+export function evidenceBrowserCommand(
+  args: string[],
+  pageSize: number,
+  input: string,
+  includeRefusals = false,
+): { args: string[]; pageSize: number; pageNumber: number } | undefined {
+  if (input.startsWith("/")) {
+    const search = input.slice(1).trim();
+    return { args: replaceCliOption(args, "--search", search || undefined), pageSize, pageNumber: 1 };
+  }
+  const splitAt = input.search(/\s/);
+  const command = (splitAt < 0 ? input : input.slice(0, splitAt)).toLowerCase();
+  const value = splitAt < 0 ? "" : input.slice(splitAt).trim();
+  const clearValue = !value || ["all", "any", "clear", "none"].includes(value.toLowerCase());
+  if (command === "clear") {
+    return {
+      args: withoutCliOptions(args, [
+        "--tenant", "--principal", "--resource", "--table", "--capability", "--boundary",
+        "--outcome", "--status", "--from", "--since", "--to", "--search",
+      ]),
+      pageSize,
+      pageNumber: 1,
+    };
+  }
+  if (command === "page") {
+    const target = Number(value);
+    return Number.isSafeInteger(target) && target > 0
+      ? { args, pageSize, pageNumber: target }
+      : undefined;
+  }
+  if (command === "size") {
+    const size = Number(value);
+    return Number.isSafeInteger(size) && size >= 5 && size <= 50
+      ? { args, pageSize: size, pageNumber: 1 }
+      : undefined;
+  }
+  const option = {
+    tenant: "--tenant",
+    principal: "--principal",
+    resource: "--resource",
+    capability: "--capability",
+    boundary: "--boundary",
+    since: "--since",
+    from: "--from",
+    to: "--to",
+    jump: "--to",
+    search: "--search",
+  }[command];
+  if (option) {
+    let updated = args;
+    if (command === "resource") updated = withoutCliOptions(updated, ["--table"]);
+    if (command === "since") updated = withoutCliOptions(updated, ["--from"]);
+    if (command === "from") updated = withoutCliOptions(updated, ["--since"]);
+    return { args: replaceCliOption(updated, option, clearValue ? undefined : value), pageSize, pageNumber: 1 };
+  }
+  if (command === "outcome") {
+    let updated = withoutCliOptions(args, ["--outcome", "--status"]);
+    if (clearValue) return { args: updated, pageSize, pageNumber: 1 };
+    const outcome = value.toLowerCase();
+    if (outcome === "ok" || outcome === "released") updated = replaceCliOption(updated, "--outcome", "ok");
+    else if (includeRefusals && (outcome === "refused" || outcome === "failed")) {
+      updated = replaceCliOption(updated, "--outcome", outcome);
+    }
+    else if (["empty", "fully_suppressed", "incomplete_comparison"].includes(outcome)) {
+      updated = replaceCliOption(updated, "--status", outcome);
+    } else return undefined;
+    return { args: updated, pageSize, pageNumber: 1 };
+  }
+  return undefined;
+}
+
+
+export function evidenceBrowserFilterSummary(
+  args: string[],
+  emptyLabel = "all released evidence",
+): string {
+  const values = [
+    optionalArg(args, "--tenant") ? "tenant applied" : undefined,
+    optionalArg(args, "--principal") ? "principal applied" : undefined,
+    (optionalArg(args, "--resource") ?? optionalArg(args, "--table"))
+      ? `resource ${optionalArg(args, "--resource") ?? optionalArg(args, "--table")}`
+      : undefined,
+    optionalArg(args, "--capability") ? `capability ${optionalArg(args, "--capability")}` : undefined,
+    optionalArg(args, "--outcome") ? `outcome ${optionalArg(args, "--outcome")}` : undefined,
+    optionalArg(args, "--status") ? `outcome ${optionalArg(args, "--status")}` : undefined,
+    optionalArg(args, "--since") ? `since ${optionalArg(args, "--since")}` : undefined,
+    optionalArg(args, "--from") ? `from ${optionalArg(args, "--from")}` : undefined,
+    optionalArg(args, "--to") ? `to ${optionalArg(args, "--to")}` : undefined,
+    optionalArg(args, "--search") ? `search ${JSON.stringify(optionalArg(args, "--search"))}` : undefined,
+  ].filter((value): value is string => Boolean(value));
+  return values.length ? `Filters: ${values.join(" | ")}` : `Filters: ${emptyLabel}`;
+}
+
+
+function evidenceBrowserHelp(color: boolean): string {
+  const lines = [
+    renderTerminalSectionHeading("Browser commands", color),
+    "  1-50 or ev_...          open a compact evidence summary",
+    "  N / B                   next or previous page",
+    "  page <n>                jump to a page",
+    "  size <5-50>             change records per page",
+    "  /text or search <text>  search reviewed-plan metadata",
+    "  resource <schema.table> narrow to a resource",
+    "  tenant <id>             narrow by tenant (value is never echoed)",
+    "  principal <id>          narrow by principal (value is never echoed)",
+    "  outcome <value>         ok, empty, fully_suppressed, or incomplete_comparison",
+    "  since <24h|ISO>         set the lower time bound",
+    "  to <ISO> / jump <ISO>   set the upper time bound",
+    "  clear                   remove live audit filters",
+    "  Add 'all' after one filter command to clear only that filter.",
+    "  Refused/failed attempts have no evidence bundle; inspect query-audit browse.",
+  ];
+  return lines.join("\n");
+}
+
+
+function replaceCliOption(args: string[], option: string, value: string | undefined): string[] {
+  return [
+    ...withoutCliOptions(args, [option]),
+    ...(value ? [option, value] : []),
+  ];
+}
+
+
+function withoutCliOptions(args: string[], options: string[]): string[] {
+  const values = new Set(options);
+  const result: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const value = args[index]!;
+    const exact = values.has(value);
+    const assigned = [...values].some((option) => value.startsWith(`${option}=`));
+    if (exact) {
+      if (value !== "--interactive" && index + 1 < args.length && !args[index + 1]!.startsWith("--")) index += 1;
+      continue;
+    }
+    if (!assigned) result.push(value);
+  }
+  return result;
+}
+
+
+async function browseQueryAudit(args: string[]): Promise<number> {
+  assertInteractiveTerminal("query-audit browse");
+  const bridged = await maybeSharedPostgresRuntimeStoreRead(
+    args,
+    "query-audit browse",
+    (bridgeStorePath) => browseQueryAudit(argsWithRuntimeStoreBridge(args, bridgeStorePath)),
+  );
+  if (bridged !== undefined) return bridged;
+
+  const color = terminalSyntaxColorEnabled();
+  const explicitLimit = optionalArg(args, "--limit");
+  let pageSize = explicitLimit ? Math.min(limitFromArgs(args), 50) : 10;
+  let pageNumber = 1;
+  let filterArgs = withoutCliOptions(args, ["--interactive", "--limit"]);
+  let result = await readQueryAuditList(filterArgs, { limit: pageSize + 1, offset: 0 });
+  process.stdout.write(ledgerReadSourceLine(result.ledgerSource));
+  process.stdout.write(auditDescriptionNotice(color));
+
+  while (true) {
+    const visible = result.rows.slice(0, pageSize);
+    const hasNext = result.rows.length > pageSize;
+    process.stdout.write(`\n${renderTerminalSectionHeading("Query audit browser", color)}\n`);
+    process.stdout.write(`${renderTerminalStyledText(`Page ${pageNumber} - ${visible.length} record${visible.length === 1 ? "" : "s"}${hasNext ? " - older records available" : ""}`, color, "muted")}\n`);
+    process.stdout.write(`${renderTerminalStyledText(evidenceBrowserFilterSummary(filterArgs, "all query-audit records"), color, "muted")}\n\n`);
+    writeLedgerNotices(result.notes, color);
+    if (visible.length === 0) {
+      process.stdout.write(`${renderTerminalStyledText("No query-audit record matches the current filters.", color, "warning")}\n`);
+    } else {
+      for (let index = 0; index < visible.length; index += 1) {
+        process.stdout.write(formatQueryAuditBrowserRow(visible[index]!, index + 1, color));
+        if (index < visible.length - 1) process.stdout.write(auditBrowserSeparator(color));
+      }
+    }
+    process.stdout.write(`${renderTerminalStyledText("N next  B back  /text search  F filters  ? help  Q quit", color, "identifier")}\n`);
+    const answer = await readTerminalTextWithEscape(
+      "Open #row or audit ID, or enter a command: ",
+      process.stdin,
+      process.stdout,
+    );
+    if (!answer || answer.toLowerCase() === "q") return 0;
+    const normalized = answer.trim();
+    const lower = normalized.toLowerCase();
+    if (lower === "?" || lower === "help" || lower === "f" || lower === "filters") {
+      process.stdout.write(`\n${queryAuditBrowserHelp(color)}\n`);
+      continue;
+    }
+    if (lower === "n" || lower === "next") {
+      if (!hasNext) {
+        process.stdout.write(`${renderTerminalStyledText("No older audit record matches the current filters.", color, "warning")}\n`);
+        continue;
+      }
+      pageNumber += 1;
+      result = await readQueryAuditList(filterArgs, { limit: pageSize + 1, offset: (pageNumber - 1) * pageSize });
+      continue;
+    }
+    if (lower === "b" || lower === "back" || lower === "previous" || lower === "prev") {
+      if (pageNumber === 1) {
+        process.stdout.write(`${renderTerminalStyledText("Already on the newest page.", color, "warning")}\n`);
+        continue;
+      }
+      pageNumber -= 1;
+      result = await readQueryAuditList(filterArgs, { limit: pageSize + 1, offset: (pageNumber - 1) * pageSize });
+      continue;
+    }
+
+    const selected = /^#\d+$/.test(normalized)
+      ? visible[Number(normalized.slice(1)) - 1]
+      : /^\d+$/.test(normalized)
+        ? visible.find((row) => Number(row.audit_id) === Number(normalized))
+        : undefined;
+    if (selected) {
+      const shouldQuit = await browseOneQueryAudit(selected, color);
+      if (shouldQuit) return 0;
+      continue;
+    }
+
+    const update = evidenceBrowserCommand(filterArgs, pageSize, normalized, true);
+    if (!update) {
+      process.stdout.write(`${renderTerminalStyledText(`Unknown browser command: ${normalized}. Enter ? for help.`, color, "danger")}\n`);
+      continue;
+    }
+    const previousArgs = filterArgs;
+    const previousPageSize = pageSize;
+    const previousPageNumber = pageNumber;
+    filterArgs = update.args;
+    pageSize = update.pageSize;
+    pageNumber = update.pageNumber;
+    try {
+      result = await readQueryAuditList(filterArgs, {
+        limit: pageSize + 1,
+        offset: (pageNumber - 1) * pageSize,
+      });
+    } catch (error) {
+      filterArgs = previousArgs;
+      pageSize = previousPageSize;
+      pageNumber = previousPageNumber;
+      process.stdout.write(`${renderTerminalStyledText(safeErrorMessage(error), color, "danger")}\n`);
+      result = await readQueryAuditList(filterArgs, {
+        limit: pageSize + 1,
+        offset: (pageNumber - 1) * pageSize,
+      });
+    }
+  }
+}
+
+
+async function browseOneQueryAudit(row: Record<string, unknown>, color: boolean): Promise<boolean> {
+  process.stdout.write(`\n${formatQueryAuditBrowserSummary(row, color)}\n`);
+  while (true) {
+    process.stdout.write(`${renderTerminalStyledText("D audit details  Q reconstructed query  P normalized plan  B list  X quit", color, "identifier")}\n`);
+    const answer = await readTerminalTextWithEscape("Audit view: ", process.stdin, process.stdout);
+    if (!answer || answer.toLowerCase() === "b") return false;
+    const command = answer.toLowerCase();
+    if (command === "x" || command === "quit" || command === "exit") return true;
+    if (command === "d" || command === "details") process.stdout.write(`\n${formatQueryAuditBrowserFacts(row, color)}\n`);
+    else if (command === "q" || command === "query") process.stdout.write(`\n${formatQueryAuditBrowserQuery(row, color)}\n`);
+    else if (command === "p" || command === "plan") process.stdout.write(`\n${formatQueryAuditBrowserPlan(row, color)}\n`);
+    else process.stdout.write(`${renderTerminalStyledText("Choose D, Q, P, B, or X.", color, "warning")}\n`);
+  }
+}
+
+
+function queryAuditBrowserHelp(color: boolean): string {
+  return [
+    renderTerminalSectionHeading("Browser commands", color),
+    "  #1-#50                 open a row from this page",
+    "  <audit ID>             open an exact durable audit ID",
+    "  N / B                  next or previous page",
+    "  page <n> / size <5-50> change the page",
+    "  /text or search <text> search reviewed-plan metadata",
+    "  resource, tenant, principal, outcome, since, to, and jump set live filters",
+    "  outcome accepts ok, refused, failed, empty, fully_suppressed, or incomplete_comparison",
+    "  clear                  remove live audit filters",
+  ].join("\n");
+}
+
+
+function auditBrowserSeparator(color: boolean): string {
+  const width = Math.min(96, Math.max(32, (process.stdout.columns ?? 80) - 4));
+  return `${renderTerminalStyledText(`  ${"-".repeat(width)}`, color, "muted")}\n`;
+}
+
+
+function auditDescriptionNotice(color: boolean): string {
+  return `${renderTerminalStyledText("Descriptions summarize persisted reviewed plans; original question text is not stored.", color, "muted")}\n`;
 }
 
 
@@ -807,8 +1193,8 @@ export async function evidenceList(args: string[]): Promise<number> {
   assertKnownOptions(args, evidenceListAllowedOptions, "evidence list");
   assertLedgerListModes(args, "evidence list");
   if (args.includes("--follow")) return followEvidence(args);
+  if (args.includes("--interactive")) return browseEvidence(args);
   const result = await readEvidenceList(args);
-  if (args.includes("--interactive")) return browseEvidence(result);
   writeEvidenceList(result, args.includes("--json"));
   return 0;
 }
@@ -878,8 +1264,8 @@ export async function queryAuditList(args: string[]): Promise<number> {
   assertKnownOptions(args, queryAuditListAllowedOptions, "query-audit list");
   assertLedgerListModes(args, "query-audit list");
   if (args.includes("--follow")) return followQueryAudit(args);
+  if (args.includes("--interactive")) return browseQueryAudit(args);
   const result = await readQueryAuditList(args);
-  if (args.includes("--interactive")) return browseQueryAudit(result);
   writeQueryAuditList(result, args.includes("--json"), showDetails(args), storeOptionSuffix(args));
   return 0;
 }

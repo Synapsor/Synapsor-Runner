@@ -65,6 +65,7 @@ export const evidenceListAllowedOptions = new Set([
   "--resource",
   "--boundary",
   "--query-fingerprint",
+  "--search",
   "--from",
   "--since",
   "--to",
@@ -92,6 +93,7 @@ export const queryAuditListAllowedOptions = new Set([
   "--object-id",
   "--primary-key",
   "--query-fingerprint",
+  "--search",
   "--from",
   "--since",
   "--to",
@@ -285,6 +287,7 @@ export function evidenceFiltersFromArgs(args: string[]): EvidenceSearchFilters {
     status: optionalArg(args, "--status"),
     outcome: ledgerOutcomeFromArgs(args),
     boundary: ledgerBoundaryFromArgs(args),
+    search: optionalArg(args, "--search"),
     limit: limitFromArgs(args),
   };
 }
@@ -309,6 +312,7 @@ export function queryAuditFiltersFromArgs(args: string[]): QueryAuditSearchFilte
     status: optionalArg(args, "--status"),
     outcome: ledgerOutcomeFromArgs(args),
     boundary: ledgerBoundaryFromArgs(args),
+    search: optionalArg(args, "--search"),
     limit: limitFromArgs(args),
   };
 }

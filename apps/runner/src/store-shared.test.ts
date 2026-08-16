@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { ProposalStore, type ProductionExploreAuditEventInput } from "@synapsor-runner/proposal-store";
-import { importProductionExploreAuditEvents } from "./store-shared.js";
+import { importProductionExploreAuditEvents, sharedRuntimeStoreReadLogEnabled } from "./store-shared.js";
 
 describe("shared PostgreSQL production Explore audit hydration", () => {
+  it("keeps routine read snapshots quiet unless operator diagnostics are enabled", () => {
+    expect(sharedRuntimeStoreReadLogEnabled([], {})).toBe(false);
+    expect(sharedRuntimeStoreReadLogEnabled(["--debug"], {})).toBe(true);
+    expect(sharedRuntimeStoreReadLogEnabled([], { SYNAPSOR_VERBOSE: "1" })).toBe(true);
+  });
+
   it("hydrates evidence and its linked query audit with original timestamps", () => {
     const store = new ProposalStore(":memory:");
     const createdAt = "2026-08-11T10:20:30.000Z";

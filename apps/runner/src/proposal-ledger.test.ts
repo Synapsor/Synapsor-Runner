@@ -6,7 +6,7 @@ import crypto from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { activitySearch, evidenceList, evidenceShow, queryAuditList, reusableRecordedFreshness } from "./proposal-ledger.js";
+import { activitySearch, evidenceBrowserCommand, evidenceBrowserFilterSummary, evidenceList, evidenceShow, queryAuditList, reusableRecordedFreshness } from "./proposal-ledger.js";
 
 
 const proposalHash = canonicalJsonDigest({ proposal: "freshness-reuse" });
@@ -257,7 +257,7 @@ describe("proposal approval freshness reuse", () => {
       });
       write.mockClear();
       await evidenceList(["--store", storePath, "--table", "public.missing"]);
-      expect(write.mock.calls.flat().join("")).toContain("No evidence bundles found in the consulted ledger");
+      expect(write.mock.calls.flat().join("")).toContain("No evidence bundles matched this view in the consulted ledger");
     } finally {
       write.mockRestore();
       await fs.rm(tempDir, { recursive: true, force: true });
@@ -371,5 +371,27 @@ describe("proposal approval freshness reuse", () => {
       write.mockRestore();
       await fs.rm(tempDir, { recursive: true, force: true });
     }
+  });
+
+  it("keeps evidence-browser filters private and supports bounded in-session navigation", () => {
+    const initial = ["--config", "./synapsor.runner.json", "--principal", "private@example.org"];
+    const searched = evidenceBrowserCommand(initial, 10, "/membership tier");
+    expect(searched).toMatchObject({ pageNumber: 1, pageSize: 10 });
+    expect(searched?.args).toContain("--search");
+    expect(searched?.args).toContain("membership tier");
+    expect(evidenceBrowserFilterSummary(searched?.args ?? [])).toContain("principal applied");
+    expect(evidenceBrowserFilterSummary(searched?.args ?? [])).not.toContain("private@example.org");
+    expect(evidenceBrowserFilterSummary([], "all query-audit records")).toBe("Filters: all query-audit records");
+
+    const scoped = evidenceBrowserCommand(searched?.args ?? [], 10, "resource librarydb.members");
+    expect(scoped?.args).toEqual(expect.arrayContaining(["--resource", "librarydb.members"]));
+    expect(evidenceBrowserCommand(scoped?.args ?? [], 10, "outcome fully_suppressed")?.args)
+      .toEqual(expect.arrayContaining(["--status", "fully_suppressed"]));
+    expect(evidenceBrowserCommand(initial, 10, "size 25")).toMatchObject({ pageSize: 25, pageNumber: 1 });
+    expect(evidenceBrowserCommand(initial, 10, "page 8")).toMatchObject({ pageSize: 10, pageNumber: 8 });
+    expect(evidenceBrowserCommand(initial, 10, "size 500")).toBeUndefined();
+    expect(evidenceBrowserCommand(initial, 10, "outcome refused")).toBeUndefined();
+    expect(evidenceBrowserCommand(initial, 10, "outcome refused", true)?.args)
+      .toEqual(expect.arrayContaining(["--outcome", "refused"]));
   });
 });

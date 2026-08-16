@@ -241,7 +241,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	    .boundary-catalog-path{border-left:2px solid #75e3b7;background:#0b1511}.boundary-catalog-path.unproven{border-left-color:#f0aa68}.boundary-catalog-path .boundary-catalog-edge{border-left:0;background:transparent}.boundary-catalog-question{margin:0;padding:0 12px 11px;color:#cbd6d0;font-size:12px}.boundary-catalog-question strong{color:#75e3b7}.boundary-catalog-questions{margin:12px 0;padding:12px 14px;border-left:2px solid #75e3b7;background:#0b1511}.boundary-catalog-questions strong{color:#75e3b7}.boundary-catalog-questions ul{margin:8px 0 0;padding-left:20px}.boundary-catalog-questions li+li{margin-top:5px}.boundary-catalog-capabilities{color:#aab8b1!important}.boundary-catalog-legend{margin:10px 0 12px;color:#839189;font-size:12px}.boundary-field-matrix-wrap{max-width:100%;margin-top:10px;overflow-x:auto}.boundary-field-matrix{width:100%;min-width:0;table-layout:fixed;border-collapse:collapse;font-size:11px}.boundary-field-matrix th,.boundary-field-matrix td{padding:7px 9px;border:1px solid #26372f;text-align:left;vertical-align:top;overflow-wrap:anywhere}.boundary-field-matrix th:first-child{width:38%;text-align:left}.boundary-field-matrix thead th{color:#aab8b1;font-size:10px}.boundary-field-matrix tbody th{font-weight:500;white-space:normal;overflow-wrap:anywhere}.boundary-field-matrix tbody th small{margin:2px 0 0;color:#839189}.boundary-operation-list{display:flex;flex-wrap:wrap;gap:4px 12px;margin:0;padding:0;list-style:none}.boundary-operation-list li{color:#cbd6d0;white-space:normal;overflow-wrap:anywhere}.boundary-operation-list li::before{content:'Y ';color:#75e3b7;font-weight:700}.boundary-operation-list .unavailable::before{content:''}.boundary-operation-list .unavailable{color:#839189}.boundary-field-exact{margin:8px 0 0;padding-top:8px}.boundary-field-exact ul{display:grid;gap:4px;margin:8px 0 0;padding-left:20px;color:#839189}.boundary-field-exact li code{margin-right:8px;color:#aab8b1}.boundary-catalog-restrictions{margin-top:9px!important;color:#e7bd75!important}.boundary-relationship-summary{display:grid;grid-template-columns:62px minmax(0,1fr);gap:5px 12px;padding:11px 13px}.boundary-relationship-summary>strong{grid-row:1/5;color:#75e3b7}.boundary-relationship-summary>code{overflow-wrap:anywhere}.boundary-relationship-summary>small,.boundary-relationship-summary>span{color:#839189}.boundary-relationship-summary>details summary{cursor:pointer;color:#839189}.boundary-relationship-summary>details code{display:block;margin-top:5px;overflow-wrap:anywhere;color:#aab8b1}
 	    .boundary-proof-report{margin:0 0 18px;padding:18px;border:1px solid var(--line);border-left:3px solid var(--good);border-radius:8px;background:var(--good-soft)}.boundary-proof-report.failed{border-left-color:var(--bad);background:var(--bad-soft)}.boundary-proof-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}.boundary-proof-head h3{margin:3px 0}.boundary-proof-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:14px 0}.boundary-proof-item{padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:var(--surface)}.boundary-proof-item strong,.boundary-proof-item small{display:block}.boundary-proof-item small{margin-top:3px;color:var(--muted)}
 	    .ask-proof-actions{order:1;display:flex;justify-content:flex-end;gap:8px;margin:-6px 0 14px}#boundary-proof-result{order:1}
-	    .ask-history{order:1;margin:0 0 14px;border:1px solid #304239;border-radius:8px;background:#0f1915}.ask-history>summary{padding:12px 16px;cursor:pointer;font-weight:750}.ask-history-body{padding:0 16px 16px}.ask-history-table-wrap{overflow-x:auto}.ask-history table{width:100%;min-width:680px}.ask-history td{vertical-align:top}.ask-history td code{color:#75e3b7;overflow-wrap:anywhere}.ask-history .history-status-latest,.ask-history .history-status-ok{color:var(--good);font-weight:750}.ask-history .history-status-refused{color:var(--warn);font-weight:750}.history-durable-table th:nth-child(3),.history-durable-table td:nth-child(3){min-width:220px}.history-durable-table th:nth-child(6),.history-durable-table td:nth-child(6){min-width:230px}.history-detail-grid{display:grid;grid-template-columns:minmax(120px,180px) minmax(0,1fr);gap:0;border-top:1px solid #304239;border-bottom:1px solid #304239;margin:10px 0 16px}.history-detail-grid dt,.history-detail-grid dd{margin:0;padding:7px 8px;border-top:1px solid #26372f;overflow-wrap:anywhere}.history-detail-grid dt{color:#91a49a;font-size:11px;font-weight:800;text-transform:uppercase}.history-detail-grid dd{color:#e3ebe6}.history-detail-grid dt:first-of-type,.history-detail-grid dt:first-of-type+dd{border-top:0}.history-audit-section h4{margin-top:16px}.history-audit-section pre{max-height:420px}
+	    .ask-history{order:1;margin:0 0 14px;border:1px solid #304239;border-radius:8px;background:#0f1915}.ask-history>summary{padding:12px 16px;cursor:pointer;font-weight:750}.ask-history-body{padding:0 16px 16px}.ask-history-table-wrap{overflow-x:auto}.ask-history table{width:100%;min-width:680px}.ask-history td{vertical-align:top}.ask-history td code{color:#75e3b7;overflow-wrap:anywhere}.ask-history .history-status-latest,.ask-history .history-status-ok{color:var(--good);font-weight:750}.ask-history .history-status-warning{color:var(--warn);font-weight:750}.ask-history .history-status-refused,.ask-history .history-status-error{color:var(--bad);font-weight:750}.history-durable-table th:nth-child(3),.history-durable-table td:nth-child(3){min-width:220px}.history-durable-table th:nth-child(6),.history-durable-table td:nth-child(6){min-width:230px}.history-detail-grid{display:grid;grid-template-columns:minmax(120px,180px) minmax(0,1fr);gap:0;border-top:1px solid #304239;border-bottom:1px solid #304239;margin:10px 0 16px}.history-detail-grid dt,.history-detail-grid dd{margin:0;padding:7px 8px;border-top:1px solid #26372f;overflow-wrap:anywhere}.history-detail-grid dt{color:#91a49a;font-size:11px;font-weight:800;text-transform:uppercase}.history-detail-grid dd{color:#e3ebe6}.history-detail-grid dt:first-of-type,.history-detail-grid dt:first-of-type+dd{border-top:0}.history-audit-section h4{margin-top:16px}.history-audit-section pre{max-height:420px}
     body.ask-focus-mode #ask-chat>.ask-disclosure{order:4;margin-top:26px;color:#77857e}
     body.ask-focus-mode #ask-starters{order:3;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:38px}
     body.ask-focus-mode #ask-starters>strong,body.ask-focus-mode #ask-starters>p{grid-column:1/-1}
@@ -602,6 +602,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
                   <label class="field">Tenant<input id="ask-history-tenant" type="text" maxlength="160" placeholder="Plain tenant ID or keyed fingerprint"></label>
                   <label class="field">Principal<input id="ask-history-principal" type="text" maxlength="160" placeholder="Plain principal ID or keyed fingerprint"></label>
                   <label class="field">Resource<input id="ask-history-resource" type="text" maxlength="256" placeholder="schema.table"></label>
+                  <label class="field">Search reviewed query metadata<input id="ask-history-search" type="search" maxlength="160" placeholder="field, measure, resource, evidence ID"></label>
                   <label class="field">Capability<input id="ask-history-capability" type="text" maxlength="160" placeholder="Exact capability"></label>
                   <label class="field">Boundary digest<input id="ask-history-boundary" type="text" maxlength="96" placeholder="sha256:..."></label>
                   <label class="field">Outcome<select id="ask-history-outcome"><option value="">Any outcome</option><option value="ok">Released</option><option value="refused">Refused</option><option value="failed">Source failed</option></select></label>
@@ -4801,7 +4802,17 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       return "Local SQLite ledger · "+(source?.path||"configured local store");
     }
 
-    async function loadAskHistory(){
+    function historyStatusClass(value){
+      const status=String(value||"").toLowerCase();
+      if(status.startsWith("refused")||status==="failed"||status.startsWith("error"))return "history-status-error";
+      if(status==="fully_suppressed"||status==="incomplete_comparison")return "history-status-warning";
+      return "history-status-ok";
+    }
+
+    let askHistoryOffset=0;
+    async function loadAskHistory(requestedOffset=0){
+      if(typeof requestedOffset!=="number"||!Number.isSafeInteger(requestedOffset)||requestedOffset<0)requestedOffset=0;
+      askHistoryOffset=requestedOffset;
       const button=byId("load-ask-history");
       const status=byId("ask-history-status");
       const content=byId("ask-history-content");
@@ -4814,6 +4825,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         const tenant=byId("ask-history-tenant").value.trim();
         const principal=byId("ask-history-principal").value.trim();
         const resource=byId("ask-history-resource").value.trim();
+        const search=byId("ask-history-search").value.trim();
         const capability=byId("ask-history-capability").value.trim();
         const boundary=byId("ask-history-boundary").value.trim();
         const outcome=byId("ask-history-outcome").value;
@@ -4823,12 +4835,14 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         if(tenant)params.set("tenant",tenant);
         if(principal)params.set("principal",principal);
         if(resource)params.set("resource",resource);
+        if(search)params.set("search",search);
         if(capability)params.set("capability",capability);
         if(boundary)params.set("boundary",boundary);
         if(outcome)params.set("outcome",outcome);
         if(since)params.set("since",new Date(since).toISOString());
         if(to)params.set("to",new Date(to).toISOString());
         if(limit)params.set("limit",limit);
+        if(askHistoryOffset)params.set("offset",String(askHistoryOffset));
         const payload=await getJson("/api/explore/history"+(params.size?"?"+params.toString():""));
         const sourceLabel=ledgerSourceSentence(payload.ledger_source);
         const recent=payload.recent||[];
@@ -4836,13 +4850,22 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         const recentHtml=recent.length
           ?'<h4>Recent references</h4><div class="ask-history-table-wrap"><table class="history-recent-table"><thead><tr><th>Reference</th><th>Request</th><th>Status</th><th>Expires</th></tr></thead><tbody>'+recent.map((query,index)=>'<tr><td data-label="Reference"><code>'+esc(query.query_ref)+'</code></td><td data-label="Request">'+esc(historyPlanSentence(query))+'</td><td data-label="Status" class="'+(index===0?'history-status-latest':'')+'">'+(index===0?'Latest':'Available')+'</td><td data-label="Expires">'+esc(new Date(query.expires_at).toLocaleString())+'</td></tr>').join("")+'</tbody></table></div><p class="muted">Open Make reusable to inspect or protect one of these references.</p>'
           :'<h4>Recent references</h4><p class="muted">No unexpired analysis reference is available in this Workbench session.</p>';
+        const durableOffset=Number(payload.durable_offset||0);
+        const durableLimit=Number(payload.durable_limit||50);
+        const durableNavigation=(payload.has_newer_records||payload.has_older_records)
+          ?'<div class="actions"><button id="ask-history-newer" class="secondary" type="button" '+(payload.has_newer_records?'':'disabled')+'>Newer records</button><span class="muted">Showing '+esc(durableOffset+1)+'-'+esc(durableOffset+durable.length)+'</span><button id="ask-history-older" class="secondary" type="button" '+(payload.has_older_records?'':'disabled')+'>Older records</button></div>'
+          :'';
         const durableHtml=durable.length
-          ?'<h4>Durable query ledger</h4><div class="ask-history-table-wrap"><table class="history-durable-table"><thead><tr><th>Audit</th><th>When</th><th>Resource</th><th>Outcome</th><th>Rows / groups</th><th>Evidence</th></tr></thead><tbody>'+durable.map(audit=>'<tr><td data-label="Audit"><button class="quiet" data-history-audit="'+esc(audit.audit_id)+'" type="button">'+esc(audit.audit_id)+'</button></td><td data-label="When">'+esc(new Date(audit.created_at).toLocaleString())+'</td><td data-label="Resource"><code>'+esc(audit.resource)+'</code></td><td data-label="Outcome" class="'+(String(audit.status).startsWith("refused")?'history-status-refused':'')+'">'+esc(String(audit.status).replaceAll("_"," "))+(audit.error_code?' · '+esc(audit.error_code):'')+'</td><td data-label="Rows / groups">'+esc(audit.returned_rows_or_groups)+'</td><td data-label="Evidence">'+(audit.evidence_bundle_id?'<button class="quiet" data-history-evidence="'+esc(audit.evidence_bundle_id)+'" type="button">'+esc(audit.evidence_bundle_id)+'</button>':'None')+'</td></tr>').join("")+'</tbody></table></div><div id="ask-history-detail"></div>'
-          :'<h4>Durable query ledger</h4><p class="muted">No Explore audit metadata was found in '+esc(sourceLabel)+'.</p>';
-        const notices=(payload.notices||[]).map(note=>'<p class="muted"><strong>Note:</strong> '+esc(note)+'</p>').join("");
+          ?'<h4>Durable query ledger</h4><div class="ask-history-table-wrap"><table class="history-durable-table"><thead><tr><th>Audit</th><th>When</th><th>Reviewed query</th><th>Outcome</th><th>Rows / groups</th><th>Evidence</th></tr></thead><tbody>'+durable.map(audit=>'<tr><td data-label="Audit"><button class="quiet" data-history-audit="'+esc(audit.audit_id)+'" type="button">'+esc(audit.audit_id)+'</button></td><td data-label="When">'+esc(new Date(audit.created_at).toLocaleString())+'</td><td data-label="Reviewed query">'+esc(audit.description||audit.resource)+'<br><code>'+esc(audit.resource)+'</code></td><td data-label="Outcome" class="'+historyStatusClass(audit.status)+'">'+esc(String(audit.status).replaceAll("_"," "))+(audit.error_code?' · '+esc(audit.error_code):'')+'</td><td data-label="Rows / groups">'+esc(audit.returned_rows_or_groups)+'</td><td data-label="Evidence">'+(audit.evidence_bundle_id?'<button class="quiet" data-history-evidence="'+esc(audit.evidence_bundle_id)+'" type="button">'+esc(audit.evidence_bundle_id)+'</button>':'None')+'</td></tr>').join("")+'</tbody></table></div>'+durableNavigation+'<div id="ask-history-detail"></div>'
+          :'<h4>Durable query ledger</h4><p class="muted">No Explore audit metadata was found on this page in '+esc(sourceLabel)+'.</p>'+durableNavigation;
+        const notices=(payload.notices||[]).length
+          ?'<div class="band warning"><strong>Audit notice</strong>'+(payload.notices||[]).map(note=>'<p>'+esc(note)+'</p>').join("")+'</div>'
+          :'';
         content.innerHTML='<p><strong>Ledger source</strong><br>'+esc(sourceLabel)+'</p>'+notices+recentHtml+durableHtml;
         content.querySelectorAll("[data-history-audit]").forEach(item=>item.onclick=()=>loadAskHistoryDetail(item.dataset.historyAudit));
         content.querySelectorAll("[data-history-evidence]").forEach(item=>item.onclick=()=>loadAskEvidenceDetail(item.dataset.historyEvidence));
+        const newer=byId("ask-history-newer");if(newer)newer.onclick=()=>loadAskHistory(Math.max(0,durableOffset-durableLimit));
+        const older=byId("ask-history-older");if(older)older.onclick=()=>loadAskHistory(durableOffset+durableLimit);
         status.textContent=recent.length+" recent "+(recent.length===1?"reference":"references")+" · "+durable.length+" durable audit "+(durable.length===1?"record":"records")+" · "+sourceLabel+". Result and trusted-scope values are not persisted.";
       }catch(error){
         content.innerHTML="";
@@ -4861,7 +4884,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       try{
         const payload=await getJson("/api/explore/history?audit_id="+encodeURIComponent(auditId));
         const audit=payload.audit;
-        const statusClass=String(audit.status).startsWith("refused")?"history-status-refused":"history-status-ok";
+        const statusClass=historyStatusClass(audit.status);
         const facts=[["Outcome",String(audit.status).replaceAll("_"," ")],["Error code",audit.error_code||"None"],["Resource",audit.resource],["Boundary digest",audit.boundary_digest||"Not recorded"],["Tenant fingerprint",audit.tenant_scope_fingerprint||"Not recorded"],["Principal fingerprint",audit.principal_scope_fingerprint||"Not recorded"],["Rows / groups",audit.returned_rows_or_groups],["Suppressed groups",audit.suppressed_groups],["Result values persisted",audit.result_values_persisted?"Yes":"No"],["Source query executed",audit.source_query_executed?"Yes":"No"]];
         const factHtml='<dl class="history-detail-grid">'+facts.map((fact,index)=>'<dt>'+esc(fact[0])+'</dt><dd class="'+(index===0?statusClass:'')+'">'+esc(fact[1])+'</dd>').join("")+'</dl>';
         const reconstructed=audit.reconstructed_query;
@@ -4883,7 +4906,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         const evidence=payload.evidence;
         const evidencePayload=evidence.payload||{};
         const facts=[["Outcome",String(evidencePayload.outcome||"recorded").replaceAll("_"," ")],["Resource",evidence.source_table||"Not recorded"],["Boundary digest",evidencePayload.boundary_digest||"Not recorded"],["Tenant fingerprint",evidence.tenant_scope_fingerprint||"Not recorded"],["Suppressed groups",evidencePayload.suppressed_groups??"Not recorded"],["Result fingerprint",evidencePayload.result_fingerprint||"Not recorded"],["Result values persisted",evidence.result_values_persisted?"Yes":"No"],["Execution duration",evidencePayload.execution_duration_ms==null?"Not recorded":evidencePayload.execution_duration_ms+" ms"]];
-        const statusClass=String(evidencePayload.outcome||"").startsWith("refused")?"history-status-refused":"history-status-ok";
+        const statusClass=historyStatusClass(evidencePayload.outcome);
         const factHtml='<dl class="history-detail-grid">'+facts.map((fact,index)=>'<dt>'+esc(fact[0])+'</dt><dd class="'+(index===0?statusClass:'')+'">'+esc(fact[1])+'</dd>').join("")+'</dl>';
         const reconstructed=evidence.reconstructed_query;
         const queryHtml=reconstructed?'<h4>Reconstructed reviewed query</h4><p class="muted">'+reconstructed.caveats.map(esc).join(" ")+'</p><pre id="ask-history-evidence-sql"></pre>':'';
@@ -6743,7 +6766,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     });
     byId("cancel-ask").onclick=cancelAsk;
     byId("clear-ask").onclick=clearAsk;
-    byId("load-ask-history").onclick=loadAskHistory;
+    byId("load-ask-history").onclick=()=>loadAskHistory(0);
     byId("refresh-protect").onclick=loadProtect;
     byId("load-action").onclick=loadGuidedAction;
     byId("create-action").onclick=createGuidedAction;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { reconstructExploreAuditQuery } from "./explore-audit-presentation.js";
-import { formatEvidenceDetail, formatQueryAuditDetail } from "./proposal-formatting.js";
+import { describeExploreAuditPlan, reconstructExploreAuditQuery } from "./explore-audit-presentation.js";
+import { formatEvidenceBrowserFacts, formatEvidenceBrowserPlan, formatEvidenceBrowserQuery, formatEvidenceBrowserRow, formatEvidenceBrowserSummary, formatEvidenceDetail, formatEvidenceSummary, formatQueryAuditBrowserFacts, formatQueryAuditBrowserPlan, formatQueryAuditBrowserQuery, formatQueryAuditBrowserRow, formatQueryAuditBrowserSummary, formatQueryAuditDetail } from "./proposal-formatting.js";
 
 describe("Explore audit presentation", () => {
   it("reconstructs a privacy-safe aggregate and makes Runner scope predicates explicit", () => {
@@ -29,6 +29,21 @@ describe("Explore audit presentation", () => {
     expect(result?.statement).toContain("GROUP BY\n  membership_tier");
     expect(result?.statement).toContain("LIMIT 25");
     expect(JSON.stringify(result)).not.toContain("private-year");
+  });
+
+  it("describes stored reviewed plans in plain English without claiming to store the request", () => {
+    expect(describeExploreAuditPlan({
+      kind: "aggregate",
+      resource: "librarydb.members",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "membership_tier" }],
+      where: [{ field: "join_year", op: "lt", value: { keyed_hash: "a".repeat(64) } }],
+    })).toBe("Members grouped by membership tier with 1 reviewed filter.");
+    expect(describeExploreAuditPlan({
+      kind: "rows",
+      resource: "librarydb.genre_catalog",
+      select: ["code", "display_name"],
+    })).toBe("Rows from genre catalog returning code and display name.");
   });
 
   it("renders rows, reviewed relationships, and no-predicate shared-reference posture without literals", () => {
@@ -130,6 +145,17 @@ describe("Explore audit presentation", () => {
     expect(colored).toContain("\u001b[");
     expect(colored).toMatch(/\u001b\[[0-9;]*32m/);
 
+    const list = formatEvidenceSummary(evidence, false);
+    expect(list).toContain("Members grouped by membership tier.");
+    expect(list).toContain("3 rows/groups / 6 cells / 1 suppressed");
+    expect(list).not.toContain("1".repeat(64));
+    expect(formatEvidenceSummary(evidence, true)).toMatch(/\u001b\[[0-9;]*32m/);
+    expect(formatEvidenceBrowserRow(evidence, 1, false)).toContain("Members grouped by membership tier.");
+    expect(formatEvidenceBrowserSummary(evidence, false)).not.toContain("Normalized reviewed plan");
+    expect(formatEvidenceBrowserFacts(evidence, false)).toContain("Generation lock");
+    expect(formatEvidenceBrowserQuery(evidence, false)).toContain("RUNNER_TENANT_PREDICATE");
+    expect(formatEvidenceBrowserPlan(evidence, false)).toContain('"membership_tier"');
+
     const refused = formatQueryAuditDetail({
       audit_id: 8,
       created_at: evidence.created_at,
@@ -154,5 +180,38 @@ describe("Explore audit presentation", () => {
     expect(refused).toContain("EXPLORE_FIELD_FORBIDDEN");
     expect(refused).toMatch(/\u001b\[[0-9;]*31m/);
     expect(refused).toContain("Reconstructed reviewed query");
+
+    const refusedRecord = {
+      audit_id: 8,
+      created_at: evidence.created_at,
+      tenant_id: evidence.tenant_id,
+      principal: evidence.principal,
+      capability: evidence.capability,
+      source_id: evidence.source_id,
+      table_name: evidence.source_table,
+      query_fingerprint: evidence.query_fingerprint,
+      row_count: 0,
+      payload: {
+        status: "refused_before_source_execution",
+        error_code: "EXPLORE_FIELD_FORBIDDEN",
+        boundary_digest: evidence.payload.boundary_digest,
+        normalized_plan: evidence.payload.normalized_plan,
+        scope_application: evidence.payload.scope_application,
+        source_query_executed: false,
+        result_values_persisted: false,
+        source_database_changed: false,
+      },
+    };
+    expect(formatQueryAuditBrowserRow(refusedRecord, 1, false)).toContain("Members grouped by membership tier.");
+    expect(formatQueryAuditBrowserSummary(refusedRecord, false)).toContain("EXPLORE_FIELD_FORBIDDEN");
+    expect(formatQueryAuditBrowserFacts(refusedRecord, false)).toContain("Source query executed: no");
+    expect(formatQueryAuditBrowserQuery(refusedRecord, false)).toContain("RUNNER_TENANT_PREDICATE");
+    expect(formatQueryAuditBrowserPlan(refusedRecord, false)).toContain('"membership_tier"');
+
+    const legacyWithoutTopLevelResource = {
+      ...evidence,
+      source_table: undefined,
+    };
+    expect(formatEvidenceSummary(legacyWithoutTopLevelResource, false)).toContain("Resource librarydb.members");
   });
 });

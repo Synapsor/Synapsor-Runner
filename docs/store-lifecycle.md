@@ -136,6 +136,7 @@ live production writer with its advisory mutation lock.
 ```bash
 synapsor-runner evidence list --principal librarian@example.org \
   --resource public.orders --since 24h --config ./synapsor.runner.json
+synapsor-runner evidence browse --since 24h --config ./synapsor.runner.json
 synapsor-runner evidence show <evidence-id> --details \
   --config ./synapsor.runner.json
 synapsor-runner query-audit list --outcome refused --resource public.orders \
@@ -149,6 +150,19 @@ synapsor-runner query-audit show <audit-id> --details \
 Production Explore records plans, outcome/count metadata, keyed scope
 fingerprints, and result fingerprints. It does not persist result values, raw
 tenant/principal claims, SQL, parameters, credentials, or source rows.
+
+`evidence browse` keeps a bounded audit session open instead of printing the
+entire result set. It supports pages, timestamp jumps, metadata search, and live
+scope/resource/outcome/time filters. A selected record starts with a compact,
+plan-derived English description; use its D, Q, and P commands for authority
+facts, the privacy-safe reconstructed query, and the normalized plan. The
+description is reconstructed from persisted reviewed-plan metadata, not from a
+stored model conversation. Successful shared-store reads are quiet by default;
+use `--debug` only when the structured snapshot event is needed.
+
+Workbench Query history presents the same reconstructed descriptions, filters,
+and paged shared-ledger records with Newer records and Older records controls.
+Use the CLI browser for a long audit investigation and `--json` for automation.
 
 `--tenant` and `--principal` accept either the operator-known plaintext value
 or an existing `keyed:<HMAC>` fingerprint. For plaintext input, Runner derives

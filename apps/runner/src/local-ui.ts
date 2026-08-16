@@ -144,7 +144,7 @@ import {
   redactPlanLiterals,
 } from "./analytics-shell-render.js";
 import { inspectCompiledExplorePlan } from "./explore-operator-evidence.js";
-import { reconstructExploreAuditQuery } from "./explore-audit-presentation.js";
+import { describeExploreAuditPlan, reconstructExploreAuditQuery } from "./explore-audit-presentation.js";
 import { queryAuditFiltersFromArgs } from "./ledger-options.js";
 import { resolveExploreLedgerFilters } from "./ledger-search.js";
 import { createWorkbenchAskMcpGateway } from "./ask-mcp-gateway.js";
@@ -2153,6 +2153,11 @@ async function handleRequest(input: {
       sendJson(response, 400, { ok: false, error: "Explore history limit must be an integer from 1 to 200." });
       return;
     }
+    const requestedOffset = Number(url.searchParams.get("offset") ?? 0);
+    if (!Number.isSafeInteger(requestedOffset) || requestedOffset < 0 || requestedOffset > 10_000_000) {
+      sendJson(response, 400, { ok: false, error: "Explore history offset must be an integer from 0 through 10000000." });
+      return;
+    }
     const filterArgs = ["--config", configPath, "--limit", String(requestedLimit)];
     const appendFilter = (parameter: string, flag = `--${parameter}`) => {
       const value = url.searchParams.get(parameter)?.trim();
@@ -2164,6 +2169,7 @@ async function handleRequest(input: {
     appendFilter("capability");
     appendFilter("boundary");
     appendFilter("outcome");
+    appendFilter("search");
     appendFilter("since");
     appendFilter("to");
     let resolvedAuditFilters;
@@ -2176,13 +2182,19 @@ async function handleRequest(input: {
       sendJson(response, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
       return;
     }
-    const auditFilters: QueryAuditSearchFilters = resolvedAuditFilters.filters;
+    const auditFilters: QueryAuditSearchFilters = {
+      ...resolvedAuditFilters.filters,
+      limit: requestedLimit + 1,
+      offset: requestedOffset,
+    };
     const durableRecords = await storeAccess(
       "read",
       "workbench-explore-history-list",
       (store) => store.listQueryAudit(auditFilters),
     );
+    const hasOlderRecords = durableRecords.length > requestedLimit;
     const durable = durableRecords
+      .slice(0, requestedLimit)
       .filter((record) => typeof asRecord(record.payload).scoped_explore_version === "string")
       .map((record) => {
         const payload = asRecord(record.payload);
@@ -2190,6 +2202,8 @@ async function handleRequest(input: {
           audit_id: Number(record.audit_id),
           created_at: String(record.created_at ?? payload.recorded_at ?? ""),
           resource: String(record.table_name ?? "app.explore_data"),
+          description: describeExploreAuditPlan(payload.normalized_plan)
+            ?? `Reviewed Explore on ${String(record.table_name ?? "an unknown resource")}.`,
           status: String(payload.status ?? "recorded"),
           returned_rows_or_groups: Number(payload.returned_rows_or_groups ?? record.row_count ?? 0),
           suppressed_groups: Number(payload.suppressed_groups ?? 0),
@@ -2206,6 +2220,9 @@ async function handleRequest(input: {
       recent: recent.map(({ token, ...query }) => ({ ...query, query_ref: token })),
       durable,
       durable_limit: requestedLimit,
+      durable_offset: requestedOffset,
+      has_newer_records: requestedOffset > 0,
+      has_older_records: hasOlderRecords,
       filters: {
         tenant: url.searchParams.has("tenant") ? "applied (value not echoed)" : null,
         principal: url.searchParams.has("principal") ? "applied (value not echoed)" : null,
@@ -2213,9 +2230,11 @@ async function handleRequest(input: {
         capability: url.searchParams.get("capability")?.trim() || null,
         boundary: url.searchParams.get("boundary")?.trim() || null,
         outcome: url.searchParams.get("outcome")?.trim() || null,
+        search: url.searchParams.get("search")?.trim() || null,
         from: auditFilters.from ?? null,
         to: auditFilters.to ?? null,
         limit: requestedLimit,
+        offset: requestedOffset,
       },
       notices: resolvedAuditFilters.notes,
       persisted: {

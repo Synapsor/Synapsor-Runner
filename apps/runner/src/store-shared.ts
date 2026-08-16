@@ -556,20 +556,30 @@ export async function withSharedPostgresRuntimeStoreReadBridge<T>(
       productionExploreAuditEvents: snapshot.productionExploreAuditEvents,
       maxEntries: mirror.maxEntries,
     });
-    operationalLog("info", "shared_runtime_store_read", {
-      command,
-      schema: mirror.schema,
-      url_env: mirror.urlEnv,
-      entries: restored.entries,
-      imported: restored.imported,
-      skipped: restored.skipped,
-      production_explore_audit_events: restored.productionExploreAuditEvents,
-      source_database_changed: false,
-    });
+    if (sharedRuntimeStoreReadLogEnabled(args)) {
+      operationalLog("info", "shared_runtime_store_read", {
+        command,
+        schema: mirror.schema,
+        url_env: mirror.urlEnv,
+        entries: restored.entries,
+        imported: restored.imported,
+        skipped: restored.skipped,
+        production_explore_audit_events: restored.productionExploreAuditEvents,
+        source_database_changed: false,
+      });
+    }
     return await callback(storePath);
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
   }
+}
+
+
+export function sharedRuntimeStoreReadLogEnabled(
+  args: string[],
+  environment: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return args.includes("--debug") || environment.SYNAPSOR_VERBOSE === "1";
 }
 
 

@@ -490,6 +490,9 @@ describe("local UI", () => {
       const history = await historyResponse.json();
       expect(history).toMatchObject({
         ok: true,
+        durable_offset: 0,
+        has_newer_records: false,
+        has_older_records: false,
         ledger_source: {
           kind: "local_sqlite",
           path: path.resolve(guided.store_path),
@@ -497,6 +500,7 @@ describe("local UI", () => {
         recent: [expect.objectContaining({ query_ref: queryRef, resource: "public.members" })],
         durable: [expect.objectContaining({
           resource: "public.members",
+          description: expect.stringMatching(/Members/i),
           status: "ok",
           returned_rows_or_groups: 1,
           source_query_executed: true,
@@ -512,7 +516,7 @@ describe("local UI", () => {
       expect(historyText).not.toContain("tenant-secret-value");
       expect(historyText).not.toContain("postgresql://fixture.invalid");
       const filteredHistoryResponse = await fetch(
-        `http://${server.host}:${server.port}/api/explore/history?tenant=${encodeURIComponent("tenant-secret-value")}&resource=public.members&boundary=${encodeURIComponent(digest)}&outcome=ok&since=3650d&limit=1`,
+        `http://${server.host}:${server.port}/api/explore/history?tenant=${encodeURIComponent("tenant-secret-value")}&resource=public.members&search=members&boundary=${encodeURIComponent(digest)}&outcome=ok&since=3650d&limit=1`,
         { headers: { "x-synapsor-ui-token": "explore-evidence-token" } },
       );
       expect(filteredHistoryResponse.status).toBe(200);
@@ -522,13 +526,24 @@ describe("local UI", () => {
         filters: {
           tenant: "applied (value not echoed)",
           resource: "public.members",
+          search: "members",
           boundary: digest,
           outcome: "ok",
           limit: 1,
+          offset: 0,
         },
         durable: [expect.objectContaining({ resource: "public.members", status: "ok" })],
       });
       expect(JSON.stringify(filteredHistory)).not.toContain("tenant-secret-value");
+      const invalidOffsetResponse = await fetch(
+        `http://${server.host}:${server.port}/api/explore/history?offset=-1`,
+        { headers: { "x-synapsor-ui-token": "explore-evidence-token" } },
+      );
+      expect(invalidOffsetResponse.status).toBe(400);
+      expect(await invalidOffsetResponse.json()).toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/offset must be an integer/i),
+      });
       const auditId = history.durable[0].audit_id;
       const auditResponse = await fetch(
         `http://${server.host}:${server.port}/api/explore/history?audit_id=${auditId}`,

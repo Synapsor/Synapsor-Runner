@@ -112,6 +112,26 @@ export function renderTerminalFact(
   return `${style(labelCode, `${safeLabel}:`)} ${style(valueCode, safeValue)}`;
 }
 
+
+export function renderTerminalStyledText(
+  value: string,
+  color = false,
+  tone: "value" | "identifier" | "success" | "warning" | "danger" | "muted" = "value",
+): string {
+  const safe = safeTerminalText(value);
+  if (!color) return safe;
+  const code = {
+    value: "1",
+    identifier: "36",
+    success: "1;32",
+    warning: "1;33",
+    danger: "1;31",
+    muted: "2",
+  }[tone];
+  return style(code, safe);
+}
+
+
 export function renderTerminalSectionHeading(label: string, color = false): string {
   const safe = safeTerminalText(label.toUpperCase());
   return color ? style("1;36", safe) : safe;

@@ -65,8 +65,11 @@ export function buildEvidenceQuery(filters: EvidenceSearchFilters): SqlQuery {
   addExploreOutcomeFilter(clauses, params, filters.outcome, "outcome");
   addJsonEqual(clauses, params, "boundary_digest", filters.boundary);
   addObjectFilter(clauses, params, "business_object", "source_table", "object_id", filters.objectType, filters.objectId);
+  addMetadataSearch(clauses, params, filters.search, [
+    "evidence_bundle_id", "source_table", "source_id", "capability", "payload_json",
+  ]);
   addTimeRange(clauses, params, "created_at", filters.from, filters.to);
-  return finishQuery("SELECT * FROM evidence_bundles", clauses, params, filters.limit);
+  return finishQuery("SELECT * FROM evidence_bundles", clauses, params, filters.limit, filters.offset);
 }
 
 export function buildQueryAuditQuery(filters: QueryAuditSearchFilters): SqlQuery {
@@ -85,8 +88,11 @@ export function buildQueryAuditQuery(filters: QueryAuditSearchFilters): SqlQuery
   addJsonStatusFilter(clauses, params, filters.status);
   addExploreOutcomeFilter(clauses, params, filters.outcome, "status");
   addJsonEqual(clauses, params, "boundary_digest", filters.boundary);
+  addMetadataSearch(clauses, params, filters.search, [
+    "CAST(audit_id AS TEXT)", "table_name", "source_id", "capability", "evidence_bundle_id", "payload_json",
+  ]);
   addTimeRange(clauses, params, "created_at", filters.from, filters.to);
-  return finishQuery("SELECT * FROM query_audit", clauses, params, filters.limit);
+  return finishQuery("SELECT * FROM query_audit", clauses, params, filters.limit, filters.offset);
 }
 
 export function buildReceiptQuery(filters: ReceiptSearchFilters): SqlQuery {
@@ -220,10 +226,38 @@ export function addTimeRange(clauses: string[], params: SqlParam[], column: stri
   }
 }
 
-export function finishQuery(base: string, clauses: string[], params: SqlParam[], limit?: number): SqlQuery {
+function addMetadataSearch(
+  clauses: string[],
+  params: SqlParam[],
+  value: string | undefined,
+  columns: string[],
+): void {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return;
+  const escaped = normalized.replace(/[\\%_]/g, (character) => `\\${character}`);
+  clauses.push(`(${columns.map((column) => `LOWER(COALESCE(${column}, '')) LIKE ? ESCAPE '\\'`).join(" OR ")})`);
+  params.push(...columns.map(() => `%${escaped}%`));
+}
+
+
+export function finishQuery(
+  base: string,
+  clauses: string[],
+  params: SqlParam[],
+  limit?: number,
+  offset?: number,
+): SqlQuery {
   const where = clauses.length ? ` WHERE ${clauses.join(" AND ")}` : "";
-  const sql = `${base}${where} ORDER BY created_at DESC${limit ? " LIMIT ?" : ""}`;
-  return { sql, params: limit ? [...params, limit] : params };
+  const boundedOffset = Number.isSafeInteger(offset) && Number(offset) > 0 ? Number(offset) : 0;
+  const sql = `${base}${where} ORDER BY created_at DESC${limit ? " LIMIT ?" : boundedOffset ? " LIMIT -1" : ""}${boundedOffset ? " OFFSET ?" : ""}`;
+  return {
+    sql,
+    params: [
+      ...params,
+      ...(limit ? [limit] : []),
+      ...(boundedOffset ? [boundedOffset] : []),
+    ],
+  };
 }
 
 export function objectTypeVariants(value: string): string[] {
