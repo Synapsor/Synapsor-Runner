@@ -31,6 +31,53 @@ const reviewedFieldMetadataSchema = z.object({
   id: z.string(),
   label: z.string().max(64).optional(),
   description: z.string().max(280).optional(),
+  plan_reference: z.literal("exact_id_only").optional(),
+  semantic_status: z.enum([
+    "reviewed_vocabulary",
+    "descriptive_identifier",
+    "opaque_identifier",
+  ]).optional(),
+  operations: z.object({
+    return_value: z.boolean(),
+    model_egress: z.enum(["visible", "withheld"]),
+    filter_operators: z.array(z.enum(["eq", "neq", "lt", "lte", "gt", "gte", "in"])),
+    sortable: z.boolean(),
+    groupable: z.boolean(),
+    aggregate_functions: z.array(z.enum([
+      "sum",
+      "avg",
+      "stddev_samp",
+      "stddev_pop",
+      "var_samp",
+      "var_pop",
+    ])),
+    presence_functions: z.array(z.enum(["null_count", "non_null_count", "completion_rate"])),
+    count_distinct: z.boolean(),
+    time_buckets: z.array(z.enum([
+      "hour",
+      "day",
+      "week",
+      "month",
+      "quarter",
+      "year",
+      "day_of_week",
+    ])),
+  }).strict().optional(),
+  allowed_values: z.array(jsonScalarSchema).optional(),
+}).strict();
+const reviewedClientFieldMetadataSchema = z.object({
+  id: z.string(),
+  label: z.string().max(64).optional(),
+  description: z.string().max(280).optional(),
+}).passthrough();
+const exploreVocabularyCoverageSchema = z.object({
+  status: z.enum(["ready", "review_required"]),
+  model_facing_fields: z.number().int().nonnegative(),
+  fields_with_labels: z.number().int().nonnegative(),
+  fields_with_descriptions: z.number().int().nonnegative(),
+  fields_with_reviewed_vocabulary: z.number().int().nonnegative(),
+  opaque_resource_without_vocabulary: z.boolean(),
+  opaque_fields_without_vocabulary: z.array(z.string()),
 }).strict();
 const modelWithheldTokenSchema = z.string().regex(/^\[withheld:[a-f0-9]{12}:[1-9][0-9]*\]$/);
 const modelEgressResultSchema = z.object({
@@ -440,11 +487,19 @@ export const scopedExploreDescribeOutputSchema = z.object({
     week_starts_on: z.literal("Monday"),
     model_supplied_date_arithmetic: z.literal(false),
   }).strict().optional(),
+  vocabulary_policy: z.object({
+    reviewed_metadata_is_semantic_only: z.literal(true),
+    exact_ids_required_in_plans: z.literal(true),
+    opaque_identifier_behavior: z.literal(
+      "do_not_guess; ask the operator to add a reviewed label or description",
+    ),
+  }).strict().optional(),
   resources: z.array(z.object({
     boundary_name: z.string().optional(),
     id: z.string(),
     label: z.string().max(64).optional(),
     description: z.string().max(280).optional(),
+    vocabulary: exploreVocabularyCoverageSchema.optional(),
     primary_key: z.string(),
     fields: z.array(reviewedFieldMetadataSchema),
     field_egress: fieldEgressSchema,
@@ -479,6 +534,7 @@ export const scopedExploreDescribeOutputSchema = z.object({
       target_resource: z.string(),
       target_label: z.string().max(64).optional(),
       target_description: z.string().max(280).optional(),
+      vocabulary: exploreVocabularyCoverageSchema.optional(),
       cardinality: z.literal("many_to_one"),
       counted_entity: z.string(),
       path_depth: z.number().int().positive(),
@@ -512,6 +568,7 @@ export const scopedExploreDescribeOutputSchema = z.object({
       time_bucket_fields: z.record(z.array(z.string())),
       relative_time_window_fields: z.array(z.string()).optional(),
       field_types: z.record(z.string()),
+      field_enums: z.record(z.array(jsonScalarSchema)).optional(),
     }).strict()),
     minimum_cohort_size: z.number().int().positive(),
     minimum_cohort_overridden: z.literal(true).optional(),
@@ -558,7 +615,7 @@ const scopedExploreClientDescribeResourceSchema = z.object({
   id: z.string().min(1),
   label: z.string().max(64).optional(),
   description: z.string().max(280).optional(),
-  fields: z.array(reviewedFieldMetadataSchema).optional(),
+  fields: z.array(reviewedClientFieldMetadataSchema).optional(),
 }).passthrough();
 
 export const scopedExploreDescribeToolOutputSchema = z.object({

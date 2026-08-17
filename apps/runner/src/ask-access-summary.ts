@@ -601,7 +601,7 @@ function asksForTimeComparison(question: string): boolean {
 function phraseMatches(question: string, value: string): boolean {
   const phrase = normalizedSearchText(value.split(".").at(-1) ?? value);
   if (!phrase) return false;
-  if (question.includes(phrase)) return true;
+  if (` ${question} `.includes(` ${phrase} `)) return true;
   const terms = new Set(question.split(" ").map(singularTerm));
   return phrase.split(" ").every((term) => terms.has(singularTerm(term)));
 }

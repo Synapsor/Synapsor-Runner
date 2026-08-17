@@ -32,6 +32,7 @@ import {
   renderBoundaryMapTable,
   type BoundaryMapFieldRow,
 } from "./boundary-map-presentation.js";
+import { exploreVocabularyCoverage } from "./explore-vocabulary.js";
 
 export type BoundaryFieldTier = ReviewedBoundaryFieldTier;
 export type BoundaryFieldTierEditResult =
@@ -1255,6 +1256,13 @@ async function editFieldTiers(
       const tableWidth = Math.max(36, Math.min(terminalContentWidth(output.columns), 116));
       const accessLayout = fieldAccessLayout(tableWidth);
       const reviewCompatibility = databaseCompatibilityLine(view.database_server_compatibility, theme);
+      const vocabularyCoverage = exploreVocabularyCoverage(
+        (view.candidate ?? view.generated_candidate)!,
+      );
+      const vocabularyGaps = [
+        ...(vocabularyCoverage.opaque_resource_without_vocabulary ? ["table name"] : []),
+        ...vocabularyCoverage.opaque_fields_without_vocabulary,
+      ];
       render([
         theme.title(`REVIEW COLUMNS - ${safeTerminalText(view.resource_id)}`),
         `${theme.key("Up/Down")} Navigate   ${theme.key("Space")} Change access   ` +
@@ -1279,6 +1287,14 @@ async function editFieldTiers(
           ? [`${theme.key("S")} Restore the current inspected filter/sort/group/measure suggestions for this column`]
           : []),
         `${theme.key("I")} Edit the selected column's reviewed label and description`,
+        ...(vocabularyGaps.length > 0
+          ? [
+            theme.warning(`REVIEWED MODEL VOCABULARY REQUIRED: ${vocabularyGaps.join(", ")}`),
+            theme.dim(
+              "Add field vocabulary here with I. Use I on the boundary table list for the table label or description. Exact database IDs remain the plan authority.",
+            ),
+          ]
+          : []),
         "Space cycles: MODEL + RUNNER -> RUNNER ONLY -> KEPT OUT",
         "",
         theme.bold(fieldAccessRow("COLUMN", "TYPE", "ACCESS", "REVIEW NOTE", accessLayout)),

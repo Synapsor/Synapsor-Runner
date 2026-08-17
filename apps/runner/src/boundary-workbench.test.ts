@@ -10,6 +10,7 @@ describe("Auto Boundary Workbench renderer", () => {
       ["field tiers and sensitive widening", ["Model + Runner", "Withheld from model", "Kept out", "Changing a tier opens a recorded human review"]],
       ["reviewed enum allowlists", ["Allowed values", "Save allowed values", "Removed values are refused even if guessed"]],
       ["reviewed labels and descriptions", ["Reviewed label", "Reviewed description", "Save reviewed metadata", "plans still use the exact id"]],
+      ["model vocabulary coverage", ["Reviewed model vocabulary required before activation", "Model vocabulary ready", "opaque model-facing identifiers", "Exact database IDs remain the plan authority"]],
       ["direct and relationship-carried tenant scope", ["tenant_scope_path", "mandatory proven relationship path"]],
       ["direct and relationship-carried principal scope", ["principal_scope_path", "user/owner limit"]],
       ["shared-reference scope", ["Shared reference - same rows for every tenant", "I confirm this table has no per-tenant rows"]],
@@ -33,6 +34,49 @@ describe("Auto Boundary Workbench renderer", () => {
       for (const marker of markers) expect(html, feature).toContain(marker);
     }
     expect(html).not.toMatch(/execute_sql|model can activate|model can approve|model can apply/i);
+  });
+
+  it("blocks opaque Workbench authority until the reviewed vocabulary panels are completed", () => {
+    const html = renderBoundaryWorkbench("test-csrf");
+    const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? "";
+    const vocabularyStart = script.indexOf("const opaqueIdentifierPrefixes");
+    const vocabularyEnd = script.indexOf("function handleSessionFailure", vocabularyStart);
+    const blockerStart = script.indexOf("function focusedBoundaryBlocker()");
+    const blockerEnd = script.indexOf("function renderSignoff()", blockerStart);
+    expect(vocabularyStart).toBeGreaterThanOrEqual(0);
+    expect(vocabularyEnd).toBeGreaterThan(vocabularyStart);
+    expect(blockerStart).toBeGreaterThanOrEqual(0);
+    expect(blockerEnd).toBeGreaterThan(blockerStart);
+    const functions = `${script.slice(vocabularyStart, vocabularyEnd)}\n${script.slice(blockerStart, blockerEnd)}`;
+    const candidate: {
+      pack: {
+        resources: Array<Record<string, unknown>>;
+      };
+    } = {
+      pack: {
+        resources: [{
+          id: "legacy.t_0031",
+          selectable_fields: ["val_1"],
+          filterable_fields: {},
+          sortable_fields: [],
+          groupable_fields: ["val_1"],
+          aggregate_measures: [],
+          count_distinct_fields: [],
+          time_bucket_fields: {},
+          kept_out_fields: [],
+          relationships: [],
+        }],
+      },
+    };
+    const context: Record<string, unknown> = { candidate };
+    const evaluated = vm.createContext(context);
+    vm.runInContext(`${functions}; result=focusedBoundaryBlocker();`, evaluated);
+    expect(context.result).toMatch(/legacy\.t_0031.*table name.*val_1/is);
+
+    candidate.pack.resources[0]!.label = "Transit routes";
+    candidate.pack.resources[0]!.field_metadata = { val_1: { label: "Service class" } };
+    vm.runInContext("result=focusedBoundaryBlocker();", evaluated);
+    expect(context.result).toBe("");
   });
 
   it("blocks a Workbench table removal when another table derives scope through it", () => {

@@ -149,6 +149,20 @@ use exact reviewed IDs. Custom labels are never accepted as plan aliases, and
 metadata attached to a kept-out field is omitted from the model-facing HTTP
 response. No additional MCP tool or HTTP endpoint is created.
 
+That parity includes vocabulary diagnostics and field-level grammar. The
+compact `app.describe_data` index returns exact IDs, reviewed labels and
+descriptions, semantic status, resource operation allowlists, coverage counts,
+and the instruction that plans use exact IDs. A focused call for one exact
+resource adds each field's legal operations, bounded enum values, and reviewed
+relationship grammar. `next_cursor` is accompanied by explicit guidance to page
+until a matching resource is found or the catalog ends, so an added table or
+boundary does not disappear merely because it falls after the first compact
+page. Clearly placeholder-like model-facing IDs require a reviewed label or
+description before a new boundary revision can activate; legacy active
+authority is warned by `doctor` until reconciled. These rules are identical over
+local stdio and secured HTTP and do not depend on JWT claims, host locale, or
+source engine.
+
 Reviewed automatic numeric bands have the same parity. A model may choose only
 an activated field, method, and bounded bucket count; it cannot provide edges,
 widths, labels, or formulas. Runner computes boundaries after JWT-derived

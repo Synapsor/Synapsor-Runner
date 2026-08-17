@@ -156,6 +156,19 @@ describe("Ask access summaries", () => {
     });
   });
 
+  it("does not match a one-character draft field inside an unrelated word", async () => {
+    const root = await fixtureProject();
+    const draftPath = path.join(root, "synapsor/generated/exploration-boundary.draft.json");
+    const draft = JSON.parse(await fs.readFile(draftPath, "utf8")) as any;
+    draft.pack.resources.push(resource("public.nums", "nums", { fields: ["n"] }));
+    await fs.writeFile(draftPath, JSON.stringify(draft), "utf8");
+
+    await expect(resolveAskAccessGuidance({
+      projectRoot: root,
+      question: "Are emergencies going up?",
+    })).resolves.toBeUndefined();
+  });
+
   it("explains complementary privacy refusals with the exact human review path", async () => {
     const root = await fixtureProject();
     await activateFixtureBoundary(root);

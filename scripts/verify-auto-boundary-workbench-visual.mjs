@@ -1510,12 +1510,10 @@ try {
           .map(resource=>resource.id),
         selected:table?.value||"",
         createLabel:document.querySelector("#create-boundary")?.textContent||"",
+        createDisabled:Boolean(document.querySelector("#create-boundary")?.disabled),
       };
     })()`);
-    const expectedStartingTableIds = [...new Set([
-      ...newBoundaryForm.generatedTableIds,
-      ...newBoundaryForm.sharedReferenceCandidateIds,
-    ])].sort();
+    const expectedStartingTableIds = [...new Set(newBoundaryForm.generatedTableIds)].sort();
     assert(
       newBoundaryForm.visible
         && JSON.stringify([...newBoundaryForm.startingTableOptions].sort())
@@ -1527,9 +1525,14 @@ try {
         && !newBoundaryForm.generatedTableIds.includes(
           "public.unscoped_shared_reference_data",
         )
+        && !newBoundaryForm.startingTableOptions.includes(
+          "public.unscoped_shared_reference_data",
+        )
         && newBoundaryForm.selected === ""
+        && newBoundaryForm.createDisabled
         && /choose its first table/i.test(newBoundaryForm.text)
         && /nothing is copied from another boundary/i.test(newBoundaryForm.text)
+        && /can be added after.*shared reference acknowledgement/i.test(newBoundaryForm.text)
         && /choose table and edit/i.test(newBoundaryForm.createLabel)
         && !/copies the selected disabled structure/i.test(newBoundaryForm.text),
       "new boundary creation did not require an explicit starting table",
