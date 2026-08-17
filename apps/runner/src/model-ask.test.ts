@@ -1795,6 +1795,435 @@ describe("Workbench BYOM Ask", () => {
     expect(metadataCalls).toBe(1);
   });
 
+  it.each(["openai", "anthropic"] as const)(
+    "accepts a reviewed business-language dimension through the %s provider path",
+    async (provider) => {
+      let exploreCalls = 0;
+      const gateway: AskToolGateway = {
+        mode: "authoring",
+        listTools: () => authoringTools,
+        callTool: async () => {
+          exploreCalls += 1;
+          return {
+            ok: true,
+            value: { ok: true, data: [{ species: "dog", measure_0: 12 }], source_database_changed: false },
+          };
+        },
+        describeOperatorMetadata: async () => ({
+          ok: true,
+          value: {
+            ok: true,
+            resources: [{
+              id: "vetdb.animals",
+              fields: [{ id: "species" }, { id: "breed_group" }],
+              groupable_fields: ["species", "breed_group"],
+              operator_review_metadata: { boundary_resource_count: 3, fields: [] },
+            }],
+            source_database_changed: false,
+          },
+        }),
+        close: async () => undefined,
+      };
+      const session = new WorkbenchAskSession();
+      if (provider === "openai") {
+        session.configure({
+          provider,
+          model: "gpt-5-mini",
+          api_key: "openai-session-key",
+          authority_digest: askToolSurfaceDigest(authoringTools),
+          egress_acknowledged: true,
+        });
+      } else {
+        session.configure({
+          provider,
+          model: "claude-test",
+          api_key: "anthropic-session-key",
+          authority_digest: askToolSurfaceDigest(authoringTools),
+          egress_acknowledged: true,
+        });
+      }
+      let requests = 0;
+      const result = await session.run("What kinds of pets do we see most?", gateway, {
+        requestJson: async () => {
+          requests += 1;
+          if (provider === "openai") {
+            return requests === 1
+              ? openAiToolCall("business_species", "app__explore_data", {
+                  plan: {
+                    kind: "aggregate",
+                    resource: "vetdb.animals",
+                    measures: [{ function: "count" }],
+                    dimensions: [{ field: "species" }],
+                  },
+                })
+              : openAiText("Dogs are the most common reviewed species.");
+          }
+          return requests === 1
+            ? {
+                status: 200,
+                body: {
+                  content: [{
+                    type: "tool_use",
+                    id: "business_species_anthropic",
+                    name: "app__explore_data",
+                    input: {
+                      plan: {
+                        kind: "aggregate",
+                        resource: "vetdb.animals",
+                        measures: [{ function: "count" }],
+                        dimensions: [{ field: "species" }],
+                      },
+                    },
+                  }],
+                },
+              }
+            : {
+                status: 200,
+                body: { content: [{ type: "text", text: "Dogs are the most common reviewed species." }] },
+              };
+        },
+      });
+
+      expect(result.tool_calls).toEqual([
+        expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+      ]);
+      expect(exploreCalls).toBe(1);
+    },
+  );
+
+  it("accepts the same reviewed business-language dimension for an OpenAI-compatible local model", async () => {
+    let exploreCalls = 0;
+    const animals = {
+      id: "vetdb.animals",
+      fields: [{ id: "species" }, { id: "breed_group" }],
+      groupable_fields: ["species", "breed_group"],
+      aggregate_measure_functions: {},
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name) => {
+        if (name === "app.describe_data") {
+          return {
+            ok: true,
+            value: {
+              ok: true,
+              resources: [animals],
+              next_cursor: null,
+              source_database_changed: false,
+            },
+          };
+        }
+        exploreCalls += 1;
+        return {
+          ok: true,
+          value: { ok: true, data: [{ species: "dog", measure_0: 12 }], source_database_changed: false },
+        };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: { ok: true, resources: [animals], source_database_changed: false },
+      }),
+      close: async () => undefined,
+    };
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    let requests = 0;
+    const result = await session.run("What kinds of pets do we see most?", gateway, {
+      requestJson: async () => {
+        requests += 1;
+        if (requests === 1) return openAiToolCall("local_business_catalog", "app__describe_data", {});
+        if (requests === 2) {
+          return openAiToolCall("local_business_species", "app__explore_data", {
+            plan: {
+              kind: "aggregate",
+              resource: "vetdb.animals",
+              measures: [{ function: "count" }],
+              dimensions: [{ field: "species" }],
+            },
+          });
+        }
+        return openAiText("Dogs are the most common reviewed species.");
+      },
+    });
+
+    expect(result.tool_calls.at(-1)).toEqual(
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    );
+    expect(exploreCalls).toBe(1);
+  });
+
+  it("loads full operator metadata before checking a relationship field label", async () => {
+    let exploreCalls = 0;
+    let metadataCalls = 0;
+    const relationship = "faults_inspection_id_fkey__inspections_turbine_id_fkey";
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name) => {
+        if (name === "app.describe_data") {
+          return {
+            ok: true,
+            value: {
+              ok: true,
+              next_cursor: null,
+              resources: [{
+                id: "public.faults",
+                groupable_fields: ["category", "severity"],
+                relationships: [{
+                  id: relationship,
+                  target_resource: "public.turbines",
+                  path_depth: 2,
+                }],
+              }],
+              source_database_changed: false,
+            },
+          };
+        }
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => {
+        metadataCalls += 1;
+        return {
+          ok: true,
+          value: {
+            ok: true,
+            resources: [{
+              id: "public.faults",
+              fields: [{ id: "category" }, { id: "severity" }],
+              groupable_fields: ["category", "severity"],
+              relationships: [{
+                id: relationship,
+                activation: "active",
+                target_resource: "public.turbines",
+                target_label: "Turbines",
+                path_depth: 2,
+                fields: [{ id: "site", label: "Location" }],
+                groupable_fields: ["site"],
+              }],
+            }],
+            source_database_changed: false,
+          },
+        };
+      },
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-5-mini",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    let requests = 0;
+    const result = await session.run("Break down faults by location.", gateway, {
+      requestJson: async () => {
+        requests += 1;
+        if (requests === 1) return openAiToolCall("compact_catalog", "app__describe_data", {});
+        if (requests === 2) {
+          return openAiToolCall("relationship_label_plan", "app__explore_data", {
+            plan: {
+              kind: "aggregate",
+              resource: "public.faults",
+              measures: [{ function: "count" }],
+              dimensions: [{ field: "site", relationship }],
+            },
+          });
+        }
+        return openAiText("The reviewed location breakdown is available.");
+      },
+    });
+
+    expect(result.tool_calls.at(-1)).toEqual(
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    );
+    expect(metadataCalls).toBe(1);
+    expect(exploreCalls).toBe(1);
+  });
+
+  it("uses distinctive reviewed field and resource descriptions as business vocabulary", async () => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: {
+          ok: true,
+          resources: [{
+            id: "legacy.t_0042",
+            description: "Wind farm outages found during inspections.",
+            fields: [
+              { id: "c9", description: "Wind farm location where the turbine stands." },
+              { id: "c10", description: "Mechanical fault category." },
+            ],
+            groupable_fields: ["c9", "c10"],
+          }],
+          source_database_changed: false,
+        },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-5-mini",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    let requests = 0;
+    const result = await session.run("Break down wind farm outages by location.", gateway, {
+      requestJson: async () => {
+        requests += 1;
+        return requests === 1
+          ? openAiToolCall("description_plan", "app__explore_data", {
+              plan: {
+                kind: "aggregate",
+                resource: "legacy.t_0042",
+                measures: [{ function: "count" }],
+                dimensions: [{ field: "c9" }],
+              },
+            })
+          : openAiText("The reviewed location breakdown is available.");
+      },
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]);
+    expect(exploreCalls).toBe(1);
+  });
+
+  it("accepts trend language for the sole reviewed time dimension", async () => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: {
+          ok: true,
+          resources: [{
+            id: "vetdb.visits",
+            fields: [{ id: "visited_on" }],
+            groupable_fields: ["visited_on"],
+            time_bucket_fields: { visited_on: ["week"] },
+          }],
+          source_database_changed: false,
+        },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-5-mini",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    let requests = 0;
+    const result = await session.run("Are emergencies going up?", gateway, {
+      requestJson: async () => {
+        requests += 1;
+        return requests === 1
+          ? openAiToolCall("trend_plan", "app__explore_data", {
+              plan: {
+                kind: "aggregate",
+                resource: "vetdb.visits",
+                measures: [{ function: "count" }],
+                dimensions: [{ field: "visited_on" }],
+              },
+            })
+          : openAiText("The reviewed trend is available.");
+      },
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]);
+    expect(exploreCalls).toBe(1);
+  });
+
+  it("lets Explore report an unavailable automatic band instead of masking it as intent mismatch", async () => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return {
+          ok: false,
+          value: {
+            ok: false,
+            error_code: "EXPLORE_AUTOMATIC_BAND_NOT_REVIEWED",
+            message: "weight_kg has no reviewed automatic numeric-band policy on this database tier.",
+            source_database_changed: false,
+          },
+        };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: {
+          ok: true,
+          resources: [{
+            id: "vetdb.animals",
+            fields: [{ id: "weight_kg" }],
+            groupable_fields: [],
+            auto_bands: [],
+          }],
+          source_database_changed: false,
+        },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-5-mini",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    let requests = 0;
+    const result = await session.run("Do heavier animals cost more to look after?", gateway, {
+      requestJson: async () => {
+        requests += 1;
+        return requests === 1
+          ? openAiToolCall("unavailable_auto_band", "app__explore_data", {
+              plan: {
+                kind: "aggregate",
+                resource: "vetdb.animals",
+                measures: [{ function: "avg", field: "lifetime_cost_pence" }],
+                dimensions: [{ numeric_band: { field: "weight_kg", method: "quantile", buckets: 5 } }],
+              },
+            })
+          : openAiText("The reviewed boundary does not permit that automatic band.");
+      },
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({
+        status: "refused",
+        result: expect.objectContaining({
+          error_code: "EXPLORE_AUTOMATIC_BAND_NOT_REVIEWED",
+        }),
+      }),
+    ]);
+    expect(result.tool_calls[0]?.error_code).not.toBe("ASK_PLAN_INTENT_MISMATCH");
+    expect(exploreCalls).toBe(1);
+  });
+
   it.each([
     {
       question: "Break down encounters by type.",
