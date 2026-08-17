@@ -14,7 +14,7 @@ npx -y @synapsor/runner doctor --first-run --json
 
 ## Guided Recovery Contract
 
-Runner 1.6.6 failures should tell you what failed, why the boundary stopped,
+Runner 1.7.x failures should tell you what failed, why the boundary stopped,
 what state remains, and one next action. Do not delete the project or add
 `--force` merely to recover.
 
@@ -27,8 +27,9 @@ what state remains, and one next action. Do not delete the project or add
 | Sensitive field remains unresolved | Field stays kept out; active tools unchanged | Open Workbench **Exceptions** and record one reviewed field decision. |
 | Row identifier is missing/composite/ambiguous | Resource remains blocked | Select a source-proven single-column primary/unique identity or keep the resource blocked. |
 | Trusted context environment is missing | Boundary and ledger remain intact; query did not run | Export the named tenant/principal variable locally, then rerun the displayed Try action. |
-| Generated output already exists | Existing files are not overwritten | Rerun the original `start` command and choose **Resume existing review**. |
+| Generated output already exists | Existing files are not overwritten | Rerun the original `start` command and choose **Resume existing review**. A valid standalone `boundary draft` project resumes even without a guided-onboarding marker. |
 | Generation lock is stale | Existing active named capability and review history | Run `synapsor-runner boundary rescan`, inspect the reconciliation report, then review and activate only the disabled changed revision. |
+| Lone disabled legacy boundary has no current resource to reconcile | Config, local ledger/evidence, and source database | Run the exact displayed `boundary delete <name> --discard-curated-review --yes`, then run the displayed current-version draft command. This guarded reset refuses active or multi-boundary projects. |
 | Config JSON is malformed | Config and source database are unchanged | Correct the reported file/line/column, then run `synapsor-runner config validate --config ./synapsor.runner.json --json`. |
 | Config mode is missing/invalid | Config and source database are unchanged | Set `mode` to `read_only`, `shadow`, `review`, or `cloud`, then rerun `synapsor-runner config validate --json`. |
 | Config contains an unknown field | Config and source database are unchanged | Remove or correct the reported JSON path, then rerun `synapsor-runner config validate --json`. |
@@ -119,6 +120,9 @@ Provider errors are redacted and do not disable the no-model composer:
   direct egress again;
 - `ASK_PROVIDER_UNAVAILABLE`: verify provider availability, key/model access,
   and local DNS/TLS, then retry;
+- `ASK_PROVIDER_HTTP_ERROR`: inspect the bounded structured provider detail.
+  Runner removes common credentials and URLs before displaying a provider
+  `400`; authentication, permission, and quota bodies remain hidden;
 - `ASK_PROVIDER_REDIRECT_REFUSED`: use the final fixed endpoint; Runner never
   forwards credentials across redirects;
 - `ASK_PROVIDER_DESTINATION_REFUSED`: the host resolved to a private, special,
@@ -144,6 +148,14 @@ Hosted providers have tested defaults: OpenAI uses `gpt-5-mini` and Anthropic
 uses `claude-sonnet-4-20250514` when `--model` is omitted. Pass `--model` to
 override either default. OpenAI-compatible endpoints require an explicit model
 because Runner cannot infer what a local endpoint serves.
+
+Official OpenAI calls use the Responses API at `/v1/responses`, including
+native `function_call` and `function_call_output` turns; Runner explicitly
+sets `store: false` on those requests. Official Anthropic
+calls use the Messages API at `/v1/messages`, including native `tool_use` and
+`tool_result` blocks. Custom OpenAI-compatible endpoints continue to use the
+documented Chat Completions subset; choose that provider only when the endpoint
+implements that protocol.
 
 CLI Ask refuses provider keys on the command line. Use the conventional or an
 explicitly named environment variable, or the hidden interactive prompt. While

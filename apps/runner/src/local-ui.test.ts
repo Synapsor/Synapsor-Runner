@@ -3244,6 +3244,41 @@ export default defineCapability({
         authority_changed: false,
         source_database_changed: false,
       });
+
+      const wrongResetConfirmation = await fetch(
+        `http://${server.host}:${server.port}/api/boundary/library/delete`,
+        {
+          method: "POST",
+          headers: { ...headers, "content-type": "application/json" },
+          body: JSON.stringify({
+            name: originalName,
+            confirmation: `DELETE ${originalName}`,
+            discard_curated_review: true,
+          }),
+        },
+      );
+      expect(wrongResetConfirmation.status).toBe(409);
+
+      const reset = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/library/delete`,
+        headers,
+        {
+          name: originalName,
+          confirmation: `DISCARD REVIEW ${originalName}`,
+          discard_curated_review: true,
+        },
+      );
+      expect(reset).toMatchObject({
+        discarded_curated_review: true,
+        deleted: originalName,
+        preserved: ["runner config", "local ledger and evidence", "source database"],
+        authority_changed: false,
+        source_database_changed: false,
+        next: "synapsor-runner boundary draft --from-env DATABASE_URL --project-root .",
+      });
+      await expect(fs.access(guided.config_path)).resolves.toBeUndefined();
+      await expect(fs.access(guided.store_path)).resolves.toBeUndefined();
+      await expect(fs.access(written.root)).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       await server.close();
       await fs.rm(tempDir, { recursive: true, force: true });

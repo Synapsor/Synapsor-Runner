@@ -142,7 +142,7 @@ describe("try ask", () => {
     expect(requestJson).toHaveBeenCalledWith(expect.objectContaining({
       body: expect.objectContaining({
         model: "gpt-5-mini",
-        max_completion_tokens: 2_048,
+        max_output_tokens: 2_048,
       }),
       timeoutMs: 75_000,
     }));

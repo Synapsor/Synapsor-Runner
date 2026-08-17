@@ -232,13 +232,16 @@ async function connectAuthoringSurface(input: {
         arguments: args,
         result,
       });
-    surface.describeOperatorMetadata = (args) => runtime!.describe({
-      ...(typeof args.boundary === "string" ? { boundary: args.boundary } : {}),
-      ...(typeof args.resource === "string" ? { resource: args.resource } : {}),
-      ...(typeof args.cursor === "number" ? { cursor: args.cursor } : {}),
-      ...(typeof args.limit === "number" ? { limit: args.limit } : {}),
-      include_time_coverage: false,
-    });
+    surface.describeOperatorMetadata = async (args) => {
+      const described = await runtime!.describe({
+        ...(typeof args.boundary === "string" ? { boundary: args.boundary } : {}),
+        ...(typeof args.resource === "string" ? { resource: args.resource } : {}),
+        ...(typeof args.cursor === "number" ? { cursor: args.cursor } : {}),
+        ...(typeof args.limit === "number" ? { limit: args.limit } : {}),
+        include_time_coverage: false,
+      });
+      return addAskOperatorReviewMetadata(runtime!, args, described);
+    };
     return surface;
   } catch (error) {
     await runtime?.close().catch(() => undefined);
@@ -270,6 +273,49 @@ async function connectAuthoringSurface(input: {
     }
     throw error;
   }
+}
+
+function addAskOperatorReviewMetadata(
+  runtime: ScopedExploreBoundarySetRuntime,
+  args: Record<string, unknown>,
+  described: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!Array.isArray(described.resources)) return described;
+  const requestedBoundary = typeof args.boundary === "string" ? args.boundary : undefined;
+  const requestedResource = typeof args.resource === "string" ? args.resource : undefined;
+  const boundary = requestedBoundary
+    ? runtime.boundaries.find((candidate) => candidate.pack.name === requestedBoundary)
+    : requestedResource
+      ? runtime.boundaries.find((candidate) =>
+          candidate.pack.resources.some((resource) => resource.id === requestedResource))
+      : runtime.boundaries.length === 1
+        ? runtime.boundaries[0]
+        : undefined;
+  if (!boundary) return described;
+
+  const reviewedById = new Map(boundary.pack.resources.map((resource) => [resource.id, resource]));
+  return {
+    ...described,
+    resources: described.resources.map((value) => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+      const resource = value as Record<string, unknown>;
+      const id = typeof resource.id === "string" ? resource.id : undefined;
+      const reviewed = id ? reviewedById.get(id) : undefined;
+      if (!reviewed) return resource;
+      return {
+        ...resource,
+        operator_review_metadata: {
+          boundary_resource_count: boundary.pack.resources.length,
+          fields: Object.keys(reviewed.field_types).sort().map((field) => ({
+            id: field,
+            kept_out: reviewed.kept_out_fields.includes(field),
+            model_visible: reviewed.selectable_fields.includes(field),
+            count_unique_reviewed: reviewed.count_distinct_fields.includes(field),
+          })),
+        },
+      };
+    }),
+  };
 }
 
 async function connectSurface(

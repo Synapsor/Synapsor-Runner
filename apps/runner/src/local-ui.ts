@@ -192,6 +192,7 @@ import {
 } from "./boundary-review-policy.js";
 import {
   createSavedBoundary,
+  discardOnlySavedBoundaryReview,
   deleteSavedBoundary,
   resolveSavedBoundaryReviewAuthority,
   switchSavedBoundary,
@@ -1162,10 +1163,36 @@ async function handleRequest(input: {
     } else if (url.pathname === "/api/boundary/library/switch") {
       progress = await switchSavedBoundary({ ...context, name });
     } else {
-      if (body.confirmation !== `DELETE ${name}`) {
+      const discardCuratedReview = body.discard_curated_review === true;
+      const requiredConfirmation = discardCuratedReview
+        ? `DISCARD REVIEW ${name}`
+        : `DELETE ${name}`;
+      if (body.confirmation !== requiredConfirmation) {
         sendJson(response, 409, {
           ok: false,
-          error: `Deleting saved boundary ${name} requires its exact confirmation.`,
+          error: `${discardCuratedReview ? "Discarding curated review for" : "Deleting"} saved boundary ${name} requires its exact confirmation.`,
+        });
+        return;
+      }
+      if (discardCuratedReview) {
+        const lock = JSON.parse(await fs.readFile(
+          path.join(projectRoot, ".synapsor/generation-lock.json"),
+          "utf8",
+        )) as GenerationLock;
+        const discarded = await discardOnlySavedBoundaryReview({
+          ...context,
+          name,
+          boundaryRoot,
+        });
+        sendJson(response, 200, {
+          ok: true,
+          discarded_curated_review: true,
+          deleted: name,
+          removed_managed_paths: discarded.removed,
+          preserved: ["runner config", "local ledger and evidence", "source database"],
+          authority_changed: false,
+          source_database_changed: false,
+          next: `synapsor-runner boundary draft --from-env ${lock.source_env} --project-root .`,
         });
         return;
       }

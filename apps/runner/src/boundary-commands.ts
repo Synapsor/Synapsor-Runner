@@ -60,6 +60,7 @@ import { disableScopedExplore } from "./protect-query.js";
 import { recommendedBoundaryReviewCandidate } from "./boundary-candidate.js";
 import {
   createSavedBoundary,
+  discardOnlySavedBoundaryReview,
   deleteSavedBoundary,
   renameSavedBoundary,
   resolveSavedBoundaryReviewAuthority,
@@ -233,12 +234,13 @@ export async function boundaryDeleteCommand(
 ): Promise<number> {
   assertKnownOptions(
     args,
-    new Set(["--project-root", "--yes", "--json"]),
+    new Set(["--project-root", "--yes", "--json", "--discard-curated-review"]),
     "boundary delete",
   );
   const name = positional(args, 0)?.trim();
   if (!name) throw new Error("boundary delete requires <disabled-boundary-name>.");
   const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
+  const discardCuratedReview = args.includes("--discard-curated-review");
   if (!args.includes("--yes")) {
     const interactive = session ?? (process.stdin.isTTY && process.stdout.isTTY
       ? createBoundaryReviewInteractiveSession()
@@ -246,7 +248,10 @@ export async function boundaryDeleteCommand(
     if (!interactive) {
       throw new Error("boundary delete requires --yes outside an interactive terminal.");
     }
-    if (!await interactive.confirm(`Delete saved disabled boundary "${name}"?`, { defaultValue: false })) {
+    const question = discardCuratedReview
+      ? `Discard every curated review decision for the only saved boundary "${name}"? Config, ledger, evidence, and source data remain.`
+      : `Delete saved disabled boundary "${name}"?`;
+    if (!await interactive.confirm(question, { defaultValue: false })) {
       process.stdout.write("Boundary deletion cancelled. Nothing changed.\n");
       return 0;
     }
@@ -258,6 +263,38 @@ export async function boundaryDeleteCommand(
     currentCandidate: context.candidate,
     ...(context.progress ? { currentProgress: context.progress } : {}),
   });
+  if (discardCuratedReview) {
+    const discarded = await discardOnlySavedBoundaryReview({
+      projectRoot,
+      boundaryRoot: context.boundaryRoot,
+      draft: context.draft,
+      currentCandidate: context.candidate,
+      ...(context.progress ? { currentProgress: context.progress } : {}),
+      name,
+    });
+    const next = `${cliCommandName()} boundary draft --from-env ${context.lock.source_env} --project-root ${shellQuote(displayPath(projectRoot))}`;
+    const payload = {
+      ok: true,
+      discarded_curated_review: true,
+      deleted: name,
+      removed_managed_paths: discarded.removed,
+      preserved: ["runner config", "local ledger and evidence", "source database"],
+      authority_activated: false,
+      source_database_changed: false,
+      next,
+    };
+    process.stdout.write(args.includes("--json")
+      ? `${JSON.stringify(payload, null, 2)}\n`
+      : [
+        `Discarded curated review for disabled boundary "${name}".`,
+        "Preserved: Runner config, local ledger and evidence, and source database.",
+        "Authority activated: no",
+        "Source database changed: no",
+        `Next: ${next}`,
+        "",
+      ].join("\n"));
+    return 0;
+  }
   const deleted = await deleteSavedBoundary({
     projectRoot,
     draft: context.draft,
@@ -1305,13 +1342,25 @@ async function interactiveBoundaryReviewLoop(input: {
         process.stdout.write("Boundary deletion cancelled. Nothing changed.\n");
         continue;
       }
-      const result = await deleteSavedBoundary({
-        projectRoot: input.projectRoot,
-        draft: context.draft,
-        currentCandidate: context.candidate,
-        ...(context.progress ? { currentProgress: context.progress } : {}),
-        name: selected.boundary_name,
-      });
+      let result: Awaited<ReturnType<typeof deleteSavedBoundary>>;
+      try {
+        result = await deleteSavedBoundary({
+          projectRoot: input.projectRoot,
+          draft: context.draft,
+          currentCandidate: context.candidate,
+          ...(context.progress ? { currentProgress: context.progress } : {}),
+          name: selected.boundary_name,
+        });
+      } catch (error) {
+        process.stdout.write([
+          `Boundary was not deleted: ${redactCliErrorMessage(
+            error instanceof Error ? error.message : String(error),
+          )}`,
+          "You are still in boundary review. Active authority and source data are unchanged.",
+          "",
+        ].join("\n"));
+        continue;
+      }
       process.stdout.write([
         `Deleted saved disabled boundary "${selected.boundary_name}".`,
         `Selected boundary: ${result.selected_name}`,

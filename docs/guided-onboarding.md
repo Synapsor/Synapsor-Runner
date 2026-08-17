@@ -226,7 +226,10 @@ choose **Use my existing AI client**. The exact-plan no-model composer remains
 a secondary fallback.
 
 Running the same command again resumes. Resume and Try do not rescan, rewrite
-files, or change a digest. To deliberately re-inspect the current database, run:
+files, or change a digest. This also applies to a valid Runner-managed project
+created with standalone `boundary draft` and `boundary review`: its draft and
+generation lock are sufficient, so a missing guided-onboarding marker does not
+strand it. To deliberately re-inspect the current database, run:
 
 ```bash
 npx -y @synapsor/runner start --from-env DATABASE_URL --rescan
@@ -260,6 +263,24 @@ The three related commands have different jobs:
 When standalone review activates a boundary, Runner prints the exact command
 to resume the guided Ask flow. It also prints a direct `try ask` command for an
 operator who has already selected a provider and model.
+
+If an old project has exactly one disabled boundary and rescan cannot reconcile
+it because none of its saved resources remains in the inspected schema, Runner
+prints one explicit recovery command:
+
+```bash
+synapsor-runner boundary delete <boundary-name> \
+  --discard-curated-review \
+  --yes
+```
+
+Ordinary deletion of the only boundary remains protected, and this recovery
+refuses an active boundary or a project with several saved boundaries. It
+deletes only the marked generated authoring tree and curated boundary review
+state. The Runner config, `.synapsor/local.db` ledger and evidence, and source
+database remain intact. Runner then prints the exact current-version draft
+command. Preview Workbench provides the same guarded action as **Reset curated
+review** and requires typing `DISCARD REVIEW <boundary-name>` exactly.
 
 Workbench requires no additional terminal command. If you choose the CLI
 fallbacks below after the first success, install Runner once:
@@ -367,6 +388,14 @@ from remote `tools/list`.
 In Workbench, choose **Ask an aggregate question**. Select only reviewed
 resources, dimensions, measures, filters, and time buckets. No SQL or plan JSON
 is required.
+
+The distinct-count permission has one human-facing name: **Count unique**. In
+the terminal `/access` table screen, press `G` (**Reviewed metrics and numeric
+bands**) and enable **Count unique** for the field. Workbench exposes the same
+control in its reviewed metrics panel. For scripted review, the equivalent is
+`boundary review resource <resource> --count-distinct-fields <field>`. This
+grant permits the distinct aggregate only; it does not make the underlying
+field values returnable.
 
 The first release supports bounded:
 

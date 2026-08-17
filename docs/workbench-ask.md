@@ -466,9 +466,17 @@ Ask never receives approval or commit tools.
 Official providers use fixed endpoints:
 
 ```text
-OpenAI:    https://api.openai.com/v1/chat/completions
+OpenAI:    https://api.openai.com/v1/responses
 Anthropic: https://api.anthropic.com/v1/messages
 ```
+
+The official adapters use each provider's native tool protocol. OpenAI
+function calls and outputs are encoded as Responses API `function_call` and
+`function_call_output` items, and Runner sends `store: false` on every official
+OpenAI request. Anthropic uses Messages API `tool_use` and `tool_result` blocks.
+Custom OpenAI-compatible and loopback providers continue
+to use the documented Chat Completions tool-call subset because Runner cannot
+assume that a compatible server implements Responses.
 
 Use **Custom OpenAI-compatible** for another endpoint. Remote custom endpoints
 must use HTTPS. Plain HTTP is accepted only for an explicit loopback endpoint,
@@ -490,6 +498,11 @@ Runner:
 - permits custom local mode only on loopback;
 - bounds request/response bytes, tool schemas/results, tool calls, iterations,
   history, time, and reported tokens.
+
+For a structured provider `400`, Runner shows the provider's bounded message
+after removing control characters and common credential/URL forms. Arbitrary
+response bodies are never printed. Authentication, permission, and quota
+failures remain classified without echoing their bodies.
 
 No URL, model, header, or destination comes from model output.
 
@@ -544,12 +557,12 @@ latency but does not replace a suitable Runner request timeout.
 
 ## Tested Provider Matrix
 
-Status as of the prepared 1.7.0 source:
+Status as of the unreleased 1.7.1 source:
 
 | Provider surface | Verification | Claim |
 | --- | --- | --- |
-| OpenAI `gpt-5-mini` | Live packed Community Solar and TrailPeak runs against real local PostgreSQL; the 2026-08-01 TrailPeak run proved a 12-week aggregate explanation, independently rendered values, and an unavailable relationship review path | Live tested |
-| Anthropic Messages/tool-use protocol | Deterministic mock server, normal/refusal/error paths | Protocol tested; no live Anthropic account run |
+| OpenAI Responses API (`gpt-5-mini` live; current reasoning-family request shape in regression) | Live packed Community Solar and TrailPeak runs against real local PostgreSQL plus deterministic native `function_call`/`function_call_output` turns | Live tested on `gpt-5-mini`; native current-model protocol regression tested |
+| Anthropic Messages/tool-use protocol | Deterministic native `tool_use`/`tool_result`, normal/refusal/error paths | Protocol tested; no live Anthropic account run |
 | Custom OpenAI-compatible loopback | Deterministic real HTTP server plus tool/refusal/proposal and endpoint-security paths | Protocol tested against the documented Chat Completions subset |
 | Ollama `qwen2.5:7b` | Live local PostgreSQL matrix plus a real RS256/JWT-authenticated production Streamable HTTP MCP run; simple enum filtering, a two-hop relationship aggregate, kept-out refusal, exact two-tool surface, and no model-supplied scope | Live tested through Ollama's OpenAI-compatible API |
 | LM Studio or another named local server | No live engine run in this release | Compatibility requires the documented Chat Completions and tool-call subset; the label alone is not a claim |

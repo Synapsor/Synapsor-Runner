@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import path from "node:path";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
+  AUTO_BOUNDARY_VERSION,
   emptyReviewOverrides,
   explorationBoundaryCandidateDigest,
   generationLockSharedFactsDigest,
@@ -370,7 +371,11 @@ export async function deleteSavedBoundary(input: BoundaryLibraryContext & {
     throw new Error(`Saved boundary ${input.name} was not found.`);
   }
   if (Object.keys(library.boundaries).length === 1) {
-    throw new Error("Create another boundary before deleting the only saved boundary.");
+    throw new Error(
+      `Boundary ${input.name} is the only saved boundary. `
+      + "Create another boundary first, or explicitly discard its curated review with "
+      + `boundary delete ${input.name} --discard-curated-review --yes.`,
+    );
   }
   const activeNames = new Set(
     (await readActiveBoundaryIdentities(input.projectRoot)).map((active) => active.name),
@@ -395,6 +400,85 @@ export async function deleteSavedBoundary(input: BoundaryLibraryContext & {
   await writeBoundaryLibrary(input.projectRoot, library);
   await saveBoundaryReviewProgress(input.projectRoot, progress);
   return { selected_name: library.selected_name, progress };
+}
+
+export async function discardOnlySavedBoundaryReview(input: BoundaryLibraryContext & {
+  name: string;
+  boundaryRoot: string;
+}): Promise<{ removed: string[] }> {
+  const projectRoot = path.resolve(input.projectRoot);
+  const library = await readOrCreateLibrary(input);
+  if (!library.boundaries[input.name]) {
+    throw new Error(`Saved boundary ${input.name} was not found.`);
+  }
+  if (Object.keys(library.boundaries).length !== 1) {
+    throw new Error(
+      "--discard-curated-review is only for recovering a project with one disabled saved boundary. "
+      + "Use ordinary boundary delete after selecting a different saved boundary.",
+    );
+  }
+  const activeNames = new Set(
+    (await readActiveBoundaryIdentities(projectRoot)).map((active) => active.name),
+  );
+  if (activeNames.has(input.name)) {
+    throw new Error(`Boundary ${input.name} is active. Deactivate it before discarding its curated review.`);
+  }
+
+  const boundaryRoot = path.resolve(input.boundaryRoot);
+  const relativeBoundaryRoot = path.relative(projectRoot, boundaryRoot);
+  if (!relativeBoundaryRoot
+    || relativeBoundaryRoot.startsWith("..")
+    || path.isAbsolute(relativeBoundaryRoot)) {
+    throw new Error("Managed boundary root escapes or replaces the selected project.");
+  }
+  const markerPath = path.join(boundaryRoot, ".synapsor-auto-boundary.json");
+  const marker = JSON.parse(await fs.readFile(markerPath, "utf8")) as { schema_version?: unknown };
+  if (marker.schema_version !== AUTO_BOUNDARY_VERSION) {
+    throw new Error(
+      `Refusing to remove ${relativeBoundaryRoot} because it is not marked as Runner-managed Auto Boundary output.`,
+    );
+  }
+
+  const targets = [
+    boundaryRoot,
+    path.join(projectRoot, ".synapsor/boundary-library.json"),
+    path.join(projectRoot, ".synapsor/boundary-review-progress.json"),
+    path.join(projectRoot, ".synapsor/generation-lock.json"),
+    path.join(projectRoot, ".synapsor/auto-boundary-policy-baseline.json"),
+    path.join(projectRoot, ".synapsor/review-report.json"),
+    path.join(projectRoot, ".synapsor/review-overrides.json"),
+    path.join(projectRoot, ".synapsor/boundary-rescan-report.json"),
+    path.join(projectRoot, ".synapsor/exploration-locks"),
+    path.join(projectRoot, ".synapsor/guided-onboarding.json"),
+  ];
+  const transactionRoot = await fs.mkdtemp(
+    path.join(projectRoot, ".synapsor/.discard-boundary-review-"),
+  );
+  const moved: Array<{ target: string; staged: string }> = [];
+  try {
+    for (const [index, target] of targets.entries()) {
+      try {
+        await fs.lstat(target);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+        throw error;
+      }
+      const staged = path.join(transactionRoot, `${String(index).padStart(2, "0")}-${path.basename(target)}`);
+      await fs.rename(target, staged);
+      moved.push({ target, staged });
+    }
+  } catch (error) {
+    for (const entry of moved.reverse()) {
+      await fs.mkdir(path.dirname(entry.target), { recursive: true, mode: 0o700 });
+      await fs.rename(entry.staged, entry.target).catch(() => undefined);
+    }
+    await fs.rm(transactionRoot, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
+  }
+  await fs.rm(transactionRoot, { recursive: true, force: true });
+  return {
+    removed: moved.map(({ target }) => path.relative(projectRoot, target)),
+  };
 }
 
 async function readOrCreateLibrary(input: BoundaryLibraryContext): Promise<BoundaryLibraryFile> {
@@ -608,7 +692,10 @@ function rebaseDisabledBoundary(
     .map((resource) => rebaseBoundaryResource(resource, storedResources.get(resource.id)!));
   if (!candidate.pack.resources.length) {
     throw new Error(
-      `Saved boundary ${expectedName} no longer contains a table present in the inspected schema. Delete it or recreate it from a current boundary.`,
+      `Saved boundary ${expectedName} no longer contains a table present in the inspected schema. `
+      + "Runner preserved its curated review and stopped. If that table was intentionally removed, reset only this disabled review with "
+      + `synapsor-runner boundary delete ${expectedName} --discard-curated-review --yes, then draft a current boundary. `
+      + "Runner config, ledger, evidence, and source data are preserved by that reset.",
     );
   }
 

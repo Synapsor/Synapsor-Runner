@@ -1409,8 +1409,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		        const action=entry.selected
 		          ?'<button class="secondary" data-open-boundary="'+esc(entry.name)+'" type="button">Edit</button>'
 		          :'<button class="secondary" data-open-boundary="'+esc(entry.name)+'" type="button">Open</button>';
-		        const deletion=!entry.active&&entries.length>1
-		          ?'<button class="quiet" data-delete-boundary="'+esc(entry.name)+'" type="button">Delete</button>'
+		        const deletion=!entry.active
+		          ?entries.length>1
+		            ?'<button class="quiet" data-delete-boundary="'+esc(entry.name)+'" type="button">Delete</button>'
+		            :'<button class="quiet danger" data-discard-boundary="'+esc(entry.name)+'" type="button">Reset curated review</button>'
 		          :'';
 		        return '<tr class="'+(entry.selected?'selected-boundary':'')+'"><td><strong>'+esc(entry.name)+'</strong>'+(entry.selected?'<small>Selected for editing</small>':'')+'</td><td>'+esc(status)+'</td><td>'+esc(entry.table_count)+'</td><td>'+(entry.active?'<span class="badge good">Active Explore</span>':'<span class="badge">No authority</span>')+'</td><td><div class="actions boundary-row-actions">'+action+deletion+'</div></td></tr>';
 		      }).join("");
@@ -1519,6 +1521,18 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		          await queueReviewProgressSave();
 		          await post("/api/boundary/library/delete",{name,confirmation:"DELETE "+name});
 		          await load();
+		        }catch(error){status.className="status-message error";status.textContent=error.message;}
+		      });
+		      document.querySelectorAll("[data-discard-boundary]").forEach(button=>button.onclick=async()=>{
+		        const status=byId("boundary-library-status");
+		        const name=button.dataset.discardBoundary;
+		        const exact="DISCARD REVIEW "+name;
+		        const confirmation=window.prompt('This removes the only disabled boundary and every curated review decision. Runner config, ledger, evidence, and source data remain. Type '+exact+' to continue.');
+		        if(confirmation!==exact){status.className="status-message";status.textContent="Review reset cancelled. Nothing changed.";return;}
+		        try{
+		          await queueReviewProgressSave();
+		          const result=await post("/api/boundary/library/delete",{name,confirmation:exact,discard_curated_review:true});
+		          panel.innerHTML='<div class="band notice"><h2>Curated review reset</h2><p>Runner config, ledger, evidence, and source data were preserved. No authority was activated.</p><p><strong>Next:</strong> <code>'+esc(result.next)+'</code></p><p>Run that command, then reopen Workbench to review the new disabled draft.</p></div>';
 		        }catch(error){status.className="status-message error";status.textContent=error.message;}
 		      });
 		      const disableButton=byId("disable-active-boundary");

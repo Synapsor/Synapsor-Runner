@@ -433,11 +433,13 @@ the local reviewed contract and proposal before writeback.
   ${cmd} boundary review --confirm [--project-root .] [--actor reviewer@example.com]
   ${cmd} boundary rename reviewed_sales --to sales_analytics --actor reviewer@example.com --reason "Use the team-facing boundary name"
   ${cmd} boundary delete old_draft --yes [--project-root .]
+  ${cmd} boundary delete stale_only_boundary --discard-curated-review --yes [--project-root .]
   ${cmd} boundary review resource public.orders [--project-root .] [--map [--details]|--json]
   ${cmd} boundary review resource public.orders --include --tenant-key tenant_id --no-principal --visible-fields id,status --actor reviewer@example.com --reason "Reviewed tenant-scoped order access"
   ${cmd} boundary review resource public.order_items --include --tenant-scope-path order_items_order_id_fkey --principal-scope-path order_items_order_id_fkey --actor reviewer@example.com --reason "Order items inherit tenant and principal scope through their required order"
   ${cmd} boundary review resource public.product_catalog --include --shared-reference --acknowledge-table-has-no-per-tenant-rows --actor owner@example.com --reason "Every tenant receives the same reviewed catalog rows"
   ${cmd} boundary review resource public.orders --withhold-from-model customer_segment --actor reviewer@example.com --reason "Use this grouping locally without sending segment values to the model"
+  ${cmd} boundary review resource public.orders --count-distinct-fields customer_id --actor reviewer@example.com --reason "Allow reviewed unique-customer counts without returning customer IDs"
   ${cmd} boundary review resource public.orders --label "Orders" --description "Customer purchases recorded at checkout" --field-label total_cents="Order total" --field-description total_cents="Gross amount in cents" --actor reviewer@example.com --reason "Document legacy database identifiers"
   ${cmd} boundary review resource public.orders --minimum-cohort 3 --actor owner@example.com --reason "Reviewed owner decision for this staging dataset"
   ${cmd} boundary review resource public.orders --max-ranked-groups 200 --actor reviewer@example.com --reason "Reviewed bounded ranking across this known customer population"
@@ -490,6 +492,20 @@ Choose the boundary workflow by intent:
     Combines inspection, reconciliation, interactive review, activation, and the
     local Ask handoff. After a standalone boundary rescan, omit --rescan when
     starting this guided flow so the database is not inspected twice.
+
+An older standalone \`boundary draft\` project is also resumable when its
+Runner-managed draft and generation lock are valid; it does not need a guided
+onboarding marker. If a lone disabled legacy boundary cannot be reconciled
+because none of its saved resources exists in the inspected schema, ordinary
+delete remains protected. The explicit recovery command is:
+
+  ${cmd} boundary delete <boundary-name> --discard-curated-review --yes
+
+That command refuses active or multi-boundary projects. It removes only the
+marked generated authoring tree and curated boundary review state. It preserves
+the Runner config, local ledger/evidence store, and source database, then prints
+the exact current-version draft command. Workbench exposes the same operation as
+**Reset curated review** with an exact typed confirmation.
 
 Headless automation still requires the complete digest and a verified signed
 operator decision.
@@ -647,6 +663,9 @@ Resource decision flags:
   --group-fields <column,...>
   --measure-fields <column,...>
   --count-distinct-fields <column,...>
+    Grants the operation labelled **Count unique** under G Reviewed metrics in
+    the terminal access editor and in Workbench. It authorizes only the reviewed
+    distinct aggregate; it does not return the underlying field values.
   --time-fields <column,...>
   --minimum-cohort <1-5>
   --max-ranked-groups <max-groups..10000>
