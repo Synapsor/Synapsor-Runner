@@ -1047,6 +1047,7 @@ async function runOpenAiCompatibleTurn(input: {
                   focusedResource,
                   completeIntentCatalogResources(intentTraces, directArguments),
                 ),
+                proposedPlan: directPlan,
               });
             }
           }
@@ -1964,20 +1965,30 @@ async function explorePlanIntentRefusal(input: {
   const plan = isRecord(input.args.plan) ? input.args.plan : undefined;
   if (!plan || typeof plan.resource !== "string") return undefined;
   if (!explorePlanHasComparableIntentShape(plan)) return undefined;
-  const resource = input.focusedResource
-    ?? localCatalogResourceForDirectCall(input.traces, input.args)
+  const tracedResource = input.focusedResource
+    ?? localCatalogResourceForDirectCall(input.traces, input.args);
+  // The compact model catalog intentionally omits relationship fields. Prefer
+  // the private focused view so reviewed labels and descriptions still protect
+  // and explain relationship-dimension intent.
+  const operatorResource = input.gateway.describeOperatorMetadata
+    ? await loadFocusedIntentResource(input)
+    : undefined;
+  const resource = operatorResource
+    ?? tracedResource
     ?? await loadFocusedIntentResource(input);
+  const catalogResources = completeIntentCatalogResources(input.traces, input.args);
   const allowUnqualifiedTrailingField = resource
     ? planHasUniqueMeasureResourceAnchor(
       input.question,
       input.args,
       resource,
-      completeIntentCatalogResources(input.traces, input.args),
+      catalogResources,
     )
     : false;
   const mismatch = resource
     ? explorePlanIntentMismatch(input.question, input.args, resource, {
       allowUnqualifiedTrailingField,
+      catalogResources,
     })
     : questionHasExplicitPlanAnchor(input.question)
       ? {
@@ -2097,7 +2108,10 @@ function explorePlanIntentMismatch(
   question: string,
   args: Record<string, unknown>,
   resource: Record<string, unknown>,
-  options: { allowUnqualifiedTrailingField?: boolean } = {},
+  options: {
+    allowUnqualifiedTrailingField?: boolean;
+    catalogResources?: Record<string, unknown>[];
+  } = {},
 ): ExplorePlanIntentMismatch | undefined {
   const plan = isRecord(args.plan) ? args.plan : undefined;
   if (!plan || typeof plan.resource !== "string" || typeof resource.id !== "string") return undefined;
@@ -2122,7 +2136,7 @@ function explorePlanIntentMismatch(
   const subject = explicitQuestionEntity(normalizedQuestion);
   if (subject
     && !genericQuestionEntity(subject)
-    && !questionEntityMatchesPlan(subject, plan, resource)) {
+    && !questionEntityMatchesPlan(subject, plan, resource, options.catalogResources)) {
     if (operatorBoundaryResourceCount(resource) === 1) {
       return {
         kind: "unavailable",
@@ -2139,7 +2153,10 @@ function explorePlanIntentMismatch(
   const dimensions = Array.isArray(plan.dimensions) ? plan.dimensions.filter(isRecord) : [];
   if (dimensions.length > 0) {
     for (const dimension of dimensions) {
-      const mismatch = planDimensionIntentMismatch(normalizedQuestion, dimension, resource, options);
+      const mismatch = planDimensionIntentMismatch(normalizedQuestion, dimension, resource, {
+        allowUnqualifiedTrailingField: options.allowUnqualifiedTrailingField,
+        plan,
+      });
       if (mismatch) return relationshipDimensionMismatch(normalizedQuestion, resource, mismatch);
     }
     return undefined;
@@ -2196,20 +2213,13 @@ function reviewedRelationshipDimensionsNamedInQuestion(
   resource: Record<string, unknown>,
 ): ReviewedRelationshipDimension[] {
   if (!Array.isArray(resource.relationships)) return [];
-  const groupingClause = explicitGroupingClause(question);
-  if (!groupingClause) return [];
+  const groupingClause = explicitGroupingClause(question) ?? question;
   const candidates = resource.relationships.filter(isRecord).flatMap((relationship) => {
     if ((relationship.activation !== undefined && relationship.activation !== "active")
       || typeof relationship.id !== "string"
       || typeof relationship.target_resource !== "string") return [];
-    const target = relationship.target_resource.split(".").at(-1)?.toLowerCase() ?? "";
-    const targetNamed = [...resourceNameVariants(target, relationship.target_label)]
-      .some((variant) => variant.length >= 3 && wordPosition(groupingClause, variant) >= 0);
-    if (!targetNamed) return [];
     return safeStringList(relationship.groupable_fields).flatMap((field) => {
-      const fieldNamed = questionExplicitlyMentionsField(groupingClause, field)
-        || reviewedFieldLabels(relationship, field)
-          .some((label) => questionMentionsMetadataName(groupingClause, label));
+      const fieldNamed = questionMentionsReviewedField(groupingClause, relationship, field);
       if (!fieldNamed) return [];
       return [{
         field,
@@ -2257,6 +2267,7 @@ function questionEntityMatchesPlan(
   subject: string,
   plan: Record<string, unknown>,
   resource: Record<string, unknown>,
+  catalogResources: Record<string, unknown>[] | undefined,
 ): boolean {
   const resourceId = typeof resource.id === "string" ? resource.id.toLowerCase() : "";
   const table = resourceId.split(".").at(-1) ?? "";
@@ -2267,9 +2278,15 @@ function questionEntityMatchesPlan(
     resource.label,
   );
   if (questionEntityExactlyMatchesNames(subject, resourceVariants)) return true;
+  if (questionMentionsDistinctiveMetadataDescription(
+    subject,
+    resource.description,
+    (catalogResources ?? []).filter((candidate) => candidate.id !== resource.id)
+      .map((candidate) => candidate.description),
+  )) return true;
   if (questionEntityStrictlyExtendsNames(subject, resourceVariants)) return false;
   const measures = Array.isArray(plan.measures) ? plan.measures.filter(isRecord) : [];
-  return measures.some((measure) => {
+  if (measures.some((measure) => {
     if (typeof measure.derived_measure === "string") {
       const definition = Array.isArray(resource.derived_measures)
         ? resource.derived_measures.filter(isRecord).find((candidate) =>
@@ -2286,7 +2303,12 @@ function questionEntityMatchesPlan(
     const readable = measure.field.toLowerCase().replace(/[_-]+/g, " ");
     const entity = readable.replace(/\s+id$/u, "").trim();
     return questionEntityExactlyMatchesNames(subject, resourceNameVariants(entity));
-  });
+  })) return true;
+
+  // An unknown entity is not enough evidence to reinterpret a multi-resource
+  // question. Reviewed resource labels/descriptions or a matching reviewed
+  // measure provide the explicit vocabulary bridge above.
+  return false;
 }
 
 function questionEntityExactlyMatchesNames(subject: string, names: Iterable<string>): boolean {
@@ -2340,22 +2362,35 @@ function planDimensionIntentMismatch(
   question: string,
   dimension: Record<string, unknown>,
   resource: Record<string, unknown>,
-  options: { allowUnqualifiedTrailingField?: boolean } = {},
+  options: {
+    allowUnqualifiedTrailingField?: boolean;
+    plan?: Record<string, unknown>;
+  } = {},
 ): string | undefined {
   const genericMismatch = (field: string) =>
     `The question does not name the plan's reviewed dimension ${field} on ${resource.id}.`;
   if (typeof dimension.numeric_band === "string") {
     const bands = Array.isArray(resource.numeric_bands) ? resource.numeric_bands.filter(isRecord) : [];
     const band = bands.find((candidate) => candidate.name === dimension.numeric_band);
+    if (!band) return undefined;
     const named = questionMentionsMetadataName(question, dimension.numeric_band)
       || questionMentionsMetadataName(question, band?.label)
-      || (typeof band?.field === "string" && questionExplicitlyMentionsField(question, band.field));
-    return named ? undefined : genericMismatch(dimension.numeric_band);
+      || (typeof band?.field === "string" && questionMentionsReviewedField(question, resource, band.field));
+    return named || questionSupportsImplicitReviewedDimension(question, options.plan)
+      ? undefined
+      : genericMismatch(dimension.numeric_band);
   }
   if (isRecord(dimension.numeric_band) && typeof dimension.numeric_band.field === "string") {
-    return questionExplicitlyMentionsField(question, dimension.numeric_band.field)
+    const automaticBand = dimension.numeric_band;
+    const reviewed = Array.isArray(resource.auto_bands)
+      && resource.auto_bands.filter(isRecord).some((policy) =>
+        policy.field === automaticBand.field
+        && safeStringList(policy.methods).includes(String(automaticBand.method)));
+    if (!reviewed) return undefined;
+    return questionMentionsReviewedField(question, resource, automaticBand.field)
+      || questionSupportsImplicitReviewedDimension(question, options.plan)
       ? undefined
-      : genericMismatch(dimension.numeric_band.field);
+      : genericMismatch(automaticBand.field);
   }
   if (typeof dimension.field !== "string") return genericMismatch("(unknown)");
   const relationship = typeof dimension.relationship === "string"
@@ -2363,9 +2398,11 @@ function planDimensionIntentMismatch(
     ? resource.relationships.filter(isRecord).find((candidate) => candidate.id === dimension.relationship)
     : undefined;
   const fieldOwner = relationship ?? resource;
-  if (questionExplicitlyMentionsField(question, dimension.field)) return undefined;
-  if (reviewedFieldLabels(fieldOwner, dimension.field)
-    .some((label) => questionMentionsMetadataName(question, label))) return undefined;
+  const reviewed = relationship
+    ? safeStringList(relationship.groupable_fields).includes(dimension.field)
+    : safeStringList(resource.groupable_fields).includes(dimension.field);
+  if (!reviewed) return undefined;
+  if (questionMentionsReviewedField(question, fieldOwner, dimension.field)) return undefined;
   if (!relationship && questionNamesSingleReviewedTimeField(question, dimension.field, resource)) {
     return undefined;
   }
@@ -2382,13 +2419,29 @@ function planDimensionIntentMismatch(
     if (trailing.kind === "ambiguous") {
       return `The question's grouping shorthand is ambiguous among reviewed fields ${trailing.fields.join(", ")} on ${resource.id}; name one exact reviewed field or label.`;
     }
+    const namedDirectFields = reviewedDirectFieldsNamedInQuestion(question, resource);
+    if (namedDirectFields.length > 0 && !namedDirectFields.includes(dimension.field)) {
+      return `The question names reviewed field${namedDirectFields.length === 1 ? "" : "s"} ${namedDirectFields.join(", ")} on ${resource.id}, but the plan selected ${dimension.field}.`;
+    }
+  } else {
+    const target = typeof relationship.target_resource === "string"
+      ? relationship.target_resource.split(".").at(-1)?.toLowerCase() ?? ""
+      : "";
+    const targetNamed = [...resourceNameVariants(target, relationship.target_label)]
+      .some((variant) => relationshipGroupingMentionsTarget(question, variant));
+    if (targetNamed) {
+      const namedTargetFields = reviewedDirectFieldsNamedInQuestion(question, relationship);
+      if (namedTargetFields.length === 0 || namedTargetFields.includes(dimension.field)) return undefined;
+      return `The question names reviewed related field${namedTargetFields.length === 1 ? "" : "s"} ${namedTargetFields.join(", ")} on ${relationship.target_resource}, but the plan selected ${dimension.field}.`;
+    }
+  }
+
+  const namedRelationships = reviewedRelationshipDimensionsNamedInQuestion(question, resource);
+  if (namedRelationships.length > 0 && !namedRelationships.some((candidate) =>
+    candidate.field === dimension.field && candidate.relationship === dimension.relationship)) {
     return genericMismatch(dimension.field);
   }
-  const target = typeof relationship.target_resource === "string"
-    ? relationship.target_resource.split(".").at(-1)?.toLowerCase() ?? ""
-    : "";
-  return [...resourceNameVariants(target, relationship.target_label)]
-    .some((variant) => relationshipGroupingMentionsTarget(question, variant))
+  return questionSupportsImplicitReviewedDimension(question, options.plan)
     ? undefined
     : genericMismatch(dimension.field);
 }
@@ -2453,8 +2506,9 @@ function questionNamesSingleReviewedTimeField(
   if (reviewed.size !== 1 || !reviewed.has(field)) return false;
   const namesCalendarUnit = /\b(?:hour|day|daily|week|weekly|month|monthly|quarter|quarterly|year|yearly)\b/u.test(question);
   const asksTemporalAnalysis = /\b(?:change|changed|trend|trending|over\s+time|compare|compared|versus|vs\.?|preceding|previous|prior|week\s+before|month\s+before|year\s+before)\b/u.test(question)
-    || /\b(?:by|per|each)\s+(?:hour|day|week|month|quarter|year)\b/u.test(question);
-  return namesCalendarUnit && asksTemporalAnalysis;
+    || /\b(?:by|per|each)\s+(?:hour|day|week|month|quarter|year)\b/u.test(question)
+    || /\b(?:going\s+(?:up|down)|getting\s+(?:better|worse)|rising|falling|increasing|decreasing|growing|shrinking|recent|recently|newer|older|used\s+to)\b/u.test(question);
+  return asksTemporalAnalysis || (namesCalendarUnit && /\b(?:by|per|each|during|in)\b/u.test(question));
 }
 
 function reviewedFieldLabels(owner: Record<string, unknown>, field: string): string[] {
@@ -2462,11 +2516,109 @@ function reviewedFieldLabels(owner: Record<string, unknown>, field: string): str
   if (isRecord(owner.field_labels) && typeof owner.field_labels[field] === "string") {
     labels.push(owner.field_labels[field]);
   }
+  if (isRecord(owner.field_metadata) && isRecord(owner.field_metadata[field])
+    && typeof owner.field_metadata[field].label === "string") {
+    labels.push(owner.field_metadata[field].label);
+  }
   if (Array.isArray(owner.fields)) {
     const metadata = owner.fields.filter(isRecord).find((candidate) => candidate.id === field);
     if (typeof metadata?.label === "string") labels.push(metadata.label);
   }
-  return labels;
+  return [...new Set(labels)];
+}
+
+function reviewedFieldDescriptions(owner: Record<string, unknown>, field: string): string[] {
+  const descriptions: string[] = [];
+  if (isRecord(owner.field_descriptions) && typeof owner.field_descriptions[field] === "string") {
+    descriptions.push(owner.field_descriptions[field]);
+  }
+  if (isRecord(owner.field_metadata) && isRecord(owner.field_metadata[field])
+    && typeof owner.field_metadata[field].description === "string") {
+    descriptions.push(owner.field_metadata[field].description);
+  }
+  if (Array.isArray(owner.fields)) {
+    const metadata = owner.fields.filter(isRecord).find((candidate) => candidate.id === field);
+    if (typeof metadata?.description === "string") descriptions.push(metadata.description);
+  }
+  return [...new Set(descriptions)];
+}
+
+function questionMentionsReviewedField(
+  question: string,
+  owner: Record<string, unknown>,
+  field: string,
+): boolean {
+  if (questionExplicitlyMentionsField(question, field)) return true;
+  if (reviewedFieldLabels(owner, field)
+    .some((label) => questionMentionsMetadataName(question, label))) return true;
+  const otherDescriptions = reviewedOwnerFieldIds(owner)
+    .filter((candidate) => candidate !== field)
+    .flatMap((candidate) => reviewedFieldDescriptions(owner, candidate));
+  if (typeof owner.description === "string") otherDescriptions.push(owner.description);
+  if (typeof owner.target_description === "string") otherDescriptions.push(owner.target_description);
+  return reviewedFieldDescriptions(owner, field).some((description) =>
+    questionMentionsDistinctiveMetadataDescription(question, description, otherDescriptions));
+}
+
+function reviewedOwnerFieldIds(owner: Record<string, unknown>): string[] {
+  return [...new Set([
+    ...safeStringList(owner.groupable_fields),
+    ...safeStringList(owner.selectable_fields),
+    ...(Array.isArray(owner.fields)
+      ? owner.fields.filter(isRecord).flatMap((field) => typeof field.id === "string" ? [field.id] : [])
+      : []),
+    ...Object.keys(isRecord(owner.field_metadata) ? owner.field_metadata : {}),
+  ])];
+}
+
+function reviewedDirectFieldsNamedInQuestion(
+  question: string,
+  owner: Record<string, unknown>,
+): string[] {
+  return safeStringList(owner.groupable_fields)
+    .filter((field) => questionMentionsReviewedField(question, owner, field))
+    .sort((left, right) => left.localeCompare(right));
+}
+
+function questionMentionsDistinctiveMetadataDescription(
+  question: string,
+  description: unknown,
+  competingDescriptions: unknown[],
+): boolean {
+  if (typeof description !== "string") return false;
+  if (questionMentionsMetadataName(question, description)) return true;
+  const competingTerms = new Set(competingDescriptions.flatMap(metadataDescriptionTerms));
+  return metadataDescriptionTerms(description).some((term) =>
+    !competingTerms.has(term) && wordPosition(question, term) >= 0);
+}
+
+function metadataDescriptionTerms(value: unknown): string[] {
+  if (typeof value !== "string") return [];
+  const ignored = new Set([
+    "about", "after", "also", "and", "before", "column", "contains", "data", "each",
+    "field", "from", "into", "model", "record", "records", "reviewed", "runner", "same",
+    "table", "that", "their", "this", "used", "value", "values", "where", "which", "with",
+  ]);
+  return [...new Set(normalizedEntityName(value).split(" ")
+    .filter((term) => term.length >= 4 && !ignored.has(term)))];
+}
+
+function questionSupportsImplicitReviewedDimension(
+  question: string,
+  plan: Record<string, unknown> | undefined,
+): boolean {
+  // A separate time grouping plus an unnamed categorical dimension is usually
+  // a model-added segmentation (for example, adding visit_type to "are
+  // emergencies going up?"). Keep that case strict.
+  if (plan?.time_bucket !== undefined || plan?.comparison !== undefined) return false;
+  // An explicit "by X" phrase that does not resolve to this reviewed field is
+  // a contradiction, not a synonym. Labels/descriptions and trailing-field
+  // resolution handle legitimate explicit aliases before this fallback.
+  if (explicitGroupingClause(question)) return false;
+  return /\b(?:which|who|where)\b/u.test(question)
+    || /\bwhat\s+(?:kind|kinds|sort|sorts|type|types|category|categories)\b/u.test(question)
+    || /\b(?:most|least|more|less|better|worse|higher|lower|best|worst|top|bottom|busiest|hardest|longest|shortest|popular|common|often|usually|different|vary|varies|variation|proportion|share|rate|riskier|serious|slower|faster|older|newer|bigger|smaller)\b/u.test(question)
+    || /\bhow\s+(?!many\b|much\b|long\b|often\b)(?:[a-z][a-z-]*\s+){0,3}(?:is|are|was|were)\b/u.test(question);
 }
 
 type ReviewedTrailingFieldResolution =
@@ -3080,6 +3232,55 @@ type LocalPlanDimension = { field: string; relationship?: string } | {
   };
 };
 
+function reviewedProposedLocalDimension(
+  resource: Record<string, unknown>,
+  dimension: Record<string, unknown>,
+): LocalPlanDimension[] {
+  if (typeof dimension.field === "string") {
+    if (typeof dimension.relationship === "string") {
+      const relationship = Array.isArray(resource.relationships)
+        ? resource.relationships.filter(isRecord).find((candidate) =>
+          candidate.id === dimension.relationship
+          && (candidate.activation === undefined || candidate.activation === "active"))
+        : undefined;
+      return relationship && safeStringList(relationship.groupable_fields).includes(dimension.field)
+        ? [{ field: dimension.field, relationship: dimension.relationship }]
+        : [];
+    }
+    return safeStringList(resource.groupable_fields).includes(dimension.field)
+      ? [{ field: dimension.field }]
+      : [];
+  }
+  if (typeof dimension.numeric_band === "string") {
+    return Array.isArray(resource.numeric_bands)
+      && resource.numeric_bands.filter(isRecord).some((band) => band.name === dimension.numeric_band)
+      ? [{ numeric_band: dimension.numeric_band }]
+      : [];
+  }
+  if (!isRecord(dimension.numeric_band)
+    || typeof dimension.numeric_band.field !== "string"
+    || (dimension.numeric_band.method !== "quantile" && dimension.numeric_band.method !== "equal_width")
+    || !Number.isSafeInteger(dimension.numeric_band.buckets)) return [];
+  const automaticBand = dimension.numeric_band;
+  const policy = Array.isArray(resource.auto_bands)
+    ? resource.auto_bands.filter(isRecord).find((candidate) => candidate.field === automaticBand.field)
+    : undefined;
+  return policy
+    && safeStringList(policy.methods).includes(automaticBand.method)
+    && typeof policy.min_buckets === "number"
+    && typeof policy.max_buckets === "number"
+    && automaticBand.buckets >= policy.min_buckets
+    && automaticBand.buckets <= policy.max_buckets
+    ? [{
+        numeric_band: {
+          field: automaticBand.field,
+          method: automaticBand.method,
+          buckets: automaticBand.buckets,
+        },
+      }]
+    : [];
+}
+
 type LocalPlanRequirements = {
   resource: string;
   boundary?: string;
@@ -3103,7 +3304,10 @@ type LocalPlanRequirements = {
 function localPlanRequirements(
   question: string,
   focusedCatalog: Record<string, unknown>,
-  options: { allowUnqualifiedTrailingField?: boolean } = {},
+  options: {
+    allowUnqualifiedTrailingField?: boolean;
+    proposedPlan?: Record<string, unknown>;
+  } = {},
 ): LocalPlanRequirements | undefined {
   const resource = Array.isArray(focusedCatalog.resources)
     ? focusedCatalog.resources.find(isRecord)
@@ -3222,8 +3426,7 @@ function localPlanRequirements(
   const reviewedDirectGroupFields = safeStringList(resource.groupable_fields);
   const explicitlyMentionedDirectGroupFields = reviewedDirectGroupFields
     .filter((field) => questionMentionsField(normalized, field)
-      || reviewedFieldLabels(resource, field)
-        .some((label) => questionMentionsMetadataName(normalized, label)));
+      || questionMentionsReviewedField(normalized, resource, field));
   const trailingGroupResolution = explicitlyMentionedDirectGroupFields.length === 0
     ? reviewedTrailingFieldResolution(
       normalized,
@@ -3235,7 +3438,27 @@ function localPlanRequirements(
     || trailingGroupResolution.kind !== "none"
     || (Array.isArray(resource.relationships) && resource.relationships.filter(isRecord)
       .some((relationship) => safeStringList(relationship.groupable_fields)
-        .some((field) => questionExplicitlyMentionsField(normalized, field))));
+        .some((field) => questionMentionsReviewedField(normalized, relationship, field))));
+  const proposedDimensions = Array.isArray(options.proposedPlan?.dimensions)
+    ? options.proposedPlan.dimensions.filter(isRecord)
+      .flatMap((dimension) => reviewedProposedLocalDimension(resource, dimension))
+    : [];
+  const explicitlyNamedRelationshipDimensions = reviewedRelationshipDimensionsNamedInQuestion(
+    normalized,
+    resource,
+  );
+  const proposedDimension = proposedDimensions.length === 1 ? proposedDimensions[0] : undefined;
+  const proposedMatchesNamedRelationship = proposedDimension !== undefined
+    && ("field" in proposedDimension)
+    && explicitlyNamedRelationshipDimensions.some((candidate) =>
+      candidate.field === proposedDimension.field
+      && candidate.relationship === proposedDimension.relationship);
+  const implicitProposedDimensions = proposedDimensions.length === 1
+    && explicitlyMentionedDirectGroupFields.length === 0
+    && (explicitlyNamedRelationshipDimensions.length === 0 || proposedMatchesNamedRelationship)
+    && questionSupportsImplicitReviewedDimension(normalized, options.proposedPlan)
+    ? proposedDimensions
+    : [];
   const groupingRequested = /\bacross\b/.test(normalized)
     || /\bby\s+(?!(?:hour|day|week|month|quarter|year)\b)/.test(normalized)
     || (/\bby\b/.test(normalized) && mentionedReviewedGroupingField)
@@ -3243,6 +3466,7 @@ function localPlanRequirements(
       && mentionedReviewedGroupingField)
     || /\b(?:for|within|of) each\b/.test(normalized)
     || trailingGroupResolution.kind !== "none"
+    || implicitProposedDimensions.length > 0
     || bandIntent;
   const dimensionCandidates: LocalPlanDimension[] = [];
   const groupingAmbiguities: string[] = [];
@@ -3270,7 +3494,7 @@ function localPlanRequirements(
           .some((variant) => wordPosition(normalized, variant) >= 0);
         const groupableFields = safeStringList(relationship.groupable_fields);
         const mentionedFields = groupableFields
-          .filter((candidate) => questionExplicitlyMentionsField(normalized, candidate));
+          .filter((candidate) => questionMentionsReviewedField(normalized, relationship, candidate));
         const targetGroupingMentioned = targetVariants
           .some((variant) => relationshipGroupingMentionsTarget(normalized, variant));
         const implicitTargetFields = mentionedFields.length === 0
@@ -3364,6 +3588,9 @@ function localPlanRequirements(
       for (const band of bandCandidates) {
         if (typeof band.name === "string") dimensionCandidates.push({ numeric_band: band.name });
       }
+    }
+    if (dimensionCandidates.length === 0 && implicitProposedDimensions.length === 1) {
+      dimensionCandidates.push(implicitProposedDimensions[0]!);
     }
   }
   const uniqueDimensionCandidates = uniqueByJson(dimensionCandidates);
@@ -3567,6 +3794,7 @@ function localPlanRequirementsForDirectCall(
   );
   return localPlanRequirements(question, { resources: [resource] }, {
     allowUnqualifiedTrailingField,
+    proposedPlan: isRecord(args.plan) ? args.plan : undefined,
   });
 }
 
