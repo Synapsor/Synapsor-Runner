@@ -156,6 +156,26 @@ labels ends with that term. For example, `shipments by mode` identifies
 before execution and names both choices. Use the full ID or a reviewed label to
 disambiguate. This resolution is derived from reviewed metadata; it contains no
 domain vocabulary.
+
+Reviewed enum values also participate in intent checking. If the question names
+an allowed value such as `emergency`, the plan must constrain the matching exact
+field in `where`; merely grouping all values does not answer that question. An
+`in` filter must contain exactly the values named by the question, not a wider
+set, and a value that exists on more than one reviewed field is refused as
+ambiguous. OpenAI and Anthropic receive one bounded correction containing the
+exact field/value requirement. A refused first attempt runs no source query and
+spends no Explore budget.
+
+For business-data questions, official-provider prose is not accepted as an
+answer until a reviewed Explore plan succeeds. If a provider answers from
+general knowledge without tools, Runner forces one catalog pass and one chance
+to call `app.explore_data`; otherwise it discards the prose and reports that no
+query ran. Generic row words such as `records`, `rows`, or `cases` are not
+treated as physical resource names unless the reviewed catalog actually
+contains that exact resource. For an unqualified trend, the provider is told to
+use reviewed `time_coverage` and `maximum_groups` and choose a month, quarter,
+or year grain when a finer bucket would omit or exceed the covered series.
+
 This is a correctness guard in Runner's built-in Ask client. An external MCP
 host sends only a structured plan to production HTTP Runner, so that host must
 retain the original question and apply its own semantic evaluation; server-side

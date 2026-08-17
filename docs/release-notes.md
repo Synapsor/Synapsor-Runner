@@ -35,6 +35,23 @@ for the Synapsor Cloud CLI.
   OpenAI-compatible endpoints retain Chat Completions compatibility. Structured
   provider `400` messages are bounded and redacted before display; credential,
   permission, and quota response bodies remain hidden.
+- `app.describe_data` now exposes an explicit semantic contract for every
+  model-facing field: exact plan ID, reviewed label/description, semantic
+  status, legal operations, and bounded enum values. The first resource index
+  remains compact; focused resource/relationship descriptions carry the full
+  grammar, and paged indexes tell clients to follow `next_cursor` before
+  concluding that a reviewed resource is unavailable. Clearly opaque identifiers
+  such as `dim_a`, `c7`, or `val_1` require reviewed vocabulary before a new
+  activation, while `doctor` identifies legacy active gaps. Exact IDs remain the
+  only plan authority, and local stdio and production HTTP return the same
+  metadata.
+- Ask now treats a named reviewed enum value as an exact filter intent, refuses
+  wider or ambiguous value sets before execution, and gives OpenAI/Anthropic one
+  bounded correction. Ungrounded provider prose is discarded unless a reviewed
+  Explore plan succeeds. Generic row wording such as `cases` no longer becomes
+  a false missing-resource error, unqualified trends are steered to a grain that
+  fits reviewed coverage/group limits, and access guidance no longer matches a
+  one-character draft field inside an unrelated word.
 - CLI and preview Workbench expose the same recovery and Count unique actions.
   Deterministic regressions cover native OpenAI and Anthropic tool round trips,
   provider error secrecy, standalone-project resume/rescan, guarded reset, and

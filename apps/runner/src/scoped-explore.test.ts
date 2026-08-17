@@ -133,6 +133,13 @@ describe("Scoped Explore", () => {
                 'quote"field',
                 "back`tick",
               ]),
+              vocabulary: expect.objectContaining({ status: "ready" }),
+              fields: expect.arrayContaining([expect.objectContaining({
+                id: "total amount",
+                plan_reference: "exact_id_only",
+                semantic_status: "descriptive_identifier",
+                operations: expect.objectContaining({ return_value: true }),
+              })]),
             }],
           });
           const explored = await client.callTool({
@@ -2806,6 +2813,16 @@ describe("Scoped Explore", () => {
           target_resource: "public.regions",
           cardinality: "many_to_one",
           groupable_fields: expect.arrayContaining(["name"]),
+          fields: expect.arrayContaining([expect.objectContaining({
+            id: "name",
+            plan_reference: "exact_id_only",
+            semantic_status: "descriptive_identifier",
+            operations: expect.objectContaining({
+              return_value: false,
+              sortable: false,
+              groupable: true,
+            }),
+          })]),
         }),
       ]);
       expect(resource).not.toHaveProperty("label");
@@ -2952,10 +2969,24 @@ describe("Scoped Explore", () => {
         label: "Customer subscriptions",
         description: "One reviewed subscription record per customer account.",
       });
-      expect(resource.fields).toContainEqual({
+      expect(resource.fields).toContainEqual(expect.objectContaining({
         id: "region",
         label: "Sales region",
         description: "Reviewed account territory used for regional grouping.",
+        plan_reference: "exact_id_only",
+        semantic_status: "reviewed_vocabulary",
+        operations: expect.objectContaining({
+          return_value: true,
+          groupable: true,
+        }),
+      }));
+      expect(resource).toMatchObject({
+        vocabulary: expect.objectContaining({ status: "ready" }),
+      });
+      expect(description.vocabulary_policy).toEqual({
+        reviewed_metadata_is_semantic_only: true,
+        exact_ids_required_in_plans: true,
+        opaque_identifier_behavior: "do_not_guess; ask the operator to add a reviewed label or description",
       });
       expect(JSON.stringify(resource.fields)).not.toMatch(/billing_token|Internal billing credential|Kept out/i);
       expect(resource.suggested_questions.map((question: { text: string }) => question.text).join("\n"))
@@ -2966,12 +2997,27 @@ describe("Scoped Explore", () => {
         id: "public.subscriptions",
         label: "Customer subscriptions",
         description: "One reviewed subscription record per customer account.",
-        fields: expect.arrayContaining([{
+        fields: expect.arrayContaining([expect.objectContaining({
           id: "region",
           label: "Sales region",
           description: "Reviewed account territory used for regional grouping.",
-        }]),
+          plan_reference: "exact_id_only",
+          semantic_status: "reviewed_vocabulary",
+        })]),
       });
+      expect(projected.resources[0].fields[0]).not.toHaveProperty("operations");
+      expect(projected.resources[0].fields[0]).not.toHaveProperty("allowed_values");
+      expect(projected.next_action).toMatch(/final catalog page/i);
+      const pagedProjection = projectDescribeDataForModel({
+        ...description,
+        next_cursor: 8,
+      }, false) as any;
+      expect(pagedProjection.next_action).toMatch(/cursor 8.*before concluding.*unavailable/i);
+      const focusedProjection = projectDescribeDataForModel(description, true) as any;
+      expect(focusedProjection.resources[0].fields).toContainEqual(expect.objectContaining({
+        id: "region",
+        operations: expect.objectContaining({ groupable: true }),
+      }));
       expect(JSON.stringify(projected.resources[0].fields))
         .not.toMatch(/billing_token|Internal billing credential|Kept out/i);
 
@@ -2990,6 +3036,78 @@ describe("Scoped Explore", () => {
     } finally {
       await runtime.close();
     }
+  });
+
+  it("requires reviewed vocabulary before activating clearly opaque model-facing identifiers", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-opaque-vocabulary-"));
+    temporaryRoots.push(root);
+    const inspection = churnInspection();
+    const table = inspection.tables[0]!;
+    table.name = "t_0031";
+    table.columns = [
+      column("id", "uuid", { immutable: true }),
+      column("tenant_id", "uuid", { tenant: true, immutable: true }),
+      column("val_1", "integer"),
+    ];
+    table.suggestions.default_visible_columns = ["id", "tenant_id", "val_1"];
+    table.suggestions.sensitive_columns = [];
+    const project = {
+      root,
+      package_manager: "pnpm" as const,
+      frameworks: [],
+      schema_inputs: [],
+      database_env_names: ["DATABASE_URL"],
+    };
+    const unlabelledBuild = buildAutoBoundary({
+      inspection,
+      project,
+      sourceEnv: "DATABASE_URL",
+    });
+    await writeAutoBoundaryArtifacts({ projectRoot: root, build: unlabelledBuild });
+    const unlabelled = unlabelledBuild.exploration_boundary;
+    const unlabelledDigest = explorationBoundaryCandidateDigest(unlabelled);
+    await expect(activateExplorationBoundary({
+      projectRoot: root,
+      candidate: unlabelled,
+      expectedDigest: unlabelledDigest,
+      actor: "reviewer@example.test",
+      confirmation: `ACTIVATE ${unlabelledDigest}`,
+      confirmedDecisions: unlabelled.unresolved_decisions,
+      currentInspection: inspection,
+    })).rejects.toThrow(/reviewed vocabulary.*public\.t_0031/is);
+
+    const decision = (value: string): ReviewedMetadataDecision => ({
+      label: value,
+      actor: "reviewer@example.test",
+      reason: "Give this legacy identifier reviewed business meaning.",
+      decided_at: "2026-08-17T12:00:00.000Z",
+    });
+    const labelledBuild = buildAutoBoundary({
+      inspection,
+      project,
+      sourceEnv: "DATABASE_URL",
+      overrides: {
+        schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
+        resources: {
+          "public.t_0031": {
+            metadata: decision("Transit routes"),
+            field_metadata: { val_1: decision("Service class") },
+          },
+        },
+      },
+    });
+    await writeAutoBoundaryArtifacts({ projectRoot: root, build: labelledBuild, force: true });
+    const labelled = labelledBuild.exploration_boundary;
+    const labelledDigest = explorationBoundaryCandidateDigest(labelled);
+    await expect(activateExplorationBoundary({
+      projectRoot: root,
+      candidate: labelled,
+      expectedDigest: labelledDigest,
+      actor: "reviewer@example.test",
+      confirmation: `ACTIVATE ${labelledDigest}`,
+      confirmedDecisions: labelled.unresolved_decisions,
+      currentInspection: inspection,
+    })).resolves.toMatchObject({ activation: { state: "active" } });
   });
 
   it("does not suggest summing numeric identifiers when forming model-facing questions", async () => {

@@ -34,6 +34,7 @@ import { fetchStdioMcpToolsCommand, mcpAuditToolNames } from "./mcp-audit.js";
 import { isManagedAuthoringEntry } from "./mcp-project-domain.js";
 import { trustedCliContext } from "./operator-authority.js";
 import { inspectProductionExploreStartup } from "./mcp-runtime.js";
+import { exploreVocabularyCoverage } from "./explore-vocabulary.js";
 import { runAllCleanups, withPreservedCleanup } from "./resource-lifecycle.js";
 import { capabilityOperation, formatSourceReceiptMode, receiptTableGuidance, runnerReceiptConfig, sourceNeedsSqlWriteback, writebackTimeoutMs } from "./writeback-domain.js";
 
@@ -110,6 +111,7 @@ export async function localDoctor(args: string[]): Promise<number> {
       });
     }
     for (const resource of boundary.pack.resources) {
+      checks.push(exploreVocabularyDoctorCheck(boundary.pack.name, resource));
       for (const policy of resource.auto_bands ?? []) {
         checks.push({
           name: `auto-band:${boundary.pack.name}:${resource.id}:${policy.field}`,
@@ -387,6 +389,28 @@ export async function localDoctor(args: string[]): Promise<number> {
     return localDoctorSetupStatus(report) === "failed" ? 1 : 0;
   }
   return report.ok ? 0 : 1;
+}
+
+export function exploreVocabularyDoctorCheck(
+  boundaryName: string,
+  resource: ActivatedExplorationBoundary["pack"]["resources"][number],
+): DoctorCheck {
+  const vocabulary = exploreVocabularyCoverage(resource);
+  const vocabularyGaps = [
+    ...(vocabulary.opaque_resource_without_vocabulary ? ["table name"] : []),
+    ...vocabulary.opaque_fields_without_vocabulary,
+  ];
+  return {
+    name: `explore-vocabulary:${boundaryName}:${resource.id}`,
+    ok: true,
+    level: vocabulary.status === "ready" ? "pass" : "warn",
+    message: vocabulary.status === "ready"
+      ? `${boundaryName}.${resource.id} has no opaque model-facing identifiers without reviewed vocabulary; `
+        + `${vocabulary.fields_with_labels} field labels and ${vocabulary.fields_with_descriptions} field descriptions are reviewed.`
+      : `${boundaryName}.${resource.id} is legacy active authority with opaque model-facing identifiers lacking reviewed vocabulary: `
+        + `${vocabularyGaps.join(", ")}. Existing authority remains active, but models may not infer their business meaning. `
+        + "Open /access, select the table or column, press I to add a reviewed label or description, then review and activate the revision.",
+  };
 }
 
 

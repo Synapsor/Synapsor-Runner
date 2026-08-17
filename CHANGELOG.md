@@ -26,6 +26,23 @@
   Safe, bounded structured provider `400` details are now shown after secret
   redaction; authentication, permission, and quota responses retain their
   classified fail-closed errors.
+- Makes `app.describe_data` an explicit semantic and operation contract instead
+  of a bare identifier list. Compact discovery carries exact IDs, reviewed
+  labels/descriptions, semantic status, coverage, and resource-level grammar;
+  one focused resource call adds per-field operations, bounded enum values, and
+  relationship grammar. Paged indexes explicitly require clients to follow
+  `next_cursor` before declaring reviewed data unavailable. New activation
+  refuses clearly placeholder-like model identifiers such as `dim_a`, `c7`, and
+  `val_1` until a reviewer supplies a label or description, while `doctor` warns
+  about legacy active gaps. Plans still accept exact database IDs only, and
+  local stdio and production HTTP use the same catalog projection.
+- Treats reviewed enum values as deterministic Ask intent. A named value must
+  become an exact filter rather than an unrelated grouping, wider value sets and
+  cross-field ambiguity refuse before execution, and native OpenAI and
+  Anthropic adapters receive one bounded correction. Runner also discards
+  ungrounded provider prose, treats generic words such as `cases` as row nouns
+  unless the catalog defines that resource, and chooses a reviewed trend grain
+  that fits catalog coverage and group limits.
 
 Prepared package versions: `@synapsor/runner@1.7.1` and the optional
 `synapsor-runner@1.7.1` command alias. `@synapsor/spec@1.9.0` and

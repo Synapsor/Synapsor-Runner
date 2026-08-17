@@ -357,6 +357,34 @@ canonical reviewed resource ID. A custom label is never accepted as a resource,
 field, relationship, or formula. Runner retains its bounded recovery for one
 unambiguous bare table name, but does not add custom labels to that resolver.
 
+The review screens and sign-off also report vocabulary coverage: model-facing
+field count, label count, description count, and any clearly placeholder-like
+IDs such as `t_0031`, `dim_a`, `c7`, or `val_1`. A new activation fails closed
+while one of those opaque table/field IDs has neither a reviewed label nor a
+reviewed description. Press `I` on the named table or column, or use the flags
+above, then review the new digest. This check is deliberately narrow and does
+not require ordinary descriptive identifiers such as `orders`, `carrier_mode`,
+or `warehouse_zone` to be relabelled. An older active boundary remains readable
+for compatibility; `doctor` warns until its next reviewed revision supplies the
+missing vocabulary.
+
+`app.describe_data` makes this state machine-readable. Every model-facing field
+has `plan_reference: "exact_id_only"` and one `semantic_status`:
+
+- `reviewed_vocabulary`: a human supplied a label or description;
+- `descriptive_identifier`: the physical ID is not clearly a placeholder;
+- `opaque_identifier`: the client must not guess its business meaning.
+
+The compact resource index includes those mappings plus the resource-level
+operation allowlists. A focused `app.describe_data` call for one exact resource
+adds complete per-field operations, reviewed enum values, and relationship
+field grammar. When more active resources exist, `next_cursor` and the
+model-facing `next_action` explicitly require the client to continue paging
+before it concludes that requested data is unavailable. This avoids repeating a
+large grammar on the first page while still making every reviewed table and
+boundary discoverable. Metadata-only catalog calls return no source rows and
+consume no Explore query budget.
+
 This metadata is descriptive only. It cannot make a field selectable,
 filterable, groupable, sortable, aggregatable, or relationship-reachable. A
 label on a kept-out field remains available to the human reviewer but is absent

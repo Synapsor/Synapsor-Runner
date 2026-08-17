@@ -6,6 +6,9 @@ import net from "node:net";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { openaiToolNameAlias, toolNameExposures } from "@synapsor-runner/mcp-server";
 import type { RelativeTimeWindow } from "./relative-time-window.js";
+import {
+  isClearlyOpaqueExploreIdentifier,
+} from "./explore-vocabulary.js";
 
 const DEFAULT_REMOTE_TIMEOUT_SECONDS = 30;
 const DEFAULT_LOOPBACK_TIMEOUT_SECONDS = 120;
@@ -48,9 +51,19 @@ const CATALOG_TO_QUERY_CORRECTION = [
   "Do not paraphrase fields, capabilities, or example metadata as a data result.",
   "If the question is outside the reviewed boundary, attempt the smallest relevant plan so Runner can return the exact refusal.",
 ].join(" ");
+const DATA_TOOL_GROUNDING_CORRECTION = [
+  "The previous response answered an application-data question without using Runner's reviewed tools.",
+  "Do not answer from general knowledge.",
+  "Call app.describe_data now to inspect the reviewed catalog, then use app.explore_data only if the catalog supports the question.",
+].join(" ");
 const CATALOG_ONLY_RUNNER_ANSWER = [
   "Runner described the reviewed catalog, but the selected model did not execute app.explore_data after one correction.",
   "No source query ran, so no data answer was produced.",
+  "Retry the question or choose a stronger tool-using model.",
+].join(" ");
+const UNGROUNDED_PROVIDER_RUNNER_ANSWER = [
+  "The selected model answered an application-data question without using Runner's reviewed tools after one forced correction.",
+  "Runner discarded that ungrounded prose and no source query ran.",
   "Retry the question or choose a stronger tool-using model.",
 ].join(" ");
 const LOCAL_PLAN_MISMATCH_RUNNER_ANSWER = [
@@ -73,6 +86,7 @@ const LOCAL_PLAN_JSON_INSTRUCTION = [
   "Copy exact resource and field ids. Change only exact reviewed ids needed by the user's question.",
   "The shape is {\"plan\":{\"kind\":\"aggregate\"|\"rows\",...}} with an optional string boundary.",
   "Filters use plan.where with entries {\"field\":\"<exact id>\",\"op\":\"eq\",\"value\":...}; never use filters or operator keys.",
+  "When the question names or paraphrases one reviewed allowed value, constrain rows with plan.where. Do not group by that field unless the user separately asks for a breakdown across its values.",
   "A related field uses {\"field\":\"<target field>\",\"relationship\":\"<exact relationship id>\"}; never qualify the field with a table name.",
   "For a supported relative period, copy time_window.field and time_window.window from focused app.describe_data metadata. Runner owns UTC date arithmetic; never send calculated start/end timestamps for that period.",
   "Rows plans require select. Aggregate plans require measures. Omit empty optional arrays and objects.",
@@ -712,8 +726,9 @@ async function runOpenAiCompatibleTurn(input: {
   const providerHistory: ProviderHistoryEntry[] = [];
   let usage: AskTurnResult["usage"];
   let catalogCorrectionSent = false;
+  let dataToolGroundingCorrectionSent = false;
   let localDirectCatalogTrace: AskToolTrace | undefined;
-  let relationshipIntentRepairAttempts = 0;
+  let intentRepairAttempts = 0;
 
   for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration += 1) {
     assertAskNotCancelled(input.signal);
@@ -721,14 +736,18 @@ async function runOpenAiCompatibleTurn(input: {
       await assertAskAuthorityCurrent(input.authorityDigest, input.authorityGuard);
     }
     reportAskProgress(input.onProgress, { phase: "provider" });
+    const forcedDescribeProviderName = dataToolGroundingCorrectionSent && traces.length === 0
+      ? providerToolName(input.prepared, "app.describe_data")
+      : undefined;
     const forcedExploreProviderName = ((catalogCorrectionSent
       && !traces.some((trace) => trace.tool === "app.explore_data"))
-      || (relationshipIntentRepairAttempts > 0
+      || (intentRepairAttempts > 0
         && !traces.some((trace) => trace.tool === "app.explore_data" && trace.status === "ok")))
       ? providerToolName(input.prepared, "app.explore_data")
       : undefined;
-    const providerTools = forcedExploreProviderName
-      ? input.prepared.providerTools.filter((tool) => tool.providerName === forcedExploreProviderName)
+    const forcedProviderName = forcedDescribeProviderName ?? forcedExploreProviderName;
+    const providerTools = forcedProviderName
+      ? input.prepared.providerTools.filter((tool) => tool.providerName === forcedProviderName)
       : input.prepared.providerTools;
     const response = await input.requestJson({
       endpoint: input.configuration.endpoint,
@@ -740,7 +759,7 @@ async function runOpenAiCompatibleTurn(input: {
         configuration: input.configuration,
         messages,
         providerTools,
-        forcedToolName: forcedExploreProviderName,
+        forcedToolName: forcedProviderName,
         maxOutputTokens: askProviderOutputTokenLimit(
           input.configuration,
           DEFAULT_PROVIDER_OUTPUT_TOKENS,
@@ -761,6 +780,19 @@ async function runOpenAiCompatibleTurn(input: {
       ...(toolCalls.length ? { tool_calls: toolCalls.map((call) => call.raw) } : {}),
     });
     if (toolCalls.length === 0) {
+      if (input.configuration.provider !== "openai_compatible"
+        && traces.length === 0
+        && shouldRecoverLocalDataQuestion(input.question)) {
+        if (!dataToolGroundingCorrectionSent) {
+          dataToolGroundingCorrectionSent = true;
+          messages.push({ role: "user", content: DATA_TOOL_GROUNDING_CORRECTION });
+          continue;
+        }
+        return rememberProviderHistory(
+          completeUngroundedProviderAnswer(input.configuration, traces, usage),
+          providerHistory,
+        );
+      }
       if ((!safeAnswerIfPresent(message.content) || shouldRecoverLocalDataQuestion(input.question))
         && traces.length === 0
         && input.configuration.provider === "openai_compatible") {
@@ -1041,7 +1073,7 @@ async function runOpenAiCompatibleTurn(input: {
                 ? [...traces, localDirectCatalogTrace]
                 : traces;
               requirements = localPlanRequirements(input.question, { resources: [focusedResource] }, {
-                allowUnqualifiedTrailingField: planHasUniqueMeasureResourceAnchor(
+                allowUnqualifiedTrailingField: planHasUniqueReviewedResourceAnchor(
                   input.question,
                   directArguments,
                   focusedResource,
@@ -1070,9 +1102,9 @@ async function runOpenAiCompatibleTurn(input: {
           traces.push(intentRefusal.trace);
           providerHistory.push(providerHistoryEntry(intentRefusal.trace, intentRefusal.providerResult));
           if (intentRefusal.retryable
-            && relationshipIntentRepairAttempts === 0
+            && intentRepairAttempts === 0
             && toolCalls.length === 1) {
-            relationshipIntentRepairAttempts += 1;
+            intentRepairAttempts += 1;
             messages.push({
               role: "tool",
               tool_call_id: call.id,
@@ -1119,6 +1151,8 @@ async function runOpenAiCompatibleTurn(input: {
           ok: false,
           error_code: "LOCAL_PLAN_INTENT_MISMATCH",
           message: `The plan was not executed because it did not match the question. ${requirements.instruction}`,
+          source_query_executed: false,
+          explore_budget_consumed: false,
           source_database_changed: false,
         };
         const trace: AskToolTrace = {
@@ -1520,7 +1554,8 @@ async function runAnthropicTurn(input: {
   const providerHistory: ProviderHistoryEntry[] = [];
   let usage: AskTurnResult["usage"];
   let catalogCorrectionSent = false;
-  let relationshipIntentRepairAttempts = 0;
+  let dataToolGroundingCorrectionSent = false;
+  let intentRepairAttempts = 0;
 
   for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration += 1) {
     assertAskNotCancelled(input.signal);
@@ -1528,14 +1563,18 @@ async function runAnthropicTurn(input: {
       await assertAskAuthorityCurrent(input.authorityDigest, input.authorityGuard);
     }
     reportAskProgress(input.onProgress, { phase: "provider" });
+    const forcedDescribeProviderName = dataToolGroundingCorrectionSent && traces.length === 0
+      ? providerToolName(input.prepared, "app.describe_data")
+      : undefined;
     const forcedExploreProviderName = ((catalogCorrectionSent
       && !traces.some((trace) => trace.tool === "app.explore_data"))
-      || (relationshipIntentRepairAttempts > 0
+      || (intentRepairAttempts > 0
         && !traces.some((trace) => trace.tool === "app.explore_data" && trace.status === "ok")))
       ? providerToolName(input.prepared, "app.explore_data")
       : undefined;
-    const providerTools = forcedExploreProviderName
-      ? input.prepared.providerTools.filter((tool) => tool.providerName === forcedExploreProviderName)
+    const forcedProviderName = forcedDescribeProviderName ?? forcedExploreProviderName;
+    const providerTools = forcedProviderName
+      ? input.prepared.providerTools.filter((tool) => tool.providerName === forcedProviderName)
       : input.prepared.providerTools;
     const response = await input.requestJson({
       endpoint: input.configuration.endpoint,
@@ -1557,8 +1596,8 @@ async function runAnthropicTurn(input: {
           description: tool.definition.description.slice(0, 1_024),
           input_schema: tool.definition.input_schema,
         })),
-        ...(forcedExploreProviderName
-          ? { tool_choice: { type: "tool", name: forcedExploreProviderName } }
+        ...(forcedProviderName
+          ? { tool_choice: { type: "tool", name: forcedProviderName } }
           : {}),
       },
       signal: input.signal,
@@ -1572,6 +1611,17 @@ async function runAnthropicTurn(input: {
     const calls = blocks.filter((block) => block.type === "tool_use");
     messages.push({ role: "assistant", content: blocks });
     if (calls.length === 0) {
+      if (traces.length === 0 && shouldRecoverLocalDataQuestion(input.question)) {
+        if (!dataToolGroundingCorrectionSent) {
+          dataToolGroundingCorrectionSent = true;
+          messages.push({ role: "user", content: DATA_TOOL_GROUNDING_CORRECTION });
+          continue;
+        }
+        return rememberProviderHistory(
+          completeUngroundedProviderAnswer(input.configuration, traces, usage),
+          providerHistory,
+        );
+      }
       if (requiresExploreAfterCatalog(input.question, traces, input.prepared)) {
         if (!catalogCorrectionSent) {
           catalogCorrectionSent = true;
@@ -1643,9 +1693,9 @@ async function runAnthropicTurn(input: {
           traces.push(intentRefusal.trace);
           providerHistory.push(providerHistoryEntry(intentRefusal.trace, intentRefusal.providerResult));
           if (intentRefusal.retryable
-            && relationshipIntentRepairAttempts === 0
+            && intentRepairAttempts === 0
             && calls.length === 1) {
-            relationshipIntentRepairAttempts += 1;
+            intentRepairAttempts += 1;
             results.push({
               type: "tool_result",
               tool_use_id: id,
@@ -1976,16 +2026,16 @@ async function explorePlanIntentRefusal(input: {
   const resource = operatorResource
     ?? tracedResource
     ?? await loadFocusedIntentResource(input);
-  const catalogResources = completeIntentCatalogResources(input.traces, input.args);
-  const allowUnqualifiedTrailingField = resource
-    ? planHasUniqueMeasureResourceAnchor(
+  let catalogResources = completeIntentCatalogResources(input.traces, input.args);
+  let allowUnqualifiedTrailingField = resource
+    ? planHasUniqueReviewedResourceAnchor(
       input.question,
       input.args,
       resource,
       catalogResources,
     )
     : false;
-  const mismatch = resource
+  let mismatch = resource
     ? explorePlanIntentMismatch(input.question, input.args, resource, {
       allowUnqualifiedTrailingField,
       catalogResources,
@@ -1996,9 +2046,35 @@ async function explorePlanIntentRefusal(input: {
         message: "Runner could not verify the selected resource against the entity or grouping named in the question.",
       }
       : undefined;
+  const explicitSubject = resource ? explicitQuestionEntity(input.question.toLowerCase()) : undefined;
+  const genericSubjectNeedsCatalog = Boolean(resource
+    && explicitSubject
+    && genericQuestionEntity(explicitSubject, [resource])
+    && operatorBoundaryResourceCount(resource) !== 1);
+  if (!catalogResources
+    && resource
+    && (mismatch?.kind === "dimension"
+      || reviewedEnumIntentsNamedInQuestion(input.question, resource).length > 0
+      || genericSubjectNeedsCatalog)) {
+    catalogResources = await loadCompleteIntentCatalog(input.gateway, input.args);
+    if (catalogResources) {
+      allowUnqualifiedTrailingField = planHasUniqueReviewedResourceAnchor(
+        input.question,
+        input.args,
+        resource,
+        catalogResources,
+      );
+      mismatch = explorePlanIntentMismatch(input.question, input.args, resource, {
+        allowUnqualifiedTrailingField,
+        catalogResources,
+      });
+    }
+  }
   if (!mismatch) return undefined;
   const relationshipDimensions = mismatch.relationship_dimensions ?? [];
-  const mismatchLead = mismatch.kind === "permission" || mismatch.kind === "unavailable"
+  const mismatchLead = mismatch.kind === "permission"
+    || mismatch.kind === "unavailable"
+    || mismatch.kind === "vocabulary"
     ? "The plan was not executed because the question could not be satisfied by the current reviewed permissions."
     : "The plan was not executed because it substituted reviewed data that did not match the question.";
   const providerResult = {
@@ -2024,8 +2100,51 @@ async function explorePlanIntentRefusal(input: {
       result: providerResult,
     },
     providerResult,
-    retryable: mismatch.kind === "dimension" && relationshipDimensions.length === 1,
+    retryable: mismatch.kind === "filter"
+      || (mismatch.kind === "dimension"
+        && (relationshipDimensions.length === 1 || planRepeatsFilterAsDimension(plan))),
   };
+}
+
+async function loadCompleteIntentCatalog(
+  gateway: AskToolGateway,
+  args: Record<string, unknown>,
+): Promise<Record<string, unknown>[] | undefined> {
+  if (!gateway.describeOperatorMetadata) return undefined;
+  const boundary = typeof args.boundary === "string" && args.boundary.length > 0
+    ? args.boundary
+    : undefined;
+  const resources: Record<string, unknown>[] = [];
+  let cursor = 0;
+  for (let page = 0; page < 32; page += 1) {
+    try {
+      const described = await gateway.describeOperatorMetadata({
+        ...(boundary ? { boundary } : {}),
+        cursor,
+        limit: 10,
+      });
+      if (!described.ok || !Array.isArray(described.value.resources)) return undefined;
+      resources.push(...described.value.resources.filter(isRecord));
+      if (described.value.next_cursor === null) return resources.length > 0 ? resources : undefined;
+      if (!Number.isSafeInteger(described.value.next_cursor)
+        || Number(described.value.next_cursor) <= cursor) return undefined;
+      cursor = Number(described.value.next_cursor);
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+function planRepeatsFilterAsDimension(plan: Record<string, unknown>): boolean {
+  const filters = Array.isArray(plan.where) ? plan.where.filter(isRecord) : [];
+  const dimensions = Array.isArray(plan.dimensions) ? plan.dimensions.filter(isRecord) : [];
+  return dimensions.some((dimension) =>
+    typeof dimension.field === "string"
+    && filters.some((filter) =>
+      filter.field === dimension.field
+      && (typeof filter.relationship === "string" ? filter.relationship : undefined)
+        === (typeof dimension.relationship === "string" ? dimension.relationship : undefined)));
 }
 
 function explorePlanHasComparableIntentShape(plan: Record<string, unknown>): boolean {
@@ -2099,7 +2218,7 @@ type ReviewedRelationshipDimension = {
 };
 
 type ExplorePlanIntentMismatch = {
-  kind: "resource" | "dimension" | "permission" | "unavailable" | "unverified";
+  kind: "resource" | "dimension" | "filter" | "permission" | "unavailable" | "unverified" | "vocabulary";
   message: string;
   relationship_dimensions?: ReviewedRelationshipDimension[];
 };
@@ -2116,6 +2235,10 @@ function explorePlanIntentMismatch(
   const plan = isRecord(args.plan) ? args.plan : undefined;
   if (!plan || typeof plan.resource !== "string" || typeof resource.id !== "string") return undefined;
   const normalizedQuestion = question.toLowerCase();
+  const vocabularyMismatch = opaquePlanVocabularyMismatch(normalizedQuestion, plan, resource);
+  if (vocabularyMismatch) {
+    return { kind: "vocabulary", message: vocabularyMismatch };
+  }
   const countUniqueField = requestedCountUniqueField(normalizedQuestion, resource);
   if (countUniqueField?.kept_out) {
     return {
@@ -2134,9 +2257,16 @@ function explorePlanIntentMismatch(
     };
   }
   const subject = explicitQuestionEntity(normalizedQuestion);
+  const entityMatchesPlan = subject
+    ? questionEntityMatchesPlan(subject, plan, resource, options.catalogResources)
+    : true;
+  const knownResources = [
+    resource,
+    ...(options.catalogResources ?? []).filter((candidate) => candidate !== resource),
+  ];
   if (subject
-    && !genericQuestionEntity(subject)
-    && !questionEntityMatchesPlan(subject, plan, resource, options.catalogResources)) {
+    && !entityMatchesPlan
+    && !genericQuestionEntity(subject, knownResources)) {
     if (operatorBoundaryResourceCount(resource) === 1) {
       return {
         kind: "unavailable",
@@ -2150,12 +2280,18 @@ function explorePlanIntentMismatch(
     };
   }
 
+  const enumIntent = reviewedEnumIntentCheck(normalizedQuestion, plan, resource);
+  if (enumIntent.mismatch) {
+    return { kind: "filter", message: enumIntent.mismatch };
+  }
+
   const dimensions = Array.isArray(plan.dimensions) ? plan.dimensions.filter(isRecord) : [];
   if (dimensions.length > 0) {
     for (const dimension of dimensions) {
       const mismatch = planDimensionIntentMismatch(normalizedQuestion, dimension, resource, {
         allowUnqualifiedTrailingField: options.allowUnqualifiedTrailingField,
         plan,
+        enumFilteredFields: enumIntent.filteredFields,
       });
       if (mismatch) return relationshipDimensionMismatch(normalizedQuestion, resource, mismatch);
     }
@@ -2257,10 +2393,224 @@ function explicitQuestionEntity(question: string): string | undefined {
   return undefined;
 }
 
-function genericQuestionEntity(subject: string): boolean {
+function genericQuestionEntity(
+  subject: string,
+  knownResources: Record<string, unknown>[] = [],
+): boolean {
   const meaningful = subject.split(/[^a-z0-9_]+/u).filter((word) =>
-    word && !["all", "active", "available", "reviewed", "records", "record", "rows", "row", "results", "result", "data", "there"].includes(word));
-  return meaningful.length === 0;
+    word && ![
+      "all",
+      "active",
+      "available",
+      "reviewed",
+      "records",
+      "record",
+      "rows",
+      "row",
+      "results",
+      "result",
+      "data",
+      "there",
+      "cases",
+      "case",
+    ].includes(word));
+  if (meaningful.length > 0) return false;
+  return !knownResources.some((candidate) => {
+    if (typeof candidate.id !== "string") return false;
+    const localId = candidate.id.split(".").at(-1) ?? candidate.id;
+    return questionEntityExactlyMatchesNames(subject, resourceNameVariants(
+      candidate.id,
+      localId,
+      localId.replace(/[_-]+/g, " "),
+      candidate.label,
+    ));
+  });
+}
+
+function opaquePlanVocabularyMismatch(
+  question: string,
+  plan: Record<string, unknown>,
+  resource: Record<string, unknown>,
+): string | undefined {
+  const resourceId = typeof resource.id === "string" ? resource.id : "";
+  const localResourceId = resourceId.split(".").at(-1) ?? resourceId;
+  if (isClearlyOpaqueExploreIdentifier(resourceId)
+    && !resource.label
+    && !resource.description
+    && !questionMentionsMetadataName(question, localResourceId)) {
+    return `Resource ${resourceId} has an opaque database identifier and no reviewed label or description. `
+      + "Runner will not guess its business meaning. In /access, select the table and press I to add reviewed vocabulary, then review and activate.";
+  }
+
+  const references: Array<{ field: string; relationship?: string }> = [];
+  const add = (value: unknown) => {
+    if (!isRecord(value) || typeof value.field !== "string") return;
+    references.push({
+      field: value.field,
+      ...(typeof value.relationship === "string" ? { relationship: value.relationship } : {}),
+    });
+  };
+  for (const value of Array.isArray(plan.measures) ? plan.measures : []) add(value);
+  for (const value of Array.isArray(plan.dimensions) ? plan.dimensions : []) {
+    if (isRecord(value) && isRecord(value.numeric_band)) add(value.numeric_band);
+    else add(value);
+  }
+  for (const value of Array.isArray(plan.where) ? plan.where : []) add(value);
+  for (const value of Array.isArray(plan.order_by) ? plan.order_by : []) add(value);
+  for (const field of Array.isArray(plan.select) ? plan.select : []) {
+    if (typeof field === "string") references.push({ field });
+  }
+  add(plan.time_bucket);
+  add(plan.time_window);
+  add(plan.comparison);
+
+  const uniqueReferences = uniqueByJson(references);
+  for (const reference of uniqueReferences) {
+    const owner = reference.relationship && Array.isArray(resource.relationships)
+      ? resource.relationships.filter(isRecord).find((relationship) =>
+        relationship.id === reference.relationship)
+      : resource;
+    if (!owner) continue;
+    if (reference.relationship
+      && typeof owner.target_resource === "string"
+      && isClearlyOpaqueExploreIdentifier(owner.target_resource)
+      && !owner.target_label
+      && !owner.target_description
+      && !questionMentionsMetadataName(question, owner.target_resource.split(".").at(-1))) {
+      return `Related resource ${owner.target_resource} has an opaque database identifier and no reviewed label or description. `
+        + "Runner refused to infer its meaning from the model's guess. Add reviewed vocabulary in /access, then review and activate.";
+    }
+    if (!isClearlyOpaqueExploreIdentifier(reference.field)
+      || reviewedFieldLabels(owner, reference.field).length > 0
+      || reviewedFieldDescriptions(owner, reference.field).length > 0) continue;
+    if (questionExplicitlyMentionsField(question, reference.field)) continue;
+    const ownerName = reference.relationship && typeof owner.target_resource === "string"
+      ? owner.target_resource
+      : resourceId;
+    return `Field ${ownerName}.${reference.field} has an opaque database identifier and no reviewed label or description. `
+      + "Runner refused to infer its meaning from the model's guess. In /access, select the column and press I to add reviewed vocabulary, then review and activate.";
+  }
+  return undefined;
+}
+
+type ReviewedEnumIntent = {
+  field: string;
+  relationship?: string;
+  owner_resource: string;
+  value: string | number | boolean;
+};
+
+function reviewedEnumIntentsNamedInQuestion(
+  question: string,
+  resource: Record<string, unknown>,
+): ReviewedEnumIntent[] {
+  const owners = [
+    { owner: resource, owner_resource: String(resource.id ?? "") },
+    ...(Array.isArray(resource.relationships)
+      ? resource.relationships.filter(isRecord).map((relationship) => ({
+          owner: relationship,
+          owner_resource: String(relationship.target_resource ?? ""),
+        }))
+      : []),
+  ];
+  const matches = owners.flatMap(({ owner, owner_resource }) => {
+    if (!isRecord(owner.field_enums)) return [];
+    return Object.entries(owner.field_enums).flatMap(([field, values]) => {
+      if (!Array.isArray(values)) return [];
+      const operators = isRecord(owner.filter_operators)
+        ? safeStringList(owner.filter_operators[field])
+        : isRecord(owner.filterable_fields)
+          ? safeStringList(owner.filterable_fields[field])
+          : [];
+      if (!operators.some((operator) => operator === "eq" || operator === "in")) return [];
+      return values.flatMap((value) => {
+        if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") {
+          return [];
+        }
+        return questionMentionsReviewedEnumValue(question, value)
+          ? [{
+              field,
+              ...(typeof owner.id === "string" && owner !== resource ? { relationship: owner.id } : {}),
+              owner_resource,
+              value,
+            }]
+          : [];
+      });
+    });
+  });
+  return uniqueByJson(matches);
+}
+
+function questionMentionsReviewedEnumValue(
+  question: string,
+  value: string | number | boolean,
+): boolean {
+  const normalized = normalizedEntityName(String(value));
+  if (!normalized || normalized.length < 3) return false;
+  const variants = new Set(separatorMentionCandidates(normalized));
+  if (!normalized.includes(" ")) {
+    variants.add(singularResourceName(normalized));
+    variants.add(pluralResourceName(normalized));
+  }
+  return [...variants].some((variant) => variant.length >= 3 && wordPosition(question, variant) >= 0);
+}
+
+function reviewedEnumIntentCheck(
+  question: string,
+  plan: Record<string, unknown>,
+  resource: Record<string, unknown>,
+): { filteredFields: Set<string>; mismatch?: string } {
+  const intents = reviewedEnumIntentsNamedInQuestion(question, resource);
+  if (intents.length === 0) {
+    return { filteredFields: new Set() };
+  }
+  const intentsByField = new Map<string, ReviewedEnumIntent[]>();
+  for (const intent of intents) {
+    const key = `${intent.relationship ?? ""}\u0000${intent.field}`;
+    const current = intentsByField.get(key) ?? [];
+    current.push(intent);
+    intentsByField.set(key, current);
+  }
+  if (intentsByField.size !== 1) {
+    const fields = [...intentsByField.values()].map((fieldIntents) => {
+      const intent = fieldIntents[0]!;
+      return `${intent.owner_resource}.${intent.field}`;
+    });
+    return {
+      filteredFields: new Set(),
+      mismatch: `The question names reviewed allowed values that match more than one field: ${fields.join(", ")}. `
+        + "Runner will not guess which field supplies the filter; use one exact reviewed field or clarify the question.",
+    };
+  }
+  const fieldIntents = [...intentsByField.values()][0]!;
+  const intent = fieldIntents[0]!;
+  const expectedValues = uniqueByJson(fieldIntents.map((candidate) => candidate.value));
+  const expectedDigests = new Set(expectedValues.map((value) => canonicalJsonDigest(value)));
+  const filters = Array.isArray(plan.where) ? plan.where.filter(isRecord) : [];
+  const exactFilter = filters.some((filter) => {
+    if (filter.field !== intent.field
+      || (typeof filter.relationship === "string" ? filter.relationship : undefined) !== intent.relationship) {
+      return false;
+    }
+    if (filter.op === "eq") {
+      return expectedValues.length === 1
+        && canonicalJsonDigest(filter.value) === canonicalJsonDigest(expectedValues[0]);
+    }
+    if (filter.op !== "in" || !Array.isArray(filter.value)) return false;
+    const actualDigests = new Set(filter.value.map((value) => canonicalJsonDigest(value)));
+    return actualDigests.size === expectedDigests.size
+      && [...expectedDigests].every((digest) => actualDigests.has(digest));
+  });
+  const fieldReference = `${intent.relationship ?? ""}\u0000${intent.field}`;
+  if (exactFilter) return { filteredFields: new Set([fieldReference]) };
+  const namedValues = expectedValues.length === 1
+    ? `value ${JSON.stringify(expectedValues[0])}`
+    : `values ${expectedValues.map((value) => JSON.stringify(value)).join(", ")}`;
+  return {
+    filteredFields: new Set(),
+    mismatch: `The question names reviewed allowed ${namedValues} on ${intent.owner_resource}.${intent.field}, `
+      + "but plan.where does not constrain that exact field to exactly those values. A value mention filters rows; it does not by itself authorize grouping all values or adding other values.",
+  };
 }
 
 function questionEntityMatchesPlan(
@@ -2284,6 +2634,14 @@ function questionEntityMatchesPlan(
     (catalogResources ?? []).filter((candidate) => candidate.id !== resource.id)
       .map((candidate) => candidate.description),
   )) return true;
+  const enumIntents = reviewedEnumIntentsNamedInQuestion(subject, resource);
+  if (enumIntents.length === 1) {
+    const sameValueOnAnotherKnownResource = (catalogResources ?? [])
+      .filter((candidate) => candidate.id !== resource.id)
+      .some((candidate) => reviewedEnumIntentsNamedInQuestion(subject, candidate).length > 0);
+    if (!sameValueOnAnotherKnownResource
+      && (operatorBoundaryResourceCount(resource) === 1 || catalogResources !== undefined)) return true;
+  }
   if (questionEntityStrictlyExtendsNames(subject, resourceVariants)) return false;
   const measures = Array.isArray(plan.measures) ? plan.measures.filter(isRecord) : [];
   if (measures.some((measure) => {
@@ -2365,6 +2723,7 @@ function planDimensionIntentMismatch(
   options: {
     allowUnqualifiedTrailingField?: boolean;
     plan?: Record<string, unknown>;
+    enumFilteredFields?: Set<string>;
   } = {},
 ): string | undefined {
   const genericMismatch = (field: string) =>
@@ -2402,6 +2761,8 @@ function planDimensionIntentMismatch(
     ? safeStringList(relationship.groupable_fields).includes(dimension.field)
     : safeStringList(resource.groupable_fields).includes(dimension.field);
   if (!reviewed) return undefined;
+  const fieldReference = `${dimension.relationship ?? ""}\u0000${dimension.field}`;
+  if (options.enumFilteredFields?.has(fieldReference)) return undefined;
   if (questionMentionsReviewedField(question, fieldOwner, dimension.field)) return undefined;
   if (!relationship && questionNamesSingleReviewedTimeField(question, dimension.field, resource)) {
     return undefined;
@@ -2422,6 +2783,30 @@ function planDimensionIntentMismatch(
     const namedDirectFields = reviewedDirectFieldsNamedInQuestion(question, resource);
     if (namedDirectFields.length > 0 && !namedDirectFields.includes(dimension.field)) {
       return `The question names reviewed field${namedDirectFields.length === 1 ? "" : "s"} ${namedDirectFields.join(", ")} on ${resource.id}, but the plan selected ${dimension.field}.`;
+    }
+    const businessVerb = options.allowUnqualifiedTrailingField === true
+      ? naturalBusinessVerbToken(question)
+      : undefined;
+    const businessVerbFields = businessVerb
+      ? safeStringList(resource.groupable_fields).filter((field) =>
+        [field, ...reviewedFieldLabels(resource, field)].some((name) =>
+          normalizedEntityName(name).split(" ").includes(businessVerb)))
+      : [];
+    if (businessVerbFields.length === 1 && businessVerbFields[0] === dimension.field) return undefined;
+    if (businessVerbFields.length === 1) {
+      return `The question's business verb names reviewed field ${businessVerbFields[0]} on ${resource.id}, but the plan selected ${dimension.field}.`;
+    }
+    const tokenResolution = reviewedUniqueFieldTokenResolution(
+      question,
+      resource,
+      options.allowUnqualifiedTrailingField === true,
+    );
+    if (tokenResolution.kind === "one" && tokenResolution.field === dimension.field) return undefined;
+    if (tokenResolution.kind === "one") {
+      return `The question's unambiguous field wording names reviewed field ${tokenResolution.field} on ${resource.id}, but the plan selected ${dimension.field}.`;
+    }
+    if (tokenResolution.kind === "ambiguous") {
+      return `The question's field wording is ambiguous among reviewed fields ${tokenResolution.fields.join(", ")} on ${resource.id}; name one exact reviewed field or label.`;
     }
   } else {
     const target = typeof relationship.target_resource === "string"
@@ -2641,6 +3026,35 @@ function reviewedTrailingFieldResolution(
     const aliases = [field, ...reviewedFieldLabels(resource, field)];
     return aliases.some((alias) => trailingNameTerms(alias)
       .some((term) => groupingPhraseMentionsExactTerm(question, term)));
+  }).sort((left, right) => left.localeCompare(right));
+  if (matches.length === 1) return { kind: "one", field: matches[0]! };
+  if (matches.length > 1) return { kind: "ambiguous", fields: matches };
+  return { kind: "none" };
+}
+
+function reviewedUniqueFieldTokenResolution(
+  question: string,
+  resource: Record<string, unknown>,
+  allowWithoutResource = false,
+): ReviewedTrailingFieldResolution {
+  const resourceId = typeof resource.id === "string" ? resource.id : "";
+  const table = resourceId.split(".").at(-1)?.toLowerCase() ?? "";
+  if (!allowWithoutResource && ![...resourceNameVariants(table, resource.label)].some((variant) =>
+    variant.length >= 3 && wordPosition(question, variant) >= 0)) return { kind: "none" };
+  const resourceTokens = new Set(normalizedEntityName(resourceId).split(" ").filter(Boolean));
+  const questionTokens = new Set(normalizedEntityName(question).split(" ")
+    .filter((token) => token.length >= 4));
+  const groupingClause = explicitGroupingClause(question);
+  const groupedTerm = groupingClause
+    ? normalizedEntityName(groupingClause).replace(/^(?:(?:the|reviewed)\s+)+/u, "")
+    : undefined;
+  const matches = safeStringList(resource.groupable_fields).filter((field) => {
+    const names = [field, ...reviewedFieldLabels(resource, field)];
+    return names.some((name) => normalizedEntityName(name).split(" ")
+      .some((token) => token.length >= 4
+        && !resourceTokens.has(token)
+        && questionTokens.has(token)
+        && (groupedTerm === undefined || groupedTerm === token)));
   }).sort((left, right) => left.localeCompare(right));
   if (matches.length === 1) return { kind: "one", field: matches[0]! };
   if (matches.length > 1) return { kind: "ambiguous", fields: matches };
@@ -3183,6 +3597,20 @@ function completeCatalogOnlyAnswer(
   );
 }
 
+function completeUngroundedProviderAnswer(
+  configuration: ResolvedAskProviderConfiguration,
+  traces: AskToolTrace[],
+  usage: AskTurnResult["usage"],
+): AskTurnResult {
+  return completeAskResult(
+    configuration,
+    UNGROUNDED_PROVIDER_RUNNER_ANSWER,
+    traces,
+    usage,
+    "runner",
+  );
+}
+
 function completeLocalPlanMismatchAnswer(
   configuration: ResolvedAskProviderConfiguration,
   traces: AskToolTrace[],
@@ -3314,6 +3742,9 @@ function localPlanRequirements(
     : undefined;
   if (!resource || typeof resource.id !== "string") return undefined;
   const normalized = question.toLowerCase();
+  const vocabularyMismatch = options.proposedPlan
+    ? opaquePlanVocabularyMismatch(normalized, options.proposedPlan, resource)
+    : undefined;
   const rowIntent = /\b(?:show|list|give)\b.*\b(?:every|all|rows?|records?|details?)\b/.test(normalized);
   const countIntent = /\b(?:how many|number of|counts?)\b/.test(normalized);
   const distinctIntent = /\b(?:distinct|unique)\b/.test(normalized);
@@ -3404,7 +3835,7 @@ function localPlanRequirements(
       if (!Array.isArray(values)) continue;
       for (const matched of values.filter((value) =>
         (typeof value === "string" || typeof value === "number" || typeof value === "boolean")
-        && wordPosition(normalized, String(value).toLowerCase()) >= 0)) {
+        && questionMentionsReviewedEnumValue(normalized, value))) {
         if (typeof matched === "string" || typeof matched === "number" || typeof matched === "boolean") {
           filterCandidates.push({ field, value: matched });
         }
@@ -3434,8 +3865,17 @@ function localPlanRequirements(
       options.allowUnqualifiedTrailingField === true,
     )
     : { kind: "none" as const };
+  const uniqueGroupTokenResolution = explicitlyMentionedDirectGroupFields.length === 0
+    && trailingGroupResolution.kind === "none"
+    ? reviewedUniqueFieldTokenResolution(
+      normalized,
+      resource,
+      options.allowUnqualifiedTrailingField === true,
+    )
+    : { kind: "none" as const };
   const mentionedReviewedGroupingField = explicitlyMentionedDirectGroupFields.length > 0
     || trailingGroupResolution.kind !== "none"
+    || uniqueGroupTokenResolution.kind !== "none"
     || (Array.isArray(resource.relationships) && resource.relationships.filter(isRecord)
       .some((relationship) => safeStringList(relationship.groupable_fields)
         .some((field) => questionMentionsReviewedField(normalized, relationship, field))));
@@ -3453,6 +3893,11 @@ function localPlanRequirements(
     && explicitlyNamedRelationshipDimensions.some((candidate) =>
       candidate.field === proposedDimension.field
       && candidate.relationship === proposedDimension.relationship);
+  const proposedMatchesUniqueDirectField = options.allowUnqualifiedTrailingField === true
+    && proposedDimension !== undefined
+    && "field" in proposedDimension
+    && proposedDimension.relationship === undefined
+    && explicitlyMentionedDirectGroupFields.includes(proposedDimension.field);
   const implicitProposedDimensions = proposedDimensions.length === 1
     && explicitlyMentionedDirectGroupFields.length === 0
     && (explicitlyNamedRelationshipDimensions.length === 0 || proposedMatchesNamedRelationship)
@@ -3466,6 +3911,8 @@ function localPlanRequirements(
       && mentionedReviewedGroupingField)
     || /\b(?:for|within|of) each\b/.test(normalized)
     || trailingGroupResolution.kind !== "none"
+    || uniqueGroupTokenResolution.kind !== "none"
+    || proposedMatchesUniqueDirectField
     || implicitProposedDimensions.length > 0
     || bandIntent;
   const dimensionCandidates: LocalPlanDimension[] = [];
@@ -3474,10 +3921,16 @@ function localPlanRequirements(
     const directGroupFields = [
       ...explicitlyMentionedDirectGroupFields,
       ...(trailingGroupResolution.kind === "one" ? [trailingGroupResolution.field] : []),
+      ...(uniqueGroupTokenResolution.kind === "one" ? [uniqueGroupTokenResolution.field] : []),
     ];
     if (trailingGroupResolution.kind === "ambiguous") {
       groupingAmbiguities.push(
         `Grouping shorthand is ambiguous; name one reviewed field: ${trailingGroupResolution.fields.join(", ")}.`,
+      );
+    }
+    if (uniqueGroupTokenResolution.kind === "ambiguous") {
+      groupingAmbiguities.push(
+        `Field wording is ambiguous; name one reviewed field: ${uniqueGroupTokenResolution.fields.join(", ")}.`,
       );
     }
     const relationshipGroupFields: Array<{
@@ -3633,7 +4086,8 @@ function localPlanRequirements(
     || uniqueFilterCandidates.length > 1
     || Boolean(groupingRequested && !dimensions?.length)
     || Boolean(requestedRelativeWindow && !timeWindow)
-    || Boolean(requestedTimeBucket && !timeBucket);
+    || Boolean(requestedTimeBucket && !timeBucket)
+    || Boolean(vocabularyMismatch);
   const requirements: LocalPlanRequirements = {
     resource: resource.id,
     ...(typeof resource.boundary_name === "string" ? { boundary: resource.boundary_name } : {}),
@@ -3653,6 +4107,7 @@ function localPlanRequirements(
     unanswerable,
   };
   const clauses = [
+    vocabularyMismatch,
     ...uniqueByJson([...groupingAmbiguities, ...(timeBucketAmbiguity ? [timeBucketAmbiguity] : [])]),
     `Use resource exactly ${requirements.resource}.`,
     requirements.boundary ? `If boundary is sent, it must be the string ${requirements.boundary}.` : undefined,
@@ -3786,7 +4241,7 @@ function localPlanRequirementsForDirectCall(
 ): LocalPlanRequirements | undefined {
   const resource = localCatalogResourceForDirectCall(traces, args);
   if (!resource) return undefined;
-  const allowUnqualifiedTrailingField = planHasUniqueMeasureResourceAnchor(
+  const allowUnqualifiedTrailingField = planHasUniqueReviewedResourceAnchor(
     question,
     args,
     resource,
@@ -3879,6 +4334,84 @@ function planHasUniqueMeasureResourceAnchor(
     && measures.some((measure) => localPlanMeasureMatches(measure, requirements.measure!)));
 }
 
+function planHasUniqueGroupFieldResourceAnchor(
+  question: string,
+  args: Record<string, unknown>,
+  resource: Record<string, unknown>,
+  catalogResources: Record<string, unknown>[] | undefined,
+): boolean {
+  if (!catalogResources || typeof resource.id !== "string") return false;
+  const selected = unambiguousGroupFieldQuestionResource(question, catalogResources);
+  if (!selected) return false;
+  const boundary = typeof args.boundary === "string" && args.boundary.length > 0
+    ? args.boundary
+    : undefined;
+  if (selected.resource !== resource.id
+    || (boundary !== undefined && selected.boundary !== boundary)) return false;
+  const plan = isRecord(args.plan) ? args.plan : undefined;
+  const dimensions = plan && Array.isArray(plan.dimensions)
+    ? plan.dimensions.filter(isRecord)
+    : [];
+  return dimensions.some((dimension) =>
+    dimension.field === selected.field && dimension.relationship === undefined);
+}
+
+function unambiguousGroupFieldQuestionResource(
+  question: string,
+  resources: Record<string, unknown>[],
+): { resource: string; field: string; boundary?: string } | undefined {
+  const businessVerb = naturalBusinessVerbToken(question);
+  if (businessVerb) {
+    const verbCandidates = resources.flatMap((candidate) => {
+      if (typeof candidate.id !== "string") return [];
+      const matchingFields = safeStringList(candidate.groupable_fields).filter((field) =>
+        [field, ...reviewedFieldLabels(candidate, field)].some((name) =>
+          normalizedEntityName(name).split(" ").includes(businessVerb)));
+      return matchingFields.map((field) => ({
+        resource: candidate.id as string,
+        field,
+        ...(typeof candidate.boundary_name === "string"
+          ? { boundary: candidate.boundary_name }
+          : {}),
+      }));
+    });
+    if (verbCandidates.length === 1) return verbCandidates[0];
+    if (verbCandidates.length > 1) return undefined;
+  }
+  const candidates = resources.flatMap((candidate) => {
+    if (typeof candidate.id !== "string") return [];
+    const resolution = reviewedUniqueFieldTokenResolution(question, candidate, true);
+    return resolution.kind === "one"
+      ? [{
+          resource: candidate.id,
+          field: resolution.field,
+          ...(typeof candidate.boundary_name === "string"
+            ? { boundary: candidate.boundary_name }
+            : {}),
+        }]
+      : [];
+  });
+  return candidates.length === 1 ? candidates[0] : undefined;
+}
+
+function naturalBusinessVerbToken(question: string): string | undefined {
+  const normalized = normalizedEntityName(question);
+  const match = normalized.match(
+    /\bhow\s+(?:do|does|did|can|could|should|would)\s+(?:we|i|you|they)\s+([a-z][a-z0-9]{2,})\b/u,
+  );
+  return match?.[1];
+}
+
+function planHasUniqueReviewedResourceAnchor(
+  question: string,
+  args: Record<string, unknown>,
+  resource: Record<string, unknown>,
+  catalogResources: Record<string, unknown>[] | undefined,
+): boolean {
+  return planHasUniqueMeasureResourceAnchor(question, args, resource, catalogResources)
+    || planHasUniqueGroupFieldResourceAnchor(question, args, resource, catalogResources);
+}
+
 function localCompoundAnalysisQuestions(question: string, toolCallCount: number): string[] {
   if (toolCallCount !== 2) return [];
   const match = question.trim().match(
@@ -3906,14 +4439,22 @@ function localPlanRequirementsFromQuestionCatalog(
     const measureSelection = trace.result.next_cursor === null
       ? unambiguousMeasureQuestionResource(question, resources)
       : undefined;
-    const selection = unambiguousQuestionResource(question, resources) ?? measureSelection;
+    const groupFieldSelection = trace.result.next_cursor === null
+      ? unambiguousGroupFieldQuestionResource(question, resources)
+      : undefined;
+    const selection = unambiguousQuestionResource(question, resources)
+      ?? measureSelection
+      ?? groupFieldSelection;
     if (!selection) return undefined;
     const resource = resources.find((candidate) =>
       candidate.id === selection.resource
       && (selection.boundary === undefined || candidate.boundary_name === selection.boundary));
     const allowUnqualifiedTrailingField = Boolean(measureSelection
       && measureSelection.resource === selection.resource
-      && measureSelection.boundary === selection.boundary);
+      && measureSelection.boundary === selection.boundary)
+      || Boolean(groupFieldSelection
+        && groupFieldSelection.resource === selection.resource
+        && groupFieldSelection.boundary === selection.boundary);
     return resource ? localPlanRequirements(question, { resources: [resource] }, {
       allowUnqualifiedTrailingField,
     }) : undefined;
@@ -4282,8 +4823,11 @@ function requiresExploreAfterCatalog(
 function shouldRecoverLocalDataQuestion(question: string): boolean {
   if (isCatalogMetadataQuestion(question)) return false;
   const normalized = question.toLowerCase().replace(/\s+/g, " ").trim();
-  return /\b(?:how many|counts?|total|sum|average|mean|standard deviation|stddev|variance|trend|running total)\b/.test(normalized)
-    || /\b(?:show|list|give)\b.*\b(?:all|every|rows?|records?|details?)\b/.test(normalized);
+  const runnerHelp = /\b(?:synapsor|runner|mcp|boundary|configure|configuration|setup|api key|provider|model)\b/.test(normalized);
+  return /\b(?:how many|counts?|total|sum|average|mean|standard deviation|stddev|variance|trend|running total|compare|comparison|break down|grouped)\b/.test(normalized)
+    || /\b(?:show|list|give)\b.*\b(?:all|every|rows?|records?|details?)\b/.test(normalized)
+    || (!runnerHelp
+      && /^(?:how|what|which|where|when|who|are|is|do|does|did|have|has|can)\b/.test(normalized));
 }
 
 function isCatalogMetadataQuestion(question: string): boolean {
@@ -4562,11 +5106,11 @@ function askSystemPrompt(): string {
   return [
     "You are the optional local client for Synapsor Runner.",
     "Answer application-data questions only through the provided reviewed tools.",
-    "Never ask the user for an Explore boundary name. Call app.describe_data without a boundary selector to discover the compact active resource index. Its output is metadata only and never answers a data question. Request one exact resource for focused relationship details only when needed, then call app.explore_data for values.",
+    "Never ask the user for an Explore boundary name. Call app.describe_data without a boundary selector to discover the compact active resource index. Its output is metadata only and never answers a data question. If next_cursor is not null and the current page does not match the question, continue app.describe_data with that exact cursor until a matching resource is found or next_cursor is null; do not declare data unavailable from a partial catalog. Request one exact resource for focused relationship details only when needed, then call app.explore_data for values.",
     "Never treat a tenant, organization, account, customer, or principal named in the user's question as a boundary name or as trusted scope input.",
     "Tenant and principal scope are injected and enforced by Runner outside model arguments; never ask the user to supply them for a data plan and never send them in tool arguments.",
     "When a question may be answerable from reviewed data, perform catalog discovery with app.describe_data and attempt the smallest valid app.explore_data plan instead of asking the user to identify Runner internals.",
-    "For every Explore plan, copy the exact resource id from app.describe_data into plan.resource. Copy exact field and relationship ids too; the catalog intentionally exposes no alternative aliases. If Runner reports an ambiguous resource, retry with one of the exact boundary and resource pairs it lists.",
+    "For every Explore plan, use reviewed labels and descriptions only to understand business meaning, then copy the associated exact resource, field, and relationship ids from app.describe_data. Labels never replace ids in a plan. If semantic_status is opaque_identifier, do not guess what it means; state that reviewed vocabulary is required. If Runner reports an ambiguous resource, retry with one of the exact boundary and resource pairs it lists.",
     "If the entity or grouping explicitly named in the question is absent from the reviewed catalog, state that limitation and do not substitute a different reviewed resource or field.",
     "Each catalog resource includes one valid_plan_example. For smaller models, copy that complete plan first and change only fields or functions whose exact reviewed ids are present on the same resource; never invent a friendlier column name.",
     "When several reviewed boundaries are active, inspect their catalog and run each data plan against exactly one boundary; never combine boundaries.",
@@ -4581,11 +5125,13 @@ function askSystemPrompt(): string {
     "Do not offer a follow-up data operation unless its exact fields, operations, and relationship path are present in the reviewed catalog or a successful Runner result; call app.describe_data when unsure.",
     "If the reviewed catalog cannot answer, do not guess table or field names and do not tell the user to add guessed schema or access; state the limitation only because the Synapsor client separately presents any source-proven operator review path.",
     "For each question, request only the minimum measures, dimensions, filters, time grain, and relationships needed to answer it; never add a related-looking measure just because it is available.",
+    "A question that names or paraphrases one reviewed allowed value normally requests a where filter on that value. Do not group by that field unless the user also asks for a breakdown, comparison, or distribution across its values.",
     "For related fields, keep resource set to the reviewed root that owns the counted entity or measure, use the target field alias by itself, and put the exact active path alias in the separate relationship property; never concatenate a relationship or table name into field.",
     "When the user asks for results by an entity such as account or customer, do not group by a foreign-key identifier unless the catalog explicitly marks it groupable. Prefer an exact active many-to-one relationship and a reviewed grouping field on the related entity, while keeping the root resource that owns the counted records.",
     "Use one aggregate measure unless the user explicitly asks for multiple measures or the requested reviewed calculation requires them; for example, a revenue-only question does not justify also requesting discounts.",
     "When a valid bounded plan can answer the question and only a date range, group limit, or presentation choice is omitted, use the boundary's conservative defaults and state what was returned instead of asking an unnecessary clarification.",
     "Treat an unqualified week-over-week, month-over-month, or day-over-day trend question as a chronological time-bucketed series over the available reviewed range. Use a two-range comparison only when the user explicitly asks for the latest, current, or two named periods.",
+    "For a trend with no requested grain, use app.describe_data time_coverage and maximum_groups to choose the coarsest useful reviewed bucket that fits the covered range. For example, do not choose weekly buckets for multi-year coverage when the estimated number of weeks exceeds maximum_groups; use month, quarter, or year as needed. Never rely on top_n to hide omitted time periods.",
     "For a two-period comparison that names a supported relative period, copy the reviewed window and compare_to names from focused app.describe_data metadata so Runner resolves both UTC ranges. Otherwise send non-overlapping half-open absolute ranges in chronological order: period_1 is the earlier baseline, period_2 is the later period, and Runner computes change as period_2 minus period_1.",
     "For an unqualified fastest-growing or fastest-declining question, use one bounded comparison of the latest 28 reviewed days in app.describe_data time_coverage against the immediately preceding 28 days. Use the current UTC date only when the reviewed coverage actually reaches it. Include the reviewed week time_bucket and exact relationship aliases for the comparison field, dimension, and measure; order by comparison_change with percentage for relative growth or decline and absolute for value change; do not request an all-history dimension-by-week cube.",
     "For a time-series or trend question with no date range, use chronological order and the reviewed maximum group bound so the latest periods are not silently truncated; state the returned range.",

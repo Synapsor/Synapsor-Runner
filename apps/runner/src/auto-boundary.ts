@@ -33,6 +33,7 @@ import type {
   BoundaryReviewProgressArtifact,
 } from "./boundary-review-progress-types.js";
 import { formatDerivedScopePath } from "./derived-scope-display.js";
+import { exploreBoundaryVocabularyGaps } from "./explore-vocabulary.js";
 
 export const AUTO_BOUNDARY_VERSION = "synapsor.auto-boundary.v1";
 export const GENERATION_LOCK_VERSION = "synapsor.generation-lock.v1";
@@ -1999,6 +2000,22 @@ export async function activateExplorationBoundary(input: {
     if (unresolved) {
       throw new Error(`${resource.id} relationship ${unresolved.id} is nullable; choose whether unmatched rows are kept as null or excluded.`);
     }
+  }
+  const vocabularyGaps = exploreBoundaryVocabularyGaps(candidate.pack.resources);
+  if (vocabularyGaps.length > 0) {
+    const details = vocabularyGaps.map((gap) => {
+      const missing = [
+        ...(gap.resource_gap ? ["table label or description"] : []),
+        ...(gap.fields.length > 0 ? [`field vocabulary for ${gap.fields.join(", ")}`] : []),
+      ];
+      return `- ${gap.resource}: ${missing.join("; ")}`;
+    });
+    throw new Error([
+      "Exploration-boundary activation requires reviewed vocabulary for clearly opaque model-facing identifiers.",
+      ...details,
+      "Open /access, select each table or column, and press I to add a reviewed label or description; then review and activate again.",
+      "Plans will still use exact database IDs. Reviewed vocabulary helps the model choose those IDs and grants no additional data authority.",
+    ].join("\n"));
   }
   const normalizedAuthority = boundaryAuthority(candidate);
   const digest = canonicalJsonDigest(normalizedAuthority);

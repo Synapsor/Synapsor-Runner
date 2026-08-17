@@ -56,6 +56,7 @@ import {
 } from "./derived-scope-display.js";
 import { resolveOperatorIdentity, verifyJwtOperatorProof, verifySignedOperatorProof, type OperatorIdentityConfig } from "./operator-identity.js";
 import { resolveSynapsorProject } from "./project-resolution.js";
+import { formatExploreVocabularyCoverage } from "./explore-vocabulary.js";
 import { disableScopedExplore } from "./protect-query.js";
 import { recommendedBoundaryReviewCandidate } from "./boundary-candidate.js";
 import {
@@ -2934,6 +2935,7 @@ export function formatFocusedBoundaryActivationReview(
       ["Runner only", fieldList((resource.model_withheld_fields ?? []).map(displayField))],
       ["Kept out", fieldList(resource.kept_out_fields.map(displayField))],
       ["Value allowlists", reviewedValues.length ? reviewedValues.join("; ") : "None"],
+      ["Model vocabulary", formatExploreVocabularyCoverage(resource)],
       ["Numeric grouping", numericGroupings.length ? numericGroupings.join("; ") : "None"],
       ["Reviewed links", relationships.length ? relationships.join(", ") : "None"],
     ];
@@ -3068,6 +3070,9 @@ function styleReviewValue(
   if (label === "Kept out") return theme.keptOut(value);
   if (label === "Value allowlists" || label === "Numeric grouping" || label === "Reviewed links") {
     return theme.relationship(value);
+  }
+  if (label === "Model vocabulary") {
+    return value.includes("reviewed vocabulary required") ? theme.warning(value) : theme.success(value);
   }
   if (label === "Small-group privacy") return theme.warning(value);
   if (label === "Writes") return theme.success(value);
@@ -5606,6 +5611,7 @@ function formatBoundaryResourceSignoff(
               : "No separate per-user column is configured",
         ],
         ["Allowed operations", operationCounts],
+        ["Model vocabulary", formatExploreVocabularyCoverage(resource)],
         [
           "Privacy",
           `minimum returned group ${resource.minimum_cohort_size}; suppression-aware totals stay on`,

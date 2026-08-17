@@ -1,10 +1,41 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  exploreVocabularyDoctorCheck,
   withMysqlProbeConnection,
   withPostgresProbeClient,
 } from "./runtime-doctor.js";
 
 describe("runtime doctor database probe cleanup", () => {
+  it("warns on legacy opaque vocabulary without failing active authority", () => {
+    const warning = exploreVocabularyDoctorCheck("legacy_boundary", {
+      id: "legacy.t_0031",
+      selectable_fields: ["val_1"],
+      filterable_fields: {},
+      sortable_fields: [],
+      groupable_fields: ["val_1"],
+      aggregate_measures: [],
+      count_distinct_fields: [],
+      time_bucket_fields: {},
+      kept_out_fields: [],
+    } as never);
+    expect(warning).toMatchObject({ ok: true, level: "warn" });
+    expect(warning.message).toMatch(/table name.*val_1.*existing authority remains active/is);
+    expect(warning.message).toContain("press I");
+
+    const ready = exploreVocabularyDoctorCheck("sales", {
+      id: "public.orders",
+      selectable_fields: ["status"],
+      filterable_fields: {},
+      sortable_fields: [],
+      groupable_fields: ["status"],
+      aggregate_measures: [],
+      count_distinct_fields: [],
+      time_bucket_fields: {},
+      kept_out_fields: [],
+    } as never);
+    expect(ready).toMatchObject({ ok: true, level: "pass" });
+  });
+
   it("closes a PostgreSQL pool when its initial connection fails", async () => {
     const end = vi.fn().mockResolvedValue(undefined);
     const pool = {

@@ -772,6 +772,41 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       .replace(/[_-]+/g," ")
       .trim()
       .replace(/\b\w/g,char=>char.toUpperCase());
+	    const opaqueIdentifierPrefixes=new Set(["attr","attribute","class","cls","col","column","dim","dimension","field","fld","measure","metric","table","tbl","val","value","var","variable"]);
+	    const isClearlyOpaqueIdentifier=value=>{
+	      const local=String(value||"").split(".").at(-1).toLowerCase();
+	      const words=local.split(/[_-]+/).filter(Boolean);
+	      if(!local||!words.length)return true;
+	      if(words.length>1&&opaqueIdentifierPrefixes.has(words[0])&&words.slice(1).every(word=>/^[0-9]+$/.test(word)||/^[a-z]$/.test(word)||/^[a-z]{0,2}[0-9]+$/.test(word)))return true;
+	      if(/^(?:attr|cls|col|dim|field|fld|measure|metric|table|tbl|val|var)[0-9]+$/.test(local))return true;
+	      if(/^[a-z]{1,3}_?[0-9]{1,8}$/.test(local))return true;
+	      return /^[a-z]$/.test(local);
+	    };
+	    const modelFacingFieldIds=resource=>[...new Set([
+	      ...(resource?.selectable_fields||[]),
+	      ...Object.keys(resource?.filterable_fields||{}),
+	      ...(resource?.sortable_fields||[]),
+	      ...(resource?.groupable_fields||[]),
+	      ...(resource?.aggregate_measures||[]),
+	      ...(resource?.presence_measure_fields||[]),
+	      ...(resource?.count_distinct_fields||[]),
+	      ...Object.keys(resource?.time_bucket_fields||{})
+	    ])].filter(field=>!(resource?.kept_out_fields||[]).includes(field)).sort();
+	    const modelVocabularyCoverage=resource=>{
+	      const fields=modelFacingFieldIds(resource);
+	      const opaqueFields=fields.filter(field=>isClearlyOpaqueIdentifier(field)&&!resource?.field_metadata?.[field]?.label&&!resource?.field_metadata?.[field]?.description);
+	      const resourceGap=isClearlyOpaqueIdentifier(resource?.id)&&!resource?.label&&!resource?.description;
+	      return {resourceGap,opaqueFields,ready:!resourceGap&&!opaqueFields.length};
+	    };
+	    const modelVocabularySummary=resource=>{
+	      const coverage=modelVocabularyCoverage(resource);
+	      const labelled=modelFacingFieldIds(resource).filter(field=>resource?.field_metadata?.[field]?.label).length;
+	      const described=modelFacingFieldIds(resource).filter(field=>resource?.field_metadata?.[field]?.description).length;
+	      const gaps=[...(coverage.resourceGap?["table name"]:[]),...coverage.opaqueFields];
+	      return coverage.ready
+	        ?labelled+" field labels; "+described+" field descriptions; no opaque model-facing identifiers"
+	        :"reviewed vocabulary required for "+gaps.join(", ");
+	    };
 	    function handleSessionFailure(payload){
 	      if(!["WORKBENCH_SESSION_REQUIRED","WORKBENCH_SESSION_EXPIRED","WORKBENCH_SESSION_INVALID"].includes(payload?.error_code))return false;
 	      document.querySelectorAll("button,input,select,textarea").forEach(control=>control.disabled=true);
@@ -1472,7 +1507,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 			      const cohortCurrent=cohortValues.length===1?cohortValues[0]:5;
 			      const cohortSettings='<details class="boundary-options"><summary>Privacy for all tables'+(cohortValues.length===1?' · minimum group size '+esc(cohortCurrent):' · mixed group sizes')+'</summary><div class="boundary-name-editor"><label>Minimum group size for every included table<select id="boundary-cohort-all"><option value="5" '+(cohortCurrent===5?'selected':'')+'>5 — default; hide groups with 1–4 rows</option><option value="4" '+(cohortCurrent===4?'selected':'')+'>4 — hide groups with 1–3 rows</option><option value="3" '+(cohortCurrent===3?'selected':'')+'>3 — hide groups with 1–2 rows</option><option value="2" '+(cohortCurrent===2?'selected':'')+'>2 — hide groups with 1 row</option><option value="1" '+(cohortCurrent===1?'selected':'')+'>1 — show every non-empty group; suppression off</option></select></label><label>Human reviewer<input id="boundary-cohort-actor" type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><label>Reason for this privacy setting<textarea id="boundary-cohort-reason" maxlength="500" rows="2" placeholder="Explain why this minimum group size is appropriate for every table in this boundary."></textarea></label><button id="save-boundary-cohort" class="secondary" type="button" '+(candidate.pack.resources.length?'':'disabled')+'>Save for all '+esc(candidate.pack.resources.length)+' table'+(candidate.pack.resources.length===1?'':'s')+'</button><span id="boundary-cohort-status" class="status-message" aria-live="polite"></span><small>Runner hides aggregate groups with fewer rows than this number. Choosing 1 turns small-group suppression off and may reveal a group containing one person or record. Saving creates one disabled boundary change; Review and activate remains separate.</small></div></details>';
 			      panel.innerHTML=
-		        '<div class="boundary-overview-head"><div><p class="instant-kicker">Scoped Explore</p><h2 id="boundary-overview-title">Your boundaries</h2><p>Each boundary is an independently reviewed set of tables, columns, relationships, and limits. An active boundary adds choices to the same two Explore tools; one query still uses exactly one boundary.</p>'+databaseCompatibilitySummary+'<div class="boundary-version-table-wrap"><table class="boundary-version-table"><thead><tr><th>Name</th><th>Status</th><th>Tables</th><th>Authority</th><th>Actions</th></tr></thead><tbody>'+rows+'</tbody></table></div><p class="muted">Active boundaries never merge relationship graphs. If a table appears in several boundaries, Runner requires the caller to name one.</p>'+pendingBoundaryBanner+'<div id="new-boundary-form" class="band" hidden><h3>Create another boundary</h3><p>Choose its first table. Nothing is copied from another boundary, and no authority is activated.</p><label class="field">Boundary name<input id="new-boundary-name" type="text" maxlength="64" spellcheck="false" placeholder="support_analytics"></label><label class="field">Starting table<select id="new-boundary-table"><option value="">Choose a table</option>'+startingTableOptions+'</select></label><small>Showing all '+esc(inspectedStartingTables.length)+' inspected tables. '+esc(eligibleStartingTables.length)+' can start a boundary; '+esc(sequencedStartingTables.length)+' can be added after their scoped ancestor or after a boundary-specific Shared reference acknowledgement; unavailable tables remain visible with their reason.</small><small>Runner opens the selected table&apos;s column access next. Related and Shared reference tables can be added afterward through their reviewed controls.</small><div class="actions"><button id="create-boundary" type="button">Choose table and edit</button><button id="cancel-new-boundary" class="secondary" type="button">Cancel</button></div></div><p id="boundary-library-status" class="status-message" aria-live="polite"></p><details class="boundary-options"><summary>Rename selected boundary</summary><div class="boundary-name-editor"><label>Boundary name<input id="boundary-pack-name" type="text" maxlength="64" spellcheck="false" value="'+esc(candidate.pack.name)+'" aria-describedby="boundary-name-help"></label><button id="save-boundary-name" class="secondary" type="button">Save disabled name</button><span id="boundary-name-status" class="status-message" aria-live="polite"></span><small id="boundary-name-help">Saving changes only the selected disabled draft. The name is included in its final review fingerprint.</small></div></details>'+cohortSettings+volumeSettings+rankedSettings+shapeSettings+'</div>'+lifecycleControls+'</div>'
+		        '<div class="boundary-overview-head"><div><p class="instant-kicker">Scoped Explore</p><h2 id="boundary-overview-title">Your boundaries</h2><p>Each boundary is an independently reviewed set of tables, columns, relationships, and limits. An active boundary adds choices to the same two Explore tools; one query still uses exactly one boundary.</p>'+databaseCompatibilitySummary+'<div class="boundary-version-table-wrap"><table class="boundary-version-table"><thead><tr><th>Name</th><th>Status</th><th>Tables</th><th>Authority</th><th>Actions</th></tr></thead><tbody>'+rows+'</tbody></table></div><p class="muted">Active boundaries never merge relationship graphs. If a table appears in several boundaries, Runner requires the caller to name one.</p>'+pendingBoundaryBanner+'<div id="new-boundary-form" class="band" hidden><h3>Create another boundary</h3><p>Choose its first table. Nothing is copied from another boundary, and no authority is activated.</p><label class="field">Boundary name<input id="new-boundary-name" type="text" maxlength="64" spellcheck="false" placeholder="support_analytics"></label><label class="field">Starting table<select id="new-boundary-table"><option value="">Choose a table</option>'+startingTableOptions+'</select></label><small>Showing all '+esc(inspectedStartingTables.length)+' inspected tables. '+esc(eligibleStartingTables.length)+' can start a boundary; '+esc(sequencedStartingTables.length)+' can be added after their scoped ancestor or after a boundary-specific Shared reference acknowledgement; unavailable tables remain visible with their reason.</small><small>Runner opens the selected table&apos;s column access next. Related and Shared reference tables can be added afterward through their reviewed controls.</small><div class="actions"><button id="create-boundary" type="button" disabled>Choose table and edit</button><button id="cancel-new-boundary" class="secondary" type="button">Cancel</button></div></div><p id="boundary-library-status" class="status-message" aria-live="polite"></p><details class="boundary-options"><summary>Rename selected boundary</summary><div class="boundary-name-editor"><label>Boundary name<input id="boundary-pack-name" type="text" maxlength="64" spellcheck="false" value="'+esc(candidate.pack.name)+'" aria-describedby="boundary-name-help"></label><button id="save-boundary-name" class="secondary" type="button">Save disabled name</button><span id="boundary-name-status" class="status-message" aria-live="polite"></span><small id="boundary-name-help">Saving changes only the selected disabled draft. The name is included in its final review fingerprint.</small></div></details>'+cohortSettings+volumeSettings+rankedSettings+shapeSettings+'</div>'+lifecycleControls+'</div>'
 		        +(selectedEntry?.active?'<div id="boundary-disable-confirmation" class="band notice" hidden><strong>Deactivate '+esc(selectedEntry.name)+'?</strong><p>This removes only this boundary from local Explore. Other active boundaries, protected capabilities, evidence, ledger, and source data stay unchanged.</p><div class="actions"><button id="confirm-disable-boundary" class="danger" type="button">Deactivate selected boundary</button><button id="cancel-disable-boundary" class="secondary" type="button">Cancel</button></div><p id="boundary-disable-status" class="status-message" aria-live="polite"></p></div>':"")
 		        +renderBoundaryRelationshipMap(boundaryCatalog,boundaryDiagrams);
 		      wireBoundaryRelationshipMaps(panel);
@@ -1483,6 +1518,14 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		        byId("new-boundary-name").focus();
 		      };
 		      byId("cancel-new-boundary").onclick=()=>byId("new-boundary-form").hidden=true;
+		      const updateCreateBoundaryState=()=>{
+		        const name=byId("new-boundary-name").value.trim().toLowerCase();
+		        const resourceId=byId("new-boundary-table").value;
+		        byId("create-boundary").disabled=!/^[a-z][a-z0-9_.-]{0,63}$/.test(name)
+		          || !original.pack.resources.some(resource=>resource.id===resourceId);
+		      };
+		      byId("new-boundary-name").addEventListener("input",updateCreateBoundaryState);
+		      byId("new-boundary-table").addEventListener("change",updateCreateBoundaryState);
 		      byId("create-boundary").onclick=async()=>{
 		        const status=byId("boundary-library-status");
 		        const requestedName=byId("new-boundary-name").value.trim();
@@ -3163,7 +3206,11 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      };
 	      const columnList='<div class="access-column-list" data-access-column-list>'+orderedFields.map(renderColumnRow).join("")+'</div>';
 		      const privacyButton=resource?'<button class="quiet" id="open-resource-privacy" type="button">Privacy · minimum group '+esc(resource.minimum_cohort_size)+'</button>':"";
-		      const resourceMetadata=resource?managedMetadataReviewPanel("resource_metadata",undefined,{label:resource.label,description:resource.description}):"";
+	      const resourceMetadata=resource?managedMetadataReviewPanel("resource_metadata",undefined,{label:resource.label,description:resource.description}):"";
+	      const vocabularyCoverage=resource?modelVocabularyCoverage(resource):null;
+	      const vocabularyNotice=vocabularyCoverage&&!vocabularyCoverage.ready
+	        ?'<div class="risk"><strong>Reviewed model vocabulary required before activation</strong><p>'+esc(modelVocabularySummary(resource))+'. Add a table label or description above, and field labels or descriptions in the affected column panels. Exact database IDs remain the plan authority; this metadata grants no data access.</p></div>'
+	        :resource?'<div class="band"><strong>Model vocabulary ready</strong><p>'+esc(modelVocabularySummary(resource))+'.</p></div>':"";
 		      const resourceHeading=resource?.label
 		        ?'<h3>'+esc(resource.label)+'</h3><p><code>'+esc(selectedResource)+'</code></p>'
 		        :'<h3>'+esc(selectedResource)+'</h3>';
@@ -3277,7 +3324,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      const resourceSignoff=focusedAccessReview
 	        ?'<div class="band notice"><strong>One final confirmation, not one checkbox per table.</strong><p>Step 2 shows this table together with the complete boundary, then records every exact digest-bound decision at once.</p></div>'
 	        :'<div class="actions"><label class="check"><input id="resource-signoff" type="checkbox" data-review-decision="'+esc(selectedResource)+'" '+(resourceConfirmed?"checked":"")+(resource&&!unresolvedRelationship?"":" disabled")+'><span>I reviewed which records and fields this agent may use, including privacy limits and related data.</span></label></div>';
-	      byId("resource-detail").innerHTML=header+serverCompatibilityNotice+resourceMetadata+columnList+scopeReview+relationshipReview+cohortReview+reviewedAnalytics+advanced+resourceSignoff;
+	      byId("resource-detail").innerHTML=header+serverCompatibilityNotice+vocabularyNotice+resourceMetadata+columnList+scopeReview+relationshipReview+cohortReview+reviewedAnalytics+advanced+resourceSignoff;
 	      byId("back-resources").onclick=backFromResourceDetail;
 	      if(byId("open-resource-privacy"))byId("open-resource-privacy").onclick=()=>{
 	        const section=document.querySelector("[data-cohort-review-section]");
@@ -3394,6 +3441,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     function focusedBoundaryBlocker(){
       if(!candidate?.pack?.resources?.length)return "Include at least one table.";
       for(const resource of candidate.pack.resources){
+	        const vocabulary=modelVocabularyCoverage(resource);
+	        if(!vocabulary.ready){
+	          return resource.id+" cannot activate until reviewed model vocabulary is added: "+modelVocabularySummary(resource)+".";
+	        }
         const unresolved=(resource.relationships||[]).find(relationship=>relationship.unmatched_rows==="review_required");
         if(unresolved){
           return "Choose how unmatched rows behave for "+resource.id+" → "+unresolved.target_resource+" before activation.";
@@ -3406,6 +3457,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       if(!candidate||!reviewReport)return;
       if(focusedAccessReview){
         const blocker=focusedBoundaryBlocker();
+	      const vocabularyGapResource=candidate.pack.resources.find(resource=>!modelVocabularyCoverage(resource).ready);
         const unresolvedRelationship=candidate.pack.resources
           .flatMap(resource=>(resource.relationships||[]).map(relationship=>({resource,relationship})))
           .find(item=>item.relationship.unmatched_rows==="review_required");
@@ -3426,7 +3478,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		          const tenantScope=reviewedTenantScopeLabel(resource,resourceReview);
 		          const principalScope=reviewedPrincipalScopeLabel(resource,resourceReview);
 		          const resourceName=resource.label?resource.label+" ("+resource.id+")":resource.id;
-		          return '<tr><td><strong>'+esc(resourceName)+'</strong>'+(resource.description?'<small>'+esc(resource.description)+'</small>':'')+'<small>Tenant scope: '+esc(tenantScope)+' · Principal scope: '+esc(principalScope)+' · minimum group '+esc(resource.minimum_cohort_size)+'</small><small>Allowed categorical values: '+esc(enumSummary.join("; ")||"None")+'</small></td>'
+	          return '<tr><td><strong>'+esc(resourceName)+'</strong>'+(resource.description?'<small>'+esc(resource.description)+'</small>':'')+'<small>Tenant scope: '+esc(tenantScope)+' · Principal scope: '+esc(principalScope)+' · minimum group '+esc(resource.minimum_cohort_size)+'</small><small>Allowed categorical values: '+esc(enumSummary.join("; ")||"None")+'</small><small>Model vocabulary: '+esc(modelVocabularySummary(resource))+'</small></td>'
             +'<td>'+fieldCell(modelFields,"model-visible")+'</td>'
             +'<td>'+fieldCell(runnerFields,"Runner-only")+'</td>'
             +'<td>'+fieldCell(resource.kept_out_fields||[],"kept out")+'</td>'
@@ -3441,6 +3493,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           +(blocker?'<div class="risk high"><strong>One explicit choice remains.</strong><p>'+esc(blocker)+'</p><button id="return-to-access" class="secondary" type="button">Return to access editor</button></div>':'<p class="muted">Selecting Activate records every exact digest-bound decision shown here, activates only this boundary, and opens Ask.</p>');
         byId("return-to-access")?.addEventListener("click",()=>{
           if(unresolvedRelationship)selectedResource=unresolvedRelationship.resource.id;
+	      else if(vocabularyGapResource)selectedResource=vocabularyGapResource.id;
           setView("exceptions");
           window.requestAnimationFrame(()=>{
             const detail=byId("resource-detail")?.querySelector("[data-relationship-semantics]");

@@ -77,6 +77,10 @@ import {
   type RelativeTimeWindow,
   type ResolvedRelativeTimeWindow,
 } from "./relative-time-window.js";
+import {
+  exploreFieldSemanticStatus,
+  exploreVocabularyCoverage,
+} from "./explore-vocabulary.js";
 
 export const SCOPED_EXPLORE_DESCRIBE_TOOL = "app.describe_data";
 export const SCOPED_EXPLORE_QUERY_TOOL = "app.explore_data";
@@ -3528,6 +3532,11 @@ function describeBoundary(
       week_starts_on: "Monday",
       model_supplied_date_arithmetic: false,
     },
+    vocabulary_policy: {
+      reviewed_metadata_is_semantic_only: true,
+      exact_ids_required_in_plans: true,
+      opaque_identifier_behavior: "do_not_guess; ask the operator to add a reviewed label or description",
+    },
     resources: selected.map((resource) => {
       const reviewableRelationships = inactiveReviewableRelationships(resource, boundary, reviewableBoundary);
       const reviewedFields = unique([
@@ -3547,20 +3556,18 @@ function describeBoundary(
         describedFields.map((field) => [field, reviewedFieldLabel(resource, field)]),
       );
       const modelWithheld = new Set(resource.model_withheld_fields ?? []);
+      const vocabulary = exploreVocabularyCoverage(resource);
       return {
         id: resource.id,
         ...(resource.label ? { label: resource.label } : {}),
         ...(resource.description ? { description: resource.description } : {}),
+        vocabulary,
         primary_key: resource.primary_key,
-        fields: describedFields.map((field) => ({
-          id: field,
-          ...(resource.field_metadata?.[field]?.label
-            ? { label: resource.field_metadata[field]!.label }
-            : {}),
-          ...(resource.field_metadata?.[field]?.description
-            ? { description: resource.field_metadata[field]!.description }
-            : {}),
-        })),
+        fields: describedFields.map((field) => describeReviewedFieldGrammar(
+          resource,
+          field,
+          modelWithheld,
+        )),
         field_egress: Object.fromEntries(reviewedFields.map((field) => [
           field,
           { model_egress: modelWithheld.has(field) ? "withheld" : "visible" },
@@ -3631,6 +3638,7 @@ function describeBoundary(
           const targetModelWithheld = new Set(target.model_withheld_fields ?? []);
           const describedTargetFields = targetFields.filter((field) =>
             !target.kept_out_fields.includes(field));
+          const targetVocabulary = exploreVocabularyCoverage(target);
           return {
             id: relationship.id,
             activation,
@@ -3638,6 +3646,7 @@ function describeBoundary(
             target_resource: relationship.target_resource,
             ...(target.label ? { target_label: target.label } : {}),
             ...(target.description ? { target_description: target.description } : {}),
+            vocabulary: targetVocabulary,
             cardinality: relationship.cardinality,
             counted_entity: relationship.counted_entity,
             path_depth: relationship.path_depth ?? 1,
@@ -3657,15 +3666,12 @@ function describeBoundary(
               field,
               { model_egress: targetModelWithheld.has(field) ? "withheld" : "visible" },
             ])),
-            fields: describedTargetFields.map((field) => ({
-              id: field,
-              ...(target.field_metadata?.[field]?.label
-                ? { label: target.field_metadata[field]!.label }
-                : {}),
-              ...(target.field_metadata?.[field]?.description
-                ? { description: target.field_metadata[field]!.description }
-                : {}),
-            })),
+            fields: describedTargetFields.map((field) => describeReviewedFieldGrammar(
+              target,
+              field,
+              targetModelWithheld,
+              true,
+            )),
             filterable_fields: Object.keys(target.filterable_fields),
             filter_operators: target.filterable_fields,
             groupable_fields: target.groupable_fields,
@@ -3686,6 +3692,9 @@ function describeBoundary(
               ? Object.keys(target.time_bucket_fields).sort()
               : [],
             field_types: Object.fromEntries(targetFields.map((field) => [field, target.field_types[field]])),
+            field_enums: Object.fromEntries(targetFields
+              .filter((field) => !targetModelWithheld.has(field) && target.field_enums[field]?.length)
+              .map((field) => [field, target.field_enums[field]])),
           };
         }),
         minimum_cohort_size: resource.minimum_cohort_size,
@@ -3703,6 +3712,45 @@ function describeBoundary(
     next_cursor: input.resource || cursor + selected.length >= boundary.pack.resources.length ? null : cursor + selected.length,
     raw_sql_available: false,
     source_rows_available_before_activation: false,
+  };
+}
+
+function describeReviewedFieldGrammar(
+  resource: BoundaryResource,
+  field: string,
+  modelWithheld: Set<string>,
+  throughRelationship = false,
+): Record<string, unknown> {
+  const aggregateFunctions = resource.aggregate_measures.includes(field)
+    ? reviewedNumericAggregateFunctions(resource, field)
+    : [];
+  const presenceFunctions = (resource.presence_measure_fields ?? []).includes(field)
+    ? ["null_count", "non_null_count", "completion_rate"]
+    : [];
+  return {
+    id: field,
+    plan_reference: "exact_id_only",
+    semantic_status: exploreFieldSemanticStatus(resource, field),
+    ...(resource.field_metadata?.[field]?.label
+      ? { label: resource.field_metadata[field]!.label }
+      : {}),
+    ...(resource.field_metadata?.[field]?.description
+      ? { description: resource.field_metadata[field]!.description }
+      : {}),
+    operations: {
+      return_value: !throughRelationship && resource.selectable_fields.includes(field),
+      model_egress: modelWithheld.has(field) ? "withheld" : "visible",
+      filter_operators: [...(resource.filterable_fields[field] ?? [])],
+      sortable: !throughRelationship && resource.sortable_fields.includes(field),
+      groupable: resource.groupable_fields.includes(field),
+      aggregate_functions: aggregateFunctions,
+      presence_functions: presenceFunctions,
+      count_distinct: resource.count_distinct_fields.includes(field),
+      time_buckets: [...(resource.time_bucket_fields[field] ?? [])],
+    },
+    ...(!modelWithheld.has(field) && resource.field_enums[field]?.length
+      ? { allowed_values: [...resource.field_enums[field]!] }
+      : {}),
   };
 }
 

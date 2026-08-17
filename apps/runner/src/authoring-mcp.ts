@@ -405,7 +405,9 @@ export function projectDescribeDataForModel(
     contains_source_values: false,
     next_action: resourceDetail
       ? "For application-data values, call app.explore_data with one smallest valid plan. Do not answer from this metadata."
-      : "Choose an exact resource id. Call app.describe_data with that resource only when focused relationship or filter details are needed, then call app.explore_data for values. Do not answer from this metadata.",
+      : typeof result.next_cursor === "number"
+        ? `More active reviewed resources are available. If this page does not match the question, call app.describe_data again with cursor ${result.next_cursor} before concluding that the data is unavailable. Otherwise choose an exact resource id, request its focused details when needed, then call app.explore_data for values. Do not answer from this metadata.`
+        : "This is the final catalog page. Choose an exact resource id, request its focused details when needed, then call app.explore_data for values. Do not answer from this metadata.",
   };
   // Keep the compact index small for weaker models. The fixed vocabulary is
   // useful only after one resource and its reviewed time fields are selected.
@@ -426,8 +428,9 @@ function modelResourceIndex(resource: Record<string, unknown>): Record<string, u
     id: modelString(resource.id),
     label: modelString(resource.label),
     description: modelString(resource.description),
+    vocabulary: modelRecordOrUndefined(resource.vocabulary),
     boundary_name: modelString(resource.boundary_name),
-    fields: modelReviewedFields(resource.fields),
+    fields: modelReviewedFields(resource.fields, false),
     selectable_fields: modelStrings(resource.selectable_fields),
     filter_operators: modelStringArrayRecord(resource.filter_operators),
     sortable_fields: modelStrings(resource.sortable_fields),
@@ -480,13 +483,14 @@ function modelResourceDetail(resource: Record<string, unknown>): Record<string, 
     target_resource: modelString(relationship.target_resource),
     target_label: modelString(relationship.target_label),
     target_description: modelString(relationship.target_description),
+    vocabulary: modelRecordOrUndefined(relationship.vocabulary),
     cardinality: modelString(relationship.cardinality),
     counted_entity: modelString(relationship.counted_entity),
     path_depth: modelNumber(relationship.path_depth),
     nullable: typeof relationship.nullable === "boolean" ? relationship.nullable : undefined,
     unmatched_rows: modelString(relationship.unmatched_rows),
     model_withheld_fields: withheldFieldNames(relationship.field_egress),
-    fields: modelReviewedFields(relationship.fields),
+    fields: modelReviewedFields(relationship.fields, true),
     filter_operators: modelStringArrayRecord(relationship.filter_operators),
     groupable_fields: modelStrings(relationship.groupable_fields),
     aggregate_measure_functions: modelStringArrayRecord(relationship.aggregate_measure_functions),
@@ -496,10 +500,12 @@ function modelResourceDetail(resource: Record<string, unknown>): Record<string, 
     count_distinct_fields: modelStrings(relationship.count_distinct_fields),
     time_bucket_fields: modelStringArrayRecord(relationship.time_bucket_fields),
     relative_time_window_fields: modelStrings(relationship.relative_time_window_fields),
+    field_enums: modelRecordOrEmpty(relationship.field_enums),
   }));
   return withoutUndefined({
     ...indexed,
     primary_key: modelString(resource.primary_key),
+    fields: modelReviewedFields(resource.fields, true),
     model_withheld_fields: withheldFieldNames(resource.field_egress),
     kept_out_field_count: modelNumber(resource.kept_out_field_count),
     relationships,
@@ -514,7 +520,10 @@ function modelRecords(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.filter(modelRecord) : [];
 }
 
-function modelReviewedFields(value: unknown): Array<Record<string, unknown>> {
+function modelReviewedFields(
+  value: unknown,
+  includeGrammar: boolean,
+): Array<Record<string, unknown>> {
   return modelRecords(value).flatMap((field) => {
     const id = modelString(field.id);
     if (!id) return [];
@@ -522,12 +531,24 @@ function modelReviewedFields(value: unknown): Array<Record<string, unknown>> {
       id,
       label: modelString(field.label),
       description: modelString(field.description),
+      plan_reference: modelString(field.plan_reference),
+      semantic_status: modelString(field.semantic_status),
+      ...(includeGrammar ? {
+        operations: modelRecordOrUndefined(field.operations),
+        allowed_values: Array.isArray(field.allowed_values)
+          ? structuredClone(field.allowed_values)
+          : undefined,
+      } : {}),
     })];
   });
 }
 
 function modelRecordOrEmpty(value: unknown): Record<string, unknown> {
   return modelRecord(value) ? structuredClone(value) : {};
+}
+
+function modelRecordOrUndefined(value: unknown): Record<string, unknown> | undefined {
+  return modelRecord(value) ? structuredClone(value) : undefined;
 }
 
 function modelString(value: unknown): string | undefined {
