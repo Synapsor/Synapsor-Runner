@@ -17,8 +17,9 @@ describe("derived-scope index doctor", () => {
     expect(checks).toEqual([expect.objectContaining({
       name: "derived-scope-indexes:complete",
       level: "pass",
-      message: expect.stringContaining("All 1 reviewed derived-scope path is index-backed"),
+      message: expect.stringContaining("indexes required by the reviewed derived-scope path exist"),
     })]);
+    expect(checks[0]!.message).toContain("index availability only");
   });
 
   it("warns once with copyable PostgreSQL SQL when the child FK index is absent", () => {
@@ -164,6 +165,48 @@ describe("derived-scope index doctor", () => {
       name: expect.stringContaining("derived-scope-cost:"),
       message: expect.stringContaining("3 mandatory many-to-one hops"),
     }));
+  });
+
+  it.each([
+    { engine: "postgres" as const, engineName: "PostgreSQL" },
+    { engine: "mysql" as const, engineName: "MySQL" },
+  ])("warns when $engineName scope statistics make an existing index unselective", ({ engine, engineName }) => {
+    const boundary = boundaryWithTenantScope(oneHopScope());
+    const orders = table("orders", [index("id"), index("tenant_id", 3)]);
+    orders.approximate_row_count = 1_000_200;
+    const checks = evaluate(boundary, inspectionWithTables(engine, [
+      table("order_items", [index("order_id"), index("id")]),
+      orders,
+    ]));
+
+    expect(checks).toContainEqual(expect.objectContaining({
+      name: expect.stringContaining("derived-scope-selectivity:"),
+      level: "warn",
+      advisory: "warning",
+      message: expect.stringMatching(
+        new RegExp(`${engineName}.+3 distinct tenant values.+1,000,200 rows.+333,400 rows.+33\\.3%.+index available does not mean index used`, "s"),
+      ),
+    }));
+    expect(checks).toContainEqual(expect.objectContaining({
+      name: "derived-scope-indexes:complete",
+      level: "pass",
+    }));
+  });
+
+  it("does not infer planner risk when catalog statistics are absent or sufficiently selective", () => {
+    const boundary = boundaryWithTenantScope(oneHopScope());
+    const noStats = table("orders", [index("id"), index("tenant_id")]);
+    noStats.approximate_row_count = 1_000_000;
+    const selective = table("orders", [index("id"), index("tenant_id", 50_000)]);
+    selective.approximate_row_count = 1_000_000;
+
+    for (const terminal of [noStats, selective]) {
+      const checks = evaluate(boundary, inspectionWithTables("postgres", [
+        table("order_items", [index("order_id"), index("id")]),
+        terminal,
+      ]));
+      expect(checks.some((check) => check.name.startsWith("derived-scope-selectivity:"))).toBe(false);
+    }
   });
 });
 
@@ -354,7 +397,7 @@ function table(name: string, indexes: TableInfo["indexes"]): TableInfo {
 }
 
 
-function index(column: string): TableInfo["indexes"][number] {
+function index(column: string, distinctEstimate?: number): TableInfo["indexes"][number] {
   return {
     name: `${column}_idx`,
     columns: [column],
@@ -362,6 +405,7 @@ function index(column: string): TableInfo["indexes"][number] {
     catalog_leading_column: column,
     catalog_usable: true,
     catalog_partial: false,
+    ...(distinctEstimate === undefined ? {} : { catalog_distinct_estimate: distinctEstimate }),
   };
 }
 
