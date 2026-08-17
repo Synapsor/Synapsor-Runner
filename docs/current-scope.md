@@ -2,7 +2,7 @@
 
 The canonical scope page is [Current Limitations](limitations.md).
 
-Current `1.7.0` scope:
+Current `1.7.1` scope:
 
 - local semantic MCP tools over Postgres/MySQL without raw SQL tools;
 - explicit source-server capability profiles: complete reviewed grammar on

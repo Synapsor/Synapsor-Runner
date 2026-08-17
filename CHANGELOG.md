@@ -1,6 +1,39 @@
 # Changelog
 
-## 1.7.0 (prepared, not published)
+## 1.7.1 (unreleased)
+
+### Ask And Upgrade Recovery Corrections
+
+- Makes Ask intent refusals describe the real obstacle instead of claiming a
+  resource substitution in a one-resource boundary. Exact kept-out and visible
+  fields now receive actionable **Count unique** guidance for the `/access`
+  `G` editor and `--count-distinct-fields`; natural week/month comparison
+  wording may identify the only reviewed time field without requiring a column
+  name. Refused plans still stop before source execution and budget accounting.
+- Lets `start` resume and reconcile a valid Runner-managed boundary draft even
+  when it was created by standalone `boundary draft` and therefore has no
+  guided-onboarding marker. A lone disabled legacy boundary remains protected
+  from ordinary deletion, but an explicit `--discard-curated-review --yes`
+  recovery removes only marked Runner authoring state and preserves config,
+  ledger/evidence, active authority checks, and source data. CLI and Workbench
+  expose the same guarded reset and exact redraft step.
+- Moves the official OpenAI Ask adapter to the native Responses API, including
+  bounded function-call and function-result turns, so current tool-using and
+  reasoning models do not fall back to incompatible Chat Completions request
+  fields. Official OpenAI requests set `store: false`. Anthropic remains on its
+  native Messages/tool-use API, and custom
+  OpenAI-compatible endpoints retain the documented Chat Completions subset.
+  Safe, bounded structured provider `400` details are now shown after secret
+  redaction; authentication, permission, and quota responses retain their
+  classified fail-closed errors.
+
+Prepared package versions: `@synapsor/runner@1.7.1` and the optional
+`synapsor-runner@1.7.1` command alias. `@synapsor/spec@1.9.0` and
+`@synapsor/dsl@1.9.0` are unchanged, and generated boundary compiler authority
+remains `1.7.0` so this patch does not itself require a rescan. No package is
+published by this change.
+
+## 1.7.0 (published 2026-08-17)
 
 ### Production Scoped Explore Over Secured HTTP
 
@@ -216,9 +249,9 @@
   and re-activation. The release matrix runs PostgreSQL 12 refusal, PostgreSQL
   13-18, MySQL 5.7/8.0/8.4, local MCP, and JWT-authenticated production HTTP.
 
-Prepared package versions: `@synapsor/runner@1.7.0` and the optional
+Published package versions: `@synapsor/runner@1.7.0` and the optional
 `synapsor-runner@1.7.0` command alias, plus `@synapsor/spec@1.9.0` and
-`@synapsor/dsl@1.9.0`. No package is published by this change.
+`@synapsor/dsl@1.9.0`.
 
 ## 1.6.7 (published 2026-08-04)
 

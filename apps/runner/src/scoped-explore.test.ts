@@ -2221,7 +2221,7 @@ describe("Scoped Explore", () => {
       measures: [{ function: "count_distinct", field: "region" }],
       top_n: 1,
     }, boundary)).toThrow(
-      /boundary review resource public\.subscriptions --count-distinct-fields region/,
+      /Count unique.*G Reviewed metrics.*boundary review resource public\.subscriptions --count-distinct-fields region/is,
     );
 
     const plan = validateExplorePlan({

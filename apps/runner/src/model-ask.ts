@@ -59,9 +59,9 @@ const LOCAL_PLAN_MISMATCH_RUNNER_ANSWER = [
   "Retry the question or choose a stronger tool-using model.",
 ].join(" ");
 const PLAN_SUBSTITUTION_RUNNER_ANSWER = [
-  "The selected model substituted a reviewed resource or grouping that did not match the question, so Runner refused the plan before execution.",
-  "The substituted Explore plan did not reach source execution, and no Explore query or differencing budget was consumed.",
-  "Ask about an available reviewed resource or update access before retrying.",
+  "Runner refused the proposed plan before execution because it did not match the question or the current reviewed permissions.",
+  "The Explore plan did not reach source execution, and no Explore query or differencing budget was consumed.",
+  "Use the refusal detail to choose an available reviewed field, grant the named permission, or correct the plan before retrying.",
 ].join(" ");
 const LOCAL_PLAN_EXECUTED_RUNNER_ANSWER = [
   "Runner executed the intent-checked reviewed plan.",
@@ -653,7 +653,7 @@ export async function secureAskJsonRequest(input: ProviderHttpInput): Promise<Pr
         if (settled) return;
         const status = response.statusCode ?? 500;
         if (status < 200 || status >= 300) {
-          finishReject(providerHttpError(status));
+          finishReject(providerHttpError(status, Buffer.concat(chunks).toString("utf8")));
           return;
         }
         let parsed: unknown;
@@ -736,28 +736,16 @@ async function runOpenAiCompatibleTurn(input: {
       headers: input.configuration.apiKey
         ? { authorization: `Bearer ${input.configuration.apiKey}` }
         : {},
-      body: {
-        model: input.configuration.model,
-        ...openAiReasoningSettings(input.configuration),
-        ...(input.configuration.provider === "openai_compatible" ? { temperature: 0 } : {}),
+      body: openAiRequestBody({
+        configuration: input.configuration,
         messages,
-        tools: providerTools.map((tool) => ({
-          type: "function",
-          function: {
-            name: tool.providerName,
-            description: tool.definition.description.slice(0, 1_024),
-            parameters: tool.definition.input_schema,
-          },
-        })),
-        tool_choice: forcedExploreProviderName
-          ? { type: "function", function: { name: forcedExploreProviderName } }
-          : "auto",
-        parallel_tool_calls: false,
-        max_completion_tokens: askProviderOutputTokenLimit(
+        providerTools,
+        forcedToolName: forcedExploreProviderName,
+        maxOutputTokens: askProviderOutputTokenLimit(
           input.configuration,
           DEFAULT_PROVIDER_OUTPUT_TOKENS,
         ),
-      },
+      }),
       signal: input.signal,
       timeoutMs: input.configuration.request_timeout_seconds * 1_000,
     });
@@ -1740,20 +1728,18 @@ async function requestOpenAiFinalAnswer(input: {
     headers: input.configuration.apiKey
       ? { authorization: `Bearer ${input.configuration.apiKey}` }
       : {},
-    body: {
-      model: input.configuration.model,
-      ...openAiReasoningSettings(input.configuration),
+    body: openAiRequestBody({
+      configuration: input.configuration,
       messages: [
         ...input.messages,
         { role: "user", content: FINAL_ANSWER_INSTRUCTION },
       ],
-      // Reasoning models can consume the smaller tool-loop allowance without
-      // emitting visible text when summarizing a non-trivial result set.
-      max_completion_tokens: askProviderOutputTokenLimit(
+      providerTools: [],
+      maxOutputTokens: askProviderOutputTokenLimit(
         input.configuration,
         FINAL_ANSWER_MAX_COMPLETION_TOKENS,
       ),
-    },
+    }),
     signal: input.signal,
     timeoutMs: input.configuration.request_timeout_seconds * 1_000,
   });
@@ -2001,10 +1987,14 @@ async function explorePlanIntentRefusal(input: {
       : undefined;
   if (!mismatch) return undefined;
   const relationshipDimensions = mismatch.relationship_dimensions ?? [];
+  const mismatchLead = mismatch.kind === "permission" || mismatch.kind === "unavailable"
+    ? "The plan was not executed because the question could not be satisfied by the current reviewed permissions."
+    : "The plan was not executed because it substituted reviewed data that did not match the question.";
   const providerResult = {
     ok: false,
     error_code: "ASK_PLAN_INTENT_MISMATCH",
-    message: `The plan was not executed because it substituted reviewed data that did not match the question. ${mismatch.message}`,
+    message: `${mismatchLead} ${mismatch.message}`,
+    intent_mismatch_kind: mismatch.kind,
     ...(relationshipDimensions.length > 0
       ? { reviewed_relationship_dimensions: relationshipDimensions }
       : {}),
@@ -2098,7 +2088,7 @@ type ReviewedRelationshipDimension = {
 };
 
 type ExplorePlanIntentMismatch = {
-  kind: "resource" | "dimension" | "unverified";
+  kind: "resource" | "dimension" | "permission" | "unavailable" | "unverified";
   message: string;
   relationship_dimensions?: ReviewedRelationshipDimension[];
 };
@@ -2112,10 +2102,34 @@ function explorePlanIntentMismatch(
   const plan = isRecord(args.plan) ? args.plan : undefined;
   if (!plan || typeof plan.resource !== "string" || typeof resource.id !== "string") return undefined;
   const normalizedQuestion = question.toLowerCase();
+  const countUniqueField = requestedCountUniqueField(normalizedQuestion, resource);
+  if (countUniqueField?.kept_out) {
+    return {
+      kind: "permission",
+      message: `${resource.id}.${countUniqueField.id} is kept out of this boundary. `
+        + "In /access, include the field in the table's column editor, then grant Count unique under G Reviewed metrics and numeric bands. "
+        + "The model cannot change either permission.",
+    };
+  }
+  if (countUniqueField && !countUniqueField.count_unique_reviewed) {
+    return {
+      kind: "permission",
+      message: `${resource.id}.${countUniqueField.id} is visible but has no reviewed Count unique (count_distinct) permission. `
+        + `Grant it under G Reviewed metrics and numeric bands for this table, or run boundary review resource ${resource.id} `
+        + `--count-distinct-fields ${countUniqueField.id}; the model cannot change this permission.`,
+    };
+  }
   const subject = explicitQuestionEntity(normalizedQuestion);
   if (subject
     && !genericQuestionEntity(subject)
     && !questionEntityMatchesPlan(subject, plan, resource)) {
+    if (operatorBoundaryResourceCount(resource) === 1) {
+      return {
+        kind: "unavailable",
+        message: `The boundary contains only ${resource.id}, and ${JSON.stringify(subject)} does not name that resource or an available reviewed Count unique field. `
+          + "No resource substitution occurred. Review the requested field or ask about an available field on this resource.",
+      };
+    }
     return {
       kind: "resource",
       message: `The question explicitly names ${JSON.stringify(subject)}, but the plan selected resource ${resource.id}.`,
@@ -2352,6 +2366,9 @@ function planDimensionIntentMismatch(
   if (questionExplicitlyMentionsField(question, dimension.field)) return undefined;
   if (reviewedFieldLabels(fieldOwner, dimension.field)
     .some((label) => questionMentionsMetadataName(question, label))) return undefined;
+  if (!relationship && questionNamesSingleReviewedTimeField(question, dimension.field, resource)) {
+    return undefined;
+  }
   if (!relationship) {
     const trailing = reviewedTrailingFieldResolution(
       question,
@@ -2374,6 +2391,70 @@ function planDimensionIntentMismatch(
     .some((variant) => relationshipGroupingMentionsTarget(question, variant))
     ? undefined
     : genericMismatch(dimension.field);
+}
+
+type OperatorReviewField = {
+  id: string;
+  kept_out: boolean;
+  count_unique_reviewed: boolean;
+};
+
+function operatorReviewFields(resource: Record<string, unknown>): OperatorReviewField[] {
+  if (!isRecord(resource.operator_review_metadata)
+    || !Array.isArray(resource.operator_review_metadata.fields)) return [];
+  return resource.operator_review_metadata.fields.filter(isRecord).flatMap((field) =>
+    typeof field.id === "string"
+      && typeof field.kept_out === "boolean"
+      && typeof field.count_unique_reviewed === "boolean"
+      ? [{
+          id: field.id,
+          kept_out: field.kept_out,
+          count_unique_reviewed: field.count_unique_reviewed,
+        }]
+      : []);
+}
+
+function operatorBoundaryResourceCount(resource: Record<string, unknown>): number | undefined {
+  if (!isRecord(resource.operator_review_metadata)) return undefined;
+  const value = resource.operator_review_metadata.boundary_resource_count;
+  return Number.isSafeInteger(value) && Number(value) > 0 ? Number(value) : undefined;
+}
+
+function requestedCountUniqueField(
+  question: string,
+  resource: Record<string, unknown>,
+): OperatorReviewField | undefined {
+  if (!/\b(?:distinct|unique)\b/u.test(question)) return undefined;
+  const target = question.match(
+    /\b(?:distinct|unique)\s+(?:number\s+of\s+)?(.+?)(?=\s+(?:are|were|is|was|by|per|across|grouped\s+by|broken\s+down\s+by)\b|[?!,;.]|$)/u,
+  )?.[1]?.trim() ?? question;
+  const fields = operatorReviewFields(resource);
+  const exact = fields.filter((field) => questionMentionsMetadataName(target, field.id));
+  if (exact.length === 1) return exact[0];
+  if (exact.length > 1) return undefined;
+  const entityMatches = fields.filter((field) => {
+    const words = normalizedEntityName(field.id).split(" ");
+    if (words.at(-1) !== "id" || words.length < 2) return false;
+    const entity = words.slice(0, -1).join(" ");
+    return [...resourceNameVariants(entity)].some((variant) => wordPosition(target, variant) >= 0);
+  });
+  return entityMatches.length === 1 ? entityMatches[0] : undefined;
+}
+
+function questionNamesSingleReviewedTimeField(
+  question: string,
+  field: string,
+  resource: Record<string, unknown>,
+): boolean {
+  const reviewed = new Set([
+    ...Object.keys(isRecord(resource.time_bucket_fields) ? resource.time_bucket_fields : {}),
+    ...safeStringList(resource.relative_time_window_fields),
+  ]);
+  if (reviewed.size !== 1 || !reviewed.has(field)) return false;
+  const namesCalendarUnit = /\b(?:hour|day|daily|week|weekly|month|monthly|quarter|quarterly|year|yearly)\b/u.test(question);
+  const asksTemporalAnalysis = /\b(?:change|changed|trend|trending|over\s+time|compare|compared|versus|vs\.?|preceding|previous|prior|week\s+before|month\s+before|year\s+before)\b/u.test(question)
+    || /\b(?:by|per|each)\s+(?:hour|day|week|month|quarter|year)\b/u.test(question);
+  return namesCalendarUnit && asksTemporalAnalysis;
 }
 
 function reviewedFieldLabels(owner: Record<string, unknown>, field: string): string[] {
@@ -2504,10 +2585,118 @@ function assertModelFacingTool(tool: AskToolDefinition): void {
   }
 }
 
+function openAiRequestBody(input: {
+  configuration: ResolvedAskProviderConfiguration;
+  messages: Array<Record<string, unknown>>;
+  providerTools: PreparedProviderTools["providerTools"];
+  forcedToolName?: string;
+  maxOutputTokens: number;
+}): Record<string, unknown> {
+  if (input.configuration.provider !== "openai") {
+    return {
+      model: input.configuration.model,
+      temperature: 0,
+      messages: input.messages,
+      ...(input.providerTools.length
+        ? {
+          tools: input.providerTools.map((tool) => ({
+            type: "function",
+            function: {
+              name: tool.providerName,
+              description: tool.definition.description.slice(0, 1_024),
+              parameters: tool.definition.input_schema,
+            },
+          })),
+          tool_choice: input.forcedToolName
+            ? { type: "function", function: { name: input.forcedToolName } }
+            : "auto",
+          parallel_tool_calls: false,
+        }
+        : {}),
+      max_completion_tokens: input.maxOutputTokens,
+    };
+  }
+
+  const instructions = input.messages
+    .filter((message) => message.role === "system")
+    .map((message) => safeOptionalText(message.content))
+    .filter((value): value is string => Boolean(value))
+    .join("\n\n");
+  const tools = input.providerTools.map((tool) => ({
+    type: "function",
+    name: tool.providerName,
+    description: tool.definition.description.slice(0, 1_024),
+    parameters: tool.definition.input_schema,
+  }));
+  const reasoningEffort = openAiReasoningSettings(input.configuration).reasoning_effort;
+  return {
+    model: input.configuration.model,
+    store: false,
+    ...(reasoningEffort
+      ? { reasoning: { effort: reasoningEffort } }
+      : {}),
+    ...(instructions ? { instructions } : {}),
+    input: openAiResponsesInput(input.messages),
+    ...(tools.length
+      ? {
+        tools,
+        tool_choice: input.forcedToolName
+          ? { type: "function", name: input.forcedToolName }
+          : "auto",
+        parallel_tool_calls: false,
+      }
+      : {}),
+    max_output_tokens: input.maxOutputTokens,
+  };
+}
+
+function openAiResponsesInput(
+  messages: Array<Record<string, unknown>>,
+): Array<Record<string, unknown>> {
+  const items: Array<Record<string, unknown>> = [];
+  for (const message of messages) {
+    const role = message.role;
+    if (role === "system") continue;
+    if (role === "tool") {
+      items.push({
+        type: "function_call_output",
+        call_id: safeProviderIdentifier(message.tool_call_id, "tool call"),
+        output: safeOptionalText(message.content) ?? "{}",
+      });
+      continue;
+    }
+    if (role !== "user" && role !== "assistant") {
+      throw new AskError("ASK_PROVIDER_REQUEST_INVALID", "Runner could not encode the provider conversation safely.", 500);
+    }
+    const text = safeOptionalText(message.content);
+    if (text) items.push({ role, content: text });
+    if (role !== "assistant" || message.tool_calls === undefined) continue;
+    if (!Array.isArray(message.tool_calls)) {
+      throw new AskError("ASK_PROVIDER_REQUEST_INVALID", "Runner could not encode prior provider tool calls safely.", 500);
+    }
+    for (const raw of message.tool_calls) {
+      if (!isRecord(raw) || !isRecord(raw.function)) {
+        throw new AskError("ASK_PROVIDER_REQUEST_INVALID", "Runner could not encode a prior provider tool call safely.", 500);
+      }
+      const serialized = raw.function.arguments;
+      if (typeof serialized !== "string" || serialized.length > 32_768) {
+        throw new AskError("ASK_PROVIDER_REQUEST_INVALID", "Runner could not encode prior provider tool arguments safely.", 500);
+      }
+      items.push({
+        type: "function_call",
+        call_id: safeProviderIdentifier(raw.id, "tool call"),
+        name: safeProviderIdentifier(raw.function.name, "tool name"),
+        arguments: serialized,
+      });
+    }
+  }
+  return items;
+}
+
 function providerEndpoint(provider: AskProvider, baseUrl: string | undefined): URL {
   if (provider === "openai") {
     if (baseUrl?.trim()) throw new AskError("ASK_OFFICIAL_ENDPOINT_FIXED", "Use the custom OpenAI-compatible provider for a non-OpenAI endpoint.");
-    return new URL("https://api.openai.com/v1/chat/completions");
+    return new URL("https://api.openai.com/v1/responses");
   }
   if (provider === "anthropic") {
     if (baseUrl?.trim()) throw new AskError("ASK_OFFICIAL_ENDPOINT_FIXED", "Use the custom OpenAI-compatible provider for a custom endpoint.");
@@ -2646,10 +2835,46 @@ function addressScope(address: string): "public" | "loopback" | "private_or_spec
 
 function openAiMessage(body: Record<string, unknown>): Record<string, unknown> {
   const choices = body.choices;
-  if (!Array.isArray(choices) || !isRecord(choices[0]) || !isRecord(choices[0].message)) {
+  if (Array.isArray(choices) && isRecord(choices[0]) && isRecord(choices[0].message)) {
+    return choices[0].message;
+  }
+  if (!Array.isArray(body.output) || body.output.some((item) => !isRecord(item))) {
     throw new AskError("ASK_PROVIDER_RESPONSE_INVALID", "The provider response did not contain a valid assistant message.", 502);
   }
-  return choices[0].message;
+  const content: string[] = [];
+  const toolCalls: Array<Record<string, unknown>> = [];
+  for (const item of body.output as Array<Record<string, unknown>>) {
+    if (item.type === "function_call") {
+      const id = safeProviderIdentifier(item.call_id, "tool call");
+      const name = safeProviderIdentifier(item.name, "tool name");
+      if (typeof item.arguments !== "string" || item.arguments.length > 32_768) {
+        throw new AskError("ASK_TOOL_ARGUMENTS_INVALID", "The provider returned malformed tool arguments.", 422);
+      }
+      toolCalls.push({
+        id,
+        type: "function",
+        function: { name, arguments: item.arguments },
+      });
+      continue;
+    }
+    if (item.type !== "message") continue;
+    if (!Array.isArray(item.content) || item.content.some((block) => !isRecord(block))) {
+      throw new AskError("ASK_PROVIDER_RESPONSE_INVALID", "The provider returned malformed response content.", 502);
+    }
+    for (const block of item.content as Array<Record<string, unknown>>) {
+      if (block.type !== "output_text") continue;
+      const text = safeOptionalText(block.text);
+      if (text) content.push(text);
+    }
+  }
+  if (content.length === 0 && toolCalls.length === 0) {
+    throw new AskError("ASK_PROVIDER_RESPONSE_INVALID", "The provider response contained no assistant text or function call.", 502);
+  }
+  return {
+    role: "assistant",
+    content: content.length ? content.join("\n") : null,
+    ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
+  };
 }
 
 function openAiToolCalls(message: Record<string, unknown>): Array<{
@@ -4308,7 +4533,7 @@ function safeProviderError(error: unknown, aborted: boolean): AskError {
   return new AskError("ASK_PROVIDER_UNAVAILABLE", "The selected provider is unavailable.", 502);
 }
 
-function providerHttpError(status: number): AskError {
+function providerHttpError(status: number, responseBody = ""): AskError {
   if (status === 401) {
     return new AskError(
       "ASK_PROVIDER_AUTHENTICATION_FAILED",
@@ -4330,7 +4555,43 @@ function providerHttpError(status: number): AskError {
       502,
     );
   }
-  return new AskError("ASK_PROVIDER_HTTP_ERROR", `The provider returned HTTP ${status}.`, 502);
+  const detail = providerErrorDetail(responseBody);
+  const responsesGuidance = detail && /\/v1\/responses|responses api/i.test(detail)
+    ? " The selected model requires the OpenAI Responses API; use the official OpenAI provider or choose a model supported by this custom Chat Completions endpoint."
+    : "";
+  return new AskError(
+    "ASK_PROVIDER_HTTP_ERROR",
+    `The provider returned HTTP ${status}.${detail ? ` Provider detail: ${detail}` : ""}${responsesGuidance}`,
+    502,
+  );
+}
+
+function providerErrorDetail(responseBody: string): string | undefined {
+  if (!responseBody || responseBody.length > MAX_PROVIDER_RESPONSE_BYTES) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(responseBody);
+  } catch {
+    return undefined;
+  }
+  if (!isRecord(parsed)) return undefined;
+  const nested = isRecord(parsed.error) ? parsed.error.message : undefined;
+  const candidate = typeof nested === "string"
+    ? nested
+    : typeof parsed.message === "string"
+      ? parsed.message
+      : undefined;
+  if (!candidate) return undefined;
+  const normalized = candidate
+    .replace(/[\u0000-\u001f\u007f]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 600)
+    .replace(/\b(?:postgres(?:ql)?|mysql):\/\/[^\s]+/gi, "<redacted-database-url>")
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer <redacted>")
+    .replace(/\b(?:sk|pk|ghp|gho|glpat|xox[baprs]|syn)[_-][A-Za-z0-9._~+/=-]{8,}\b/g, "<redacted>")
+    .replace(/((?:token|secret|password|api[_ -]?key)\s*[=:]\s*)[^\s,;]+/gi, "$1<redacted>");
+  return normalized || undefined;
 }
 
 function boundedInteger(value: number, minimum: number, maximum: number): number {

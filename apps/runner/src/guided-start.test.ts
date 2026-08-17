@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
 import { buildAutoBoundary } from "./auto-boundary.js";
+import { boundaryDeleteCommand } from "./boundary-commands.js";
 import { start } from "./guided-start.js";
 import {
   activateInstantCliBoundary,
@@ -177,6 +178,101 @@ describe("guided start surfaces", () => {
       expect(schemaInspector).toHaveBeenCalledOnce();
       expect(runBoundaryReview).not.toHaveBeenCalled();
       expect(runPostActivationHandoff).toHaveBeenCalledWith({ projectRoot });
+    } finally {
+      process.chdir(suiteCwd);
+      await fs.rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("resumes and rescans a CLI-managed boundary project without a guided marker", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-start-managed-resume-"));
+    const schemaInspector = vi.fn(async () => inspection());
+    const runBoundaryReview = vi.fn(async () => 0);
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    process.chdir(projectRoot);
+
+    try {
+      await start(
+        ["--from-env", "DATABASE_URL", "--no-open"],
+        { interactive: false, schemaInspector },
+      );
+      await fs.rm(path.join(projectRoot, ".synapsor/guided-onboarding.json"));
+
+      await expect(start(
+        ["--from-env", "DATABASE_URL", "--cli"],
+        {
+          interactive: true,
+          schemaInspector,
+          runBoundaryReview,
+          runPostActivationHandoff: vi.fn(async () => 0),
+        },
+      )).resolves.toBe(0);
+      expect(schemaInspector).toHaveBeenCalledTimes(1);
+      expect(runBoundaryReview).toHaveBeenLastCalledWith(
+        ["--project-root", projectRoot, "--access"],
+        schemaInspector,
+        expect.any(Function),
+      );
+      expect(output).toContain("Existing Runner-managed boundary project found.");
+
+      runBoundaryReview.mockClear();
+      await expect(start(
+        ["--from-env", "DATABASE_URL", "--cli", "--rescan"],
+        {
+          interactive: true,
+          schemaInspector,
+          runBoundaryReview,
+          runPostActivationHandoff: vi.fn(async () => 0),
+        },
+      )).resolves.toBe(0);
+      expect(schemaInspector).toHaveBeenCalledTimes(2);
+      expect(runBoundaryReview).toHaveBeenCalledOnce();
+      await expect(fs.access(path.join(projectRoot, ".synapsor/guided-onboarding.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      process.chdir(suiteCwd);
+      await fs.rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("requires an explicit reset to discard the only disabled boundary review", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-start-managed-reset-"));
+    process.chdir(projectRoot);
+
+    try {
+      await start(
+        ["--from-env", "DATABASE_URL", "--no-open"],
+        { interactive: false, schemaInspector: async () => inspection() },
+      );
+      const draft = JSON.parse(await fs.readFile(
+        path.join(projectRoot, "synapsor/generated/exploration-boundary.draft.json"),
+        "utf8",
+      )) as { pack: { name: string } };
+
+      await expect(boundaryDeleteCommand([
+        draft.pack.name,
+        "--project-root", projectRoot,
+        "--yes",
+      ])).rejects.toThrow(/--discard-curated-review --yes/i);
+
+      await expect(boundaryDeleteCommand([
+        draft.pack.name,
+        "--project-root", projectRoot,
+        "--discard-curated-review",
+        "--yes",
+      ])).resolves.toBe(0);
+      await expect(fs.access(path.join(projectRoot, "synapsor.runner.json"))).resolves.toBeUndefined();
+      await expect(fs.access(path.join(projectRoot, ".synapsor/local.db"))).resolves.toBeUndefined();
+      await expect(fs.access(path.join(projectRoot, "synapsor/generated")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+      await expect(fs.access(path.join(projectRoot, ".synapsor/generation-lock.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+      await expect(fs.access(path.join(projectRoot, ".synapsor/guided-onboarding.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       process.chdir(suiteCwd);
       await fs.rm(projectRoot, { recursive: true, force: true });

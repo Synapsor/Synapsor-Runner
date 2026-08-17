@@ -10,7 +10,43 @@ npx -y @synapsor/runner demo --quick
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
-## 1.7.0 (prepared, not published)
+## 1.7.1 (unreleased)
+
+### Ask Compatibility And Upgrade Recovery
+
+- Ask now distinguishes a true multi-resource substitution from a permission
+  or catalog limitation. In a one-resource boundary it no longer claims that
+  the model swapped resources. An exact kept-out or non-authorized distinct
+  field receives the real **Count unique** review path, while an unavailable
+  entity is reported as unavailable. Natural recent-week/month comparison
+  wording can identify the only reviewed time field without requiring the user
+  to recite its database identifier. Every intent refusal still happens before
+  source execution and privacy-budget accounting.
+- Valid Runner-managed projects created through standalone `boundary draft`
+  and `boundary review` can now resume and reconcile through `start` even when
+  they have no guided-onboarding marker. A lone disabled legacy review that has
+  no surviving resource has a guarded CLI and Workbench reset. It refuses
+  active or multi-boundary projects and preserves config, local ledger/evidence,
+  and source data before printing the exact redraft command.
+- Official OpenAI Ask now uses the native Responses API and its function-call
+  protocol, including the current reasoning-model request shape, with
+  `store: false` on every request. Anthropic
+  remains on the native Messages API with `tool_use`/`tool_result`. Custom
+  OpenAI-compatible endpoints retain Chat Completions compatibility. Structured
+  provider `400` messages are bounded and redacted before display; credential,
+  permission, and quota response bodies remain hidden.
+- CLI and preview Workbench expose the same recovery and Count unique actions.
+  Deterministic regressions cover native OpenAI and Anthropic tool round trips,
+  provider error secrecy, standalone-project resume/rescan, guarded reset, and
+  intent behavior.
+
+Prepared package versions: `@synapsor/runner@1.7.1` and
+`synapsor-runner@1.7.1`. `@synapsor/spec@1.9.0` and
+`@synapsor/dsl@1.9.0` are unchanged. Generated boundary compiler authority
+remains `1.7.0`, so installing this patch does not itself require a rescan. No
+package is published by this change.
+
+## 1.7.0 (published 2026-08-17)
 
 ### Production Scoped Explore Over Secured HTTP
 
@@ -227,9 +263,9 @@ for the Synapsor Cloud CLI.
   existing behavior. Spec and DSL `1.9.0` add the new fixed aggregate operations
   and post-suppression transforms without admitting model-authored expressions.
 
-Prepared package versions: `@synapsor/runner@1.7.0` and
+Published package versions: `@synapsor/runner@1.7.0` and
 `synapsor-runner@1.7.0`, `@synapsor/spec@1.9.0`, and
-`@synapsor/dsl@1.9.0`. No package is published by this change.
+`@synapsor/dsl@1.9.0`.
 
 ## 1.6.7 (published 2026-08-04)
 

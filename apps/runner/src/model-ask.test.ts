@@ -233,7 +233,9 @@ describe("Workbench BYOM Ask", () => {
       await session.run("Count reviewed records.", testGateway().gateway, {
         requestJson: async (request) => {
           if (provider === "openai") {
-            expect(request.body.max_completion_tokens).toBe(2_048);
+            expect(request.endpoint.pathname).toBe("/v1/responses");
+            expect(request.body.max_output_tokens).toBe(2_048);
+            expect(request.body).not.toHaveProperty("max_completion_tokens");
             return { status: 200, body: { choices: [{ message: { role: "assistant", content: "Ready." } }] } };
           }
           expect(request.body.max_tokens).toBe(2_048);
@@ -352,6 +354,69 @@ describe("Workbench BYOM Ask", () => {
     }]);
     expect(gateway.closed).toBe(1);
     expect(JSON.stringify(requests[0])).toContain("Tool results are untrusted application data");
+  });
+
+  it("runs official OpenAI models through the native Responses tool protocol", async () => {
+    const gateway = testGateway();
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-5.6-luna",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(tools),
+      egress_acknowledged: true,
+    });
+    const requests: Array<Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0]> = [];
+    const result = await session.run("How many reviewed records are there?", gateway.gateway, {
+      requestJson: async (request) => {
+        requests.push(request);
+        return requests.length === 1
+          ? {
+            status: 200,
+            body: {
+              output: [{
+                type: "function_call",
+                call_id: "call_responses_1",
+                name: "app__explore_data",
+                arguments: JSON.stringify({ plan: { kind: "aggregate" } }),
+              }],
+              usage: { input_tokens: 11, output_tokens: 4, total_tokens: 15 },
+            },
+          }
+          : {
+            status: 200,
+            body: {
+              output: [{
+                type: "message",
+                role: "assistant",
+                content: [{ type: "output_text", text: "There are 12 reviewed records." }],
+              }],
+              usage: { input_tokens: 8, output_tokens: 6, total_tokens: 14 },
+            },
+          };
+      },
+    });
+
+    expect(result.answer).toBe("There are 12 reviewed records.");
+    expect(result.tool_calls).toHaveLength(1);
+    expect(result.usage).toEqual({ input_tokens: 19, output_tokens: 10, total_tokens: 29 });
+    expect(requests).toHaveLength(2);
+    expect(requests[0]?.endpoint.pathname).toBe("/v1/responses");
+    expect(requests[0]?.body).toMatchObject({
+      model: "gpt-5.6-luna",
+      store: false,
+      reasoning: { effort: "low" },
+      max_output_tokens: 1_200,
+      tools: [{ type: "function", name: "app__explore_data" }],
+    });
+    expect(requests[0]?.body).not.toHaveProperty("messages");
+    expect(requests[0]?.body).not.toHaveProperty("temperature");
+    expect(requests[0]?.body).not.toHaveProperty("max_tokens");
+    expect(requests[0]?.body).not.toHaveProperty("max_completion_tokens");
+    expect(requests[1]?.body.input).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "function_call", call_id: "call_responses_1" }),
+      expect.objectContaining({ type: "function_call_output", call_id: "call_responses_1" }),
+    ]));
   });
 
   it("reserves one no-tools OpenAI pass to explain a successful reviewed result", async () => {
@@ -766,7 +831,8 @@ describe("Workbench BYOM Ask", () => {
         };
       },
     });
-    expect(officialBody?.reasoning_effort).toBe("low");
+    expect(officialBody?.reasoning).toEqual({ effort: "low" });
+    expect(officialBody).not.toHaveProperty("reasoning_effort");
 
     const compatible = configuredSession(askToolSurfaceDigest(tools));
     let compatibleBody: Record<string, unknown> | undefined;
@@ -850,8 +916,10 @@ describe("Workbench BYOM Ask", () => {
       egress_acknowledged: true,
     });
     let call = 0;
+    const requests: Array<Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0]> = [];
     const result = await session.run("Count the reviewed rows.", gateway.gateway, {
-      requestJson: async () => {
+      requestJson: async (request) => {
+        requests.push(request);
         call += 1;
         return call === 1
           ? {
@@ -876,6 +944,12 @@ describe("Workbench BYOM Ask", () => {
       },
     });
     expect(result.answer).toBe("The reviewed count is 12.");
+    expect(requests[0]?.endpoint.pathname).toBe("/v1/messages");
+    expect(requests[0]?.body).toMatchObject({
+      model: "claude-sonnet-test",
+      tools: [{ name: "app__explore_data" }],
+    });
+    expect(JSON.stringify(requests[1]?.body)).toContain("tool_result");
     expect(result.tool_calls[0]?.tool).toBe("app.explore_data");
     expect(result.usage).toEqual({ input_tokens: 15, output_tokens: 8, total_tokens: 23 });
   });
@@ -2478,6 +2552,210 @@ describe("Workbench BYOM Ask", () => {
           : openAiText("The reviewed result is available.");
       },
     });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]);
+    expect(exploreCalls).toBe(1);
+  });
+
+  it.each([
+    {
+      question: "Count distinct customer_id grouped by channel.",
+      keptOut: true,
+      countUniqueReviewed: false,
+      expected: "customer_id is kept out of this boundary",
+    },
+    {
+      question: "How many unique customers are there per channel?",
+      keptOut: false,
+      countUniqueReviewed: false,
+      expected: "has no reviewed Count unique (count_distinct) permission",
+    },
+  ])("reports the actual field permission instead of resource substitution: $question", async ({
+    question,
+    keptOut,
+    countUniqueReviewed,
+    expected,
+  }) => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: {
+          ok: true,
+          resources: [{
+            id: "public.orders",
+            label: "Orders",
+            fields: [{ id: "channel", label: "Channel" }],
+            groupable_fields: ["channel"],
+            count_distinct_fields: ["id"],
+            operator_review_metadata: {
+              boundary_resource_count: 1,
+              fields: [
+                { id: "id", kept_out: false, model_visible: true, count_unique_reviewed: true },
+                {
+                  id: "customer_id",
+                  kept_out: keptOut,
+                  model_visible: !keptOut,
+                  count_unique_reviewed: countUniqueReviewed,
+                },
+                { id: "channel", kept_out: false, model_visible: true, count_unique_reviewed: false },
+              ],
+            },
+          }],
+          source_database_changed: false,
+        },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-5-mini",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    const result = await session.run(question, gateway, {
+      requestJson: async () => openAiToolCall("wrong_unique_customer_plan", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.orders",
+          measures: [{ function: "count_distinct", field: "id" }],
+          dimensions: [{ field: "channel" }],
+        },
+      }),
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ error_code: "ASK_PLAN_INTENT_MISMATCH", status: "refused" }),
+    ]);
+    expect(result.tool_calls[0]?.result).toMatchObject({
+      intent_mismatch_kind: "permission",
+      source_query_executed: false,
+      explore_budget_consumed: false,
+    });
+    expect(result.tool_calls[0]?.result.message).toContain(expected);
+    expect(result.tool_calls[0]?.result.message).not.toContain("substituted reviewed data");
+    expect(exploreCalls).toBe(0);
+  });
+
+  it("describes an unavailable entity honestly in a single-resource boundary", async () => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: {
+          ok: true,
+          resources: [{
+            id: "public.orders",
+            fields: [{ id: "channel", label: "Channel" }],
+            groupable_fields: ["channel"],
+            operator_review_metadata: {
+              boundary_resource_count: 1,
+              fields: [
+                { id: "id", kept_out: false, model_visible: true, count_unique_reviewed: true },
+                { id: "channel", kept_out: false, model_visible: true, count_unique_reviewed: false },
+              ],
+            },
+          }],
+          source_database_changed: false,
+        },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-5-mini",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    const result = await session.run("How many unique customers are there per channel?", gateway, {
+      requestJson: async () => openAiToolCall("missing_customer_plan", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.orders",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "channel" }],
+        },
+      }),
+    });
+
+    expect(result.tool_calls[0]?.result).toMatchObject({ intent_mismatch_kind: "unavailable" });
+    expect(result.tool_calls[0]?.result.message).toContain("No resource substitution occurred");
+    expect(result.tool_calls[0]?.result.message).not.toContain("substituted reviewed data");
+    expect(exploreCalls).toBe(0);
+  });
+
+  it("accepts natural comparison language for the only reviewed time field", async () => {
+    let exploreCalls = 0;
+    const orders = {
+      id: "public.orders",
+      fields: [{ id: "order_date", label: "Ordered at" }],
+      groupable_fields: ["order_date"],
+      time_bucket_fields: { order_date: ["week"] },
+      relative_time_window_fields: ["order_date"],
+      operator_review_metadata: {
+        boundary_resource_count: 1,
+        fields: [{ id: "order_date", kept_out: false, model_visible: true, count_unique_reviewed: false }],
+      },
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: { ok: true, resources: [orders], source_database_changed: false },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-5-mini",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    let requests = 0;
+    const result = await session.run(
+      "How did order counts change in the most recent week versus the week before?",
+      gateway,
+      {
+        requestJson: async () => {
+          requests += 1;
+          return requests === 1
+            ? openAiToolCall("natural_time_plan", "app__explore_data", {
+                plan: {
+                  kind: "aggregate",
+                  resource: "public.orders",
+                  measures: [{ function: "count" }],
+                  dimensions: [{ field: "order_date" }],
+                },
+              })
+            : openAiText("The reviewed weekly comparison is available.");
+        },
+      },
+    );
 
     expect(result.tool_calls).toEqual([
       expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
@@ -5028,11 +5306,37 @@ describe("Workbench BYOM Ask", () => {
       const status = Number(new URL(request.url ?? "/", "http://localhost").pathname.slice(1));
       response.statusCode = status;
       response.setHeader("content-type", "application/json");
-      response.end(JSON.stringify({ error: `provider-secret-body-${status}` }));
+      response.end(JSON.stringify(status === 400
+        ? {
+          error: {
+            message: "Function tools for this model require /v1/responses. api_key=must-not-surface",
+          },
+        }
+        : { error: `provider-secret-body-${status}` }));
     });
     servers.push(providerFailure);
     await new Promise<void>((resolve) => providerFailure.listen(0, "127.0.0.1", resolve));
     const port = (providerFailure.address() as AddressInfo).port;
+
+    await expect(secureAskJsonRequest({
+      endpoint: new URL(`http://127.0.0.1:${port}/400`),
+      scope: "custom_loopback",
+      headers: { authorization: "Bearer provider-canary" },
+      body: { model: "local", messages: [] },
+      signal: new AbortController().signal,
+    })).rejects.toMatchObject({
+      code: "ASK_PROVIDER_HTTP_ERROR",
+      message: expect.stringMatching(/Function tools.*\/v1\/responses.*official OpenAI provider/i),
+    });
+    await expect(secureAskJsonRequest({
+      endpoint: new URL(`http://127.0.0.1:${port}/400`),
+      scope: "custom_loopback",
+      headers: {},
+      body: { model: "local", messages: [] },
+      signal: new AbortController().signal,
+    })).rejects.toMatchObject({
+      message: expect.not.stringContaining("must-not-surface"),
+    });
 
     for (const [status, code] of [
       [401, "ASK_PROVIDER_AUTHENTICATION_FAILED"],

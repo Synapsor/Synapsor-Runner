@@ -263,6 +263,9 @@ async function shouldEnterAutoBoundary(
   if (args.includes("--no-open")) return true;
   if (!interactive) return false;
   if (await fileExists(path.resolve(".synapsor/guided-onboarding.json"))) return true;
+  if ((args.includes("--rescan") || args.includes("--force"))
+    && await fileExists(path.resolve("synapsor/generated/exploration-boundary.draft.json"))
+    && await fileExists(path.resolve(".synapsor/generation-lock.json"))) return true;
   if (await fileExists(path.resolve("synapsor.runner.json"))) return false;
   if (await fileExists(path.resolve("synapsor.contract.json"))) return false;
   return true;
@@ -359,29 +362,41 @@ async function startAutoBoundary(
   const verbose = args.includes("--verbose");
   if (verbose) writeGuidedOutput(formatProjectDetection(project));
   const existingJourney = await readGuidedOnboardingState(project.root);
+  const managedBoundaryContext = existingJourney
+    ? undefined
+    : await loadManagedBoundaryProjectContext(project.root);
   const shouldRescan = args.includes("--rescan") || args.includes("--force");
-  if (existingJourney && shouldRescan && !singleOrganization) {
-    const existingBoundary = await loadBoundaryReviewContext(project.root);
+  if ((existingJourney || managedBoundaryContext) && shouldRescan && !singleOrganization) {
+    const existingBoundary = managedBoundaryContext ?? await loadBoundaryReviewContext(project.root);
     if (existingBoundary.draft.organization_scope) {
       singleOrganization = true;
       organizationId = existingBoundary.draft.organization_scope.organization_id;
     }
   }
-  if (shouldRescan && !existingJourney) {
-    throw new Error("There is no guided Synapsor project to rescan. Start without --rescan or --force.");
+  if (shouldRescan && !existingJourney && !managedBoundaryContext) {
+    throw new Error(
+      "There is no Runner-managed boundary project to rescan. "
+      + "Create one with boundary draft or start without --rescan/--force.",
+    );
   }
-  if (existingJourney && !shouldRescan) {
-    if (existingJourney.source.environment_variable !== sourceEnv) {
+  if ((existingJourney || managedBoundaryContext) && !shouldRescan) {
+    const context = managedBoundaryContext ?? await loadBoundaryReviewContext(project.root);
+    const reviewedSourceEnv = existingJourney?.source.environment_variable ?? context.lock.source_env;
+    if (reviewedSourceEnv !== sourceEnv) {
       throw new Error(
-        `This guided project uses ${existingJourney.source.environment_variable}, not ${sourceEnv}. ` +
-        `Resume with --from-env ${existingJourney.source.environment_variable}, or choose an explicit rescan.`,
+        `This reviewed project uses ${reviewedSourceEnv}, not ${sourceEnv}. ` +
+        `Resume with --from-env ${reviewedSourceEnv}, or choose an explicit rescan.`,
       );
     }
-    const boundaryRoot = path.join(project.root, existingJourney.artifacts.boundary_root);
+    const boundaryRoot = existingJourney
+      ? path.join(project.root, existingJourney.artifacts.boundary_root)
+      : context.boundaryRoot;
     const activeBoundaryExists = await guidedActiveBoundaryExists(project.root);
     writeGuidedOutput([
-      "Existing Synapsor guided project found.",
-      `Completed: ${existingJourney.completed_steps.join(", ")}`,
+      existingJourney
+        ? "Existing Synapsor guided project found."
+        : "Existing Runner-managed boundary project found.",
+      ...(existingJourney ? [`Completed: ${existingJourney.completed_steps.join(", ")}`] : []),
       `Agent authority active: ${activeBoundaryExists ? "yes" : "no"}`,
       "Source database changed: no",
       "No schema inspection, digest change, or file rewrite was performed.",
@@ -391,7 +406,7 @@ async function startAutoBoundary(
             ? "Continuing to model or MCP-client selection in this terminal."
             : "Continuing the saved boundary review in this terminal.",
         ]
-        : [`Next: ${existingJourney.recommended_next_action}`]),
+        : [`Next: ${existingJourney?.recommended_next_action ?? "Review the saved disabled boundary."}`]),
       "",
     ].join("\n"));
     if (cliMode) {
@@ -401,8 +416,7 @@ async function startAutoBoundary(
           ...terminalAskLimits,
         });
       }
-      const context = await loadBoundaryReviewContext(project.root);
-      if (!context.progress && existingJourney.status === "review_boundary") {
+      if (!context.progress && existingJourney?.status === "review_boundary") {
         const instant = await runInstantCliBoundary({
           projectRoot: project.root,
           draft: context.draft,
@@ -432,21 +446,25 @@ async function startAutoBoundary(
       "--boundary-root",
       boundaryRoot,
       "--config",
-      path.join(project.root, existingJourney.artifacts.runner_config),
+      path.join(project.root, existingJourney?.artifacts.runner_config ?? "synapsor.runner.json"),
       "--store",
-      path.join(project.root, existingJourney.artifacts.local_store),
-      ...(existingJourney.instant_onboarding ? ["--instant-onboarding"] : []),
-      ...(existingJourney.graduation_tip_suppressed ? ["--no-graduation-tip"] : []),
+      path.join(project.root, existingJourney?.artifacts.local_store ?? ".synapsor/local.db"),
+      ...(existingJourney?.instant_onboarding ? ["--instant-onboarding"] : []),
+      ...(existingJourney?.graduation_tip_suppressed ? ["--no-graduation-tip"] : []),
     ]);
   }
-  if (existingJourney && shouldRescan) {
-    if (existingJourney.source.environment_variable !== sourceEnv) {
+  if ((existingJourney || managedBoundaryContext) && shouldRescan) {
+    const context = managedBoundaryContext ?? await loadBoundaryReviewContext(project.root);
+    const reviewedSourceEnv = existingJourney?.source.environment_variable ?? context.lock.source_env;
+    if (reviewedSourceEnv !== sourceEnv) {
       throw new Error(
-        `This guided project uses ${existingJourney.source.environment_variable}, not ${sourceEnv}. `
-        + `Rescan with --from-env ${existingJourney.source.environment_variable}.`,
+        `This reviewed project uses ${reviewedSourceEnv}, not ${sourceEnv}. `
+        + `Rescan with --from-env ${reviewedSourceEnv}.`,
       );
     }
-    const boundaryRoot = path.join(project.root, existingJourney.artifacts.boundary_root);
+    const boundaryRoot = existingJourney
+      ? path.join(project.root, existingJourney.artifacts.boundary_root)
+      : context.boundaryRoot;
     writeGuidedOutput("Connecting and reconciling current schema metadata with every saved boundary...\n");
     const prepared = await prepareBoundaryRescan({
       projectRoot: project.root,
@@ -455,13 +473,15 @@ async function startAutoBoundary(
     });
     await commitBoundaryRescan(prepared);
     const activeBoundaryExists = await guidedActiveBoundaryExists(project.root);
-    await recordGuidedBoundaryRescan({
-      projectRoot: project.root,
-      schemaFingerprint: prepared.selectedBuild.lock.schema_fingerprint,
-      rolePostureFingerprint: prepared.selectedBuild.lock.role_posture_fingerprint,
-      pendingReview: prepared.report.changed,
-      authorityActive: activeBoundaryExists,
-    });
+    if (existingJourney) {
+      await recordGuidedBoundaryRescan({
+        projectRoot: project.root,
+        schemaFingerprint: prepared.selectedBuild.lock.schema_fingerprint,
+        rolePostureFingerprint: prepared.selectedBuild.lock.role_posture_fingerprint,
+        pendingReview: prepared.report.changed,
+        authorityActive: activeBoundaryExists,
+      });
+    }
     writeGuidedOutput(`${formatBoundaryRescanReport(prepared.report)}\n\n`);
     if (cliMode) {
       if (!prepared.report.changed && activeBoundaryExists) {
@@ -482,11 +502,11 @@ async function startAutoBoundary(
       "--boundary-root",
       boundaryRoot,
       "--config",
-      path.join(project.root, existingJourney.artifacts.runner_config),
+      path.join(project.root, existingJourney?.artifacts.runner_config ?? "synapsor.runner.json"),
       "--store",
-      path.join(project.root, existingJourney.artifacts.local_store),
-      ...(existingJourney.instant_onboarding ? ["--instant-onboarding"] : []),
-      ...(existingJourney.graduation_tip_suppressed ? ["--no-graduation-tip"] : []),
+      path.join(project.root, existingJourney?.artifacts.local_store ?? ".synapsor/local.db"),
+      ...(existingJourney?.instant_onboarding ? ["--instant-onboarding"] : []),
+      ...(existingJourney?.graduation_tip_suppressed ? ["--no-graduation-tip"] : []),
     ]);
   }
   await preflightGuidedProjectInitialization(project.root);
@@ -600,6 +620,30 @@ async function startAutoBoundary(
 async function guidedActiveBoundaryExists(projectRoot: string): Promise<boolean> {
   return await fileExists(path.join(projectRoot, ".synapsor/exploration-boundaries.active.json"))
     || await fileExists(path.join(projectRoot, ".synapsor/exploration-boundary.active.json"));
+}
+
+
+async function loadManagedBoundaryProjectContext(
+  projectRoot: string,
+): Promise<Awaited<ReturnType<typeof loadBoundaryReviewContext>> | undefined> {
+  const draftPath = path.join(
+    projectRoot,
+    "synapsor/generated/exploration-boundary.draft.json",
+  );
+  const lockPath = path.join(projectRoot, ".synapsor/generation-lock.json");
+  const [draftExists, lockExists] = await Promise.all([
+    fileExists(draftPath),
+    fileExists(lockPath),
+  ]);
+  if (!draftExists && !lockExists) return undefined;
+  if (!draftExists || !lockExists) {
+    throw new Error([
+      "The existing Runner-managed boundary project is incomplete.",
+      `Expected both ${displayPath(draftPath)} and ${displayPath(lockPath)}.`,
+      "Runner did not inspect the database or rewrite any project file.",
+    ].join("\n"));
+  }
+  return loadBoundaryReviewContext(projectRoot);
 }
 
 

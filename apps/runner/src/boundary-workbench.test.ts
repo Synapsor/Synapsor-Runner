@@ -418,6 +418,11 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("Advanced exact path IDs");
     expect(html).toContain('post("/api/boundary/library/switch"');
     expect(html).toContain('post("/api/boundary/library/delete"');
+    expect(html).toContain('data-discard-boundary="');
+    expect(html).toContain("Reset curated review");
+    expect(html).toContain("DISCARD REVIEW ");
+    expect(html).toContain("discard_curated_review:true");
+    expect(html).toContain("Runner config, ledger, evidence, and source data were preserved");
     expect(html).toContain('<details class="boundary-options"><summary>Rename selected boundary</summary>');
     expect(html).toContain('<details id="overview-table-details" class="band">');
     expect(html).toContain('id="boundary-pack-name"');

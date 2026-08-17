@@ -72,6 +72,10 @@ vi.mock("./scoped-explore-boundary-set.js", async () => ({
         name: "reviewed_staging",
         resources: [{
           id: "public.sessions",
+          field_types: { id: "bigint", duration_ms: "integer", secret_note: "text" },
+          selectable_fields: ["id", "duration_ms"],
+          kept_out_fields: ["secret_note"],
+          count_distinct_fields: ["id"],
           ...(fixture.autoBands ? { auto_bands: [{ field: "duration_ms" }] } : {}),
         }],
       },
@@ -224,6 +228,22 @@ describe("Ask authoring/runtime separation", () => {
         .toContain('"method":"quantile","buckets":5');
       expect(listed.find((tool) => tool.name === "app.explore_data")?.description)
         .toContain('"time_window"');
+      const operatorMetadata = await gateway.describeOperatorMetadata?.({ resource: "public.sessions" });
+      expect(operatorMetadata?.value.resources).toEqual([
+        expect.objectContaining({
+          id: "public.sessions",
+          operator_review_metadata: {
+            boundary_resource_count: 1,
+            fields: [
+              { id: "duration_ms", kept_out: false, model_visible: true, count_unique_reviewed: false },
+              { id: "id", kept_out: false, model_visible: true, count_unique_reviewed: true },
+              { id: "secret_note", kept_out: true, model_visible: false, count_unique_reviewed: false },
+            ],
+          },
+        }),
+      ]);
+      const modelCatalog = await gateway.callTool("app.describe_data", { resource: "public.sessions" });
+      expect(JSON.stringify(modelCatalog)).not.toContain("operator_review_metadata");
       const exploreSchema = JSON.stringify(listed.find((tool) => tool.name === "app.explore_data")?.input_schema);
       expect(exploreSchema).toContain("equal_width");
       expect(exploreSchema).not.toMatch(/"edges"|"width"|"offset"|"labels"/);

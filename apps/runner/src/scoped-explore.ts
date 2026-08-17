@@ -5971,16 +5971,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function fieldError(resource: BoundaryResource, field: string, operation: string): ScopedExploreError {
+  const keptOut = resource.kept_out_fields.includes(field);
   const reviewableVisibleOperation = operation === "count_distinct"
     && resource.selectable_fields.includes(field)
-    && !resource.kept_out_fields.includes(field);
+    && !keptOut;
+  const countUniqueGuidance = operation !== "count_distinct"
+    ? ""
+    : keptOut
+      ? " In /access, include the field in this table's column editor, then grant Count unique under G Reviewed metrics and numeric bands. The model cannot change either permission."
+      : reviewableVisibleOperation
+        ? ` Grant Count unique under G Reviewed metrics and numeric bands for this table, or run boundary review resource ${resource.id} `
+          + `--count-distinct-fields ${field}; the model cannot change this permission.`
+        : "";
   return new ScopedExploreError(
     "EXPLORE_FIELD_FORBIDDEN",
-    `${resource.id}.${field} is not reviewed for ${operation}.`
-      + (reviewableVisibleOperation
-        ? ` An operator can review it with boundary review resource ${resource.id} `
-          + `--count-distinct-fields ${field}; the model cannot change this permission.`
-        : ""),
+    `${resource.id}.${field} is not reviewed for ${operation === "count_distinct" ? "Count unique (count_distinct)" : operation}.`
+      + countUniqueGuidance,
     {
       reason: "field_operation_not_reviewed",
       resource: resource.id,
