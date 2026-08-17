@@ -40,7 +40,7 @@ grep -F "stale apply refused: yes" proof.txt >/dev/null
 grep -F "replay changed source: no" proof.txt >/dev/null
 
 npx -y -p @synapsor/runner@latest synapsor-runner audit --example dangerous-db-mcp --format markdown > audit.md
-grep -F "execute_sql" audit.md >/dev/null
+grep -F 'execute\_sql' audit.md >/dev/null
 
 npx -y -p @synapsor/runner@latest synapsor-runner mcp serve-streamable-http --help > streamable-help.txt
 grep -F -- "--alias-mode openai" streamable-help.txt >/dev/null
