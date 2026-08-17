@@ -17,7 +17,7 @@ The default check validates:
 - read/write credential separation;
 - reachable source metadata when the read env var is set;
 - configured target tables and columns;
-- supporting indexes for active reviewed derived-scope paths;
+- required index presence and low-selectivity advisories for active reviewed derived-scope paths;
 - MCP tool boundary, including absence of raw SQL and commit tools;
 - local store stats.
 
@@ -53,10 +53,25 @@ A missing child foreign-key index is a warning because the mandatory scoping
 shown as a lower-impact note. These findings are advisory: they never activate,
 disable, widen, or gate Explore, and they never change the scope predicate.
 
-Each finding includes engine-correct `CREATE INDEX` SQL for an operator to
-review and run separately. Runner only reads catalog metadata; `doctor` never
-creates the suggested index or reads source rows for this check. A clean report
-explicitly confirms that all reviewed derived-scope paths are index-backed.
+Each missing-index finding includes engine-correct `CREATE INDEX` SQL for an
+operator to review and run separately. Runner only reads catalog metadata;
+`doctor` never creates the suggested index or reads source rows for this check.
+A clean report says that the indexes required by the reviewed paths exist. This
+is an availability statement, not a promise that the database planner will use
+those indexes.
+
+When catalog statistics are available, `doctor` also compares the terminal
+tenant or principal index's approximate distinct-value count with the ancestor
+table's approximate row count. An ancestor estimated at 100,000 or more rows
+with 50 or fewer distinct scope values gets a low-selectivity warning:
+PostgreSQL or MySQL may reasonably choose scans even though every required
+index exists. The estimate comes from `pg_stats.n_distinct` on PostgreSQL and
+`information_schema.statistics.cardinality` on MySQL. Both are approximate and
+may be stale, so the warning is advisory rather than a latency prediction.
+Measure the real plan before changing a reviewed timeout or source schema. For
+high-volume deep paths, a direct scope column on the leaf, or a shorter reviewed
+path where the schema permits one, is usually more predictable than relying on
+an index over a low-cardinality terminal predicate.
 
 ## App-Owned Handler Checks
 

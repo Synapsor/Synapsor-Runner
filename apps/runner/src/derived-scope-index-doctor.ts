@@ -7,6 +7,8 @@ import { formatDerivedScopePath } from "./derived-scope-display.js";
 type ScopeKind = "tenant" | "principal";
 
 const DERIVED_SCOPE_ROW_HOP_WARNING = 500_000;
+const DERIVED_SCOPE_SELECTIVITY_MIN_ROWS = 100_000;
+const DERIVED_SCOPE_SELECTIVITY_MAX_DISTINCT = 50;
 
 
 export function derivedScopeIndexDoctorChecks(input: {
@@ -106,19 +108,74 @@ export function derivedScopeIndexDoctorChecks(input: {
           advisory: "note",
           effect: `the terminal ${kind} predicate may require more filtering work`,
         }));
+      } else {
+        const selectivityAdvisory = derivedScopeSelectivityAdvisoryCheck({
+          boundary,
+          pathLabel,
+          kind,
+          terminalTable,
+          terminalColumn: scope.ancestor_column,
+          engine,
+        });
+        if (selectivityAdvisory) checks.push(selectivityAdvisory);
       }
     }
   }
 
   if (pathCount > 0 && missingCount === 0) {
+    const pathSummary = pathCount === 1
+      ? "the reviewed derived-scope path"
+      : `all ${pathCount} reviewed derived-scope paths`;
     checks.push({
       name: "derived-scope-indexes:complete",
       ok: true,
       level: "pass",
-      message: `All ${pathCount} reviewed derived-scope ${pathCount === 1 ? "path is" : "paths are"} index-backed in the live catalog (FK correlation, referenced keys, and terminal tenant/principal filters).`,
+      message: `The indexes required by ${pathSummary} exist in the live catalog (FK correlation, referenced keys, and terminal tenant/principal filters). This attests index availability only; the database planner may still choose scans for low-selectivity predicates.`,
     });
   }
   return checks;
+}
+
+function derivedScopeSelectivityAdvisoryCheck(input: {
+  boundary: ActivatedExplorationBoundary;
+  pathLabel: string;
+  kind: ScopeKind;
+  terminalTable: TableInfo;
+  terminalColumn: string;
+  engine: SourceEngine | undefined;
+}): DoctorCheck | undefined {
+  const rowEstimate = input.terminalTable.approximate_row_count;
+  const distinctEstimate = leadingIndexDistinctEstimate(input.terminalTable, input.terminalColumn);
+  if (rowEstimate === undefined
+    || rowEstimate < DERIVED_SCOPE_SELECTIVITY_MIN_ROWS
+    || distinctEstimate === undefined
+    || distinctEstimate > DERIVED_SCOPE_SELECTIVITY_MAX_DISTINCT) {
+    return undefined;
+  }
+  const boundedDistinct = Math.max(1, Math.min(distinctEstimate, rowEstimate));
+  const rowsPerValue = Math.round(rowEstimate / boundedDistinct);
+  const sharePerValue = 100 / boundedDistinct;
+  const engineName = input.engine === "postgres"
+    ? "PostgreSQL"
+    : input.engine === "mysql"
+      ? "MySQL"
+      : "database";
+  const terminal = `${resourceId(input.terminalTable.schema, input.terminalTable.name)}.${input.terminalColumn}`;
+  return {
+    name: `derived-scope-selectivity:${input.boundary.pack.name}:${doctorNamePart(input.pathLabel)}`,
+    ok: true,
+    level: "warn",
+    advisory: "warning",
+    message:
+      `Derived-scope selectivity warning for boundary ${input.boundary.pack.name}, path ${input.pathLabel}: `
+      + `the required index on ${terminal} exists, but live ${engineName} catalog statistics estimate about `
+      + `${boundedDistinct.toLocaleString("en-US")} distinct ${input.kind} ${boundedDistinct === 1 ? "value" : "values"} across about `
+      + `${rowEstimate.toLocaleString("en-US")} rows (roughly ${rowsPerValue.toLocaleString("en-US")} rows, or `
+      + `${formatPercentage(sharePerValue)}, per value under a uniform estimate). The planner may choose scans at this selectivity; `
+      + `index available does not mean index used. Catalog statistics are approximate and may be stale. Measure the real plan; `
+      + `prefer a direct ${input.kind} column on a high-volume leaf or a shorter reviewed path where the schema permits, `
+      + `or raise the reviewed statement_timeout_ms only after measuring.`,
+  };
 }
 
 function derivedScopeCostAdvisoryCheck(input: {
@@ -217,6 +274,24 @@ function hasUsableLeadingIndex(table: TableInfo, requiredColumns: string[]): boo
     if (requiredColumns.length === 1) return true;
     return requiredColumns.every((column, offset) => keyColumns[offset] === column);
   });
+}
+
+function leadingIndexDistinctEstimate(table: TableInfo, column: string): number | undefined {
+  const estimates = table.indexes
+    .filter((index) => {
+      if (index.catalog_usable === false || index.catalog_partial === true) return false;
+      const keyColumns = index.catalog_key_columns ?? index.columns ?? [];
+      return (index.catalog_leading_column ?? keyColumns[0]) === column;
+    })
+    .map((index) => index.catalog_distinct_estimate)
+    .filter((estimate): estimate is number => estimate !== undefined && Number.isFinite(estimate) && estimate > 0);
+  return estimates.length === 0 ? undefined : Math.max(...estimates);
+}
+
+function formatPercentage(value: number): string {
+  if (value >= 10) return `${value.toFixed(1)}%`;
+  if (value >= 1) return `${value.toFixed(2)}%`;
+  return `${value.toFixed(3)}%`;
 }
 
 

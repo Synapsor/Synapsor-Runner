@@ -622,6 +622,8 @@ export type IndexInfo = {
   catalog_usable?: boolean;
   /** Partial indexes do not cover every row and cannot satisfy general scope probes. */
   catalog_partial?: boolean;
+  /** Approximate distinct values for the leading key; advisory only and excluded from authority fingerprints. */
+  catalog_distinct_estimate?: number;
 };
 
 export type CheckConstraintInfo = {
@@ -1427,7 +1429,18 @@ async function inspectPostgres(
                 ORDER BY key_column.ordinal_position
               ) AS catalog_key_columns,
               (index_definition.indisvalid AND index_definition.indisready) AS catalog_usable,
-              (index_definition.indpred IS NOT NULL) AS catalog_partial
+              (index_definition.indpred IS NOT NULL) AS catalog_partial,
+              (SELECT CASE
+                 WHEN column_stats.n_distinct < 0
+                   THEN ABS(column_stats.n_distinct) * GREATEST(source_table.reltuples, 0)
+                 ELSE column_stats.n_distinct
+               END
+               FROM pg_catalog.pg_stats column_stats
+               WHERE column_stats.schemaname = table_ns.nspname
+                 AND column_stats.tablename = source_table.relname
+                 AND column_stats.attname = leading_attribute.attname
+                 AND column_stats.inherited = false
+               LIMIT 1) AS catalog_distinct_estimate
        FROM pg_catalog.pg_index index_definition
        JOIN pg_catalog.pg_class source_table ON source_table.oid = index_definition.indrelid
        JOIN pg_catalog.pg_namespace table_ns ON table_ns.oid = source_table.relnamespace
@@ -1683,6 +1696,7 @@ async function inspectMysql(
       `SELECT table_schema AS \`schema\`, table_name AS table_name, index_name AS name,
               GROUP_CONCAT(column_name ORDER BY seq_in_index) AS columns,
               MAX(CASE WHEN seq_in_index = 1 THEN column_name END) AS catalog_leading_column,
+              MAX(CASE WHEN seq_in_index = 1 THEN cardinality END) AS catalog_distinct_estimate,
               MIN(non_unique) AS non_unique
        FROM information_schema.statistics
        WHERE table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
@@ -1790,6 +1804,9 @@ async function inspectMysql(
           : undefined,
         catalog_usable: true,
         catalog_partial: false,
+        ...(catalogDistinctEstimate(row.catalog_distinct_estimate) === undefined
+          ? {}
+          : { catalog_distinct_estimate: catalogDistinctEstimate(row.catalog_distinct_estimate) }),
         unique: Number(row.non_unique) === 0,
       })),
       triggers: triggerRows as RawTrigger[],
@@ -1858,6 +1875,7 @@ type RawIndex = {
   catalog_leading_column?: string;
   catalog_usable?: boolean;
   catalog_partial?: boolean;
+  catalog_distinct_estimate?: string | number | bigint | null;
 };
 type RawTrigger = { schema: string; table_name: string; name: string; timing: string; orientation: string; event: string };
 type RawRowSecurity = { schema: string; table_name: string; enabled: boolean; forced?: boolean };
@@ -1985,6 +2003,9 @@ function normalizeInspection(input: {
         catalog_leading_column: index.catalog_leading_column,
         catalog_usable: index.catalog_usable,
         catalog_partial: index.catalog_partial,
+        ...(catalogDistinctEstimate(index.catalog_distinct_estimate) === undefined
+          ? {}
+          : { catalog_distinct_estimate: catalogDistinctEstimate(index.catalog_distinct_estimate) }),
       })),
       suggestions: {
         tenant_columns: columns.filter((column) => column.suggestions.tenant).map((column) => column.name),
@@ -2050,6 +2071,16 @@ function catalogRowEstimate(
   if (value === null || value === undefined) return undefined;
   const numeric = typeof value === "bigint" ? Number(value) : Number(value);
   return Number.isSafeInteger(numeric) && numeric >= 0 ? numeric : undefined;
+}
+
+function catalogDistinctEstimate(
+  value: unknown,
+): number | undefined {
+  if (value === null || value === undefined) return undefined;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0
+    ? Math.max(1, Math.round(numeric))
+    : undefined;
 }
 
 function normalizePolicyRoles(value: unknown): string[] {

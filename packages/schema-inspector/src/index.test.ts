@@ -713,6 +713,7 @@ describe("schema inspector helpers", () => {
       catalog_leading_column: "tenant_id",
       catalog_usable: true,
       catalog_partial: false,
+      catalog_distinct_estimate: 3,
     };
 
     expect(schemaFingerprintForInspection(inspection)).toBe(before);
