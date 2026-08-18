@@ -23,6 +23,7 @@ import {
   enforceProtectedReadBudget,
   recordProtectedRead,
 } from "./protected-read-runtime.js";
+import { resolveTrustedContext } from "./trusted-context.js";
 
 const digest = `sha256:${"a".repeat(64)}` as const;
 const lock = `sha256:${"b".repeat(64)}` as const;
@@ -225,6 +226,134 @@ describe("protected named reads", () => {
       { schema: "public", table: "departments", principalScoped: false },
       { schema: "public", table: "regions", principalScoped: false },
     ]);
+  });
+
+  it("compiles and records single-organization relationship reads without tenant predicates while retaining principal scope", async () => {
+    const config = aggregateConfig();
+    const capability = config.capabilities?.[0];
+    if (!capability?.protected_read?.aggregate || !config.trusted_context) {
+      throw new Error("protected aggregate fixture is incomplete");
+    }
+    delete capability.target.tenant_key;
+    capability.protected_read.organization_scope = {
+      mode: "single_organization",
+      organization_id: "northgate-construction",
+      acknowledgement: "all_rows_belong_to_one_organization",
+    };
+    capability.protected_read.relationships = [{
+      name: "account",
+      links: [{
+        schema: "public",
+        table: "accounts",
+        primary_key: "id",
+        principal_scope_key: "owner_id",
+        local_key: "account_id",
+        target_key: "id",
+        cardinality: "many_to_one",
+        max_fan_out: 1,
+        unmatched_rows: "exclude",
+      }],
+    }];
+    capability.protected_read.aggregate.dimensions = [{
+      name: "account_name",
+      field: "name",
+      relationship: "account",
+    }];
+    delete capability.protected_read.aggregate.time_bucket;
+    delete capability.protected_read.aggregate.comparison;
+    delete capability.protected_read.aggregate.order_by;
+    capability.args = {};
+    config.trusted_context.values = {
+      organization_id: "northgate-construction",
+      tenant_id: "northgate-construction",
+      principal_env: "SYNAPSOR_PRINCIPAL",
+    };
+
+    const context = resolveTrustedContext(config, {
+      SYNAPSOR_PRINCIPAL: "owner-7",
+    }, capability);
+    expect(context).toEqual({
+      tenant_id: "northgate-construction",
+      principal: "owner-7",
+      provenance: "environment",
+    });
+    for (const placeholderStyle of ["$", "?"] as const) {
+      const query = buildProtectedReadQuery(capability, placeholderStyle, {}, context);
+      expect(query.sql).toContain(placeholderStyle === "$" ? 't0."owner_id"' : "t0.`owner_id`");
+      expect(query.sql).toContain(placeholderStyle === "$" ? 'r1_1."owner_id"' : "r1_1.`owner_id`");
+      expect(query.sql).not.toContain("tenant_id");
+      expect(query.values).toEqual(["owner-7", "owner-7", "churned"]);
+    }
+
+    const store = new ProposalStore(":memory:");
+    try {
+      const budgetReservation = await enforceProtectedReadBudget(
+        store,
+        capability,
+        context,
+        {},
+        "single-organization-principal-test",
+      );
+      const result = await recordProtectedRead({
+        capability,
+        sourceName: capability.source,
+        context,
+        current: {
+          row: { account_name: "Northgate", churned_accounts: 8, __cohort_size: 8 },
+          rows: [{ account_name: "Northgate", churned_accounts: 8, __cohort_size: 8 }],
+          rowCount: 1,
+        },
+        store,
+        mode: "read_only",
+        privacySessionId: "single-organization-principal-test",
+        args: {},
+        budgetReservation,
+      });
+      expect(result).toMatchObject({
+        trusted_context: {
+          tenant_bound: false,
+          organization_bound: true,
+          principal_bound: true,
+        },
+      });
+      expect(store.listEvidenceBundles({ limit: 1 })[0]?.payload).toMatchObject({
+        trusted_scope: {
+          tenant_bound: false,
+          organization_bound: true,
+          principal_bound: true,
+        },
+      });
+    } finally {
+      store.close();
+    }
+
+    config.trusted_context.values.tenant_id_env = "SYNAPSOR_TENANT_ID";
+    expect(() => resolveTrustedContext(config, {
+      SYNAPSOR_TENANT_ID: "another-organization",
+      SYNAPSOR_PRINCIPAL: "owner-7",
+    }, capability)).toThrow(/does not match the organization frozen/i);
+
+    const organizationOnlyConfig = structuredClone(config);
+    const organizationOnlyCapability = organizationOnlyConfig.capabilities![0]!;
+    delete organizationOnlyCapability.target.principal_scope_key;
+    delete organizationOnlyCapability.protected_read!.relationships![0]!.links[0]!.principal_scope_key;
+    organizationOnlyConfig.trusted_context = {
+      provider: "reviewed_organization",
+      tenant_binding: "tenant_id",
+      values: {
+        tenant_id: "northgate-construction",
+        organization_id: "northgate-construction",
+      },
+    };
+    expect(resolveTrustedContext(
+      organizationOnlyConfig,
+      {},
+      organizationOnlyCapability,
+    )).toEqual({
+      tenant_id: "northgate-construction",
+      principal: "",
+      provenance: "reviewed_organization",
+    });
   });
 
   it("compiles protected dispersion and missing-data measures portably", () => {

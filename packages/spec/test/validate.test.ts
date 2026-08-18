@@ -214,6 +214,55 @@ describe("@synapsor/spec validation", () => {
     });
   });
 
+  it("accepts one immutable single-organization scope and rejects contradictory tenant authority", () => {
+    const contract = protectedAggregateContract();
+    const capability = contract.capabilities[0];
+    delete capability.subject.tenant_key;
+    capability.protected_read.organization_scope = {
+      mode: "single_organization",
+      organization_id: "northgate-construction",
+      acknowledgement: "all_rows_belong_to_one_organization",
+    };
+    contract.contexts[0].bindings = contract.contexts[0].bindings.map((binding: Record<string, unknown>) =>
+      binding.name === contract.contexts[0].tenant_binding
+        ? { ...binding, source: "reviewed_organization", key: "northgate-construction", required: true }
+        : binding.name === contract.contexts[0].principal_binding
+          ? { ...binding, required: true }
+          : binding);
+    capability.protected_read.relationships = [{
+      name: "account",
+      links: [{
+        schema: "public",
+        table: "accounts",
+        primary_key: "id",
+        principal_scope_key: "owner_id",
+        local_key: "account_id",
+        target_key: "id",
+        cardinality: "many_to_one",
+        max_fan_out: 1,
+        unmatched_rows: "exclude",
+      }],
+    }];
+
+    expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+
+    const conflictingRoot = structuredClone(contract);
+    conflictingRoot.capabilities[0].subject.tenant_key = "tenant_id";
+    expect(validateContract(conflictingRoot).errors.map((error) => error.code))
+      .toContain("PROTECTED_SCOPE_MODES_CONFLICT");
+
+    const conflictingRelationship = structuredClone(contract);
+    conflictingRelationship.capabilities[0].protected_read.relationships[0].links[0].tenant_key = "tenant_id";
+    expect(validateContract(conflictingRelationship).errors.map((error) => error.code))
+      .toContain("PROTECTED_SCOPE_MODES_CONFLICT");
+
+    const mismatchedContext = structuredClone(contract);
+    mismatchedContext.contexts[0].bindings.find((binding: Record<string, unknown>) =>
+      binding.name === mismatchedContext.contexts[0].tenant_binding).key = "another-organization";
+    expect(validateContract(mismatchedContext).errors.map((error) => error.code))
+      .toContain("PROTECTED_ORGANIZATION_BINDING_REQUIRED");
+  });
+
   it("accepts only digest-bound ranked period movers with a reviewed underlying-group limit", () => {
     const contract = protectedAggregateContract();
     const protectedRead = contract.capabilities[0].protected_read;

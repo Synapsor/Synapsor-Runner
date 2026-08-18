@@ -1307,7 +1307,8 @@ select an exact unexpired analysis reference. Protect freezes:
 - resources and reviewed relationship paths;
 - counted entity, measures, dimensions, and bucket structure;
 - filters, ordering, top-N, and comparison shape;
-- tenant/principal as trusted bindings;
+- either tenant-key scope or the exact reviewed organization, plus any
+  independently reviewed principal scope, as non-model trusted bindings;
 - cohort suppression and query/privacy budgets.
 
 Reviewed literals remain fixed by default. A human may convert selected
@@ -1340,6 +1341,17 @@ gesture and stays in the current Ask session; Workbench uses one labelled
 activation button. Both call the same canonical implementation, recompute the
 digest immediately before activation, and reject stale previews. Workbench is
 optional for a developer who chose the CLI path.
+
+For a boundary reviewed with `--single-tenant --organization-id <id>`, Protect
+freezes `PROTECTED SINGLE ORGANIZATION '<id>' ACKNOWLEDGED` instead of inventing
+a tenant column. The protected SQL therefore has no tenant predicate, matching
+the reviewed Explore posture. The exact organization assertion is part of the
+capability digest and generation lock; a different configured organization or
+source authority refuses before execution. Direct principal columns on the
+root or reviewed relationship path remain independently bound from trusted
+environment or verified HTTP-session context and still produce principal SQL
+predicates. CLI `/protect`, `try protect`, and Workbench call this same
+implementation.
 
 `/details` and the equivalent Workbench disclosure connect the original
 question, typed model tool call, normalized validated plan, selected boundary,

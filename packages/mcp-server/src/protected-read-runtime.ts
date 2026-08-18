@@ -337,7 +337,8 @@ export async function recordProtectedRead(input: {
     data,
     trusted_context: {
       tenant_bound: Boolean(input.capability.target.tenant_key),
-      principal_bound: Boolean(input.capability.target.principal_scope_key),
+      ...(protectedRead.organization_scope ? { organization_bound: true } : {}),
+      principal_bound: protectedReadPrincipalBound(input.capability),
       provenance: input.context.provenance,
     },
     query_audit: {
@@ -551,7 +552,11 @@ async function recordProtectedReadEvidence(input: {
       protected_read_digest: canonicalJsonDigest(protectedRead),
       trusted_scope: {
         tenant_bound: Boolean(input.capability.target.tenant_key),
-        principal_bound: Boolean(input.capability.target.principal_scope_key),
+        organization_bound: Boolean(protectedRead.organization_scope),
+        ...(protectedRead.organization_scope
+          ? { organization_scope: protectedRead.organization_scope }
+          : {}),
+        principal_bound: protectedReadPrincipalBound(input.capability),
         provenance: input.context.provenance,
         values_persisted: false,
       },
@@ -599,6 +604,12 @@ function protectedReadAuditPayload(input: {
     boundary_digest: protectedRead.boundary_digest,
     generation_lock_fingerprint: protectedRead.generation_lock_fingerprint,
     protected_read_digest: canonicalJsonDigest(protectedRead),
+    tenant_bound: Boolean(input.capability.target.tenant_key),
+    organization_bound: Boolean(protectedRead.organization_scope),
+    ...(protectedRead.organization_scope
+      ? { organization_scope: protectedRead.organization_scope }
+      : {}),
+    principal_bound: protectedReadPrincipalBound(input.capability),
     session_fingerprint: protectedReadSessionFingerprint(input.capability, input.context, input.privacySessionId),
     argument_fingerprint: protectedReadArgumentFingerprint(input.args, input.privacySessionId),
     budget_reservation_id: input.budgetReservation.reservation_id,
@@ -613,6 +624,16 @@ function protectedReadAuditPayload(input: {
     raw_sql_included: false,
     source_database_changed: false,
   };
+}
+
+function protectedReadPrincipalBound(capability: RuntimeCapabilityConfig): boolean {
+  const protectedRead = capability.protected_read;
+  return Boolean(
+    capability.target.principal_scope_key
+    || protectedRead?.relationship?.principal_scope_key
+    || protectedRead?.relationships?.some((relationship) =>
+      relationship.links.some((link) => Boolean(link.principal_scope_key))),
+  );
 }
 
 export function protectedReadSessionFingerprint(

@@ -111,6 +111,12 @@ export function effectivePrincipalScope(
   if (!column) return undefined;
   const contextConfig = (capability.context ? config.contexts?.[capability.context] : undefined) ?? config.trusted_context;
   if (!contextConfig) throw new McpRuntimeError("TRUSTED_CONTEXT_MISSING", `Principal-scoped capability ${capability.name} has no trusted context.`);
+  if (contextConfig.provider === "reviewed_organization") {
+    throw new McpRuntimeError(
+      "TRUSTED_BINDING_MISSING",
+      `Principal-scoped capability ${capability.name} requires a trusted principal provider in addition to its reviewed organization.`,
+    );
+  }
   const binding = contextConfig.principal_binding ?? "principal";
   const value = scalar(context.principal);
   const material = { column, binding, provider: contextConfig.provider, value };
@@ -136,9 +142,24 @@ export function resolveTrustedContext(
   }
   const provider = contextConfig.provider;
   const values = contextConfig.values ?? {};
+  const protectedOrganization = capability?.protected_read?.organization_scope?.organization_id;
+  const configuredOrganization = typeof values.organization_id === "string"
+    ? values.organization_id.trim()
+    : typeof values.tenant_id === "string"
+      ? values.tenant_id.trim()
+      : undefined;
+  if (protectedOrganization && configuredOrganization && protectedOrganization !== configuredOrganization) {
+    throw new McpRuntimeError(
+      "TRUSTED_ORGANIZATION_MISMATCH",
+      `Capability ${capability?.name ?? "(unknown)"} is fixed to reviewed organization ${protectedOrganization}, but its runtime context names a different organization.`,
+    );
+  }
   const principalRequired = Boolean(
     contextConfig.principal_binding
     || capability?.target.principal_scope_key
+    || capability?.protected_read?.relationship?.principal_scope_key
+    || capability?.protected_read?.relationships?.some((relationship) =>
+      relationship.links.some((link) => Boolean(link.principal_scope_key)))
     || values.principal_env !== undefined
     || values.principal_id_env !== undefined
     || values.principal !== undefined,
@@ -146,7 +167,16 @@ export function resolveTrustedContext(
   if (provider === "environment") {
     const tenantEnv = String(values.tenant_id_env ?? "SYNAPSOR_TENANT_ID");
     const principalEnv = String(values.principal_env ?? "SYNAPSOR_PRINCIPAL");
-    const tenant = envValue(env, tenantEnv);
+    const environmentTenant = protectedOrganization && values.tenant_id_env === undefined
+      ? undefined
+      : envValue(env, tenantEnv);
+    if (protectedOrganization && environmentTenant && environmentTenant !== protectedOrganization) {
+      throw new McpRuntimeError(
+        "TRUSTED_ORGANIZATION_MISMATCH",
+        `${tenantEnv} does not match the organization frozen into protected capability ${capability?.name ?? "(unknown)"}.`,
+      );
+    }
+    const tenant = protectedOrganization ?? environmentTenant;
     const principal = envValue(env, principalEnv);
     if (!tenant || (principalRequired && !principal)) {
       throw new McpRuntimeError(
@@ -157,7 +187,14 @@ export function resolveTrustedContext(
     return { tenant_id: tenant, principal: principal ?? "", provenance: "environment" };
   }
   if (provider === "static_dev") {
-    const tenant = valueFromEnvOrLiteral(values.tenant_id_env, values.tenant_id, env);
+    const configuredTenant = valueFromEnvOrLiteral(values.tenant_id_env, values.tenant_id, env);
+    if (protectedOrganization && configuredTenant && configuredTenant !== protectedOrganization) {
+      throw new McpRuntimeError(
+        "TRUSTED_ORGANIZATION_MISMATCH",
+        `The static trusted context does not match the organization frozen into protected capability ${capability?.name ?? "(unknown)"}.`,
+      );
+    }
+    const tenant = protectedOrganization ?? configuredTenant;
     const principal = valueFromEnvOrLiteral(values.principal_env, values.principal, env);
     if (!tenant || (principalRequired && !principal)) {
       throw new McpRuntimeError(
@@ -176,7 +213,30 @@ export function resolveTrustedContext(
     if (principalRequired && !sessionContext.principal) {
       throw new McpRuntimeError("TRUSTED_BINDING_MISSING", `${provider} trusted context requires a verified principal binding.`);
     }
-    return sessionContext;
+    if (protectedOrganization && sessionContext.tenant_id && sessionContext.tenant_id !== protectedOrganization) {
+      throw new McpRuntimeError(
+        "TRUSTED_ORGANIZATION_MISMATCH",
+        `The verified session tenant does not match the organization frozen into protected capability ${capability?.name ?? "(unknown)"}.`,
+      );
+    }
+    return protectedOrganization
+      ? { ...sessionContext, tenant_id: protectedOrganization }
+      : sessionContext;
+  }
+  if (provider === "reviewed_organization") {
+    if (!protectedOrganization) {
+      throw new McpRuntimeError(
+        "TRUSTED_ORGANIZATION_AUTHORITY_MISSING",
+        "reviewed_organization context requires a protected capability with immutable single-organization authority.",
+      );
+    }
+    if (principalRequired) {
+      throw new McpRuntimeError(
+        "TRUSTED_BINDING_MISSING",
+        "A principal-scoped protected capability must pair its reviewed organization with a trusted principal provider.",
+      );
+    }
+    return { tenant_id: protectedOrganization, principal: "", provenance: "reviewed_organization" };
   }
   throw new McpRuntimeError("TRUSTED_CONTEXT_UNSUPPORTED", `${provider} trusted context is not available in local stdio mode.`);
 }

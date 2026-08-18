@@ -228,7 +228,11 @@ The named protected capability freezes resources, optional reviewed
 many-to-one relationship, predicates, projection or aggregate measures,
 dimensions, bucket, ordering, result bounds, suppression, and privacy/query
 budgets. Only explicitly selected typed literal positions become arguments.
-Tenant and principal remain trusted bindings.
+Normal multi-tenant capabilities retain tenant-key predicates. A boundary
+reviewed for one organization instead freezes that exact organization in the
+contract and generation lock without inventing a tenant column; the serving
+configuration must match it. Principal scope remains a separate trusted
+binding in both forms.
 
 Both authoring tools advertise structured output schemas. The bounded safe
 catalog is available through `synapsor-runner tools catalog` and carries the
@@ -266,6 +270,7 @@ reviewed runner JSON capabilities. Current parity:
 | proposal `reversibility` | `REVERSIBLE` | 1.4 | Direct SQL only. Captures a bounded inverse after unambiguous apply; operator `revert` creates a new independently approved proposal. |
 | evidence options | `REQUIRE EVIDENCE` | 0.1 | Detailed evidence sources/handle prefixes are not expressible in DSL yet; use embedded JSON or generated contract JSON for those. |
 | capability `protected_read` | `PROTECTED READ ROWS\|AGGREGATE` plus `BOUNDARY DIGEST`, `GENERATION LOCK`, reviewed filters/read or aggregate clauses, and `PROTECTED LIMITS` | 1.5 | Optional default-deny named authority produced by Protect. Existing contracts without this field retain their previous normalization and digest. |
+| protected `organization_scope` | `BIND tenant_id FROM REVIEWED_ORGANIZATION <id> REQUIRED` plus `PROTECTED SINGLE ORGANIZATION '<id>' ACKNOWLEDGED` | 1.10 | Tenant-key alternative emitted only from an explicitly reviewed whole-organization boundary. Root and relationship tenant keys are forbidden; principal scope remains independently enforceable. |
 
 ## Direct Runner Config Path
 

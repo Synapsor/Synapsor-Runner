@@ -1057,6 +1057,58 @@ END
     expect(compileAgentDsl(formatAgentDsl(source))).toEqual(contract);
   });
 
+  it("freezes single-organization protected reads without inventing tenant columns", () => {
+    const source = protectedAggregateSource()
+      .replace(
+        "BIND tenant_id FROM ENVIRONMENT SYNAPSOR_TENANT_ID REQUIRED",
+        "BIND tenant_id FROM REVIEWED_ORGANIZATION northgate-construction REQUIRED",
+      )
+      .replace("  TENANT KEY tenant_id\n", "")
+      .replace(
+        `  GENERATION LOCK sha256:${"b".repeat(64)}`,
+        `  GENERATION LOCK sha256:${"b".repeat(64)}\n  PROTECTED SINGLE ORGANIZATION 'northgate-construction' ACKNOWLEDGED`,
+      )
+      .replace(
+        "PROTECTED FILTER status EQ FIXED 'churned'",
+        "PROTECTED RELATIONSHIP account ON account_id REFERENCES public.accounts.id PRIMARY KEY id PRINCIPAL SCOPE KEY owner_id\n  PROTECTED FILTER status EQ FIXED 'churned'",
+      );
+    const contract = compileAgentDsl(source);
+
+    expect(contract.contexts[0]?.bindings[0]).toMatchObject({
+      source: "reviewed_organization",
+      key: "northgate-construction",
+      required: true,
+    });
+    expect(contract.capabilities[0]?.subject.tenant_key).toBeUndefined();
+    expect(contract.capabilities[0]?.protected_read).toMatchObject({
+      organization_scope: {
+        mode: "single_organization",
+        organization_id: "northgate-construction",
+        acknowledgement: "all_rows_belong_to_one_organization",
+      },
+      relationship: {
+        table: "accounts",
+        principal_scope_key: "owner_id",
+      },
+    });
+    expect(contract.capabilities[0]?.protected_read?.relationship?.tenant_key).toBeUndefined();
+    expect(validateContract(contract)).toMatchObject({ ok: true, errors: [] });
+    expect(compileAgentDsl(formatAgentDsl(source))).toEqual(contract);
+
+    expect(() => compileAgentDsl(source.replace(
+      "  PRIMARY KEY id\n",
+      "  PRIMARY KEY id\n  TENANT KEY tenant_id\n",
+    ))).toThrow(/PROTECTED_SCOPE_MODES_CONFLICT/);
+    expect(() => compileAgentDsl(source.replace(
+      " PRIMARY KEY id PRINCIPAL SCOPE KEY owner_id",
+      " PRIMARY KEY id TENANT KEY tenant_id PRINCIPAL SCOPE KEY owner_id",
+    ))).toThrow(/PROTECTED_SCOPE_MODES_CONFLICT/);
+    expect(() => compileAgentDsl(source
+      .replace("  BIND principal FROM ENVIRONMENT SYNAPSOR_PRINCIPAL REQUIRED\n", "")
+      .replace("  PRINCIPAL BINDING principal\n", "")))
+      .toThrow(/PRINCIPAL_SCOPE_BINDING_REQUIRED/);
+  });
+
   it("keeps protected-read identifiers and trust scope outside model arguments", () => {
     const invalid = protectedAggregateSource()
       .replace("PROTECTED FILTER status EQ FIXED 'churned'", "PROTECTED FILTER tenant_id EQ ARG tenant_id")

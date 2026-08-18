@@ -52,6 +52,7 @@ const PROTECTED_READ_KEYS = new Set([
   "mode",
   "boundary_digest",
   "generation_lock_fingerprint",
+  "organization_scope",
   "predicates",
   "relationship",
   "relationships",
@@ -59,6 +60,11 @@ const PROTECTED_READ_KEYS = new Set([
   "row_order_by",
   "aggregate",
   "limits",
+]);
+const PROTECTED_ORGANIZATION_SCOPE_KEYS = new Set([
+  "mode",
+  "organization_id",
+  "acknowledgement",
 ]);
 const PROTECTED_VALUE_KEYS = new Set(["fixed", "from_arg"]);
 const PROTECTED_PREDICATE_KEYS = new Set(["field", "relationship", "operator", "value", "values"]);
@@ -187,6 +193,7 @@ export function validateContract(input: unknown): ValidationResult {
   const policies = Array.isArray(input.policies) ? input.policies : [];
   const capabilityNames = validateCapabilities(input.capabilities, contextNames, resourceNames, errors, warnings);
   validatePrincipalScopes(input.capabilities, input.contexts, input.resources, errors);
+  validateProtectedOrganizationContexts(input.capabilities, input.contexts, errors);
   validateWorkflows(input.workflows, contextNames, capabilityNames, errors);
   const policyByName = validatePolicies(input.policies, errors);
   validateCapabilityApprovalPolicies(capabilities, policies, policyByName, errors);
@@ -277,7 +284,7 @@ function validateContexts(value: unknown, errors: ValidationIssue[], warnings: V
       checkUnknownKeys(binding, BINDING_KEYS, bindingPath, errors);
       if (!isSafeIdentifier(binding.name)) errors.push({ path: `${bindingPath}.name`, code: "INVALID_BINDING_NAME", message: "binding name must be a safe identifier." });
       else addUnique(bindingNames, binding.name, `${bindingPath}.name`, "DUPLICATE_BINDING_NAME", errors);
-      if (!["session", "environment", "cloud_session", "static_dev", "http_claim"].includes(String(binding.source))) errors.push({ path: `${bindingPath}.source`, code: "INVALID_BINDING_SOURCE", message: "binding source must be session, environment, cloud_session, static_dev, or http_claim." });
+      if (!["session", "environment", "cloud_session", "static_dev", "http_claim", "reviewed_organization"].includes(String(binding.source))) errors.push({ path: `${bindingPath}.source`, code: "INVALID_BINDING_SOURCE", message: "binding source must be session, environment, cloud_session, static_dev, http_claim, or reviewed_organization." });
       if (!isNonEmptyString(binding.key)) errors.push({ path: `${bindingPath}.key`, code: "INVALID_BINDING_KEY", message: "binding key must be a non-empty string." });
       if (binding.source === "static_dev") warnings.push({ path: `${bindingPath}.source`, code: "STATIC_DEV_BINDING", message: "static_dev bindings are for local demos only." });
     });
@@ -308,7 +315,14 @@ function validateCapabilities(value: unknown, contextNames: Set<string>, resourc
     if (capability.returns_hint !== undefined && !isNonEmptyString(capability.returns_hint)) errors.push({ path: `${path}.returns_hint`, code: "INVALID_RETURNS_HINT", message: "returns_hint must be a non-empty string." });
     if (!["read", "aggregate_read", "proposal", "external_action", "answer_with_evidence"].includes(String(capability.kind))) errors.push({ path: `${path}.kind`, code: "INVALID_CAPABILITY_KIND", message: "kind must be read, aggregate_read, proposal, external_action, or answer_with_evidence." });
     if (!isNonEmptyString(capability.context) || !contextNames.has(capability.context)) errors.push({ path: `${path}.context`, code: "UNKNOWN_CONTEXT", message: "capability.context must reference a declared context." });
-    validateSubject(capability.subject, `${path}.subject`, resourceNames, errors, warnings);
+    validateSubject(
+      capability.subject,
+      `${path}.subject`,
+      resourceNames,
+      errors,
+      warnings,
+      capability.protected_read,
+    );
     const hasProtectedRead = capability.protected_read !== undefined;
     validateArgs(capability.args, `${path}.args`, errors, capability.kind === "aggregate_read" || hasProtectedRead);
     if (capability.lookup !== undefined) validateLookup(capability.lookup, `${path}.lookup`, capability.args, errors);
@@ -384,7 +398,14 @@ function validateSetCapabilityArgs(capability: JsonRecord, path: string, errors:
   }
 }
 
-function validateSubject(value: unknown, path: string, resourceNames: Set<string>, errors: ValidationIssue[], warnings: ValidationIssue[]): void {
+function validateSubject(
+  value: unknown,
+  path: string,
+  resourceNames: Set<string>,
+  errors: ValidationIssue[],
+  warnings: ValidationIssue[],
+  protectedRead?: unknown,
+): void {
   if (!isRecord(value)) {
     errors.push({ path, code: "SUBJECT_REQUIRED", message: "subject must be an object." });
     return;
@@ -397,15 +418,20 @@ function validateSubject(value: unknown, path: string, resourceNames: Set<string
     for (const key of ["schema", "table", "primary_key"]) {
       if (!isSafeIdentifier(value[key])) errors.push({ path: `${path}.${key}`, code: "INVALID_SUBJECT_IDENTIFIER", message: `${key} must be provided as a fixed safe identifier when resource is omitted.` });
     }
-    if (!isSafeIdentifier(value.tenant_key) && value.single_tenant_dev !== true) {
-      errors.push({ path: `${path}.tenant_key`, code: "TENANT_KEY_REQUIRED", message: "tenant_key is required unless single_tenant_dev is explicitly true." });
+    if (!isSafeIdentifier(value.tenant_key)
+      && value.single_tenant_dev !== true
+      && !validProtectedOrganizationScope(isRecord(protectedRead) ? protectedRead.organization_scope : undefined)) {
+      errors.push({ path: `${path}.tenant_key`, code: "TENANT_KEY_REQUIRED", message: "tenant_key is required unless single_tenant_dev is explicitly true or protected_read freezes a reviewed single organization." });
     }
   }
   if (value.principal_scope_key !== undefined && !isSafeIdentifier(value.principal_scope_key)) {
     errors.push({ path: `${path}.principal_scope_key`, code: "INVALID_PRINCIPAL_SCOPE_KEY", message: "principal_scope_key must be a fixed safe identifier." });
   }
-  if (value.principal_scope_key !== undefined && value.resource === undefined && !isSafeIdentifier(value.tenant_key)) {
-    errors.push({ path: `${path}.principal_scope_key`, code: "PRINCIPAL_SCOPE_TENANT_REQUIRED", message: "principal_scope_key can only narrow a capability that also declares tenant_key." });
+  if (value.principal_scope_key !== undefined
+    && value.resource === undefined
+    && !isSafeIdentifier(value.tenant_key)
+    && !validProtectedOrganizationScope(isRecord(protectedRead) ? protectedRead.organization_scope : undefined)) {
+    errors.push({ path: `${path}.principal_scope_key`, code: "PRINCIPAL_SCOPE_TENANT_REQUIRED", message: "principal_scope_key requires either a reviewed tenant_key or a protected single-organization authority." });
   }
   if (value.principal_scope_key !== undefined && value.single_tenant_dev === true) {
     errors.push({ path: `${path}.principal_scope_key`, code: "PRINCIPAL_SCOPE_TENANT_REQUIRED", message: "principal_scope_key cannot be used with single_tenant_dev; declare a reviewed tenant_key." });
@@ -426,13 +452,26 @@ function validatePrincipalScopes(capabilities: unknown, contexts: unknown, resou
     }
   }
   capabilities.forEach((capability, index) => {
-    if (!isRecord(capability) || !isRecord(capability.subject) || capability.subject.principal_scope_key === undefined) return;
+    if (!isRecord(capability) || !isRecord(capability.subject)) return;
+    const protectedRead = isRecord(capability.protected_read) ? capability.protected_read : undefined;
+    const protectedRelationshipPrincipal = isRecord(protectedRead?.relationship)
+      && protectedRead.relationship.principal_scope_key !== undefined;
+    const protectedPathPrincipal = Array.isArray(protectedRead?.relationships)
+      && protectedRead.relationships.some((relationship) => isRecord(relationship)
+        && Array.isArray(relationship.links)
+        && relationship.links.some((link) => isRecord(link)
+          && link.principal_scope_key !== undefined));
+    const rootPrincipal = capability.subject.principal_scope_key !== undefined;
+    if (!rootPrincipal && !protectedRelationshipPrincipal && !protectedPathPrincipal) return;
     const path = `$.capabilities[${index}]`;
     const resource = typeof capability.subject.resource === "string" ? resourceByName.get(capability.subject.resource) : undefined;
     const tenantKey = capability.subject.tenant_key ?? resource?.tenant_key;
     const singleTenantDev = capability.subject.single_tenant_dev ?? resource?.single_tenant_dev;
-    if (!isSafeIdentifier(tenantKey) || singleTenantDev === true) {
-      errors.push({ path: `${path}.subject.principal_scope_key`, code: "PRINCIPAL_SCOPE_TENANT_REQUIRED", message: "principal_scope_key can only narrow a capability with a reviewed tenant_key." });
+    const organizationScoped = validProtectedOrganizationScope(
+      isRecord(capability.protected_read) ? capability.protected_read.organization_scope : undefined,
+    );
+    if (rootPrincipal && ((!isSafeIdentifier(tenantKey) && !organizationScoped) || singleTenantDev === true)) {
+      errors.push({ path: `${path}.subject.principal_scope_key`, code: "PRINCIPAL_SCOPE_TENANT_REQUIRED", message: "principal_scope_key requires a reviewed tenant_key or protected single-organization authority." });
     }
     const context = contextByName.get(String(capability.context));
     if (!context || !isSafeIdentifier(context.principal_binding)) {
@@ -445,19 +484,96 @@ function validatePrincipalScopes(capabilities: unknown, contexts: unknown, resou
     if (!isRecord(binding) || binding.required !== true) {
       errors.push({ path: `${path}.context`, code: "PRINCIPAL_SCOPE_BINDING_REQUIRED", message: "principal_binding must reference a required trusted context binding." });
     }
-    const scopeKey = capability.subject.principal_scope_key;
-    if (isRecord(capability.args) && Object.prototype.hasOwnProperty.call(capability.args, String(scopeKey))) {
-      errors.push({ path: `${path}.args.${String(scopeKey)}`, code: "MODEL_CONTROLLED_PRINCIPAL_SCOPE", message: "the reviewed principal scope column cannot also be a model-facing argument." });
-    }
-    if (isRecord(capability.proposal)) {
-      if (Array.isArray(capability.proposal.allowed_fields) && capability.proposal.allowed_fields.includes(scopeKey)) {
-        errors.push({ path: `${path}.proposal.allowed_fields`, code: "PRINCIPAL_SCOPE_WRITE_FORBIDDEN", message: "the reviewed principal scope column cannot be model-writeable." });
+    if (rootPrincipal) {
+      const scopeKey = capability.subject.principal_scope_key;
+      if (isRecord(capability.args) && Object.prototype.hasOwnProperty.call(capability.args, String(scopeKey))) {
+        errors.push({ path: `${path}.args.${String(scopeKey)}`, code: "MODEL_CONTROLLED_PRINCIPAL_SCOPE", message: "the reviewed principal scope column cannot also be a model-facing argument." });
       }
-      if (isRecord(capability.proposal.patch) && Object.prototype.hasOwnProperty.call(capability.proposal.patch, String(scopeKey))) {
-        errors.push({ path: `${path}.proposal.patch.${String(scopeKey)}`, code: "PRINCIPAL_SCOPE_WRITE_FORBIDDEN", message: "the reviewed principal scope column is forced from trusted context and cannot be patched by the model." });
+      if (isRecord(capability.proposal)) {
+        if (Array.isArray(capability.proposal.allowed_fields) && capability.proposal.allowed_fields.includes(scopeKey)) {
+          errors.push({ path: `${path}.proposal.allowed_fields`, code: "PRINCIPAL_SCOPE_WRITE_FORBIDDEN", message: "the reviewed principal scope column cannot be model-writeable." });
+        }
+        if (isRecord(capability.proposal.patch) && Object.prototype.hasOwnProperty.call(capability.proposal.patch, String(scopeKey))) {
+          errors.push({ path: `${path}.proposal.patch.${String(scopeKey)}`, code: "PRINCIPAL_SCOPE_WRITE_FORBIDDEN", message: "the reviewed principal scope column is forced from trusted context and cannot be patched by the model." });
+        }
       }
     }
   });
+}
+
+function validateProtectedOrganizationContexts(
+  capabilities: unknown,
+  contexts: unknown,
+  errors: ValidationIssue[],
+): void {
+  if (!Array.isArray(capabilities) || !Array.isArray(contexts)) return;
+  const contextByName = new Map<string, JsonRecord>();
+  for (const context of contexts) {
+    if (isRecord(context) && isNonEmptyString(context.name)) contextByName.set(context.name, context);
+  }
+  capabilities.forEach((capability, index) => {
+    if (!isRecord(capability)) return;
+    const protectedRead = isRecord(capability.protected_read) ? capability.protected_read : undefined;
+    const organizationScope = isRecord(protectedRead?.organization_scope)
+      ? protectedRead.organization_scope
+      : undefined;
+    const context = contextByName.get(String(capability.context));
+    const tenantBindingName = context?.tenant_binding;
+    const tenantBinding = Array.isArray(context?.bindings)
+      ? context.bindings.find((binding) => isRecord(binding) && binding.name === tenantBindingName)
+      : undefined;
+    const path = `$.capabilities[${index}]`;
+    if (organizationScope !== undefined) {
+      if (!isRecord(tenantBinding)
+        || tenantBinding.source !== "reviewed_organization"
+        || tenantBinding.key !== organizationScope.organization_id
+        || tenantBinding.required !== true) {
+        errors.push({
+          path: `${path}.context`,
+          code: "PROTECTED_ORGANIZATION_BINDING_REQUIRED",
+          message: "protected single-organization authority requires a matching required reviewed_organization tenant binding.",
+        });
+      }
+    } else if (isRecord(tenantBinding) && tenantBinding.source === "reviewed_organization") {
+      errors.push({
+        path: `${path}.context`,
+        code: "PROTECTED_ORGANIZATION_AUTHORITY_REQUIRED",
+        message: "a reviewed_organization tenant binding is valid only for a protected read that freezes the same organization.",
+      });
+    }
+  });
+}
+
+function validProtectedOrganizationScope(value: unknown): value is JsonRecord {
+  return isRecord(value)
+    && value.mode === "single_organization"
+    && typeof value.organization_id === "string"
+    && /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(value.organization_id)
+    && value.acknowledgement === "all_rows_belong_to_one_organization";
+}
+
+function validateProtectedOrganizationScope(
+  value: unknown,
+  path: string,
+  errors: ValidationIssue[],
+): boolean {
+  if (value === undefined) return false;
+  if (!isRecord(value)) {
+    errors.push({ path, code: "PROTECTED_ORGANIZATION_SCOPE_NOT_OBJECT", message: "organization_scope must be a fixed reviewed authority object." });
+    return false;
+  }
+  checkUnknownKeys(value, PROTECTED_ORGANIZATION_SCOPE_KEYS, path, errors);
+  if (value.mode !== "single_organization") {
+    errors.push({ path: `${path}.mode`, code: "INVALID_PROTECTED_ORGANIZATION_MODE", message: "organization_scope.mode must be single_organization." });
+  }
+  if (typeof value.organization_id !== "string"
+    || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(value.organization_id)) {
+    errors.push({ path: `${path}.organization_id`, code: "INVALID_PROTECTED_ORGANIZATION_ID", message: "organization_id must contain 1-128 letters, numbers, dots, colons, underscores, or dashes." });
+  }
+  if (value.acknowledgement !== "all_rows_belong_to_one_organization") {
+    errors.push({ path: `${path}.acknowledgement`, code: "PROTECTED_ORGANIZATION_ACKNOWLEDGEMENT_REQUIRED", message: "organization_scope must retain the reviewed all-rows-belong-to-one-organization acknowledgement." });
+  }
+  return validProtectedOrganizationScope(value);
 }
 
 function validateArgs(value: unknown, path: string, errors: ValidationIssue[], allowEmpty = false): void {
@@ -530,10 +646,30 @@ function validateProtectedRead(capability: JsonRecord, path: string, errors: Val
     if (!isSha256Digest(protectedRead[key])) errors.push({ path: `${path}.protected_read.${key}`, code: "INVALID_PROTECTED_READ_DIGEST", message: `${key} must be a canonical sha256 digest.` });
   }
 
+  const organizationScoped = validateProtectedOrganizationScope(
+    protectedRead.organization_scope,
+    `${path}.protected_read.organization_scope`,
+    errors,
+  );
+  const subject = isRecord(capability.subject) ? capability.subject : {};
+  if (organizationScoped && isSafeIdentifier(subject.tenant_key)) {
+    errors.push({
+      path: `${path}.protected_read.organization_scope`,
+      code: "PROTECTED_SCOPE_MODES_CONFLICT",
+      message: "protected_read must freeze either tenant-key scope or one reviewed organization, never both.",
+    });
+  }
+  if (!organizationScoped && !isSafeIdentifier(subject.tenant_key)) {
+    errors.push({
+      path: `${path}.subject.tenant_key`,
+      code: "PROTECTED_TENANT_AUTHORITY_REQUIRED",
+      message: "protected_read requires a reviewed tenant_key unless it freezes one reviewed organization.",
+    });
+  }
+
   const args = isRecord(capability.args) ? capability.args : {};
   const referencedArgs = new Set<string>();
   const keptOut = new Set(Array.isArray(capability.kept_out_fields) ? capability.kept_out_fields.filter((field): field is string => typeof field === "string") : []);
-  const subject = isRecord(capability.subject) ? capability.subject : {};
   const trustedScopeFields = new Set([subject.tenant_key, subject.principal_scope_key].filter((field): field is string => isSafeIdentifier(field)));
   const relationshipNames = new Set<string>();
   const legacyRelationshipName = validateProtectedRelationship(
@@ -541,6 +677,7 @@ function validateProtectedRead(capability: JsonRecord, path: string, errors: Val
     keptOut,
     trustedScopeFields,
     `${path}.protected_read.relationship`,
+    organizationScoped,
     errors,
   );
   if (legacyRelationshipName) relationshipNames.add(legacyRelationshipName);
@@ -557,6 +694,7 @@ function validateProtectedRead(capability: JsonRecord, path: string, errors: Val
     trustedScopeFields,
     `${path}.protected_read.relationships`,
     relationshipNames,
+    organizationScoped,
     errors,
   );
 
@@ -697,6 +835,7 @@ function validateProtectedRelationship(
   keptOut: Set<string>,
   trustedScopeFields: Set<string>,
   path: string,
+  organizationScoped: boolean,
   errors: ValidationIssue[],
 ): string | undefined {
   if (value === undefined) return undefined;
@@ -705,8 +844,13 @@ function validateProtectedRelationship(
     return undefined;
   }
   checkUnknownKeys(value, PROTECTED_RELATIONSHIP_KEYS, path, errors);
-  for (const key of ["name", "schema", "table", "primary_key", "tenant_key", "local_key", "target_key"] as const) {
+  for (const key of ["name", "schema", "table", "primary_key", "local_key", "target_key"] as const) {
     if (!isSafeIdentifier(value[key])) errors.push({ path: `${path}.${key}`, code: "INVALID_PROTECTED_RELATIONSHIP_IDENTIFIER", message: `${key} must be a fixed safe identifier.` });
+  }
+  if (organizationScoped && value.tenant_key !== undefined) {
+    errors.push({ path: `${path}.tenant_key`, code: "PROTECTED_SCOPE_MODES_CONFLICT", message: "single-organization protected relationships must not declare tenant_key." });
+  } else if (!organizationScoped && !isSafeIdentifier(value.tenant_key)) {
+    errors.push({ path: `${path}.tenant_key`, code: "INVALID_PROTECTED_RELATIONSHIP_IDENTIFIER", message: "tenant_key must be a fixed safe identifier for tenant-scoped protected relationships." });
   }
   if (value.principal_scope_key !== undefined && !isSafeIdentifier(value.principal_scope_key)) errors.push({ path: `${path}.principal_scope_key`, code: "INVALID_PROTECTED_RELATIONSHIP_IDENTIFIER", message: "principal_scope_key must be a fixed safe identifier." });
   if (value.cardinality !== "many_to_one" || value.max_fan_out !== 1) {
@@ -728,6 +872,7 @@ function validateProtectedRelationshipPaths(
   trustedScopeFields: Set<string>,
   path: string,
   relationshipNames: Set<string>,
+  organizationScoped: boolean,
   errors: ValidationIssue[],
 ): void {
   if (value === undefined) return;
@@ -764,8 +909,13 @@ function validateProtectedRelationshipPaths(
         return;
       }
       checkUnknownKeys(link, PROTECTED_RELATIONSHIP_LINK_KEYS, linkPath, errors);
-      for (const key of ["schema", "table", "primary_key", "tenant_key", "local_key", "target_key"] as const) {
+      for (const key of ["schema", "table", "primary_key", "local_key", "target_key"] as const) {
         if (!isSafeIdentifier(link[key])) errors.push({ path: `${linkPath}.${key}`, code: "INVALID_PROTECTED_RELATIONSHIP_IDENTIFIER", message: `${key} must be a fixed safe identifier.` });
+      }
+      if (organizationScoped && link.tenant_key !== undefined) {
+        errors.push({ path: `${linkPath}.tenant_key`, code: "PROTECTED_SCOPE_MODES_CONFLICT", message: "single-organization protected relationship links must not declare tenant_key." });
+      } else if (!organizationScoped && !isSafeIdentifier(link.tenant_key)) {
+        errors.push({ path: `${linkPath}.tenant_key`, code: "INVALID_PROTECTED_RELATIONSHIP_IDENTIFIER", message: "tenant_key must be a fixed safe identifier for tenant-scoped protected relationship links." });
       }
       if (link.principal_scope_key !== undefined && !isSafeIdentifier(link.principal_scope_key)) {
         errors.push({ path: `${linkPath}.principal_scope_key`, code: "INVALID_PROTECTED_RELATIONSHIP_IDENTIFIER", message: "principal_scope_key must be a fixed safe identifier." });

@@ -58,12 +58,19 @@
   ungrounded provider prose, treats generic words such as `cases` as row nouns
   unless the catalog defines that resource, and chooses a reviewed trend grain
   that fits catalog coverage and group limits.
+- Lets an explicitly reviewed single-organization Explore analysis graduate
+  through Protect in CLI and Workbench. The generated named capability freezes
+  the exact organization assertion in public DSL, canonical Spec, its digest,
+  and the generation lock instead of inventing a tenant column or predicate.
+  Load refuses an organization/config mismatch, relationship paths retain the
+  same many-to-one proofs, and reviewed principal scope remains independently
+  enforced on the root and every protected relationship link.
 
 Prepared package versions: `@synapsor/runner@1.7.1` and the optional
-`synapsor-runner@1.7.1` command alias. `@synapsor/spec@1.9.0` and
-`@synapsor/dsl@1.9.0` are unchanged, and generated boundary compiler authority
-remains `1.7.0` so this patch does not itself require a rescan. No package is
-published by this change.
+`synapsor-runner@1.7.1` command alias, plus `@synapsor/spec@1.10.0` and
+`@synapsor/dsl@1.10.0` for the additive reviewed-organization authority.
+Generated boundary compiler authority remains `1.7.0`, so this patch does not
+itself require a rescan. No package is published by this change.
 
 ## 1.7.0 (published 2026-08-17)
 

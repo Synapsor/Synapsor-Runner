@@ -42,7 +42,9 @@ export function describeIsolationAssurance(config: RuntimeConfig): SourceIsolati
           ? "postgres_rls"
           : "application_scope";
       const controls = [
-        "runner_predicates",
+        ...(requestBinding === "reviewed_fixed_scope"
+          ? ["reviewed_single_organization_authority"]
+          : ["runner_predicates"]),
         ...(databaseScope === "postgres_rls" ? ["postgres_rls"] : []),
         ...(credentialScope === "tenant_resolver" ? ["tenant_credential_resolver"] : []),
       ];
@@ -231,17 +233,21 @@ export function runtimeContextFromSpec(context: AgentContextSpec): NonNullable<R
   }
   const tenantBinding = context.bindings.find((binding) => binding.name === context.tenant_binding) ?? context.bindings.find((binding) => binding.name === "tenant_id");
   const principalBinding = context.bindings.find((binding) => binding.name === context.principal_binding) ?? context.bindings.find((binding) => binding.name === "principal");
+  const reviewedOrganization = context.bindings.find((binding) => binding.source === "reviewed_organization");
   const provider = context.bindings.some((binding) => binding.source === "environment") ? "environment"
     : context.bindings.some((binding) => binding.source === "cloud_session") ? "cloud_session"
       : context.bindings.some((binding) => binding.source === "http_claim") ? "http_claims"
         : context.bindings.some((binding) => binding.source === "static_dev") ? "static_dev"
+          : reviewedOrganization ? "reviewed_organization"
           : (() => { throw new Error(`TRUSTED_CONTEXT_BINDING_UNSUPPORTED: context ${context.name} has no binding source supported by Synapsor Runner.`); })();
   return {
     provider,
     tenant_binding: context.tenant_binding,
     principal_binding: context.principal_binding,
     values: {
-      ...(tenantBinding ? { tenant_id_env: tenantBinding.key, tenant_id_key: tenantBinding.key } : {}),
+      ...(tenantBinding?.source === "reviewed_organization"
+        ? { tenant_id: tenantBinding.key, organization_id: tenantBinding.key }
+        : tenantBinding ? { tenant_id_env: tenantBinding.key, tenant_id_key: tenantBinding.key } : {}),
       ...(principalBinding ? { principal_env: principalBinding.key, principal_key: principalBinding.key } : {}),
     },
   };

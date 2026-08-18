@@ -2,7 +2,7 @@ import { validateContract } from "@synapsor/spec";
 
 export type RunnerMode = "read_only" | "shadow" | "review" | "cloud";
 export type SourceEngine = "postgres" | "mysql";
-export type TrustedContextProvider = "static_dev" | "environment" | "http_claims" | "cloud_session";
+export type TrustedContextProvider = "static_dev" | "environment" | "http_claims" | "cloud_session" | "reviewed_organization";
 export type CapabilityKind = "read" | "aggregate_read" | "proposal";
 export type ExecutorType = "sql_update" | "http_handler" | "command_handler";
 
@@ -1790,7 +1790,7 @@ function validateContextObject(
     errors.push({
       path: `${path}.provider`,
       code: "INVALID_CONTEXT_PROVIDER",
-      message: "provider must be static_dev, environment, http_claims, or cloud_session.",
+      message: "provider must be static_dev, environment, http_claims, cloud_session, or reviewed_organization.",
     });
   }
   if (value.provider === "static_dev") {
@@ -2352,8 +2352,12 @@ function validateCapability(
   }
   validateCapabilityWriteback(value, path, executorNames, strict, errors);
   validateCapabilityReversibility(value, path, strict, errors);
-  validateTarget(value.target, `${path}.target`, strict, errors, warnings);
   const protectedRead = value.protected_read !== undefined;
+  const reviewedOrganization = isRecord(value.protected_read)
+    && isRecord(value.protected_read.organization_scope)
+    && value.protected_read.organization_scope.mode === "single_organization"
+    && typeof value.protected_read.organization_scope.organization_id === "string";
+  validateTarget(value.target, `${path}.target`, strict, errors, warnings, reviewedOrganization);
   if (protectedRead) {
     validateArgs(value.args, `${path}.args`, strict, errors, true);
     if (value.kind === "read") validateVisibleColumns(value.visible_columns, `${path}.visible_columns`, errors);
@@ -2393,13 +2397,20 @@ function validateAggregateReadCapability(value: JsonRecord, path: string, strict
 }
 
 function validateProtectedRuntimeCapability(value: JsonRecord, path: string, errors: ConfigIssue[]): void {
+  const organizationId = isRecord(value.protected_read)
+    && isRecord(value.protected_read.organization_scope)
+    && typeof value.protected_read.organization_scope.organization_id === "string"
+    ? value.protected_read.organization_scope.organization_id
+    : undefined;
   const result = validateContract({
     spec_version: "0.1",
     kind: "SynapsorContract",
     contexts: [{
       name: "runtime_context",
       bindings: [
-        { name: "tenant_id", source: "static_dev", key: "runtime_tenant", required: true },
+        organizationId
+          ? { name: "tenant_id", source: "reviewed_organization", key: organizationId, required: true }
+          : { name: "tenant_id", source: "static_dev", key: "runtime_tenant", required: true },
         { name: "principal", source: "static_dev", key: "runtime_principal", required: true },
       ],
       tenant_binding: "tenant_id",
@@ -2519,6 +2530,7 @@ function validateTarget(
   strict: boolean,
   errors: ConfigIssue[],
   warnings: ConfigIssue[],
+  reviewedOrganization = false,
 ): void {
   if (!isRecord(value)) {
     errors.push({ path, code: "TARGET_REQUIRED", message: "target must be an object." });
@@ -2533,18 +2545,18 @@ function validateTarget(
   const hasTenantKey = isSafeIdentifier(value.tenant_key);
   const hasPrincipalScopeKey = isSafeIdentifier(value.principal_scope_key);
   const singleTenant = value.single_tenant_dev === true;
-  if (!hasTenantKey && !singleTenant) {
+  if (!hasTenantKey && !singleTenant && !reviewedOrganization) {
     errors.push({
       path: `${path}.tenant_key`,
       code: "TENANT_GUARD_REQUIRED",
-      message: "tenant_key is required unless target.single_tenant_dev is explicitly true for a local dev example.",
+      message: "tenant_key is required unless target.single_tenant_dev is explicitly true for a local dev example or protected_read freezes one reviewed organization.",
     });
   }
   if (value.principal_scope_key !== undefined && !hasPrincipalScopeKey) {
     errors.push({ path: `${path}.principal_scope_key`, code: "INVALID_PRINCIPAL_SCOPE_KEY", message: "principal_scope_key must be a fixed safe identifier." });
   }
-  if (hasPrincipalScopeKey && !hasTenantKey) {
-    errors.push({ path: `${path}.principal_scope_key`, code: "PRINCIPAL_SCOPE_TENANT_REQUIRED", message: "principal_scope_key can only narrow a target that also declares tenant_key." });
+  if (hasPrincipalScopeKey && !hasTenantKey && !reviewedOrganization) {
+    errors.push({ path: `${path}.principal_scope_key`, code: "PRINCIPAL_SCOPE_TENANT_REQUIRED", message: "principal_scope_key requires a tenant_key or protected single-organization authority." });
   }
   if (singleTenant) {
     warnings.push({
@@ -2996,7 +3008,7 @@ function isSourceEngine(value: unknown): value is SourceEngine {
 }
 
 function isTrustedContextProvider(value: unknown): value is TrustedContextProvider {
-  return value === "static_dev" || value === "environment" || value === "http_claims" || value === "cloud_session";
+  return value === "static_dev" || value === "environment" || value === "http_claims" || value === "cloud_session" || value === "reviewed_organization";
 }
 
 function isExecutorType(value: unknown): value is ExecutorType {

@@ -115,7 +115,7 @@
       },
       "properties": {
         "name": { "$ref": "#/$defs/safeIdentifier" },
-        "source": { "enum": ["session", "environment", "cloud_session", "static_dev", "http_claim"] },
+        "source": { "enum": ["session", "environment", "cloud_session", "static_dev", "http_claim", "reviewed_organization"] },
         "key": { "type": "string", "minLength": 1 },
         "required": { "type": "boolean" }
       }
@@ -428,7 +428,7 @@
     },
     "protectedReadRelationship": {
       "type": "object",
-      "required": ["name", "schema", "table", "primary_key", "tenant_key", "local_key", "target_key", "cardinality", "max_fan_out"],
+      "required": ["name", "schema", "table", "primary_key", "local_key", "target_key", "cardinality", "max_fan_out"],
       "additionalProperties": false,
       "patternProperties": {
         "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
@@ -448,7 +448,7 @@
     },
     "protectedReadRelationshipLink": {
       "type": "object",
-      "required": ["schema", "table", "primary_key", "tenant_key", "local_key", "target_key", "cardinality", "max_fan_out", "unmatched_rows"],
+      "required": ["schema", "table", "primary_key", "local_key", "target_key", "cardinality", "max_fan_out", "unmatched_rows"],
       "additionalProperties": false,
       "patternProperties": {
         "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
@@ -481,6 +481,22 @@
           "maxItems": 3,
           "items": { "$ref": "#/$defs/protectedReadRelationshipLink" }
         }
+      }
+    },
+    "protectedReadOrganizationScope": {
+      "type": "object",
+      "required": ["mode", "organization_id", "acknowledgement"],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(cloud|runner|experimental)-[A-Za-z0-9_.-]+$": true
+      },
+      "properties": {
+        "mode": { "const": "single_organization" },
+        "organization_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "acknowledgement": { "const": "all_rows_belong_to_one_organization" }
       }
     },
     "protectedReadMeasure": {
@@ -696,6 +712,7 @@
         "mode": { "enum": ["rows", "aggregate"] },
         "boundary_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
         "generation_lock_fingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "organization_scope": { "$ref": "#/$defs/protectedReadOrganizationScope" },
         "predicates": {
           "type": "array",
           "maxItems": 8,

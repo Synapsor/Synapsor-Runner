@@ -28,7 +28,7 @@ export type AgentDslAst = {
 export type AgentDslContextAst = {
   name: string;
   line?: number;
-  bindings: Array<{ name: string; source: "session" | "environment" | "cloud_session" | "static_dev" | "http_claim"; key: string; required?: boolean }>;
+  bindings: Array<{ name: string; source: "session" | "environment" | "cloud_session" | "static_dev" | "http_claim" | "reviewed_organization"; key: string; required?: boolean }>;
   tenantBinding?: string;
   principalBinding?: string;
 };
@@ -69,6 +69,7 @@ export type AgentDslCapabilityAst = {
     mode: "rows" | "aggregate";
     boundaryDigest?: `sha256:${string}`;
     generationLockFingerprint?: `sha256:${string}`;
+    organizationScope?: ProtectedReadSpec["organization_scope"];
     predicates: ProtectedReadPredicateSpec[];
     relationship?: ProtectedReadRelationshipSpec;
     relationships: ProtectedReadRelationshipPathSpec[];
@@ -312,6 +313,7 @@ function protectedReadSpecFromDsl(capability: AgentDslCapabilityAst): ProtectedR
     mode: protectedRead.mode,
     boundary_digest: protectedRead.boundaryDigest,
     generation_lock_fingerprint: protectedRead.generationLockFingerprint,
+    ...(protectedRead.organizationScope ? { organization_scope: protectedRead.organizationScope } : {}),
     ...(protectedRead.predicates.length ? { predicates: protectedRead.predicates } : {}),
     ...(protectedRead.relationship ? { relationship: protectedRead.relationship } : {}),
     ...(protectedRead.relationships.length ? { relationships: protectedRead.relationships } : {}),
@@ -400,7 +402,7 @@ function parseBlocks(source: string): Block[] {
 function parseContextBlock(block: Block): AgentDslContextAst {
   const context: AgentDslContextAst = { name: block.name, line: block.line, bindings: [] };
   for (const item of block.body) {
-    const bind = item.text.match(/^BIND\s+([A-Za-z_][A-Za-z0-9_]*)\s+FROM\s+(SESSION|ENV|ENVIRONMENT|CLOUD_SESSION|STATIC_DEV|HTTP_CLAIM)\s+([A-Za-z0-9_.-]+)(?:\s+REQUIRED)?$/i);
+    const bind = item.text.match(/^BIND\s+([A-Za-z_][A-Za-z0-9_]*)\s+FROM\s+(SESSION|ENV|ENVIRONMENT|CLOUD_SESSION|STATIC_DEV|HTTP_CLAIM|REVIEWED_ORGANIZATION)\s+([A-Za-z0-9_.:-]+)(?:\s+REQUIRED)?$/i);
     if (bind?.[1] && bind[2] && bind[3]) {
       const name = bind[1];
       const source = normalizeBindingSource(bind[2]);
@@ -598,10 +600,27 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
       reviewed.generationLockFingerprint = generationLock[1].toLowerCase() as `sha256:${string}`;
       continue;
     }
-    const protectedRelationshipLink = item.text.match(/^PROTECTED\s+RELATIONSHIP\s+([A-Za-z_][A-Za-z0-9_]*)\s+LINK\s+([123])\s+ON\s+([A-Za-z_][A-Za-z0-9_]*)\s+REFERENCES\s+([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\s+PRIMARY\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*)\s+TENANT\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+PRINCIPAL\s+SCOPE\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*))?\s+UNMATCHED\s+(EXCLUDE|KEEP\s+NULL)$/i);
+    const protectedOrganization = item.text.match(/^PROTECTED\s+SINGLE\s+ORGANIZATION\s+('(?:''|[^'])*')\s+ACKNOWLEDGED$/i);
+    if (protectedOrganization?.[1]) {
+      const reviewed = requireProtectedRead(capability, item);
+      if (reviewed.organizationScope) {
+        throw dslError(item.line, 1, "PROTECTED_ORGANIZATION_DUPLICATE", "PROTECTED READ permits one reviewed organization assertion");
+      }
+      const organizationId = parseProtectedLiteral(protectedOrganization[1], item.line, 1);
+      if (typeof organizationId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(organizationId)) {
+        throw dslError(item.line, 1, "INVALID_PROTECTED_ORGANIZATION_ID", "protected organization id must contain 1-128 letters, numbers, dots, colons, underscores, or dashes");
+      }
+      reviewed.organizationScope = {
+        mode: "single_organization",
+        organization_id: organizationId,
+        acknowledgement: "all_rows_belong_to_one_organization",
+      };
+      continue;
+    }
+    const protectedRelationshipLink = item.text.match(/^PROTECTED\s+RELATIONSHIP\s+([A-Za-z_][A-Za-z0-9_]*)\s+LINK\s+([123])\s+ON\s+([A-Za-z_][A-Za-z0-9_]*)\s+REFERENCES\s+([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\s+PRIMARY\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+TENANT\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*))?(?:\s+PRINCIPAL\s+SCOPE\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*))?\s+UNMATCHED\s+(EXCLUDE|KEEP\s+NULL)$/i);
     if (protectedRelationshipLink?.[1] && protectedRelationshipLink[2] && protectedRelationshipLink[3]
       && protectedRelationshipLink[4] && protectedRelationshipLink[5] && protectedRelationshipLink[6]
-      && protectedRelationshipLink[7] && protectedRelationshipLink[8] && protectedRelationshipLink[10]) {
+      && protectedRelationshipLink[7] && protectedRelationshipLink[10]) {
       const reviewed = requireProtectedRead(capability, item);
       if (reviewed.relationship) {
         throw dslError(item.line, 1, "PROTECTED_RELATIONSHIP_FORMS_CONFLICT", "legacy PROTECTED RELATIONSHIP and LINK path syntax cannot be combined");
@@ -622,7 +641,7 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
         table: protectedRelationshipLink[5],
         target_key: protectedRelationshipLink[6],
         primary_key: protectedRelationshipLink[7],
-        tenant_key: protectedRelationshipLink[8],
+        ...(protectedRelationshipLink[8] ? { tenant_key: protectedRelationshipLink[8] } : {}),
         ...(protectedRelationshipLink[9] ? { principal_scope_key: protectedRelationshipLink[9] } : {}),
         cardinality: "many_to_one",
         max_fan_out: 1,
@@ -630,8 +649,8 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
       });
       continue;
     }
-    const protectedRelationship = item.text.match(/^PROTECTED\s+RELATIONSHIP\s+([A-Za-z_][A-Za-z0-9_]*)\s+ON\s+([A-Za-z_][A-Za-z0-9_]*)\s+REFERENCES\s+([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\s+PRIMARY\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*)\s+TENANT\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+PRINCIPAL\s+SCOPE\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*))?$/i);
-    if (protectedRelationship?.[1] && protectedRelationship[2] && protectedRelationship[3] && protectedRelationship[4] && protectedRelationship[5] && protectedRelationship[6] && protectedRelationship[7]) {
+    const protectedRelationship = item.text.match(/^PROTECTED\s+RELATIONSHIP\s+([A-Za-z_][A-Za-z0-9_]*)\s+ON\s+([A-Za-z_][A-Za-z0-9_]*)\s+REFERENCES\s+([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\s+PRIMARY\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+TENANT\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*))?(?:\s+PRINCIPAL\s+SCOPE\s+KEY\s+([A-Za-z_][A-Za-z0-9_]*))?$/i);
+    if (protectedRelationship?.[1] && protectedRelationship[2] && protectedRelationship[3] && protectedRelationship[4] && protectedRelationship[5] && protectedRelationship[6]) {
       const reviewed = requireProtectedRead(capability, item);
       if (reviewed.relationship || reviewed.relationships.length) throw dslError(item.line, 1, "PROTECTED_RELATIONSHIP_LIMIT", "legacy PROTECTED RELATIONSHIP permits one reviewed many-to-one relationship and cannot be combined with LINK paths");
       reviewed.relationship = {
@@ -641,7 +660,7 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
         table: protectedRelationship[4],
         target_key: protectedRelationship[5],
         primary_key: protectedRelationship[6],
-        tenant_key: protectedRelationship[7],
+        ...(protectedRelationship[7] ? { tenant_key: protectedRelationship[7] } : {}),
         ...(protectedRelationship[8] ? { principal_scope_key: protectedRelationship[8] } : {}),
         cardinality: "many_to_one",
         max_fan_out: 1,
@@ -1018,7 +1037,12 @@ function parseCapabilityBlock(block: Block): AgentDslCapabilityAst {
   }
   if (!capability.context) throw dslError(block.line, 1, "CAPABILITY_CONTEXT_REQUIRED", `${block.name} requires USING CONTEXT`);
   if (!capability.schema || !capability.table) throw dslError(block.line, 1, "CAPABILITY_SUBJECT_REQUIRED", `${block.name} requires ON schema.table`);
-  if (!capability.tenantKey) throw dslError(block.line, 1, "CAPABILITY_TENANT_REQUIRED", `${block.name} requires TENANT KEY for 0.1 DSL`);
+  if (!capability.tenantKey && !capability.protectedRead?.organizationScope) {
+    throw dslError(block.line, 1, "CAPABILITY_TENANT_REQUIRED", `${block.name} requires TENANT KEY or a protected single-organization assertion`);
+  }
+  if (capability.tenantKey && capability.protectedRead?.organizationScope) {
+    throw dslError(block.line, 1, "PROTECTED_SCOPE_MODES_CONFLICT", `${block.name} cannot combine TENANT KEY with PROTECTED SINGLE ORGANIZATION`);
+  }
   if (capability.lookup && capability.lookup.column !== capability.primaryKey) {
     throw dslError(
       capability.lookup.line ?? block.line,
@@ -1643,6 +1667,7 @@ function normalizeBindingSource(source: string): AgentDslContextAst["bindings"][
   if (normalized === "SESSION") return "session";
   if (normalized === "CLOUD_SESSION") return "cloud_session";
   if (normalized === "STATIC_DEV") return "static_dev";
+  if (normalized === "REVIEWED_ORGANIZATION") return "reviewed_organization";
   return "http_claim";
 }
 

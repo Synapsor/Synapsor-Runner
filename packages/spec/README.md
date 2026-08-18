@@ -74,8 +74,10 @@ synapsor-runner cloud push ./synapsor.contract.json --dry-run
 - visible and kept-out fields;
 - evidence/query-audit requirements;
 - optional protected named row/aggregate reads with fixed predicates, reviewed
-  one-hop or explicitly reviewed bounded many-to-one paths (up to three hops), explicit missing-row semantics,
-  privacy budgets, and generation-lock/boundary digests;
+  one-hop or explicitly reviewed bounded many-to-one paths (up to three hops),
+  explicit missing-row semantics, privacy budgets, generation-lock/boundary
+  digests, and either tenant-key authority or one immutable reviewed
+  organization assertion;
 - proposal action shape, explicit INSERT/UPDATE/DELETE operation, source-unique
   INSERT deduplication, UPDATE version advancement, numeric bounds, transition
   guards, optional bounded-set cardinality/fixed selection/row and aggregate

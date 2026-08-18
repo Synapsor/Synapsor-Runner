@@ -1998,8 +1998,8 @@ describe("runner cli", () => {
       expect((seenRequest.body?.contract as { kind?: string }).kind).toBe("SynapsorContract");
       expect(seenRequest.body?.local_digest).toMatch(/^sha256:[a-f0-9]{64}$/);
       expect(seenRequest.body?.source_versions).toEqual({
-        "@synapsor/spec": "1.9.0",
-        "@synapsor/dsl": "1.9.0",
+        "@synapsor/spec": "1.10.0",
+        "@synapsor/dsl": "1.10.0",
         "@synapsor/runner": runnerPackage.version,
       });
       expect(output.join("")).not.toContain("secret-cloud-token");

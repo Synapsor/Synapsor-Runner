@@ -28,7 +28,12 @@ import type {
 
 export type RunnerMode = "read_only" | "shadow" | "review" | "cloud";
 export type SourceEngine = "postgres" | "mysql";
-export type ContextProvider = "static_dev" | "environment" | "http_claims" | "cloud_session";
+export type ContextProvider =
+  | "static_dev"
+  | "environment"
+  | "http_claims"
+  | "cloud_session"
+  | "reviewed_organization";
 export type CapabilityKind = "read" | "aggregate_read" | "proposal";
 export type RuntimeWritebackMode = "direct_sql" | "app_handler" | "cloud_worker" | "none";
 export type ToolNameStyle = "canonical" | "openai" | "both";
@@ -431,6 +436,7 @@ export type RuntimeConfig = {
 export type IsolationAssuranceMode = "application_scope" | "postgres_rls" | "tenant_bound";
 export type TrustedContextBindingMode =
   | "process_bound"
+  | "reviewed_fixed_scope"
   | "verified_http_session"
   | "verified_external_session"
   | "mixed"
@@ -766,6 +772,11 @@ export type GeneratedAuthorityLock = {
   reviewed_overrides_digest: `sha256:${string}`;
   protected_authority: string[];
   reporting_timezone?: "UTC";
+  organization_scope?: {
+    mode: "single_organization";
+    organization_id: string;
+    acknowledgement: "all_rows_belong_to_one_organization";
+  };
   authority_dependencies?: {
     schema_version: "synapsor.authority-dependencies.v1";
     credential_posture_fingerprint: `sha256:${string}`;

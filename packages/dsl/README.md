@@ -114,7 +114,7 @@ try {
 - `CREATE AGENT CONTEXT`
 - `CREATE CAPABILITY`
 - `CREATE AGENT WORKFLOW`
-- `BIND ... FROM SESSION|ENVIRONMENT|CLOUD_SESSION|STATIC_DEV|HTTP_CLAIM` in
+- `BIND ... FROM SESSION|ENVIRONMENT|CLOUD_SESSION|STATIC_DEV|HTTP_CLAIM|REVIEWED_ORGANIZATION` in
   the language-neutral grammar; Runner rejects `SESSION` rather than treating
   it as environment input
 - `USING CONTEXT`
@@ -123,6 +123,9 @@ try {
 - `ON schema.table`
 - `PRIMARY KEY`
 - `TENANT KEY`
+- `PROTECTED SINGLE ORGANIZATION 'organization-id' ACKNOWLEDGED` as the
+  tenant-key alternative emitted only from a digest-bound reviewed
+  single-organization boundary
 - `PRINCIPAL SCOPE KEY` for a tenant-additive trusted owner/assignee row lock
 - exact `CONFLICT GUARD column`
 - explicit legacy `CONFLICT GUARD WEAK ROW HASH ACKNOWLEDGED` for ordinary
