@@ -120,6 +120,14 @@ function loadGeneratedAuthorityLock(
   }
   const lockFingerprint = canonicalJsonDigest(lock);
   for (const capability of protectedCapabilities) {
+    const protectedOrganization = capability.protected_read!.organization_scope;
+    if (canonicalJsonDigest(protectedOrganization ?? null)
+      !== canonicalJsonDigest(lock.organization_scope ?? null)) {
+      throw new McpRuntimeError(
+        "GENERATION_LOCK_ORGANIZATION_MISMATCH",
+        `Protected capability ${capability.name} no longer uses the single-organization authority captured by its generation lock.`,
+      );
+    }
     if (capability.protected_read!.generation_lock_fingerprint !== lockFingerprint) {
       throw new McpRuntimeError(
         "GENERATION_LOCK_DIGEST_MISMATCH",
@@ -131,6 +139,15 @@ function loadGeneratedAuthorityLock(
       throw new McpRuntimeError(
         "GENERATION_LOCK_SOURCE_MISMATCH",
         `Protected capability ${capability.name} no longer uses the source and read credential posture captured by its generation lock.`,
+      );
+    }
+  }
+  if (config.production_explore) {
+    const configuredOrganization = config.production_explore.single_organization_id;
+    if ((configuredOrganization ?? null) !== (lock.organization_scope?.organization_id ?? null)) {
+      throw new McpRuntimeError(
+        "GENERATION_LOCK_ORGANIZATION_MISMATCH",
+        "Generated protected authority no longer matches the production single-organization posture.",
       );
     }
   }
@@ -201,6 +218,12 @@ export function assertGeneratedAuthorityLockShape(value: GeneratedAuthorityLock)
     || !Array.isArray(value.protected_authority)
     || value.protected_authority.some((item) => typeof item !== "string")
     || (value.reporting_timezone !== undefined && value.reporting_timezone !== "UTC")
+    || (value.organization_scope !== undefined
+      && (!isRecord(value.organization_scope)
+        || value.organization_scope.mode !== "single_organization"
+        || typeof value.organization_scope.organization_id !== "string"
+        || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(value.organization_scope.organization_id)
+        || value.organization_scope.acknowledgement !== "all_rows_belong_to_one_organization"))
     || (value.authority_dependencies !== undefined
       && !generatedAuthorityDependenciesValid(value.authority_dependencies, digest))) {
     throw new McpRuntimeError(

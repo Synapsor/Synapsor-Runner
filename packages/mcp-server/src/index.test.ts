@@ -122,6 +122,37 @@ describe("database-enforced trusted scope", () => {
     expect(assurance[2]?.remaining_trust_boundary).toContain("resolver");
   });
 
+  it("describes reviewed single-organization authority without claiming a tenant predicate", () => {
+    const config: RuntimeConfig = {
+      version: 1,
+      mode: "read_only",
+      sources: {
+        organization: { engine: "postgres", read_url_env: "DATABASE_URL", read_only: true },
+      },
+      trusted_context: {
+        provider: "reviewed_organization",
+        tenant_binding: "tenant_id",
+        values: {
+          tenant_id: "northgate-construction",
+          organization_id: "northgate-construction",
+        },
+      },
+      capabilities: [],
+    };
+
+    expect(describeIsolationAssurance(config)).toEqual([
+      expect.objectContaining({
+        source: "organization",
+        mode: "application_scope",
+        trusted_context: {
+          providers: ["reviewed_organization"],
+          request_binding: "reviewed_fixed_scope",
+        },
+        controls: ["reviewed_single_organization_authority"],
+      }),
+    ]);
+  });
+
   it("refuses an unattested custom database reader in hardened mode", () => {
     const hardened: RuntimeConfig = {
       version: 1,

@@ -269,6 +269,7 @@ const protectedQueryAuditSchema = z.object({
 
 const protectedTrustedContextSchema = z.object({
   tenant_bound: z.boolean(),
+  organization_bound: z.boolean().optional(),
   principal_bound: z.boolean(),
   provenance: z.string(),
 }).strict();

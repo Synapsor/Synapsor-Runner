@@ -125,7 +125,9 @@ export function buildProtectedReadQuery(
         preserveUnmatched ||= link.unmatched_rows === "keep_null";
         const conditions = [
           `${sourceAlias}.${quoteIdentifier(link.local_key, placeholderStyle)} = ${alias}.${quoteIdentifier(link.target_key, placeholderStyle)}`,
-          `${alias}.${quoteIdentifier(link.tenant_key, placeholderStyle)} = ${bind(context.tenant_id)}`,
+          ...(link.tenant_key
+            ? [`${alias}.${quoteIdentifier(link.tenant_key, placeholderStyle)} = ${bind(context.tenant_id)}`]
+            : []),
           ...(link.principal_scope_key
             ? [`${alias}.${quoteIdentifier(link.principal_scope_key, placeholderStyle)} = ${bind(context.principal)}`]
             : []),
@@ -408,7 +410,7 @@ export function protectedRelationshipPaths(
       schema: relationship.schema,
       table: relationship.table,
       primary_key: relationship.primary_key,
-      tenant_key: relationship.tenant_key,
+      ...(relationship.tenant_key ? { tenant_key: relationship.tenant_key } : {}),
       ...(relationship.principal_scope_key
         ? { principal_scope_key: relationship.principal_scope_key }
         : {}),

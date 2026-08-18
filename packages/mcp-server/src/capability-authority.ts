@@ -84,6 +84,7 @@ export function trustedContextProvidersForSource(config: RuntimeConfig, sourceNa
 
 export function trustedContextBindingMode(providers: ContextProvider[]): TrustedContextBindingMode {
   if (providers.length === 0) return "missing";
+  if (providers.every((provider) => provider === "reviewed_organization")) return "reviewed_fixed_scope";
   if (providers.every((provider) => provider === "http_claims")) return "verified_http_session";
   if (providers.every((provider) => provider === "cloud_session")) return "verified_external_session";
   if (providers.every((provider) => provider === "environment" || provider === "static_dev")) return "process_bound";

@@ -2,9 +2,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
+import { loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AUTO_BOUNDARY_OVERRIDES_VERSION,
+  CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION,
   activateExplorationBoundary,
   buildAutoBoundary,
   explorationBoundaryCandidateDigest,
@@ -125,6 +127,146 @@ describe("Protect This Query", () => {
       mode: "postgres_rls",
       tenant_setting: "app.tenant_id",
     });
+  });
+
+  it("protects and activates a single-organization aggregate without a tenant environment or tenant column", async () => {
+    const fixture = await activatedSingleOrganizationFixture();
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([{
+        dimension_0: "west",
+        measure_0: 8,
+        __cohort_size: 8,
+      }]),
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => Date.parse("2026-08-18T12:00:00.000Z"),
+    });
+    const result = await runtime.explore({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "region" }],
+      top_n: 10,
+    });
+    await runtime.close();
+
+    const created = await createProtectedQueryDraft({
+      projectRoot: fixture.root,
+      token: (result.protect as { token: string }).token,
+      capabilityName: "analytics.single_org_churn_by_region",
+      description: "Count reviewed subscriptions by region for the reviewed organization.",
+      returnsHint: "Returns privacy-suppressed region groups.",
+      now: Date.parse("2026-08-18T12:00:01.000Z"),
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+
+    expect(created.dsl).toContain(
+      "BIND tenant_id FROM REVIEWED_ORGANIZATION northgate-construction REQUIRED",
+    );
+    expect(created.dsl).toContain(
+      "PROTECTED SINGLE ORGANIZATION 'northgate-construction' ACKNOWLEDGED",
+    );
+    expect(created.dsl).not.toContain("TENANT KEY");
+    expect(created.contract.capabilities[0]).toMatchObject({
+      subject: {
+        schema: "public",
+        table: "subscriptions",
+        primary_key: "id",
+      },
+      protected_read: {
+        organization_scope: fixture.boundary.organization_scope,
+      },
+    });
+    expect(created.contract.capabilities[0]?.subject.tenant_key).toBeUndefined();
+    expect(protectedDatabaseScope(created.contract, fixture.boundary)).toBeUndefined();
+
+    const lock = JSON.parse(
+      await fs.readFile(path.join(fixture.root, ".synapsor/generation-lock.json"), "utf8"),
+    ) as GenerationLock;
+    const activated = await activateProtectedQuery({
+      projectRoot: fixture.root,
+      capabilityName: created.draft.capability,
+      expectedDigest: created.draft.contract_digest,
+      operatorConfirmed: true,
+      actor: "reviewer@example.test",
+      env: fixture.env,
+      prepareScopedExploreFn: async () => ({
+        boundary: fixture.boundary,
+        lock,
+        inspection: fixture.inspection,
+      }),
+    });
+    const activeContract = JSON.parse(
+      await fs.readFile(path.join(fixture.root, activated.contract_path), "utf8"),
+    );
+    const config = loadRuntimeConfigFromFile(path.join(fixture.root, activated.config_path));
+    expect(activeContract.contexts[0]).toMatchObject({
+      tenant_binding: "tenant_id",
+      bindings: [{
+        name: "tenant_id",
+        source: "reviewed_organization",
+        key: "northgate-construction",
+        required: true,
+      }],
+    });
+    expect(config.contexts?.protected_operator).toMatchObject({
+      provider: "reviewed_organization",
+      values: {
+        tenant_id: "northgate-construction",
+        organization_id: "northgate-construction",
+      },
+    });
+  });
+
+  it("protects a single-organization depth-three relationship without adding tenant predicates", async () => {
+    const fixture = await activatedSingleOrganizationFixture(
+      singleOrganizationInspection(depthThreeProtectInspection()),
+      (candidate) => {
+        candidate.budgets.max_analysis_relationship_hops = 3;
+      },
+    );
+    const relationship = "subscriptions_product_id_fkey__products_category_id_fkey__categories_department_id_fkey";
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([{
+        dimension_0: "Hardware",
+        measure_0: 8,
+        __cohort_size: 8,
+      }]),
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => Date.parse("2026-08-18T13:00:00.000Z"),
+    });
+    const result = await runtime.explore({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "name", relationship }],
+      top_n: 10,
+    });
+    await runtime.close();
+
+    const created = await createProtectedQueryDraft({
+      projectRoot: fixture.root,
+      token: (result.protect as { token: string }).token,
+      capabilityName: "analytics.single_org_subscriptions_by_department",
+      description: "Count subscriptions by the reviewed department relationship.",
+      returnsHint: "Returns privacy-suppressed department groups.",
+      now: Date.parse("2026-08-18T13:00:01.000Z"),
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+
+    expect(created.dsl.match(/PROTECTED RELATIONSHIP/g)).toHaveLength(3);
+    expect(created.dsl).not.toContain("TENANT KEY");
+    expect(created.contract.capabilities[0]?.protected_read?.relationships?.[0]?.links)
+      .toHaveLength(3);
+    expect(created.contract.capabilities[0]?.protected_read?.relationships?.[0]?.links
+      .every((link) => link.tenant_key === undefined)).toBe(true);
   });
 
   it("freezes an explicitly reviewed depth-three relationship into public DSL", async () => {
@@ -1390,6 +1532,58 @@ async function activatedFixture(
   };
 }
 
+async function activatedSingleOrganizationFixture(
+  inspection = singleOrganizationInspection(churnInspection()),
+  narrow?: (candidate: ReturnType<typeof buildAutoBoundary>["exploration_boundary"]) => void,
+): Promise<{
+  root: string;
+  boundary: ActivatedExplorationBoundary;
+  inspection: SchemaInspection;
+  env: NodeJS.ProcessEnv;
+}> {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-protect-single-org-"));
+  temporaryRoots.push(root);
+  const build = buildAutoBoundary({
+    inspection,
+    project: {
+      root,
+      package_manager: "pnpm",
+      frameworks: [],
+      schema_inputs: [],
+      database_env_names: ["DATABASE_URL"],
+    },
+    sourceEnv: "DATABASE_URL",
+    singleOrganization: { organizationId: "northgate-construction" },
+    configuredTrustedContext: {
+      schema_version: CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION,
+      provider: "environment",
+      tenant_env: "SYNAPSOR_TENANT_ID",
+      principal_env: "SYNAPSOR_PRINCIPAL",
+    },
+  });
+  await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+  const candidate = structuredClone(build.exploration_boundary);
+  narrow?.(candidate);
+  const digest = explorationBoundaryCandidateDigest(candidate);
+  const boundary = await activateExplorationBoundary({
+    projectRoot: root,
+    candidate,
+    expectedDigest: digest,
+    actor: "reviewer@example.test",
+    confirmation: `ACTIVATE ${digest}`,
+    confirmedDecisions: candidate.unresolved_decisions,
+    currentInspection: inspection,
+  });
+  return {
+    root,
+    boundary,
+    inspection,
+    env: {
+      DATABASE_URL: "postgresql://unused.example.test/synapsor",
+    },
+  };
+}
+
 async function activatedDerivedProtectFixture(
   narrow?: (candidate: ReturnType<typeof buildAutoBoundary>["exploration_boundary"]) => void,
 ): Promise<{
@@ -1560,6 +1754,24 @@ function churnInspection(): SchemaInspection {
       },
     }],
   };
+}
+
+function singleOrganizationInspection(inspection: SchemaInspection): SchemaInspection {
+  const singleOrganization = structuredClone(inspection);
+  singleOrganization.global_tenant_isolation_evidence = [];
+  for (const table of singleOrganization.tables) {
+    table.columns = table.columns.filter((field) => field.name !== "tenant_id");
+    table.row_level_security = false;
+    table.row_level_security_policies = [];
+    table.suggestions.tenant_columns = [];
+    table.suggestions.default_visible_columns = table.suggestions.default_visible_columns
+      .filter((field) => field !== "tenant_id");
+    if (table.role_posture) {
+      table.role_posture.row_security_forced = false;
+      table.role_posture.row_security_effective_for_current_role = false;
+    }
+  }
+  return singleOrganization;
 }
 
 function starProtectInspection(): SchemaInspection {

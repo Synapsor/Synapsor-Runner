@@ -41,7 +41,13 @@ export type ResourceSpec = ExtensionFields & {
   single_tenant_dev?: boolean;
 };
 
-export type BindingSource = "session" | "environment" | "cloud_session" | "static_dev" | "http_claim";
+export type BindingSource =
+  | "session"
+  | "environment"
+  | "cloud_session"
+  | "static_dev"
+  | "http_claim"
+  | "reviewed_organization";
 export type ContextBindingSpec = ExtensionFields & {
   name: string;
   source: BindingSource;
@@ -204,7 +210,7 @@ export type ProtectedReadRelationshipSpec = ExtensionFields & {
   schema: string;
   table: string;
   primary_key: string;
-  tenant_key: string;
+  tenant_key?: string;
   principal_scope_key?: string;
   local_key: string;
   target_key: string;
@@ -216,7 +222,7 @@ export type ProtectedReadRelationshipLinkSpec = ExtensionFields & {
   schema: string;
   table: string;
   primary_key: string;
-  tenant_key: string;
+  tenant_key?: string;
   principal_scope_key?: string;
   local_key: string;
   target_key: string;
@@ -340,6 +346,12 @@ export type ProtectedReadLimitsSpec = ExtensionFields & {
   rate_limit_per_minute: number;
 };
 
+export type ProtectedReadOrganizationScopeSpec = ExtensionFields & {
+  mode: "single_organization";
+  organization_id: string;
+  acknowledgement: "all_rows_belong_to_one_organization";
+};
+
 /**
  * A digest-bound named read produced by Protect This Query.
  *
@@ -354,6 +366,7 @@ export type ProtectedReadSpec = ExtensionFields & {
   mode: "rows" | "aggregate";
   boundary_digest: `sha256:${string}`;
   generation_lock_fingerprint: `sha256:${string}`;
+  organization_scope?: ProtectedReadOrganizationScopeSpec;
   predicates?: ProtectedReadPredicateSpec[];
   /**
    * Legacy one-hop form. It remains canonical when present so existing

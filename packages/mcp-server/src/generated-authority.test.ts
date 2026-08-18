@@ -134,6 +134,89 @@ describe("generated protected-authority preflight", () => {
     }
   });
 
+  it("binds protected single-organization authority to the exact lock and production posture", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-generation-organization-"));
+    try {
+      const current = inspection();
+      const organizationScope = {
+        mode: "single_organization",
+        organization_id: "northgate-construction",
+        acknowledgement: "all_rows_belong_to_one_organization",
+      } as const;
+      const lock = {
+        schema_version: "synapsor.generation-lock.v1",
+        compiler_version: "1.7.0",
+        spec_version: "1.9.0",
+        engine: "postgres",
+        source_env: "DATABASE_URL",
+        schema_fingerprint: schemaFingerprintForInspection(current),
+        role_posture_fingerprint: rolePostureFingerprint(current),
+        evidence_fingerprint: `sha256:${"b".repeat(64)}`,
+        generated_contract_digest: `sha256:${"c".repeat(64)}`,
+        reviewed_overrides_digest: `sha256:${"d".repeat(64)}`,
+        protected_authority: ["public.subscriptions"],
+        organization_scope: organizationScope,
+      } as const;
+      const lockPath = path.join(root, "generation-lock.json");
+      await fs.writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`, "utf8");
+      const config = protectedConfig(canonicalJsonDigest(lock));
+      const capability = config.capabilities![0]!;
+      delete capability.target.tenant_key;
+      capability.protected_read!.organization_scope = organizationScope;
+      config.trusted_context = {
+        provider: "reviewed_organization",
+        tenant_binding: "tenant_id",
+        values: {
+          tenant_id: organizationScope.organization_id,
+          organization_id: organizationScope.organization_id,
+        },
+      };
+      config.generated_authority = {
+        generation_lock_path: lockPath,
+        enforcement: "required",
+      };
+
+      await expect(preflightGeneratedAuthority(
+        config,
+        { DATABASE_URL: "postgres://redacted" },
+        async () => current,
+      )).resolves.toBeUndefined();
+
+      capability.protected_read!.organization_scope = {
+        ...organizationScope,
+        organization_id: "another-organization",
+      };
+      await expect(preflightGeneratedAuthority(
+        config,
+        { DATABASE_URL: "postgres://redacted" },
+        async () => current,
+      )).rejects.toMatchObject({ code: "GENERATION_LOCK_ORGANIZATION_MISMATCH" });
+
+      capability.protected_read!.organization_scope = organizationScope;
+      config.production_explore = {
+        enabled: true,
+        project_root: root,
+        required_oauth_scope: "synapsor.explore",
+        budget_hmac_key_env: "SYNAPSOR_EXPLORE_BUDGET_HMAC_KEY",
+        accounting_namespace: "test",
+        single_organization_id: "another-organization",
+        tenant_limits: {
+          max_queries_per_rolling_24_hours: 100,
+          max_extracted_cells_per_rolling_24_hours: 4_000,
+          max_differencing_queries_per_rolling_24_hours: 16,
+          requests_per_minute: 20,
+        },
+      };
+      await expect(preflightGeneratedAuthority(
+        config,
+        { DATABASE_URL: "postgres://redacted" },
+        async () => current,
+      )).rejects.toMatchObject({ code: "GENERATION_LOCK_ORGANIZATION_MISMATCH" });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("keeps protected authority current across unrelated schema drift but rejects a dependent resource change", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-generation-dependencies-"));
     try {

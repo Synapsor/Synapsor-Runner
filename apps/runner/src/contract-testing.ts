@@ -11,8 +11,8 @@ export type ContractTestAssertion = {
   kind: "tool_allow" | "tool_deny" | "cross_principal_deny" | "hide_fields" | "argument_constraint" | "transition_guard" | "set_cap" | "proposal_effect" | "conflict_guard" | "trusted_scope" | "evidence_requirement" | "approval_boundary" | "protected_read_boundary" | "source_unchanged_before_approval" | "operator_boundary";
   capability: string;
   args?: Record<string, unknown>;
-  trusted_context?: { tenant_id: string; principal: string; provenance?: "environment" | "static_dev" | "http_claims" | "cloud_session" };
-  other_trusted_context?: { tenant_id: string; principal: string; provenance?: "environment" | "static_dev" | "http_claims" | "cloud_session" };
+  trusted_context?: { tenant_id: string; principal: string; provenance?: "environment" | "static_dev" | "http_claims" | "cloud_session" | "reviewed_organization" };
+  other_trusted_context?: { tenant_id: string; principal: string; provenance?: "environment" | "static_dev" | "http_claims" | "cloud_session" | "reviewed_organization" };
   expected_code?: string;
   fields?: string[];
   argument?: string;
@@ -431,7 +431,7 @@ function requiresLive(test: ContractTestAssertion): boolean {
 
 function trustedContextFromManifest(record: Record<string, unknown>, id: string): NonNullable<ContractTestAssertion["trusted_context"]> {
   const provenance = record.provenance;
-  if (provenance !== undefined && !["environment", "static_dev", "http_claims", "cloud_session"].includes(String(provenance))) {
+  if (provenance !== undefined && !["environment", "static_dev", "http_claims", "cloud_session", "reviewed_organization"].includes(String(provenance))) {
     throw new Error(`CONTRACT_TEST_PROVENANCE_INVALID: ${id}.trusted_context.provenance`);
   }
   return {

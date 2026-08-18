@@ -226,8 +226,9 @@ The protected clauses mean:
 | `PROTECTED READ ROWS` / `AGGREGATE` | Selects a frozen row or aggregate protected-read shape. |
 | `BOUNDARY DIGEST sha256:...` | Binds the capability to the exact human-activated exploration authority. |
 | `GENERATION LOCK sha256:...` | Binds it to the reviewed schema, role/grant/RLS posture, compiler, and Spec fingerprint. |
-| `PROTECTED RELATIONSHIP name ON local_key REFERENCES schema.table.target_key PRIMARY KEY pk TENANT KEY tenant [PRINCIPAL SCOPE KEY principal]` | Legacy one-hop form. It freezes one inspected, reviewed many-to-one path with fan-out one and cannot be mixed with `LINK` declarations. |
-| `PROTECTED RELATIONSHIP name LINK 1|2|3 ON local_key REFERENCES schema.table.target_key PRIMARY KEY pk TENANT KEY tenant [PRINCIPAL SCOPE KEY principal] UNMATCHED EXCLUDE|KEEP NULL` | Additive path form. Up to three user-named paths may contain one to three contiguous, ordered many-to-one links within the source boundary's reviewed depth. Missing-row semantics are explicit and digest-bound. |
+| `PROTECTED SINGLE ORGANIZATION 'organization-id' ACKNOWLEDGED` | Freezes the exact organization reviewed for a whole-organization boundary. It replaces, and cannot be combined with, root or relationship `TENANT KEY` clauses. |
+| `PROTECTED RELATIONSHIP name ON local_key REFERENCES schema.table.target_key PRIMARY KEY pk [TENANT KEY tenant] [PRINCIPAL SCOPE KEY principal]` | Legacy one-hop form. It freezes one inspected, reviewed many-to-one path with fan-out one and cannot be mixed with `LINK` declarations. `TENANT KEY` is mandatory for tenant-scoped capabilities and forbidden for a protected single organization. |
+| `PROTECTED RELATIONSHIP name LINK 1|2|3 ON local_key REFERENCES schema.table.target_key PRIMARY KEY pk [TENANT KEY tenant] [PRINCIPAL SCOPE KEY principal] UNMATCHED EXCLUDE|KEEP NULL` | Additive path form. Up to three user-named paths may contain one to three contiguous, ordered many-to-one links within the source boundary's reviewed depth. Missing-row semantics are explicit and digest-bound. `TENANT KEY` follows the same conditional rule as the one-hop form. |
 | `PROTECTED FILTER field OP FIXED value` | Freezes a reviewed literal. `OP` is `EQ`, `NEQ`, `LT`, `LTE`, `GT`, `GTE`, or bounded fixed-list `IN`. |
 | `PROTECTED FILTER field OP ARG name` | Allows only one declared typed/bounded argument at that reviewed literal position. |
 | `ALLOW READ ...` / `ROW ORDER BY ...` | Freezes row projection and up to three fixed sort fields for row mode. |
@@ -262,6 +263,24 @@ not have to transcribe digests or limits. The generated DSL compiles through
 `@synapsor/dsl` into the optional default-deny `protected_read` field in the
 canonical Spec. Existing contracts with no `protected_read` field normalize
 and hash exactly as before.
+
+A protected capability has exactly one tenant-authority form:
+
+- a normal multi-tenant capability keeps `TENANT KEY` on the root and each
+  protected relationship target, and Runner binds the trusted tenant value as
+  a SQL predicate;
+- a boundary reviewed for one whole organization instead emits
+  `PROTECTED SINGLE ORGANIZATION`, omits every `TENANT KEY`, and compiles a
+  required `REVIEWED_ORGANIZATION` context binding to that exact organization
+  ID. Runner emits no tenant predicate because the activated boundary already
+  attests that every reviewed row belongs to that organization.
+
+The second form is not a development shortcut. Its organization ID is part of
+the canonical capability digest and must match both the generation lock and
+the serving production configuration. Repointing the source is still caught by
+the existing source/schema/role generation lock, and changing the organization
+posture fails before execution. A reviewed `PRINCIPAL SCOPE KEY` remains
+independent and still adds a trusted principal predicate where declared.
 
 In a `PROTECTED RELATIONSHIP` declaration, `name`, the keys, and the
 `schema.table.target_key` reference are user-reviewed identifiers generated

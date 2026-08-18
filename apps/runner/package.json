@@ -109,7 +109,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
-    "@synapsor/spec": "workspace:^1.9.0",
+    "@synapsor/spec": "workspace:^1.10.0",
     "jose": "6.2.3",
     "jsonc-parser": "3.3.1",
     "mysql2": "^3.11.0",
