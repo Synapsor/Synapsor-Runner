@@ -2257,6 +2257,372 @@ describe("Workbench BYOM Ask", () => {
     },
   );
 
+  it.each(["openai", "anthropic"] as const)(
+    "accepts a reviewed enum field as the category dimension in a comparative question through %s",
+    async (provider) => {
+      let exploreCalls = 0;
+      const inspections = {
+        id: "public.inspections",
+        fields: [{ id: "technician_grade" }, { id: "duration_minutes" }],
+        groupable_fields: ["technician_grade"],
+        field_enums: {
+          technician_grade: ["apprentice", "qualified", "senior"],
+        },
+        filter_operators: { technician_grade: ["eq", "in"] },
+        aggregate_measure_functions: { duration_minutes: ["avg"] },
+      };
+      const gateway: AskToolGateway = {
+        mode: "authoring",
+        listTools: () => authoringTools,
+        callTool: async () => {
+          exploreCalls += 1;
+          return {
+            ok: true,
+            value: {
+              ok: true,
+              data: [
+                { technician_grade: "apprentice", avg_duration_minutes: 54 },
+                { technician_grade: "senior", avg_duration_minutes: 31 },
+              ],
+              source_database_changed: false,
+            },
+          };
+        },
+        describeOperatorMetadata: async () => ({
+          ok: true,
+          value: { ok: true, resources: [inspections], source_database_changed: false },
+        }),
+        close: async () => undefined,
+      };
+      const session = new WorkbenchAskSession();
+      session.configure(provider === "openai" ? {
+        provider,
+        model: "gpt-5-mini",
+        api_key: "openai-session-key",
+        authority_digest: askToolSurfaceDigest(authoringTools),
+        egress_acknowledged: true,
+      } : {
+        provider,
+        model: "claude-test",
+        api_key: "anthropic-session-key",
+        authority_digest: askToolSurfaceDigest(authoringTools),
+        egress_acknowledged: true,
+      });
+      const plan = {
+        kind: "aggregate",
+        resource: "public.inspections",
+        measures: [{ function: "avg", field: "duration_minutes" }],
+        dimensions: [{ field: "technician_grade" }],
+      };
+      let requests = 0;
+      const result = await session.run(
+        "Do junior engineers work slower than the senior ones?",
+        gateway,
+        {
+          requestJson: async () => {
+            requests += 1;
+            if (provider === "openai") {
+              return requests === 1
+                ? openAiToolCall("enum_category_comparison", "app__explore_data", { plan })
+                : openAiText("The reviewed category comparison is available.");
+            }
+            return requests === 1
+              ? {
+                  status: 200,
+                  body: {
+                    content: [{
+                      type: "tool_use",
+                      id: "enum_category_comparison_anthropic",
+                      name: "app__explore_data",
+                      input: { plan },
+                    }],
+                  },
+                }
+              : {
+                  status: 200,
+                  body: { content: [{ type: "text", text: "The reviewed category comparison is available." }] },
+                };
+          },
+        },
+      );
+
+      expect(result.tool_calls).toEqual([
+        expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+      ]);
+      expect(exploreCalls).toBe(1);
+    },
+  );
+
+  it.each([
+    {
+      case: "one-sided equality",
+      where: [{ field: "technician_grade", op: "eq", value: "senior" }],
+    },
+    {
+      case: "invented comparison partner",
+      where: [{ field: "technician_grade", op: "in", value: ["qualified", "senior"] }],
+    },
+    {
+      case: "contradictory second filter",
+      where: [
+        { field: "technician_grade", op: "in", value: ["apprentice", "senior"] },
+        { field: "technician_grade", op: "eq", value: "senior" },
+      ],
+    },
+  ])("refuses a categorical comparison narrowed by $case", async ({ where }) => {
+    let exploreCalls = 0;
+    const inspections = {
+      id: "public.inspections",
+      groupable_fields: ["technician_grade"],
+      field_enums: { technician_grade: ["apprentice", "qualified", "senior"] },
+      filter_operators: { technician_grade: ["eq", "in"] },
+      aggregate_measure_functions: { duration_minutes: ["avg"] },
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: { ok: true, resources: [inspections], source_database_changed: false },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-5-mini",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    const result = await session.run(
+      "Do junior engineers work slower than the senior ones?",
+      gateway,
+      {
+        requestJson: async () => openAiToolCall(
+          "enum_category_comparison_filtered",
+          "app__explore_data",
+          {
+            plan: {
+              kind: "aggregate",
+              resource: "public.inspections",
+              measures: [{ function: "avg", field: "duration_minutes" }],
+              dimensions: [{ field: "technician_grade" }],
+              where,
+            },
+          },
+        ),
+      },
+    );
+
+    expect(result.tool_calls).toHaveLength(2);
+    expect(result.tool_calls.every((trace) =>
+      trace.error_code === "ASK_PLAN_INTENT_MISMATCH" && trace.status === "refused")).toBe(true);
+    expect(result.tool_calls[0]?.result).toMatchObject({
+      intent_mismatch_kind: "filter",
+      source_query_executed: false,
+      explore_budget_consumed: false,
+    });
+    expect(JSON.stringify(result.tool_calls[0]?.result)).toContain("compares categories");
+    expect(exploreCalls).toBe(0);
+  });
+
+  it("does not mistake a reviewed category comparison with a numeric measure for missing banding", async () => {
+    let exploreCalls = 0;
+    let requests = 0;
+    const visits = {
+      id: "vetdb.visits",
+      groupable_fields: ["visit_type"],
+      field_enums: { visit_type: ["routine", "emergency"] },
+      filter_operators: { visit_type: ["eq", "in"] },
+      aggregate_measure_functions: { wait_minutes: ["avg"] },
+      numeric_bands: [],
+      auto_bands: [],
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return {
+          ok: true,
+          value: {
+            ok: true,
+            data: [
+              { visit_type: "emergency", avg_wait_minutes: 58 },
+              { visit_type: "routine", avg_wait_minutes: 21 },
+            ],
+            source_database_changed: false,
+          },
+        };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: { ok: true, resources: [visits], source_database_changed: false },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-5-mini",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    const result = await session.run(
+      "Do emergency visits wait longer than routine ones?",
+      gateway,
+      {
+        requestJson: async () => {
+          requests += 1;
+          return requests === 1
+            ? openAiToolCall("enum_wait_comparison", "app__explore_data", {
+              plan: {
+                kind: "aggregate",
+                resource: "vetdb.visits",
+                measures: [{ function: "avg", field: "wait_minutes" }],
+                dimensions: [{ field: "visit_type" }],
+                where: [{ field: "visit_type", op: "in", value: ["emergency", "routine"] }],
+              },
+            })
+            : openAiText("Emergency visits have a longer reviewed average wait.");
+        },
+      },
+    );
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]);
+    expect(exploreCalls).toBe(1);
+  });
+
+  it("keeps an enum value as a filter when than compares time periods rather than categories", async () => {
+    let exploreCalls = 0;
+    const visits = {
+      id: "vetdb.visits",
+      groupable_fields: ["visit_type"],
+      field_enums: { visit_type: ["routine", "emergency"] },
+      filter_operators: { visit_type: ["eq", "in"] },
+      time_bucket_fields: { visited_on: ["month"] },
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: { ok: true, resources: [visits], source_database_changed: false },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-5-mini",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    const result = await session.run(
+      "Are emergency visits higher this month than last month?",
+      gateway,
+      {
+        requestJson: async () => openAiToolCall("temporal_enum_comparison", "app__explore_data", {
+          plan: {
+            kind: "aggregate",
+            resource: "vetdb.visits",
+            measures: [{ function: "count" }],
+            dimensions: [{ field: "visit_type" }],
+            time_bucket: { field: "visited_on", bucket: "month" },
+          },
+        }),
+      },
+    );
+
+    expect(result.tool_calls).toHaveLength(2);
+    expect(result.tool_calls.every((trace) =>
+      trace.error_code === "ASK_PLAN_INTENT_MISMATCH" && trace.status === "refused")).toBe(true);
+    expect(result.tool_calls[0]?.result).toMatchObject({ intent_mismatch_kind: "filter" });
+    expect(JSON.stringify(result.tool_calls[0]?.result)).toContain("plan.where");
+    expect(exploreCalls).toBe(0);
+  });
+
+  it("reports missing reviewed numeric banding instead of inventing an entity from a phrasal verb", async () => {
+    let exploreCalls = 0;
+    const inspections = {
+      id: "public.inspections",
+      groupable_fields: ["outcome"],
+      aggregate_measure_functions: { duration_minutes: ["avg"] },
+      numeric_bands: [],
+      auto_bands: [],
+      relationships: [{
+        id: "inspections_turbine_id_fkey",
+        target_resource: "public.turbines",
+        groupable_fields: ["site", "model"],
+        aggregate_measure_functions: {
+          commissioned_year: ["avg"],
+          rated_kw: ["avg"],
+          hub_height_m: ["avg"],
+        },
+        numeric_bands: [],
+        auto_bands: [],
+      }],
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: { ok: true, resources: [inspections], source_database_changed: false },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-5-mini",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    const result = await session.run("Do the bigger units break down more?", gateway, {
+      requestJson: async () => openAiToolCall("unreviewed_magnitude_group", "app__explore_data", {
+        plan: {
+          kind: "aggregate",
+          resource: "public.inspections",
+          measures: [{ function: "count" }],
+          dimensions: [{ field: "outcome" }],
+        },
+      }),
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ error_code: "ASK_PLAN_INTENT_MISMATCH", status: "refused" }),
+    ]);
+    expect(result.tool_calls[0]?.result).toMatchObject({
+      intent_mismatch_kind: "permission",
+      source_query_executed: false,
+      explore_budget_consumed: false,
+    });
+    const refusal = JSON.stringify(result.tool_calls[0]?.result);
+    expect(refusal).toContain("no numeric band");
+    expect(refusal).toContain("press G");
+    expect(refusal).not.toContain("explicitly names \\\"more\\\"");
+    expect(exploreCalls).toBe(0);
+  });
+
   it("refuses an enum filter that includes an unrequested reviewed value", async () => {
     let exploreCalls = 0;
     const visits = {

@@ -37,9 +37,13 @@
   about legacy active gaps. Plans still accept exact database IDs only, and
   local stdio and production HTTP use the same catalog projection.
 - Treats reviewed enum values as deterministic Ask intent. A named value must
-  become an exact filter rather than an unrelated grouping, wider value sets and
-  cross-field ambiguity refuse before execution, and native OpenAI and
-  Anthropic adapters receive one bounded correction. Runner also discards
+  normally become an exact filter rather than an unrelated grouping; an
+  explicit category comparison instead uses that enum as its dimension and
+  cannot narrow the plan to one side. Wider value sets and cross-field
+  ambiguity refuse before execution, and native OpenAI and Anthropic adapters
+  receive one bounded correction. Magnitude comparisons without reviewed
+  numeric bands now name the band/path limitation rather than an invented
+  entity or unrelated grouping. Runner also discards
   ungrounded provider prose, treats generic words such as `cases` as row nouns
   unless the catalog defines that resource, and chooses a reviewed trend grain
   that fits catalog coverage and group limits.
