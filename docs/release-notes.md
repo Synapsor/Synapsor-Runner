@@ -45,10 +45,14 @@ for the Synapsor Cloud CLI.
   activation, while `doctor` identifies legacy active gaps. Exact IDs remain the
   only plan authority, and local stdio and production HTTP return the same
   metadata.
-- Ask now treats a named reviewed enum value as an exact filter intent, refuses
-  wider or ambiguous value sets before execution, and gives OpenAI/Anthropic one
-  bounded correction. Ungrounded provider prose is discarded unless a reviewed
-  Explore plan succeeds. Generic row wording such as `cases` no longer becomes
+- Ask now treats a named reviewed enum value as an exact filter intent, except
+  when the question explicitly compares categories and therefore requires the
+  enum dimension. It refuses one-sided category comparisons plus wider or
+  ambiguous filter sets before execution, and gives OpenAI/Anthropic one bounded
+  correction. Magnitude questions without reviewed numeric bands report the
+  missing band/path authority instead of substituting another field. Ungrounded
+  provider prose is discarded unless a reviewed Explore plan succeeds. Generic
+  row wording such as `cases` no longer becomes
   a false missing-resource error, unqualified trends are steered to a grain that
   fits reviewed coverage/group limits, and access guidance no longer matches a
   one-character draft field inside an unrelated word.

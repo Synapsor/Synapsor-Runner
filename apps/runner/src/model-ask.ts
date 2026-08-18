@@ -2284,6 +2284,12 @@ function explorePlanIntentMismatch(
   if (enumIntent.mismatch) {
     return { kind: "filter", message: enumIntent.mismatch };
   }
+  const numericBandingLimitation = enumIntent.groupedFields.size === 0
+    ? reviewedNumericBandingLimitation(normalizedQuestion, plan, resource)
+    : undefined;
+  if (numericBandingLimitation) {
+    return { kind: "permission", message: numericBandingLimitation };
+  }
 
   const dimensions = Array.isArray(plan.dimensions) ? plan.dimensions.filter(isRecord) : [];
   if (dimensions.length > 0) {
@@ -2292,6 +2298,7 @@ function explorePlanIntentMismatch(
         allowUnqualifiedTrailingField: options.allowUnqualifiedTrailingField,
         plan,
         enumFilteredFields: enumIntent.filteredFields,
+        enumGroupedFields: enumIntent.groupedFields,
       });
       if (mismatch) return relationshipDimensionMismatch(normalizedQuestion, resource, mismatch);
     }
@@ -2382,7 +2389,10 @@ function explicitQuestionEntity(question: string): string | undefined {
     new RegExp(String.raw`\bhow\s+many\s+(?:the\s+)?(.+?)${suffix}`, "iu"),
     new RegExp(String.raw`\b(?:number|count)\s+of\s+(?:the\s+)?(.+?)${suffix}`, "iu"),
     new RegExp(String.raw`\bcount\s+(?:the\s+)?(.+?)${suffix}`, "iu"),
-    new RegExp(String.raw`\bbreak\s+down\s+(?:the\s+)?(.+?)${suffix}`, "iu"),
+    // "Break down orders by status" is a command. In "do machines break
+    // down more?", break down is the business predicate and must not create
+    // the invented entity "more".
+    new RegExp(String.raw`^(?:(?:please|(?:can|could|would)\s+you)\s+)?break\s+down\s+(?:the\s+)?(.+?)${suffix}`, "iu"),
     new RegExp(String.raw`\bshow\s+(?:the\s+)?(.+?)${suffix}`, "iu"),
     new RegExp(String.raw`\b(?:show|list|give\s+me)\s+(?:all|every)\s+(?:the\s+)?(.+?)${suffix}`, "iu"),
   ];
@@ -2559,10 +2569,10 @@ function reviewedEnumIntentCheck(
   question: string,
   plan: Record<string, unknown>,
   resource: Record<string, unknown>,
-): { filteredFields: Set<string>; mismatch?: string } {
+): { filteredFields: Set<string>; groupedFields: Set<string>; mismatch?: string } {
   const intents = reviewedEnumIntentsNamedInQuestion(question, resource);
   if (intents.length === 0) {
-    return { filteredFields: new Set() };
+    return { filteredFields: new Set(), groupedFields: new Set() };
   }
   const intentsByField = new Map<string, ReviewedEnumIntent[]>();
   for (const intent of intents) {
@@ -2578,6 +2588,7 @@ function reviewedEnumIntentCheck(
     });
     return {
       filteredFields: new Set(),
+      groupedFields: new Set(),
       mismatch: `The question names reviewed allowed values that match more than one field: ${fields.join(", ")}. `
         + "Runner will not guess which field supplies the filter; use one exact reviewed field or clarify the question.",
     };
@@ -2587,6 +2598,46 @@ function reviewedEnumIntentCheck(
   const expectedValues = uniqueByJson(fieldIntents.map((candidate) => candidate.value));
   const expectedDigests = new Set(expectedValues.map((value) => canonicalJsonDigest(value)));
   const filters = Array.isArray(plan.where) ? plan.where.filter(isRecord) : [];
+  const fieldReference = `${intent.relationship ?? ""}\u0000${intent.field}`;
+  const sameFieldFilters = filters.filter((filter) =>
+    filter.field === intent.field
+    && (typeof filter.relationship === "string" ? filter.relationship : undefined) === intent.relationship);
+  const dimensions = Array.isArray(plan.dimensions) ? plan.dimensions.filter(isRecord) : [];
+  const groupsComparedField = dimensions.some((dimension) =>
+    dimension.field === intent.field
+    && (typeof dimension.relationship === "string" ? dimension.relationship : undefined) === intent.relationship);
+  const categoryComparison = questionUsesReviewedEnumAsComparisonCategory(question, fieldIntents);
+  if (categoryComparison) {
+    if (!groupsComparedField) {
+      return {
+        filteredFields: new Set(),
+        groupedFields: new Set(),
+        mismatch: `The question compares categories on ${intent.owner_resource}.${intent.field}, but plan.dimensions does not group that exact reviewed field. `
+          + "Use the reviewed enum field as the dimension; Runner will not replace the comparison with a scalar filter or another grouping.",
+      };
+    }
+    if (sameFieldFilters.length === 0) {
+      return { filteredFields: new Set(), groupedFields: new Set([fieldReference]) };
+    }
+    const comparisonFilterIsBounded = sameFieldFilters.length === 1 && (() => {
+      const filter = sameFieldFilters[0]!;
+      if (filter.op !== "in" || !Array.isArray(filter.value)) return false;
+      const actualDigests = new Set(filter.value.map((value) => canonicalJsonDigest(value)));
+      if (actualDigests.size < 2) return false;
+      if (expectedValues.length < 2) return false;
+      if (![...expectedDigests].every((digest) => actualDigests.has(digest))) return false;
+      return actualDigests.size === expectedDigests.size;
+    })();
+    if (comparisonFilterIsBounded) {
+      return { filteredFields: new Set(), groupedFields: new Set([fieldReference]) };
+    }
+    return {
+      filteredFields: new Set(),
+      groupedFields: new Set(),
+      mismatch: `The question compares categories on ${intent.owner_resource}.${intent.field}, but plan.where narrows that field to fewer or different categories. `
+        + "Keep the reviewed field as a dimension without a category filter, or use an exact reviewed in-filter containing the compared values.",
+    };
+  }
   const exactFilter = filters.some((filter) => {
     if (filter.field !== intent.field
       || (typeof filter.relationship === "string" ? filter.relationship : undefined) !== intent.relationship) {
@@ -2601,16 +2652,86 @@ function reviewedEnumIntentCheck(
     return actualDigests.size === expectedDigests.size
       && [...expectedDigests].every((digest) => actualDigests.has(digest));
   });
-  const fieldReference = `${intent.relationship ?? ""}\u0000${intent.field}`;
-  if (exactFilter) return { filteredFields: new Set([fieldReference]) };
+  if (exactFilter) return { filteredFields: new Set([fieldReference]), groupedFields: new Set() };
   const namedValues = expectedValues.length === 1
     ? `value ${JSON.stringify(expectedValues[0])}`
     : `values ${expectedValues.map((value) => JSON.stringify(value)).join(", ")}`;
   return {
     filteredFields: new Set(),
+    groupedFields: new Set(),
     mismatch: `The question names reviewed allowed ${namedValues} on ${intent.owner_resource}.${intent.field}, `
       + "but plan.where does not constrain that exact field to exactly those values. A value mention filters rows; it does not by itself authorize grouping all values or adding other values.",
   };
+}
+
+function questionUsesReviewedEnumAsComparisonCategory(
+  question: string,
+  intents: ReviewedEnumIntent[],
+): boolean {
+  const normalized = normalizedEntityName(question);
+  if (!normalized) return false;
+  const distinctValues = new Set(intents.map((intent) => canonicalJsonDigest(intent.value)));
+  if (distinctValues.size >= 2
+    && /\b(?:compare|compared|versus|vs|difference\s+between)\b/u.test(normalized)) {
+    return true;
+  }
+  const thanIndex = normalized.indexOf(" than ");
+  if (thanIndex < 0) return false;
+  const comparisonPartner = normalized.slice(thanIndex + " than ".length);
+  return intents.some((intent) =>
+    questionMentionsReviewedEnumValue(comparisonPartner, intent.value));
+}
+
+function reviewedNumericBandingLimitation(
+  question: string,
+  plan: Record<string, unknown>,
+  resource: Record<string, unknown>,
+): string | undefined {
+  if (!questionRequestsMagnitudeComparison(question)) return undefined;
+  const dimensions = Array.isArray(plan.dimensions) ? plan.dimensions.filter(isRecord) : [];
+  if (dimensions.some((dimension) => dimension.numeric_band !== undefined)) return undefined;
+
+  const owners = [
+    resource,
+    ...(Array.isArray(resource.relationships) ? resource.relationships.filter(isRecord) : []),
+  ];
+  const unbandedNumericFields = owners.flatMap((owner) => {
+    const aggregateFields = isRecord(owner.aggregate_measure_functions)
+      ? Object.keys(owner.aggregate_measure_functions)
+      : [];
+    const groupable = new Set(safeStringList(owner.groupable_fields));
+    return aggregateFields.filter((field) => !groupable.has(field));
+  });
+  if (unbandedNumericFields.length === 0) return undefined;
+
+  const reviewedBands = owners.flatMap((owner) => [
+    ...(Array.isArray(owner.numeric_bands)
+      ? owner.numeric_bands.filter(isRecord).flatMap((band) =>
+          typeof band.name === "string" ? [band.name] : [])
+      : []),
+    ...(Array.isArray(owner.auto_bands)
+      ? owner.auto_bands.filter(isRecord).flatMap((band) =>
+          typeof band.field === "string" ? [`auto:${band.field}`] : [])
+      : []),
+  ]);
+  const proposedDimensions = dimensions.flatMap((dimension) =>
+    typeof dimension.field === "string" ? [dimension.field] : []);
+  const proposal = proposedDimensions.length > 0
+    ? `The proposed plan grouped ${proposedDimensions.join(", ")} instead.`
+    : "The proposed plan did not use a numeric-band dimension.";
+  if (reviewedBands.length > 0) {
+    return `The question asks whether an outcome changes with numeric magnitude, but the plan does not use a matching reviewed numeric band. ${proposal} `
+      + `Available reviewed bands are ${reviewedBands.join(", ")}. Retry with one exact reviewed band; Runner will not substitute an unrelated categorical dimension.`;
+  }
+  return `The question asks whether an outcome changes with numeric magnitude, but this reviewed path exposes no numeric band and raw numeric values cannot be grouped safely. ${proposal} `
+    + "In /access, select the intended table and press G to review a fixed or automatic numeric band. If the outcome is on another table, also review the required relationship or child-count path, then activate the new digest. Runner will not substitute an unrelated categorical dimension.";
+}
+
+function questionRequestsMagnitudeComparison(question: string): boolean {
+  const magnitude = /\b(?:bigger|larger|smaller|heavier|lighter|older|newer|taller|shorter|wider|narrower|longer)\b/u.test(question);
+  const outcomeComparison = /\b(?:more|less|fewer|higher|lower|faster|slower|better|worse|heavier|lighter)\b/u.test(question)
+    || /\bthan\b/u.test(question);
+  return magnitude && outcomeComparison;
 }
 
 function questionEntityMatchesPlan(
@@ -2724,6 +2845,7 @@ function planDimensionIntentMismatch(
     allowUnqualifiedTrailingField?: boolean;
     plan?: Record<string, unknown>;
     enumFilteredFields?: Set<string>;
+    enumGroupedFields?: Set<string>;
   } = {},
 ): string | undefined {
   const genericMismatch = (field: string) =>
@@ -2762,7 +2884,8 @@ function planDimensionIntentMismatch(
     : safeStringList(resource.groupable_fields).includes(dimension.field);
   if (!reviewed) return undefined;
   const fieldReference = `${dimension.relationship ?? ""}\u0000${dimension.field}`;
-  if (options.enumFilteredFields?.has(fieldReference)) return undefined;
+  if (options.enumFilteredFields?.has(fieldReference)
+    || options.enumGroupedFields?.has(fieldReference)) return undefined;
   if (questionMentionsReviewedField(question, fieldOwner, dimension.field)) return undefined;
   if (!relationship && questionNamesSingleReviewedTimeField(question, dimension.field, resource)) {
     return undefined;
@@ -5125,7 +5248,8 @@ function askSystemPrompt(): string {
     "Do not offer a follow-up data operation unless its exact fields, operations, and relationship path are present in the reviewed catalog or a successful Runner result; call app.describe_data when unsure.",
     "If the reviewed catalog cannot answer, do not guess table or field names and do not tell the user to add guessed schema or access; state the limitation only because the Synapsor client separately presents any source-proven operator review path.",
     "For each question, request only the minimum measures, dimensions, filters, time grain, and relationships needed to answer it; never add a related-looking measure just because it is available.",
-    "A question that names or paraphrases one reviewed allowed value normally requests a where filter on that value. Do not group by that field unless the user also asks for a breakdown, comparison, or distribution across its values.",
+    "A question that names or paraphrases one reviewed allowed value normally requests a where filter on that value. Do not group by that field unless the user also asks for a breakdown, comparison, or distribution across its values. In a categorical comparison such as one group being faster than another, keep the reviewed enum field as the dimension; do not filter the plan down to only one side.",
+    "If a question compares outcomes by numeric magnitude but focused metadata offers no reviewed fixed or automatic numeric band, do not substitute an unrelated categorical dimension. Explain that the intended numeric band and any required relationship or child-count path need human review.",
     "For related fields, keep resource set to the reviewed root that owns the counted entity or measure, use the target field alias by itself, and put the exact active path alias in the separate relationship property; never concatenate a relationship or table name into field.",
     "When the user asks for results by an entity such as account or customer, do not group by a foreign-key identifier unless the catalog explicitly marks it groupable. Prefer an exact active many-to-one relationship and a reviewed grouping field on the related entity, while keeping the root resource that owns the counted records.",
     "Use one aggregate measure unless the user explicitly asks for multiple measures or the requested reviewed calculation requires them; for example, a revenue-only question does not justify also requesting discounts.",

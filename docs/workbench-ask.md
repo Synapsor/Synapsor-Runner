@@ -157,14 +157,26 @@ before execution and names both choices. Use the full ID or a reviewed label to
 disambiguate. This resolution is derived from reviewed metadata; it contains no
 domain vocabulary.
 
-Reviewed enum values also participate in intent checking. If the question names
-an allowed value such as `emergency`, the plan must constrain the matching exact
-field in `where`; merely grouping all values does not answer that question. An
-`in` filter must contain exactly the values named by the question, not a wider
-set, and a value that exists on more than one reviewed field is refused as
-ambiguous. OpenAI and Anthropic receive one bounded correction containing the
-exact field/value requirement. A refused first attempt runs no source query and
-spends no Explore budget.
+Reviewed enum values also participate in intent checking. Normally, if the
+question names an allowed value such as `emergency`, the plan must constrain the
+matching exact field in `where`; merely grouping all values does not answer that
+question. A categorical comparison is the deliberate exception: “are
+apprentices slower than senior staff?” may group the reviewed grade enum, and
+must not filter the result down to only one side. A time comparison such as
+“emergency visits this month versus last month” still filters `emergency` and
+compares periods. An `in` filter must contain exactly the values named by a
+normal filter question, not a wider set, and a value that exists on more than
+one reviewed field is refused as ambiguous. OpenAI and Anthropic receive one
+bounded correction containing the exact requirement. A refused first attempt
+runs no source query and spends no Explore budget.
+
+Magnitude comparisons need reviewed numeric grouping. If a question asks
+whether bigger, older, or heavier records have a different outcome but the
+intended field has no fixed or automatic numeric band, Ask refuses before
+execution and points to `G Reviewed metrics and numeric bands`. Raw numeric
+values never become a grouping fallback, and an unrelated categorical field is
+not substituted. A cross-table version also names the need for a reviewed
+relationship or child-count path.
 
 For business-data questions, official-provider prose is not accepted as an
 answer until a reviewed Explore plan succeeds. If a provider answers from
