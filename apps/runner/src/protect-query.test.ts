@@ -183,6 +183,24 @@ describe("Protect This Query", () => {
     expect(created.contract.capabilities[0]?.subject.tenant_key).toBeUndefined();
     expect(protectedDatabaseScope(created.contract, fixture.boundary)).toBeUndefined();
 
+    const differentOrganizationBoundary = structuredClone(fixture.boundary);
+    differentOrganizationBoundary.organization_scope = {
+      ...differentOrganizationBoundary.organization_scope!,
+      organization_id: "southgate-construction",
+    };
+    expect(() => protectedDatabaseScope(created.contract, differentOrganizationBoundary))
+      .toThrow("Protected capability organization scope does not match the activated exploration boundary.");
+
+    const unscopedBoundary = structuredClone(fixture.boundary);
+    delete unscopedBoundary.organization_scope;
+    expect(() => protectedDatabaseScope(created.contract, unscopedBoundary))
+      .toThrow("Protected capability organization scope does not match the activated exploration boundary.");
+
+    const unscopedContract = structuredClone(created.contract);
+    delete unscopedContract.capabilities[0]!.protected_read!.organization_scope;
+    expect(() => protectedDatabaseScope(unscopedContract, fixture.boundary))
+      .toThrow("Protected capability organization scope does not match the activated exploration boundary.");
+
     const lock = JSON.parse(
       await fs.readFile(path.join(fixture.root, ".synapsor/generation-lock.json"), "utf8"),
     ) as GenerationLock;
