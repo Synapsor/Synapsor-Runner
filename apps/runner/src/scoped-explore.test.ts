@@ -2987,6 +2987,7 @@ describe("Scoped Explore", () => {
         reviewed_metadata_is_semantic_only: true,
         exact_ids_required_in_plans: true,
         opaque_identifier_behavior: "do_not_guess; ask the operator to add a reviewed label or description",
+        coded_value_behavior: "do_not_infer_business_meaning_from_codes; use exact codes only when the question names them or reviewed metadata explains them",
       });
       expect(JSON.stringify(resource.fields)).not.toMatch(/billing_token|Internal billing credential|Kept out/i);
       expect(resource.suggested_questions.map((question: { text: string }) => question.text).join("\n"))
@@ -3033,6 +3034,68 @@ describe("Scoped Explore", () => {
         measures: [{ function: "count" }],
         top_n: 10,
       }, fixture.boundary)).toMatchObject({ resource: "public.subscriptions" });
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("advertises coded enum semantics without blocking local or production Explore", async () => {
+    const inspection = churnInspection();
+    const table = inspection.tables[0]!;
+    table.columns.push({
+      ...column("ph_code", "text"),
+      enum_values: ["P1", "P2", "P3"],
+    });
+    table.suggestions.default_visible_columns.push("ph_code");
+    const fixture = await activatedFixture((candidate) => {
+      const resource = candidate.pack.resources[0]!;
+      resource.groupable_fields = ["ph_code"];
+    }, inspection);
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: fixedExecutor([]),
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    try {
+      const operatorDescription = await runtime.describe({ resource: "public.subscriptions" }) as any;
+      expect(JSON.stringify(operatorDescription.resources[0].suggested_questions))
+        .not.toMatch(/ph code|P1|P2|P3/i);
+      for (const mode of ["local_authoring", "production_http"] as const) {
+        const server = createScopedExploreMcpServer(runtime, { mode });
+        const client = new Client({ name: `coded-vocabulary-${mode}`, version: "1.0.0" });
+        const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+        try {
+          await server.connect(serverTransport);
+          await client.connect(clientTransport);
+          const described = await client.callTool({
+            name: "app.describe_data",
+            arguments: { resource: "public.subscriptions" },
+          });
+          expect(described.isError).not.toBe(true);
+          expect(described.structuredContent).toMatchObject({
+            vocabulary_policy: {
+              coded_value_behavior: expect.stringContaining("do_not_infer_business_meaning"),
+            },
+            resources: [{
+              vocabulary: {
+                status: "review_advised",
+                coded_fields_without_vocabulary: ["ph_code"],
+              },
+              fields: expect.arrayContaining([expect.objectContaining({
+                id: "ph_code",
+                semantic_status: "coded_values",
+                allowed_values: ["P1", "P2", "P3"],
+              })]),
+              valid_plan_example: expect.not.objectContaining({ dimensions: expect.anything() }),
+            }],
+          });
+        } finally {
+          await client.close();
+          await server.close();
+        }
+      }
     } finally {
       await runtime.close();
     }

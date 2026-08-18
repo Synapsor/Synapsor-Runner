@@ -3312,6 +3312,197 @@ describe("Workbench BYOM Ask", () => {
     expect(exploreCalls).toBe(0);
   });
 
+  it("refuses a business-language guess over unlabeled coded values before Explore", async () => {
+    let exploreCalls = 0;
+    const catalog = {
+      ok: true,
+      resources: [{
+        id: "public.sites",
+        fields: [{
+          id: "ph_code",
+          semantic_status: "coded_values",
+          allowed_values: ["P1", "P2", "P3"],
+        }],
+        field_enums: { ph_code: ["P1", "P2", "P3"] },
+        groupable_fields: ["ph_code"],
+      }],
+      source_database_changed: false,
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name) => {
+        if (name === "app.describe_data") return { ok: true, value: catalog };
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({ ok: true, value: catalog }),
+      close: async () => undefined,
+    };
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    let requests = 0;
+    const result = await session.run("Which phase has the most sites?", gateway, {
+      requestJson: async () => {
+        requests += 1;
+        return requests === 1
+          ? openAiToolCall("coded_field_guess", "app__explore_data", {
+              plan: {
+                kind: "aggregate",
+                resource: "public.sites",
+                measures: [{ function: "count" }],
+                dimensions: [{ field: "ph_code" }],
+              },
+            })
+          : openAiText("The field's coded meaning needs reviewed vocabulary.");
+      },
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ error_code: "LOCAL_PLAN_INTENT_MISMATCH", status: "refused" }),
+    ]);
+    expect(result.tool_calls[0]?.result).toMatchObject({ source_query_executed: false });
+    expect(result.tool_calls[0]?.result.message).toMatch(/ph_code.*coded values.*refused to infer/is);
+    expect(exploreCalls).toBe(0);
+  });
+
+  it.each(["openai", "anthropic"] as const)(
+    "refuses an unlabeled coded-value guess through the native %s provider path",
+    async (provider) => {
+      let exploreCalls = 0;
+      const sites = {
+        id: "public.sites",
+        fields: [{
+          id: "ph_code",
+          semantic_status: "coded_values",
+          allowed_values: ["P1", "P2", "P3"],
+        }],
+        field_enums: { ph_code: ["P1", "P2", "P3"] },
+        groupable_fields: ["ph_code"],
+      };
+      const gateway: AskToolGateway = {
+        mode: "authoring",
+        listTools: () => authoringTools,
+        callTool: async () => {
+          exploreCalls += 1;
+          return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+        },
+        describeOperatorMetadata: async () => ({
+          ok: true,
+          value: { ok: true, resources: [sites], source_database_changed: false },
+        }),
+        close: async () => undefined,
+      };
+      const session = new WorkbenchAskSession();
+      session.configure(provider === "openai" ? {
+        provider,
+        model: "gpt-5-mini",
+        api_key: "openai-session-key",
+        authority_digest: askToolSurfaceDigest(authoringTools),
+        egress_acknowledged: true,
+      } : {
+        provider,
+        model: "claude-test",
+        api_key: "anthropic-session-key",
+        authority_digest: askToolSurfaceDigest(authoringTools),
+        egress_acknowledged: true,
+      });
+      const plan = {
+        kind: "aggregate",
+        resource: "public.sites",
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "ph_code" }],
+      };
+      let requests = 0;
+      const result = await session.run("Which phase has the most sites?", gateway, {
+        requestJson: async () => {
+          requests += 1;
+          if (provider === "openai") {
+            return requests === 1
+              ? openAiToolCall("coded_field_guess_native", "app__explore_data", { plan })
+              : openAiText("The field's coded meaning needs reviewed vocabulary.");
+          }
+          return requests === 1
+            ? {
+                status: 200,
+                body: { content: [{
+                  type: "tool_use",
+                  id: "coded_field_guess_native_anthropic",
+                  name: "app__explore_data",
+                  input: { plan },
+                }] },
+              }
+            : {
+                status: 200,
+                body: { content: [{
+                  type: "text",
+                  text: "The field's coded meaning needs reviewed vocabulary.",
+                }] },
+              };
+        },
+      });
+
+      expect(result.tool_calls).toEqual([
+        expect.objectContaining({ error_code: "ASK_PLAN_INTENT_MISMATCH", status: "refused" }),
+      ]);
+      expect(result.tool_calls[0]?.result).toMatchObject({
+        explore_budget_consumed: false,
+        source_query_executed: false,
+      });
+      expect(result.tool_calls[0]?.result.message).toMatch(/ph_code.*coded values.*refused to infer/is);
+      expect(exploreCalls).toBe(0);
+    },
+  );
+
+  it("allows an exact coded field reference without treating the advisory as a permission gate", async () => {
+    let exploreCalls = 0;
+    const catalog = {
+      ok: true,
+      resources: [{
+        id: "public.sites",
+        fields: [{ id: "ph_code", semantic_status: "coded_values" }],
+        field_enums: { ph_code: ["P1", "P2", "P3"] },
+        groupable_fields: ["ph_code"],
+      }],
+      source_database_changed: false,
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name) => {
+        if (name === "app.describe_data") return { ok: true, value: catalog };
+        exploreCalls += 1;
+        return {
+          ok: true,
+          value: { ok: true, data: [{ ph_code: "P2", count: 8 }], source_database_changed: false },
+        };
+      },
+      describeOperatorMetadata: async () => ({ ok: true, value: catalog }),
+      close: async () => undefined,
+    };
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    let requests = 0;
+    const result = await session.run("Break down sites by ph_code.", gateway, {
+      requestJson: async () => {
+        requests += 1;
+        return requests === 1
+          ? openAiToolCall("exact_coded_field", "app__explore_data", {
+              plan: {
+                kind: "aggregate",
+                resource: "public.sites",
+                measures: [{ function: "count" }],
+                dimensions: [{ field: "ph_code" }],
+              },
+            })
+          : openAiText("P2 has the largest reviewed count.");
+      },
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]);
+    expect(exploreCalls).toBe(1);
+  });
+
   it("lets Explore report an unavailable automatic band instead of masking it as intent mismatch", async () => {
     let exploreCalls = 0;
     const gateway: AskToolGateway = {

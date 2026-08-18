@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  type ExploreVocabularyResource,
   exploreBoundaryVocabularyGaps,
   exploreFieldSemanticStatus,
   exploreVocabularyCoverage,
+  exploreVocabularyStructuralProfile,
+  isCodedExploreValueDomain,
   isClearlyOpaqueExploreIdentifier,
 } from "./explore-vocabulary.js";
 
@@ -28,7 +31,7 @@ describe("Explore reviewed vocabulary", () => {
   });
 
   it("counts only model-facing fields and closes an opaque gap with either reviewed metadata field", () => {
-    const resource = {
+    const resource: ExploreVocabularyResource = {
       id: "legacy.t_0031",
       label: "Clinical encounters",
       field_metadata: {
@@ -75,5 +78,57 @@ describe("Explore reviewed vocabulary", () => {
       resource_gap: true,
       fields: ["val_1"],
     }]);
+  });
+
+  it.each([
+    [["P1", "P2", "P3"], true],
+    [["W1", "W2", "W3", "W4"], true],
+    [["Thames Valley", "North West"], false],
+    [["P1"], false],
+    [["P1", "phase two"], false],
+  ])("classifies bounded schema vocabulary %j structurally", (values, expected) => {
+    expect(isCodedExploreValueDomain(values)).toBe(expected);
+  });
+
+  it("advises on coded values without widening the activation-blocking opaque gate", () => {
+    const resource: ExploreVocabularyResource = {
+      id: "public.sites",
+      field_types: { ph_code: "text", region: "text" },
+      field_enums: {
+        ph_code: ["P1", "P2", "P3"],
+        region: ["Thames Valley", "North West"],
+      },
+      selectable_fields: ["ph_code", "region"],
+      filterable_fields: { ph_code: ["eq"], region: ["eq"] },
+      sortable_fields: ["ph_code", "region"],
+      groupable_fields: ["ph_code", "region"],
+      aggregate_measures: [],
+      count_distinct_fields: [],
+      time_bucket_fields: {},
+      kept_out_fields: [],
+    };
+
+    expect(exploreFieldSemanticStatus(resource, "ph_code")).toBe("coded_values");
+    expect(exploreFieldSemanticStatus(resource, "region")).toBe("descriptive_identifier");
+    expect(exploreVocabularyCoverage(resource)).toMatchObject({
+      status: "review_advised",
+      opaque_fields_without_vocabulary: [],
+      coded_fields_without_vocabulary: ["ph_code"],
+    });
+    expect(exploreBoundaryVocabularyGaps([resource])).toEqual([]);
+    expect(exploreVocabularyStructuralProfile(resource)).toEqual({
+      resource_identifier_opaque: false,
+      field_semantic_status: {
+        ph_code: "coded_values",
+        region: "descriptive_identifier",
+      },
+    });
+
+    resource.field_metadata = { ph_code: { label: "Construction phase" } };
+    expect(exploreFieldSemanticStatus(resource, "ph_code")).toBe("reviewed_vocabulary");
+    expect(exploreVocabularyCoverage(resource)).toMatchObject({
+      status: "ready",
+      coded_fields_without_vocabulary: [],
+    });
   });
 });

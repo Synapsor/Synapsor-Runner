@@ -3536,6 +3536,7 @@ function describeBoundary(
       reviewed_metadata_is_semantic_only: true,
       exact_ids_required_in_plans: true,
       opaque_identifier_behavior: "do_not_guess; ask the operator to add a reviewed label or description",
+      coded_value_behavior: "do_not_infer_business_meaning_from_codes; use exact codes only when the question names them or reviewed metadata explains them",
     },
     resources: selected.map((resource) => {
       const reviewableRelationships = inactiveReviewableRelationships(resource, boundary, reviewableBoundary);
@@ -3920,7 +3921,7 @@ function suggestedAggregateQuestions(
   boundary: ActivatedExplorationBoundary,
   reviewableRelationships: BoundaryResource["relationships"] = [],
 ): Array<Record<string, unknown>> {
-  const dimension = suggestedDimension(resource.groupable_fields);
+  const dimension = suggestedDimension(resource, resource.groupable_fields);
   const measure = [...resource.aggregate_measures]
     .filter((field) => suggestedMeasureUsefulness(resource, field) >= 0)
     .sort((left, right) => suggestedMeasureUsefulness(resource, right)
@@ -3942,7 +3943,7 @@ function suggestedAggregateQuestions(
   const relationship = resource.relationships[0];
   if (relationship) {
     const target = resourceFor(boundary, relationship.target_resource);
-    const relatedDimension = suggestedDimension(target.groupable_fields, true);
+    const relatedDimension = suggestedDimension(target, target.groupable_fields, true);
     if (relatedDimension) {
       questions.push({
         text: `Which reviewed ${dimensionSubject(target, relatedDimension)} have the most ${resourceLabel}?`,
@@ -3954,7 +3955,7 @@ function suggestedAggregateQuestions(
   const reviewableRelationship = reviewableRelationships[0];
   if (!relationship && reviewableRelationship) {
     const target = resourceFor(boundary, reviewableRelationship.target_resource);
-    const relatedDimension = suggestedDimension(target.groupable_fields, true);
+    const relatedDimension = suggestedDimension(target, target.groupable_fields, true);
     if (relatedDimension) {
       questions.push({
         text: `Which reviewed ${dimensionSubject(target, relatedDimension)} have the most ${resourceLabel}? Human relationship review is required before source rows are read.`,
@@ -4057,9 +4058,18 @@ function suggestedAggregateQuestionIsExecutable(
   }
 }
 
-function suggestedDimension(fields: string[], allowGenericLabel = false): string | undefined {
-  const meaningful = fields.find((field) => !/^(?:name|title|label|display_name)$/i.test(field));
-  return meaningful ?? (allowGenericLabel ? fields[0] : undefined);
+function suggestedDimension(
+  resource: BoundaryResource,
+  fields: string[],
+  allowGenericLabel = false,
+): string | undefined {
+  const semanticallyGrounded = fields.filter((field) => {
+    const status = exploreFieldSemanticStatus(resource, field);
+    return status !== "opaque_identifier" && status !== "coded_values";
+  });
+  const meaningful = semanticallyGrounded.find((field) =>
+    !/^(?:name|title|label|display_name)$/i.test(field));
+  return meaningful ?? (allowGenericLabel ? semanticallyGrounded[0] : undefined);
 }
 
 function dimensionSubject(resource: BoundaryResource, field: string): string {

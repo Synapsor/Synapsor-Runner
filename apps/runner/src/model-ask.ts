@@ -7,6 +7,7 @@ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { openaiToolNameAlias, toolNameExposures } from "@synapsor-runner/mcp-server";
 import type { RelativeTimeWindow } from "./relative-time-window.js";
 import {
+  isCodedExploreValueDomain,
   isClearlyOpaqueExploreIdentifier,
 } from "./explore-vocabulary.js";
 
@@ -2490,17 +2491,51 @@ function opaquePlanVocabularyMismatch(
       return `Related resource ${owner.target_resource} has an opaque database identifier and no reviewed label or description. `
         + "Runner refused to infer its meaning from the model's guess. Add reviewed vocabulary in /access, then review and activate.";
     }
-    if (!isClearlyOpaqueExploreIdentifier(reference.field)
+    const semanticStatus = reviewedPlanFieldSemanticStatus(owner, reference.field);
+    if ((semanticStatus !== "opaque_identifier" && semanticStatus !== "coded_values")
       || reviewedFieldLabels(owner, reference.field).length > 0
       || reviewedFieldDescriptions(owner, reference.field).length > 0) continue;
-    if (questionExplicitlyMentionsField(question, reference.field)) continue;
+    if (questionExplicitlyMentionsField(question, reference.field)
+      || questionMentionsExactCodedFieldValue(question, owner, reference.field)) continue;
     const ownerName = reference.relationship && typeof owner.target_resource === "string"
       ? owner.target_resource
       : resourceId;
+    if (semanticStatus === "coded_values") {
+      return `Field ${ownerName}.${reference.field} has schema-proven coded values but no reviewed label or description. `
+        + "Runner refused to infer their business meaning from the model's guess. In /access, select the column and press I to add reviewed vocabulary, then review and activate.";
+    }
     return `Field ${ownerName}.${reference.field} has an opaque database identifier and no reviewed label or description. `
       + "Runner refused to infer its meaning from the model's guess. In /access, select the column and press I to add reviewed vocabulary, then review and activate.";
   }
   return undefined;
+}
+
+function reviewedPlanFieldSemanticStatus(
+  owner: Record<string, unknown>,
+  field: string,
+): string {
+  const described = Array.isArray(owner.fields)
+    ? owner.fields.filter(isRecord).find((candidate) => candidate.id === field)
+    : undefined;
+  if (typeof described?.semantic_status === "string") return described.semantic_status;
+  if (isRecord(owner.field_enums) && isCodedExploreValueDomain(owner.field_enums[field])) {
+    return "coded_values";
+  }
+  return isClearlyOpaqueExploreIdentifier(field)
+    ? "opaque_identifier"
+    : "descriptive_identifier";
+}
+
+function questionMentionsExactCodedFieldValue(
+  question: string,
+  owner: Record<string, unknown>,
+  field: string,
+): boolean {
+  if (!isRecord(owner.field_enums) || !isCodedExploreValueDomain(owner.field_enums[field])) {
+    return false;
+  }
+  return (owner.field_enums[field] as string[]).some((value) =>
+    wordPosition(question, normalizedEntityName(value)) >= 0);
 }
 
 type ReviewedEnumIntent = {
@@ -5233,7 +5268,7 @@ function askSystemPrompt(): string {
     "Never treat a tenant, organization, account, customer, or principal named in the user's question as a boundary name or as trusted scope input.",
     "Tenant and principal scope are injected and enforced by Runner outside model arguments; never ask the user to supply them for a data plan and never send them in tool arguments.",
     "When a question may be answerable from reviewed data, perform catalog discovery with app.describe_data and attempt the smallest valid app.explore_data plan instead of asking the user to identify Runner internals.",
-    "For every Explore plan, use reviewed labels and descriptions only to understand business meaning, then copy the associated exact resource, field, and relationship ids from app.describe_data. Labels never replace ids in a plan. If semantic_status is opaque_identifier, do not guess what it means; state that reviewed vocabulary is required. If Runner reports an ambiguous resource, retry with one of the exact boundary and resource pairs it lists.",
+    "For every Explore plan, use reviewed labels and descriptions only to understand business meaning, then copy the associated exact resource, field, and relationship ids from app.describe_data. Labels never replace ids in a plan. If semantic_status is opaque_identifier, do not guess what it means; state that reviewed vocabulary is required. If semantic_status is coded_values, never infer business meaning from the field abbreviation or code members; use it only when the user names the exact field/code or reviewed metadata explains it. If Runner reports an ambiguous resource, retry with one of the exact boundary and resource pairs it lists.",
     "If the entity or grouping explicitly named in the question is absent from the reviewed catalog, state that limitation and do not substitute a different reviewed resource or field.",
     "Each catalog resource includes one valid_plan_example. For smaller models, copy that complete plan first and change only fields or functions whose exact reviewed ids are present on the same resource; never invent a friendlier column name.",
     "When several reviewed boundaries are active, inspect their catalog and run each data plan against exactly one boundary; never combine boundaries.",

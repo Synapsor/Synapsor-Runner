@@ -405,8 +405,12 @@ export function exploreVocabularyDoctorCheck(
     ok: true,
     level: vocabulary.status === "ready" ? "pass" : "warn",
     message: vocabulary.status === "ready"
-      ? `${boundaryName}.${resource.id} has no opaque model-facing identifiers without reviewed vocabulary; `
+      ? `${boundaryName}.${resource.id} has no opaque or coded model-facing vocabulary gaps; `
         + `${vocabulary.fields_with_labels} field labels and ${vocabulary.fields_with_descriptions} field descriptions are reviewed.`
+      : vocabulary.status === "review_advised"
+        ? `${boundaryName}.${resource.id} has model-facing fields with coded schema values but no reviewed semantic vocabulary: `
+          + `${vocabulary.coded_fields_without_vocabulary.join(", ")}. Activation remains valid, but clients are told not to infer `
+          + "business meaning from codes such as P1 or W2. Open /access, select each column, press I to add a reviewed label or description, then review and activate the revision."
       : `${boundaryName}.${resource.id} is legacy active authority with opaque model-facing identifiers lacking reviewed vocabulary: `
         + `${vocabularyGaps.join(", ")}. Existing authority remains active, but models may not infer their business meaning. `
         + "Open /access, select the table or column, press I to add a reviewed label or description, then review and activate the revision.",

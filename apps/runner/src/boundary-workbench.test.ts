@@ -10,7 +10,7 @@ describe("Auto Boundary Workbench renderer", () => {
       ["field tiers and sensitive widening", ["Model + Runner", "Withheld from model", "Kept out", "Changing a tier opens a recorded human review"]],
       ["reviewed enum allowlists", ["Allowed values", "Save allowed values", "Removed values are refused even if guessed"]],
       ["reviewed labels and descriptions", ["Reviewed label", "Reviewed description", "Save reviewed metadata", "plans still use the exact id"]],
-      ["model vocabulary coverage", ["Reviewed model vocabulary required before activation", "Model vocabulary ready", "opaque model-facing identifiers", "Exact database IDs remain the plan authority"]],
+      ["model vocabulary coverage", ["Reviewed model vocabulary required before activation", "Reviewed model vocabulary advised", "Model vocabulary ready", "coded value fields", "Exact database IDs remain the plan authority"]],
       ["direct and relationship-carried tenant scope", ["tenant_scope_path", "mandatory proven relationship path"]],
       ["direct and relationship-carried principal scope", ["principal_scope_path", "user/owner limit"]],
       ["shared-reference scope", ["Shared reference - same rows for every tenant", "I confirm this table has no per-tenant rows"]],
@@ -39,7 +39,7 @@ describe("Auto Boundary Workbench renderer", () => {
   it("blocks opaque Workbench authority until the reviewed vocabulary panels are completed", () => {
     const html = renderBoundaryWorkbench("test-csrf");
     const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? "";
-    const vocabularyStart = script.indexOf("const opaqueIdentifierPrefixes");
+    const vocabularyStart = script.indexOf("const modelFacingFieldIds");
     const vocabularyEnd = script.indexOf("function handleSessionFailure", vocabularyStart);
     const blockerStart = script.indexOf("function focusedBoundaryBlocker()");
     const blockerEnd = script.indexOf("function renderSignoff()", blockerStart);
@@ -68,7 +68,15 @@ describe("Auto Boundary Workbench renderer", () => {
         }],
       },
     };
-    const context: Record<string, unknown> = { candidate };
+    const context: Record<string, unknown> = {
+      candidate,
+      vocabularyStructuralProfiles: {
+        "legacy.t_0031": {
+          resource_identifier_opaque: true,
+          field_semantic_status: { val_1: "opaque_identifier" },
+        },
+      },
+    };
     const evaluated = vm.createContext(context);
     vm.runInContext(`${functions}; result=focusedBoundaryBlocker();`, evaluated);
     expect(context.result).toMatch(/legacy\.t_0031.*table name.*val_1/is);
@@ -77,6 +85,28 @@ describe("Auto Boundary Workbench renderer", () => {
     candidate.pack.resources[0]!.field_metadata = { val_1: { label: "Service class" } };
     vm.runInContext("result=focusedBoundaryBlocker();", evaluated);
     expect(context.result).toBe("");
+
+    candidate.pack.resources[0] = {
+      id: "public.sites",
+      selectable_fields: ["ph_code"],
+      filterable_fields: { ph_code: ["eq"] },
+      sortable_fields: ["ph_code"],
+      groupable_fields: ["ph_code"],
+      aggregate_measures: [],
+      count_distinct_fields: [],
+      time_bucket_fields: {},
+      kept_out_fields: [],
+      relationships: [],
+    };
+    context.vocabularyStructuralProfiles = {
+      "public.sites": {
+        resource_identifier_opaque: false,
+        field_semantic_status: { ph_code: "coded_values" },
+      },
+    };
+    vm.runInContext("vocabularyStructuralProfiles=globalThis.vocabularyStructuralProfiles; result=focusedBoundaryBlocker(); summary=modelVocabularySummary(candidate.pack.resources[0]);", evaluated);
+    expect(context.result).toBe("");
+    expect(context.summary).toMatch(/reviewed vocabulary advised.*ph_code.*activation remains available/is);
   });
 
   it("blocks a Workbench table removal when another table derives scope through it", () => {

@@ -45,6 +45,12 @@ for the Synapsor Cloud CLI.
   activation, while `doctor` identifies legacy active gaps. Exact IDs remain the
   only plan authority, and local stdio and production HTTP return the same
   metadata.
+- Schema-proven categorical codes such as `P1 | P2 | P3` are no longer claimed
+  to be descriptive vocabulary. They are reported as `coded_values` with a
+  non-blocking `review_advised` status in local and production catalogs, CLI,
+  Workbench, and `doctor`. Ask will not map business language onto an unlabelled
+  coded field; exact field IDs and exact codes remain available, so this does
+  not widen or remove reviewed authority.
 - Ask now treats a named reviewed enum value as an exact filter intent, except
   when the question explicitly compares categories and therefore requires the
   enum dimension. It refuses one-sided category comparisons plus wider or

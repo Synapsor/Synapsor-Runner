@@ -368,11 +368,23 @@ or `warehouse_zone` to be relabelled. An older active boundary remains readable
 for compatibility; `doctor` warns until its next reviewed revision supplies the
 missing vocabulary.
 
+A separate non-blocking check covers bounded categorical vocabularies made only
+of short letter-and-number codes, such as `P1 | P2 | P3` or
+`W1 | W2 | W3 | W4`. The database proves that those values are allowed, but it
+does not prove what they mean. Runner reports `review_advised` in the coverage
+summary, names the affected fields in the CLI, Workbench, and `doctor`, and
+keeps activation available. Add a reviewed label or description when a model
+should map business language to that field. Until then, clients are instructed
+to use an exact field or code only and never infer meaning from the abbreviation
+or code sequence.
+
 `app.describe_data` makes this state machine-readable. Every model-facing field
 has `plan_reference: "exact_id_only"` and one `semantic_status`:
 
 - `reviewed_vocabulary`: a human supplied a label or description;
 - `descriptive_identifier`: the physical ID is not clearly a placeholder;
+- `coded_values`: the physical ID may read like a name, but its schema-proven
+  allowed values are structural codes whose business meaning is not reviewed;
 - `opaque_identifier`: the client must not guess its business meaning.
 
 The compact resource index includes those mappings plus the resource-level

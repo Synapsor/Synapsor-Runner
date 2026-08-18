@@ -36,6 +36,13 @@
   `val_1` until a reviewer supplies a label or description, while `doctor` warns
   about legacy active gaps. Plans still accept exact database IDs only, and
   local stdio and production HTTP use the same catalog projection.
+- Distinguishes schema-proven coded value domains such as `P1 | P2 | P3` from
+  descriptive identifiers. `app.describe_data` emits `coded_values` plus a
+  non-blocking `review_advised` coverage state; CLI, Workbench, and `doctor`
+  name the fields without preventing activation. Ask refuses a business-language
+  guess over an unlabelled coded field before source execution, while exact IDs
+  and exact codes remain usable. Workbench now consumes the server's canonical
+  structural classification instead of maintaining a second detector.
 - Treats reviewed enum values as deterministic Ask intent. A named value must
   normally become an exact filter rather than an unrelated grouping; an
   explicit category comparison instead uses that enum as its dimension and

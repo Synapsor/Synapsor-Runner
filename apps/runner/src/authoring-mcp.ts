@@ -463,7 +463,15 @@ function modelResourceIndex(resource: Record<string, unknown>): Record<string, u
 
 function modelValidAggregatePlan(resource: Record<string, unknown>): Record<string, unknown> {
   const resourceId = modelString(resource.id) ?? "";
-  const dimension = modelStrings(resource.groupable_fields)[0];
+  const semanticStatus = new Map(modelRecords(resource.fields).flatMap((field) => {
+    const id = modelString(field.id);
+    const status = modelString(field.semantic_status);
+    return id && status ? [[id, status] as const] : [];
+  }));
+  const dimension = modelStrings(resource.groupable_fields).find((field) => {
+    const status = semanticStatus.get(field);
+    return status !== "opaque_identifier" && status !== "coded_values";
+  });
   return {
     kind: "aggregate",
     resource: resourceId,
