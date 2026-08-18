@@ -108,7 +108,7 @@ authority digest, egress decision, and runtime validators as Workbench Ask:
 ```bash
 synapsor-runner try ask \
   --provider openai \
-  --model gpt-5-mini
+  --model gpt-5.6-luna
 
 synapsor-runner try ask \
   --provider openai-compatible \

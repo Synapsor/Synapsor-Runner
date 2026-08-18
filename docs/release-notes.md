@@ -14,6 +14,10 @@ for the Synapsor Cloud CLI.
 
 ### Ask Compatibility And Upgrade Recovery
 
+- The `synapsor>` terminal Ask path now defaults OpenAI to `gpt-5.6-luna`
+  when `--model` is omitted. This applies to `try ask`, guided CLI startup,
+  provider selection, and post-activation resume guidance. An explicit
+  `--model` remains authoritative, and Workbench Ask keeps its separate default.
 - Ask now distinguishes a true multi-resource substitution from a permission
   or catalog limitation. In a one-resource boundary it no longer claims that
   the model swapped resources. An exact kept-out or non-authorized distinct

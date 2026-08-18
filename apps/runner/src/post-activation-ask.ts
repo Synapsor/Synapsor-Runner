@@ -9,6 +9,10 @@ import {
   padTerminalBlock,
   padTerminalLines,
 } from "./terminal-layout.js";
+import {
+  DEFAULT_TERMINAL_ANTHROPIC_ASK_MODEL,
+  DEFAULT_TERMINAL_OPENAI_ASK_MODEL,
+} from "./terminal-ask-defaults.js";
 
 export type PostActivationAskRoute =
   | "openai"
@@ -66,7 +70,7 @@ const routeOptions: RouteOption[] = [
   {
     id: "openai",
     label: "OpenAI",
-    detail: "Start the terminal chat with gpt-5-mini",
+    detail: `Start the terminal chat with ${DEFAULT_TERMINAL_OPENAI_ASK_MODEL}`,
   },
   {
     id: "anthropic",
@@ -130,7 +134,7 @@ export async function runPostActivationAskHandoff(
       "Your reviewed boundaries remain active.",
       `Start the terminal chat later: ${cliCommandName()} try ask ` +
         `--project-root ${shellToken(input.projectRoot)} ` +
-        "--provider openai --model gpt-5-mini",
+        `--provider openai --model ${DEFAULT_TERMINAL_OPENAI_ASK_MODEL}`,
       "",
     ].join("\n"));
     return 0;
@@ -257,11 +261,11 @@ export function defaultPostActivationAskSelection(
   return route === "anthropic"
     ? {
       route,
-      model: "claude-sonnet-4-20250514",
+      model: DEFAULT_TERMINAL_ANTHROPIC_ASK_MODEL,
     }
     : {
       route: "openai",
-      model: "gpt-5-mini",
+      model: DEFAULT_TERMINAL_OPENAI_ASK_MODEL,
     };
 }
 
@@ -271,8 +275,8 @@ export function soleConfiguredHostedSelection(
   const route = soleConfiguredHostedRoute(env);
   if (!route) return undefined;
   return route === "anthropic"
-    ? { route, model: "claude-sonnet-4-20250514" }
-    : { route, model: "gpt-5-mini" };
+    ? { route, model: DEFAULT_TERMINAL_ANTHROPIC_ASK_MODEL }
+    : { route, model: DEFAULT_TERMINAL_OPENAI_ASK_MODEL };
 }
 
 export function formatPostActivationAskSelection(
@@ -306,12 +310,12 @@ export async function choosePostActivationAskSelection(
     if (!route) return undefined;
     if (route === "mcp-client" || route === "later") return { route };
     if (route === "openai") {
-      const model = await prompt("OpenAI model", "gpt-5-mini");
+      const model = await prompt("OpenAI model", DEFAULT_TERMINAL_OPENAI_ASK_MODEL);
       if (model === undefined) continue;
       return { route, model };
     }
     if (route === "anthropic") {
-      const model = await prompt("Anthropic model", "claude-sonnet-4-20250514");
+      const model = await prompt("Anthropic model", DEFAULT_TERMINAL_ANTHROPIC_ASK_MODEL);
       if (model === undefined) continue;
       return { route, model };
     }

@@ -760,7 +760,7 @@ offers that decision as the immediate next default-yes prompt rather than
 requiring another command; headless activation remains explicitly digest-bound.
 After interactive activation, Runner stays in the same terminal and offers:
 
-- OpenAI with the tested `gpt-5-mini` default;
+- OpenAI with the `gpt-5.6-luna` terminal default;
 - Anthropic with the Workbench Claude Sonnet default;
 - a loopback OpenAI-compatible endpoint and model;
 - an existing MCP client; or
@@ -800,7 +800,7 @@ synapsor-runner try explore --suggested --json
 synapsor-runner try ask --provider openai
 ```
 
-OpenAI uses the tested `gpt-5-mini` default and Anthropic uses the tested
+Terminal Ask uses the `gpt-5.6-luna` OpenAI default and the tested
 Claude Sonnet default when `--model` is omitted. A loopback OpenAI-compatible
 endpoint still requires `--model` because its installed models are local
 operator state.
