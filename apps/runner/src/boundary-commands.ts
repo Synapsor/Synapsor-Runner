@@ -57,6 +57,7 @@ import {
 import { resolveOperatorIdentity, verifyJwtOperatorProof, verifySignedOperatorProof, type OperatorIdentityConfig } from "./operator-identity.js";
 import { resolveSynapsorProject } from "./project-resolution.js";
 import { formatExploreVocabularyCoverage } from "./explore-vocabulary.js";
+import { DEFAULT_TERMINAL_OPENAI_ASK_MODEL } from "./terminal-ask-defaults.js";
 import { disableScopedExplore } from "./protect-query.js";
 import { recommendedBoundaryReviewCandidate } from "./boundary-candidate.js";
 import {
@@ -5263,7 +5264,7 @@ export async function boundaryActivateCommand(
         "Resume the guided CLI and choose a model or MCP client:",
         `  ${guidedStartFromProject}`,
         "Or open Ask directly with an explicit provider:",
-        `  ${cliCommandName()} try ask --project-root ${shellQuote(displayPath(projectRoot))} --provider openai --model gpt-5-mini`,
+        `  ${cliCommandName()} try ask --project-root ${shellQuote(displayPath(projectRoot))} --provider openai --model ${DEFAULT_TERMINAL_OPENAI_ASK_MODEL}`,
         "",
       ].join("\n"));
   }

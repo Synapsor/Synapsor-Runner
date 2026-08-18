@@ -437,7 +437,7 @@ MCP all use the same boundary, suppression, budgets, and denials:
 ```bash
 synapsor-runner try ask \
   --provider openai \
-  --model gpt-5-mini
+  --model gpt-5.6-luna
 ```
 
 Interactive CLI review does not stop after activation. It offers OpenAI,

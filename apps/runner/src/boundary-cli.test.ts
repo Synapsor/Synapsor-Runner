@@ -2499,7 +2499,7 @@ describe("boundary operator-plane CLI", () => {
       expect(output).toContain("start --from-env DATABASE_URL --cli");
       expect(output).toContain("Or open Ask directly with an explicit provider:");
       expect(output).toContain("try ask --project-root");
-      expect(output).toContain("--provider openai --model gpt-5-mini");
+      expect(output).toContain("--provider openai --model gpt-5.6-luna");
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

@@ -70,7 +70,7 @@ describe("try ask", () => {
   });
 
   it("uses the documented hosted-provider defaults while requiring an explicit custom model", () => {
-    expect(resolveAskModel("openai", undefined)).toBe("gpt-5-mini");
+    expect(resolveAskModel("openai", undefined)).toBe("gpt-5.6-luna");
     expect(resolveAskModel("anthropic", undefined)).toBe("claude-sonnet-4-20250514");
     expect(resolveAskModel("openai", "gpt-custom")).toBe("gpt-custom");
     expect(() => resolveAskModel("openai_compatible", undefined))
@@ -135,13 +135,13 @@ describe("try ask", () => {
     })).resolves.toBe(0);
 
     expect(consent).toHaveBeenCalledWith(expect.objectContaining({
-      model: "gpt-5-mini",
+      model: "gpt-5.6-luna",
       sessionTokenBudget: 350_000,
       maxOutputTokens: 2_048,
     }));
     expect(requestJson).toHaveBeenCalledWith(expect.objectContaining({
       body: expect.objectContaining({
-        model: "gpt-5-mini",
+        model: "gpt-5.6-luna",
         max_output_tokens: 2_048,
       }),
       timeoutMs: 75_000,

@@ -65,6 +65,10 @@ import {
   buildBoundaryCatalogModel,
   type BoundaryCatalogModel,
 } from "./boundary-catalog.js";
+import {
+  DEFAULT_TERMINAL_ANTHROPIC_ASK_MODEL,
+  DEFAULT_TERMINAL_OPENAI_ASK_MODEL,
+} from "./terminal-ask-defaults.js";
 
 export type TryAskDependencies = {
   env?: NodeJS.ProcessEnv;
@@ -954,8 +958,8 @@ function providerValue(value: string | undefined): AskProvider {
 export function resolveAskModel(provider: AskProvider, value: string | undefined): string {
   const requested = value?.trim();
   if (requested) return requested;
-  if (provider === "openai") return "gpt-5-mini";
-  if (provider === "anthropic") return "claude-sonnet-4-20250514";
+  if (provider === "openai") return DEFAULT_TERMINAL_OPENAI_ASK_MODEL;
+  if (provider === "anthropic") return DEFAULT_TERMINAL_ANTHROPIC_ASK_MODEL;
   throw new Error("try ask requires --model <value> for an OpenAI-compatible endpoint.");
 }
 

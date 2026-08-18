@@ -1,5 +1,6 @@
 import process from "node:process";
 import { cliCommandName } from "./cli-command-meta.js";
+import { DEFAULT_TERMINAL_OPENAI_ASK_MODEL } from "./terminal-ask-defaults.js";
 
 
 export function usage(args: string[] = []): void {
@@ -133,7 +134,7 @@ Choose the intended path:
     connected project database and may open its separate demo review screen.
   ${cmd} try ask --provider openai
     Opens the terminal natural-language analytics shell for an already active
-    reviewed project boundary. OpenAI defaults to gpt-5-mini and Anthropic
+    reviewed project boundary. OpenAI defaults to ${DEFAULT_TERMINAL_OPENAI_ASK_MODEL} and Anthropic
     defaults to Claude Sonnet; --model overrides either choice. A loopback
     OpenAI-compatible provider still requires an explicit model. This command
     does not open the demo UI. --timeout is the whole-number timeout in seconds

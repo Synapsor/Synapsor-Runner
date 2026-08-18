@@ -4,6 +4,10 @@
 
 ### Ask And Upgrade Recovery Corrections
 
+- Changes only the `synapsor>` terminal Ask OpenAI default to `gpt-5.6-luna`
+  across `try ask`, guided CLI provider selection, and activation guidance.
+  Explicit model choices remain unchanged; Workbench Ask retains its separate
+  default.
 - Makes Ask intent refusals describe the real obstacle instead of claiming a
   resource substitution in a one-resource boundary. Exact kept-out and visible
   fields now receive actionable **Count unique** guidance for the `/access`

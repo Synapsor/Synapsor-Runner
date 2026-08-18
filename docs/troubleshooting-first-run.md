@@ -144,7 +144,7 @@ The same provider path is available without a browser:
 synapsor-runner try ask --provider openai
 ```
 
-Hosted providers have tested defaults: OpenAI uses `gpt-5-mini` and Anthropic
+Terminal Ask defaults OpenAI to `gpt-5.6-luna` and Anthropic
 uses `claude-sonnet-4-20250514` when `--model` is omitted. Pass `--model` to
 override either default. OpenAI-compatible endpoints require an explicit model
 because Runner cannot infer what a local endpoint serves.
