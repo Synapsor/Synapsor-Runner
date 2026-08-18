@@ -35,6 +35,7 @@ const reviewedFieldMetadataSchema = z.object({
   semantic_status: z.enum([
     "reviewed_vocabulary",
     "descriptive_identifier",
+    "coded_values",
     "opaque_identifier",
   ]).optional(),
   operations: z.object({
@@ -71,13 +72,14 @@ const reviewedClientFieldMetadataSchema = z.object({
   description: z.string().max(280).optional(),
 }).passthrough();
 const exploreVocabularyCoverageSchema = z.object({
-  status: z.enum(["ready", "review_required"]),
+  status: z.enum(["ready", "review_advised", "review_required"]),
   model_facing_fields: z.number().int().nonnegative(),
   fields_with_labels: z.number().int().nonnegative(),
   fields_with_descriptions: z.number().int().nonnegative(),
   fields_with_reviewed_vocabulary: z.number().int().nonnegative(),
   opaque_resource_without_vocabulary: z.boolean(),
   opaque_fields_without_vocabulary: z.array(z.string()),
+  coded_fields_without_vocabulary: z.array(z.string()),
 }).strict();
 const modelWithheldTokenSchema = z.string().regex(/^\[withheld:[a-f0-9]{12}:[1-9][0-9]*\]$/);
 const modelEgressResultSchema = z.object({
@@ -492,6 +494,9 @@ export const scopedExploreDescribeOutputSchema = z.object({
     exact_ids_required_in_plans: z.literal(true),
     opaque_identifier_behavior: z.literal(
       "do_not_guess; ask the operator to add a reviewed label or description",
+    ),
+    coded_value_behavior: z.literal(
+      "do_not_infer_business_meaning_from_codes; use exact codes only when the question names them or reviewed metadata explains them",
     ),
   }).strict().optional(),
   resources: z.array(z.object({

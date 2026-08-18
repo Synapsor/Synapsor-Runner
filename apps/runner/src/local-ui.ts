@@ -158,6 +158,7 @@ import {
   type AskMode,
 } from "./ask-authority.js";
 import { WORKBENCH_SYNTAX_CSS, workbenchSyntaxScript } from "./workbench-syntax.js";
+import { exploreVocabularyStructuralProfile } from "./explore-vocabulary.js";
 import {
   BOUNDARY_REVIEW_PROGRESS_VERSION,
   boundaryReviewDecisions as sharedBoundaryReviewDecisions,
@@ -815,6 +816,12 @@ async function handleRequest(input: {
       ok: true,
       draft,
       candidate,
+      vocabulary_structural_profiles: Object.fromEntries(
+        draft.pack.resources.map((resource) => [
+          resource.id,
+          exploreVocabularyStructuralProfile(resource),
+        ]),
+      ),
       confirmed_decisions: confirmedDecisions,
       review_decisions: reviewDecisions,
       review_progress: {

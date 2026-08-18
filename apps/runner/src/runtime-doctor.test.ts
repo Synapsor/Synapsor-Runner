@@ -34,6 +34,21 @@ describe("runtime doctor database probe cleanup", () => {
       kept_out_fields: [],
     } as never);
     expect(ready).toMatchObject({ ok: true, level: "pass" });
+
+    const coded = exploreVocabularyDoctorCheck("construction", {
+      id: "public.sites",
+      selectable_fields: ["ph_code"],
+      filterable_fields: { ph_code: ["eq"] },
+      sortable_fields: ["ph_code"],
+      groupable_fields: ["ph_code"],
+      aggregate_measures: [],
+      count_distinct_fields: [],
+      time_bucket_fields: {},
+      field_enums: { ph_code: ["P1", "P2", "P3"] },
+      kept_out_fields: [],
+    } as never);
+    expect(coded).toMatchObject({ ok: true, level: "warn" });
+    expect(coded.message).toMatch(/ph_code.*activation remains valid.*not to infer/is);
   });
 
   it("closes a PostgreSQL pool when its initial connection fails", async () => {

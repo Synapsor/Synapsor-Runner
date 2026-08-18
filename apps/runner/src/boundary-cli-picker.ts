@@ -1295,6 +1295,16 @@ async function editFieldTiers(
             ),
           ]
           : []),
+        ...(vocabularyCoverage.coded_fields_without_vocabulary.length > 0
+          ? [
+            theme.warning(
+              `REVIEWED MODEL VOCABULARY ADVISED: coded value fields ${vocabularyCoverage.coded_fields_without_vocabulary.join(", ")}`,
+            ),
+            theme.dim(
+              "Activation remains available, but clients are told not to infer business meaning from codes such as P1 or W2. Press I to add a reviewed label or description.",
+            ),
+          ]
+          : []),
         "Space cycles: MODEL + RUNNER -> RUNNER ONLY -> KEPT OUT",
         "",
         theme.bold(fieldAccessRow("COLUMN", "TYPE", "ACCESS", "REVIEW NOTE", accessLayout)),

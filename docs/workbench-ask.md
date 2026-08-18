@@ -170,6 +170,13 @@ one reviewed field is refused as ambiguous. OpenAI and Anthropic receive one
 bounded correction containing the exact requirement. A refused first attempt
 runs no source query and spends no Explore budget.
 
+The same guard treats a schema-proven code domain such as
+`ph_code = P1 | P2 | P3` as semantically unreviewed. Ask may use the exact field
+or an exact code named by the user, but it refuses to map business language such
+as “phase” onto that field until a reviewer adds a label or description.
+Production HTTP clients receive this state as `semantic_status: "coded_values"`
+and must apply the same non-inference rule.
+
 Magnitude comparisons need reviewed numeric grouping. If a question asks
 whether bigger, older, or heavier records have a different outcome but the
 intended field has no fixed or automatic numeric band, Ask refuses before
