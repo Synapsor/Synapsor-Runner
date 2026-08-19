@@ -31,8 +31,9 @@ for the Synapsor Cloud CLI.
   Polite `show me`/`give me`/`tell me` phrasing no longer becomes a false
   entity. Exact contradictions and ambiguous corrections still refuse before
   source execution or budget accounting. A correctable mismatch receives one
-  bounded provider retry; the rejected plan never executes, and a second
-  mismatch ends the turn.
+  bounded provider retry with a versioned exact-ID correction contract and a
+  separate provider instruction. The model must author the corrected plan;
+  Runner never rewrites it, and a second mismatch receives no additional retry.
 - Valid Runner-managed projects created through standalone `boundary draft`
   and `boundary review` can now resume and reconcile through `start` even when
   they have no guided-onboarding marker. A lone disabled legacy review that has

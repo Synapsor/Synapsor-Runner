@@ -18,9 +18,11 @@
   resolves when exactly one reviewed resource, field, label, enum value, or
   relationship dimension is within the bounded per-token edit limit; ambiguous
   matches still refuse and name the exact choices. Polite imperative prefixes
-  no longer become entities. One uniquely correctable mismatch gets one retry,
-  while the original and any repeated mismatch remain non-executing and spend
-  no Explore budget.
+  no longer become entities. One uniquely correctable mismatch gets one
+  versioned exact-ID correction contract and a separate provider instruction;
+  the model must author the corrected plan. The original and any repeated
+  mismatch remain non-executing, spend no Explore budget, and receive no second
+  correction attempt.
 - Lets `start` resume and reconcile a valid Runner-managed boundary draft even
   when it was created by standalone `boundary draft` and therefore has no
   guided-onboarding marker. A lone disabled legacy boundary remains protected
