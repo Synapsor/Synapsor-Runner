@@ -157,6 +157,25 @@ before execution and names both choices. Use the full ID or a reviewed label to
 disambiguate. This resolution is derived from reviewed metadata; it contains no
 domain vocabulary.
 
+Ask also tolerates a narrowly bounded typo when exactly one reviewed resource,
+field, label, enum value, or relationship dimension explains it. The matcher
+allows at most one insertion, deletion, substitution, or adjacent transposition
+per token, and no more than two edits across a multiword name. For example,
+`reagions` can resolve to the unique reviewed field `region`, and
+`contrac ttype` can resolve to `contract_type`. Exact wording always takes
+precedence. If two reviewed names remain plausible, Ask refuses and names the
+exact IDs or labels the user must choose between. Polite prefixes such as
+`show me`, `give me`, `tell me`, and `please show` are removed before entity
+comparison rather than becoming part of the inferred resource.
+
+When a rejected plan has one concrete reviewed correction, OpenAI and
+Anthropic receive the refusal and one bounded opportunity to submit a corrected
+plan. The original plan never executes. A second mismatch ends the turn, and
+ambiguous, unavailable, or permission-blocked requests are not retried merely
+to guess again. This Ask-side check does not apply to external Explore clients,
+which submit plans without giving Runner the original natural-language
+question.
+
 Reviewed enum values also participate in intent checking. Normally, if the
 question names an allowed value such as `emergency`, the plan must constrain the
 matching exact field in `where`; merely grouping all values does not answer that

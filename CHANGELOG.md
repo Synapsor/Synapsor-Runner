@@ -14,6 +14,13 @@
   `G` editor and `--count-distinct-fields`; natural week/month comparison
   wording may identify the only reviewed time field without requiring a column
   name. Refused plans still stop before source execution and budget accounting.
+- Adds conservative typo tolerance over reviewed Ask vocabulary only. A typo
+  resolves when exactly one reviewed resource, field, label, enum value, or
+  relationship dimension is within the bounded per-token edit limit; ambiguous
+  matches still refuse and name the exact choices. Polite imperative prefixes
+  no longer become entities. One uniquely correctable mismatch gets one retry,
+  while the original and any repeated mismatch remain non-executing and spend
+  no Explore budget.
 - Lets `start` resume and reconcile a valid Runner-managed boundary draft even
   when it was created by standalone `boundary draft` and therefore has no
   guided-onboarding marker. A lone disabled legacy boundary remains protected

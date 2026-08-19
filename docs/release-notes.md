@@ -26,6 +26,13 @@ for the Synapsor Cloud CLI.
   wording can identify the only reviewed time field without requiring the user
   to recite its database identifier. Every intent refusal still happens before
   source execution and privacy-budget accounting.
+- Ask now accepts a conservative typo only when one reviewed resource, field,
+  label, enum value, or relationship dimension is the unique correction.
+  Polite `show me`/`give me`/`tell me` phrasing no longer becomes a false
+  entity. Exact contradictions and ambiguous corrections still refuse before
+  source execution or budget accounting. A correctable mismatch receives one
+  bounded provider retry; the rejected plan never executes, and a second
+  mismatch ends the turn.
 - Valid Runner-managed projects created through standalone `boundary draft`
   and `boundary review` can now resume and reconcile through `start` even when
   they have no guided-onboarding marker. A lone disabled legacy review that has
