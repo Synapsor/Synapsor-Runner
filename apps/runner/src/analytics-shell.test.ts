@@ -1716,6 +1716,30 @@ describe("Synapsor Analytics shell", () => {
     io.close();
   });
 
+  it("keeps slash-command suggestions inside a short terminal", async () => {
+    const readable = new PassThrough();
+    const writable = new PassThrough() as PassThrough & { columns: number; rows: number };
+    writable.columns = 70;
+    writable.rows = 8;
+    const chunks: string[] = [];
+    writable.on("data", (chunk) => chunks.push(String(chunk)));
+    const io = createTerminalAnalyticsShellIo({ readable, writable, terminal: true });
+    const answer = io.read("synapsor> ");
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const offset = chunks.join("").length;
+
+    readable.write("/");
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const rendered = chunks.join("").slice(offset);
+    expect((rendered.match(/\n/gu) ?? []).length).toBeLessThan(8);
+    expect(stripAnsi(rendered)).toContain("rows hidden");
+    expect(stripAnsi(rendered)).toContain("/help");
+
+    readable.write("\r");
+    await expect(answer).resolves.toBe("/");
+    io.close();
+  });
+
   it("fully clears slash actions after a completed model turn", async () => {
     const readable = new PassThrough();
     const writable = new PassThrough() as PassThrough & { columns: number };
@@ -1852,6 +1876,52 @@ describe("Synapsor Analytics shell", () => {
     expect(pipedChunks.join("")).toBe("Heading\nBody\n");
     expect(pipedIo.columns()).toBe(100);
     pipedIo.close();
+  });
+
+  it("keeps an Ask picker inside a short terminal while selection moves", async () => {
+    const readable = new PassThrough() as PassThrough & {
+      isRaw: boolean;
+      setRawMode(value: boolean): void;
+    };
+    readable.isRaw = false;
+    readable.setRawMode = (value) => {
+      readable.isRaw = value;
+    };
+    const writable = new PassThrough() as PassThrough & { columns: number; rows: number };
+    writable.columns = 70;
+    writable.rows = 10;
+    const chunks: string[] = [];
+    writable.on("data", (chunk) => chunks.push(String(chunk)));
+    const io = createTerminalAnalyticsShellIo({ readable, writable, terminal: true });
+
+    const choice = io.choose!({
+      title: "CHOOSE A REVIEWED VIEW",
+      message: "Select one reviewed resource relationship to inspect.",
+      options: Array.from({ length: 8 }, (_, index) => ({
+        value: `choice_${index + 1}`,
+        label: `Reviewed option ${index + 1}`,
+        detail: "A deliberately long explanation that wraps in a narrow terminal",
+      })),
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    let frame = chunks.join("");
+    expect(terminalFrameRows(frame)).toBeLessThanOrEqual(10);
+    expect(frame.endsWith("\n")).toBe(false);
+
+    const offset = frame.length;
+    readable.emit("keypress", "", { name: "down", sequence: "\u001b[B" });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    frame = chunks.join("").slice(offset);
+    expect(terminalFrameRows(frame)).toBeLessThanOrEqual(10);
+    expect(stripAnsi(frame)).toContain("> Reviewed option 2");
+    expect(frame.endsWith("\n")).toBe(false);
+
+    readable.emit("keypress", "", { name: "return", sequence: "\r" });
+    await expect(choice).resolves.toBe("choice_2");
+    expect(readable.isRaw).toBe(true);
+    io.close();
+    expect(readable.isRaw).toBe(false);
   });
 
   it("keeps blank terminal rows below the live analytics prompt", async () => {
@@ -2743,6 +2813,10 @@ function operatorEvidence() {
 
 function stripAnsi(value: string): string {
   return value.replace(/\u001b\[[0-9;]*m/g, "");
+}
+
+function terminalFrameRows(value: string): number {
+  return (value.match(/\r\n/gu) ?? []).length + (value ? 1 : 0);
 }
 
 function dummyDraft() {

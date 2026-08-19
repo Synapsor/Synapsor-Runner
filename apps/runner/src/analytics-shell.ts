@@ -38,6 +38,7 @@ import {
   padTerminalBlock,
   padTerminalLine,
   terminalContentWidth,
+  wrapStyledTerminalLine,
 } from "./terminal-layout.js";
 import {
   renderTerminalFact,
@@ -59,7 +60,10 @@ import {
 import { cliCommandName } from "./cli-command-meta.js";
 import { shellQuote } from "./cli-format.js";
 import type { ResolvedRelativeTimeWindow } from "./relative-time-window.js";
-import { createInPlaceTerminalRenderer } from "./terminal-prompt.js";
+import {
+  createInPlaceTerminalRenderer,
+  fitTerminalFrameToRows,
+} from "./terminal-prompt.js";
 
 export { renderTerminalJson, renderTerminalSql } from "./terminal-syntax.js";
 
@@ -919,7 +923,17 @@ export function createTerminalAnalyticsShellIo(input: {
     if (!terminal) return;
     const cursor = rl.getCursorPos();
     const inputRows = renderedRows(`${activePrompt}${rl.line}`);
-    const displayedMenu = padTerminalBlock(menu);
+    const menuLines = menu
+      ? menu.split("\n").flatMap((line) =>
+          wrapStyledTerminalLine(line, terminalContentWidth(terminalColumns()))
+            .map((wrapped) => padTerminalLine(wrapped)))
+      : [];
+    const terminalRows = (writable as NodeJS.WriteStream).rows;
+    const availableMenuRows = terminalRows === undefined
+      ? undefined
+      : Math.max(1, terminalRows - inputRows - TERMINAL_BOTTOM_PADDING);
+    const displayedMenuLines = fitTerminalFrameToRows(menuLines, availableMenuRows);
+    const displayedMenu = displayedMenuLines.join("\n");
 
     // Redraw the prompt and popup as one owned surface. Saving a cursor at the
     // terminal's bottom row and then painting below it can scroll that saved
@@ -937,7 +951,7 @@ export function createTerminalAnalyticsShellIo(input: {
       slashMenuVisible = false;
     }
 
-    const menuRows = menu ? renderedRows(displayedMenu) : 0;
+    const menuRows = displayedMenuLines.length;
     const inputRowsAfterCursor = Math.max(0, inputRows - cursor.rows - 1);
     writeBottomPadding();
     const rowsBackToCursor = menuRows
@@ -1006,7 +1020,9 @@ export function createTerminalAnalyticsShellIo(input: {
     clearStatus();
     let selected = Math.max(0, choice.options.findIndex((option) =>
       option.value === choice.initialValue));
-    const pickerRenderer = createInPlaceTerminalRenderer(writable as NodeJS.WriteStream);
+    const pickerRenderer = createInPlaceTerminalRenderer(writable as NodeJS.WriteStream, {
+      maxRows: () => (writable as NodeJS.WriteStream).rows,
+    });
     const queuedKeys: Array<{ name?: string; ctrl?: boolean }> = [];
     const keyWaiters: Array<(key: { name?: string; ctrl?: boolean }) => void> = [];
     const keyHandler = (_text: string, key: { name?: string; ctrl?: boolean }) => {
@@ -1029,7 +1045,7 @@ export function createTerminalAnalyticsShellIo(input: {
       ? value
       : `${value.slice(0, Math.max(1, width - 3))}...`;
     const render = () => {
-      const width = Math.max(36, terminalContentWidth(terminalColumns()));
+      const width = terminalContentWidth(terminalColumns());
       const terminalRows = (writable as NodeJS.WriteStream).rows;
       const windowSize = Math.min(
         choice.options.length,
@@ -1065,7 +1081,8 @@ export function createTerminalAnalyticsShellIo(input: {
         }),
         "",
         `${theme.key("Up/Down")} Select   ${theme.key("Enter")} Show diagram   ${theme.key("Esc")} Cancel`,
-      ].map((line) => padTerminalLine(line));
+      ].flatMap((line) =>
+        wrapStyledTerminalLine(line, width).map((wrapped) => padTerminalLine(wrapped)));
       pickerRenderer.render(lines);
     };
 

@@ -22,6 +22,84 @@ export type InPlaceTerminalRenderer = {
   clear(): void;
 };
 
+type InPlaceTerminalRendererOptions = {
+  maxRows?: () => number | undefined;
+};
+
+export function fitTerminalFrameToRows(lines: string[], maxRows: number | undefined): string[] {
+  if (maxRows === undefined || !Number.isFinite(maxRows)) return lines;
+  const limit = Math.max(1, Math.floor(maxRows));
+  if (lines.length <= limit) return lines;
+  if (limit === 1) return [lines[focusedTerminalFrameLine(lines) ?? 0] ?? ""];
+  if (limit < 7) {
+    const focus = focusedTerminalFrameLine(lines);
+    const essential = [
+      lines[0]!,
+      ...(focus !== undefined && focus > 0 && focus < lines.length - 1 ? [lines[focus]!] : []),
+      terminalFrameOmission(lines.length - limit),
+      lines.at(-1)!,
+    ];
+    return essential.slice(0, limit);
+  }
+
+  const headerRows = Math.min(limit >= 18 ? 3 : 1, lines.length);
+  const footerRows = Math.min(
+    limit >= 10 ? 5 : limit >= 6 ? 3 : 2,
+    lines.length - headerRows,
+  );
+  const bodyStartBoundary = headerRows;
+  const bodyEndBoundary = lines.length - footerRows;
+  const bodyBudget = Math.max(1, limit - headerRows - footerRows - 2);
+  const focus = focusedTerminalFrameLine(lines);
+  const desiredStart = focus !== undefined && focus >= bodyStartBoundary && focus < bodyEndBoundary
+    ? focus - Math.floor(bodyBudget / 4)
+    : bodyStartBoundary;
+  let bodyStart = Math.max(
+    bodyStartBoundary,
+    Math.min(desiredStart, Math.max(bodyStartBoundary, bodyEndBoundary - bodyBudget)),
+  );
+  let bodyEnd = Math.min(bodyEndBoundary, bodyStart + bodyBudget);
+
+  const build = () => {
+    const result = lines.slice(0, headerRows);
+    if (bodyStart > bodyStartBoundary) {
+      result.push(terminalFrameOmission(bodyStart - bodyStartBoundary));
+    }
+    result.push(...lines.slice(bodyStart, bodyEnd));
+    if (bodyEnd < bodyEndBoundary) {
+      result.push(terminalFrameOmission(bodyEndBoundary - bodyEnd));
+    }
+    result.push(...lines.slice(bodyEndBoundary));
+    return result;
+  };
+
+  let fitted = build();
+  while (fitted.length < limit && bodyEnd < bodyEndBoundary) {
+    bodyEnd += 1;
+    fitted = build();
+  }
+  while (fitted.length < limit && bodyStart > bodyStartBoundary) {
+    bodyStart -= 1;
+    fitted = build();
+  }
+  while (fitted.length > limit && bodyEnd - bodyStart > 1) {
+    if (focus !== undefined && bodyStart < focus) bodyStart += 1;
+    else bodyEnd -= 1;
+    fitted = build();
+  }
+  return fitted.slice(0, limit);
+}
+
+function focusedTerminalFrameLine(lines: string[]): number | undefined {
+  const index = lines.findIndex((line) =>
+    /^\s*>\s/u.test(line.replace(/\u001b\[[0-9;]*m/gu, "")));
+  return index >= 0 ? index : undefined;
+}
+
+function terminalFrameOmission(count: number): string {
+  return `  ... ${count} ${count === 1 ? "row" : "rows"} hidden ...`;
+}
+
 /**
  * Redraws a terminal frame without writing a newline after its last row.
  * A trailing newline at the bottom of a terminal scrolls the viewport on every
@@ -29,6 +107,7 @@ export type InPlaceTerminalRenderer = {
  */
 export function createInPlaceTerminalRenderer(
   output: Pick<WriteStream, "write">,
+  options: InPlaceTerminalRendererOptions = {},
 ): InPlaceTerminalRenderer {
   let renderedLines = 0;
 
@@ -42,13 +121,19 @@ export function createInPlaceTerminalRenderer(
 
   return {
     render(lines) {
-      const targetLines = Math.max(renderedLines, lines.length);
+      const maxRows = options.maxRows?.();
+      if (maxRows !== undefined && renderedLines > Math.max(1, Math.floor(maxRows))) {
+        output.write("\u001b[2J\u001b[H");
+        renderedLines = 0;
+      }
+      const visibleLines = fitTerminalFrameToRows(lines, maxRows);
+      const targetLines = Math.max(renderedLines, visibleLines.length);
       if (!targetLines) return;
       if (renderedLines) moveToFrameStart();
       else output.write("\r");
 
       for (let index = 0; index < targetLines; index += 1) {
-        output.write(`\u001b[2K${lines[index] ?? ""}`);
+        output.write(`\u001b[2K${visibleLines[index] ?? ""}`);
         if (index < targetLines - 1) output.write("\r\n");
       }
       renderedLines = targetLines;
@@ -132,7 +217,9 @@ export async function withRawTerminalScreen<T>(
   }
   const wasRaw = input.isRaw;
   const wasPaused = input.isPaused();
-  const renderer = createInPlaceTerminalRenderer(output);
+  const renderer = createInPlaceTerminalRenderer(output, {
+    maxRows: () => output.rows,
+  });
   const queuedKeys: TerminalKeypress[] = [];
   const keyWaiters: Array<(key: TerminalKeypress) => void> = [];
   let terminalClosed = false;
@@ -155,7 +242,7 @@ export async function withRawTerminalScreen<T>(
   input.resume();
   output.write("\u001b[?25l");
   const render = (lines: string[]) => {
-    const width = Math.max(36, Math.min(terminalContentWidth(output.columns), 116));
+    const width = Math.min(terminalContentWidth(output.columns), 116);
     const normalized = lines.flatMap((line) =>
       wrapStyledTerminalLine(line, width).map((wrapped) => padTerminalLine(wrapped)));
     renderer.render(normalized);

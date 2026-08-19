@@ -579,6 +579,42 @@ describe("proposal approval freshness reuse", () => {
     expect(auditBrowserHasActiveFilters(["--config", "runner.json"])).toBe(false);
   });
 
+  it("keeps the audit browser inside a short terminal while selection moves", async () => {
+    const terminal = fakeTerminal(70, 12);
+    const selected = selectAuditBrowserPage({
+      title: "Evidence browser",
+      pageNumber: 1,
+      pageSize: 10,
+      hasNext: false,
+      hasPrevious: false,
+      selectedIndex: 0,
+      rows: Array.from({ length: 6 }, (_, index) =>
+        `${index + 1}  OK  Reviewed query ${index + 1}\n    ev_explore_${index + 1}`),
+      filters: "Filters: all released evidence",
+      hasActiveFilters: false,
+      notes: ["Production shared ledger"],
+      emptyLines: [],
+      helpLines: ["BROWSER COMMANDS"],
+      color: false,
+      input: terminal.input,
+      output: terminal.output,
+    });
+
+    let frame = terminal.output.read()?.toString() ?? "";
+    expect(terminalFrameRows(frame)).toBeLessThanOrEqual(12);
+    expect(stripAnsi(frame)).toContain("> 1  OK  Reviewed query 1");
+    expect(stripAnsi(frame)).toContain("Up/Down Select");
+
+    await emitKey(terminal.input, { name: "down", sequence: "\u001b[B" });
+    frame = terminal.output.read()?.toString() ?? "";
+    expect(terminalFrameRows(frame)).toBeLessThanOrEqual(12);
+    expect(stripAnsi(frame)).toContain("> 2  OK  Reviewed query 2");
+    expect(frame.endsWith("\n")).toBe(false);
+
+    await emitKey(terminal.input, { name: "escape", sequence: "\u001b" });
+    await expect(selected).resolves.toEqual({ kind: "quit", selectedIndex: 1 });
+  });
+
   it("restores the operator terminal when an in-place browser operation fails", async () => {
     const terminal = fakeTerminal();
     await expect(withAlternateTerminalScreen(terminal.output, async () => {
@@ -617,6 +653,11 @@ function fakeTerminal(columns = 100, rows = 32): {
 
 function stripAnsi(value: string): string {
   return value.replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, "");
+}
+
+
+function terminalFrameRows(value: string): number {
+  return (value.match(/\r\n/gu) ?? []).length + (value ? 1 : 0);
 }
 
 
