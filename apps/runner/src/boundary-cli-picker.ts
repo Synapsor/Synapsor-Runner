@@ -12,10 +12,13 @@ import {
 import {
   readTerminalActivationConfirmation,
   readTerminalTextWithEscape,
-  withRawTerminalScreen as withRawKeys,
+  withAlternateTerminalScreen,
+  withRawTerminalScreen,
+  type TerminalKeypress,
 } from "./terminal-prompt.js";
 import {
   terminalContentWidth,
+  wrapStyledTerminalLine,
 } from "./terminal-layout.js";
 import {
   formatDerivedScopeJoinColumns,
@@ -61,6 +64,20 @@ export type BoundaryFieldTierEditResult =
   | undefined;
 
 export type BoundaryFieldEnumEditResult = string[] | "back" | undefined;
+
+async function withRawKeys<T>(
+  input: ReadStream,
+  output: WriteStream,
+  operation: (
+    nextKey: () => Promise<TerminalKeypress>,
+    render: (lines: string[]) => void,
+  ) => Promise<T>,
+): Promise<T> {
+  return withAlternateTerminalScreen(
+    output,
+    () => withRawTerminalScreen(input, output, operation),
+  );
+}
 
 export type BoundaryBlockedResolution =
   | ({ row_identity: string } & (
@@ -1243,8 +1260,6 @@ async function editFieldTiers(
         if (isCancel(key)) return undefined;
         continue;
       }
-      const start = boundedWindowStart(selected, fields.length, 12);
-      const visible = fields.slice(start, start + 12);
       const highlighted = fields[selected]!;
       const enumValues = reviewableEnumValues(view, highlighted);
       const reviewedEnumValues = enumValues
@@ -1262,36 +1277,46 @@ async function editFieldTiers(
         ...(vocabularyCoverage.opaque_resource_without_vocabulary ? ["table name"] : []),
         ...vocabularyCoverage.opaque_fields_without_vocabulary,
       ];
-      render([
-        theme.title(`REVIEW COLUMNS - ${safeTerminalText(view.resource_id)}`),
-        `${theme.key("Up/Down")} Navigate   ${theme.key("Space")} Change access   ` +
-          `${theme.key("Enter")} ${options?.focusedAccess ? "Save draft choices" : "Continue to table sign-off"}`,
-        `${theme.key("V/W/K")} Set directly   ${theme.key("M")} View access map   ` +
-          `${theme.key("B/Esc")} ${options?.focusedAccess ? "Back to boundary tables" : "Back"}   ` +
-          `${theme.key("Q")} Quit`,
-        `${theme.key("P")} Privacy threshold: minimum group ${
-          (view.candidate ?? view.generated_candidate)!.minimum_cohort_size
-        } (${(view.candidate ?? view.generated_candidate)!.minimum_cohort_size === 1 ? "suppression off" : "small groups withheld"})`,
-        `${theme.key("O")} User/owner row limit: ${
-          (view.candidate ?? view.generated_candidate)!.principal_key
-            ?? ((view.candidate ?? view.generated_candidate)!.principal_scope
-              ? formatDerivedScopePath((view.candidate ?? view.generated_candidate)!.principal_scope!)
-              : "not configured")
-        }`,
-        ...(reviewCompatibility ? [reviewCompatibility] : []),
+      const minimumCohort = (view.candidate ?? view.generated_candidate)!.minimum_cohort_size;
+      const principalScope = (view.candidate ?? view.generated_candidate)!.principal_key
+        ?? ((view.candidate ?? view.generated_candidate)!.principal_scope
+          ? formatDerivedScopePath((view.candidate ?? view.generated_candidate)!.principal_scope!)
+          : "not configured");
+      const primaryActions = [
+        `${theme.key("Up/Down")} Navigate`,
+        `${theme.key("Space")} Change access`,
+        `${theme.key("Enter")} ${options?.focusedAccess ? "Save draft choices" : "Continue to table sign-off"}`,
+        `${theme.key("V/W/K")} Set directly`,
+        `${theme.key("M")} View access map`,
+        `${theme.key("B/Esc")} ${options?.focusedAccess ? "Back to boundary tables" : "Back"}`,
+        `${theme.key("Q")} Quit`,
+      ];
+      const reviewActions = [
+        `${theme.key("P")} Privacy threshold: minimum group ${minimumCohort} ` +
+          `(${minimumCohort === 1 ? "suppression off" : "small groups withheld"})`,
+        `${theme.key("O")} User/owner row limit: ${principalScope}`,
+        `${theme.key("I")} Edit the selected column's reviewed label and description`,
         ...(enumValues
           ? [`${theme.key("E")} Edit allowed values for selected column: ${reviewedEnumValues!.length} of ${enumValues.length}`]
           : []),
         ...(operationRepairAvailable
           ? [`${theme.key("S")} Restore the current inspected filter/sort/group/measure suggestions for this column`]
           : []),
-        `${theme.key("I")} Edit the selected column's reviewed label and description`,
+      ];
+      const terminalRows = typeof output.rows === "number" && Number.isFinite(output.rows)
+        ? Math.max(1, Math.floor(output.rows))
+        : undefined;
+      const detailedContext = terminalRows === undefined || terminalRows >= 30;
+      const contextLines = [
+        ...(reviewCompatibility ? [reviewCompatibility] : []),
         ...(vocabularyGaps.length > 0
           ? [
             theme.warning(`REVIEWED MODEL VOCABULARY REQUIRED: ${vocabularyGaps.join(", ")}`),
-            theme.dim(
-              "Add field vocabulary here with I. Use I on the boundary table list for the table label or description. Exact database IDs remain the plan authority.",
-            ),
+            ...(detailedContext
+              ? [theme.dim(
+                "Add field vocabulary here with I. Use I on the boundary table list for the table label or description. Exact database IDs remain the plan authority.",
+              )]
+              : []),
           ]
           : []),
         ...(vocabularyCoverage.coded_fields_without_vocabulary.length > 0
@@ -1299,29 +1324,39 @@ async function editFieldTiers(
             theme.warning(
               `REVIEWED MODEL VOCABULARY ADVISED: coded value fields ${vocabularyCoverage.coded_fields_without_vocabulary.join(", ")}`,
             ),
-            theme.dim(
-              "Activation remains available, but clients are told not to infer business meaning from codes such as P1 or W2. Press I to add a reviewed label or description.",
-            ),
+            ...(detailedContext
+              ? [theme.dim(
+                "Activation remains available, but clients are told not to infer business meaning from codes such as P1 or W2. Press I to add a reviewed label or description.",
+              )]
+              : []),
           ]
           : []),
+      ];
+      const fullHeader = [
+        theme.title(`REVIEW COLUMNS - ${safeTerminalText(view.resource_id)}`),
+        ...packTerminalActions(primaryActions, tableWidth),
+        ...packTerminalActions(reviewActions, tableWidth),
+        ...contextLines,
         "Space cycles: MODEL + RUNNER -> RUNNER ONLY -> KEPT OUT",
-        "",
-        theme.bold(fieldAccessRow("COLUMN", "TYPE", "ACCESS", "REVIEW NOTE", accessLayout)),
-        ...visible.map((field, index) => {
-          const absolute = start + index;
-          const tier = tiers[field.name]!;
-          const tierText = `[${tierLabel(tier)}]`;
-          const line = `${absolute === selected ? ">" : " "} ${fieldAccessRow(
-            safeTerminalText(field.name),
-            safeTerminalText(field.data_type),
-            tierText,
-            compactRiskBadge(view, field),
-            accessLayout,
-          )}`;
-          return absolute === selected
-            ? theme.focus(line)
-            : line.replace(tierText, styleTier(theme, tier, tierText));
-        }),
+      ];
+      const compactHeader = [
+        theme.title(`REVIEW COLUMNS - ${safeTerminalText(view.resource_id)}`),
+        ...packTerminalActions([
+          `${theme.key("Up/Down")} Navigate`,
+          `${theme.key("Space")} Change access`,
+          `${theme.key("Enter")} Save`,
+          `${theme.key("V/W/K")} Set directly`,
+          `${theme.key("M")} Map`,
+          `${theme.key("P")} Privacy (minimum group ${minimumCohort})`,
+          `${theme.key("O")} User/owner scope`,
+          `${theme.key("I")} Labels and descriptions`,
+          ...(enumValues ? [`${theme.key("E")} Allowed values`] : []),
+          ...(operationRepairAvailable ? [`${theme.key("S")} Restore operations`] : []),
+          `${theme.key("B/Esc")} ${options?.focusedAccess ? "Back to tables" : "Back"}`,
+          `${theme.key("Q")} Quit`,
+        ], tableWidth),
+      ];
+      const fullFooter = [
         "",
         theme.bold(`Selected access: ${tierLabel(tiers[highlighted.name]!)}`),
         theme.dim(
@@ -1341,7 +1376,61 @@ async function editFieldTiers(
             ? "Enter stages these choices in the disabled boundary. Final activation is one separate confirmation."
             : "Enter continues to one plain-language table sign-off. Nothing activates from this screen.",
         ),
-      ]);
+      ];
+      const compactFooter = [
+        theme.bold(
+          `Selected: ${safeTerminalText(highlighted.name)} · ${safeTerminalText(highlighted.data_type)} · ` +
+          tierLabel(tiers[highlighted.name]!),
+        ),
+        theme.dim(options?.focusedAccess
+          ? "Draft only; activate separately after saving."
+          : "Nothing activates from this screen."),
+      ];
+      const buildFrame = (windowSize: number, compact: boolean) => {
+        const start = boundedWindowStart(selected, fields.length, windowSize);
+        const visible = fields.slice(start, start + windowSize);
+        const tableLines = visible.map((field, index) => {
+          const absolute = start + index;
+          const tier = tiers[field.name]!;
+          const tierText = `[${tierLabel(tier)}]`;
+          const line = `${absolute === selected ? ">" : " "} ${fieldAccessRow(
+            safeTerminalText(field.name),
+            safeTerminalText(field.data_type),
+            tierText,
+            compactRiskBadge(view, field),
+            accessLayout,
+          )}`;
+          return absolute === selected
+            ? theme.focus(line)
+            : line.replace(tierText, styleTier(theme, tier, tierText));
+        });
+        return [
+          ...(compact ? compactHeader : fullHeader),
+          "",
+          ...(compact
+            ? []
+            : [theme.bold(fieldAccessRow("COLUMN", "TYPE", "ACCESS", "REVIEW NOTE", accessLayout))]),
+          ...tableLines,
+          ...(visible.length < fields.length
+            ? [theme.dim(
+              `Showing columns ${start + 1}-${start + visible.length} of ${fields.length}; Up/Down moves the selection.`,
+            )]
+            : []),
+          ...(compact ? compactFooter : fullFooter),
+        ];
+      };
+      let windowSize = Math.min(12, fields.length);
+      let frame = buildFrame(windowSize, false);
+      while (terminalRows !== undefined
+        && terminalFrameRows(frame, tableWidth) > terminalRows
+        && windowSize > 1) {
+        windowSize -= 1;
+        frame = buildFrame(windowSize, false);
+      }
+      if (terminalRows !== undefined && terminalFrameRows(frame, tableWidth) > terminalRows) {
+        frame = buildFrame(1, true);
+      }
+      render(frame);
       const key = await nextKey();
       if (isBackToResources(key)) return "back";
       if (isCancel(key)) return undefined;
@@ -3111,6 +3200,13 @@ export function packTerminalActions(actions: string[], width: number): string[] 
 
 function styledTerminalWidth(value: string): number {
   return Array.from(value.replace(/\u001b\[[0-9;]*m/g, "")).length;
+}
+
+function terminalFrameRows(lines: string[], width: number): number {
+  return lines.reduce(
+    (total, line) => total + wrapStyledTerminalLine(line, width).length,
+    0,
+  );
 }
 
 function formatTextPromptWithBack(prompt: string, theme: TerminalTheme): string {
