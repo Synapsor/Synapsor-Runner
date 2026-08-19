@@ -4915,6 +4915,161 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 20_000);
 
+  it("stages exact numeric grouping without changing active authority until activation", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-exact-numeric-grouping-"));
+    const inspection = boundaryInspection();
+    inspection.tables[0]!.columns.push({
+      name: "started_year",
+      data_type: "integer",
+      nullable: false,
+      generated: false,
+      ordinal_position: inspection.tables[0]!.columns.length + 1,
+      suggestions: {
+        tenant: false,
+        conflict: false,
+        sensitive: false,
+        immutable: false,
+        large_or_binary: false,
+      },
+    });
+    inspection.tables[0]!.suggestions.default_visible_columns.push("started_year");
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const generated = await loadBoundaryReviewContext(root);
+      const generatedResource = generated.candidate.pack.resources[0]!;
+      const narrowing = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.service_visits",
+        filterable_fields: Object.keys(generatedResource.filterable_fields)
+          .filter((field) => field !== "started_year"),
+        sortable_fields: generatedResource.sortable_fields
+          .filter((field) => field !== "started_year"),
+        aggregate_measures: generatedResource.aggregate_measures
+          .filter((field) => field !== "started_year"),
+        actor: "analytics-owner",
+        reason: "Keep exact grouping independent from filtering, sorting, and measures.",
+      }, async () => inspection);
+      await commitBoundaryResourceReviewMutation(root, narrowing);
+      const initial = await loadBoundaryReviewContext(root);
+      const initialResource = initial.candidate.pack.resources[0]!;
+      expect(initialResource.groupable_fields).not.toContain("started_year");
+      expect(initialResource.filterable_fields).not.toHaveProperty("started_year");
+      expect(initialResource.sortable_fields).not.toContain("started_year");
+      expect(initialResource.aggregate_measures).not.toContain("started_year");
+      const initialGroupable = [...initialResource.groupable_fields];
+      const initialDigest = explorationBoundaryCandidateDigest(initial.candidate);
+      await activateExplorationBoundary({
+        projectRoot: root,
+        candidate: initial.candidate,
+        expectedDigest: initialDigest,
+        actor: "analytics-owner",
+        confirmation: `ACTIVATE ${initialDigest}`,
+        confirmedDecisions: initial.candidate.unresolved_decisions,
+        currentInspection: inspection,
+      });
+
+      let cliPreviewOutput = "";
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+        cliPreviewOutput += String(chunk);
+        return true;
+      });
+      await expect(boundaryReviewCommandInternal([
+        "resource", "public.service_visits",
+        "--project-root", root,
+        "--allow-exact-numeric-grouping", "started_year",
+        "--actor", "analytics-owner",
+        "--reason", "Calendar year is a safe, bounded operational dimension.",
+        "--json",
+      ], async () => inspection)).resolves.toBe(0);
+      stdout.mockRestore();
+      expect(JSON.parse(cliPreviewOutput)).toMatchObject({
+        authority_activated: false,
+        source_database_changed: false,
+      });
+
+      const preview = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.service_visits",
+        allow_exact_numeric_grouping_fields: ["started_year"],
+        actor: "analytics-owner",
+        reason: "Calendar year is a safe, bounded operational dimension.",
+      }, async () => inspection);
+      const staged = preview.candidate.pack.resources[0]!;
+      expect(staged.groupable_fields).toEqual(
+        expect.arrayContaining([...initialGroupable, "started_year"]),
+      );
+      expect(staged.filterable_fields).not.toHaveProperty("started_year");
+      expect(staged.sortable_fields).not.toContain("started_year");
+      expect(staged.aggregate_measures).not.toContain("started_year");
+      expect(staged.numeric_bands).toBeUndefined();
+      expect(staged.auto_bands).toBeUndefined();
+      expect(preview.build.overrides.resources["public.service_visits"]?.exact_numeric_grouping)
+        .toMatchObject({
+          started_year: {
+            actor: "analytics-owner",
+            reason: "Calendar year is a safe, bounded operational dimension.",
+          },
+        });
+      expect((await loadActivatedExplorationBoundaries(root))[0]!
+        .pack.resources[0]!.groupable_fields).not.toContain("started_year");
+
+      await commitBoundaryResourceReviewMutation(root, preview);
+      expect((await loadActivatedExplorationBoundaries(root))[0]!
+        .pack.resources[0]!.groupable_fields).not.toContain("started_year");
+      const stagedContext = await loadBoundaryReviewContext(root);
+      const stagedDigest = explorationBoundaryCandidateDigest(stagedContext.candidate);
+      const activated = await activateExplorationBoundary({
+        projectRoot: root,
+        candidate: stagedContext.candidate,
+        expectedDigest: stagedDigest,
+        actor: "analytics-owner",
+        confirmation: `ACTIVATE ${stagedDigest}`,
+        confirmedDecisions: stagedContext.candidate.unresolved_decisions,
+        currentInspection: inspection,
+      });
+      expect(activated.pack.resources[0]!.groupable_fields).toContain("started_year");
+      expect(activated.pack.resources[0]!.filterable_fields).not.toHaveProperty("started_year");
+      expect(activated.pack.resources[0]!.sortable_fields).not.toContain("started_year");
+      expect(activated.pack.resources[0]!.aggregate_measures).not.toContain("started_year");
+
+      const view = await inspectBoundaryResourceReview(root, "public.service_visits");
+      expect(view.exact_numeric_grouping_eligibility?.started_year).toEqual({
+        eligible: true,
+        reasons: [],
+      });
+      expect(view.fields.find((field) => field.name === "started_year")
+        ?.exact_numeric_grouping_review_override).toMatchObject({ actor: "analytics-owner" });
+
+      const removal = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.service_visits",
+        remove_exact_numeric_grouping_fields: ["started_year"],
+        actor: "analytics-owner",
+        reason: "This dimension is no longer needed by the reviewed agent.",
+      }, async () => inspection);
+      expect(removal.candidate.pack.resources[0]!.groupable_fields)
+        .not.toContain("started_year");
+      expect((await loadActivatedExplorationBoundaries(root))[0]!
+        .pack.resources[0]!.groupable_fields).toContain("started_year");
+      await commitBoundaryResourceReviewMutation(root, removal);
+      expect((await loadBoundaryReviewContext(root)).candidate.pack.resources[0]!
+        .groupable_fields).not.toContain("started_year");
+      expect((await loadActivatedExplorationBoundaries(root))[0]!
+        .pack.resources[0]!.groupable_fields).toContain("started_year");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
   it("refuses automatic numeric-band review on MySQL 5.7 through the shared CLI and Workbench mutation path", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-mysql57-auto-band-"));
     const inspection = boundaryInspection();

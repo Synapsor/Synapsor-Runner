@@ -741,6 +741,8 @@ async function boundaryResourceReviewCommand(
     "--filter-fields",
     "--sort-fields",
     "--group-fields",
+    "--allow-exact-numeric-grouping",
+    "--remove-exact-numeric-grouping",
     "--measure-fields",
     "--count-distinct-fields",
     "--time-fields",
@@ -794,6 +796,8 @@ async function boundaryResourceReviewCommand(
     "--filter-fields",
     "--sort-fields",
     "--group-fields",
+    "--allow-exact-numeric-grouping",
+    "--remove-exact-numeric-grouping",
     "--measure-fields",
     "--count-distinct-fields",
     "--time-fields",
@@ -988,6 +992,22 @@ async function boundaryResourceReviewCommand(
     ...(listArg(args, "--filter-fields") ? { filterable_fields: listArg(args, "--filter-fields") } : {}),
     ...(listArg(args, "--sort-fields") ? { sortable_fields: listArg(args, "--sort-fields") } : {}),
     ...(listArg(args, "--group-fields") ? { groupable_fields: listArg(args, "--group-fields") } : {}),
+    ...(listArg(args, "--allow-exact-numeric-grouping")
+      ? {
+          allow_exact_numeric_grouping_fields: listArg(
+            args,
+            "--allow-exact-numeric-grouping",
+          ),
+        }
+      : {}),
+    ...(listArg(args, "--remove-exact-numeric-grouping")
+      ? {
+          remove_exact_numeric_grouping_fields: listArg(
+            args,
+            "--remove-exact-numeric-grouping",
+          ),
+        }
+      : {}),
     ...(listArg(args, "--measure-fields") ? { aggregate_measures: listArg(args, "--measure-fields") } : {}),
     ...(listArg(args, "--count-distinct-fields")
       ? { count_distinct_fields: listArg(args, "--count-distinct-fields") }
@@ -3508,6 +3528,21 @@ async function interactiveBoundaryResourceReview(input: {
     }
     return enumResult;
   }
+  if (isExactNumericGroupingFieldTierAction(selected)) {
+    const exactResult = await interactiveExactNumericGroupingReview({
+      ...input,
+      field: selected.field,
+      enabled: selected.enabled,
+    });
+    const updatedView = exactResult === "saved"
+      ? await inspectBoundaryResourceReview(input.projectRoot, input.resourceId)
+      : input.view;
+    return interactiveBoundaryResourceReview({
+      ...input,
+      view: updatedView,
+      initialTiers: selected.tiers,
+    });
+  }
   const operationRestore = isRestoreFieldOperationsAction(selected) ? selected : undefined;
   if (typeof selected === "string") {
     if (selected.startsWith("enum:")) {
@@ -3749,6 +3784,107 @@ function isRestoreFieldOperationsAction(value: unknown): value is {
     && Boolean((value as { tiers?: unknown }).tiers)
     && typeof (value as { tiers?: unknown }).tiers === "object"
     && !Array.isArray((value as { tiers?: unknown }).tiers);
+}
+
+function isExactNumericGroupingFieldTierAction(value: unknown): value is {
+  action: "exact_numeric_grouping";
+  field: string;
+  enabled: boolean;
+  tiers: Record<string, BoundaryFieldTier>;
+} {
+  return Boolean(value)
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && (value as { action?: unknown }).action === "exact_numeric_grouping"
+    && typeof (value as { field?: unknown }).field === "string"
+    && typeof (value as { enabled?: unknown }).enabled === "boolean"
+    && Boolean((value as { tiers?: unknown }).tiers)
+    && typeof (value as { tiers?: unknown }).tiers === "object"
+    && !Array.isArray((value as { tiers?: unknown }).tiers);
+}
+
+async function interactiveExactNumericGroupingReview(input: {
+  projectRoot: string;
+  resourceId: string;
+  field: string;
+  enabled: boolean;
+  view: BoundaryResourceReviewView;
+  schemaInspector: typeof inspectDatabase;
+  session: BoundaryReviewInteractiveSession;
+  focusedAccess?: boolean;
+}): Promise<"saved" | "cancelled"> {
+  const resource = input.view.candidate ?? input.view.generated_candidate;
+  if (!resource) return "cancelled";
+  const budgets = input.view.reviewed_budgets;
+  process.stdout.write([
+    `${input.enabled ? "ENABLE" : "REMOVE"} EXACT NUMERIC GROUPS - ${input.resourceId}.${input.field}`,
+    input.enabled
+      ? "Exact values will become a reviewed grouping dimension. This is separate from fixed or automatic numeric bands."
+      : "The exact numeric grouping grant will be removed from the disabled revision.",
+    ...(input.enabled ? [
+      `Privacy and shape remain enforced: minimum group ${resource.minimum_cohort_size}; `
+        + `maximum ${budgets?.max_groups ?? "reviewed"} groups; top ${budgets?.max_top_n ?? "reviewed"}; `
+        + `${budgets?.max_response_cells ?? "reviewed"} cells; ${budgets?.max_response_bytes ?? "reviewed"} bytes.`,
+      `Execution remains bounded by ${budgets?.statement_timeout_ms ?? "the reviewed"} ms statement timeout and the reviewed rolling query budgets.`,
+    ] : []),
+    "This saves only a disabled revision. Current active Explore authority does not change until exact-digest activation.",
+    "",
+  ].join("\n"));
+  const actor = input.focusedAccess
+    ? localInteractiveActor()
+    : await input.session.promptText("Human reviewer identity (audit label, not a password)");
+  if (!actor) return "cancelled";
+  let reason: string | undefined;
+  while (!reason) {
+    const entered = await input.session.promptText(
+      input.enabled
+        ? "Required reason this numeric field is a safe, meaningful exact grouping dimension"
+        : "Required reason for removing exact numeric grouping",
+    );
+    if (entered === undefined) return "cancelled";
+    reason = entered.trim();
+    if (!reason) {
+      process.stdout.write("Rejected: a concrete reason is required; no change was made. Enter it now, or press Esc to cancel.\n");
+    }
+  }
+  try {
+    const preview = await prepareBoundaryResourceReviewMutation(
+      input.projectRoot,
+      {
+        resource_id: input.resourceId,
+        ...(input.enabled
+          ? { allow_exact_numeric_grouping_fields: [input.field] }
+          : { remove_exact_numeric_grouping_fields: [input.field] }),
+        actor,
+        reason,
+      },
+      input.schemaInspector,
+    );
+    if (!input.focusedAccess) {
+      process.stdout.write(formatBoundaryMutationPreview(preview, input.view));
+      const confirmed = await input.session.confirm(
+        "Save this exact numeric grouping decision in the disabled boundary?",
+        { defaultValue: true },
+      );
+      if (!confirmed) return "cancelled";
+    }
+    const committed = await commitBoundaryResourceReviewMutation(input.projectRoot, preview);
+    process.stdout.write([
+      `Recorded: ${input.resourceId}.${input.field} exact numeric grouping ${input.enabled ? "enabled" : "removed"}.`,
+      `Actor: ${actor}; reason: ${JSON.stringify(reason)}.`,
+      `Saved in disabled boundary revision ${committed.review_revision}. Active authority changed: no.`,
+      "Use C Review + activate before this decision reaches local or production HTTP Explore.",
+      "",
+    ].join("\n"));
+    return "saved";
+  } catch (error) {
+    process.stdout.write([
+      `Rejected: ${redactCliErrorMessage(error instanceof Error ? error.message : String(error))}`,
+      "No exact numeric grouping change was made or activated.",
+      "",
+    ].join("\n"));
+    return "cancelled";
+  }
 }
 
 async function interactiveReviewedMetadataReview(input: {
@@ -4757,6 +4893,12 @@ function formatRequestedBoundaryChanges(
   }
   for (const field of request.allow_reviewed_fields ?? []) {
     lines.push(`Allow reviewed model-visible use: ${describeReviewedField(view, field)}`);
+  }
+  for (const field of request.allow_exact_numeric_grouping_fields ?? []) {
+    lines.push(`Enable exact numeric grouping: ${describeReviewedField(view, field)}`);
+  }
+  for (const field of request.remove_exact_numeric_grouping_fields ?? []) {
+    lines.push(`Remove exact numeric grouping: ${describeReviewedField(view, field)}`);
   }
   if (request.include) lines.push(`Include ${request.resource_id} in the disabled candidate.`);
   if (request.exclude) lines.push(`Exclude ${request.resource_id} from the disabled candidate.`);

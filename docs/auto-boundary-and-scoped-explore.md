@@ -274,6 +274,7 @@ The Workbench requires a human to narrow and confirm:
 - selectable fields;
 - filterable fields and allowed operators;
 - sortable and groupable fields;
+- explicitly reviewed exact numeric dimensions, which remain off by default;
 - aggregate-safe numeric, dispersion, and missing-data measures;
 - identifiers allowed only for `count_distinct`;
 - timestamp fields and permitted hour/day/week/month/quarter/year/day-of-week
@@ -419,6 +420,44 @@ groups. A removed or unknown value is refused before source execution. Disabling
 the vocabulary disables filter and group operations for that field; it does not
 silently reopen free-text filtering. Model-withheld and kept-out fields never
 send their value vocabulary to a model.
+
+### Exact Numeric Grouping
+
+Runner does not automatically make numeric columns grouping dimensions. An
+integer may be a useful discrete business category such as `started_year`, but
+it may instead be a customer ID, foreign key, tenant key, precise amount, or
+high-cardinality value. Treating every number as groupable would create noisy
+answers and could widen disclosure. Numeric measures and numeric groups are
+therefore separate reviewed permissions.
+
+A reviewer may explicitly enable exact grouping for one low-risk numeric field
+in the terminal column editor with `X`, or in Workbench under **Exact numeric
+groups**. The scripted equivalent is additive and does not remove existing
+categorical dimensions:
+
+```bash
+synapsor-runner boundary review resource public.sites \
+  --allow-exact-numeric-grouping started_year \
+  --actor reviewer@example.com \
+  --reason "Calendar year is a bounded business dimension"
+```
+
+`--group-fields` remains a narrowing flag; it cannot promote a numeric field.
+Use `--remove-exact-numeric-grouping` to retract this separate grant. Runner
+refuses the grant for record identities, foreign/reference columns,
+tenant/principal scope, sensitive or unresolved fields, and fields unavailable
+for reviewed model use. The reviewer identity and concrete reason are recorded.
+The result is a disabled revision and does not affect local or HTTP Explore
+until the normal exact-digest activation succeeds.
+
+This permission returns the exact reviewed values. It creates no fixed or
+automatic band and accepts no model-authored edges. Every query still uses the
+reviewed minimum cohort, suppression, maximum groups and top-N, response
+cell/byte limits, statement timeout, rolling query budget, extraction budget,
+and differencing controls. For continuous amounts or high-cardinality scores,
+prefer a fixed or reviewer-approved automatic numeric band. Exact grouping is
+intended for deliberately discrete values whose meaning and likely cardinality
+the reviewer understands.
 
 Workbench activation requires every generated decision and the operator
 identity. Its single **Activate and ask** action computes, displays as an

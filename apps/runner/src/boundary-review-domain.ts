@@ -87,6 +87,15 @@ export type ManagedBoundaryReviewDecision =
       decided_at?: string;
     }
   | {
+      kind: "exact_numeric_grouping";
+      resource_id: string;
+      field: string;
+      enabled: boolean;
+      actor: string;
+      reason: string;
+      decided_at?: string;
+    }
+  | {
       kind: "row_identity" | "tenant_key" | "tenant_scope_path";
       resource_id: string;
       value: string;
@@ -218,6 +227,20 @@ export function normalizeManagedBoundaryReviewDecision(
       decided_at: decidedAt,
     };
   }
+  if (kind === "exact_numeric_grouping") {
+    if (typeof input.enabled !== "boolean") {
+      throw new Error("exact_numeric_grouping review requires enabled true or false.");
+    }
+    return {
+      kind,
+      resource_id: resourceId,
+      field: requiredText(input.field, "field"),
+      enabled: input.enabled,
+      actor,
+      reason,
+      decided_at: decidedAt,
+    };
+  }
   if (kind === "derived_measure") {
     const name = requiredText(input.name, "name");
     if (!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name)) {
@@ -330,7 +353,7 @@ export function normalizeManagedBoundaryReviewDecision(
     };
   }
   throw new Error(
-    "Managed boundary review kind must be resource_metadata, field_metadata, field_exposure, field_enum, derived_measure, numeric_band, auto_band, row_identity, tenant_key, tenant_scope_path, shared_reference_scope, principal_key, principal_scope_path, or minimum_cohort.",
+    "Managed boundary review kind must be resource_metadata, field_metadata, field_exposure, field_enum, exact_numeric_grouping, derived_measure, numeric_band, auto_band, row_identity, tenant_key, tenant_scope_path, shared_reference_scope, principal_key, principal_scope_path, or minimum_cohort.",
   );
 }
 
@@ -402,6 +425,22 @@ export function applyManagedBoundaryReviewDecision(
         decided_at: decidedAt,
       },
     };
+  } else if (input.kind === "exact_numeric_grouping") {
+    if (input.enabled) {
+      resource.exact_numeric_grouping = {
+        ...(resource.exact_numeric_grouping ?? {}),
+        [input.field]: {
+          actor: input.actor,
+          reason: input.reason,
+          decided_at: decidedAt,
+        },
+      };
+    } else if (resource.exact_numeric_grouping) {
+      delete resource.exact_numeric_grouping[input.field];
+      if (Object.keys(resource.exact_numeric_grouping).length === 0) {
+        delete resource.exact_numeric_grouping;
+      }
+    }
   } else if (input.kind === "derived_measure") {
     if (input.remove || input.definition === null) {
       if (resource.derived_measures) {

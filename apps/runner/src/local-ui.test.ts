@@ -2706,6 +2706,41 @@ export default defineCapability({
       expect(restoredResource.field_enums.membership_status).toEqual(["active", "paused"]);
       expect(restoredEnum.active).toEqual(activeBeforeReview);
 
+      const exactNumericGrouping = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/regenerate`,
+        mutationHeaders,
+        {
+          kind: "exact_numeric_grouping",
+          resource_id: "public.members",
+          field: "duration_ms",
+          enabled: true,
+          actor: "owner@example.test",
+          reason: "Duration is a reviewed discrete operational score in this fixture.",
+        },
+      );
+      expect(exactNumericGrouping).toMatchObject({
+        ok: true,
+        candidate: {
+          pack: {
+            resources: [{
+              id: "public.members",
+              groupable_fields: expect.arrayContaining(["duration_ms"]),
+            }],
+          },
+        },
+        active: activeBeforeReview,
+      });
+      expect(exactNumericGrouping.candidate.pack.resources[0].numeric_bands).toBeUndefined();
+      expect(exactNumericGrouping.candidate.pack.resources[0].auto_bands).toBeUndefined();
+      const boundaryView = await fetch(`http://${server.host}:${server.port}/api/boundary`, {
+        headers: { "x-synapsor-ui-token": "boundary-regenerate-token" },
+      }).then((result) => result.json());
+      expect(boundaryView.review.resources[0].exact_numeric_grouping_eligibility.duration_ms)
+        .toEqual({ eligible: true, reasons: [] });
+      expect(boundaryView.review.resources[0].fields.find(
+        (field: { name: string }) => field.name === "duration_ms",
+      ).exact_numeric_grouping_review_override).toMatchObject({ actor: "owner@example.test" });
+
       const autoBandReview = await postJson(
         `http://${server.host}:${server.port}/api/boundary/regenerate`,
         mutationHeaders,

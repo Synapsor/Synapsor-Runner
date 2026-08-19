@@ -219,6 +219,59 @@ describe("Ask access summaries", () => {
     expect(guidance?.next_action).toContain("groups of one can identify individuals");
   });
 
+  it("routes safe numeric grouping refusals to an explicit reviewed decision", async () => {
+    const root = await fixtureProject();
+    const draftPath = path.join(root, "synapsor/generated/exploration-boundary.draft.json");
+    const draft = JSON.parse(await fs.readFile(draftPath, "utf8")) as any;
+    draft.pack.resources.find((candidate: any) => candidate.id === "public.orders")
+      .field_types.total_cents = "integer";
+    await fs.writeFile(draftPath, JSON.stringify(draft), "utf8");
+    await activateFixtureBoundary(root);
+
+    const guidance = await resolveAskAccessGuidance({
+      projectRoot: root,
+      question: "How many orders are in each exact total?",
+      toolCalls: [{
+        call_id: "call-exact-numeric-group",
+        tool: "app.explore_data",
+        provider_tool: "app__explore_data",
+        status: "refused",
+        error_code: "EXPLORE_FIELD_FORBIDDEN",
+        arguments: {
+          boundary: "reviewed_staging",
+          plan: {
+            kind: "aggregate",
+            resource: "public.orders",
+            measures: [{ function: "count" }],
+            dimensions: [{ field: "total_cents" }],
+            top_n: 10,
+          },
+        },
+        result: {
+          ok: false,
+          details: {
+            reason: "field_operation_not_reviewed",
+            resource: "public.orders",
+            field: "total_cents",
+            operation: "group",
+          },
+        },
+      }],
+    });
+
+    expect(guidance).toMatchObject({
+      kind: "review_candidate",
+      review_boundary: "reviewed_staging",
+      review_resource: "public.orders",
+      review_field: "total_cents",
+      review_focus: "field_operation",
+    });
+    expect(guidance?.message).toMatch(/not grouped automatically.*human may approve/is);
+    expect(guidance?.next_action).toContain("Exact numeric groups (X in the terminal)");
+    expect(guidance?.next_action).toContain("--allow-exact-numeric-grouping total_cents");
+    expect(guidance?.next_action).toContain("Review + activate");
+  });
+
   it("routes a forbidden foreign-key grouping through its reviewed relationship", async () => {
     const root = await fixtureProject();
     await activateFixtureBoundary(root);

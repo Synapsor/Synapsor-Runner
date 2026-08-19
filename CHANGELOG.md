@@ -77,6 +77,15 @@
   text entry, so typed boundary names cannot disappear into scrollback. The
   column editor reserves rows for every keyboard control and windows only the
   column list instead of hiding instructions behind a generic row marker.
+- Adds an explicit reviewed exact-grouping grant for eligible numeric business
+  dimensions such as an integer calendar year. Numeric fields remain
+  non-groupable by default; primary, foreign/reference, tenant/principal,
+  sensitive, and unavailable fields cannot be promoted. Terminal `/access`,
+  Workbench, and the additive `--allow-exact-numeric-grouping` CLI path all
+  record actor/reason, stage a disabled revision, and require normal activation.
+  Existing groupable fields are preserved, numeric bands remain separate, and
+  local stdio plus production HTTP use the same cohort, group, response,
+  timeout, query, extraction, and differencing bounds.
 
 Prepared package versions: `@synapsor/runner@1.7.1` and the optional
 `synapsor-runner@1.7.1` command alias, plus `@synapsor/spec@1.10.0` and

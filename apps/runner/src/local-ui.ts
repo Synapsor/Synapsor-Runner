@@ -38,6 +38,7 @@ import {
   databaseServerCompatibilityForLock,
   deactivateExplorationBoundary,
   emptyReviewOverrides,
+  exactNumericGroupingEligibility,
   explorationBoundaryCandidateDigest,
   loadActivatedExplorationBoundary,
   loadActivatedExplorationBoundaries,
@@ -724,7 +725,16 @@ async function handleRequest(input: {
       ...review,
       resources: review.resources.map((resource) => {
         const guidance = blockedTenantScopeGuidance(resource);
-        return guidance ? { ...resource, scope_resolution_guidance: guidance } : resource;
+        return {
+          ...resource,
+          ...(guidance ? { scope_resolution_guidance: guidance } : {}),
+          exact_numeric_grouping_eligibility: Object.fromEntries(
+            resource.fields.map((field) => [
+              field.name,
+              exactNumericGroupingEligibility(resource, field.name),
+            ]),
+          ),
+        };
       }),
     };
     let progress = await readBoundaryReviewProgress(projectRoot, draft);
@@ -8418,6 +8428,14 @@ function managedReviewMutationRequest(
         field: decision.field,
         values: [...decision.values],
       },
+    };
+  }
+  if (decision.kind === "exact_numeric_grouping") {
+    return {
+      ...common,
+      ...(decision.enabled
+        ? { allow_exact_numeric_grouping_fields: [decision.field] }
+        : { remove_exact_numeric_grouping_fields: [decision.field] }),
     };
   }
   if (decision.kind === "derived_measure") {

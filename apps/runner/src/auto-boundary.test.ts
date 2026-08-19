@@ -729,6 +729,134 @@ describe("Auto Boundary compiler", () => {
     );
   });
 
+  it("keeps numeric grouping conservative until a safe exact dimension is explicitly reviewed", () => {
+    const inspection = churnInspection();
+    const table = inspection.tables[0]!;
+    table.columns.push(column("started_year", "integer"));
+    table.suggestions.default_visible_columns.push("started_year");
+    const input = {
+      inspection,
+      project: projectSummary("/workspace/exact-numeric-grouping"),
+      sourceEnv: "DATABASE_URL",
+    };
+    const baseline = buildAutoBoundary(input);
+    const before = baseline.exploration_boundary.pack.resources[0]!;
+    expect(before.groupable_fields).not.toContain("started_year");
+    expect(before.numeric_bands).toBeUndefined();
+    expect(before.auto_bands).toBeUndefined();
+
+    const overrides = applyManagedBoundaryReviewDecision(emptyReviewOverrides(), {
+      kind: "exact_numeric_grouping",
+      resource_id: "public.subscriptions",
+      field: "started_year",
+      enabled: true,
+      actor: "analytics-owner@example.test",
+      reason: "Calendar year is a bounded, meaningful business dimension.",
+      decided_at: "2026-08-19T12:00:00.000Z",
+    });
+    const reviewed = buildAutoBoundary({ ...input, overrides });
+    const after = reviewed.exploration_boundary.pack.resources[0]!;
+    expect(after.groupable_fields).toEqual(
+      expect.arrayContaining([...before.groupable_fields, "started_year"]),
+    );
+    expect(after.numeric_bands).toBeUndefined();
+    expect(after.auto_bands).toBeUndefined();
+    expect(reviewed.overrides.resources["public.subscriptions"]?.exact_numeric_grouping)
+      .toMatchObject({
+        started_year: {
+          actor: "analytics-owner@example.test",
+          reason: "Calendar year is a bounded, meaningful business dimension.",
+        },
+      });
+    expect(reviewed.lock.reviewed_overrides_digest)
+      .not.toBe(baseline.lock.reviewed_overrides_digest);
+
+    const reconstructed = reconstructBoundaryReviewOverrides({
+      baseline: baseline.exploration_boundary,
+      candidate: reviewed.exploration_boundary,
+      actor: "boundary-policy-migration",
+      decidedAt: "2026-08-19T13:00:00.000Z",
+    });
+    expect(reconstructed.resources["public.subscriptions"]?.exact_numeric_grouping)
+      .toHaveProperty("started_year");
+    expect(buildAutoBoundary({ ...input, overrides: reconstructed }).exploration_boundary)
+      .toEqual(reviewed.exploration_boundary);
+
+    const removedOverrides = applyManagedBoundaryReviewDecision(overrides, {
+      kind: "exact_numeric_grouping",
+      resource_id: "public.subscriptions",
+      field: "started_year",
+      enabled: false,
+      actor: "analytics-owner@example.test",
+      reason: "Exact years are no longer part of this agent's reviewed questions.",
+      decided_at: "2026-08-19T14:00:00.000Z",
+    });
+    expect(buildAutoBoundary({ ...input, overrides: removedOverrides })
+      .exploration_boundary.pack.resources[0]!.groupable_fields).not.toContain("started_year");
+
+    const retyped = structuredClone(inspection);
+    retyped.tables[0]!.columns.find((field) => field.name === "started_year")!.data_type = "text";
+    const pruned = pruneAutoBoundaryReviewOverrides(retyped, overrides, {
+      project: input.project,
+    });
+    expect(pruned.overrides.resources["public.subscriptions"]?.exact_numeric_grouping)
+      .toBeUndefined();
+    expect(pruned.removed.join("\n")).toMatch(/started_year.*not numeric/i);
+  });
+
+  it("refuses exact numeric grouping for identity, reference, trusted-scope, and sensitive fields", () => {
+    const inspection = churnInspection();
+    const table = inspection.tables[0]!;
+    table.columns.find((field) => field.name === "id")!.data_type = "integer";
+    table.columns.find((field) => field.name === "tenant_id")!.data_type = "integer";
+    table.columns.push(
+      column("account_id", "integer"),
+      column("principal_code", "integer"),
+      column("risk_score", "integer", { sensitive: true }),
+    );
+    table.suggestions.default_visible_columns.push("account_id", "principal_code", "risk_score");
+    table.suggestions.sensitive_columns.push("risk_score");
+    const base = emptyReviewOverrides();
+    const decision = (field: string) => applyManagedBoundaryReviewDecision(base, {
+      kind: "exact_numeric_grouping",
+      resource_id: "public.subscriptions",
+      field,
+      enabled: true,
+      actor: "analytics-owner@example.test",
+      reason: "Exercise exact grouping eligibility.",
+      decided_at: "2026-08-19T12:00:00.000Z",
+    });
+    const build = (overrides: AutoBoundaryReviewOverrides) => buildAutoBoundary({
+      inspection,
+      project: projectSummary("/workspace/exact-numeric-refusals"),
+      sourceEnv: "DATABASE_URL",
+      overrides,
+    });
+    expect(() => build(decision("id"))).toThrow(/record identity/i);
+    expect(() => build(decision("tenant_id"))).toThrow(/trusted tenant/i);
+    expect(() => build(decision("account_id"))).toThrow(/identifier-like/i);
+    expect(() => build(decision("risk_score"))).toThrow(/sensitive or unresolved/i);
+
+    let principalOverrides = applyManagedBoundaryReviewDecision(base, {
+      kind: "principal_key",
+      resource_id: "public.subscriptions",
+      value: "principal_code",
+      actor: "analytics-owner@example.test",
+      reason: "Use the reviewed numeric owner code as trusted principal scope.",
+      decided_at: "2026-08-19T12:00:00.000Z",
+    });
+    principalOverrides = applyManagedBoundaryReviewDecision(principalOverrides, {
+      kind: "exact_numeric_grouping",
+      resource_id: "public.subscriptions",
+      field: "principal_code",
+      enabled: true,
+      actor: "analytics-owner@example.test",
+      reason: "This conflicting request must fail closed.",
+      decided_at: "2026-08-19T12:01:00.000Z",
+    });
+    expect(() => build(principalOverrides)).toThrow(/trusted tenant and principal/i);
+  });
+
   it("keeps three-hop many-to-one paths reviewable but inactive until the exact bounded opt-in", () => {
     const result = buildAutoBoundary({
       inspection: relationshipChainInspection({ nullableProduct: true }),

@@ -301,6 +301,7 @@ export type AutoBoundaryField = {
   time_bucket_suggestion: boolean;
   evidence: string[];
   enum_review_override?: ReviewedEnumValuesDecision;
+  exact_numeric_grouping_review_override?: ReviewedExactNumericGroupingDecision;
   metadata_review_override?: ReviewedMetadataDecision;
   review_override?: {
     exposure: "keep_out" | "withhold_from_model" | "allow_reviewed_use";
@@ -775,6 +776,7 @@ export type AutoBoundaryReviewOverrides = {
     derived_measures?: Record<string, ReviewedDerivedMeasureDecision>;
     numeric_bands?: Record<string, ReviewedNumericBandDecision>;
     auto_bands?: Record<string, ReviewedAutoBandDecision>;
+    exact_numeric_grouping?: Record<string, ReviewedExactNumericGroupingDecision>;
     metadata?: ReviewedMetadataDecision;
     field_metadata?: Record<string, ReviewedMetadataDecision>;
     fields?: Record<string, {
@@ -823,6 +825,12 @@ export type ReviewedNumericBandDecision = {
 
 export type ReviewedAutoBandDecision = {
   definition: ExplorationAutoBandPolicy;
+  actor: string;
+  reason: string;
+  decided_at: string;
+};
+
+export type ReviewedExactNumericGroupingDecision = {
   actor: string;
   reason: string;
   decided_at: string;
@@ -1008,6 +1016,21 @@ export function pruneAutoBoundaryReviewOverrides(
       autoBands[field] = autoBandDecision;
     }
     if (Object.keys(autoBands).length) retained.auto_bands = autoBands;
+    const exactNumericGrouping: NonNullable<
+      AutoBoundaryReviewOverrides["resources"][string]["exact_numeric_grouping"]
+    > = {};
+    for (const [field, groupingDecision] of Object.entries(
+      decision.exact_numeric_grouping ?? {},
+    )) {
+      if (!columns.has(field)) {
+        removed.push(`${resourceId}.${field}: reviewed exact numeric grouping field no longer exists`);
+        continue;
+      }
+      exactNumericGrouping[field] = groupingDecision;
+    }
+    if (Object.keys(exactNumericGrouping).length) {
+      retained.exact_numeric_grouping = exactNumericGrouping;
+    }
     const fieldMetadata: NonNullable<
       AutoBoundaryReviewOverrides["resources"][string]["field_metadata"]
     > = {};
@@ -1068,7 +1091,8 @@ export function pruneAutoBoundaryReviewOverrides(
   if (Object.values(preliminary.resources).some((resource) =>
     resource.tenant_scope_path
     || resource.principal_scope_path
-    || resource.shared_reference_scope)) {
+    || resource.shared_reference_scope
+    || Object.keys(resource.exact_numeric_grouping ?? {}).length > 0)) {
     const parsedEvidence = context.parsedEvidence ?? [];
     const staticObjects = parsedEvidence.flatMap((evidence) =>
       evidence.objects.map((object) => ({ format: evidence.format, object })));
@@ -1084,7 +1108,11 @@ export function pruneAutoBoundaryReviewOverrides(
       context.existingContracts ?? [],
       context.configuredTrustedContext,
     );
-    applyReviewOverrides(graph, preliminary);
+    const structuralOverrides = structuredClone(preliminary);
+    for (const resource of Object.values(structuralOverrides.resources)) {
+      delete resource.exact_numeric_grouping;
+    }
+    applyReviewOverrides(graph, normalizeAutoBoundaryReviewOverrides(structuralOverrides));
     inferDerivedScopeCandidates(graph);
     const reviewedResources = new Map(graph.resources.map((resource) => [resource.id, resource]));
     for (const [resourceId, decision] of Object.entries(resources)) {
@@ -1113,6 +1141,21 @@ export function pruneAutoBoundaryReviewOverrides(
           );
           delete decision.shared_reference_scope;
         }
+      }
+      for (const field of Object.keys(decision.exact_numeric_grouping ?? {})) {
+        const eligibility = reviewed
+          ? exactNumericGroupingEligibility(reviewed, field)
+          : { eligible: false, reasons: ["the resource is no longer available"] };
+        if (eligibility.eligible) continue;
+        removed.push(
+          `${resourceId}.${field}: reviewed exact numeric grouping was removed because `
+          + eligibility.reasons.join("; "),
+        );
+        delete decision.exact_numeric_grouping![field];
+      }
+      if (decision.exact_numeric_grouping
+        && Object.keys(decision.exact_numeric_grouping).length === 0) {
+        delete decision.exact_numeric_grouping;
       }
       if (Object.keys(decision).length === 0) delete resources[resourceId];
     }
@@ -1394,6 +1437,9 @@ function reviewOverrideAuthority(overrides: AutoBoundaryReviewOverrides): Record
                   .map(([field, decision]) => [field, decision.definition]),
               ),
             } : {}),
+            ...(resource.exact_numeric_grouping ? {
+              exact_numeric_grouping: Object.keys(resource.exact_numeric_grouping).sort(),
+            } : {}),
             ...(resource.metadata ? {
               metadata: {
                 ...(resource.metadata.label ? { label: resource.metadata.label } : {}),
@@ -1465,6 +1511,9 @@ function generationEvidenceAuthority(resources: AutoBoundaryResource[]): unknown
       ...field,
       ...(field.enum_review_override
         ? { enum_review_override: { values: field.enum_review_override.values } }
+        : {}),
+      ...(field.exact_numeric_grouping_review_override
+        ? { exact_numeric_grouping_review_override: true }
         : {}),
       ...(field.metadata_review_override
         ? {
@@ -2782,6 +2831,7 @@ export function normalizeAutoBoundaryReviewOverrides(input: unknown): AutoBounda
         "derived_measures",
         "numeric_bands",
         "auto_bands",
+        "exact_numeric_grouping",
         "metadata",
         "field_metadata",
         "fields",
@@ -2906,6 +2956,22 @@ export function normalizeAutoBoundaryReviewOverrides(input: unknown): AutoBounda
         }
       }
       resource.auto_bands = autoBands;
+    }
+    if (rawResource.exact_numeric_grouping !== undefined) {
+      if (!isRecord(rawResource.exact_numeric_grouping)) {
+        throw new Error(`${resourceId} exact numeric grouping review overrides must be an object.`);
+      }
+      const exactNumericGrouping: NonNullable<
+        AutoBoundaryReviewOverrides["resources"][string]["exact_numeric_grouping"]
+      > = {};
+      for (const field of Object.keys(rawResource.exact_numeric_grouping).sort()) {
+        assertSafeMapKey(field, "reviewed exact numeric grouping field");
+        exactNumericGrouping[field] = normalizeReviewedExactNumericGroupingDecision(
+          rawResource.exact_numeric_grouping[field],
+          `${resourceId}.${field} exact numeric grouping`,
+        );
+      }
+      resource.exact_numeric_grouping = exactNumericGrouping;
     }
     if (rawResource.field_metadata !== undefined) {
       if (!isRecord(rawResource.field_metadata)) {
@@ -3049,6 +3115,19 @@ function normalizeReviewedAutoBandDecision(
   assertOnlyKeys(value, ["definition", "actor", "reason", "decided_at"], `${label} decision`);
   return {
     definition: normalizeExplorationAutoBandPolicy(value.definition, `${label} definition`),
+    actor: reviewedText(value.actor, `${label} actor`, 128),
+    reason: reviewedText(value.reason, `${label} reason`, 500),
+    decided_at: reviewedTimestamp(value.decided_at, `${label} decided_at`),
+  };
+}
+
+function normalizeReviewedExactNumericGroupingDecision(
+  value: unknown,
+  label: string,
+): ReviewedExactNumericGroupingDecision {
+  if (!isRecord(value)) throw new Error(`${label} decision must be an object.`);
+  assertOnlyKeys(value, ["actor", "reason", "decided_at"], `${label} decision`);
+  return {
     actor: reviewedText(value.actor, `${label} actor`, 128),
     reason: reviewedText(value.reason, `${label} reason`, 500),
     decided_at: reviewedTimestamp(value.decided_at, `${label} decided_at`),
@@ -3439,6 +3518,24 @@ function applyReviewOverrides(
         && !isReferenceIdentifierName(field.name)
         && isCategoricalType(field.data_type);
       field.time_bucket_suggestion = allow && isTimestampType(field.data_type);
+    }
+    for (const [fieldName, groupingOverride] of Object.entries(
+      override.exact_numeric_grouping ?? {},
+    )) {
+      const field = resource.fields.find((candidate) => candidate.name === fieldName);
+      if (!field) {
+        throw new Error(`Exact numeric grouping review references unknown field ${resourceId}.${fieldName}.`);
+      }
+      const eligibility = exactNumericGroupingEligibility(resource, fieldName);
+      if (!eligibility.eligible) {
+        throw new Error(
+          `${resourceId}.${fieldName} cannot be reviewed for exact numeric grouping: `
+          + `${eligibility.reasons.join("; ")}.`,
+        );
+      }
+      field.exact_numeric_grouping_review_override = structuredClone(groupingOverride);
+      field.groupable_suggestion = true;
+      field.evidence.push("human review override: exact numeric grouping enabled");
     }
     refreshResourceStatus(resource);
   }
@@ -5152,6 +5249,7 @@ function buildExplorationBoundaryDraft(
     const categoricalAnalysisAvailable = (field: AutoBoundaryField): boolean =>
       options.databaseServerAuthority.features.schema_check_constraints
       || !field.groupable_suggestion
+      || Boolean(field.exact_numeric_grouping_review_override)
       || Boolean(reviewedFieldEnums[field.name]?.length);
     const selectable = resource.fields
       .filter((field) => field.raw_visible_suggestion
@@ -5748,6 +5846,46 @@ function nameOnlySensitivityRefutedByStructure(
 function sourceKind(detail: string): "prisma" | "drizzle" | "openapi" | "synapsor" {
   const prefix = detail.split(":", 1)[0];
   return prefix === "prisma" || prefix === "drizzle" || prefix === "openapi" ? prefix : "synapsor";
+}
+
+export type ExactNumericGroupingEligibility = {
+  eligible: boolean;
+  reasons: string[];
+};
+
+export function exactNumericGroupingEligibility(
+  resource: Pick<
+    AutoBoundaryResource,
+    "fields" | "primary_key" | "tenant_key" | "principal_key" | "relationships"
+  >,
+  fieldName: string,
+): ExactNumericGroupingEligibility {
+  const field = resource.fields.find((candidate) => candidate.name === fieldName);
+  if (!field) return { eligible: false, reasons: ["the field is not present in the inspected resource"] };
+  const reasons: string[] = [];
+  if (!isNumericType(field.data_type)) reasons.push("the inspected database type is not numeric");
+  if (field.primary_key || resource.primary_key.selected === fieldName) {
+    reasons.push("record identity fields cannot be exact grouping dimensions");
+  }
+  if (resource.relationships.some((relationship) => relationship.columns.includes(fieldName))) {
+    reasons.push("foreign-key and reference fields cannot be exact grouping dimensions");
+  }
+  if (isReferenceIdentifierName(fieldName)) {
+    reasons.push("identifier-like fields cannot be exact grouping dimensions");
+  }
+  if (resource.tenant_key.selected === fieldName
+    || resource.principal_key.selected === fieldName
+    || resource.tenant_key.candidates.includes(fieldName)
+    || resource.principal_key.candidates.includes(fieldName)) {
+    reasons.push("trusted tenant and principal fields cannot be exact grouping dimensions");
+  }
+  if (field.sensitivity.state !== "structurally_low_risk") {
+    reasons.push("sensitive or unresolved fields cannot be exact grouping dimensions");
+  }
+  if (!field.raw_visible_suggestion || field.sensitive_suggestion || isUnsafeRawType(field.data_type)) {
+    reasons.push("the field is not available for reviewed model use");
+  }
+  return { eligible: reasons.length === 0, reasons: unique(reasons) };
 }
 
 function isNumericType(type: string): boolean {
