@@ -1,4 +1,3 @@
-import readline from "node:readline";
 import type { ReadStream, WriteStream } from "node:tty";
 import {
   reviewedBoundaryFieldTier,
@@ -13,9 +12,9 @@ import {
 import {
   readTerminalActivationConfirmation,
   readTerminalTextWithEscape,
+  withRawTerminalScreen as withRawKeys,
 } from "./terminal-prompt.js";
 import {
-  padTerminalLine,
   terminalContentWidth,
 } from "./terminal-layout.js";
 import {
@@ -3155,168 +3154,6 @@ function isEscapeKey(key: Keypress): boolean {
   return key.name === "escape" || key.sequence === "\u001b";
 }
 
-async function withRawKeys<T>(
-  input: ReadStream,
-  output: WriteStream,
-  operation: (
-    nextKey: () => Promise<Keypress>,
-    render: (lines: string[]) => void,
-  ) => Promise<T>,
-): Promise<T> {
-  const wasRaw = input.isRaw;
-  const wasPaused = input.isPaused();
-  let renderedLines = 0;
-  const queuedKeys: Keypress[] = [];
-  const keyWaiters: Array<(key: Keypress) => void> = [];
-  let terminalClosed = false;
-  const closedKey: Keypress = { name: "escape", sequence: "\u001b" };
-  const keyHandler = (_text: string, key: Keypress) => {
-    const waiter = keyWaiters.shift();
-    if (waiter) waiter(key);
-    else queuedKeys.push(key);
-  };
-  const closeHandler = () => {
-    terminalClosed = true;
-    for (const waiter of keyWaiters.splice(0)) waiter(closedKey);
-  };
-  readline.emitKeypressEvents(input);
-  input.on("keypress", keyHandler);
-  input.once("end", closeHandler);
-  input.once("close", closeHandler);
-  input.once("error", closeHandler);
-  input.setRawMode(true);
-  input.resume();
-  output.write("\u001b[?25l");
-  const render = (lines: string[]) => {
-    if (renderedLines) output.write(`\u001b[${renderedLines}F`);
-    const width = Math.max(36, Math.min(terminalContentWidth(output.columns), 116));
-    const normalized = lines.flatMap((line) =>
-      wrapTerminalLine(line, width).map((wrapped) => padTerminalLine(wrapped)));
-    const targetLines = Math.max(renderedLines, normalized.length);
-    for (let index = 0; index < targetLines; index += 1) {
-      output.write(`\u001b[2K${normalized[index] ?? ""}\n`);
-    }
-    renderedLines = targetLines;
-  };
-  const nextKey = () => {
-    const queued = queuedKeys.shift();
-    if (queued) return Promise.resolve(queued);
-    if (terminalClosed) return Promise.resolve(closedKey);
-    return new Promise<Keypress>((resolve) => keyWaiters.push(resolve));
-  };
-  try {
-    return await operation(nextKey, render);
-  } finally {
-    input.off("keypress", keyHandler);
-    input.off("end", closeHandler);
-    input.off("close", closeHandler);
-    input.off("error", closeHandler);
-    if (renderedLines) output.write(`\u001b[${renderedLines}F\u001b[0J`);
-    output.write("\u001b[?25h");
-    input.setRawMode(wasRaw);
-    if (wasPaused) input.pause();
-  }
-}
-
 function safeTerminalText(value: string): string {
   return value.replace(/[\u0000-\u001f\u007f-\u009f]/g, "?");
-}
-
-function wrapTerminalLine(value: string, width: number): string[] {
-  const safe = sanitizeStyledTerminalLine(value);
-  if (!safe) return [""];
-  const tokens = (safe.match(/\u001b\[[0-9;]*m|./gu) ?? []).map((raw) => ({
-    raw,
-    visible: !raw.startsWith("\u001b["),
-  }));
-  const lines: string[] = [];
-  let current: typeof tokens = [];
-  let visible = 0;
-  const continuationIndent = styledContinuationIndent(safe, width);
-  const continuationPrefix = Array.from({ length: continuationIndent }, () => ({
-    raw: " ",
-    visible: true,
-  }));
-  for (const token of tokens) {
-    current.push(token);
-    if (token.visible) visible += 1;
-    if (visible <= width) continue;
-
-    const wordBreak = findStyledWordBreak(current, width);
-    const splitAt = wordBreak >= 0
-      ? wordBreak
-      : styledTokenIndexAfterVisibleWidth(current, width);
-    const head = current.slice(0, splitAt);
-    current = [
-      ...continuationPrefix,
-      ...current.slice(splitAt + (wordBreak >= 0 ? 1 : 0)),
-    ];
-    lines.push(head.map((item) => item.raw).join("").trimEnd());
-    visible = current.filter((item) => item.visible).length;
-  }
-  lines.push(current.map((item) => item.raw).join("").trimEnd());
-  return lines;
-}
-
-function styledContinuationIndent(value: string, width: number): number {
-  const plain = value.replace(/\u001b\[[0-9;]*m/g, "");
-  const leading = plain.match(/^ */u)?.[0].length ?? 0;
-  const labeledColumn = plain.slice(leading).match(/^\S.{0,18}? {2,}/u);
-  const desired = labeledColumn ? leading + labeledColumn[0].length : leading;
-  return Math.min(desired, Math.max(0, Math.floor(width / 3)));
-}
-
-function findStyledWordBreak(
-  tokens: Array<{ raw: string; visible: boolean }>,
-  width: number,
-): number {
-  let visible = 0;
-  let candidate = -1;
-  for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index]!;
-    if (!token.visible) continue;
-    visible += 1;
-    if (visible > width) break;
-    if (/\s/u.test(token.raw) && visible >= Math.max(8, Math.floor(width / 2))) {
-      candidate = index;
-    }
-  }
-  return candidate;
-}
-
-function styledTokenIndexAfterVisibleWidth(
-  tokens: Array<{ raw: string; visible: boolean }>,
-  width: number,
-): number {
-  let visible = 0;
-  for (let index = 0; index < tokens.length; index += 1) {
-    if (!tokens[index]!.visible) continue;
-    visible += 1;
-    if (visible > width) return index;
-  }
-  return tokens.length;
-}
-
-function sanitizeStyledTerminalLine(value: string): string {
-  let safe = "";
-  for (let index = 0; index < value.length;) {
-    if (value[index] === "\u001b") {
-      const sgr = value.slice(index).match(/^\u001b\[[0-9;]*m/);
-      if (sgr) {
-        safe += sgr[0];
-        index += sgr[0].length;
-        continue;
-      }
-      safe += "?";
-      index += 1;
-      continue;
-    }
-    const codePoint = value.codePointAt(index)!;
-    const character = String.fromCodePoint(codePoint);
-    safe += codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f)
-      ? "?"
-      : character;
-    index += character.length;
-  }
-  return safe;
 }

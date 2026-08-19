@@ -108,13 +108,18 @@ describe("boundary review terminal picker", () => {
       "Required reason",
     ].join("\n"));
 
-    await send(terminal.input, "Centrally managed reference data.\n");
+    for (const character of "Centrally managed reference data.") {
+      await send(terminal.input, character);
+    }
+    await send(terminal.input, "\n");
     await expect(answer).resolves.toBe("Centrally managed reference data.");
 
     const rendered = stripAnsi(terminal.output.read()?.toString() ?? "");
     expect(rendered).toContain("  SHARED REFERENCE REVIEW\n");
     expect(rendered).toContain("  Table: public.lab_catalog\n");
     expect(rendered).toContain("  Required reason [Esc Back]: ");
+    expect(rendered.match(/SHARED REFERENCE REVIEW/gu)).toHaveLength(1);
+    expect(rendered.match(/Table: public\.lab_catalog/gu)).toHaveLength(1);
     expect(terminal.input.isRaw).toBe(false);
   });
 
@@ -796,8 +801,12 @@ describe("boundary review terminal picker", () => {
     expect(firstView).toContain("Nothing is copied from another boundary.");
     expect(firstView).toContain("public.check_ins");
     expect(firstView).toContain("public.organizations");
+    expect(firstView.endsWith("\n")).toBe(false);
 
     await send(input, "\u001b[B");
+    const movedView = output.read()?.toString() ?? "";
+    expect(movedView).toContain("\u001b[");
+    expect(movedView.endsWith("\n")).toBe(false);
     await send(input, "\r");
     await expect(selected).resolves.toEqual({
       resource_id: "public.organizations",

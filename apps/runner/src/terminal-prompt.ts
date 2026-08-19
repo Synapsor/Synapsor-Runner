@@ -17,6 +17,51 @@ export type TerminalKeypress = {
 
 type PromptKey = TerminalKeypress;
 
+export type InPlaceTerminalRenderer = {
+  render(lines: string[]): void;
+  clear(): void;
+};
+
+/**
+ * Redraws a terminal frame without writing a newline after its last row.
+ * A trailing newline at the bottom of a terminal scrolls the viewport on every
+ * keypress, even when the following redraw moves the cursor back up.
+ */
+export function createInPlaceTerminalRenderer(
+  output: Pick<WriteStream, "write">,
+): InPlaceTerminalRenderer {
+  let renderedLines = 0;
+
+  const moveToFrameStart = () => {
+    if (renderedLines > 1) {
+      output.write(`\u001b[${renderedLines - 1}F`);
+    } else {
+      output.write("\r");
+    }
+  };
+
+  return {
+    render(lines) {
+      const targetLines = Math.max(renderedLines, lines.length);
+      if (!targetLines) return;
+      if (renderedLines) moveToFrameStart();
+      else output.write("\r");
+
+      for (let index = 0; index < targetLines; index += 1) {
+        output.write(`\u001b[2K${lines[index] ?? ""}`);
+        if (index < targetLines - 1) output.write("\r\n");
+      }
+      renderedLines = targetLines;
+    },
+    clear() {
+      if (!renderedLines) return;
+      moveToFrameStart();
+      output.write("\u001b[0J");
+      renderedLines = 0;
+    },
+  };
+}
+
 export async function withAlternateTerminalScreen<T>(
   output: WriteStream,
   operation: () => Promise<T>,
@@ -38,6 +83,9 @@ export async function readTerminalTextWithEscape(
   if (!input.isTTY || !output.isTTY || typeof input.setRawMode !== "function") {
     throw new Error("Interactive text input requires a real terminal.");
   }
+  const promptLines = padTerminalBlock(prompt).split("\n");
+  const questionPrompt = promptLines.pop() ?? "";
+  if (promptLines.length) output.write(`${promptLines.join("\n")}\n`);
   const rl = readline.createInterface({ input, output, terminal: true });
   return new Promise<string | undefined>((resolve) => {
     let settled = false;
@@ -62,7 +110,7 @@ export async function readTerminalTextWithEscape(
     input.once("end", onEnd);
     input.once("close", onEnd);
     input.once("error", onError);
-    rl.question(padTerminalBlock(prompt), (value) => finish(value.trim()));
+    rl.question(questionPrompt, (value) => finish(value.trim()));
   });
 }
 
@@ -84,7 +132,7 @@ export async function withRawTerminalScreen<T>(
   }
   const wasRaw = input.isRaw;
   const wasPaused = input.isPaused();
-  let renderedLines = 0;
+  const renderer = createInPlaceTerminalRenderer(output);
   const queuedKeys: TerminalKeypress[] = [];
   const keyWaiters: Array<(key: TerminalKeypress) => void> = [];
   let terminalClosed = false;
@@ -107,15 +155,10 @@ export async function withRawTerminalScreen<T>(
   input.resume();
   output.write("\u001b[?25l");
   const render = (lines: string[]) => {
-    if (renderedLines) output.write(`\u001b[${renderedLines}F`);
     const width = Math.max(36, Math.min(terminalContentWidth(output.columns), 116));
     const normalized = lines.flatMap((line) =>
       wrapStyledTerminalLine(line, width).map((wrapped) => padTerminalLine(wrapped)));
-    const targetLines = Math.max(renderedLines, normalized.length);
-    for (let index = 0; index < targetLines; index += 1) {
-      output.write(`\u001b[2K${normalized[index] ?? ""}\n`);
-    }
-    renderedLines = targetLines;
+    renderer.render(normalized);
   };
   const nextKey = () => {
     const queued = queuedKeys.shift();
@@ -130,7 +173,7 @@ export async function withRawTerminalScreen<T>(
     input.off("end", closeHandler);
     input.off("close", closeHandler);
     input.off("error", closeHandler);
-    if (renderedLines) output.write(`\u001b[${renderedLines}F\u001b[0J`);
+    renderer.clear();
     output.write("\u001b[?25h");
     input.setRawMode(wasRaw);
     if (wasPaused) input.pause();

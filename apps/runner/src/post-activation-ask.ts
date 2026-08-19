@@ -3,7 +3,10 @@ import process from "node:process";
 import type { ReadStream, WriteStream } from "node:tty";
 import { terminalTheme } from "./boundary-cli-picker.js";
 import { cliCommandName } from "./cli-command-meta.js";
-import { readTerminalTextWithEscape } from "./terminal-prompt.js";
+import {
+  createInPlaceTerminalRenderer,
+  readTerminalTextWithEscape,
+} from "./terminal-prompt.js";
 import { ProviderCredentialInputCancelledError } from "./secret-input.js";
 import {
   padTerminalBlock,
@@ -414,7 +417,7 @@ async function chooseRouteInTerminal(
   );
   const wasRaw = input.isRaw;
   const wasPaused = input.isPaused();
-  let renderedLines = 0;
+  const renderer = createInPlaceTerminalRenderer(output);
   const queued: Array<{ name?: string; ctrl?: boolean }> = [];
   const waiters: Array<(key: { name?: string; ctrl?: boolean }) => void> = [];
   const onKey = (_text: string, key: { name?: string; ctrl?: boolean }) => {
@@ -443,12 +446,7 @@ async function chooseRouteInTerminal(
       "",
       `${theme.key("Up/Down")} Select   ${theme.key("Enter")} Continue   ${theme.key("Esc")} Back`,
     ]);
-    if (renderedLines) output.write(`\u001b[${renderedLines}F`);
-    const target = Math.max(renderedLines, lines.length);
-    for (let index = 0; index < target; index += 1) {
-      output.write(`\u001b[2K${lines[index] ?? ""}\n`);
-    }
-    renderedLines = target;
+    renderer.render(lines);
   };
   const nextKey = () => {
     const key = queued.shift();
@@ -472,7 +470,7 @@ async function chooseRouteInTerminal(
     }
   } finally {
     input.off("keypress", onKey);
-    if (renderedLines) output.write(`\u001b[${renderedLines}F\u001b[0J`);
+    renderer.clear();
     output.write("\u001b[?25h");
     input.setRawMode(wasRaw);
     if (wasPaused) input.pause();
