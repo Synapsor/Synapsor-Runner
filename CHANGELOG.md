@@ -72,7 +72,11 @@
   terminal's real row count while retaining the title, highlighted choice, and
   controls. Multiline explanations are printed once instead of being repainted
   for every typed character, and compact terminals identify hidden rows rather
-  than pushing them into scrollback on every keypress.
+  than pushing them into scrollback on every keypress. Boundary navigation now
+  runs in the terminal's alternate screen and restores the normal buffer before
+  text entry, so typed boundary names cannot disappear into scrollback. The
+  column editor reserves rows for every keyboard control and windows only the
+  column list instead of hiding instructions behind a generic row marker.
 
 Prepared package versions: `@synapsor/runner@1.7.1` and the optional
 `synapsor-runner@1.7.1` command alias, plus `@synapsor/spec@1.10.0` and

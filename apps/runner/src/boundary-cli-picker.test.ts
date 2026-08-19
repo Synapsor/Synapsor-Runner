@@ -97,6 +97,33 @@ describe("boundary review terminal picker", () => {
     await expect(confirmed).resolves.toBe(true);
   });
 
+  it("restores the normal terminal buffer before naming a boundary from access", async () => {
+    const terminal = fakeTerminal(80, 24);
+    const session = createBoundaryReviewInteractiveSession(terminal.input, terminal.output);
+    const create = session.chooseResource(
+      [summary("public.sites", 0)],
+      undefined,
+      { initialView: "access" },
+    );
+
+    await send(terminal.input, "b");
+    await send(terminal.input, "a");
+    await expect(create).resolves.toEqual({ action: "create" });
+    const navigation = terminal.output.read()?.toString() ?? "";
+    expect(navigation).toContain("\u001b[?1049h");
+    expect(navigation.lastIndexOf("\u001b[?1049l"))
+      .toBeGreaterThan(navigation.lastIndexOf("\u001b[?1049h"));
+
+    const name = session.promptText("New boundary name: ");
+    for (const character of "test_sites") await send(terminal.input, character);
+    await send(terminal.input, "\n");
+    await expect(name).resolves.toBe("test_sites");
+    const prompt = terminal.output.read()?.toString() ?? "";
+    expect(prompt).toContain("New boundary name");
+    expect(prompt).toContain("test_sites");
+    expect(prompt).not.toContain("\u001b[?1049h");
+  });
+
   it("keeps a multiline review explanation above a short visible text-entry line", async () => {
     const terminal = fakeTerminal();
     const session = createBoundaryReviewInteractiveSession(terminal.input, terminal.output);
@@ -1611,6 +1638,37 @@ describe("boundary review terminal picker", () => {
     expect(rendered).toContain("ACCESS");
     expect(rendered).toContain("Selected column: outcome · text");
     expect(plain).toMatch(/Back to boundary\s+tables/);
+    await send(input, "b");
+    await expect(edited).resolves.toBe("back");
+  });
+
+  it("windows columns without hiding their controls in a short terminal", async () => {
+    const { input, output } = fakeTerminal(80, 24);
+    const view = reviewView();
+    const template = view.fields[0]!;
+    view.fields = Array.from({ length: 14 }, (_, index) => ({
+      ...template,
+      name: `site_field_${String(index + 1).padStart(2, "0")}`,
+    }));
+    const names = view.fields.map((field) => field.name);
+    for (const candidate of [view.candidate!, view.generated_candidate!]) {
+      candidate.selectable_fields = [...names];
+      candidate.kept_out_fields = [];
+    }
+    const edited = createBoundaryReviewInteractiveSession(input, output)
+      .editFieldTiers(view, { focusedAccess: true });
+    const frame = output.read()?.toString() ?? "";
+    const plain = stripAnsi(frame);
+
+    expect(terminalFrameRows(frame)).toBeLessThanOrEqual(24);
+    expect(plain).toContain("Up/Down Navigate");
+    expect(plain).toContain("P Privacy");
+    expect(plain).toContain("O User/owner");
+    expect(plain).toMatch(/I (?:Edit the selected column's reviewed label|Labels and descriptions)/u);
+    expect(plain).toMatch(/B\/Esc Back to (?:boundary )?tables/u);
+    expect(plain).toContain("Showing columns");
+    expect(plain).not.toContain("rows hidden");
+
     await send(input, "b");
     await expect(edited).resolves.toBe("back");
   });
