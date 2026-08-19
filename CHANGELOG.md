@@ -65,6 +65,11 @@
   Load refuses an organization/config mismatch, relationship paths retain the
   same many-to-one proofs, and reviewed principal scope remains independently
   enforced on the root and every protected relationship link.
+- Keeps keyboard-driven terminal views fixed in place instead of scrolling the
+  viewport by one row on every redraw. Boundary authoring, evidence browsing,
+  Ask pickers, and post-activation choices now share one frame renderer that
+  never emits a trailing newline below the frame; multiline explanations are
+  also printed once instead of being repainted for every typed character.
 
 Prepared package versions: `@synapsor/runner@1.7.1` and the optional
 `synapsor-runner@1.7.1` command alias, plus `@synapsor/spec@1.10.0` and

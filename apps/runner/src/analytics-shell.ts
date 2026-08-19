@@ -59,6 +59,7 @@ import {
 import { cliCommandName } from "./cli-command-meta.js";
 import { shellQuote } from "./cli-format.js";
 import type { ResolvedRelativeTimeWindow } from "./relative-time-window.js";
+import { createInPlaceTerminalRenderer } from "./terminal-prompt.js";
 
 export { renderTerminalJson, renderTerminalSql } from "./terminal-syntax.js";
 
@@ -1005,7 +1006,7 @@ export function createTerminalAnalyticsShellIo(input: {
     clearStatus();
     let selected = Math.max(0, choice.options.findIndex((option) =>
       option.value === choice.initialValue));
-    let renderedLines = 0;
+    const pickerRenderer = createInPlaceTerminalRenderer(writable as NodeJS.WriteStream);
     const queuedKeys: Array<{ name?: string; ctrl?: boolean }> = [];
     const keyWaiters: Array<(key: { name?: string; ctrl?: boolean }) => void> = [];
     const keyHandler = (_text: string, key: { name?: string; ctrl?: boolean }) => {
@@ -1065,12 +1066,7 @@ export function createTerminalAnalyticsShellIo(input: {
         "",
         `${theme.key("Up/Down")} Select   ${theme.key("Enter")} Show diagram   ${theme.key("Esc")} Cancel`,
       ].map((line) => padTerminalLine(line));
-      if (renderedLines) writable.write(`\u001b[${renderedLines}F`);
-      const target = Math.max(renderedLines, lines.length);
-      for (let index = 0; index < target; index += 1) {
-        writable.write(`\u001b[2K${lines[index] ?? ""}\n`);
-      }
-      renderedLines = target;
+      pickerRenderer.render(lines);
     };
 
     readable.removeAllListeners("keypress");
@@ -1098,7 +1094,7 @@ export function createTerminalAnalyticsShellIo(input: {
       }
     } finally {
       readable.off("keypress", keyHandler);
-      if (renderedLines) writable.write(`\u001b[${renderedLines}F\u001b[0J`);
+      pickerRenderer.clear();
       writable.write("\u001b[?25h");
       ttyInput.setRawMode(wasRaw);
       if (wasPaused) readable.pause();
