@@ -170,11 +170,14 @@ comparison rather than becoming part of the inferred resource.
 
 When a rejected plan has one concrete reviewed correction, OpenAI and
 Anthropic receive the refusal and one bounded opportunity to submit a corrected
-plan. The original plan never executes. A second mismatch ends the turn, and
-ambiguous, unavailable, or permission-blocked requests are not retried merely
-to guess again. This Ask-side check does not apply to external Explore clients,
-which submit plans without giving Runner the original natural-language
-question.
+plan. Runner sends a versioned correction contract plus a separate provider
+instruction naming the exact required resource or dimension and the rejected
+choice. The model must author the corrected plan; Runner does not rewrite it.
+The original plan never executes. A second mismatch ends the turn and carries
+no additional retry allowance. Ambiguous, unavailable, or permission-blocked
+requests are not retried merely to guess again. This Ask-side check does not
+apply to external Explore clients, which submit plans without giving Runner the
+original natural-language question.
 
 Reviewed enum values also participate in intent checking. Normally, if the
 question names an allowed value such as `emergency`, the plan must constrain the
@@ -594,10 +597,12 @@ The current release enforces:
 | Reported session token usage | 200,000 by default; operator ceiling 1,000-5,000,000 |
 
 One Workbench Ask session runs one request at a time. Runner does not
-automatically retry provider calls in this release. A developer may retry a
-known safe failure from the UI; every retry begins with current authority
-validation. Token accounting depends on usage reported by the provider and is
-not a monetary spend guarantee.
+automatically retry transport failures or ordinary provider calls. The sole
+in-turn exception is the one bounded, fail-closed intent correction described
+above; it cannot execute the rejected plan or grant a second correction. A
+developer may retry a known safe failure from the UI; every new user retry
+begins with current authority validation. Token accounting depends on usage
+reported by the provider and is not a monetary spend guarantee.
 
 Set the initial client limits with
 `try ask --session-token-budget <tokens> --max-output-tokens <tokens>` or the

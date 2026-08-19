@@ -1430,7 +1430,11 @@ describe("Workbench BYOM Ask", () => {
             };
           }
           if (requests === 2) {
-            expect(JSON.stringify(request.body)).toContain(relationship);
+            const body = JSON.stringify(request.body);
+            expect(body).toContain(relationship);
+            expect(body).toContain("synapsor.ask-intent-retry.v1");
+            expect(body).toContain("RUNNER INTENT CORRECTION - ONE ATTEMPT ONLY");
+            expect(body).toContain("set_exact_dimension");
             return {
               status: 200,
               body: {
@@ -1462,6 +1466,12 @@ describe("Workbench BYOM Ask", () => {
       expect.objectContaining({ error_code: "ASK_PLAN_INTENT_MISMATCH", status: "refused" }),
       expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
     ]);
+    expect(result.tool_calls[0]?.result.runner_retry_contract).toMatchObject({
+      schema_version: "synapsor.ask-intent-retry.v1",
+      attempts_remaining: 1,
+      required_dimension: { field: "department", relationship },
+      rejected_dimensions: [{ field: "event_type" }],
+    });
     expect(exploreCalls).toBe(1);
     expect(requests).toBe(3);
   });
@@ -3986,6 +3996,13 @@ describe("Workbench BYOM Ask", () => {
       call.error_code === "ASK_PLAN_INTENT_MISMATCH"
       && call.result.source_query_executed === false
       && call.result.explore_budget_consumed === false)).toBe(true);
+    expect(result.tool_calls[0]?.result.runner_retry_contract).toMatchObject({
+      schema_version: "synapsor.ask-intent-retry.v1",
+      attempts_remaining: 1,
+      required_dimension: { field: "region" },
+      rejected_dimensions: [{ field: "contract_type" }],
+    });
+    expect(result.tool_calls[1]?.result.runner_retry_contract).toBeUndefined();
     expect(exploreCalls).toBe(0);
     expect(requestJson).toHaveBeenCalledTimes(2);
   });
@@ -4043,14 +4060,14 @@ describe("Workbench BYOM Ask", () => {
     expect(requestJson).toHaveBeenCalledTimes(1);
   });
 
-  it("executes only one corrected retry after refusing the original plan", async () => {
+  it("executes only one model-authored correction after refusing the split-typo plan", async () => {
     let exploreCalls = 0;
     const gateway: AskToolGateway = {
       mode: "authoring",
       listTools: () => authoringTools,
       callTool: async () => {
         exploreCalls += 1;
-        return { ok: true, value: { ok: true, data: [{ region: "west", measure_0: 12 }], source_database_changed: false } };
+        return { ok: true, value: { ok: true, data: [{ contract_type: "fixed", measure_0: 12 }], source_database_changed: false } };
       },
       describeOperatorMetadata: async () => ({
         ok: true,
@@ -4060,10 +4077,10 @@ describe("Workbench BYOM Ask", () => {
             id: "public.sites",
             label: "Sites",
             fields: [
-              { id: "region", label: "Region" },
               { id: "contract_type", label: "Contract type" },
+              { id: "site_ref", label: "Site reference" },
             ],
-            groupable_fields: ["region", "contract_type"],
+            groupable_fields: ["contract_type", "site_ref"],
           }],
           source_database_changed: false,
         },
@@ -4079,11 +4096,28 @@ describe("Workbench BYOM Ask", () => {
       egress_acknowledged: true,
     });
     let requests = 0;
-    const result = await session.run("Which regions have the most sites?", gateway, {
+    const result = await session.run("Which sites are there for each contrac ttype?", gateway, {
       requestJson: async (request) => {
         requests += 1;
         if (requests === 1) {
-          return openAiToolCall("wrong_region_dimension", "app__explore_data", {
+          return openAiToolCall("wrong_contract_type_dimension", "app__explore_data", {
+            plan: {
+              kind: "aggregate",
+              resource: "public.sites",
+              measures: [{ function: "count" }],
+              dimensions: [{ field: "contract_type" }, { field: "site_ref" }],
+            },
+          });
+        }
+        if (requests === 2) {
+          const body = JSON.stringify(request.body);
+          expect(body).toContain("ASK_PLAN_INTENT_MISMATCH");
+          expect(body).toContain("synapsor.ask-intent-retry.v1");
+          expect(body).toContain("RUNNER INTENT CORRECTION - ONE ATTEMPT ONLY");
+          expect(body).toContain("set_exact_dimension");
+          expect(body).toContain("contract_type");
+          expect(body).toContain("site_ref");
+          return openAiToolCall("corrected_contract_type_dimension", "app__explore_data", {
             plan: {
               kind: "aggregate",
               resource: "public.sites",
@@ -4092,19 +4126,7 @@ describe("Workbench BYOM Ask", () => {
             },
           });
         }
-        if (requests === 2) {
-          expect(JSON.stringify(request.body)).toContain("ASK_PLAN_INTENT_MISMATCH");
-          expect(JSON.stringify(request.body)).toContain("region");
-          return openAiToolCall("corrected_region_dimension", "app__explore_data", {
-            plan: {
-              kind: "aggregate",
-              resource: "public.sites",
-              measures: [{ function: "count" }],
-              dimensions: [{ field: "region" }],
-            },
-          });
-        }
-        return openAiText("West has the most reviewed sites.");
+        return openAiText("The reviewed site counts by contract type are available.");
       },
     });
 
@@ -4115,6 +4137,17 @@ describe("Workbench BYOM Ask", () => {
     expect(result.tool_calls[0]?.result).toMatchObject({
       source_query_executed: false,
       explore_budget_consumed: false,
+      runner_retry_contract: {
+        schema_version: "synapsor.ask-intent-retry.v1",
+        attempts_remaining: 1,
+        rejected_plan_executed: false,
+        rejected_plan_must_not_repeat: true,
+        action: "set_exact_dimension",
+        required_resource: "public.sites",
+        required_dimension: { field: "contract_type" },
+        rejected_dimensions: [{ field: "site_ref" }],
+        preserve_other_plan_properties: true,
+      },
     });
     expect(exploreCalls).toBe(1);
     expect(requests).toBe(3);
