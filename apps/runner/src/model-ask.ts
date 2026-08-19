@@ -2054,7 +2054,8 @@ async function explorePlanIntentRefusal(input: {
     && operatorBoundaryResourceCount(resource) !== 1);
   if (!catalogResources
     && resource
-    && (mismatch?.kind === "dimension"
+    && (mismatch?.kind === "resource"
+      || mismatch?.kind === "dimension"
       || reviewedEnumIntentsNamedInQuestion(input.question, resource).length > 0
       || genericSubjectNeedsCatalog)) {
     catalogResources = await loadCompleteIntentCatalog(input.gateway, input.args);
@@ -2073,6 +2074,19 @@ async function explorePlanIntentRefusal(input: {
   }
   if (!mismatch) return undefined;
   const relationshipDimensions = mismatch.relationship_dimensions ?? [];
+  const retryable = mismatch.kind === "filter"
+    || (mismatch.kind === "dimension"
+      && resource !== undefined
+      && (questionNamesOneReviewedDimensionCorrection(
+          input.question,
+          resource,
+          allowUnqualifiedTrailingField,
+        )
+        || planRepeatsFilterAsDimension(plan)))
+    || (mismatch.kind === "resource"
+      && explicitSubject !== undefined
+      && catalogResources !== undefined
+      && reviewedResourceCorrection(explicitSubject, catalogResources) !== undefined);
   const mismatchLead = mismatch.kind === "permission"
     || mismatch.kind === "unavailable"
     || mismatch.kind === "vocabulary"
@@ -2101,10 +2115,68 @@ async function explorePlanIntentRefusal(input: {
       result: providerResult,
     },
     providerResult,
-    retryable: mismatch.kind === "filter"
-      || (mismatch.kind === "dimension"
-        && (relationshipDimensions.length === 1 || planRepeatsFilterAsDimension(plan))),
+    retryable,
   };
+}
+
+function planRepeatsFilterAsDimension(plan: Record<string, unknown>): boolean {
+  const filters = Array.isArray(plan.where) ? plan.where.filter(isRecord) : [];
+  const dimensions = Array.isArray(plan.dimensions) ? plan.dimensions.filter(isRecord) : [];
+  return dimensions.some((dimension) =>
+    typeof dimension.field === "string"
+    && filters.some((filter) =>
+      filter.field === dimension.field
+      && (typeof filter.relationship === "string" ? filter.relationship : undefined)
+        === (typeof dimension.relationship === "string" ? dimension.relationship : undefined)));
+}
+
+function questionNamesOneReviewedDimensionCorrection(
+  question: string,
+  resource: Record<string, unknown>,
+  allowUnqualifiedTrailingField: boolean,
+): boolean {
+  if (reviewedDirectFieldsNamedInQuestion(question, resource).length === 1) return true;
+  if (reviewedTrailingFieldResolution(question, resource, allowUnqualifiedTrailingField).kind === "one") {
+    return true;
+  }
+  if (reviewedUniqueFieldTokenResolution(question, resource, allowUnqualifiedTrailingField).kind === "one") {
+    return true;
+  }
+  if (reviewedUniqueFuzzyFieldResolution(question, resource, allowUnqualifiedTrailingField).kind === "one") {
+    return true;
+  }
+  return reviewedRelationshipDimensionsNamedInQuestion(question, resource).length === 1;
+}
+
+function reviewedResourceCorrection(
+  subject: string,
+  resources: Record<string, unknown>[],
+): string | undefined {
+  const exact = resources.filter((candidate) => {
+    if (typeof candidate.id !== "string") return false;
+    const localId = candidate.id.split(".").at(-1) ?? candidate.id;
+    return questionEntityExactlyMatchesNames(subject, resourceNameVariants(
+      candidate.id,
+      localId,
+      candidate.label,
+    ));
+  });
+  if (exact.length === 1) return exact[0]!.id as string;
+  if (exact.length > 1) return undefined;
+  const fuzzy = conservativeReviewedMetadataTypoResolution(
+    subject,
+    resources.flatMap((candidate) => {
+      if (typeof candidate.id !== "string") return [];
+      const localId = candidate.id.split(".").at(-1) ?? candidate.id;
+      return [{
+        key: candidate.id,
+        value: candidate.id,
+        names: [candidate.id, localId, candidate.label].filter((value): value is string =>
+          typeof value === "string"),
+      }];
+    }),
+  );
+  return fuzzy.kind === "one" ? fuzzy.value : undefined;
 }
 
 async function loadCompleteIntentCatalog(
@@ -2135,17 +2207,6 @@ async function loadCompleteIntentCatalog(
     }
   }
   return undefined;
-}
-
-function planRepeatsFilterAsDimension(plan: Record<string, unknown>): boolean {
-  const filters = Array.isArray(plan.where) ? plan.where.filter(isRecord) : [];
-  const dimensions = Array.isArray(plan.dimensions) ? plan.dimensions.filter(isRecord) : [];
-  return dimensions.some((dimension) =>
-    typeof dimension.field === "string"
-    && filters.some((filter) =>
-      filter.field === dimension.field
-      && (typeof filter.relationship === "string" ? filter.relationship : undefined)
-        === (typeof dimension.relationship === "string" ? dimension.relationship : undefined)));
 }
 
 function explorePlanHasComparableIntentShape(plan: Record<string, unknown>): boolean {
@@ -2258,8 +2319,14 @@ function explorePlanIntentMismatch(
     };
   }
   const subject = explicitQuestionEntity(normalizedQuestion);
+  const subjectMatchesPlanDimension = subject
+    ? questionEntityMatchesReviewedPlanDimension(subject, plan, resource)
+    : false;
   const entityMatchesPlan = subject
     ? questionEntityMatchesPlan(subject, plan, resource, options.catalogResources)
+      || (subjectMatchesPlanDimension
+        && (options.allowUnqualifiedTrailingField === true
+          || operatorBoundaryResourceCount(resource) === 1))
     : true;
   const knownResources = [
     resource,
@@ -2296,7 +2363,8 @@ function explorePlanIntentMismatch(
   if (dimensions.length > 0) {
     for (const dimension of dimensions) {
       const mismatch = planDimensionIntentMismatch(normalizedQuestion, dimension, resource, {
-        allowUnqualifiedTrailingField: options.allowUnqualifiedTrailingField,
+        allowUnqualifiedTrailingField: options.allowUnqualifiedTrailingField
+          || subjectMatchesPlanDimension,
         plan,
         enumFilteredFields: enumIntent.filteredFields,
         enumGroupedFields: enumIntent.groupedFields,
@@ -2357,14 +2425,13 @@ function reviewedRelationshipDimensionsNamedInQuestion(
   resource: Record<string, unknown>,
 ): ReviewedRelationshipDimension[] {
   if (!Array.isArray(resource.relationships)) return [];
+  const relationships = resource.relationships.filter(isRecord);
   const groupingClause = explicitGroupingClause(question) ?? question;
-  const candidates = resource.relationships.filter(isRecord).flatMap((relationship) => {
+  const reviewed = relationships.flatMap((relationship) => {
     if ((relationship.activation !== undefined && relationship.activation !== "active")
       || typeof relationship.id !== "string"
       || typeof relationship.target_resource !== "string") return [];
     return safeStringList(relationship.groupable_fields).flatMap((field) => {
-      const fieldNamed = questionMentionsReviewedField(groupingClause, relationship, field);
-      if (!fieldNamed) return [];
       return [{
         field,
         relationship: relationship.id,
@@ -2373,6 +2440,32 @@ function reviewedRelationshipDimensionsNamedInQuestion(
       }];
     });
   });
+  const exact = reviewed.filter((candidate) => {
+    const relationship = relationships.find((value) => value.id === candidate.relationship);
+    return Boolean(relationship
+      && questionMentionsReviewedField(groupingClause, relationship, candidate.field));
+  });
+  const candidates = exact.length > 0
+    ? exact
+    : (() => {
+        const fuzzy = conservativeReviewedMetadataTypoResolution(
+          groupingClause,
+          reviewed.map((candidate) => {
+            const relationship = relationships.find((value) => value.id === candidate.relationship);
+            const names = relationship
+              ? [candidate.field, ...reviewedFieldLabels(relationship, candidate.field)]
+              : [candidate.field];
+            return {
+              key: `${candidate.relationship}\u0000${candidate.field}`,
+              value: candidate,
+              names: [...new Set(names.flatMap((name) => [name, ...trailingNameTerms(name)]))],
+            };
+          }),
+        );
+        if (fuzzy.kind === "one") return [fuzzy.value];
+        if (fuzzy.kind === "ambiguous") return fuzzy.values;
+        return [];
+      })();
   return uniqueByJson(candidates).sort((left, right) =>
     left.relationship.localeCompare(right.relationship) || left.field.localeCompare(right.field));
 }
@@ -2394,7 +2487,7 @@ function explicitQuestionEntity(question: string): string | undefined {
     // down more?", break down is the business predicate and must not create
     // the invented entity "more".
     new RegExp(String.raw`^(?:(?:please|(?:can|could|would)\s+you)\s+)?break\s+down\s+(?:the\s+)?(.+?)${suffix}`, "iu"),
-    new RegExp(String.raw`\bshow\s+(?:the\s+)?(.+?)${suffix}`, "iu"),
+    new RegExp(String.raw`^(?:(?:please|(?:can|could|would)\s+you)\s+)?(?:show|give|tell)(?:\s+me)?\s+(?:the\s+)?(.+?)${suffix}`, "iu"),
     new RegExp(String.raw`\b(?:show|list|give\s+me)\s+(?:all|every)\s+(?:the\s+)?(.+?)${suffix}`, "iu"),
   ];
   for (const pattern of patterns) {
@@ -2558,7 +2651,7 @@ function reviewedEnumIntentsNamedInQuestion(
         }))
       : []),
   ];
-  const matches = owners.flatMap(({ owner, owner_resource }) => {
+  const reviewed = owners.flatMap(({ owner, owner_resource }) => {
     if (!isRecord(owner.field_enums)) return [];
     return Object.entries(owner.field_enums).flatMap(([field, values]) => {
       if (!Array.isArray(values)) return [];
@@ -2572,18 +2665,30 @@ function reviewedEnumIntentsNamedInQuestion(
         if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") {
           return [];
         }
-        return questionMentionsReviewedEnumValue(question, value)
-          ? [{
-              field,
-              ...(typeof owner.id === "string" && owner !== resource ? { relationship: owner.id } : {}),
-              owner_resource,
-              value,
-            }]
-          : [];
+        return [{
+          field,
+          ...(typeof owner.id === "string" && owner !== resource ? { relationship: owner.id } : {}),
+          owner_resource,
+          value,
+        }];
       });
     });
   });
-  return uniqueByJson(matches);
+  const exact = reviewed.filter((intent) => questionMentionsReviewedEnumValue(question, intent.value));
+  if (exact.length > 0) return uniqueByJson(exact);
+  const fuzzy = conservativeReviewedMetadataTypoResolution(
+    question,
+    reviewed.flatMap((intent) => typeof intent.value === "string"
+      ? [{
+          key: `${intent.relationship ?? ""}\u0000${intent.field}\u0000${canonicalJsonDigest(intent.value)}`,
+          value: intent,
+          names: [intent.value],
+        }]
+      : []),
+  );
+  if (fuzzy.kind === "one") return [fuzzy.value];
+  if (fuzzy.kind === "ambiguous") return uniqueByJson(fuzzy.values);
+  return [];
 }
 
 function questionMentionsReviewedEnumValue(
@@ -2799,6 +2904,25 @@ function questionEntityMatchesPlan(
       && (operatorBoundaryResourceCount(resource) === 1 || catalogResources !== undefined)) return true;
   }
   if (questionEntityStrictlyExtendsNames(subject, resourceVariants)) return false;
+  const knownResources = catalogResources
+    ? [resource, ...catalogResources.filter((candidate) => candidate.id !== resource.id)]
+    : operatorBoundaryResourceCount(resource) === 1
+      ? [resource]
+      : [];
+  const fuzzyResource = conservativeReviewedMetadataTypoResolution(
+    subject,
+    knownResources.flatMap((candidate) => {
+      if (typeof candidate.id !== "string") return [];
+      const localId = candidate.id.split(".").at(-1) ?? candidate.id;
+      return [{
+        key: candidate.id,
+        value: candidate.id,
+        names: [candidate.id, localId, candidate.label].filter((value): value is string =>
+          typeof value === "string"),
+      }];
+    }),
+  );
+  if (fuzzyResource.kind === "one") return fuzzyResource.value === resource.id;
   const measures = Array.isArray(plan.measures) ? plan.measures.filter(isRecord) : [];
   if (measures.some((measure) => {
     if (typeof measure.derived_measure === "string") {
@@ -2823,6 +2947,27 @@ function questionEntityMatchesPlan(
   // question. Reviewed resource labels/descriptions or a matching reviewed
   // measure provide the explicit vocabulary bridge above.
   return false;
+}
+
+function questionEntityMatchesReviewedPlanDimension(
+  subject: string,
+  plan: Record<string, unknown>,
+  resource: Record<string, unknown>,
+): boolean {
+  const dimensions = Array.isArray(plan.dimensions) ? plan.dimensions.filter(isRecord) : [];
+  const directFields = new Set(dimensions.flatMap((dimension) =>
+    typeof dimension.field === "string" && dimension.relationship === undefined
+      ? [dimension.field]
+      : []));
+  const exactDirect = reviewedDirectFieldsNamedInQuestion(subject, resource);
+  if (exactDirect.length === 1 && directFields.has(exactDirect[0]!)) return true;
+  if (exactDirect.length === 0) {
+    const fuzzyDirect = reviewedUniqueFuzzyFieldResolution(subject, resource, true);
+    if (fuzzyDirect.kind === "one" && directFields.has(fuzzyDirect.field)) return true;
+  }
+  const related = reviewedRelationshipDimensionsNamedInQuestion(subject, resource);
+  return related.length === 1 && dimensions.some((dimension) =>
+    dimension.field === related[0]!.field && dimension.relationship === related[0]!.relationship);
 }
 
 function questionEntityExactlyMatchesNames(subject: string, names: Iterable<string>): boolean {
@@ -2860,6 +3005,124 @@ function normalizedQuestionEntityNames(subject: string): Set<string> {
 
 function normalizedEntityName(value: string): string {
   return value.toLowerCase().replace(/[_-]+/g, " ").replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+type ReviewedMetadataTypoCandidate<T> = {
+  key: string;
+  value: T;
+  names: string[];
+};
+
+type ReviewedMetadataTypoResolution<T> =
+  | { kind: "none" }
+  | { kind: "one"; value: T; corrected_to: string }
+  | { kind: "ambiguous"; values: T[]; corrected_to: string[] };
+
+function conservativeReviewedMetadataTypoResolution<T>(
+  text: string,
+  candidates: ReviewedMetadataTypoCandidate<T>[],
+): ReviewedMetadataTypoResolution<T> {
+  const normalizedText = normalizedEntityName(text);
+  if (!normalizedText) return { kind: "none" };
+  const textTokens = normalizedText.split(" ").filter(Boolean);
+  const merged = new Map<string, ReviewedMetadataTypoCandidate<T>>();
+  for (const candidate of candidates) {
+    const current = merged.get(candidate.key);
+    if (current) {
+      current.names.push(...candidate.names);
+    } else {
+      merged.set(candidate.key, { ...candidate, names: [...candidate.names] });
+    }
+  }
+  const matches = [...merged.values()].flatMap((candidate) => {
+    let best: { distance: number; corrected_to: string } | undefined;
+    for (const candidateName of new Set(candidate.names)) {
+      const nameVariants = resourceNameVariants(candidateName);
+      if ([...nameVariants].some((name) => {
+        const normalizedName = normalizedEntityName(name);
+        return normalizedName.length >= 3 && wordPosition(normalizedText, normalizedName) >= 0;
+      })) continue;
+      for (const name of nameVariants) {
+        const normalizedName = normalizedEntityName(name);
+        if (!normalizedName) continue;
+        const nameTokens = normalizedName.split(" ").filter(Boolean);
+        const distance = conservativeMetadataPhraseDistance(textTokens, nameTokens);
+        if (distance === undefined || distance === 0) continue;
+        if (!best || distance < best.distance) best = { distance, corrected_to: normalizedName };
+      }
+    }
+    return best ? [{ candidate, ...best }] : [];
+  });
+  if (matches.length === 0) return { kind: "none" };
+  if (matches.length === 1) {
+    return {
+      kind: "one",
+      value: matches[0]!.candidate.value,
+      corrected_to: matches[0]!.corrected_to,
+    };
+  }
+  return {
+    kind: "ambiguous",
+    values: matches.map((match) => match.candidate.value),
+    corrected_to: [...new Set(matches.map((match) => match.corrected_to))].sort(),
+  };
+}
+
+function conservativeMetadataPhraseDistance(
+  textTokens: string[],
+  nameTokens: string[],
+): number | undefined {
+  if (nameTokens.length === 0 || nameTokens.some((token) => token.length < 4)) return undefined;
+  let best: number | undefined;
+  for (let start = 0; start + nameTokens.length <= textTokens.length; start += 1) {
+    let total = 0;
+    let valid = true;
+    for (let offset = 0; offset < nameTokens.length; offset += 1) {
+      const observed = textTokens[start + offset]!;
+      const reviewed = nameTokens[offset]!;
+      if (Math.abs(observed.length - reviewed.length) > 1) {
+        valid = false;
+        break;
+      }
+      const distance = adjacentTranspositionEditDistance(observed, reviewed);
+      if (distance > 1) {
+        valid = false;
+        break;
+      }
+      total += distance;
+    }
+    const maximum = nameTokens.length === 1 ? 1 : 2;
+    if (valid && total > 0 && total <= maximum && (best === undefined || total < best)) {
+      best = total;
+    }
+  }
+  return best;
+}
+
+function adjacentTranspositionEditDistance(left: string, right: string): number {
+  const rows = Array.from({ length: left.length + 1 }, () => new Array<number>(right.length + 1).fill(0));
+  for (let index = 0; index <= left.length; index += 1) rows[index]![0] = index;
+  for (let index = 0; index <= right.length; index += 1) rows[0]![index] = index;
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      const substitution = left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1;
+      rows[leftIndex]![rightIndex] = Math.min(
+        rows[leftIndex - 1]![rightIndex]! + 1,
+        rows[leftIndex]![rightIndex - 1]! + 1,
+        rows[leftIndex - 1]![rightIndex - 1]! + substitution,
+      );
+      if (leftIndex > 1
+        && rightIndex > 1
+        && left[leftIndex - 1] === right[rightIndex - 2]
+        && left[leftIndex - 2] === right[rightIndex - 1]) {
+        rows[leftIndex]![rightIndex] = Math.min(
+          rows[leftIndex]![rightIndex]!,
+          rows[leftIndex - 2]![rightIndex - 2]! + 1,
+        );
+      }
+    }
+  }
+  return rows[left.length]![right.length]!;
 }
 
 function explicitGroupingRequested(question: string): boolean {
@@ -2942,6 +3205,18 @@ function planDimensionIntentMismatch(
     if (namedDirectFields.length > 0 && !namedDirectFields.includes(dimension.field)) {
       return `The question names reviewed field${namedDirectFields.length === 1 ? "" : "s"} ${namedDirectFields.join(", ")} on ${resource.id}, but the plan selected ${dimension.field}.`;
     }
+    const fuzzyField = reviewedUniqueFuzzyFieldResolution(
+      question,
+      resource,
+      options.allowUnqualifiedTrailingField === true,
+    );
+    if (fuzzyField.kind === "one" && fuzzyField.field === dimension.field) return undefined;
+    if (fuzzyField.kind === "one") {
+      return `The question has one conservative reviewed-field correction, ${fuzzyField.field} on ${resource.id}, but the plan selected ${dimension.field}.`;
+    }
+    if (fuzzyField.kind === "ambiguous") {
+      return `The question's possible typo is ambiguous among reviewed fields ${fuzzyField.fields.join(", ")} on ${resource.id}; name one exact reviewed field or label.`;
+    }
     const businessVerb = options.allowUnqualifiedTrailingField === true
       ? naturalBusinessVerbToken(question)
       : undefined;
@@ -2980,8 +3255,11 @@ function planDimensionIntentMismatch(
   }
 
   const namedRelationships = reviewedRelationshipDimensionsNamedInQuestion(question, resource);
-  if (namedRelationships.length > 0 && !namedRelationships.some((candidate) =>
-    candidate.field === dimension.field && candidate.relationship === dimension.relationship)) {
+  if (namedRelationships.length > 0) {
+    if (namedRelationships.some((candidate) =>
+      candidate.field === dimension.field && candidate.relationship === dimension.relationship)) {
+      return undefined;
+    }
     return genericMismatch(dimension.field);
   }
   return questionSupportsImplicitReviewedDimension(question, options.plan)
@@ -3216,6 +3494,33 @@ function reviewedUniqueFieldTokenResolution(
   }).sort((left, right) => left.localeCompare(right));
   if (matches.length === 1) return { kind: "one", field: matches[0]! };
   if (matches.length > 1) return { kind: "ambiguous", fields: matches };
+  return { kind: "none" };
+}
+
+function reviewedUniqueFuzzyFieldResolution(
+  question: string,
+  resource: Record<string, unknown>,
+  allowWithoutResource = false,
+): ReviewedTrailingFieldResolution {
+  const resourceId = typeof resource.id === "string" ? resource.id : "";
+  const table = resourceId.split(".").at(-1)?.toLowerCase() ?? "";
+  if (!allowWithoutResource && ![...resourceNameVariants(table, resource.label)].some((variant) =>
+    variant.length >= 3 && wordPosition(question, variant) >= 0)) return { kind: "none" };
+  const resolution = conservativeReviewedMetadataTypoResolution(
+    question,
+    safeStringList(resource.groupable_fields).map((field) => {
+      const names = [field, ...reviewedFieldLabels(resource, field)];
+      return {
+        key: field,
+        value: field,
+        names: [...new Set(names.flatMap((name) => [name, ...trailingNameTerms(name)]))],
+      };
+    }),
+  );
+  if (resolution.kind === "one") return { kind: "one", field: resolution.value };
+  if (resolution.kind === "ambiguous") {
+    return { kind: "ambiguous", fields: [...new Set(resolution.values)].sort() };
+  }
   return { kind: "none" };
 }
 
@@ -4031,9 +4336,19 @@ function localPlanRequirements(
       options.allowUnqualifiedTrailingField === true,
     )
     : { kind: "none" as const };
+  const fuzzyGroupResolution = explicitlyMentionedDirectGroupFields.length === 0
+    && trailingGroupResolution.kind === "none"
+    && uniqueGroupTokenResolution.kind === "none"
+    ? reviewedUniqueFuzzyFieldResolution(
+      normalized,
+      resource,
+      options.allowUnqualifiedTrailingField === true,
+    )
+    : { kind: "none" as const };
   const mentionedReviewedGroupingField = explicitlyMentionedDirectGroupFields.length > 0
     || trailingGroupResolution.kind !== "none"
     || uniqueGroupTokenResolution.kind !== "none"
+    || fuzzyGroupResolution.kind !== "none"
     || (Array.isArray(resource.relationships) && resource.relationships.filter(isRecord)
       .some((relationship) => safeStringList(relationship.groupable_fields)
         .some((field) => questionMentionsReviewedField(normalized, relationship, field))));
@@ -4070,6 +4385,7 @@ function localPlanRequirements(
     || /\b(?:for|within|of) each\b/.test(normalized)
     || trailingGroupResolution.kind !== "none"
     || uniqueGroupTokenResolution.kind !== "none"
+    || fuzzyGroupResolution.kind !== "none"
     || proposedMatchesUniqueDirectField
     || implicitProposedDimensions.length > 0
     || bandIntent;
@@ -4080,6 +4396,7 @@ function localPlanRequirements(
       ...explicitlyMentionedDirectGroupFields,
       ...(trailingGroupResolution.kind === "one" ? [trailingGroupResolution.field] : []),
       ...(uniqueGroupTokenResolution.kind === "one" ? [uniqueGroupTokenResolution.field] : []),
+      ...(fuzzyGroupResolution.kind === "one" ? [fuzzyGroupResolution.field] : []),
     ];
     if (trailingGroupResolution.kind === "ambiguous") {
       groupingAmbiguities.push(
@@ -4089,6 +4406,11 @@ function localPlanRequirements(
     if (uniqueGroupTokenResolution.kind === "ambiguous") {
       groupingAmbiguities.push(
         `Field wording is ambiguous; name one reviewed field: ${uniqueGroupTokenResolution.fields.join(", ")}.`,
+      );
+    }
+    if (fuzzyGroupResolution.kind === "ambiguous") {
+      groupingAmbiguities.push(
+        `Possible typo is ambiguous; name one exact reviewed field or label: ${fuzzyGroupResolution.fields.join(", ")}.`,
       );
     }
     const relationshipGroupFields: Array<{
@@ -4106,9 +4428,19 @@ function localPlanRequirements(
         const groupableFields = safeStringList(relationship.groupable_fields);
         const mentionedFields = groupableFields
           .filter((candidate) => questionMentionsReviewedField(normalized, relationship, candidate));
+        const fuzzyFields = mentionedFields.length === 0
+          ? reviewedUniqueFuzzyFieldResolution(normalized, relationship, true)
+          : { kind: "none" as const };
+        if (fuzzyFields.kind === "ambiguous") {
+          groupingAmbiguities.push(
+            `Possible typo on ${relationship.target_resource} is ambiguous; name one exact reviewed field or label: ${fuzzyFields.fields.join(", ")}.`,
+          );
+        }
         const targetGroupingMentioned = targetVariants
           .some((variant) => relationshipGroupingMentionsTarget(normalized, variant));
+        const fuzzyMentionedFields = fuzzyFields.kind === "one" ? [fuzzyFields.field] : [];
         const implicitTargetFields = mentionedFields.length === 0
+          && fuzzyMentionedFields.length === 0
           && targetGroupingMentioned
           ? groupableFields.length === 1
             ? groupableFields
@@ -4121,7 +4453,12 @@ function localPlanRequirements(
             `Grouping through ${relationship.target_resource} is ambiguous; name one reviewed field: ${groupableFields.join(", ")}.`,
           );
         }
-        for (const field of mentionedFields.length > 0 ? mentionedFields : implicitTargetFields) {
+        const selectedFields = mentionedFields.length > 0
+          ? mentionedFields
+          : fuzzyMentionedFields.length > 0
+            ? fuzzyMentionedFields
+            : implicitTargetFields;
+        for (const field of selectedFields) {
           relationshipGroupFields.push({ field, relationship: relationship.id, targetMentioned });
         }
       }
@@ -4549,7 +4886,22 @@ function unambiguousGroupFieldQuestionResource(
         }]
       : [];
   });
-  return candidates.length === 1 ? candidates[0] : undefined;
+  if (candidates.length === 1) return candidates[0];
+  if (candidates.length > 1) return undefined;
+  const fuzzyCandidates = resources.flatMap((candidate) => {
+    if (typeof candidate.id !== "string") return [];
+    const resolution = reviewedUniqueFuzzyFieldResolution(question, candidate, true);
+    return resolution.kind === "one"
+      ? [{
+          resource: candidate.id,
+          field: resolution.field,
+          ...(typeof candidate.boundary_name === "string"
+            ? { boundary: candidate.boundary_name }
+            : {}),
+        }]
+      : [];
+  });
+  return fuzzyCandidates.length === 1 ? fuzzyCandidates[0] : undefined;
 }
 
 function naturalBusinessVerbToken(question: string): string | undefined {

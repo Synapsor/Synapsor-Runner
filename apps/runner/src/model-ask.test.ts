@@ -1129,7 +1129,7 @@ describe("Workbench BYOM Ask", () => {
     expect(result.answer).toContain("no Explore query or differencing budget was consumed");
     expect(exploreCalls).toBe(0);
     expect(calls).toEqual([]);
-    expect(metadataCalls).toEqual([{ resource }]);
+    expect(metadataCalls).toEqual([{ resource }, { cursor: 0, limit: 10 }]);
     expect(requestJson).toHaveBeenCalledTimes(1);
   });
 
@@ -1354,7 +1354,7 @@ describe("Workbench BYOM Ask", () => {
     ]);
     expect(result.answer_source).toBe("runner");
     expect(exploreCalls).toBe(0);
-    expect(metadataCalls).toBe(1);
+    expect(metadataCalls).toBe(2);
   });
 
   it("gives Anthropic one bounded retry for an exact reviewed relationship dimension", async () => {
@@ -3659,6 +3659,467 @@ describe("Workbench BYOM Ask", () => {
     expect(exploreCalls).toBe(1);
   });
 
+  it.each([
+    {
+      question: "Which regions have the most sites?",
+      plan: {
+        kind: "aggregate",
+        resource: "public.sites",
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "region" }],
+      },
+    },
+    {
+      question: "Show me the top reagions by average contract value.",
+      plan: {
+        kind: "aggregate",
+        resource: "public.sites",
+        measures: [{ function: "avg", field: "contract_value_cents" }],
+        dimensions: [{ field: "region" }],
+      },
+    },
+    {
+      question: "Please show me the top reagions by average contract value.",
+      plan: {
+        kind: "aggregate",
+        resource: "public.sites",
+        measures: [{ function: "avg", field: "contract_value_cents" }],
+        dimensions: [{ field: "region" }],
+      },
+    },
+    {
+      question: "Give me the top reagions by average contract value.",
+      plan: {
+        kind: "aggregate",
+        resource: "public.sites",
+        measures: [{ function: "avg", field: "contract_value_cents" }],
+        dimensions: [{ field: "region" }],
+      },
+    },
+    {
+      question: "Tell me the top reagions by average contract value.",
+      plan: {
+        kind: "aggregate",
+        resource: "public.sites",
+        measures: [{ function: "avg", field: "contract_value_cents" }],
+        dimensions: [{ field: "region" }],
+      },
+    },
+    {
+      question: "Which sites are there for each contrac ttype?",
+      plan: {
+        kind: "aggregate",
+        resource: "public.sites",
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "contract_type" }],
+      },
+    },
+    {
+      question: "Which sites are there for each contrac type?",
+      plan: {
+        kind: "aggregate",
+        resource: "public.sites",
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "contract_type" }],
+      },
+    },
+    {
+      question: "How many sitse are there by region?",
+      plan: {
+        kind: "aggregate",
+        resource: "public.sites",
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "region" }],
+      },
+    },
+    {
+      question: "How many enterprize sites are there?",
+      plan: {
+        kind: "aggregate",
+        resource: "public.sites",
+        measures: [{ function: "count" }],
+        where: [{ field: "contract_type", op: "eq", value: "enterprise" }],
+      },
+    },
+    {
+      question: "Break down sites by market segmant.",
+      plan: {
+        kind: "aggregate",
+        resource: "public.sites",
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "market_segment", relationship: "sites_region_id_fkey" }],
+      },
+    },
+  ])("accepts one unique conservative reviewed-metadata correction: $question", async ({
+    question,
+    plan,
+  }) => {
+    let exploreCalls = 0;
+    const focusedResource = {
+      id: "public.sites",
+      label: "Sites",
+      fields: [
+        { id: "region", label: "Region" },
+        { id: "contract_type", label: "Contract type" },
+        { id: "contract_value_cents", label: "Contract value" },
+      ],
+      groupable_fields: ["region", "contract_type"],
+      aggregate_measure_functions: { contract_value_cents: ["avg"] },
+      field_enums: { contract_type: ["enterprise", "standard"] },
+      filter_operators: { contract_type: ["eq", "in"] },
+      relationships: [{
+        id: "sites_region_id_fkey",
+        activation: "active",
+        target_resource: "public.regions",
+        target_label: "Regions",
+        fields: [{ id: "market_segment", label: "Market segment" }],
+        groupable_fields: ["market_segment"],
+      }],
+      operator_review_metadata: { boundary_resource_count: 1 },
+    };
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: { ok: true, resources: [focusedResource], source_database_changed: false },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-5.6-luna",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    let requests = 0;
+    const result = await session.run(question, gateway, {
+      requestJson: async () => {
+        requests += 1;
+        return requests === 1
+          ? openAiToolCall("conservative_typo_plan", "app__explore_data", { plan })
+          : openAiText("The reviewed result is available.");
+      },
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]);
+    expect(exploreCalls).toBe(1);
+    expect(requests).toBe(2);
+  });
+
+  it("applies the same unique typo correction to Anthropic Ask", async () => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: {
+          ok: true,
+          resources: [{
+            id: "public.sites",
+            label: "Sites",
+            fields: [{ id: "contract_type", label: "Contract type" }],
+            groupable_fields: ["contract_type"],
+          }],
+          source_database_changed: false,
+        },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "anthropic",
+      model: "claude-test",
+      api_key: "anthropic-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    let requests = 0;
+    const result = await session.run("Which sites are there for each contrac ttype?", gateway, {
+      requestJson: async () => {
+        requests += 1;
+        return requests === 1
+          ? {
+              status: 200,
+              body: {
+                content: [{
+                  type: "tool_use",
+                  id: "anthropic_contract_typo",
+                  name: "app__explore_data",
+                  input: {
+                    plan: {
+                      kind: "aggregate",
+                      resource: "public.sites",
+                      measures: [{ function: "count" }],
+                      dimensions: [{ field: "contract_type" }],
+                    },
+                  },
+                }],
+              },
+            }
+          : {
+              status: 200,
+              body: { content: [{ type: "text", text: "The reviewed result is available." }] },
+            };
+      },
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]);
+    expect(exploreCalls).toBe(1);
+    expect(requests).toBe(2);
+  });
+
+  it("applies the same unique typo correction to an OpenAI-compatible local model", async () => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name) => {
+        if (name === "app.describe_data") {
+          return {
+            ok: true,
+            value: {
+              ok: true,
+              resources: [{
+                id: "public.sites",
+                label: "Sites",
+                fields: [{ id: "contract_type", label: "Contract type" }],
+                groupable_fields: ["contract_type"],
+                aggregate_measure_functions: {},
+              }],
+              source_database_changed: false,
+            },
+          };
+        }
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      close: async () => undefined,
+    };
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    let requests = 0;
+    const result = await session.run("Which sites are there for each contrac ttype?", gateway, {
+      requestJson: async () => {
+        requests += 1;
+        return requests === 1
+          ? openAiToolCall("local_contract_typo", "app__explore_data", {
+              plan: {
+                kind: "aggregate",
+                resource: "public.sites",
+                measures: [{ function: "count" }],
+                dimensions: [{ field: "contract_type" }],
+              },
+            })
+          : openAiText("The reviewed result is available.");
+      },
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]);
+    expect(exploreCalls).toBe(1);
+    expect(requests).toBe(2);
+  });
+
+  it("refuses an exact dimension contradiction after one bounded correction opportunity", async () => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: {
+          ok: true,
+          resources: [{
+            id: "public.sites",
+            label: "Sites",
+            fields: [
+              { id: "region", label: "Region" },
+              { id: "contract_type", label: "Contract type" },
+            ],
+            groupable_fields: ["region", "contract_type"],
+          }],
+          source_database_changed: false,
+        },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-5.6-luna",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    const wrongPlan = {
+      kind: "aggregate",
+      resource: "public.sites",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "contract_type" }],
+    };
+    const requestJson = vi.fn(async () =>
+      openAiToolCall("wrong_region_dimension", "app__explore_data", { plan: wrongPlan }));
+    const result = await session.run("Which regions have the most sites?", gateway, { requestJson });
+
+    expect(result.tool_calls).toHaveLength(2);
+    expect(result.tool_calls.every((call) =>
+      call.error_code === "ASK_PLAN_INTENT_MISMATCH"
+      && call.result.source_query_executed === false
+      && call.result.explore_budget_consumed === false)).toBe(true);
+    expect(exploreCalls).toBe(0);
+    expect(requestJson).toHaveBeenCalledTimes(2);
+  });
+
+  it("refuses an ambiguous fuzzy field correction and names the reviewed choices", async () => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: {
+          ok: true,
+          resources: [{
+            id: "public.sites",
+            label: "Sites",
+            fields: [
+              { id: "sales_region", label: "Sales region" },
+              { id: "service_region", label: "Service region" },
+            ],
+            groupable_fields: ["sales_region", "service_region"],
+          }],
+          source_database_changed: false,
+        },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-5.6-luna",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    const requestJson = vi.fn(async () => openAiToolCall("ambiguous_region_typo", "app__explore_data", {
+      plan: {
+        kind: "aggregate",
+        resource: "public.sites",
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "sales_region" }],
+      },
+    }));
+    const result = await session.run("Break down sites by regoin.", gateway, { requestJson });
+
+    expect(result.tool_calls).toHaveLength(1);
+    expect(result.tool_calls[0]?.result.message).toContain("ambiguous");
+    expect(result.tool_calls[0]?.result.message).toContain("sales_region");
+    expect(result.tool_calls[0]?.result.message).toContain("service_region");
+    expect(exploreCalls).toBe(0);
+    expect(requestJson).toHaveBeenCalledTimes(1);
+  });
+
+  it("executes only one corrected retry after refusing the original plan", async () => {
+    let exploreCalls = 0;
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async () => {
+        exploreCalls += 1;
+        return { ok: true, value: { ok: true, data: [{ region: "west", measure_0: 12 }], source_database_changed: false } };
+      },
+      describeOperatorMetadata: async () => ({
+        ok: true,
+        value: {
+          ok: true,
+          resources: [{
+            id: "public.sites",
+            label: "Sites",
+            fields: [
+              { id: "region", label: "Region" },
+              { id: "contract_type", label: "Contract type" },
+            ],
+            groupable_fields: ["region", "contract_type"],
+          }],
+          source_database_changed: false,
+        },
+      }),
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai",
+      model: "gpt-5.6-luna",
+      api_key: "openai-session-key",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    let requests = 0;
+    const result = await session.run("Which regions have the most sites?", gateway, {
+      requestJson: async (request) => {
+        requests += 1;
+        if (requests === 1) {
+          return openAiToolCall("wrong_region_dimension", "app__explore_data", {
+            plan: {
+              kind: "aggregate",
+              resource: "public.sites",
+              measures: [{ function: "count" }],
+              dimensions: [{ field: "contract_type" }],
+            },
+          });
+        }
+        if (requests === 2) {
+          expect(JSON.stringify(request.body)).toContain("ASK_PLAN_INTENT_MISMATCH");
+          expect(JSON.stringify(request.body)).toContain("region");
+          return openAiToolCall("corrected_region_dimension", "app__explore_data", {
+            plan: {
+              kind: "aggregate",
+              resource: "public.sites",
+              measures: [{ function: "count" }],
+              dimensions: [{ field: "region" }],
+            },
+          });
+        }
+        return openAiText("West has the most reviewed sites.");
+      },
+    });
+
+    expect(result.tool_calls).toEqual([
+      expect.objectContaining({ error_code: "ASK_PLAN_INTENT_MISMATCH", status: "refused" }),
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+    ]);
+    expect(result.tool_calls[0]?.result).toMatchObject({
+      source_query_executed: false,
+      explore_budget_consumed: false,
+    });
+    expect(exploreCalls).toBe(1);
+    expect(requests).toBe(3);
+  });
+
   it("does not treat an unrelated modifier as a resource-qualified field shorthand", async () => {
     let exploreCalls = 0;
     const gateway: AskToolGateway = {
@@ -4234,9 +4695,9 @@ describe("Workbench BYOM Ask", () => {
       }),
     });
 
-    expect(result.tool_calls).toEqual([
-      expect.objectContaining({ error_code: "ASK_PLAN_INTENT_MISMATCH", status: "refused" }),
-    ]);
+    expect(result.tool_calls).toHaveLength(2);
+    expect(result.tool_calls.every((call) =>
+      call.error_code === "ASK_PLAN_INTENT_MISMATCH" && call.status === "refused")).toBe(true);
     expect(result.tool_calls[0]?.result.message).toContain("warehouse_zone");
     expect(result.tool_calls[0]?.result.message).toContain("carrier_mode");
     expect(exploreCalls).toBe(0);
@@ -4443,9 +4904,9 @@ describe("Workbench BYOM Ask", () => {
       }),
     });
 
-    expect(result.tool_calls).toEqual([
-      expect.objectContaining({ error_code: "ASK_PLAN_INTENT_MISMATCH", status: "refused" }),
-    ]);
+    expect(result.tool_calls).toHaveLength(2);
+    expect(result.tool_calls.every((call) =>
+      call.error_code === "ASK_PLAN_INTENT_MISMATCH" && call.status === "refused")).toBe(true);
     expect(JSON.stringify(result.tool_calls[0]?.result)).toContain("cases");
     expect(exploreCalls).toBe(0);
   });
