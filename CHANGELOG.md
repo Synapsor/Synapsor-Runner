@@ -68,8 +68,11 @@
 - Keeps keyboard-driven terminal views fixed in place instead of scrolling the
   viewport by one row on every redraw. Boundary authoring, evidence browsing,
   Ask pickers, and post-activation choices now share one frame renderer that
-  never emits a trailing newline below the frame; multiline explanations are
-  also printed once instead of being repainted for every typed character.
+  never emits a trailing newline below the frame and caps wrapped output to the
+  terminal's real row count while retaining the title, highlighted choice, and
+  controls. Multiline explanations are printed once instead of being repainted
+  for every typed character, and compact terminals identify hidden rows rather
+  than pushing them into scrollback on every keypress.
 
 Prepared package versions: `@synapsor/runner@1.7.1` and the optional
 `synapsor-runner@1.7.1` command alias, plus `@synapsor/spec@1.10.0` and

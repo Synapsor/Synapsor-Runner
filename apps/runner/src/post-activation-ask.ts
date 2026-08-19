@@ -10,7 +10,9 @@ import {
 import { ProviderCredentialInputCancelledError } from "./secret-input.js";
 import {
   padTerminalBlock,
-  padTerminalLines,
+  padTerminalLine,
+  terminalContentWidth,
+  wrapStyledTerminalLine,
 } from "./terminal-layout.js";
 import {
   DEFAULT_TERMINAL_ANTHROPIC_ASK_MODEL,
@@ -417,7 +419,9 @@ async function chooseRouteInTerminal(
   );
   const wasRaw = input.isRaw;
   const wasPaused = input.isPaused();
-  const renderer = createInPlaceTerminalRenderer(output);
+  const renderer = createInPlaceTerminalRenderer(output, {
+    maxRows: () => output.rows,
+  });
   const queued: Array<{ name?: string; ctrl?: boolean }> = [];
   const waiters: Array<(key: { name?: string; ctrl?: boolean }) => void> = [];
   const onKey = (_text: string, key: { name?: string; ctrl?: boolean }) => {
@@ -433,7 +437,8 @@ async function chooseRouteInTerminal(
   const theme = terminalTheme(!("NO_COLOR" in process.env));
 
   const render = () => {
-    const lines = padTerminalLines([
+    const width = Math.min(terminalContentWidth(output.columns), 116);
+    const lines = [
       theme.title("ASK YOUR REVIEWED DATA"),
       "Choose how you want to ask with this reviewed boundary.",
       theme.dim("The model receives only the reviewed analytics tools and fields."),
@@ -445,7 +450,8 @@ async function chooseRouteInTerminal(
       })),
       "",
       `${theme.key("Up/Down")} Select   ${theme.key("Enter")} Continue   ${theme.key("Esc")} Back`,
-    ]);
+    ].flatMap((line) =>
+      wrapStyledTerminalLine(line, width).map((wrapped) => padTerminalLine(wrapped)));
     renderer.render(lines);
   };
   const nextKey = () => {

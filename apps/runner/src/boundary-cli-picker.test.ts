@@ -814,6 +814,38 @@ describe("boundary review terminal picker", () => {
     });
   });
 
+  it("keeps an oversized new-boundary picker inside a short terminal", async () => {
+    const { input, output } = fakeTerminal(80, 12);
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const resources = Array.from({ length: 14 }, (_, index) => {
+      const resource = summary(`public.table_${index + 1}`, 0);
+      resource.included = false;
+      return resource;
+    });
+    const selected = session.chooseResource(
+      resources,
+      undefined,
+      { initialView: "access", startingBoundaryName: "short_terminal" },
+    );
+
+    let frame = output.read()?.toString() ?? "";
+    expect(terminalFrameRows(frame)).toBeLessThanOrEqual(12);
+    expect(stripAnsi(frame)).toContain("> public.table_1");
+    expect(stripAnsi(frame)).toContain("rows hidden");
+    expect(stripAnsi(frame)).toContain("B/Esc/Q Cancel new boundary");
+
+    for (let index = 0; index < 7; index += 1) {
+      await send(input, "\u001b[B");
+      frame = output.read()?.toString() ?? "";
+      expect(terminalFrameRows(frame)).toBeLessThanOrEqual(12);
+      expect(frame.endsWith("\n")).toBe(false);
+    }
+    expect(stripAnsi(frame)).toContain("> public.table_8");
+
+    await emitKey(input, { name: "escape", sequence: "\u001b" });
+    await expect(selected).resolves.toBeUndefined();
+  });
+
   it("accounts for every inspected table and explains unavailable starting tables", async () => {
     const { input, output } = fakeTerminal();
     const session = createBoundaryReviewInteractiveSession(input, output);
@@ -1952,7 +1984,7 @@ describe("boundary review terminal picker", () => {
   });
 });
 
-function fakeTerminal(columns = 100): {
+function fakeTerminal(columns = 100, rows?: number): {
   input: ReadStream;
   output: WriteStream & PassThrough;
 } {
@@ -1967,7 +1999,7 @@ function fakeTerminal(columns = 100): {
     input.isRaw = value;
   };
   const output = new PassThrough() as WriteStream & PassThrough;
-  Object.assign(output, { isTTY: true, columns });
+  Object.assign(output, { isTTY: true, columns, ...(rows === undefined ? {} : { rows }) });
   return {
     input: input as unknown as ReadStream,
     output,
@@ -1976,6 +2008,10 @@ function fakeTerminal(columns = 100): {
 
 function stripAnsi(value: string): string {
   return value.replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, "");
+}
+
+function terminalFrameRows(value: string): number {
+  return (value.match(/\r\n/gu) ?? []).length + (value ? 1 : 0);
 }
 
 function asciiTableColumnText(value: string, column: number): string {
