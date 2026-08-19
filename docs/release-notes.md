@@ -70,10 +70,17 @@ for the Synapsor Cloud CLI.
   Deterministic regressions cover native OpenAI and Anthropic tool round trips,
   provider error secrecy, standalone-project resume/rescan, guarded reset, and
   intent behavior.
+- Numeric columns remain non-groupable by default, but a human reviewer can now
+  enable exact grouping for one eligible low-risk field through `/access`,
+  Workbench, or the additive `--allow-exact-numeric-grouping` flag. Identity,
+  reference, tenant/principal, sensitive, and unavailable fields are refused.
+  The change is actor/reason audited, stays disabled until exact-digest
+  activation, creates no numeric band, and retains every cohort, group,
+  response, timeout, query, extraction, and differencing bound.
 
 Prepared package versions: `@synapsor/runner@1.7.1` and
-`synapsor-runner@1.7.1`. `@synapsor/spec@1.9.0` and
-`@synapsor/dsl@1.9.0` are unchanged. Generated boundary compiler authority
+`synapsor-runner@1.7.1`, plus `@synapsor/spec@1.10.0` and
+`@synapsor/dsl@1.10.0`. Generated boundary compiler authority
 remains `1.7.0`, so installing this patch does not itself require a rescan. No
 package is published by this change.
 

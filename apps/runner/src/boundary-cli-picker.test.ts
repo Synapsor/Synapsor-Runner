@@ -1673,6 +1673,68 @@ describe("boundary review terminal picker", () => {
     await expect(edited).resolves.toBe("back");
   });
 
+  it("offers reviewed exact numeric grouping without overflowing an 80x12 terminal", async () => {
+    const { input, output } = fakeTerminal(80, 12);
+    const view = reviewView();
+    const template = view.fields[0]!;
+    view.fields.push({
+      ...template,
+      name: "started_year",
+      data_type: "integer",
+      primary_key: false,
+      aggregate_measure_suggestion: true,
+      count_distinct_suggestion: false,
+      evidence: ["database column started_year integer"],
+    });
+    view.exact_numeric_grouping_eligibility = {
+      outcome: { eligible: false, reasons: ["the inspected database type is not numeric"] },
+      started_year: { eligible: true, reasons: [] },
+      tenant_id: { eligible: false, reasons: ["trusted tenant fields cannot be grouped"] },
+    };
+    view.reviewed_budgets = {
+      max_rows: 100,
+      max_groups: 50,
+      max_top_n: 25,
+      max_response_cells: 500,
+      max_response_bytes: 262_144,
+      statement_timeout_ms: 3_000,
+      max_measures: 3,
+      max_dimensions: 3,
+      max_time_ranges: 2,
+      max_complexity: 24,
+      max_queries_per_session: 1_000,
+      rate_limit_per_minute: 120,
+      max_differencing_queries: 16,
+      max_extracted_cells_per_session: 4_000,
+      max_ranked_groups: 50,
+      max_relationship_hops: 2,
+      max_derived_scope_hops: 2,
+      max_analysis_relationship_hops: 2,
+    };
+    for (const candidate of [view.candidate!, view.generated_candidate!]) {
+      candidate.field_types.started_year = "integer";
+      candidate.selectable_fields.push("started_year");
+      candidate.sortable_fields.push("started_year");
+      candidate.aggregate_measures.push("started_year");
+      candidate.groupable_fields = candidate.groupable_fields.filter((field) =>
+        field !== "started_year");
+    }
+    const edited = createBoundaryReviewInteractiveSession(input, output)
+      .editFieldTiers(view, { focusedAccess: true });
+    output.read();
+    await send(input, "\u001b[B");
+    const frame = output.read()?.toString() ?? "";
+    const plain = stripAnsi(frame);
+    expect(plain).toContain("X Enable exact numeric groups");
+    expect(terminalFrameRows(frame)).toBeLessThanOrEqual(12);
+    await send(input, "x");
+    await expect(edited).resolves.toMatchObject({
+      action: "exact_numeric_grouping",
+      field: "started_year",
+      enabled: true,
+    });
+  });
+
   it("edits only database-declared categorical values and explains the empty-set consequence", async () => {
     const view = reviewView();
     view.fields[0]!.enum_values = ["scheduled", "completed"];

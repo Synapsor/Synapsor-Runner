@@ -441,6 +441,7 @@ the local reviewed contract and proposal before writeback.
   ${cmd} boundary review resource public.product_catalog --include --shared-reference --acknowledge-table-has-no-per-tenant-rows --actor owner@example.com --reason "Every tenant receives the same reviewed catalog rows"
   ${cmd} boundary review resource public.orders --withhold-from-model customer_segment --actor reviewer@example.com --reason "Use this grouping locally without sending segment values to the model"
   ${cmd} boundary review resource public.orders --count-distinct-fields customer_id --actor reviewer@example.com --reason "Allow reviewed unique-customer counts without returning customer IDs"
+  ${cmd} boundary review resource public.sites --allow-exact-numeric-grouping started_year --actor reviewer@example.com --reason "Calendar year is a low-cardinality business dimension"
   ${cmd} boundary review resource public.orders --label "Orders" --description "Customer purchases recorded at checkout" --field-label total_cents="Order total" --field-description total_cents="Gross amount in cents" --actor reviewer@example.com --reason "Document legacy database identifiers"
   ${cmd} boundary review resource public.orders --minimum-cohort 3 --actor owner@example.com --reason "Reviewed owner decision for this staging dataset"
   ${cmd} boundary review resource public.orders --max-ranked-groups 200 --actor reviewer@example.com --reason "Reviewed bounded ranking across this known customer population"
@@ -662,6 +663,13 @@ Resource decision flags:
   --filter-fields <column,...>
   --sort-fields <column,...>
   --group-fields <column,...>
+    Narrows the currently generated groupable fields; it never promotes a numeric field.
+  --allow-exact-numeric-grouping <column,...>
+    Adds exact grouping for explicitly reviewed safe numeric dimensions. Primary,
+    foreign/reference, tenant, principal, sensitive, and unavailable fields are refused.
+    This remains bounded by suppression, group/top-N, response, timeout, and query limits.
+  --remove-exact-numeric-grouping <column,...>
+    Removes a previously reviewed exact numeric grouping grant.
   --measure-fields <column,...>
   --count-distinct-fields <column,...>
     Grants the operation labelled **Count unique** under G Reviewed metrics in

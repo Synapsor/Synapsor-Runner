@@ -185,6 +185,14 @@ values never become a grouping fallback, and an unrelated categorical field is
 not substituted. A cross-table version also names the need for a reviewed
 relationship or child-count path.
 
+A deliberately discrete numeric value, such as a calendar year stored as an
+integer, may instead receive a human-reviewed exact grouping grant. In
+`/access`, select the field and press `X`; in Workbench, use **Exact numeric
+groups**. This is not a fallback for magnitude questions and is never enabled
+by a model. It remains a disabled revision until activation, and all cohort,
+group, response, timeout, query, extraction, and differencing bounds continue
+to apply.
+
 For business-data questions, official-provider prose is not accepted as an
 answer until a reviewed Explore plan succeeds. If a provider answers from
 general knowledge without tools, Runner forces one catalog pass and one chance

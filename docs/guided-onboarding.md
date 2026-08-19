@@ -403,6 +403,10 @@ The first release supports bounded:
 - `sum`, `avg`, standard deviation, and variance over reviewed numeric measures;
 - reviewed missing-data measures, named ratios, fixed numeric bands,
   reviewer-approved automatic numeric bands, and safe child-count metrics;
+- exact numeric dimensions only after a human explicitly enables a safe field
+  with `X` in the terminal, **Exact numeric groups** in Workbench, or
+  `--allow-exact-numeric-grouping`; numeric fields remain non-groupable by
+  default and this grant is separate from bands;
 - reviewed categorical dimensions;
 - hour, day, week, month, quarter, year, and day-of-week buckets;
 - reviewed running totals, ranks, lag changes, moving averages, and shares,

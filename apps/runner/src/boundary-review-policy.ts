@@ -114,6 +114,18 @@ export function reconstructBoundaryReviewOverrides(input: {
     if (Object.keys(fields).length) resource.fields = fields;
     const fieldEnums = reconstructFieldEnumOverrides(baseline, candidate, input);
     if (Object.keys(fieldEnums).length) resource.field_enums = fieldEnums;
+    const exactNumericGroupingFields = candidate.groupable_fields.filter((field) =>
+      !baseline.groupable_fields.includes(field)
+      && isNumericFieldType(candidate.field_types[field] ?? ""));
+    if (exactNumericGroupingFields.length) {
+      resource.exact_numeric_grouping = Object.fromEntries(
+        exactNumericGroupingFields.map((field) => [field, {
+          actor: boundedMigrationText(input.actor, "migration actor", 128),
+          reason: `Reconstructed exact numeric grouping from saved boundary ${input.candidate.pack.name}.`,
+          decided_at: input.decidedAt,
+        }]),
+      );
+    }
     if (candidate.derived_measures?.length) {
       resource.derived_measures = Object.fromEntries(candidate.derived_measures.map((definition) => [
         definition.name,
@@ -153,6 +165,11 @@ export function reconstructBoundaryReviewOverrides(input: {
     schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
     resources: overrides.resources,
   });
+}
+
+function isNumericFieldType(type: string): boolean {
+  return /(?:^|\b)(?:smallint|integer|bigint|int2|int4|int8|serial|bigserial|decimal|numeric|real|double precision|float|tinyint|mediumint|int|double)(?:\b|$)/i
+    .test(type);
 }
 
 export async function backupLegacyBoundaryReviewOverrides(projectRoot: string): Promise<void> {

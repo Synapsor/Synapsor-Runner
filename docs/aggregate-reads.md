@@ -90,7 +90,8 @@ Scoped Aggregate Explore reuses and extends this suppression machinery. Its
 reviewed boundary additionally fixes aggregate-safe measures,
 `count_distinct` identifiers, numeric dispersion, missing-data measures,
 reviewer-named derived measures, fixed numeric bands, reviewer-approved
-automatic numeric-band methods, hour through year and day-of-week buckets,
+automatic numeric-band methods, explicitly reviewed exact numeric dimensions,
+hour through year and day-of-week buckets,
 typed filters, up to three activated relationship paths
 (one or two proven many-to-one links per path by default, or three after an
 explicit reviewed depth change), maximum groups,
@@ -124,6 +125,17 @@ ordinal or outward-rounded labels, and never records raw computed edges in
 model output or evidence. Fixed and automatic band variants consume the same
 root-resource differencing allowance. The policy is off until a reviewer saves
 and activates it through the `G` analytics editor in CLI or Workbench.
+
+Exact numeric grouping is a different, narrower authoring decision for values
+that are already discrete business dimensions, such as a calendar year stored
+as an integer. It stays off by default and must be enabled per field with `X`
+in `/access`, **Exact numeric groups** in Workbench, or the additive
+`--allow-exact-numeric-grouping` review flag. Primary keys, foreign/reference
+columns, tenant/principal keys, sensitive fields, and unavailable fields cannot
+receive the grant. It emits an ordinary exact `GROUP BY`, not a banding `CASE`,
+and remains subject to cohort suppression, maximum groups/top-N, response
+limits, timeout, query/extraction, and differencing budgets. Use bands rather
+than exact grouping for continuous or high-cardinality values.
 
 Reviewers can save ratio, percentage, and per-unit definitions assembled from
 reviewed base aggregates. They can also save running total, rank, lag change,

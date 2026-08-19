@@ -899,6 +899,113 @@ describe("Scoped Explore", () => {
     }
   });
 
+  it("compiles reviewed exact numeric groups through the ordinary bounded aggregate path", async () => {
+    const inspection = exactNumericGroupingInspection();
+    const fixture = await activatedFixture(
+      undefined,
+      inspection,
+      undefined,
+      undefined,
+      { exact_numeric_grouping: ["started_year"] },
+    );
+    const resource = fixture.boundary.pack.resources[0]!;
+    expect(resource.groupable_fields).toContain("started_year");
+    expect(resource.numeric_bands).toBeUndefined();
+    expect(resource.auto_bands).toBeUndefined();
+
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "started_year" }],
+      top_n: 10,
+    }, fixture.boundary);
+
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [compiled] = compileExplorePlan(plan, fixture.boundary, {
+        tenant: "tenant-acme",
+        principal: "pm-1",
+      }, engine);
+      expect(compiled?.sql).toContain(
+        engine === "postgres"
+          ? 't0."started_year" AS "dimension_0"'
+          : "t0.`started_year` AS `dimension_0`",
+      );
+      expect(compiled?.sql).toContain(
+        engine === "postgres"
+          ? 't0."tenant_id" = $1'
+          : "t0.`tenant_id` = ?",
+      );
+      expect(compiled?.sql).toContain(
+        engine === "postgres"
+          ? 'GROUP BY t0."started_year"'
+          : "GROUP BY t0.`started_year`",
+      );
+      expect(compiled?.sql).not.toContain("CASE WHEN");
+      expect(compiled?.params).toContain("tenant-acme");
+      expect(compiled?.params.at(-1)).toBe(fixture.boundary.budgets.max_groups + 1);
+    }
+
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+      executor: fixedExecutor([
+        { dimension_0: 2024, measure_0: 12, __cohort_size: 12 },
+        { dimension_0: 2025, measure_0: 2, __cohort_size: 2 },
+      ]),
+    });
+    try {
+      const description = await runtime.describe({ resource: "public.subscriptions" }) as any;
+      expect(description.resources[0]?.groupable_fields).toContain("started_year");
+      const modelDescription = projectDescribeDataForModel(description, true) as any;
+      expect(modelDescription.resources[0]?.groupable_fields).toContain("started_year");
+      const result = await runtime.explore(plan);
+      expect(result.data).toEqual([{ started_year: 2024, count: 12 }]);
+      expect(result.privacy).toMatchObject({
+        minimum_cohort_size: 5,
+        suppressed_groups: 1,
+      });
+      expect(JSON.stringify(result)).not.toContain("2025");
+    } finally {
+      await runtime.close();
+    }
+
+    const overflowFixture = await activatedFixture(
+      undefined,
+      exactNumericGroupingInspection(),
+      undefined,
+      undefined,
+      { exact_numeric_grouping: ["started_year"] },
+    );
+    const overflowRuntime = await createScopedExploreRuntime({
+      projectRoot: overflowFixture.root,
+      transport: "stdio",
+      env: overflowFixture.env,
+      inspectDatabaseFn: async () => overflowFixture.inspection,
+      executor: fixedExecutor(Array.from(
+        { length: overflowFixture.boundary.budgets.max_groups + 1 },
+        (_, index) => ({
+          dimension_0: 1900 + index,
+          measure_0: 10,
+          __cohort_size: 10,
+        }),
+      )),
+    });
+    try {
+      await expect(overflowRuntime.explore({
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "started_year" }],
+        top_n: 10,
+      })).rejects.toMatchObject({ code: "EXPLORE_RESPONSE_TOO_LARGE" });
+    } finally {
+      await overflowRuntime.close();
+    }
+  }, 20_000);
+
   it("compiles one reviewed quantile auto band over scoped rows on both engines", async () => {
     const fixture = await activatedFixture((candidate) => {
       candidate.pack.resources[0]!.auto_bands = [{
@@ -2221,6 +2328,16 @@ describe("Scoped Explore", () => {
       dimensions: [{ field: "billing_token" }],
       top_n: 10,
     }, boundary)).toThrow(/not reviewed for group/i);
+
+    expect(() => validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "monthly_revenue_cents" }],
+      top_n: 10,
+    }, boundary)).toThrow(
+      /review exact numeric groups.*--allow-exact-numeric-grouping monthly_revenue_cents/is,
+    );
 
     expect(() => validateExplorePlan({
       kind: "aggregate",
@@ -5827,6 +5944,7 @@ async function activatedFixture(
   metadata?: {
     resource?: ReviewedMetadataDecision;
     fields?: Record<string, ReviewedMetadataDecision>;
+    exact_numeric_grouping?: string[];
   },
 ): Promise<{
   root: string;
@@ -5839,6 +5957,18 @@ async function activatedFixture(
   const reviewedResource = {
     ...(metadata?.resource ? { metadata: metadata.resource } : {}),
     ...(metadata?.fields ? { field_metadata: metadata.fields } : {}),
+    ...(metadata?.exact_numeric_grouping
+      ? {
+        exact_numeric_grouping: Object.fromEntries(metadata.exact_numeric_grouping.map((field) => [
+          field,
+          {
+            actor: "analytics-owner@example.test",
+            reason: "This reviewed numeric field is a bounded, meaningful business dimension.",
+            decided_at: "2026-08-19T00:00:00.000Z",
+          },
+        ])),
+      }
+      : {}),
     ...(minimumCohort
       ? {
         minimum_cohort: {
@@ -6752,6 +6882,13 @@ function churnInspection(): SchemaInspection {
       },
     }],
   };
+}
+
+function exactNumericGroupingInspection(): SchemaInspection {
+  const inspection = churnInspection();
+  inspection.tables[0]!.columns.push(column("started_year", "integer"));
+  inspection.tables[0]!.suggestions.default_visible_columns.push("started_year");
+  return inspection;
 }
 
 function quotedIdentifierInspection(): SchemaInspection {

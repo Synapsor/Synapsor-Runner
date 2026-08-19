@@ -11,6 +11,7 @@ import {
 import {
   buildAutoBoundary,
   databaseServerCompatibilityForLock,
+  exactNumericGroupingEligibility,
   EXPLORATION_BUDGET_REVIEW_CEILINGS,
   SHARED_REFERENCE_ACKNOWLEDGEMENT,
   explorationBoundaryCandidateDigest,
@@ -35,6 +36,7 @@ import {
   type ExplorationDerivedMeasure,
   type ExplorationAutoBandPolicy,
   type ExplorationPostAggregateOperation,
+  type ExactNumericGroupingEligibility,
   type GenerationLock,
   type RelationshipLinkProof,
   type SharedReferenceScopeInference,
@@ -181,6 +183,8 @@ export type BoundaryResourceReviewRequest = {
   filterable_fields?: string[];
   sortable_fields?: string[];
   groupable_fields?: string[];
+  allow_exact_numeric_grouping_fields?: string[];
+  remove_exact_numeric_grouping_fields?: string[];
   aggregate_measures?: string[];
   count_distinct_fields?: string[];
   time_bucket_fields?: string[];
@@ -588,6 +592,7 @@ export type BoundaryResourceReviewView = {
   candidate: ExplorationBoundaryDraft["pack"]["resources"][number] | null;
   generated_candidate: ExplorationBoundaryDraft["pack"]["resources"][number] | null;
   operation_repair_fields?: string[];
+  exact_numeric_grouping_eligibility?: Record<string, ExactNumericGroupingEligibility>;
   bindings: BoundaryReviewMutationBindings;
   reviewed_budgets?: ExplorationBoundaryDraft["budgets"];
   database_server_compatibility?: DatabaseServerCompatibility;
@@ -699,6 +704,10 @@ export async function inspectBoundaryResourceReview(
     candidate,
     generated_candidate: generatedCandidate,
     operation_repair_fields: reviewedBoundaryOperationRepairFields(candidate, generatedCandidate),
+    exact_numeric_grouping_eligibility: Object.fromEntries(reviewed.fields.map((field) => [
+      field.name,
+      exactNumericGroupingEligibility(reviewed, field.name),
+    ])),
     bindings: reviewBindings(state),
     reviewed_budgets: structuredClone(state.candidate.budgets),
     ...(state.lock.database_server_version
@@ -1482,6 +1491,22 @@ function managedDecisionsForRequest(
       exposure: "allow_reviewed_use",
     }));
   }
+  for (const field of request.allow_exact_numeric_grouping_fields ?? []) {
+    decisions.push(normalizeManagedBoundaryReviewDecision({
+      ...common,
+      kind: "exact_numeric_grouping",
+      field,
+      enabled: true,
+    }));
+  }
+  for (const field of request.remove_exact_numeric_grouping_fields ?? []) {
+    decisions.push(normalizeManagedBoundaryReviewDecision({
+      ...common,
+      kind: "exact_numeric_grouping",
+      field,
+      enabled: false,
+    }));
+  }
   if (request.field_enum) {
     decisions.push(normalizeManagedBoundaryReviewDecision({
       ...common,
@@ -1728,6 +1753,12 @@ function preserveBoundaryResourcePolicy(
           || operationRepairFields.has(field))
       : [],
   );
+  const restoredGroupingOperations = new Set(restoredSuggestedOperations);
+  if (editedResource) {
+    for (const field of request.allow_exact_numeric_grouping_fields ?? []) {
+      restoredGroupingOperations.add(field);
+    }
+  }
   generated.selectable_fields = preserveReviewedList(
     generated.selectable_fields,
     previous.selectable_fields,
@@ -1741,7 +1772,7 @@ function preserveBoundaryResourcePolicy(
   generated.groupable_fields = preserveReviewedList(
     generated.groupable_fields,
     previous.groupable_fields,
-    restoredSuggestedOperations,
+    restoredGroupingOperations,
   );
   generated.aggregate_measures = preserveReviewedList(
     generated.aggregate_measures,
@@ -1983,6 +2014,8 @@ function hasAuthorityNarrowing(request: BoundaryResourceReviewRequest): boolean 
     request.filterable_fields,
     request.sortable_fields,
     request.groupable_fields,
+    request.allow_exact_numeric_grouping_fields,
+    request.remove_exact_numeric_grouping_fields,
     request.aggregate_measures,
     request.count_distinct_fields,
     request.time_bucket_fields,
@@ -2020,6 +2053,8 @@ function canStageIncompleteScopeResolution(
     request.filterable_fields,
     request.sortable_fields,
     request.groupable_fields,
+    request.allow_exact_numeric_grouping_fields,
+    request.remove_exact_numeric_grouping_fields,
     request.aggregate_measures,
     request.count_distinct_fields,
     request.time_bucket_fields,
@@ -2426,6 +2461,8 @@ function validateBoundaryRequestAgainstResource(
     ...(request.filterable_fields ?? []),
     ...(request.sortable_fields ?? []),
     ...(request.groupable_fields ?? []),
+    ...(request.allow_exact_numeric_grouping_fields ?? []),
+    ...(request.remove_exact_numeric_grouping_fields ?? []),
     ...(request.aggregate_measures ?? []),
     ...(request.count_distinct_fields ?? []),
     ...(request.time_bucket_fields ?? []),
@@ -2488,6 +2525,31 @@ function validateBoundaryRequestAgainstResource(
     }
   }
 
+  const exactGroupingChanges = new Map<string, "enable" | "disable">();
+  for (const [mode, fields] of [
+    ["enable", request.allow_exact_numeric_grouping_fields],
+    ["disable", request.remove_exact_numeric_grouping_fields],
+  ] as const) {
+    for (const field of fields ?? []) {
+      const previous = exactGroupingChanges.get(field);
+      if (previous && previous !== mode) {
+        throw new Error(
+          `${resource.id}.${field} cannot enable and disable exact numeric grouping in one review decision.`,
+        );
+      }
+      exactGroupingChanges.set(field, mode);
+    }
+  }
+  for (const field of request.allow_exact_numeric_grouping_fields ?? []) {
+    const eligibility = exactNumericGroupingEligibility(resource, field);
+    if (!eligibility.eligible) {
+      throw new Error(
+        `${resource.id}.${field} cannot be reviewed for exact numeric grouping: `
+        + `${eligibility.reasons.join("; ")}.`,
+      );
+    }
+  }
+
   const exposureRequests = new Map<string, string>();
   for (const [label, fields] of [
     ["keep out", request.keep_out_fields],
@@ -2532,6 +2594,20 @@ function assertRequestedExposureState(
       || resource.model_withheld_fields?.includes(field)) {
       throw new Error(
         `Reviewed visible-field decision for ${request.resource_id}.${field} was not reflected in the disabled candidate.`,
+      );
+    }
+  }
+  for (const field of request.allow_exact_numeric_grouping_fields ?? []) {
+    if (!resource.groupable_fields.includes(field)) {
+      throw new Error(
+        `Reviewed exact numeric grouping for ${request.resource_id}.${field} was not reflected in the disabled candidate.`,
+      );
+    }
+  }
+  for (const field of request.remove_exact_numeric_grouping_fields ?? []) {
+    if (resource.groupable_fields.includes(field)) {
+      throw new Error(
+        `Removed exact numeric grouping for ${request.resource_id}.${field} remained in the disabled candidate.`,
       );
     }
   }
@@ -2622,6 +2698,12 @@ function canonicalReviewRequest(request: BoundaryResourceReviewRequest): JsonRec
     filterable_fields: sortedOrNull(request.filterable_fields),
     sortable_fields: sortedOrNull(request.sortable_fields),
     groupable_fields: sortedOrNull(request.groupable_fields),
+    allow_exact_numeric_grouping_fields: sortedOrNull(
+      request.allow_exact_numeric_grouping_fields,
+    ),
+    remove_exact_numeric_grouping_fields: sortedOrNull(
+      request.remove_exact_numeric_grouping_fields,
+    ),
     aggregate_measures: sortedOrNull(request.aggregate_measures),
     count_distinct_fields: sortedOrNull(request.count_distinct_fields),
     time_bucket_fields: sortedOrNull(request.time_bucket_fields),
@@ -2694,6 +2776,8 @@ function requestArrays(request: BoundaryResourceReviewRequest): string[] {
     ...(request.filterable_fields ?? []),
     ...(request.sortable_fields ?? []),
     ...(request.groupable_fields ?? []),
+    ...(request.allow_exact_numeric_grouping_fields ?? []),
+    ...(request.remove_exact_numeric_grouping_fields ?? []),
     ...(request.aggregate_measures ?? []),
     ...(request.count_distinct_fields ?? []),
     ...(request.time_bucket_fields ?? []),

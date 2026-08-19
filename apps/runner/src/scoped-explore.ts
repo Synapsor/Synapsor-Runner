@@ -6041,10 +6041,17 @@ function fieldError(resource: BoundaryResource, field: string, operation: string
         ? ` Grant Count unique under G Reviewed metrics and numeric bands for this table, or run boundary review resource ${resource.id} `
           + `--count-distinct-fields ${field}; the model cannot change this permission.`
         : "";
+  const exactNumericGroupingGuidance = operation === "group"
+    && exactNumericGroupingReviewable(resource, field)
+    ? ` In /access, select this column and press X to review exact numeric groups, or run boundary review resource ${resource.id} `
+      + `--allow-exact-numeric-grouping ${field} --actor <reviewer> --reason '<reason>'. `
+      + "This creates a disabled revision and still requires separate activation; the model cannot grant it."
+    : "";
   return new ScopedExploreError(
     "EXPLORE_FIELD_FORBIDDEN",
     `${resource.id}.${field} is not reviewed for ${operation === "count_distinct" ? "Count unique (count_distinct)" : operation}.`
-      + countUniqueGuidance,
+      + countUniqueGuidance
+      + exactNumericGroupingGuidance,
     {
       reason: "field_operation_not_reviewed",
       resource: resource.id,
@@ -6052,6 +6059,23 @@ function fieldError(resource: BoundaryResource, field: string, operation: string
       operation,
     },
   );
+}
+
+function exactNumericGroupingReviewable(resource: BoundaryResource, field: string): boolean {
+  const type = resource.field_types[field] ?? "";
+  if (!/(?:^|\b)(?:smallint|integer|bigint|int2|int4|int8|serial|bigserial|decimal|numeric|real|double precision|float|tinyint|mediumint|int|double)(?:\b|$)/i.test(type)) {
+    return false;
+  }
+  if (!resource.selectable_fields.includes(field)
+    || resource.kept_out_fields.includes(field)
+    || resource.primary_key === field
+    || resource.tenant_key === field
+    || resource.principal_key === field) {
+    return false;
+  }
+  if (resource.relationships.some((relationship) =>
+    relationship.local_columns.includes(field))) return false;
+  return field.toLowerCase() !== "id" && !/_id$/i.test(field);
 }
 
 function relationshipRequiredForGrouping(

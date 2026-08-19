@@ -58,6 +58,12 @@ export type BoundaryFieldTierEditResult =
       field: string;
       tiers: Record<string, BoundaryFieldTier>;
     }
+  | {
+      action: "exact_numeric_grouping";
+      field: string;
+      enabled: boolean;
+      tiers: Record<string, BoundaryFieldTier>;
+    }
   | `enum:${string}`
   | "back"
   | "privacy"
@@ -1267,6 +1273,13 @@ async function editFieldTiers(
         : undefined;
       const operationRepairAvailable = (view.operation_repair_fields ?? []).includes(highlighted.name)
         && tiers[highlighted.name] !== "kept_out";
+      const exactNumericGroupingEligibility = view.exact_numeric_grouping_eligibility?.[highlighted.name];
+      const exactNumericGroupingEnabled = Boolean(
+        highlighted.exact_numeric_grouping_review_override
+        && (view.candidate ?? view.generated_candidate)?.groupable_fields.includes(highlighted.name),
+      );
+      const exactNumericGroupingAvailable = tiers[highlighted.name] !== "kept_out"
+        && (exactNumericGroupingEligibility?.eligible || exactNumericGroupingEnabled);
       const tableWidth = Math.max(36, Math.min(terminalContentWidth(output.columns), 116));
       const accessLayout = fieldAccessLayout(tableWidth);
       const reviewCompatibility = databaseCompatibilityLine(view.database_server_compatibility, theme);
@@ -1301,6 +1314,9 @@ async function editFieldTiers(
           : []),
         ...(operationRepairAvailable
           ? [`${theme.key("S")} Restore the current inspected filter/sort/group/measure suggestions for this column`]
+          : []),
+        ...(exactNumericGroupingAvailable
+          ? [`${theme.key("X")} ${exactNumericGroupingEnabled ? "Remove" : "Enable"} exact numeric groups for this column`]
           : []),
       ];
       const terminalRows = typeof output.rows === "number" && Number.isFinite(output.rows)
@@ -1352,6 +1368,9 @@ async function editFieldTiers(
           `${theme.key("I")} Labels and descriptions`,
           ...(enumValues ? [`${theme.key("E")} Allowed values`] : []),
           ...(operationRepairAvailable ? [`${theme.key("S")} Restore operations`] : []),
+          ...(exactNumericGroupingAvailable
+            ? [`${theme.key("X")} ${exactNumericGroupingEnabled ? "Remove" : "Enable"} exact numeric groups`]
+            : []),
           `${theme.key("B/Esc")} ${options?.focusedAccess ? "Back to tables" : "Back"}`,
           `${theme.key("Q")} Quit`,
         ], tableWidth),
@@ -1452,6 +1471,14 @@ async function editFieldTiers(
         return {
           action: "restore_operations",
           field: highlighted.name,
+          tiers: { ...tiers },
+        };
+      }
+      if (key.name === "x" && exactNumericGroupingAvailable) {
+        return {
+          action: "exact_numeric_grouping",
+          field: highlighted.name,
+          enabled: !exactNumericGroupingEnabled,
           tiers: { ...tiers },
         };
       }

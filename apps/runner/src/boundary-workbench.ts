@@ -2467,6 +2467,56 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       return '<div class="review-form hidden" data-managed-review-form data-field="'+esc(field)+'" data-exposure="'+esc(exposure)+'"><label class="field">Human reviewer<input data-review-actor type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><label class="field">Reason<textarea data-review-reason maxlength="500" rows="2" placeholder="'+esc(placeholder)+'"></textarea></label><div class="actions"><button data-submit-field-review="'+esc(field)+'" data-exposure="'+esc(exposure)+'" type="button">Save this reviewed choice</button><button class="quiet" data-cancel-field-review type="button">Cancel</button></div><span data-review-status class="status-message"></span></div>';
     }
 
+    function managedExactNumericGroupingPanel(field,reviewedDecision,enabled,eligibility){
+      if(!reviewedDecision&&!eligibility?.eligible)return "";
+      const budgets=candidate?.budgets||{};
+      const state=enabled?"enabled in this disabled revision":"not enabled in this disabled revision";
+      const review=reviewedDecision
+        ?'<p>Reviewed by '+esc(reviewedDecision.actor)+' at '+esc(reviewedDecision.decided_at)+': '+esc(reviewedDecision.reason)+'</p>'
+        :"";
+      const unavailable=!eligibility?.eligible
+        ?'<p class="status-message error">This grant is no longer eligible: '+esc((eligibility?.reasons||["the inspected field is unavailable"]).join("; "))+'. Rescan removes stale authority.</p>'
+        :"";
+      return '<details class="access-secondary" data-exact-numeric-grouping-panel data-field="'+esc(field)+'"><summary>Exact numeric groups · '+esc(state)+'</summary>'
+        +'<p>This is for bounded business dimensions such as calendar years or reviewed scores. It returns exact values; it does not create numeric bands.</p>'
+        +'<p>Every query remains bounded by minimum group '+esc(candidate?.pack?.resources?.find(item=>item.id===selectedResource)?.minimum_cohort_size??5)
+        +', maximum '+esc(budgets.max_groups??"reviewed")+' groups, top '+esc(budgets.max_top_n??"reviewed")
+        +', '+esc(budgets.max_response_cells??"reviewed")+' cells, '+esc(budgets.max_response_bytes??"reviewed")
+        +' bytes, '+esc(budgets.statement_timeout_ms??"reviewed")+' ms, and the reviewed rolling query budgets.</p>'
+        +review+unavailable
+        +(eligibility?.eligible?'<div class="review-form"><div class="form-grid"><label class="field">Human reviewer<input data-exact-grouping-actor type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><label class="field">Concrete reason<textarea data-exact-grouping-reason maxlength="500" rows="2" placeholder="Explain why this numeric column is a safe, meaningful exact grouping dimension."></textarea></label></div><div class="actions"><button data-submit-exact-numeric-grouping type="button" data-enabled="'+esc(String(!enabled))+'">'+(enabled?'Remove exact grouping':'Enable exact grouping')+'</button></div><span data-exact-grouping-status class="status-message"></span></div>':"")
+        +'</details>';
+    }
+
+    async function submitExactNumericGroupingReview(form){
+      const status=form.querySelector("[data-exact-grouping-status]");
+      try{
+        const actor=form.querySelector("[data-exact-grouping-actor]").value.trim();
+        const reason=form.querySelector("[data-exact-grouping-reason]").value.trim();
+        const button=form.querySelector("[data-submit-exact-numeric-grouping]");
+        if(!actor||!reason)throw new Error("Enter the human reviewer identity and a concrete reason. No change was made.");
+        status.className="status-message";
+        status.textContent="Saving exact numeric grouping in the disabled boundary...";
+        await post("/api/boundary/regenerate",{
+          kind:"exact_numeric_grouping",
+          resource_id:selectedResource,
+          field:form.dataset.field,
+          enabled:button.dataset.enabled==="true",
+          actor,
+          reason
+        });
+        candidateDigest=undefined;
+        focusedAccessReview=true;
+        document.body.classList.remove("quick-start-mode");
+        await load();
+        offerStagedActivation();
+        byId("access-staged-summary").textContent="Recorded exact numeric grouping for "+selectedResource+"."+form.dataset.field+". Review the complete boundary, then activate it.";
+      }catch(error){
+        status.className="status-message error";
+        status.textContent=error.message;
+      }
+    }
+
     function managedMetadataReviewPanel(kind,field,metadata){
       const subject=field?"Column name and description":"Table name and description";
       const exact=field?selectedResource+"."+field:selectedResource;
@@ -3179,6 +3229,15 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	        const operationRepairForm=operationRepairNeeded
 	          ?managedReviewForm(field.name,operationRepairExposure,"Why should Runner restore the current inspected analytical suggestions for this field?")
 	          :"";
+	        const exactNumericGroupingEligibility=review.exact_numeric_grouping_eligibility?.[field.name];
+	        const exactNumericGroupingControl=resource
+	          ?managedExactNumericGroupingPanel(
+	            field.name,
+	            field.exact_numeric_grouping_review_override,
+	            (resource.groupable_fields||[]).includes(field.name),
+	            exactNumericGroupingEligibility,
+	          )
+	          :"";
 		        const schemaEnum=Array.isArray(field.enum_values)?field.enum_values:[];
 		        const enumReviewable=Boolean(resource&&schemaEnum.length&&(Object.hasOwn(source?.field_enums||{},field.name)||field.enum_review_override));
 		        const reviewedEnum=enumReviewable
@@ -3203,6 +3262,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	          +reviewForms
 	          +operationRepairControl
 	          +operationRepairForm
+	          +exactNumericGroupingControl
 		          +enumControl
 		          +metadataControl
 		          +'</div>';
@@ -3370,6 +3430,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	        else openManagedFieldReview(button.dataset.restoreFieldOperations,button.dataset.exposure);
 	      });
 	      document.querySelectorAll("[data-submit-field-review]").forEach(button=>button.onclick=()=>submitManagedFieldReview(button.dataset.submitFieldReview,button.dataset.exposure));
+	      document.querySelectorAll("[data-exact-numeric-grouping-panel]").forEach(form=>form.querySelector("[data-submit-exact-numeric-grouping]")?.addEventListener("click",()=>submitExactNumericGroupingReview(form)));
 	      document.querySelectorAll("[data-cancel-field-review]").forEach(button=>button.onclick=()=>button.closest("[data-managed-review-form]").classList.add("hidden"));
 	      document.querySelectorAll("[data-submit-enum-review]").forEach(button=>button.onclick=()=>submitManagedEnumReview(button.dataset.submitEnumReview,button.closest("[data-enum-review-form]")));
       document.querySelectorAll("[data-submit-metadata-review]").forEach(button=>button.onclick=()=>submitManagedMetadataReview(button.closest("[data-metadata-review-form]")));
