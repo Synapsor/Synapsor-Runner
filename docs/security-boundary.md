@@ -171,17 +171,26 @@ or unverifiable dependency produces no mutation and is never silently
 refreshed. See
 [Proposal And Evidence Freshness](proposal-evidence-freshness.md).
 
-Code-first Safe Actions do not create authority when a file is edited. Runner
-parses the restricted TypeScript object without importing or executing it,
-compiles it into a digest-addressed disabled canonical draft, and keeps the
-active contract pointer unchanged. Activation is available only in the
-session-token/CSRF-protected localhost Workbench after a matching real staging
-proposal proves `source_database_changed:false`; the operator must confirm the
-complete digest. A proposal remains pinned to the active contract digest it was
-created under, so later activation cannot reinterpret an old approval. Cloud-
-linked projects route activation through Cloud governance instead of the local
-control. No model-facing MCP tool can validate-and-activate, approve, apply, or
-revert.
+Code-first and managed Safe Actions do not create authority when a file,
+ActionSuggestion, or ActionDesign is written. Runner parses restricted
+TypeScript without importing or executing it, or compiles the terminal/
+Workbench review through public DSL and canonical Spec, then stores a
+digest-addressed disabled revision while keeping the active pointer unchanged.
+
+Local activation is human-owned in the preferred terminal control plane or the
+session-token/CSRF-protected loopback Workbench. It requires a matching real
+staging rehearsal that proves `source_database_changed:false` plus complete
+exact-digest confirmation. Headless activation additionally requires a
+cryptographically verified `signed_key` or `jwt_oidc` operator, role, reason,
+bounded expiry, and single-use capability/digest-bound nonce; `--yes` or an
+actor label is insufficient. Cloud-linked projects continue to route
+activation through Cloud governance.
+
+A proposal remains pinned to the active contract digest and writeback posture
+under which it was created, so a later execution promotion cannot reinterpret
+an old proposal-only record. No model-facing MCP tool can suggest authority,
+validate-and-activate, approve, apply, change policy, or revert. See [Safe
+Action Human Control Plane](safe-action-control-plane.md).
 
 The local proposal store rejects obvious credential material before persistence:
 database URLs, bearer tokens, Synapsor runner tokens, private-key blocks, and

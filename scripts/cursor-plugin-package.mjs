@@ -67,7 +67,7 @@ export async function validateCursorPlugin(directory = cursorPluginSource, expec
     `npx -y @synapsor/runner@${expectedVersion} start --action`,
     `npx -y @synapsor/runner@${expectedVersion} action validate`,
     "synapsor/SAFE_ACTION_AGENT.md",
-    "There is intentionally no `action activate` CLI or MCP",
+    "There is intentionally no model-facing `action activate` MCP tool",
   ]) {
     if (!command.includes(required)) throw new Error(`Cursor command is missing required boundary text: ${required}`);
   }

@@ -51,7 +51,12 @@ export function scalar(value: unknown): Scalar {
 
 export function conflictGuardScalar(value: Scalar): Scalar {
   if (typeof value !== "string") return value;
-  const match = value.trim().match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}(?::?\d{2})?)?$/i);
+  const trimmed = value.trim();
+  if (/^-?(?:0|[1-9]\d*)$/.test(trimmed)) {
+    const integer = Number(trimmed);
+    if (Number.isSafeInteger(integer)) return integer;
+  }
+  const match = trimmed.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}(?::?\d{2})?)?$/i);
   if (!match) return value;
   const fraction = (match[3] ?? "").padEnd(6, "0").slice(0, 6);
   return `${match[1]} ${match[2]}.${fraction}${match[4] ?? ""}`;

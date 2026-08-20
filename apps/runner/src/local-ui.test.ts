@@ -26,6 +26,7 @@ import {
 } from "./local-ui.js";
 import { compileSafeActionDraft } from "./safe-action.js";
 import { createScopedExploreRuntime } from "./scoped-explore.js";
+import { ACTION_SUGGESTION_VERSION } from "./action-design.js";
 
 const changeSet = {
   schema_version: "synapsor.change-set.v2",
@@ -1245,15 +1246,47 @@ export default defineCapability({
           source_database_changed: false,
         };
       },
+      guidedActionSuggestion: async (input) => {
+        expect(input).toMatchObject({
+          intent: "Let support propose freezing one membership.",
+          provider: "anthropic",
+          model: "claude-test",
+          apiKeyEnv: "ANTHROPIC_API_KEY",
+          egressAcknowledged: true,
+        });
+        return {
+          provider: "anthropic",
+          model: "claude-test",
+          authority_granted: false,
+          source_database_changed: false,
+          assessment: {
+            status: "suggested",
+            suggestion: {
+              schema_version: ACTION_SUGGESTION_VERSION,
+              intent: "Let support propose freezing one membership.",
+              operation: "update",
+              resource: "public.members",
+              fields: ["membership_status"],
+              suggested_by: { kind: "model", provider: "anthropic", model: "claude-test" },
+            },
+            structural_evidence: [],
+            blockers: [],
+            authority_granted: false,
+            source_database_changed: false,
+          },
+        };
+      },
     });
     const baseUrl = `http://${server.host}:${server.port}`;
     const headers = { "x-synapsor-ui-token": "guided-action-token" };
     const mutationHeaders = { ...headers, "x-synapsor-csrf": "guided-action-csrf" };
+    const baseConfigBefore = await fs.readFile(guided.config_path, "utf8");
     try {
       const options = await getJson(`${baseUrl}/api/actions/guided`, headers);
       expect(options).toMatchObject({
         ok: true,
         source_database_changed: false,
+        suggestions: [],
         options: {
           source: "local_postgres",
           resources: [{
@@ -1263,7 +1296,39 @@ export default defineCapability({
           }],
         },
       });
+      const generatedSuggestion = await postJson(`${baseUrl}/api/actions/guided/suggest`, mutationHeaders, {
+        intent: "Let support propose freezing one membership.",
+        provider: "anthropic",
+        model: "claude-test",
+        api_key_env: "ANTHROPIC_API_KEY",
+        egress_acknowledged: true,
+      });
+      expect(generatedSuggestion).toMatchObject({
+        ok: true,
+        reviewable: true,
+        generated_by: { provider: "anthropic", model: "claude-test" },
+        suggestion: { state: "suggested", authority_granted: false },
+      });
+      const importedSuggestion = await postJson(`${baseUrl}/api/actions/guided/suggest`, mutationHeaders, {
+        suggestion: {
+          schema_version: ACTION_SUGGESTION_VERSION,
+          intent: "Propose one bounded loyalty balance adjustment.",
+          operation: "update",
+          resource: "public.members",
+          fields: ["loyalty_balance"],
+          suggested_by: { kind: "model", provider: "openai", model: "gpt-5.6-luna" },
+        },
+      });
+      expect(importedSuggestion).toMatchObject({
+        ok: true,
+        reviewable: true,
+        authority_granted: false,
+        active_tools_changed: false,
+        source_database_changed: false,
+        suggestion: { state: "suggested" },
+      });
       const created = await postJson(`${baseUrl}/api/actions/guided/draft`, mutationHeaders, {
+        suggestion_id: importedSuggestion.suggestion.suggestion_id,
         action: {
           capability_name: "membership.set_loyalty_balance",
           description: "Propose a reviewed loyalty balance for one assigned member.",
@@ -1287,6 +1352,21 @@ export default defineCapability({
         source_database_changed: false,
         draft: { state: "disabled", capability: "membership.set_loyalty_balance" },
       });
+      const suggestionsAfterReview = await getJson(`${baseUrl}/api/actions/guided`, headers);
+      expect(suggestionsAfterReview.suggestions).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          suggestion_id: importedSuggestion.suggestion.suggestion_id,
+          state: "reviewed",
+          review: expect.objectContaining({
+            capability: "membership.set_loyalty_balance",
+            authority_activated: false,
+          }),
+        }),
+        expect.objectContaining({
+          suggestion_id: generatedSuggestion.suggestion.suggestion_id,
+          state: "suggested",
+        }),
+      ]));
       previewDigest = created.draft.contract_digest;
       const preview = await postJson(`${baseUrl}/api/actions/guided/preview`, mutationHeaders, {
         capability_name: "membership.set_loyalty_balance",
@@ -1309,15 +1389,71 @@ export default defineCapability({
         ok: true,
         reconnect_required: true,
         source_database_changed: false,
-        active: { capability: "membership.set_loyalty_balance" },
+        active: {
+          capability: "membership.set_loyalty_balance",
+          authority_posture: "proposal_only",
+          writeback_mode: "none",
+        },
       });
-      expect(JSON.parse(await fs.readFile(guided.config_path, "utf8"))).toMatchObject({
+      expect(await fs.readFile(guided.config_path, "utf8")).toBe(baseConfigBefore);
+      const actionConfigPath = path.join(tempDir, "synapsor.actions.runner.json");
+      const proposalOnlyConfig = JSON.parse(await fs.readFile(actionConfigPath, "utf8"));
+      expect(proposalOnlyConfig).toMatchObject({
         mode: "review",
-        proposal_freshness: {
-          "membership.set_loyalty_balance": {
-            approval: "required",
-            dependencies: [],
+        sources: {
+          local_postgres: {
+            read_only: true,
           },
+        },
+      });
+      expect(proposalOnlyConfig.proposal_freshness).toBeUndefined();
+      expect(proposalOnlyConfig.sources.local_postgres.write_url_env).toBeUndefined();
+      expect(proposalOnlyConfig.contracts).toEqual([activated.active.contract_path]);
+
+      const revised = await postJson(`${baseUrl}/api/actions/guided/revise`, mutationHeaders, {
+        capability_name: "membership.set_loyalty_balance",
+        expected_current_digest: activated.active.contract_digest,
+        authority: {
+          authority_posture: "executable",
+          writeback: { mode: "direct_sql" },
+          receipt_mode: "runner_ledger",
+          write_url_env: "SYNAPSOR_DATABASE_WRITE_URL",
+        },
+      });
+      expect(revised).toMatchObject({
+        ok: true,
+        source_database_changed: false,
+        transition: {
+          kind: "promotion",
+          requires_new_revision: true,
+          old_proposals_gain_execution_authority: false,
+        },
+        previous: { contract_digest: activated.active.contract_digest, writeback_mode: "none" },
+        draft: { authority_posture: "executable", writeback_mode: "direct_sql" },
+      });
+      expect(revised.draft.contract_digest).not.toBe(activated.active.contract_digest);
+      expect(JSON.parse(await fs.readFile(actionConfigPath, "utf8")).contracts)
+        .toEqual([activated.active.contract_path]);
+
+      previewDigest = revised.draft.contract_digest;
+      await postJson(`${baseUrl}/api/actions/guided/preview`, mutationHeaders, {
+        capability_name: "membership.set_loyalty_balance",
+        args: { member_id: "MEM-1", loyalty_balance: 25 },
+      });
+      const promoted = await postJson(`${baseUrl}/api/actions/guided/activate`, mutationHeaders, {
+        capability_name: "membership.set_loyalty_balance",
+        expected_digest: previewDigest,
+        confirmation: `ACTIVATE ${previewDigest}`,
+        actor: "reviewer@example.test",
+      });
+      expect(promoted).toMatchObject({
+        ok: true,
+        active: { authority_posture: "executable", writeback_mode: "direct_sql" },
+      });
+      const promotedConfig = JSON.parse(await fs.readFile(actionConfigPath, "utf8"));
+      expect(promotedConfig).toMatchObject({
+        proposal_freshness: {
+          "membership.set_loyalty_balance": { approval: "required", dependencies: [] },
         },
         sources: {
           local_postgres: {
@@ -1327,8 +1463,20 @@ export default defineCapability({
           },
         },
       });
+      expect(promotedConfig.contracts).toEqual([promoted.active.contract_path]);
+      expect(promotedConfig.contracts).not.toContain(activated.active.contract_path);
+      const archivedContract = JSON.parse(await fs.readFile(path.join(tempDir, activated.active.contract_path), "utf8"));
+      expect(archivedContract.capabilities[0].proposal.writeback).toEqual({ mode: "none" });
       const boundaryLanding = await fetch(`${baseUrl}/`, { headers });
-      expect(await boundaryLanding.text()).toContain("Add safe action");
+      const boundaryHtml = await boundaryLanding.text();
+      expect(boundaryHtml).toContain("Add safe action");
+      expect(boundaryHtml).toContain("Proposal only - WRITEBACK NONE");
+      expect(boundaryHtml).toContain("structurally eligible, not pre-approved for writes");
+      expect(boundaryHtml).toContain("/api/actions/guided/revise");
+      expect(boundaryHtml).toContain("Required reviewed minimum");
+      expect(boundaryHtml).toContain("Required reviewed maximum");
+      expect(boundaryHtml).toContain("required for INSERT");
+      expect(boundaryHtml).toContain("INSERT requires reviewed values for:");
       const activityLanding = await fetch(`${baseUrl}/?surface=activity`, { headers });
       const activityHtml = await activityLanding.text();
       expect(activityHtml).toContain("<h2>Activity</h2>");

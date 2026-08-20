@@ -29,6 +29,7 @@
     "test:mcp-local": "node scripts/smoke-mcp-local-examples.mjs",
     "test:live-apply": "node scripts/smoke-mcp-local-examples.mjs",
     "test:guarded-crud": "corepack pnpm build && node scripts/verify-guarded-crud.mjs",
+    "test:guided-actions-live": "corepack pnpm build && node scripts/verify-guided-action-control-plane.mjs",
     "test:bounded-set": "corepack pnpm build && node scripts/verify-bounded-set-writeback.mjs",
     "test:reversible": "corepack pnpm build:runner-package && node scripts/verify-reversible-writeback.mjs",
     "test:contract-lsp": "vitest run apps/runner/src/language-server.test.ts",

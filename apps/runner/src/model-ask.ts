@@ -574,7 +574,26 @@ export async function runAskProviderTurn(input: {
   dependencies?: AskProviderDependencies;
   authorityDigest: `sha256:${string}`;
   authorityGuard?: AskAuthorityGuard;
+  providerSystemPrompt?: string;
+  skipRunnerQuestionContext?: boolean;
+  requiredInitialToolName?: string;
+  completeAfterRequiredTool?: boolean;
 }): Promise<AskTurnResult> {
+  if (input.completeAfterRequiredTool && !input.requiredInitialToolName) {
+    throw new AskError(
+      "ASK_REQUIRED_TOOL_INVALID",
+      "A provider turn can complete after a required tool only when that exact tool is named.",
+      500,
+    );
+  }
+  if (input.requiredInitialToolName
+    && !input.tools.some((tool) => tool.name === input.requiredInitialToolName)) {
+    throw new AskError(
+      "ASK_REQUIRED_TOOL_INVALID",
+      "The required provider tool is outside the reviewed tool surface.",
+      409,
+    );
+  }
   const prepared = prepareProviderTools(input.tools);
   const requestJson = input.dependencies?.requestJson ?? secureAskJsonRequest;
   const currentUtcDate = (input.dependencies?.now?.() ?? new Date()).toISOString().slice(0, 10);
@@ -717,11 +736,20 @@ async function runOpenAiCompatibleTurn(input: {
   onProgress?: AskProviderDependencies["onProgress"];
   authorityDigest: `sha256:${string}`;
   authorityGuard?: AskAuthorityGuard;
+  providerSystemPrompt?: string;
+  skipRunnerQuestionContext?: boolean;
+  requiredInitialToolName?: string;
+  completeAfterRequiredTool?: boolean;
 }): Promise<AskTurnResult> {
   const messages: Array<Record<string, unknown>> = [
-    { role: "system", content: askSystemPrompt() },
+    { role: "system", content: input.providerSystemPrompt ?? askSystemPrompt() },
     ...historyMessages(input.history),
-    { role: "user", content: currentQuestionWithRunnerContext(input.history, input.question, input.currentUtcDate) },
+    {
+      role: "user",
+      content: input.skipRunnerQuestionContext
+        ? input.question
+        : currentQuestionWithRunnerContext(input.history, input.question, input.currentUtcDate),
+    },
   ];
   const traces: AskToolTrace[] = [];
   const providerHistory: ProviderHistoryEntry[] = [];
@@ -746,7 +774,10 @@ async function runOpenAiCompatibleTurn(input: {
         && !traces.some((trace) => trace.tool === "app.explore_data" && trace.status === "ok")))
       ? providerToolName(input.prepared, "app.explore_data")
       : undefined;
-    const forcedProviderName = forcedDescribeProviderName ?? forcedExploreProviderName;
+    const requiredProviderName = iteration === 0 && input.requiredInitialToolName
+      ? providerToolName(input.prepared, input.requiredInitialToolName)
+      : undefined;
+    const forcedProviderName = requiredProviderName ?? forcedDescribeProviderName ?? forcedExploreProviderName;
     const providerTools = forcedProviderName
       ? input.prepared.providerTools.filter((tool) => tool.providerName === forcedProviderName)
       : input.prepared.providerTools;
@@ -772,9 +803,34 @@ async function runOpenAiCompatibleTurn(input: {
     if (input.authorityGuard) {
       await assertAskAuthorityCurrent(input.authorityDigest, input.authorityGuard);
     }
-    const message = openAiMessage(response.body);
+    let message: Record<string, unknown>;
+    try {
+      message = openAiMessage(response.body);
+    } catch (error) {
+      if (iteration === 0
+        && input.requiredInitialToolName
+        && error instanceof AskError
+        && error.code === "ASK_PROVIDER_RESPONSE_INVALID") {
+        throw new AskError(
+          "ASK_REQUIRED_TOOL_NOT_CALLED",
+          "The provider did not submit the one required structured tool call.",
+          502,
+        );
+      }
+      throw error;
+    }
     usage = mergeUsage(usage, openAiUsage(response.body));
     const toolCalls = openAiToolCalls(message);
+    if (iteration === 0 && input.requiredInitialToolName) {
+      const requiredProviderTool = providerToolName(input.prepared, input.requiredInitialToolName);
+      if (toolCalls.length !== 1 || toolCalls[0]?.name !== requiredProviderTool) {
+        throw new AskError(
+          "ASK_REQUIRED_TOOL_NOT_CALLED",
+          "The provider did not submit the one required structured tool call.",
+          502,
+        );
+      }
+    }
     messages.push({
       role: "assistant",
       content: safeOptionalText(message.content),
@@ -1253,6 +1309,20 @@ async function runOpenAiCompatibleTurn(input: {
         content: boundedToolResult(executed.providerResult),
       });
     }
+    if (input.completeAfterRequiredTool
+      && input.requiredInitialToolName
+      && traces.some((trace) => trace.tool === input.requiredInitialToolName)) {
+      return rememberProviderHistory(
+        completeAskResult(
+          input.configuration,
+          "The required structured tool call completed.",
+          traces,
+          usage,
+          "runner",
+        ),
+        providerHistory,
+      );
+    }
   }
   if (requiresExploreAfterCatalog(input.question, traces, input.prepared)) {
     return rememberProviderHistory(
@@ -1548,10 +1618,19 @@ async function runAnthropicTurn(input: {
   onProgress?: AskProviderDependencies["onProgress"];
   authorityDigest: `sha256:${string}`;
   authorityGuard?: AskAuthorityGuard;
+  providerSystemPrompt?: string;
+  skipRunnerQuestionContext?: boolean;
+  requiredInitialToolName?: string;
+  completeAfterRequiredTool?: boolean;
 }): Promise<AskTurnResult> {
   const messages: Array<Record<string, unknown>> = [
     ...historyMessages(input.history),
-    { role: "user", content: currentQuestionWithRunnerContext(input.history, input.question, input.currentUtcDate) },
+    {
+      role: "user",
+      content: input.skipRunnerQuestionContext
+        ? input.question
+        : currentQuestionWithRunnerContext(input.history, input.question, input.currentUtcDate),
+    },
   ];
   const traces: AskToolTrace[] = [];
   const providerHistory: ProviderHistoryEntry[] = [];
@@ -1575,7 +1654,10 @@ async function runAnthropicTurn(input: {
         && !traces.some((trace) => trace.tool === "app.explore_data" && trace.status === "ok")))
       ? providerToolName(input.prepared, "app.explore_data")
       : undefined;
-    const forcedProviderName = forcedDescribeProviderName ?? forcedExploreProviderName;
+    const requiredProviderName = iteration === 0 && input.requiredInitialToolName
+      ? providerToolName(input.prepared, input.requiredInitialToolName)
+      : undefined;
+    const forcedProviderName = requiredProviderName ?? forcedDescribeProviderName ?? forcedExploreProviderName;
     const providerTools = forcedProviderName
       ? input.prepared.providerTools.filter((tool) => tool.providerName === forcedProviderName)
       : input.prepared.providerTools;
@@ -1592,7 +1674,7 @@ async function runAnthropicTurn(input: {
           input.configuration,
           DEFAULT_PROVIDER_OUTPUT_TOKENS,
         ),
-        system: askSystemPrompt(),
+        system: input.providerSystemPrompt ?? askSystemPrompt(),
         messages,
         tools: providerTools.map((tool) => ({
           name: tool.providerName,
@@ -1612,6 +1694,16 @@ async function runAnthropicTurn(input: {
     const blocks = anthropicBlocks(response.body);
     usage = mergeUsage(usage, anthropicUsage(response.body));
     const calls = blocks.filter((block) => block.type === "tool_use");
+    if (iteration === 0 && input.requiredInitialToolName) {
+      const requiredProviderTool = providerToolName(input.prepared, input.requiredInitialToolName);
+      if (calls.length !== 1 || calls[0]?.name !== requiredProviderTool) {
+        throw new AskError(
+          "ASK_REQUIRED_TOOL_NOT_CALLED",
+          "The provider did not submit the one required structured tool call.",
+          502,
+        );
+      }
+    }
     messages.push({ role: "assistant", content: blocks });
     if (calls.length === 0) {
       if (traces.length === 0 && shouldRecoverLocalDataQuestion(input.question)) {
@@ -1732,6 +1824,20 @@ async function runAnthropicTurn(input: {
         content: boundedToolResult(executed.providerResult),
         is_error: trace.status === "refused",
       });
+    }
+    if (input.completeAfterRequiredTool
+      && input.requiredInitialToolName
+      && traces.some((trace) => trace.tool === input.requiredInitialToolName)) {
+      return rememberProviderHistory(
+        completeAskResult(
+          input.configuration,
+          "The required structured tool call completed.",
+          traces,
+          usage,
+          "runner",
+        ),
+        providerHistory,
+      );
     }
     messages.push({ role: "user", content: results });
   }
@@ -1878,6 +1984,7 @@ async function requestAnthropicFinalAnswer(input: {
   onProgress?: AskProviderDependencies["onProgress"];
   authorityDigest: `sha256:${string}`;
   authorityGuard?: AskAuthorityGuard;
+  providerSystemPrompt?: string;
 }): Promise<{ answer?: string; usage: AskTurnResult["usage"] }> {
   assertAskNotCancelled(input.signal);
   if (input.authorityGuard) {
@@ -1901,7 +2008,7 @@ async function requestAnthropicFinalAnswer(input: {
         input.configuration,
         DEFAULT_PROVIDER_OUTPUT_TOKENS,
       ),
-      system: `${askSystemPrompt()} ${FINAL_ANSWER_INSTRUCTION}`,
+      system: `${input.providerSystemPrompt ?? askSystemPrompt()} ${FINAL_ANSWER_INSTRUCTION}`,
       messages,
     },
     signal: input.signal,

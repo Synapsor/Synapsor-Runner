@@ -179,6 +179,7 @@ test -f "$PACKED_ROOT/docs/fresh-developer-usability.md"
 test -f "$PACKED_ROOT/docs/guided-onboarding.md"
 test -f "$PACKED_ROOT/docs/approval-roles-and-operator-identity.md"
 test -f "$PACKED_ROOT/docs/supervised-automatic-apply.md"
+test -f "$PACKED_ROOT/docs/safe-action-control-plane.md"
 test -f "$PACKED_ROOT/docs/human-attention-notifications.md"
 test -f "$PACKED_ROOT/docs/effect-regression.md"
 test -f "$PACKED_ROOT/examples/fitflow-guided-onboarding/prisma/schema.prisma"
@@ -215,6 +216,8 @@ done
 npx synapsor-runner --help >/dev/null
 node "$PACKED_ROOT/dist/cli.js" --help > direct-launcher-help.txt
 grep -F "synapsor-runner try --prove" direct-launcher-help.txt >/dev/null
+grep -F "action       Review Safe Actions and operate immutable proposals" direct-launcher-help.txt >/dev/null
+grep -F "synapsor-runner action review --project-root ." direct-launcher-help.txt >/dev/null
 if grep -F "synapsor try --prove" direct-launcher-help.txt >/dev/null; then
   echo "packed Runner launcher confused the local binary with the Cloud CLI" >&2
   exit 1

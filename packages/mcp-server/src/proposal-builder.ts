@@ -433,11 +433,34 @@ export function numericAggregateValue(value: Scalar | undefined, column: string)
 
 export function expectedVersionGuard(capability: RuntimeCapabilityConfig, row: Record<string, Scalar>): { column: string; value: Scalar } {
   const column = capability.conflict_guard?.column;
-  if (column && row[column] !== undefined) return { column, value: conflictGuardScalar(row[column]) };
+  if (column && row[column] !== undefined) {
+    const value = conflictGuardScalar(row[column]);
+    return {
+      column,
+      value: capability.operation?.version_advance?.strategy === "integer_increment"
+        ? safeIntegerVersion(value, column)
+        : value,
+    };
+  }
   if (capability.conflict_guard?.weak_guard_ack === true) {
     return { column: "__row_hash", value: hashJson(row) };
   }
   throw new McpRuntimeError("CONFLICT_GUARD_MISSING", "Proposal capability must read a configured conflict guard column.");
+}
+
+function safeIntegerVersion(value: Scalar, column: string): number {
+  const candidate = typeof value === "number"
+    ? value
+    : typeof value === "string" && /^-?(?:0|[1-9]\d*)$/.test(value)
+      ? Number(value)
+      : Number.NaN;
+  if (!Number.isSafeInteger(candidate)) {
+    throw new McpRuntimeError(
+      "VERSION_ADVANCE_REQUIRES_NUMBER",
+      `Integer version advancement requires ${column} to be a safe integer. Use database_generated advancement for values outside JavaScript's safe integer range.`,
+    );
+  }
+  return candidate;
 }
 
 export async function readCurrentRow(input: {

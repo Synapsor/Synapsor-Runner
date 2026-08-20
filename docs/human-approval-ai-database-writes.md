@@ -49,8 +49,10 @@ authorization stay in an app-owned executor. Runner governs the proposal and
 approval envelope, but your application owns final scope, conflict,
 idempotency, transaction/rollback, and safe receipt behavior.
 
-See [Guarded CRUD Writeback](guarded-crud-writeback.md), [Supervised Automatic
-Apply](supervised-automatic-apply.md), and [App-Owned Executors](app-owned-executors.md).
+Start with the [Safe Action Human Control Plane](safe-action-control-plane.md),
+then see [Guarded CRUD Writeback](guarded-crud-writeback.md), [Supervised
+Automatic Apply](supervised-automatic-apply.md), and [App-Owned
+Executors](app-owned-executors.md).
 
 Start with a no-database proof:
 

@@ -25,6 +25,7 @@ import {
 import { detectProjectContext } from "./project-detection.js";
 import type { ProjectDetectionSummary } from "./onboarding-artifacts.js";
 import { writeSafeActionAgentInstructions } from "./safe-action-instructions.js";
+import { actionAuthorityForCapability } from "./action-authority.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -548,7 +549,12 @@ export async function recordSafeActionEffectPreview(input: {
   const draft = await readCurrentDraft(projectRoot);
   if (input.draftDigest !== draft.draft_contract_digest) throw new Error("SAFE_ACTION_PREVIEW_DIGEST_MISMATCH: preview does not belong to the current draft.");
   if (input.sourceDatabaseChanged) throw new Error("SAFE_ACTION_PREVIEW_MUTATED_SOURCE: activation is blocked because preview changed source data.");
-  if (!input.proposalId.trim() || !input.proposalHash.trim()) throw new Error("SAFE_ACTION_PREVIEW_IDENTITY_REQUIRED: preview proposal identity is incomplete.");
+  if (!input.proposalId.trim()
+    || input.proposalId.length > 256
+    || /[\u0000-\u001f\u007f]/.test(input.proposalId)
+    || !/^sha256:[a-f0-9]{64}$/.test(input.proposalHash)) {
+    throw new Error("SAFE_ACTION_PREVIEW_IDENTITY_REQUIRED: immutable proposal id and full lowercase sha256 hash are required.");
+  }
   const updated: SafeActionDraftManifest = {
     ...draft,
     effect_preview: {
@@ -662,7 +668,30 @@ export function validateSafeActionCapability(
       warning("SAFE_ACTION_POLICY_REVIEW_REQUIRED", "This action reuses existing policy authority; review its limits explicitly. The draft does not activate or widen the policy.", "proposal.approval");
     }
   }
-  if (!proposal.writeback?.mode || proposal.writeback.mode === "none") error("SAFE_ACTION_WRITEBACK_REQUIRED", "Choose direct_sql or an app_handler/cloud_worker executor explicitly.", "proposal.writeback.mode");
+  if (!proposal.writeback?.mode) {
+    error(
+      "SAFE_ACTION_WRITEBACK_REQUIRED",
+      "Choose proposal-only none, direct_sql, app_handler, or cloud_worker explicitly.",
+      "proposal.writeback.mode",
+    );
+  } else {
+    try {
+      const authority = actionAuthorityForCapability(capability);
+      if (authority?.posture === "proposal_only") {
+        warning(
+          "SAFE_ACTION_PROPOSAL_ONLY",
+          "This revision creates immutable proposals only. Approval cannot make them executable; enabling writeback requires a new reviewed contract digest.",
+          "proposal.writeback.mode",
+        );
+      }
+    } catch (authorityError) {
+      error(
+        "SAFE_ACTION_AUTHORITY_INVALID",
+        authorityError instanceof Error ? authorityError.message : "The approval/writeback/execution authority combination is invalid.",
+        "proposal",
+      );
+    }
+  }
   if ((operation === "update" || operation === "delete") && !proposal.conflict_guard?.column && proposal.conflict_guard?.weak_guard_ack !== true) {
     error("SAFE_ACTION_CONFLICT_GUARD_REQUIRED", `${operation.toUpperCase()} requires an expected-version/conflict field or an explicit weak-guard acknowledgement.`, "proposal.conflict_guard");
   }

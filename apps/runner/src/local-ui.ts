@@ -113,10 +113,24 @@ import {
   guidedActionDraftDetails,
   guidedActionOptions,
   guidedActionStatus,
-  prepareGuidedActionPreview,
   recordGuidedActionPreview,
+  reviseGuidedActionAuthority,
+  type GuidedActionAuthorityRevisionInput,
   type GuidedActionInput,
 } from "./guided-action.js";
+import { executeGuidedActionPreview as executeManagedGuidedActionPreview } from "./guided-action-runtime.js";
+import { withDisposableActionPreviewLedger } from "./action-preview-ledger.js";
+import { generateModelActionSuggestion } from "./action-suggestion-model.js";
+import {
+  importActionSuggestion,
+  listActionSuggestions,
+  readActionSuggestion,
+  recordActionSuggestionReview,
+} from "./action-suggestions.js";
+import {
+  DEFAULT_TERMINAL_ANTHROPIC_ASK_MODEL,
+  DEFAULT_TERMINAL_OPENAI_ASK_MODEL,
+} from "./terminal-ask-defaults.js";
 import {
   activateSafeActionDraft,
   prepareSafeActionPreview,
@@ -234,6 +248,7 @@ export type LocalUiOptions = {
   ledgerSource?: WorkbenchLedgerSource;
   safeActionPreview?: SafeActionPreview;
   guidedActionPreview?: GuidedActionPreview;
+  guidedActionSuggestion?: typeof generateModelActionSuggestion;
   freshnessEvaluator?: ProposalFreshnessEvaluator;
   schemaInspector?: typeof inspectDatabase;
   ledgerScope?: WorkbenchLedgerScope;
@@ -439,6 +454,7 @@ export async function startLocalUiServer(options: LocalUiOptions = {}): Promise<
     ?? (options.instantOnboarding === true ? "development" : undefined);
   const safeActionPreview = options.safeActionPreview ?? executeSafeActionPreview;
   const guidedActionPreview = options.guidedActionPreview ?? executeGuidedActionPreview;
+  const guidedActionSuggestion = options.guidedActionSuggestion ?? generateModelActionSuggestion;
   const schemaInspector = options.schemaInspector ?? inspectDatabase;
   const freshnessEvaluator = options.freshnessEvaluator
     ?? ((proposal: StoredProposal) => evaluateWorkbenchFreshness(configPath, proposal));
@@ -475,6 +491,7 @@ export async function startLocalUiServer(options: LocalUiOptions = {}): Promise<
         },
         safeActionPreview,
         guidedActionPreview,
+        guidedActionSuggestion,
         freshnessEvaluator,
         schemaInspector,
         ledgerScope: options.ledgerScope,
@@ -563,6 +580,7 @@ async function handleRequest(input: {
   ledgerSource: WorkbenchLedgerSource;
   safeActionPreview: SafeActionPreview;
   guidedActionPreview: GuidedActionPreview;
+  guidedActionSuggestion: typeof generateModelActionSuggestion;
   freshnessEvaluator: ProposalFreshnessEvaluator;
   schemaInspector: typeof inspectDatabase;
   ledgerScope?: WorkbenchLedgerScope;
@@ -597,6 +615,7 @@ async function handleRequest(input: {
     ledgerSource,
     safeActionPreview,
     guidedActionPreview,
+    guidedActionSuggestion,
     freshnessEvaluator,
     schemaInspector,
     ledgerScope,
@@ -3416,10 +3435,82 @@ async function handleRequest(input: {
       return;
     }
     const inspection = await inspectGuidedProject(projectRoot, schemaInspector);
+    const options = await guidedActionOptions({ projectRoot, inspection });
     sendJson(response, 200, {
       ok: true,
-      options: await guidedActionOptions({ projectRoot, inspection }),
+      options,
       status: await guidedActionStatus(projectRoot),
+      suggestions: await listActionSuggestions({ projectRoot, options }),
+      source_database_changed: false,
+    });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/actions/guided/suggest") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Guided action suggestions are available only in an Auto Boundary Workbench." });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required to import or generate a guided action suggestion." });
+      return;
+    }
+    const body = await readJsonBody(request);
+    if ("api_key" in body || "credential" in body || "token" in body) {
+      throw new Error("Workbench action suggestions accept an API-key environment name only, never a credential value.");
+    }
+    const inspection = await inspectGuidedProject(projectRoot, schemaInspector);
+    const options = await guidedActionOptions({ projectRoot, inspection });
+    let suggestionValue: unknown;
+    let generatedBy: { provider: string; model: string } | undefined;
+    if (isRecord(body.suggestion)) {
+      suggestionValue = body.suggestion;
+    } else {
+      if (typeof body.intent !== "string" || typeof body.provider !== "string") {
+        throw new Error("Guided action model suggestion requires intent and provider, or one bounded suggestion object.");
+      }
+      const provider = body.provider === "openai-compatible" ? "openai_compatible" : body.provider;
+      if (provider !== "openai" && provider !== "anthropic" && provider !== "openai_compatible") {
+        throw new Error("Guided action suggestion provider must be openai, anthropic, or openai-compatible.");
+      }
+      const model = typeof body.model === "string" && body.model.trim()
+        ? body.model.trim()
+        : provider === "openai"
+          ? DEFAULT_TERMINAL_OPENAI_ASK_MODEL
+          : provider === "anthropic"
+            ? DEFAULT_TERMINAL_ANTHROPIC_ASK_MODEL
+            : undefined;
+      if (!model) throw new Error("OpenAI-compatible action suggestions require an exact model name.");
+      const generated = await guidedActionSuggestion({
+        intent: body.intent,
+        provider,
+        model,
+        options,
+        env: process.env,
+        ...(typeof body.api_key_env === "string" && body.api_key_env.trim()
+          ? { apiKeyEnv: body.api_key_env.trim() }
+          : {}),
+        ...(typeof body.base_url === "string" && body.base_url.trim()
+          ? { baseUrl: body.base_url.trim() }
+          : {}),
+        egressAcknowledged: body.egress_acknowledged === true,
+        ...(askProviderDependencies ? { dependencies: askProviderDependencies } : {}),
+      });
+      suggestionValue = generated.assessment.suggestion;
+      generatedBy = { provider, model };
+    }
+    const suggestion = await importActionSuggestion({
+      projectRoot,
+      value: suggestionValue,
+      options,
+    });
+    sendJson(response, 200, {
+      ok: true,
+      reviewable: suggestion.state === "suggested",
+      suggestion,
+      ...(generatedBy ? { generated_by: generatedBy } : {}),
+      authority_granted: false,
+      active_tools_changed: false,
       source_database_changed: false,
     });
     return;
@@ -3452,11 +3543,26 @@ async function handleRequest(input: {
     const body = await readJsonBody(request);
     if (!isRecord(body.action)) throw new Error("Guided action authoring requires one reviewed action object.");
     const inspection = await inspectGuidedProject(projectRoot, schemaInspector);
+    const options = await guidedActionOptions({ projectRoot, inspection });
+    const suggestion = typeof body.suggestion_id === "string"
+      ? await readActionSuggestion({ projectRoot, suggestionId: body.suggestion_id, options })
+      : undefined;
+    if (suggestion && suggestion.state !== "suggested") {
+      throw new Error(`Guided action suggestion ${suggestion.suggestion_id} is ${suggestion.state} and cannot be reviewed into another draft.`);
+    }
     const created = await createGuidedActionDraft({
       projectRoot,
       action: body.action as GuidedActionInput,
       inspection,
     });
+    if (suggestion) {
+      await recordActionSuggestionReview({
+        projectRoot,
+        suggestion,
+        capability: created.draft.capability,
+        contractDigest: created.draft.contract_digest,
+      });
+    }
     await recordWorkbenchAttention(storeAccess, {
       event_type: "capability.review_required",
       severity: "warning",
@@ -3480,7 +3586,7 @@ async function handleRequest(input: {
       status: "add_action",
       completedStep: "action_drafted",
       authorityActive: true,
-      recommendedNextAction: "Preview the exact staging proposal. The source database will remain unchanged.",
+      recommendedNextAction: "Rehearse the exact draft through the disposable preview ledger. The source database and durable proposal ledger will remain unchanged.",
     }).catch(() => undefined);
     sendJson(response, 200, {
       ok: true,
@@ -3491,6 +3597,71 @@ async function handleRequest(input: {
       preview_args: created.preview_args,
       source_database_changed: false,
       message: "Disabled action draft created. No model-facing authority was activated.",
+    });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/actions/guided/revise") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Guided action revision is available only in an Auto Boundary Workbench." });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required to revise guided action authority." });
+      return;
+    }
+    if (await cloudLinkedGovernance(configPath)) {
+      sendJson(response, 403, { ok: false, error: "Cloud-linked contract revisions must use the governed Cloud contract-version workflow." });
+      return;
+    }
+    const body = await readJsonBody(request);
+    if (typeof body.capability_name !== "string"
+      || typeof body.expected_current_digest !== "string"
+      || !isRecord(body.authority)) {
+      throw new Error(
+        "Guided action revision requires capability_name, expected_current_digest, and one reviewed authority object.",
+      );
+    }
+    const inspection = await inspectGuidedProject(projectRoot, schemaInspector);
+    const revised = await reviseGuidedActionAuthority({
+      projectRoot,
+      capabilityName: body.capability_name,
+      expectedCurrentDigest: body.expected_current_digest,
+      authority: body.authority as GuidedActionAuthorityRevisionInput,
+      inspection,
+    });
+    await recordWorkbenchAttention(storeAccess, {
+      event_type: "capability.review_required",
+      severity: "warning",
+      environment: deploymentProfile ?? "unknown",
+      capability: revised.draft.capability,
+      contract_digest: revised.draft.contract_digest,
+      attention_key: `capability-review:${revised.draft.capability}:${revised.draft.contract_digest}`,
+      attention_required: true,
+      immediate_default: false,
+      summary: `Guided action ${revised.transition.kind} requires human review`,
+      workbench_path: "/",
+      details: {
+        authority_type: "guided_action_revision",
+        transition: revised.transition.kind,
+        previous_contract_digest: revised.previous.contract_digest,
+        old_proposals_gain_execution_authority: false,
+        source_database_changed: false,
+      },
+      source_event_key: `workbench-guided-action-revision:${revised.draft.capability}:${revised.draft.contract_digest}`,
+      now: revised.draft.created_at,
+    });
+    sendJson(response, 200, {
+      ok: true,
+      previous: revised.previous,
+      transition: revised.transition,
+      draft: revised.draft,
+      dsl: revised.dsl,
+      contract: revised.contract,
+      tests: revised.tests,
+      preview_args: revised.preview_args,
+      source_database_changed: false,
+      message: `Disabled ${revised.transition.kind} revision created. The active digest and all earlier proposals are unchanged.`,
     });
     return;
   }
@@ -3537,7 +3708,8 @@ async function handleRequest(input: {
       source_database_changed: false,
       model_can_approve: false,
       model_can_apply: false,
-      message: "Proposal created. Source database changed: no. The model cannot approve or apply this proposal.",
+      rehearsal_proposal_persisted: false,
+      message: "Exact proposal rehearsal passed in a disposable ledger. Source database changed: no. The rehearsal proposal was destroyed and can never be approved or applied.",
     });
     return;
   }
@@ -3595,7 +3767,9 @@ async function handleRequest(input: {
       tools_list_changed: true,
       reconnect_required: true,
       source_database_changed: false,
-      message: "The reviewed action is active. Its model-facing call creates a proposal only; approval and apply remain outside MCP.",
+      message: active.writeback_mode === "none"
+        ? "The proposal-only action revision is active in the separate action runtime. Its model-facing call creates immutable proposals; approval and apply remain outside MCP."
+        : `The ${active.authority_posture} action revision is active in the separate action runtime. Approved proposals may use ${active.writeback_mode}; the model still cannot approve or apply.`,
     });
     return;
   }
@@ -4670,26 +4844,31 @@ async function executeSafeActionPreview(input: {
 }): ReturnType<SafeActionPreview> {
   const prepared = await prepareSafeActionPreview({ projectRoot: input.projectRoot, configPath: input.configPath });
   const previewConfigPath = path.resolve(input.projectRoot, prepared.config_path);
-  const runtime = createMcpRuntime(loadRuntimeConfigFromFile(previewConfigPath), { storePath: input.storePath });
-  try {
-    const result = await runtime.callTool(prepared.capability, input.args);
-    assertSuccessfulPreviewResult(result, "Safe Action preview");
-    const proposalId = proposalIdFromToolResult(result);
-    if (!proposalId) throw new Error("Safe Action preview did not create an immutable proposal");
-    if (result.source_database_changed === true || result.source_database_mutated === true) throw new Error("Safe Action preview unexpectedly changed source data");
-    const proposal = await runtime.store.getProposal(proposalId);
-    const proposalHash = typeof result.proposal_hash === "string" ? result.proposal_hash : proposal?.proposal_hash ?? "";
-    if (!proposal || proposal.proposal_hash !== proposalHash) throw new Error("Safe Action preview proposal is missing from the reviewed ledger");
-    if (proposal.change_set.contract?.digest !== prepared.draft_digest) throw new Error("Safe Action preview proposal is not pinned to the current draft digest");
-    return {
-      draft_digest: prepared.draft_digest,
-      proposal_id: proposalId,
-      proposal_hash: proposalHash,
-      source_database_changed: false,
-    };
-  } finally {
-    await runtime.close();
-  }
+  return withDisposableActionPreviewLedger({
+    projectRoot: input.projectRoot,
+    run: async (previewStorePath) => {
+      const runtime = createMcpRuntime(loadRuntimeConfigFromFile(previewConfigPath), { storePath: previewStorePath });
+      try {
+        const result = await runtime.callTool(prepared.capability, input.args);
+        assertSuccessfulPreviewResult(result, "Safe Action preview");
+        const proposalId = proposalIdFromToolResult(result);
+        if (!proposalId) throw new Error("Safe Action preview did not create an immutable proposal");
+        if (result.source_database_changed === true || result.source_database_mutated === true) throw new Error("Safe Action preview unexpectedly changed source data");
+        const proposal = await runtime.store.getProposal(proposalId);
+        const proposalHash = typeof result.proposal_hash === "string" ? result.proposal_hash : proposal?.proposal_hash ?? "";
+        if (!proposal || proposal.proposal_hash !== proposalHash) throw new Error("Safe Action preview proposal is missing from the reviewed ledger");
+        if (proposal.change_set.contract?.digest !== prepared.draft_digest) throw new Error("Safe Action preview proposal is not pinned to the current draft digest");
+        return {
+          draft_digest: prepared.draft_digest,
+          proposal_id: proposalId,
+          proposal_hash: proposalHash,
+          source_database_changed: false,
+        };
+      } finally {
+        await runtime.close();
+      }
+    },
+  });
 }
 
 async function executeGuidedActionPreview(input: {
@@ -4700,41 +4879,14 @@ async function executeGuidedActionPreview(input: {
   args: JsonRecord;
   env: NodeJS.ProcessEnv;
 }): ReturnType<GuidedActionPreview> {
-  const prepared = await prepareGuidedActionPreview({
+  return executeManagedGuidedActionPreview({
     projectRoot: input.projectRoot,
-    capabilityName: input.capabilityName,
-    configPath: input.configPath,
-  });
-  const previewConfigPath = path.resolve(input.projectRoot, prepared.config_path);
-  const runtime = createMcpRuntime(loadRuntimeConfigFromFile(previewConfigPath), {
+    baseConfigPath: input.configPath,
     storePath: input.storePath,
+    capabilityName: input.capabilityName,
+    args: input.args,
     env: input.env,
   });
-  try {
-    const result = await runtime.callTool(prepared.capability, input.args);
-    assertSuccessfulPreviewResult(result, "Guided action preview");
-    const proposalId = proposalIdFromToolResult(result);
-    if (!proposalId) throw new Error("Guided action preview did not create an immutable proposal.");
-    if (result.source_database_changed === true || result.source_database_mutated === true) {
-      throw new Error("Guided action preview unexpectedly changed source data.");
-    }
-    const proposal = await runtime.store.getProposal(proposalId);
-    const proposalHash = typeof result.proposal_hash === "string" ? result.proposal_hash : proposal?.proposal_hash ?? "";
-    if (!proposal || proposal.proposal_hash !== proposalHash) {
-      throw new Error("Guided action preview proposal is missing from the reviewed ledger.");
-    }
-    if (proposal.change_set.contract?.digest !== prepared.draft_digest) {
-      throw new Error("Guided action preview proposal is not pinned to the current draft digest.");
-    }
-    return {
-      draft_digest: prepared.draft_digest,
-      proposal_id: proposalId,
-      proposal_hash: proposalHash,
-      source_database_changed: false,
-    };
-  } finally {
-    await runtime.close();
-  }
 }
 
 function assertSuccessfulPreviewResult(result: JsonRecord, label: string): void {

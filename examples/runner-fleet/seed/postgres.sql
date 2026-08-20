@@ -105,6 +105,7 @@ $$;
 GRANT CONNECT ON DATABASE synapsor_fleet TO synapsor_reader, synapsor_writer;
 GRANT USAGE ON SCHEMA public TO synapsor_reader, synapsor_writer;
 GRANT SELECT ON public.invoices TO synapsor_reader, synapsor_writer;
+GRANT SELECT ON public.guard_crud_items TO synapsor_reader;
 GRANT SELECT ON public.slow_invoices TO synapsor_reader;
 GRANT UPDATE (late_fee_cents, waiver_reason, updated_at) ON public.invoices TO synapsor_writer;
 GRANT SELECT, INSERT, UPDATE ON public.synapsor_writeback_receipts TO synapsor_writer;

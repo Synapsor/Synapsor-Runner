@@ -161,6 +161,8 @@ to focused command owners:
 | Arguments, help, output, files, and redaction | `cli-options.ts`, `cli-help.ts`, `cli-format.ts`, `cli-files.ts`, `cli-logging.ts` |
 | Project, config, and local-store resolution | `cli-project.ts`, `config-domain.ts`, `config-inspect.ts` |
 | Onboarding, boundary review/activation, and Workbench | `guided-start.ts`, `onboarding.ts`, `boundary-commands.ts`, `ui-command.ts` |
+| Safe Action authority, design, suggestions, immutable revisions, and terminal control plane | `action-authority.ts`, `action-design.ts`, `action-suggestions.ts`, `guided-action.ts`, `action-tui.ts` |
+| Safe Action operator inbox and disposable rehearsal | `action-operator.ts`, `guided-action-runtime.ts` |
 | MCP serving, project installers, audit, and runtime | `mcp-runtime.ts`, `mcp-project.ts`, `mcp-audit.ts`, `runtime-commands.ts` |
 | Contracts, DSL, tests, policy, reports, and effect regression | `contract-commands.ts` |
 | Proposal/evidence/receipt/replay browsing | `proposal-ledger.ts`, `ledger-commands.ts`, `proposal-formatting.ts` |
@@ -179,6 +181,21 @@ The CLI does not become a second mutation engine. Manual apply, batch apply,
 Workbench apply, and supervised-worker apply converge on the same guarded apply
 and writeback implementation. Operator actions pass through the existing
 identity verification and immutable decision records.
+
+The terminal Action control plane and preview Workbench are adapters over the
+same domain services. A bounded `ActionSuggestion` may reorder exact structural
+candidates, but its schema excludes trusted scope, approval, writeback,
+execution, credentials, and SQL. `ActionDesign` compiles through the public DSL
+and canonical Spec path into an immutable disabled revision. Rehearsal invokes
+the real semantic proposal path with a disposable ledger and must prove that
+the source stayed unchanged. Activation recomputes the exact digest and archives
+the revision before updating the separate action-runtime config.
+
+Changing execution posture never edits an active revision. It creates another
+disabled digest. Each proposal freezes the contract digest and writeback mode
+under which it was created, so promotion cannot make older proposal-only
+records executable. See [Safe Action Human Control
+Plane](safe-action-control-plane.md).
 
 ## Input Trust
 

@@ -33,5 +33,7 @@ export type TrustedOperatorDecisionOverride = {
 export type TrustedOperatorInvocation = {
   decision?: TrustedOperatorDecisionOverride;
   freshnessProofDigest?: string;
+  /** Binds a TUI/Workbench decision to the exact proposal the operator reviewed. */
+  expectedProposalHash?: string;
   quiet?: boolean;
 };

@@ -57,7 +57,10 @@ import {
 import { resolveOperatorIdentity, verifyJwtOperatorProof, verifySignedOperatorProof, type OperatorIdentityConfig } from "./operator-identity.js";
 import { resolveSynapsorProject } from "./project-resolution.js";
 import { formatExploreVocabularyCoverage } from "./explore-vocabulary.js";
-import { DEFAULT_TERMINAL_OPENAI_ASK_MODEL } from "./terminal-ask-defaults.js";
+import {
+  DEFAULT_TERMINAL_ANTHROPIC_ASK_MODEL,
+  DEFAULT_TERMINAL_OPENAI_ASK_MODEL,
+} from "./terminal-ask-defaults.js";
 import { disableScopedExplore } from "./protect-query.js";
 import { recommendedBoundaryReviewCandidate } from "./boundary-candidate.js";
 import {
@@ -70,6 +73,28 @@ import {
   synchronizeBoundaryLibrary,
 } from "./boundary-library.js";
 import { compileSafeActionDraft, safeActionStatus, SafeActionValidationError, scaffoldSafeAction } from "./safe-action.js";
+import {
+  activateGuidedAction,
+  createGuidedActionDraft,
+  guidedActionOptions,
+  guidedActionStatus,
+  readGuidedActionDraft,
+  recordGuidedActionPreview,
+  reviseGuidedActionAuthority,
+  type GuidedActionAuthorityRevisionInput,
+  type GuidedActionInput,
+} from "./guided-action.js";
+import { executeGuidedActionPreview } from "./guided-action-runtime.js";
+import {
+  inspectActionProject,
+  renderActionControlPlaneTable,
+  runActionControlPlane,
+} from "./action-tui.js";
+import {
+  importActionSuggestion,
+  listActionSuggestions,
+} from "./action-suggestions.js";
+import { generateModelActionSuggestion } from "./action-suggestion-model.js";
 import {
   boundaryReviewRequestsFromDecisionFile,
   parseBoundaryReviewDecisionFile,
@@ -5860,7 +5885,7 @@ function boundaryDecisionExpiry(value: string | undefined, now: Date): string {
   if (!Number.isFinite(expires.getTime())
     || expires.getTime() <= now.getTime()
     || expires.getTime() - now.getTime() > maximumMs) {
-    throw new Error("Boundary activation decision expiry must be in the future and no more than 15 minutes from now.");
+    throw new Error("Operator activation decision expiry must be in the future and no more than 15 minutes from now.");
   }
   return expires.toISOString();
 }
@@ -5879,7 +5904,7 @@ async function assertFreshOperatorProof(
       "utf8",
     );
     if (!verifySignedOperatorProof(proof, publicKey)) {
-      throw new Error("Signed boundary activation proof failed independent verification.");
+      throw new Error("Signed operator proof failed independent verification.");
     }
     return;
   }
@@ -5887,11 +5912,11 @@ async function assertFreshOperatorProof(
     const secretEnv = config.attestation_secret_env ?? "SYNAPSOR_OPERATOR_ATTESTATION_SECRET";
     const secret = process.env[secretEnv]?.trim();
     if (!secret || !verifyJwtOperatorProof(proof, secret)) {
-      throw new Error("OIDC boundary activation proof failed independent attestation verification.");
+      throw new Error("OIDC operator proof failed independent attestation verification.");
     }
     return;
   }
-  throw new Error("Boundary activation proof must use signed_key or jwt_oidc.");
+  throw new Error("Operator proof must use signed_key or jwt_oidc.");
 }
 
 
@@ -5941,13 +5966,449 @@ export async function startSafeAction(args: string[]): Promise<number> {
 }
 
 
-export async function actionCommand(args: string[]): Promise<number> {
+type ActionProjectInspector = typeof inspectActionProject;
+
+export async function actionCommand(
+  args: string[],
+  actionProjectInspector: ActionProjectInspector = inspectActionProject,
+): Promise<number> {
   const [subcommand, ...rest] = args;
+  if (subcommand === "review" || subcommand === "tui") return reviewActionsCommand(rest, actionProjectInspector);
+  if (subcommand === "suggest") return importActionSuggestionCommand(rest, actionProjectInspector);
+  if (subcommand === "suggestions") return listActionSuggestionsCommand(rest, actionProjectInspector);
+  if (subcommand === "draft") return draftGuidedActionCommand(rest, actionProjectInspector);
+  if (subcommand === "revise") return reviseGuidedActionCommand(rest, actionProjectInspector);
+  if (subcommand === "preview") return previewGuidedActionCommand(rest);
+  if (subcommand === "activate") return activateGuidedActionCommand(rest, actionProjectInspector);
   if (subcommand === "validate" || subcommand === "compile") return validateSafeActionCommand(rest);
   if (subcommand === "watch") return watchSafeActionCommand(rest);
   if (subcommand === "status") return safeActionStatusCommand(rest);
   usage(["action"]);
   return 2;
+}
+
+
+async function reviewActionsCommand(
+  args: string[],
+  actionProjectInspector: ActionProjectInspector,
+): Promise<number> {
+  assertKnownOptions(args, new Set(["--config", "--project-root", "--store", "--suggestion"]), "action review");
+  const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
+  await runActionControlPlane({
+    projectRoot,
+    inspection: await actionProjectInspector(projectRoot, process.env),
+    ...(optionalArg(args, "--config") ? { configPath: optionalArg(args, "--config") } : {}),
+    ...(optionalArg(args, "--store") ? { storePath: optionalArg(args, "--store") } : {}),
+    ...(optionalArg(args, "--suggestion") ? { initialSuggestionId: optionalArg(args, "--suggestion") } : {}),
+  });
+  return 0;
+}
+
+
+async function importActionSuggestionCommand(
+  args: string[],
+  actionProjectInspector: ActionProjectInspector,
+): Promise<number> {
+  assertKnownOptions(args, new Set([
+    "--input",
+    "--intent",
+    "--provider",
+    "--model",
+    "--api-key-env",
+    "--base-url",
+    "--acknowledge-egress",
+    "--project-root",
+    "--json",
+  ]), "action suggest");
+  const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
+  const inspection = await actionProjectInspector(projectRoot, process.env);
+  const options = await guidedActionOptions({ projectRoot, inspection });
+  const inputPath = optionalArg(args, "--input");
+  const intent = optionalArg(args, "--intent");
+  if (Boolean(inputPath) === Boolean(intent)) {
+    throw new Error("action suggest requires exactly one of --input <json> or --intent <business intent>.");
+  }
+  let value: Record<string, unknown>;
+  let generatedBy: { provider: string; model: string } | undefined;
+  if (inputPath) {
+    value = await readContainedActionJson(projectRoot, inputPath);
+  } else {
+    const rawProvider = requiredActionArg(args, "--provider", "action suggest");
+    const provider = rawProvider === "openai-compatible" ? "openai_compatible" : rawProvider;
+    if (provider !== "openai" && provider !== "anthropic" && provider !== "openai_compatible") {
+      throw new Error("action suggest --provider must be openai, anthropic, or openai-compatible.");
+    }
+    const model = optionalArg(args, "--model")
+      ?? (provider === "openai"
+        ? DEFAULT_TERMINAL_OPENAI_ASK_MODEL
+        : provider === "anthropic"
+          ? DEFAULT_TERMINAL_ANTHROPIC_ASK_MODEL
+          : undefined);
+    if (!model) throw new Error("action suggest with an OpenAI-compatible provider requires --model <name>.");
+    const generated = await generateModelActionSuggestion({
+      intent: intent!,
+      provider,
+      model,
+      options,
+      env: process.env,
+      ...(optionalArg(args, "--api-key-env") ? { apiKeyEnv: optionalArg(args, "--api-key-env") } : {}),
+      ...(optionalArg(args, "--base-url") ? { baseUrl: optionalArg(args, "--base-url") } : {}),
+      egressAcknowledged: args.includes("--acknowledge-egress"),
+    });
+    value = generated.assessment.suggestion as unknown as Record<string, unknown>;
+    generatedBy = { provider, model };
+  }
+  const suggestion = await importActionSuggestion({ projectRoot, value, options });
+  const payload = {
+    ok: suggestion.state === "suggested",
+    suggestion,
+    authority_granted: false,
+    active_tools_changed: false,
+    source_database_changed: false,
+    ...(generatedBy ? { generated_by: generatedBy } : {}),
+  };
+  if (args.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+  else process.stdout.write([
+    `Safe Action suggestion ${suggestion.suggestion_id} imported as ${suggestion.state.toUpperCase()}.`,
+    `Intent: ${suggestion.assessment.suggestion.intent}`,
+    ...suggestion.current_assessment.structural_evidence.map((item) =>
+      `${item.state.toUpperCase()} ${item.decision} ${item.value}: ${item.reason}`),
+    ...suggestion.current_assessment.blockers.map((blocker) => `BLOCKED: ${blocker}`),
+    "Authority granted: no",
+    "Active tools changed: no",
+    "Source database changed: no",
+    suggestion.state === "suggested"
+      ? `Next: ${cliCommandName()} action review --suggestion ${suggestion.suggestion_id} --project-root ${shellQuote(projectRoot)}`
+      : "Next: correct the suggestion against the current reviewed candidates, then import a new immutable suggestion.",
+    "",
+  ].join("\n"));
+  return suggestion.state === "suggested" ? 0 : 1;
+}
+
+
+async function listActionSuggestionsCommand(
+  args: string[],
+  actionProjectInspector: ActionProjectInspector,
+): Promise<number> {
+  assertKnownOptions(args, new Set(["--project-root", "--json"]), "action suggestions");
+  const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
+  const inspection = await actionProjectInspector(projectRoot, process.env);
+  const options = await guidedActionOptions({ projectRoot, inspection });
+  const suggestions = await listActionSuggestions({ projectRoot, options });
+  if (args.includes("--json")) {
+    process.stdout.write(`${JSON.stringify({ ok: true, suggestions, source_database_changed: false }, null, 2)}\n`);
+  } else {
+    process.stdout.write([
+      "Imported Safe Action suggestions",
+      "",
+      ...(suggestions.length
+        ? suggestions.flatMap((suggestion) => [
+            `${suggestion.suggestion_id}  ${suggestion.state.toUpperCase()}  ${suggestion.assessment.suggestion.intent}`,
+            `  ${suggestion.assessment.suggestion.operation?.toUpperCase() ?? "OPERATION NEEDED"} ${suggestion.assessment.suggestion.resource ?? "RESOURCE NEEDED"}`,
+          ])
+        : ["No bounded suggestions are imported."]),
+      "",
+      "Suggestions are untrusted convenience metadata. They never grant authority or alter active tools.",
+      "",
+    ].join("\n"));
+  }
+  return 0;
+}
+
+
+async function draftGuidedActionCommand(
+  args: string[],
+  actionProjectInspector: ActionProjectInspector,
+): Promise<number> {
+  assertKnownOptions(args, new Set(["--answers", "--project-root", "--json"]), "action draft");
+  const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
+  const answersPath = requiredActionArg(args, "--answers", "action draft");
+  const answers = await readContainedActionJson(projectRoot, answersPath);
+  const action = (isCliRecord(answers.action) ? answers.action : answers) as GuidedActionInput;
+  const inspection = await actionProjectInspector(projectRoot, process.env);
+  const created = await createGuidedActionDraft({ projectRoot, action, inspection });
+  const payload = {
+    ok: true,
+    state: created.draft.state,
+    draft: created.draft,
+    preview_args: created.preview_args,
+    source_database_changed: false,
+    active_tools_changed: false,
+  };
+  if (args.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+  else process.stdout.write([
+    "Disabled Safe Action revision created",
+    `Capability: ${created.draft.capability}`,
+    `Authority: ${created.draft.authority_posture}`,
+    `Writeback: ${created.draft.writeback_mode}`,
+    `Exact digest: ${created.draft.contract_digest}`,
+    "Source database changed: no",
+    `Next: ${cliCommandName()} action preview --capability ${created.draft.capability} --args <json-file> --project-root ${shellQuote(projectRoot)}`,
+    "",
+  ].join("\n"));
+  return 0;
+}
+
+
+async function reviseGuidedActionCommand(
+  args: string[],
+  actionProjectInspector: ActionProjectInspector,
+): Promise<number> {
+  assertKnownOptions(args, new Set(["--capability", "--expected-digest", "--answers", "--project-root", "--json"]), "action revise");
+  const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
+  const capabilityName = requiredActionArg(args, "--capability", "action revise");
+  const expectedCurrentDigest = requiredActionArg(args, "--expected-digest", "action revise");
+  const answers = await readContainedActionJson(projectRoot, requiredActionArg(args, "--answers", "action revise"));
+  const authority = (isCliRecord(answers.authority) ? answers.authority : answers) as GuidedActionAuthorityRevisionInput;
+  const inspection = await actionProjectInspector(projectRoot, process.env);
+  const revised = await reviseGuidedActionAuthority({
+    projectRoot,
+    capabilityName,
+    expectedCurrentDigest,
+    authority,
+    inspection,
+  });
+  const payload = {
+    ok: true,
+    transition: revised.transition,
+    previous_digest: revised.previous.contract_digest,
+    draft: revised.draft,
+    source_database_changed: false,
+    active_tools_changed: false,
+  };
+  if (args.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+  else process.stdout.write([
+    `Disabled ${revised.transition.kind} revision created for ${revised.draft.capability}.`,
+    `Active digest remains: ${revised.previous.contract_digest}`,
+    `New disabled digest: ${revised.draft.contract_digest}`,
+    "Old proposals gain execution authority: no",
+    "",
+  ].join("\n"));
+  return 0;
+}
+
+
+async function previewGuidedActionCommand(args: string[]): Promise<number> {
+  assertKnownOptions(args, new Set(["--capability", "--args", "--config", "--project-root", "--token-env", "--json"]), "action preview");
+  const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
+  const capabilityName = requiredActionArg(args, "--capability", "action preview");
+  const previewArgs = await readContainedActionJson(projectRoot, requiredActionArg(args, "--args", "action preview"));
+  const preview = await executeGuidedActionPreview({
+    projectRoot,
+    capabilityName,
+    args: previewArgs,
+    ...(optionalArg(args, "--config") ? { baseConfigPath: optionalArg(args, "--config") } : {}),
+    ...(optionalArg(args, "--token-env") ? { accessTokenEnv: optionalArg(args, "--token-env") } : {}),
+  });
+  const draft = await recordGuidedActionPreview({
+    projectRoot,
+    capabilityName,
+    contractDigest: preview.draft_digest,
+    proposalId: preview.proposal_id,
+    proposalHash: preview.proposal_hash,
+    sourceDatabaseChanged: preview.source_database_changed,
+  });
+  const payload = { ok: true, preview: draft.effect_preview, source_database_changed: false, rehearsal_ledger_persisted: false };
+  if (args.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+  else process.stdout.write([
+    `Exact proposal rehearsal verified for ${capabilityName}.`,
+    `Proposal: ${preview.proposal_id}`,
+    `Hash: ${preview.proposal_hash}`,
+    "Source database changed: no",
+    "Disposable rehearsal ledger persisted: no",
+    "",
+  ].join("\n"));
+  return 0;
+}
+
+
+async function activateGuidedActionCommand(
+  args: string[],
+  actionProjectInspector: ActionProjectInspector,
+): Promise<number> {
+  assertKnownOptions(args, new Set([
+    "--capability",
+    "--expected-digest",
+    "--confirmation",
+    "--actor",
+    "--config",
+    "--project-root",
+    "--headless",
+    "--identity",
+    "--identity-key",
+    "--required-role",
+    "--reason",
+    "--expires-at",
+    "--nonce",
+    "--json",
+  ]), "action activate");
+  const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
+  const capabilityName = requiredActionArg(args, "--capability", "action activate");
+  const expectedDigest = requiredActionArg(args, "--expected-digest", "action activate");
+  const confirmation = requiredActionArg(args, "--confirmation", "action activate");
+  const headless = args.includes("--headless");
+  if (!headless && (!process.stdin.isTTY || !process.stdout.isTTY)) {
+    throw new Error(
+      "Noninteractive Safe Action activation requires --headless and a verified signed_key or jwt_oidc operator identity.",
+    );
+  }
+  let actor = optionalArg(args, "--actor")?.trim();
+  let consumedDecision: { store: ProposalStore; key: string; decisionId: `sha256:${string}` } | undefined;
+  if (headless) {
+    const draft = await readGuidedActionDraft(projectRoot, capabilityName);
+    if (draft.contract_digest !== expectedDigest || confirmation !== `ACTIVATE ${draft.contract_digest}`) {
+      throw new Error(`Headless Safe Action activation requires the exact confirmation ACTIVATE ${draft.contract_digest}.`);
+    }
+    if (!draft.effect_preview || draft.effect_preview.contract_digest !== draft.contract_digest) {
+      throw new Error("Headless Safe Action activation requires an exact successful proposal rehearsal for this digest.");
+    }
+    const resolvedProject = await resolveSynapsorProject(projectRoot, process.env);
+    const configPath = optionalArg(args, "--config") ?? resolvedProject?.config_path;
+    if (!configPath) {
+      throw new Error("Headless Safe Action activation requires a discoverable Runner config or --config <path>.");
+    }
+    const config = await readRuntimeConfig(configPath);
+    if (config.operator_identity?.provider !== "signed_key"
+      && config.operator_identity?.provider !== "jwt_oidc") {
+      throw new Error("Headless Safe Action activation requires configured signed_key or jwt_oidc operator identity.");
+    }
+    const requiredRole = optionalArg(args, "--required-role")?.trim();
+    if (!requiredRole) throw new Error("Headless Safe Action activation requires --required-role <reviewed-operator-role>.");
+    const reason = optionalArg(args, "--reason")?.trim();
+    if (!reason) throw new Error("Headless Safe Action activation requires --reason <human review reason>.");
+    const now = new Date();
+    const expiresAt = boundaryDecisionExpiry(optionalArg(args, "--expires-at"), now);
+    const nonce = optionalArg(args, "--nonce")?.trim() || crypto.randomBytes(24).toString("base64url");
+    if (!/^[A-Za-z0-9._~-]{16,200}$/.test(nonce)) {
+      throw new Error("Safe Action activation nonce must contain 16-200 URL-safe non-secret characters.");
+    }
+    const envelope = {
+      schema_version: "synapsor.action-activation-decision.v1",
+      capability: draft.capability,
+      contract_digest: draft.contract_digest,
+      boundary_digest: draft.boundary_digest,
+      generation_lock_fingerprint: draft.generation_lock_fingerprint,
+      authority_posture: draft.authority_posture,
+      writeback_mode: draft.writeback_mode,
+      rehearsal_proposal_hash: draft.effect_preview.proposal_hash,
+      required_role: requiredRole,
+      issued_at: now.toISOString(),
+      expires_at: expiresAt,
+      nonce,
+    };
+    const decisionId = canonicalJsonDigest(envelope);
+    const identity = await resolveOperatorIdentity({
+      config: config.operator_identity as OperatorIdentityConfig,
+      configPath,
+      proposal: {
+        proposal_id: `action_${draft.contract_digest.slice("sha256:".length, "sha256:".length + 24)}`,
+        proposal_version: 1,
+        proposal_hash: decisionId,
+      },
+      action: "action_activate",
+      reason,
+      actor,
+      identity: optionalArg(args, "--identity"),
+      privateKeyPath: optionalArg(args, "--identity-key"),
+      requiredRole,
+      now: now.toISOString(),
+    });
+    if (!identity.verified || identity.provider === "dev_env") {
+      throw new Error("Headless Safe Action activation identity was not cryptographically verified.");
+    }
+    if (actor && actor !== identity.subject) {
+      throw new Error("The verified operator subject does not match --actor.");
+    }
+    await assertFreshOperatorProof(
+      identity,
+      config.operator_identity as OperatorIdentityConfig,
+      configPath,
+    );
+    actor = identity.subject;
+    const storePath = resolvedProject?.store_path
+      ?? (config.storage?.sqlite_path
+        ? path.resolve(path.dirname(path.resolve(configPath)), config.storage.sqlite_path)
+        : path.join(projectRoot, ".synapsor/local.db"));
+    await fs.mkdir(path.dirname(storePath), { recursive: true, mode: 0o700 });
+    const store = new ProposalStore(storePath);
+    // The signed decision includes issued_at, so its digest changes between
+    // attempts. Replay protection must instead key the caller-supplied nonce to
+    // the exact immutable action revision.
+    const nonceDigest = canonicalJsonDigest({
+      schema_version: "synapsor.action-activation-nonce.v1",
+      capability: draft.capability,
+      contract_digest: draft.contract_digest,
+      nonce,
+    });
+    const key = `action_activation_nonce:${nonceDigest}`;
+    if (store.getRunnerState(key)) {
+      store.close();
+      throw new Error("Safe Action activation decision was already consumed; create a fresh short-lived decision with a new nonce.");
+    }
+    store.setRunnerState(key, {
+      status: "consumed_before_activation",
+      decision_id: decisionId,
+      capability: draft.capability,
+      contract_digest: draft.contract_digest,
+      subject: identity.subject,
+      provider: identity.provider,
+      decision_hash: identity.decision_hash,
+      integrity_hash: identity.integrity_hash,
+      issued_at: now.toISOString(),
+      expires_at: expiresAt,
+      nonce_digest: nonceDigest,
+      source_database_changed: false,
+    });
+    consumedDecision = { store, key, decisionId };
+  }
+  if (!actor) throw new Error("Interactive Safe Action activation requires --actor <operator-audit-label>.");
+  const inspection = await actionProjectInspector(projectRoot, process.env);
+  let active;
+  try {
+    active = await activateGuidedAction({
+      projectRoot,
+      capabilityName,
+      expectedDigest,
+      confirmation,
+      actor,
+      inspection,
+      ...(optionalArg(args, "--config") ? { configPath: optionalArg(args, "--config") } : {}),
+    });
+    consumedDecision?.store.setRunnerState(consumedDecision.key, {
+      status: "activated",
+      decision_id: consumedDecision.decisionId,
+      capability: active.capability,
+      contract_digest: active.contract_digest,
+      activated_at: active.activated_at,
+      source_database_changed: false,
+    });
+  } catch (error) {
+    consumedDecision?.store.setRunnerState(consumedDecision.key, {
+      status: "consumed_activation_failed",
+      decision_id: consumedDecision.decisionId,
+      capability: capabilityName,
+      contract_digest: expectedDigest,
+      failed_at: new Date().toISOString(),
+      source_database_changed: false,
+    });
+    throw error;
+  } finally {
+    consumedDecision?.store.close();
+  }
+  const payload = { ok: true, active, source_database_changed: false };
+  if (args.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+  else process.stdout.write([
+    `Safe Action ${active.capability} activated.`,
+    `Authority: ${active.authority_posture}`,
+    `Writeback: ${active.writeback_mode}`,
+    `Exact digest: ${active.contract_digest}`,
+    `Action runtime: ${active.config_path}`,
+    active.writeback_mode === "none"
+      ? "Source mutation remains impossible; calls create proposals only."
+      : "Approval and execution remain separate trusted operator steps.",
+    "",
+  ].join("\n"));
+  return 0;
 }
 
 
@@ -6032,14 +6493,32 @@ async function watchSafeActionCommand(args: string[]): Promise<number> {
 
 async function safeActionStatusCommand(args: string[]): Promise<number> {
   assertKnownOptions(args, new Set(["--project-root", "--json"]), "action status");
-  const status = await safeActionStatus(optionalArg(args, "--project-root"));
-  if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ ok: true, ...status }, null, 2)}\n`);
+  const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
+  const [status, guided] = await Promise.all([
+    safeActionStatus(projectRoot),
+    guidedActionStatus(projectRoot),
+  ]);
+  if (args.includes("--json")) {
+    process.stdout.write(`${JSON.stringify({
+      ok: true,
+      // Preserve the original automation contract while exposing the new
+      // multi-action control-plane views additively.
+      ...status,
+      code_first: status,
+      managed_actions: guided,
+    }, null, 2)}\n`);
+  }
   else process.stdout.write([
     "Synapsor Safe Action status",
+    "",
+    ...renderActionControlPlaneTable(guided, process.stdout.columns ?? 100),
+    "",
+    "Code-first compatibility path",
     `Draft: ${status.draft ? `${status.draft.action_name} (${status.draft.state}, ${status.draft.draft_contract_digest})` : "none"}`,
     `Active: ${status.active ? `${status.active.action_name} (${status.active.contract_digest})` : "not managed by Safe Action activation"}`,
     `Draft matches active: ${status.draft_matches_active ? "yes" : "no"}`,
-    "Activation is available only in the secured localhost Workbench, never through MCP or this CLI command.",
+    "Open the human control plane with: synapsor-runner action review",
+    "No authoring, activation, approval, apply, or policy command is model-facing.",
     "",
   ].join("\n"));
   return 0;
@@ -6089,6 +6568,30 @@ function formatSafeActionValidation(input: {
 function flagWithValue(args: string[], flag: string): string[] {
   const value = optionalArg(args, flag);
   return value ? [flag, value] : [];
+}
+
+
+function requiredActionArg(args: string[], flag: string, command: string): string {
+  const value = optionalArg(args, flag);
+  if (!value) throw new Error(`${command} requires ${flag} <value>.`);
+  return value;
+}
+
+
+async function readContainedActionJson(projectRoot: string, inputPath: string): Promise<Record<string, unknown>> {
+  const root = path.resolve(projectRoot);
+  const resolved = path.resolve(root, inputPath);
+  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
+    throw new Error("Action input JSON must stay inside the project root.");
+  }
+  const parsed = JSON.parse(await fs.readFile(resolved, "utf8")) as unknown;
+  if (!isCliRecord(parsed)) throw new Error("Action input must be a JSON object.");
+  return parsed;
+}
+
+
+function isCliRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 

@@ -819,7 +819,7 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).not.toContain('id="protect-confirmation"');
     expect(html).toContain("Runner normalized plan");
     expect(html).toContain("Runner does not persist or infer the MCP host conversation");
-    expect(html).toContain("Activate reviewed proposal capability");
+    expect(html).toContain("Activate this exact");
     expect(html).not.toContain('id="action-confirmation"');
     expect(html).toContain("data-action-digest");
     expect(html).toContain('id="leave-ask-focus" class="quiet header-back"');
@@ -836,8 +836,8 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).not.toContain('id="trusted-principal"');
     expect(html).not.toContain('id="instant-tenant"');
     expect(html).not.toContain('id="instant-principal"');
-    expect(html).toContain("Review proposal outside MCP");
-    expect(html).toContain("Disable Explore and review proposal");
+    expect(html).toContain("Review proposals outside MCP");
+    expect(html).toContain("Disable Explore and review proposals");
     expect(html).toContain("Reviewing does not end this local analytics session");
     expect(html).toContain("No native guarded write is available for this resource");
     expect(html).toContain("history.pushState(historyState");

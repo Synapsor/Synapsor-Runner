@@ -10,7 +10,39 @@ npx -y @synapsor/runner demo --quick
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
-## 1.7.1 (unreleased)
+## Unreleased
+
+### Safe Action Human Control Plane
+
+- The preferred terminal `action review` control plane now covers bounded
+  `INSERT`, `UPDATE`, and `DELETE` design, exact source-unchanged rehearsal,
+  immutable activation/revision history, proposal review, verified approval,
+  guarded apply, receipts, replay, evidence, deterministic policy approval,
+  and exact-digest supervised execution. The preview Workbench and
+  non-interactive JSON commands use the same domain services.
+- Managed actions default to proposal-only `WRITEBACK NONE`. Explicit
+  executable or supervised postures remain separate reviewed authority, and
+  every posture change creates a new exact digest. Proposals freeze their
+  original writeback posture, so later promotion cannot make an old
+  proposal-only record executable.
+- Bounded ActionSuggestion records may be imported or generated once through
+  OpenAI, Anthropic, or an OpenAI-compatible provider after explicit structural
+  metadata egress consent. Suggestions are untrusted, Read-Boundary-digest
+  bound, and visibly SUGGESTED, BLOCKED, STALE, or REVIEWED. They cannot contain
+  SQL, credentials, trusted identity, approval, writeback, execution, or active
+  authority and only reorder the normal human review choices.
+- Non-interactive activation now requires an exact successful rehearsal,
+  cryptographically verified `signed_key` or `jwt_oidc` operator identity,
+  role, reason, short expiry, and a single-use capability/digest-bound nonce.
+  `--yes` or an actor label alone cannot activate an Action revision.
+- The model-facing surface remains semantic actions only over stdio, local Ask,
+  and authenticated Streamable HTTP. Authoring, activation, approval, apply,
+  policy, credential, and SQL tools remain absent, and the locked production
+  Explore two-tool surface is not widened.
+
+No package is published by this unreleased change.
+
+## 1.7.1 (published 2026-08-20)
 
 ### Ask Compatibility And Upgrade Recovery
 
@@ -86,11 +118,10 @@ for the Synapsor Cloud CLI.
   activation, creates no numeric band, and retains every cohort, group,
   response, timeout, query, extraction, and differencing bound.
 
-Prepared package versions: `@synapsor/runner@1.7.1` and
+Published package versions: `@synapsor/runner@1.7.1` and
 `synapsor-runner@1.7.1`, plus `@synapsor/spec@1.10.0` and
 `@synapsor/dsl@1.10.0`. Generated boundary compiler authority
-remains `1.7.0`, so installing this patch does not itself require a rescan. No
-package is published by this change.
+remains `1.7.0`, so installing this patch does not itself require a rescan.
 
 ## 1.7.0 (published 2026-08-17)
 

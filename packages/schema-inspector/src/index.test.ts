@@ -635,6 +635,35 @@ describe("schema inspector helpers", () => {
     expect(unsafe).toContainEqual(expect.objectContaining({ code: "INSERT_REQUIRED_COLUMNS_MISSING", level: "fail" }));
   });
 
+  it("counts a reviewed trusted principal column as supplied for INSERT", () => {
+    const table = directWriteTable();
+    table.columns.push({
+      name: "assigned_to",
+      data_type: "text",
+      nullable: false,
+      generated: false,
+      ordinal_position: table.columns.length + 1,
+      suggestions: {
+        tenant: false,
+        conflict: false,
+        sensitive: false,
+        immutable: true,
+        large_or_binary: false,
+      },
+    });
+    const checks = assessDirectWritePrerequisites(table, {
+      operation: "insert",
+      primary_key: "id",
+      tenant_key: "tenant_id",
+      principal_scope_key: "assigned_to",
+      allowed_columns: ["amount_cents", "reason"],
+      patch_columns: ["amount_cents", "reason"],
+      dedup_columns: ["id", "tenant_id"],
+    });
+    expect(checks).toContainEqual(expect.objectContaining({ code: "PRINCIPAL_SCOPE_COLUMN_PRESENT", level: "pass" }));
+    expect(checks).toContainEqual(expect.objectContaining({ code: "INSERT_REQUIRED_COLUMNS_SATISFIED", level: "pass" }));
+  });
+
   it("blocks hard DELETE when inspected cascades or triggers can widen the reviewed effect", () => {
     const table = directWriteTable();
     table.referenced_by = [{

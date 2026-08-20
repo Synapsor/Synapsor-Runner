@@ -124,6 +124,9 @@ export async function applyProposal(
   const store = new ProposalStore(storePath);
   try {
     const proposal = requireLocalProposal(store, resolvedProposalId);
+    if (invocation.expectedProposalHash && proposal.proposal_hash !== invocation.expectedProposalHash) {
+      throw new Error("PROPOSAL_CHANGED: reload the approved proposal before applying it.");
+    }
     const capability = findProposalCapability(config, proposal);
     let supervisedPolicy: NonNullable<ReturnType<typeof resolveSupervisedWorkerEligibility>["policy"]> | undefined;
     if (workerExecutionMode !== undefined) {

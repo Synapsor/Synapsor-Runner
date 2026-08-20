@@ -690,6 +690,7 @@ export type DirectWriteAssessmentInput = {
   operation: "update" | "insert" | "delete";
   primary_key: string;
   tenant_key?: string;
+  principal_scope_key?: string;
   allowed_columns: string[];
   patch_columns: string[];
   conflict_column?: string;
@@ -717,6 +718,10 @@ export function assessDirectWritePrerequisites(table: TableInfo, input: DirectWr
   } else pass("PRIMARY_KEY_EXACT", `Primary key ${input.primary_key} is source-enforced.`);
   if (!input.tenant_key || !columns.has(input.tenant_key)) fail("TENANT_COLUMN_MISSING", "Direct writeback requires a reviewed tenant column present in the target table.");
   else pass("TENANT_COLUMN_PRESENT", `Trusted tenant is forced through ${input.tenant_key}.`);
+  if (input.principal_scope_key) {
+    if (!columns.has(input.principal_scope_key)) fail("PRINCIPAL_SCOPE_COLUMN_MISSING", `Reviewed principal scope column ${input.principal_scope_key} does not exist in the target table.`);
+    else pass("PRINCIPAL_SCOPE_COLUMN_PRESENT", `Trusted principal is forced through ${input.principal_scope_key}.`);
+  }
 
   for (const columnName of new Set([...input.allowed_columns, ...input.patch_columns])) {
     const column = columns.get(columnName);
@@ -758,7 +763,11 @@ export function assessDirectWritePrerequisites(table: TableInfo, input: DirectWr
     if (!matchingUnique) fail("INSERT_DEDUP_NOT_SOURCE_UNIQUE", `INSERT dedup columns ${dedupColumns.join(", ") || "(none)"} must fully supply an inspected PRIMARY KEY or UNIQUE constraint.`);
     else pass("INSERT_DEDUP_SOURCE_UNIQUE", `INSERT dedup identity is source-enforced by ${matchingUnique.name}.`);
 
-    const supplied = new Set([...input.patch_columns, ...dedupColumns]);
+    const supplied = new Set([
+      ...input.patch_columns,
+      ...dedupColumns,
+      ...(input.principal_scope_key ? [input.principal_scope_key] : []),
+    ]);
     const missingRequired = table.columns.filter((column) => !column.nullable && column.default === undefined && !column.generated && !column.identity && !supplied.has(column.name));
     if (missingRequired.length > 0) fail("INSERT_REQUIRED_COLUMNS_MISSING", `INSERT does not supply required columns: ${missingRequired.map((column) => column.name).join(", ")}.`);
     else pass("INSERT_REQUIRED_COLUMNS_SATISFIED", "All inspected required columns are supplied or database-generated/defaulted.");

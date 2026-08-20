@@ -1780,6 +1780,52 @@ describe("local Synapsor MCP runtime", () => {
     }
   });
 
+  it("normalizes driver string bigints for exact integer version advancement and rejects unsafe values", async () => {
+    const integerVersionConfig = structuredClone(config);
+    const capability = integerVersionConfig.capabilities?.find((item) => item.name === "billing.propose_late_fee_waiver");
+    if (!capability) throw new Error("proposal fixture missing");
+    capability.visible_columns = [...new Set([...capability.visible_columns, "version"])];
+    capability.conflict_guard = { column: "version" };
+    capability.operation = {
+      kind: "update",
+      cardinality: "single",
+      version_advance: { column: "version", strategy: "integer_increment" },
+    };
+
+    const runtime = createMcpRuntime(integerVersionConfig, {
+      readRow: async () => ({ row: { ...fixtureRow, version: "7" }, rowCount: 1 }),
+    });
+    try {
+      const result = await runtime.callTool("billing.propose_late_fee_waiver", {
+        invoice_id: "INV-STRING-BIGINT",
+        reason: "reviewed string bigint",
+      });
+      const proposal = await runtime.readResource(String(result.proposal_resource));
+      expect(proposal).toMatchObject({
+        proposal: {
+          change_set: {
+            guards: { expected_version: { column: "version", value: 7 } },
+            after: { version: 8 },
+          },
+        },
+      });
+    } finally {
+      await runtime.close();
+    }
+
+    const unsafeRuntime = createMcpRuntime(integerVersionConfig, {
+      readRow: async () => ({ row: { ...fixtureRow, version: "9007199254740992" }, rowCount: 1 }),
+    });
+    try {
+      await expect(unsafeRuntime.callTool("billing.propose_late_fee_waiver", {
+        invoice_id: "INV-UNSAFE-BIGINT",
+        reason: "must refuse unsafe integer",
+      })).rejects.toMatchObject({ code: "VERSION_ADVANCE_REQUIRES_NUMBER" });
+    } finally {
+      await unsafeRuntime.close();
+    }
+  });
+
   it("creates a v2 INSERT proposal with Runner-supplied tenant and dedup identity", async () => {
     const insertConfig = structuredClone(config);
     insertConfig.capabilities = [{
@@ -4506,6 +4552,181 @@ describe("local Synapsor MCP runtime", () => {
       await new Promise<void>((resolve) => jwksServer.close(() => resolve()));
     }
   });
+
+  it("serves proposal-only Safe Actions over scoped RS256 HTTP without exposing control authority", async () => {
+    const { publicKey, privateKey } = await generateKeyPair("RS256", { extractable: true });
+    const actionConfig = structuredClone(config);
+    const proposalCapability = actionConfig.capabilities?.find((capability) => capability.kind === "proposal");
+    const source = actionConfig.sources?.app_postgres;
+    if (!proposalCapability || !source) throw new Error("proposal-only HTTP fixture is incomplete");
+    proposalCapability.writeback = { mode: "none" };
+    actionConfig.capabilities = [proposalCapability];
+    source.read_only = true;
+    delete source.write_url_env;
+    actionConfig.trusted_context = {
+      provider: "http_claims",
+      values: { tenant_id_key: "tenant_id", principal_key: "sub" },
+    };
+    actionConfig.session_auth = {
+      provider: "jwt_asymmetric",
+      algorithms: ["RS256"],
+      public_key_env: "SYNAPSOR_SESSION_PUBLIC_KEY",
+      issuer: "https://identity.example",
+      audience: "https://runner.example/actions/mcp",
+      tenant_claim: "tenant_id",
+      principal_claim: "sub",
+      clock_skew_seconds: 0,
+    };
+    actionConfig.http_security = {
+      deployment: "shared",
+      channel: "trusted_tls_proxy",
+      oauth_resource: {
+        resource: "https://runner.example/actions/mcp",
+        authorization_servers: ["https://identity.example"],
+        scopes_supported: ["synapsor:actions"],
+        required_scopes: ["synapsor:actions"],
+      },
+    };
+
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "synapsor-rs256-actions-"));
+    const storePath = path.join(root, "action-ledger.db");
+    const seen: Array<{ tenant_id: string; principal: string }> = [];
+    const server = await startStreamableHttpMcpServer({
+      config: actionConfig,
+      storePath,
+      port: 0,
+      trustedTlsProxy: true,
+      env: { SYNAPSOR_SESSION_PUBLIC_KEY: await exportSPKI(publicKey) },
+      log: false,
+      readRow: async ({ args, context }) => {
+        seen.push({ tenant_id: context.tenant_id, principal: context.principal });
+        return {
+          row: {
+            ...fixtureRow,
+            id: args.invoice_id,
+            tenant_id: context.tenant_id,
+          },
+          rowCount: 1,
+        };
+      },
+    });
+    const tokenFor = (tenantId: string, principal: string, scope = "synapsor:actions") =>
+      new SignJWT({ tenant_id: tenantId, scope })
+        .setProtectedHeader({ alg: "RS256", kid: "actions-rs256-1" })
+        .setSubject(principal)
+        .setIssuer("https://identity.example")
+        .setAudience("https://runner.example/actions/mcp")
+        .setExpirationTime(Math.floor(Date.now() / 1000) + 300)
+        .sign(privateKey);
+    const initialize = {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-11-25",
+        capabilities: {},
+        clientInfo: { name: "proposal-auth-test", version: "1" },
+      },
+    };
+    const acmeClient = new Client({ name: "acme-action-agent", version: "1.0.0" });
+    const globexClient = new Client({ name: "globex-action-agent", version: "1.0.0" });
+    let acmeProposalId = "";
+    let globexProposalId = "";
+    try {
+      const missingAuthorization = await fetch(server.url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(initialize),
+      });
+      expect(missingAuthorization.status).toBe(401);
+
+      const wrongScopeToken = await tokenFor("acme", "alice", "other:scope");
+      const wrongScope = await fetch(server.url, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${wrongScopeToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(initialize),
+      });
+      expect(wrongScope.status).toBe(403);
+      expect(wrongScope.headers.get("www-authenticate")).toContain('error="insufficient_scope"');
+
+      const acmeTransport = new StreamableHTTPClientTransport(new URL(server.url), {
+        requestInit: { headers: { authorization: `Bearer ${await tokenFor("acme", "alice")}` } },
+      });
+      const globexTransport = new StreamableHTTPClientTransport(new URL(server.url), {
+        requestInit: { headers: { authorization: `Bearer ${await tokenFor("globex", "bob")}` } },
+      });
+      await acmeClient.connect(acmeTransport);
+      await globexClient.connect(globexTransport);
+
+      const listed = await acmeClient.listTools();
+      expect(listed.tools.map((tool) => tool.name)).toEqual(["billing.propose_late_fee_waiver"]);
+      const modelFacing = listed.tools.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+      }));
+      expect(JSON.stringify(modelFacing)).not.toMatch(/execute_sql|raw_sql|tenant_id|principal|writeback|executor|credential/i);
+      expect(listed.tools[0]?._meta).toMatchObject({
+        "synapsor.raw_sql_exposed": false,
+        "synapsor.approval_tool": false,
+      });
+
+      const acmeProposal = await acmeClient.callTool({
+        name: "billing.propose_late_fee_waiver",
+        arguments: { invoice_id: "INV-SHARED", reason: "reviewed waiver" },
+      });
+      const globexProposal = await globexClient.callTool({
+        name: "billing.propose_late_fee_waiver",
+        arguments: { invoice_id: "INV-SHARED", reason: "reviewed waiver" },
+      });
+      expect(acmeProposal.structuredContent).toMatchObject({
+        status: "review_required",
+        source_database_mutated: false,
+        writeback: { mode: "read_only", executor: "none" },
+      });
+      expect(globexProposal.structuredContent).toMatchObject({
+        status: "review_required",
+        source_database_mutated: false,
+        writeback: { mode: "read_only", executor: "none" },
+      });
+      acmeProposalId = String((acmeProposal.structuredContent as Record<string, unknown>).proposal_id);
+      globexProposalId = String((globexProposal.structuredContent as Record<string, unknown>).proposal_id);
+      expect(acmeProposalId).not.toBe(globexProposalId);
+
+      await expect(globexClient.readResource({ uri: `synapsor://proposals/${acmeProposalId}` }))
+        .rejects.toThrow(/Synapsor resource not found/i);
+      expect(seen).toEqual([
+        { tenant_id: "acme", principal: "alice" },
+        { tenant_id: "globex", principal: "bob" },
+      ]);
+    } finally {
+      await acmeClient.close().catch(() => undefined);
+      await globexClient.close().catch(() => undefined);
+      await server.close();
+    }
+
+    const ledger = new ProposalStore(storePath);
+    try {
+      expect(ledger.getProposal(acmeProposalId)).toMatchObject({
+        tenant_id: "acme",
+        principal: "alice",
+        source_database_mutated: false,
+        change_set: { writeback: { mode: "read_only", executor: "none" } },
+      });
+      expect(ledger.getProposal(globexProposalId)).toMatchObject({
+        tenant_id: "globex",
+        principal: "bob",
+        source_database_mutated: false,
+        change_set: { writeback: { mode: "read_only", executor: "none" } },
+      });
+    } finally {
+      ledger.close();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }, 30_000);
 
   it("requires client certificates when Streamable HTTP mTLS is enabled", async () => {
     const certs = generateMtlsFixture();

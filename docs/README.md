@@ -24,6 +24,11 @@ your database, then read deeper concepts.
   five-minute first read, repeated bounded Explore, optional Protect, first
   proposal, resumable setup, guarded development writeback, and host-neutral
   client handoff.
+- [Safe Action Human Control Plane](safe-action-control-plane.md): use the
+  preferred terminal TUI, preview Workbench, bounded model suggestions, or
+  scriptable JSON to review `INSERT`/`UPDATE`/`DELETE` proposal authority,
+  rehearse an exact digest, activate, promote, and operate proposals without
+  giving the model approval, apply, credential, or SQL tools.
 - [Workbench Ask With Your Model](workbench-ask.md): preview browser UI for
   optional local OpenAI, Anthropic, and custom-provider chat over the exact
   reviewed tool surface, with direct-egress consent, session-only credentials,
@@ -121,6 +126,9 @@ your database, then read deeper concepts.
 
 ## 05 Generate Capabilities
 
+- [Safe Action Human Control Plane](safe-action-control-plane.md): canonical
+  ActionSuggestion, ActionDesign, immutable revision, rehearsal, activation,
+  promotion, proposal, approval, execution, receipt, and replay lifecycle.
 - [Auto Boundary, Scoped Explore, And
   Protect](auto-boundary-and-scoped-explore.md): generate disabled public DSL
   from deterministic schema/ORM/OpenAPI evidence, then Protect a reviewed
@@ -205,6 +213,9 @@ your database, then read deeper concepts.
 
 ## 07 Propose, Approve, Apply
 
+- [Safe Action Human Control Plane](safe-action-control-plane.md): preferred
+  operator workflow and parity across terminal, Workbench, CI, code-first,
+  stdio, Ask, and authenticated HTTP.
 - [Local Mode](local-mode.md): local store, proposals, approval, replay, and
   writeback flow.
 - [Operator-Supervised Automatic Apply](supervised-automatic-apply.md):

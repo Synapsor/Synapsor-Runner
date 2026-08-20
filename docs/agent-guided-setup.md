@@ -193,10 +193,19 @@ dry-run result first. Installation remains a human choice.
 
 ## Guided Write Action
 
-After the first safe read, Workbench can generate one bounded write action.
+After the first safe read, the preferred terminal control plane can generate
+one bounded write action; the preview Workbench exposes the same domain flow:
+
+```bash
+synapsor-runner action review --project-root .
+```
+
 Schema structure supplies candidates only. The human decides business intent,
 allowed fields, values or transitions, trusted scope, version guard, reviewer,
-limits, optional bounded policy approval, receipt mode, and compensation.
+limits, optional bounded policy approval, execution posture, receipt mode, and
+compensation. A bounded operator/model suggestion may reorder candidates but
+cannot skip any decision or activate authority. See the [Safe Action Human
+Control Plane](safe-action-control-plane.md).
 
 The generated action starts disabled. Its first model-facing call creates an
 exact proposal and must say:

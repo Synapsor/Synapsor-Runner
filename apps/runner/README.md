@@ -53,10 +53,10 @@ inspects schema metadata, not source rows. It proposes conservative read access
 that grants the agent nothing until you review and activate it. You do not need
 to write DSL or JSON to begin.
 
-To use the preview Workbench instead:
+With `DATABASE_URL`, use the CLI:
 
 ```bash
-synapsor-runner start --from-env DATABASE_URL
+synapsor-runner start --cli --from-env DATABASE_URL
 ```
 
 For automation, run `synapsor-runner onboard --help`; missing decisions are reported together.
@@ -82,7 +82,7 @@ conversation history stay in memory. A loopback model keeps provider traffic
 on the machine.
 
 ```bash
-synapsor-runner try ask --provider openai --model gpt-5-mini
+synapsor-runner try ask --provider openai --model gpt-5.6-luna
 ```
 
 **Use an MCP client that already has a model.** Runner can prepare project-local
@@ -169,8 +169,17 @@ secured runtime config from the boundary without secrets.
 
 ## Let Agents Propose Bounded Changes
 
-For writes, describe one business action. Runner generates an inert TypeScript
-draft; it does not silently add a tool or change active authority:
+For writes, use the preferred terminal control plane:
+
+```bash
+synapsor-runner action review --project-root .
+```
+
+It derives structural candidates and creates disabled semantic `INSERT`,
+`UPDATE`, or `DELETE` revisions. Humans choose fields, bounds, approval, and
+execution. Optional metadata-only agent suggestions grant nothing.
+
+The code-first path remains:
 
 ```bash
 synapsor-runner start \
@@ -188,12 +197,6 @@ Effect    plan_credit_cents: 0 -> 2500
 Database  unchanged until an outside-model decision
 ```
 
-Humans do not need to approve every routine request. A team can review a policy
-once so low-risk requests inside fixed value, rate, and scope limits are
-policy-approved. Automatic application still requires a separate deployment
-opt-in and a trusted worker that repeats every guard. Exceptions wait for a
-person.
-
 Auto-approval does not mean auto-apply: the exact contract digest and deployment both opt into supervised execution.
 External notifications are disabled and quiet by default.
 A webhook response cannot approve or apply.
@@ -202,7 +205,9 @@ Immediately before a Runner-managed commit, live scope, evidence freshness,
 version, bounds, limits, and idempotency are rechecked. Drift causes no
 mutation. See [Supervised Apply](docs/supervised-automatic-apply.md),
 [Proposal Freshness](docs/proposal-evidence-freshness.md), and
-[Verified Operator Identity](docs/approval-roles-and-operator-identity.md).
+[Verified Operator Identity](docs/approval-roles-and-operator-identity.md). The
+complete TUI, Workbench, CI, DSL/Spec, stdio, Ask, and HTTP lifecycle is in the
+[Safe Action Human Control Plane](docs/safe-action-control-plane.md).
 
 ## Other Ways To Start
 

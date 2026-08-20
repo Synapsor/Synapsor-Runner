@@ -250,6 +250,7 @@ const publicDocs = [
   "runner-config-reference.md",
   "runner-bundles.md",
   "running-a-runner-fleet.md",
+  "safe-action-control-plane.md",
   "safe-postgres-mcp.md",
   "schema-api-candidates.md",
   "secure-text-to-sql.md",

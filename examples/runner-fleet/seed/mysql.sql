@@ -56,6 +56,7 @@ CREATE USER IF NOT EXISTS 'synapsor_crud_precreated'@'%' IDENTIFIED BY 'synapsor
 CREATE USER IF NOT EXISTS 'synapsor_crud_auto'@'%' IDENTIFIED BY 'synapsor_crud_auto_password';
 CREATE USER IF NOT EXISTS 'synapsor_crud_ledger'@'%' IDENTIFIED BY 'synapsor_crud_ledger_password';
 GRANT SELECT ON synapsor_fleet.invoices TO 'synapsor_reader'@'%';
+GRANT SELECT ON synapsor_fleet.guard_crud_items TO 'synapsor_reader'@'%';
 GRANT SELECT ON synapsor_fleet.slow_invoices TO 'synapsor_reader'@'%';
 GRANT SELECT, INSERT, UPDATE, DELETE ON synapsor_fleet.guard_crud_items TO 'synapsor_crud_precreated'@'%';
 GRANT SELECT, INSERT, UPDATE, DELETE ON synapsor_fleet.guard_crud_items TO 'synapsor_crud_auto'@'%';

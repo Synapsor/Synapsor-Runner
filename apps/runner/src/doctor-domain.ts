@@ -381,6 +381,7 @@ export async function inspectConfiguredSource(input: {
             operation,
             primary_key: capability.target.primary_key,
             tenant_key: capability.target.tenant_key,
+            principal_scope_key: capability.target.principal_scope_key,
             allowed_columns: capability.allowed_columns ?? [],
             patch_columns: Object.keys(capability.patch ?? {}),
             conflict_column: capability.conflict_guard?.column,

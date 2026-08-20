@@ -507,8 +507,15 @@ plain descriptions and requires an explicit `--from A2`.
 
 ## Fifteen Minutes: First Proposal
 
-After the first read, choose **Add a safe action**. Schema metadata supplies
-structure, never business permission. The human specifies:
+After the first read, open the preferred terminal control plane or choose
+**Add a safe action** in the preview Workbench:
+
+```bash
+synapsor-runner action review --project-root .
+```
+
+Schema metadata supplies structure, never business permission. The human
+specifies:
 
 1. the business action;
 2. target resource and exact row identity;
@@ -520,6 +527,13 @@ structure, never business permission. The human specifies:
 8. optional small bounded auto-approval;
 9. per-operation and daily limits;
 10. optional reviewed compensation.
+
+The TUI can also import a bounded ActionSuggestion or request one suggestion
+from OpenAI, Anthropic, or an OpenAI-compatible provider after explicit
+structural-metadata egress consent. Suggestions contain no rows, SQL,
+credentials, trusted scope, approval, writeback, or activation authority and
+never replace the decisions above. See the [Safe Action Human Control
+Plane](safe-action-control-plane.md).
 
 Runner generates public DSL, canonical JSON, tests, an exact-effect preview,
 and a disabled action. Unsupported or unsafe combinations fail closed. In

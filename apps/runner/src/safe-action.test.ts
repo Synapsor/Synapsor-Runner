@@ -185,7 +185,7 @@ describe("Safe Action authoring", () => {
       projectRoot: fixture.root,
       draftDigest: draft.draft_contract_digest,
       proposalId: "wrp_lint_blocked",
-      proposalHash: "sha256:lint-blocked",
+      proposalHash: `sha256:${"1".repeat(64)}`,
       sourceDatabaseChanged: false,
     });
     await expect(activateSafeActionDraft({
@@ -214,6 +214,7 @@ describe("Safe Action authoring", () => {
     expectCode((candidate) => { candidate.evidence = { required: false }; }, "SAFE_ACTION_EVIDENCE_REQUIRED");
     expectCode((candidate) => { candidate.proposal!.allowed_fields.push("status"); }, "SAFE_ACTION_PATCH_MUST_BE_EXACT");
     expectCode((candidate) => { delete candidate.proposal!.approval!.required_role; }, "SAFE_ACTION_REVIEWER_ROLE_REQUIRED");
+    expectCode((candidate) => { delete candidate.proposal!.writeback; }, "SAFE_ACTION_WRITEBACK_REQUIRED");
     expectCode((candidate) => { delete candidate.proposal!.numeric_bounds; }, "SAFE_ACTION_NUMERIC_VALUE_BOUNDS_REQUIRED");
     expectCode((candidate) => { candidate.proposal!.operation = { kind: "insert" }; }, "SAFE_ACTION_INSERT_DEDUP_REQUIRED");
     expectCode((candidate, candidateConfig) => {
@@ -224,6 +225,37 @@ describe("Safe Action authoring", () => {
       candidate.proposal!.patch = { status: { fixed: "refunded" } };
       delete candidate.proposal!.transition_guards;
     }, "SAFE_ACTION_TRANSITION_GUARD_REQUIRED");
+  });
+
+  it("accepts an explicit proposal-only revision without a writer credential", async () => {
+    const fixture = await projectFixture();
+    const source = actionSource("billing.propose_refund_order")
+      .replace('writeback: { mode: "direct_sql" }', 'writeback: { mode: "none" }');
+    await fs.writeFile(fixture.sourcePath, source);
+    const baseContract = JSON.parse(await fs.readFile(fixture.contractPath, "utf8"));
+    for (const capability of baseContract.capabilities) {
+      if (capability.kind === "proposal" && capability.proposal) {
+        capability.proposal.writeback = { mode: "none" };
+      }
+    }
+    await fs.writeFile(fixture.contractPath, `${JSON.stringify(baseContract, null, 2)}\n`);
+    const config = JSON.parse(await fs.readFile(fixture.configPath, "utf8"));
+    delete config.sources.local_postgres.write_url_env;
+    config.sources.local_postgres.read_only = true;
+    await fs.writeFile(fixture.configPath, `${JSON.stringify(config, null, 2)}\n`);
+
+    const result = await compileSafeActionDraft({
+      projectRoot: fixture.root,
+      sourcePath: fixture.sourcePath,
+    });
+
+    expect(result.manifest.validation.ok).toBe(true);
+    expect(result.manifest.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "SAFE_ACTION_PROPOSAL_ONLY", severity: "warning" }),
+    ]));
+    expect(result.contract.capabilities.find((capability) =>
+      capability.name === "billing.propose_refund_order")?.proposal?.writeback)
+      .toEqual({ mode: "none" });
   });
 
   it("activates only the exact reviewed digest and keeps immutable history", async () => {
@@ -251,14 +283,21 @@ describe("Safe Action authoring", () => {
       projectRoot: fixture.root,
       draftDigest: draft.draft_contract_digest,
       proposalId: "wrp_preview",
-      proposalHash: "sha256:preview",
+      proposalHash: `sha256:${"2".repeat(64)}`,
       sourceDatabaseChanged: true,
     })).rejects.toThrow(/PREVIEW_MUTATED_SOURCE/);
-    await recordSafeActionEffectPreview({
+    await expect(recordSafeActionEffectPreview({
       projectRoot: fixture.root,
       draftDigest: draft.draft_contract_digest,
       proposalId: "wrp_preview",
       proposalHash: "sha256:preview",
+      sourceDatabaseChanged: false,
+    })).rejects.toThrow(/PREVIEW_IDENTITY_REQUIRED/);
+    await recordSafeActionEffectPreview({
+      projectRoot: fixture.root,
+      draftDigest: draft.draft_contract_digest,
+      proposalId: "wrp_preview",
+      proposalHash: `sha256:${"2".repeat(64)}`,
       sourceDatabaseChanged: false,
       previewedAt: "2026-07-21T04:04:00.000Z",
     });
@@ -291,7 +330,7 @@ describe("Safe Action authoring", () => {
   it("does not reinterpret active authority when source changes and rejects a stale draft base", async () => {
     const fixture = await projectFixture();
     const firstDraft = (await compileSafeActionDraft({ projectRoot: fixture.root, sourcePath: fixture.sourcePath })).manifest;
-    await recordSafeActionEffectPreview({ projectRoot: fixture.root, draftDigest: firstDraft.draft_contract_digest, proposalId: "wrp_first", proposalHash: "sha256:first", sourceDatabaseChanged: false });
+    await recordSafeActionEffectPreview({ projectRoot: fixture.root, draftDigest: firstDraft.draft_contract_digest, proposalId: "wrp_first", proposalHash: `sha256:${"3".repeat(64)}`, sourceDatabaseChanged: false });
     await fs.writeFile(fixture.sourcePath, actionSource("billing.propose_refund_order").replace("maximum: 5000", "maximum: 7000"));
     await expect(activateSafeActionDraft({
       projectRoot: fixture.root,
@@ -302,7 +341,7 @@ describe("Safe Action authoring", () => {
 
     await fs.writeFile(fixture.sourcePath, actionSource("billing.propose_refund_order"));
     const staleDraft = (await compileSafeActionDraft({ projectRoot: fixture.root, sourcePath: fixture.sourcePath })).manifest;
-    await recordSafeActionEffectPreview({ projectRoot: fixture.root, draftDigest: staleDraft.draft_contract_digest, proposalId: "wrp_stale", proposalHash: "sha256:stale", sourceDatabaseChanged: false });
+    await recordSafeActionEffectPreview({ projectRoot: fixture.root, draftDigest: staleDraft.draft_contract_digest, proposalId: "wrp_stale", proposalHash: `sha256:${"4".repeat(64)}`, sourceDatabaseChanged: false });
     const base = JSON.parse(await fs.readFile(fixture.contractPath, "utf8"));
     base.metadata.description = "independently changed active contract";
     await fs.writeFile(fixture.contractPath, `${JSON.stringify(base, null, 2)}\n`);
@@ -322,7 +361,7 @@ describe("Safe Action authoring", () => {
     expect(originalNames).not.toContain("billing.propose_refund_order");
     const draft = (await compileSafeActionDraft({ projectRoot: fixture.root, sourcePath: fixture.sourcePath })).manifest;
     expect(loadRuntimeConfigFromFile(fixture.configPath).capabilities?.map((capability) => capability.name)).toEqual(originalNames);
-    await recordSafeActionEffectPreview({ projectRoot: fixture.root, draftDigest: draft.draft_contract_digest, proposalId: "wrp_restart", proposalHash: "sha256:restart", sourceDatabaseChanged: false });
+    await recordSafeActionEffectPreview({ projectRoot: fixture.root, draftDigest: draft.draft_contract_digest, proposalId: "wrp_restart", proposalHash: `sha256:${"5".repeat(64)}`, sourceDatabaseChanged: false });
     await activateSafeActionDraft({ projectRoot: fixture.root, expectedDigest: draft.draft_contract_digest, confirmation: `ACTIVATE ${draft.draft_contract_digest}` });
     const activated = loadRuntimeConfigFromFile(fixture.configPath);
     expect(activated.capabilities?.map((capability) => capability.name)).toContain("billing.propose_refund_order");

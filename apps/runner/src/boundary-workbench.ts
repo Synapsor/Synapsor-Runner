@@ -643,14 +643,32 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     </section>
 
     <section id="view-action" class="view">
-      <h2>Add a proposal-only write</h2>
-      <p>Define one business action. Runner supplies only inspected structure; you choose the authority, bounds, and reviewers.</p>
+      <h2>Review Safe Actions</h2>
+      <p>Define one semantic INSERT, UPDATE, or DELETE action. Runner supplies only inspected structure; you choose every business bound and authority decision.</p>
       <div class="band notice">
-        <strong>Writes remain proposals.</strong>
-        <p>This wizard never infers business write authority. Every draft starts disabled, and the model cannot activate, approve, or apply it.</p>
+        <strong>Proposal-only is the default.</strong>
+        <p>A first activation uses <code>WRITEBACK NONE</code>. Execution and supervised automation are separate exact-digest revisions. Earlier proposals never gain authority after a promotion. The model cannot activate, approve, apply, or choose an executor.</p>
       </div>
       <div id="action-loading" class="band"><button id="load-action" type="button">Review available action shapes</button></div>
       <div id="action-wizard" class="hidden">
+        <section class="band">
+          <h3>Optional bounded suggestion</h3>
+          <p>A model may suggest one exact candidate target, operation, and field set from structural metadata. The suggestion grants no authority and only preselects the normal review form.</p>
+          <div class="form-grid">
+            <label class="field">Business intent<input id="action-suggest-intent" type="text" maxlength="500" placeholder="Let support propose closing one exact order."></label>
+            <label class="field">Provider<select id="action-suggest-provider"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="openai_compatible">OpenAI-compatible</option></select></label>
+            <label class="field">Model<input id="action-suggest-model" type="text" maxlength="128" value="gpt-5.6-luna"></label>
+            <label class="field">API key environment name<input id="action-suggest-key-env" type="text" maxlength="128" value="OPENAI_API_KEY"></label>
+            <label id="action-suggest-base-wrap" class="field hidden">OpenAI-compatible base URL<input id="action-suggest-base" type="url" maxlength="500"></label>
+          </div>
+          <label class="check"><input id="action-suggest-egress" type="checkbox"><span>Send this intent and structural candidate metadata to the selected provider. No source rows, trusted identity values, credentials, approval policy, executor, or active authority are sent.</span></label>
+          <div class="actions"><button id="action-generate-suggestion" type="button">Generate bounded suggestion</button></div>
+          <details><summary>Import suggestion JSON from another agent</summary><label class="field">Bounded ActionSuggestion JSON<textarea id="action-suggestion-json" rows="7" spellcheck="false" placeholder='{"schema_version":"synapsor.action-suggestion.v1",...}'></textarea></label><div class="actions"><button id="action-import-suggestion" type="button" class="secondary">Import suggestion</button></div></details>
+          <div id="action-suggestion-status" class="status-message" role="status" aria-live="polite"></div>
+          <div id="action-suggestions"></div>
+        </section>
+        <div id="action-inventory"></div>
+        <div id="action-revision" class="hidden"></div>
         <section class="band">
           <div class="form-grid">
             <label class="field">Target resource<select id="action-resource"></select></label>
@@ -663,8 +681,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
               <label class="field">What may the agent propose?<input id="action-description" type="text" maxlength="500" placeholder="Propose a reviewed loyalty balance for one assigned member."></label>
             </div>
             <div id="action-operation-note" class="band"></div>
-            <h3>Allowed changes</h3>
-            <p>Select only the fields this named action needs. Numeric and text arguments require explicit bounds.</p>
+            <h3>Reviewed change candidates</h3>
+            <p>These columns are structurally eligible, not pre-approved for writes. Select only what this action needs. Numeric and text arguments require explicit reviewer-entered bounds.</p>
             <div id="action-fields" class="action-fields"></div>
             <div class="form-grid" style="margin-top:14px">
               <label class="field">Conflict / version guard<select id="action-conflict"></select></label>
@@ -672,19 +690,43 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
               <label class="field">Insert deduplication identity<select id="action-dedup"></select></label>
               <label class="field">Approval role<input id="action-role" type="text" maxlength="128" value="operator_reviewer"></label>
               <label class="field">Required distinct approvals<input id="action-quorum" type="number" min="1" max="10" value="1"></label>
-              <label class="field">Receipt authority<select id="action-receipts"><option value="runner_ledger">Runner ledger, no source receipt table</option><option value="source_auto_migrate">Source database, Runner creates receipt table</option><option value="source_precreated">Source database, precreated receipt table</option></select></label>
-              <label class="field">Write credential environment name<input id="action-write-env" type="text" maxlength="128" value="SYNAPSOR_DATABASE_WRITE_URL"></label>
             </div>
             <p class="muted">The approval role is a Synapsor contract role, not a database role or secret. In production, Runner requires that exact role in a freshly verified operator identity. <a href="https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/approval-roles-and-operator-identity.md" target="_blank" rel="noreferrer">Trace the role from IdP claim to approval and apply</a>.</p>
             <label class="check" style="margin-top:14px"><input id="action-auto" type="checkbox"><span>Allow a small bounded case to be policy-approved. Off by default.</span></label>
             <div id="action-auto-settings" class="form-grid hidden" style="margin-top:10px">
               <label class="field">Bounded numeric field<select id="action-auto-field"></select></label>
-              <label class="field">Maximum automatic value<input id="action-auto-max" type="number" min="0" value="25"></label>
-              <label class="field">Maximum per day<input id="action-auto-count" type="number" min="1" value="20"></label>
-              <label class="field">Maximum total value per day<input id="action-auto-total" type="number" min="1" value="500"></label>
+              <label class="field">Maximum automatic value<input id="action-auto-max" type="number" min="0" placeholder="Required reviewed threshold"></label>
+              <label class="field">Maximum per day<input id="action-auto-count" type="number" min="1" placeholder="Required reviewed count"></label>
+              <label class="field">Maximum total value per day<input id="action-auto-total" type="number" min="1" placeholder="Required aggregate circuit breaker"></label>
             </div>
-            <label class="check" style="margin-top:12px"><input id="action-supervised-worker" type="checkbox"><span>Permit a separately trusted Runner worker to apply eligible approved proposals. Off by default.</span></label>
-            <p class="muted">This adds only contract-side permission. Automatic execution still requires a separate operator-owned deployment allowlist for this exact activated digest; the model can configure neither side.</p>
+            <h3 style="margin-top:18px">Execution authority</h3>
+            <div class="form-grid">
+              <label class="field">Authority posture<select id="action-authority-posture"><option value="proposal_only">Proposal only - WRITEBACK NONE</option><option value="executable">Executable after separate approval/apply</option><option value="supervised_execution">Supervised worker may apply eligible approved proposals</option></select></label>
+              <label id="action-writeback-wrap" class="field hidden">Reviewed executor<select id="action-writeback"><option value="direct_sql">Runner direct SQL</option><option value="app_handler">Application handler</option><option value="cloud_worker">Cloud worker</option></select></label>
+              <label id="action-executor-wrap" class="field hidden">Application handler name<input id="action-executor" type="text" maxlength="128" placeholder="billing.apply_adjustment"></label>
+            </div>
+            <div id="action-direct-sql-settings" class="form-grid hidden" style="margin-top:10px">
+              <label class="field">Receipt authority<select id="action-receipts"><option value="runner_ledger">Runner ledger, no source receipt table</option><option value="source_auto_migrate">Source database, Runner creates receipt table</option><option value="source_precreated">Source database, precreated receipt table</option></select></label>
+              <label class="field">Write credential environment name<input id="action-write-env" type="text" maxlength="128" value="SYNAPSOR_DATABASE_WRITE_URL"></label>
+            </div>
+            <div id="action-worker-settings" class="band hidden" style="margin-top:10px">
+              <strong>Reviewed supervised-worker deployment limits</strong>
+              <p>The deployment must separately allowlist this exact activated digest. These bounded settings do not enter the agent tool schema.</p>
+              <div class="form-grid">
+                <label class="field">Concurrency<input id="action-worker-concurrency" type="number" min="1" max="32" value="1"></label>
+                <label class="field">Queue limit<input id="action-worker-queue" type="number" min="1" max="10000" value="100"></label>
+                <label class="field">Lease seconds<input id="action-worker-lease" type="number" min="5" max="3600" value="30"></label>
+                <label class="field">Maximum attempts<input id="action-worker-attempts" type="number" min="1" max="20" value="3"></label>
+                <label class="field">Proposal TTL seconds<input id="action-worker-ttl" type="number" min="60" max="604800" value="3600"></label>
+                <label class="field">Executions per rate window<input id="action-worker-rate-count" type="number" min="1" max="100000" value="60"></label>
+                <label class="field">Rate-window seconds<input id="action-worker-rate-window" type="number" min="1" max="86400" value="60"></label>
+                <label class="field">Worker identity (optional)<input id="action-worker-identity" type="text" maxlength="128"></label>
+                <label class="field">Control role (optional)<input id="action-worker-role" type="text" maxlength="128"></label>
+                <label id="action-worker-posture-wrap" class="field hidden">Least-privilege writer posture digest<input id="action-worker-posture" type="text" maxlength="71" placeholder="sha256:..."></label>
+              </div>
+              <label class="check"><input id="action-worker-least-privilege" type="checkbox"><span>Require an independently reviewed least-privilege writer credential.</span></label>
+            </div>
+            <p id="action-authority-note" class="muted">No executor is active. The semantic tool can create immutable proposals only.</p>
             <label class="check" style="margin-top:12px"><input id="action-reversible" type="checkbox"><span>Create reviewed compensation authority. This is available only for a human-approved integer-version UPDATE.</span></label>
             <label class="check" style="margin-top:12px"><input id="action-scope-confirm" type="checkbox"><span>I confirm this action inherits the reviewed tenant and principal scope shown above.</span></label>
             <label id="action-delete-confirm-wrap" class="field hidden" style="margin-top:12px">Exact delete confirmation<input id="action-delete-confirm" type="text"></label>
@@ -736,6 +778,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     const askEvidenceByRef=new Map();
     let guidedActionData=null;
     let guidedActionDraft=null;
+    let guidedActionSuggestionId=null;
     let askStatus=null;
 	    let boundaryCatalog={schema_version:"synapsor.boundary-catalog.v1",table_count:0,relationship_count:0,boundaries:[]};
 	    let boundaryMermaid="flowchart LR";
@@ -6487,13 +6530,175 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       byId("action-resource").onchange=renderGuidedActionForm;
       byId("action-operation").onchange=renderGuidedActionForm;
       byId("action-auto").onchange=()=>{byId("action-auto-settings").classList.toggle("hidden",!byId("action-auto").checked);updateGuidedAutoFields()};
-      byId("action-supervised-worker").onchange=updateGuidedCompatibility;
+      byId("action-authority-posture").onchange=updateGuidedCompatibility;
+      byId("action-writeback").onchange=updateGuidedCompatibility;
       byId("action-reversible").onchange=updateGuidedCompatibility;
+      byId("action-quorum").onchange=updateGuidedCompatibility;
+      byId("action-suggest-provider").onchange=updateGuidedSuggestionProvider;
+      byId("action-generate-suggestion").onclick=generateGuidedSuggestion;
+      byId("action-import-suggestion").onclick=importGuidedSuggestion;
+      renderGuidedActionInventory(guidedActionData?.status||{drafts:[],activations:[]});
+      renderGuidedSuggestions();
+      updateGuidedSuggestionProvider();
       renderGuidedActionForm();
+    }
+
+    function updateGuidedSuggestionProvider(){
+      const provider=byId("action-suggest-provider").value;
+      byId("action-suggest-base-wrap").classList.toggle("hidden",provider!=="openai_compatible");
+      if(provider==="openai"){
+        byId("action-suggest-model").value="gpt-5.6-luna";
+        byId("action-suggest-key-env").value="OPENAI_API_KEY";
+      }else if(provider==="anthropic"){
+        byId("action-suggest-model").value="claude-sonnet-4-20250514";
+        byId("action-suggest-key-env").value="ANTHROPIC_API_KEY";
+      }
+    }
+
+    function renderGuidedSuggestions(){
+      const panel=byId("action-suggestions");
+      const suggestions=guidedActionData?.suggestions||[];
+      if(!suggestions.length){panel.innerHTML='<p class="muted">No imported suggestions. The complete no-model composer remains available below.</p>';return}
+      panel.innerHTML='<div class="action-fields">'+suggestions.map(item=>{
+        const suggestion=item.assessment?.suggestion||{};
+        const blockers=item.current_assessment?.blockers||[];
+        return '<div class="action-field"><strong>'+esc(item.suggestion_id)+' <span class="badge">'+esc(String(item.state).toUpperCase())+'</span></strong><p>'+esc(suggestion.intent||"No intent")+'<br><code>'+esc((suggestion.operation||"operation needed")+' '+(suggestion.resource||"resource needed"))+'</code></p>'+(blockers.length?'<p class="error">'+esc(blockers.join(" "))+'</p>':'')+(item.state==="suggested"?'<button type="button" class="secondary" data-action-use-suggestion="'+esc(item.suggestion_id)+'">Review this suggestion</button>':'')+'</div>';
+      }).join("")+'</div>';
+      panel.querySelectorAll("[data-action-use-suggestion]").forEach(button=>button.onclick=()=>applyGuidedSuggestion(button.dataset.actionUseSuggestion));
+    }
+
+    async function generateGuidedSuggestion(){
+      const status=byId("action-suggestion-status");
+      try{
+        status.className="status-message";
+        status.textContent="Requesting one bounded, non-authoritative suggestion...";
+        const provider=byId("action-suggest-provider").value;
+        const payload=await post("/api/actions/guided/suggest",{
+          intent:requiredGuidedText("action-suggest-intent","Suggestion business intent"),
+          provider,
+          model:requiredGuidedText("action-suggest-model","Suggestion model"),
+          api_key_env:byId("action-suggest-key-env").value.trim(),
+          ...(provider==="openai_compatible"?{base_url:requiredGuidedText("action-suggest-base","OpenAI-compatible base URL")} : {}),
+          egress_acknowledged:byId("action-suggest-egress").checked
+        });
+        guidedActionData.suggestions=[payload.suggestion,...(guidedActionData.suggestions||[]).filter(item=>item.suggestion_id!==payload.suggestion.suggestion_id)];
+        renderGuidedSuggestions();
+        status.textContent="Suggestion imported. Authority granted: no. Select Review this suggestion to walk every human decision.";
+      }catch(error){status.className="status-message error";status.textContent=error.message}
+    }
+
+    async function importGuidedSuggestion(){
+      const status=byId("action-suggestion-status");
+      try{
+        const raw=requiredGuidedText("action-suggestion-json","ActionSuggestion JSON");
+        const payload=await post("/api/actions/guided/suggest",{suggestion:JSON.parse(raw)});
+        guidedActionData.suggestions=[payload.suggestion,...(guidedActionData.suggestions||[]).filter(item=>item.suggestion_id!==payload.suggestion.suggestion_id)];
+        renderGuidedSuggestions();
+        status.className="status-message";
+        status.textContent="Suggestion imported. It has not changed any active tool or source row.";
+      }catch(error){status.className="status-message error";status.textContent=error.message}
+    }
+
+    function applyGuidedSuggestion(suggestionId){
+      const item=(guidedActionData?.suggestions||[]).find(candidate=>candidate.suggestion_id===suggestionId);
+      if(!item||item.state!=="suggested")return;
+      const suggestion=item.assessment.suggestion;
+      byId("action-resource").value=suggestion.resource;
+      renderGuidedActionForm();
+      if(suggestion.operation&&selectedGuidedResource()?.operation_availability?.[suggestion.operation]?.available){
+        byId("action-operation").value=suggestion.operation;
+        renderGuidedActionForm();
+      }
+      (suggestion.fields||[]).forEach(field=>{
+        const input=document.querySelector('[data-action-field="'+cssValue(field)+'"]');
+        if(input&&!input.disabled){input.checked=true;input.dispatchEvent(new Event("change"))}
+      });
+      byId("action-description").value=suggestion.intent||"";
+      guidedActionSuggestionId=suggestionId;
+      const status=byId("action-suggestion-status");
+      status.className="status-message";
+      status.textContent="Suggestion preselected structural candidates only. Review every bound, conflict, scope, approval, and execution decision below.";
+      byId("action-authoring-controls").scrollIntoView({block:"start",behavior:"smooth"});
+    }
+
+    function renderGuidedActionInventory(status){
+      const active=status.activations||[];
+      const drafts=status.drafts||[];
+      const panel=byId("action-inventory");
+      if(!active.length&&!drafts.length){panel.innerHTML="";return}
+      panel.innerHTML='<section class="band"><h3>Managed action revisions</h3>'+
+        (active.length?'<div class="action-fields">'+active.map(item=>'<div class="action-field"><strong>'+esc(item.capability)+'</strong><p>'+esc(humanizeIdentifier(item.authority_posture))+' · '+esc(item.writeback_mode)+'<br><code>'+esc(item.contract_digest)+'</code></p><button type="button" class="secondary" data-action-revise="'+esc(item.capability)+'">Draft authority revision</button></div>').join("")+'</div>':'<p>No active Safe Action revision.</p>')+
+        (drafts.length?'<p><strong>Disabled drafts:</strong> '+drafts.map(item=>esc(item.capability)+' ('+esc(humanizeIdentifier(item.authority_posture))+')').join(", ")+'</p>':"")+
+        '</section>';
+      panel.querySelectorAll("[data-action-revise]").forEach(button=>button.onclick=()=>openGuidedActionRevision(active.find(item=>item.capability===button.dataset.actionRevise)));
+    }
+
+    function openGuidedActionRevision(active){
+      if(!active)return;
+      const production=guidedActionData?.options?.deployment_profile==="production";
+      const panel=byId("action-revision");
+      panel.classList.remove("hidden");
+      panel.innerHTML='<section class="band notice"><h3>Draft a new authority revision</h3><p><strong>'+esc(active.capability)+'</strong><br>Current: '+esc(humanizeIdentifier(active.authority_posture))+' / '+esc(active.writeback_mode)+'<br><code>'+esc(active.contract_digest)+'</code></p><p>The current digest remains active. Earlier proposals retain their original writeback posture.</p><div class="form-grid"><label class="field">New authority posture<select id="action-revise-posture"><option value="proposal_only">Proposal only - WRITEBACK NONE</option><option value="executable">Executable after separate approval/apply</option><option value="supervised_execution">Supervised worker execution</option></select></label><label id="action-revise-writeback-wrap" class="field hidden">Reviewed executor<select id="action-revise-writeback"><option value="direct_sql">Runner direct SQL</option><option value="app_handler">Application handler</option><option value="cloud_worker">Cloud worker</option></select></label><label id="action-revise-executor-wrap" class="field hidden">Application handler name<input id="action-revise-executor" type="text" maxlength="128"></label><label id="action-revise-receipts-wrap" class="field hidden">Receipt authority<select id="action-revise-receipts"><option value="runner_ledger">Runner ledger</option><option value="source_auto_migrate">Source auto-migrated receipts</option><option value="source_precreated">Precreated source receipts</option></select></label><label id="action-revise-write-env-wrap" class="field hidden">Write credential environment name<input id="action-revise-write-env" type="text" maxlength="128" value="SYNAPSOR_DATABASE_WRITE_URL"></label></div><div id="action-revise-worker" class="form-grid hidden" style="margin-top:10px"><label class="field">Concurrency<input id="action-revise-concurrency" type="number" min="1" max="32" value="1"></label><label class="field">Queue limit<input id="action-revise-queue" type="number" min="1" max="10000" value="100"></label><label class="field">Lease seconds<input id="action-revise-lease" type="number" min="5" max="3600" value="30"></label><label class="field">Maximum attempts<input id="action-revise-attempts" type="number" min="1" max="20" value="3"></label><label class="field">Proposal TTL seconds<input id="action-revise-ttl" type="number" min="60" max="604800" value="3600"></label><label class="field">Executions per window<input id="action-revise-rate-count" type="number" min="1" max="100000" value="60"></label><label class="field">Rate-window seconds<input id="action-revise-rate-window" type="number" min="1" max="86400" value="60"></label>'+(production?'<label class="field">Least-privilege writer posture digest<input id="action-revise-posture-digest" type="text" maxlength="71" placeholder="sha256:..."></label>':'')+'</div><div class="actions"><button id="action-create-revision" type="button">Generate disabled revision</button><button id="action-cancel-revision" type="button" class="secondary">Cancel</button></div></section>';
+      byId("action-revise-posture").value=active.authority_posture;
+      if(active.writeback_mode!=="none")byId("action-revise-writeback").value=active.writeback_mode;
+      byId("action-revise-posture").onchange=updateGuidedRevisionCompatibility;
+      byId("action-revise-writeback").onchange=updateGuidedRevisionCompatibility;
+      byId("action-create-revision").onclick=()=>createGuidedActionRevision(active);
+      byId("action-cancel-revision").onclick=()=>{panel.classList.add("hidden");panel.innerHTML=""};
+      updateGuidedRevisionCompatibility();
+      panel.scrollIntoView({block:"start",behavior:"smooth"});
+    }
+
+    function updateGuidedRevisionCompatibility(){
+      const posture=byId("action-revise-posture")?.value;
+      const executable=posture!=="proposal_only";
+      const supervised=posture==="supervised_execution";
+      byId("action-revise-writeback-wrap")?.classList.toggle("hidden",!executable);
+      if(supervised)byId("action-revise-writeback").value="direct_sql";
+      byId("action-revise-writeback").disabled=supervised;
+      const mode=executable?byId("action-revise-writeback").value:"none";
+      byId("action-revise-executor-wrap")?.classList.toggle("hidden",mode!=="app_handler");
+      byId("action-revise-receipts-wrap")?.classList.toggle("hidden",mode!=="direct_sql");
+      byId("action-revise-write-env-wrap")?.classList.toggle("hidden",mode!=="direct_sql");
+      byId("action-revise-worker")?.classList.toggle("hidden",!supervised);
+    }
+
+    async function createGuidedActionRevision(active){
+      const status=byId("action-status");
+      try{
+        const posture=byId("action-revise-posture").value;
+        const mode=posture==="proposal_only"?"none":byId("action-revise-writeback").value;
+        const authority={authority_posture:posture,writeback:{mode},supervised_worker_execution:posture==="supervised_execution"};
+        if(mode==="app_handler")authority.writeback.executor=requiredGuidedText("action-revise-executor","Application handler name");
+        if(mode==="direct_sql"){
+          authority.receipt_mode=byId("action-revise-receipts").value;
+          authority.write_url_env=requiredGuidedText("action-revise-write-env","Write credential environment name");
+        }
+        if(posture==="supervised_execution")authority.worker_policy={
+          profile:guidedActionData.options.deployment_profile,
+          concurrency:requiredGuidedInteger("action-revise-concurrency","Worker concurrency"),
+          queue_limit:requiredGuidedInteger("action-revise-queue","Worker queue limit"),
+          lease_seconds:requiredGuidedInteger("action-revise-lease","Worker lease seconds"),
+          max_attempts:requiredGuidedInteger("action-revise-attempts","Worker maximum attempts"),
+          proposal_ttl_seconds:requiredGuidedInteger("action-revise-ttl","Proposal TTL"),
+          rate_limit:{executions:requiredGuidedInteger("action-revise-rate-count","Worker rate count"),window_seconds:requiredGuidedInteger("action-revise-rate-window","Worker rate window")},
+          require_least_privilege_writer:guidedActionData.options.deployment_profile==="production",
+          ...(guidedActionData.options.deployment_profile==="production"?{writer_posture_fingerprint:requiredGuidedText("action-revise-posture-digest","Least-privilege writer posture digest")}:{})
+        };
+        status.className="status-message";
+        status.textContent="Compiling a disabled new authority revision...";
+        const payload=await post("/api/actions/guided/revise",{capability_name:active.capability,expected_current_digest:active.contract_digest,authority});
+        showGuidedActionDraft(payload);
+        status.textContent=payload.message+" Preview and activate the new digest explicitly.";
+      }catch(error){status.className="status-message error";status.textContent=error.message}
     }
 
     function selectedGuidedResource(){
       return (guidedActionData?.options?.resources||[]).find(resource=>resource.id===byId("action-resource").value);
+    }
+
+    function guidedCandidateFields(resource){
+      return resource?.structurally_eligible_fields||resource?.writable_fields||[];
     }
 
     function renderGuidedActionForm(){
@@ -6540,11 +6745,13 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         updateGuidedAutoFields();
         return;
       }
-      panel.innerHTML=(resource.writable_fields||[]).map(field=>{
+      panel.innerHTML=guidedCandidateFields(resource).map(field=>{
         const numeric=isGuidedNumeric(field.data_type);
         const transition=/(^|_)(status|state)$/i.test(field.name);
-        return '<div class="action-field"><label class="check"><input type="checkbox" data-action-field="'+esc(field.name)+'"><span><strong>'+esc(field.name)+'</strong> <span class="badge">'+esc(field.data_type)+'</span></span></label><div class="action-field-settings hidden" data-action-settings="'+esc(field.name)+'"><div class="form-grid"><label class="field">Value source<select data-action-mode="'+esc(field.name)+'"><option value="argument">Bounded tool argument</option><option value="fixed">Fixed reviewed value</option></select></label><label class="field">Argument name<input data-action-argument="'+esc(field.name)+'" type="text" value="'+esc(field.name)+'"></label><label class="field">Fixed value<input data-action-fixed="'+esc(field.name)+'" type="'+(numeric?"number":"text")+'" placeholder="'+esc((field.enum_values||[]).join(" | ")||"Reviewed fixed value")+'"></label>'+(numeric?'<label class="field">Minimum<input data-action-min="'+esc(field.name)+'" type="number" value="0"></label><label class="field">Maximum<input data-action-max="'+esc(field.name)+'" type="number" value="100"></label>':'<label class="field">Maximum length<input data-action-length="'+esc(field.name)+'" type="number" min="1" value="128"></label>')+(transition?'<label class="field">Allowed current states<input data-action-from="'+esc(field.name)+'" type="text" placeholder="'+esc((field.enum_values||[]).join(", "))+'"></label>':'')+'</div>'+(field.enum_values?.length?'<p>Inspected values: '+esc(field.enum_values.join(", "))+'</p>':'')+'</div></div>';
-      }).join("")||'<div class="band error">No reviewed non-sensitive writable field is available.</div>';
+        const required=operation==="insert"&&field.required_for_insert;
+        const boundedText=!numeric&&!(field.enum_values||[]).length&&!/bool/i.test(field.data_type);
+        return '<div class="action-field"><label class="check"><input type="checkbox" data-action-field="'+esc(field.name)+'" '+(required?'checked disabled':'')+'><span><strong>'+esc(field.name)+'</strong> <span class="badge">'+esc(field.data_type)+'</span>'+(required?' <span class="badge">required for INSERT</span>':'')+'</span></label><div class="action-field-settings '+(required?'':'hidden')+'" data-action-settings="'+esc(field.name)+'"><p class="muted">'+(required?'The source requires this non-default field. You still decide its bounded value authority.':'Structurally eligible only. Selecting this field creates a new reviewed authority decision.')+'</p><div class="form-grid"><label class="field">Value source<select data-action-mode="'+esc(field.name)+'"><option value="argument">Bounded tool argument</option><option value="fixed">Fixed reviewed value</option></select></label><label class="field">Argument name<input data-action-argument="'+esc(field.name)+'" type="text" value="'+esc(field.name)+'"></label><label class="field">Fixed value<input data-action-fixed="'+esc(field.name)+'" type="'+(numeric?"number":"text")+'" placeholder="'+esc((field.enum_values||[]).join(" | ")||"Required reviewed fixed value")+'"></label>'+(numeric?'<label class="field">Minimum<input data-action-min="'+esc(field.name)+'" type="number" placeholder="Required reviewed minimum"></label><label class="field">Maximum<input data-action-max="'+esc(field.name)+'" type="number" placeholder="Required reviewed maximum"></label>':boundedText?'<label class="field">Maximum length<input data-action-length="'+esc(field.name)+'" type="number" min="1" placeholder="Required reviewed maximum"></label>':'')+(transition&&operation==="update"?'<label class="field">Allowed current states<input data-action-from="'+esc(field.name)+'" type="text" placeholder="'+esc((field.enum_values||[]).join(", "))+'"></label>':'')+'</div>'+(field.enum_values?.length?'<p>Inspected enum evidence: '+esc(field.enum_values.join(", "))+'</p>':'')+'</div></div>';
+      }).join("")||'<div class="band error">No reviewed non-sensitive field is structurally eligible for this action.</div>';
       panel.querySelectorAll("[data-action-field]").forEach(input=>{
         input.onchange=()=>{
           panel.querySelector('[data-action-settings="'+cssValue(input.dataset.actionField)+'"]').classList.toggle("hidden",!input.checked);
@@ -6559,7 +6766,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const resource=selectedGuidedResource();
       if(!resource)return;
       const selected=[...document.querySelectorAll("[data-action-field]:checked")].map(input=>input.dataset.actionField);
-      const eligible=(resource.writable_fields||[]).filter(field=>selected.includes(field.name)&&isGuidedNumeric(field.data_type)&&document.querySelector('[data-action-mode="'+cssValue(field.name)+'"]')?.value==="argument");
+      const eligible=guidedCandidateFields(resource).filter(field=>selected.includes(field.name)&&isGuidedNumeric(field.data_type)&&document.querySelector('[data-action-mode="'+cssValue(field.name)+'"]')?.value==="argument");
       byId("action-auto-field").innerHTML=eligible.map(field=>'<option value="'+esc(field.name)+'">'+esc(field.name)+'</option>').join("");
       if(byId("action-auto").checked&&!eligible.length){
         byId("action-auto").checked=false;
@@ -6571,53 +6778,99 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const operation=byId("action-operation").value;
       const reversible=byId("action-reversible");
       const auto=byId("action-auto");
-      const supervised=byId("action-supervised-worker");
-      reversible.disabled=operation!=="update";
+      const posture=byId("action-authority-posture");
+      const supervisedOption=[...posture.options].find(option=>option.value==="supervised_execution");
+      if(supervisedOption)supervisedOption.disabled=operation==="delete"||reversible.checked;
+      if(posture.value==="supervised_execution"&&supervisedOption?.disabled)posture.value="proposal_only";
+      const executable=posture.value!=="proposal_only";
+      const supervised=posture.value==="supervised_execution";
+      byId("action-writeback-wrap").classList.toggle("hidden",!executable);
+      if(supervised)byId("action-writeback").value="direct_sql";
+      byId("action-writeback").disabled=supervised;
+      const writeback=executable?byId("action-writeback").value:"none";
+      byId("action-executor-wrap").classList.toggle("hidden",writeback!=="app_handler");
+      byId("action-direct-sql-settings").classList.toggle("hidden",writeback!=="direct_sql");
+      byId("action-worker-settings").classList.toggle("hidden",!supervised);
+      const production=guidedActionData?.options?.deployment_profile==="production";
+      byId("action-worker-posture-wrap").classList.toggle("hidden",!supervised||!production);
+      byId("action-worker-least-privilege").disabled=supervised&&production;
+      if(supervised&&production)byId("action-worker-least-privilege").checked=true;
+      reversible.disabled=operation!=="update"||writeback!=="direct_sql"||supervised;
       if(reversible.disabled)reversible.checked=false;
       auto.disabled=operation==="delete"||reversible.checked||Number(byId("action-quorum").value)>1;
       if(auto.disabled){
         auto.checked=false;
         byId("action-auto-settings").classList.add("hidden");
       }
-      supervised.disabled=operation==="delete"||reversible.checked;
-      if(supervised.disabled)supervised.checked=false;
+      byId("action-authority-note").textContent=posture.value==="proposal_only"
+        ?"No executor is active. The semantic tool creates immutable proposals only."
+        :supervised
+          ?"This new revision permits a separately deployed, exact-digest allowlisted worker to apply eligible approved proposals."
+          :"This new revision permits a separate operator apply step through the reviewed executor. The model still cannot approve or apply.";
     }
 
     function guidedActionPayload(){
       const resource=selectedGuidedResource();
       const operation=byId("action-operation").value;
+      const selectedFields=[...document.querySelectorAll("[data-action-field]:checked")].map(input=>input.dataset.actionField);
+      if(operation==="insert"){
+        const missing=guidedCandidateFields(resource).filter(field=>field.required_for_insert&&!selectedFields.includes(field.name)).map(field=>field.name);
+        if(missing.length)throw new Error("INSERT requires reviewed values for: "+missing.join(", ")+".");
+      }
       const patches=[...document.querySelectorAll("[data-action-field]:checked")].map(input=>{
         const column=input.dataset.actionField;
-        const field=resource.writable_fields.find(candidate=>candidate.name===column);
+        const field=guidedCandidateFields(resource).find(candidate=>candidate.name===column);
         const mode=document.querySelector('[data-action-mode="'+cssValue(column)+'"]').value;
         const patch={column,value_source:mode};
         if(mode==="argument"){
-          patch.argument_name=document.querySelector('[data-action-argument="'+cssValue(column)+'"]').value.trim();
+          patch.argument_name=requiredGuidedElementText(document.querySelector('[data-action-argument="'+cssValue(column)+'"]'),column+" argument name");
           if(isGuidedNumeric(field.data_type)){
-            patch.minimum=Number(document.querySelector('[data-action-min="'+cssValue(column)+'"]').value);
-            patch.maximum=Number(document.querySelector('[data-action-max="'+cssValue(column)+'"]').value);
-          }else patch.max_length=Number(document.querySelector('[data-action-length="'+cssValue(column)+'"]').value);
+            patch.minimum=requiredGuidedElementNumber(document.querySelector('[data-action-min="'+cssValue(column)+'"]'),column+" minimum");
+            patch.maximum=requiredGuidedElementNumber(document.querySelector('[data-action-max="'+cssValue(column)+'"]'),column+" maximum");
+          }else if(!(field.enum_values||[]).length&&!/bool/i.test(field.data_type))patch.max_length=requiredGuidedElementInteger(document.querySelector('[data-action-length="'+cssValue(column)+'"]'),column+" maximum length");
         }else{
           const raw=document.querySelector('[data-action-fixed="'+cssValue(column)+'"]').value;
-          patch.fixed_value=isGuidedNumeric(field.data_type)?Number(raw):/bool/i.test(field.data_type)?raw==="true":raw;
+          if(!String(raw).trim())throw new Error(column+" fixed value is required.");
+          patch.fixed_value=isGuidedNumeric(field.data_type)?requiredGuidedElementNumber(document.querySelector('[data-action-fixed="'+cssValue(column)+'"]'),column+" fixed value"):/bool/i.test(field.data_type)?raw==="true":raw;
           const from=document.querySelector('[data-action-from="'+cssValue(column)+'"]');
-          if(from)patch.allowed_from=from.value.split(",").map(value=>value.trim()).filter(Boolean);
+          if(from&&operation==="update")patch.allowed_from=from.value.split(",").map(value=>value.trim()).filter(Boolean);
         }
         return patch;
       });
+      const posture=byId("action-authority-posture").value;
+      const writebackMode=posture==="proposal_only"?"none":byId("action-writeback").value;
+      const writeback={mode:writebackMode};
+      if(writebackMode==="app_handler")writeback.executor=requiredGuidedText("action-executor","Application handler name");
       const action={
-        capability_name:byId("action-name").value.trim(),
-        description:byId("action-description").value.trim(),
+        capability_name:requiredGuidedText("action-name","Business capability name"),
+        description:requiredGuidedText("action-description","Business effect description"),
         resource:resource.id,
         operation,
         patches,
-        approval_role:byId("action-role").value.trim(),
-        required_approvals:Number(byId("action-quorum").value),
-        receipt_mode:byId("action-receipts").value,
-        write_url_env:byId("action-write-env").value.trim(),
+        approval_role:requiredGuidedText("action-role","Approval role"),
+        required_approvals:requiredGuidedInteger("action-quorum","Required approval count"),
+        authority_posture:posture,
+        writeback,
         confirmed_trusted_scope:byId("action-scope-confirm").checked,
-        supervised_worker_execution:byId("action-supervised-worker").checked,
+        supervised_worker_execution:posture==="supervised_execution",
         reversible:byId("action-reversible").checked
+      };
+      if(writebackMode==="direct_sql"){
+        action.receipt_mode=byId("action-receipts").value;
+        action.write_url_env=requiredGuidedText("action-write-env","Write credential environment name");
+      }
+      if(posture==="supervised_execution")action.worker_policy={
+        profile:guidedActionData.options.deployment_profile,
+        concurrency:requiredGuidedInteger("action-worker-concurrency","Worker concurrency"),
+        queue_limit:requiredGuidedInteger("action-worker-queue","Worker queue limit"),
+        lease_seconds:requiredGuidedInteger("action-worker-lease","Worker lease seconds"),
+        max_attempts:requiredGuidedInteger("action-worker-attempts","Worker maximum attempts"),
+        proposal_ttl_seconds:requiredGuidedInteger("action-worker-ttl","Proposal TTL"),
+        rate_limit:{executions:requiredGuidedInteger("action-worker-rate-count","Worker rate count"),window_seconds:requiredGuidedInteger("action-worker-rate-window","Worker rate window")},
+        require_least_privilege_writer:byId("action-worker-least-privilege").checked,
+        ...(byId("action-worker-identity").value.trim()?{worker_identity:byId("action-worker-identity").value.trim()}:{}),
+        ...(byId("action-worker-role").value.trim()?{control_role:byId("action-worker-role").value.trim()}:{}),
+        ...(guidedActionData.options.deployment_profile==="production"?{writer_posture_fingerprint:requiredGuidedText("action-worker-posture","Least-privilege writer posture digest")}:{})
       };
       if(operation!=="insert")action.conflict_column=byId("action-conflict").value;
       if(operation==="update")action.version_advance=byId("action-version").value;
@@ -6625,19 +6878,35 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       if(operation==="delete")action.delete_confirmation=byId("action-delete-confirm").value;
       if(byId("action-auto").checked)action.auto_approval={
         field:byId("action-auto-field").value,
-        maximum:Number(byId("action-auto-max").value),
-        max_per_day:Number(byId("action-auto-count").value),
-        max_total_per_day:Number(byId("action-auto-total").value)
+        maximum:requiredGuidedNumber("action-auto-max","Automatic approval maximum"),
+        max_per_day:requiredGuidedInteger("action-auto-count","Automatic approvals per day"),
+        max_total_per_day:requiredGuidedInteger("action-auto-total","Automatic aggregate value per day")
       };
       return action;
     }
+
+    function requiredGuidedText(id,label){return requiredGuidedElementText(byId(id),label)}
+    function requiredGuidedNumber(id,label){return requiredGuidedElementNumber(byId(id),label)}
+    function requiredGuidedInteger(id,label){return requiredGuidedElementInteger(byId(id),label)}
+    function requiredGuidedElementText(input,label){const value=String(input?.value||"").trim();if(!value)throw new Error(label+" is required.");return value}
+    function requiredGuidedElementNumber(input,label){const raw=String(input?.value||"").trim();const value=Number(raw);if(!raw||!Number.isFinite(value))throw new Error(label+" must be an explicit finite number.");return value}
+    function requiredGuidedElementInteger(input,label){const value=requiredGuidedElementNumber(input,label);if(!Number.isSafeInteger(value))throw new Error(label+" must be an integer.");return value}
 
     async function createGuidedAction(){
       const status=byId("action-status");
       try{
         status.className="status-message";
         status.textContent="Compiling public DSL, canonical contract, tests, and exact digest...";
-        const payload=await post("/api/actions/guided/draft",{action:guidedActionPayload()});
+        const payload=await post("/api/actions/guided/draft",{
+          action:guidedActionPayload(),
+          ...(guidedActionSuggestionId?{suggestion_id:guidedActionSuggestionId}:{})
+        });
+        if(guidedActionSuggestionId){
+          const reviewed=(guidedActionData.suggestions||[]).find(item=>item.suggestion_id===guidedActionSuggestionId);
+          if(reviewed)reviewed.state="reviewed";
+          guidedActionSuggestionId=null;
+          renderGuidedSuggestions();
+        }
         showGuidedActionDraft(payload);
         status.textContent="Disabled action draft created. Next: enter real staging arguments and preview one proposal.";
       }catch(error){
@@ -6651,7 +6920,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const draft=payload.draft;
       const args=payload.preview_args||{};
       const inputs=Object.entries(args).map(([name,value])=>'<label class="field">'+esc(name)+'<input data-action-preview="'+esc(name)+'" data-value-type="'+esc(typeof value)+'" type="'+(typeof value==="number"?"number":typeof value==="boolean"?"checkbox":"text")+'" '+(typeof value==="boolean"&&value?"checked":"")+(typeof value==="boolean"?"":' value="'+esc(value)+'"')+'></label>').join("");
-      byId("action-draft").innerHTML='<section class="band success"><h3>Disabled reviewable action</h3><p><strong>Capability:</strong> '+esc(draft.capability)+'<br><strong>Operation:</strong> '+esc(draft.operation.toUpperCase())+'<br><strong>Supervised execution permission:</strong> '+(draft.supervised_worker_execution?"Contract side enabled; deployment side still required":"Off")+'<br><strong>Source database changed:</strong> no</p><details><summary>Review generated public DSL</summary><pre id="action-dsl-preview"></pre></details><details><summary>Advanced fingerprint</summary><code data-action-digest>'+esc(draft.contract_digest)+'</code></details><h3 style="margin-top:16px">Exact staging proposal preview</h3><p>Use a real row identifier and bounded values. This calls the actual proposal runtime; it cannot approve or apply.</p><div class="form-grid">'+inputs+'</div><div class="actions"><button id="preview-action" type="button">Create preview proposal</button></div><div id="action-activation"></div></section>';
+      byId("action-draft").innerHTML='<section class="band success"><h3>Disabled reviewable action revision</h3><p><strong>Capability:</strong> '+esc(draft.capability)+'<br><strong>Operation:</strong> '+esc(draft.operation.toUpperCase())+'<br><strong>Authority posture:</strong> '+esc(humanizeIdentifier(draft.authority_posture))+'<br><strong>Writeback:</strong> '+esc(draft.writeback_mode)+(draft.writeback_executor?' via '+esc(draft.writeback_executor):'')+'<br><strong>Supervised execution permission:</strong> '+(draft.supervised_worker_execution?"Contract side enabled; exact-digest deployment allowlist still required":"Off")+'<br><strong>Source database changed:</strong> no</p><details><summary>Review generated public DSL</summary><pre id="action-dsl-preview"></pre></details><details><summary>Advanced fingerprint</summary><code data-action-digest>'+esc(draft.contract_digest)+'</code></details><h3 style="margin-top:16px">Exact disabled-draft rehearsal</h3><p>Use a real row identifier and bounded values. Runner validates the actual semantic proposal path in a disposable ledger, then destroys that rehearsal record. It cannot later be approved or applied.</p><div class="form-grid">'+inputs+'</div><div class="actions"><button id="preview-action" type="button">Rehearse exact proposal</button></div><div id="action-activation"></div></section>';
       renderSyntaxCode("action-dsl-preview",payload.dsl||"Open "+draft.dsl_path+" to inspect the persisted public DSL.","synapsor-dsl");
       byId("preview-action").onclick=previewGuidedAction;
       if(draft.effect_preview)renderGuidedActionActivation();
@@ -6668,7 +6937,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const status=byId("action-status");
       try{
         status.className="status-message";
-        status.textContent="Creating one immutable proposal through the real runtime...";
+        status.textContent="Rehearsing one immutable proposal through an isolated copy of the real runtime...";
         const payload=await post("/api/actions/guided/preview",{
           capability_name:guidedActionDraft.draft.capability,
           args:guidedPreviewArgs()
@@ -6684,7 +6953,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 
     function renderGuidedActionActivation(){
       const draft=guidedActionDraft.draft;
-      byId("action-activation").innerHTML='<div class="band notice"><strong>Proposal created. Source database changed: no.</strong><p>The model cannot approve or apply this proposal. Activating adds only this reviewed proposal capability; approval and apply remain separate operator actions. Runner binds this button to the exact fingerprint above and rechecks it before activation.</p></div><div class="form-grid"><label class="field">Operator identity<input id="action-actor" type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label></div><div class="actions"><button id="activate-action" type="button">Activate reviewed proposal capability</button></div>';
+      const execution=draft.writeback_mode==="none"?'The activated tool creates durable proposals only.':'Approved proposals may be applied later through '+draft.writeback_mode+'; the model still cannot approve or apply.';
+      byId("action-activation").innerHTML='<div class="band notice"><strong>Exact rehearsal passed. Source database changed: no.</strong><p>'+esc(execution)+' The rehearsal ledger was disposable, so this test proposal can never become executable. Runner binds activation to the exact fingerprint above and rechecks it immediately before activation.</p></div><div class="form-grid"><label class="field">Operator identity<input id="action-actor" type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label></div><div class="actions"><button id="activate-action" type="button">Activate this exact '+esc(humanizeIdentifier(draft.authority_posture))+' revision</button></div>';
       byId("activate-action").onclick=activateGuidedAction;
     }
 
@@ -6699,11 +6969,12 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         });
         status.className="status-message";
         status.textContent=payload.message;
-        byId("action-activation").innerHTML='<div class="band success"><strong>Safe action active.</strong><p>Its MCP call creates a proposal only. Approval and apply remain outside the model.</p><div class="actions"><button id="review-proposal" type="button">Review proposal outside MCP</button><button id="finish-authoring" type="button" class="secondary">Disable Explore and review proposal</button></div><p class="muted">Reviewing does not end this local analytics session. Disable Explore only when authoring is finished.</p></div>';
+        const proposalOnly=payload.active.writeback_mode==="none";
+        byId("action-activation").innerHTML='<div class="band success"><strong>Safe Action revision active.</strong><p>'+(proposalOnly?'Its semantic MCP call creates a proposal only.':'Approved proposals can now be applied through '+esc(payload.active.writeback_mode)+'.')+' Approval and apply remain outside the model. Earlier proposals keep the exact authority of the revision that created them.</p><p><strong>Action runtime:</strong> <code>'+esc(payload.active.config_path)+'</code></p><div class="actions"><button id="review-proposal" type="button">Review proposals outside MCP</button><button id="finish-authoring" type="button" class="secondary">Disable Explore and review proposals</button></div><p class="muted">Reviewing does not end this local analytics session. Disabling Explore is a separate explicit action. Reconnect the separate action runtime to discover this digest; the locked production Explore endpoint remains unchanged.</p></div>';
         byId("review-proposal").onclick=openProposalReview;
         byId("finish-authoring").onclick=finishGuidedAuthoring;
         document.querySelector('[data-view="action"]').classList.add("done");
-        byId("header-state").textContent="Reviewed read and proposal tools active";
+        byId("header-state").textContent=proposalOnly?"Reviewed read and proposal tools active":"Reviewed read and executable Safe Action active";
         byId("header-state").className="state good";
       }catch(error){
         status.className="status-message error";

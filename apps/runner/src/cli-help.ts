@@ -26,7 +26,7 @@ Commands:
   try          Run an isolated proof, or ask/explore/call active project tools
   inspect      Inspect a Postgres/MySQL schema
   start        Interactive guided first run, or no-arg legacy worker polling
-  action       Validate/watch disabled TypeScript Safe Action drafts
+  action       Review Safe Actions and operate immutable proposals
   up           Bring up local review mode guidance/server
   init         Generate a Synapsor capability contract
   config       Validate local synapsor.runner.json wiring
@@ -70,6 +70,7 @@ Examples:
   ${cmd} try ask --provider openai [--model <model>] [--verbose] [--session-token-budget 200000]
   ${cmd} start --from-env DATABASE_URL
   ${cmd} start --from-env DATABASE_URL --cli
+  ${cmd} action review --project-root .
   ${cmd} start --action refund_order --description "Propose one reviewed order refund"
   ${cmd} action validate ./synapsor/actions/billing.propose_refund_order.ts
   ${cmd} up --config ./synapsor.runner.json --store ./.synapsor/local.db --dry-run
@@ -738,19 +739,43 @@ separate production_explore profile, secured Streamable HTTP, verified JWT
 tenant/principal context, and the production budget and rate-limit prerequisites.
 `,
     action: `Usage:
+  ${cmd} action review [--project-root .]
+  ${cmd} action suggest --input suggestion.json [--project-root .] [--json]
+  ${cmd} action suggest --intent <business-intent> --provider openai|anthropic|openai-compatible [--model <name>] [--api-key-env <name>] --acknowledge-egress
+  ${cmd} action suggestions [--project-root .] [--json]
+  ${cmd} action review --suggestion <as_digest> [--project-root .]
+  ${cmd} action draft --answers action.json [--project-root .] [--json]
+  ${cmd} action revise --capability <name> --expected-digest <sha256:...> --answers authority.json
+  ${cmd} action preview --capability <name> --args proposal-args.json [--config ./synapsor.runner.json]
+  ${cmd} action activate --capability <name> --expected-digest <sha256:...> --confirmation 'ACTIVATE <sha256:...>' --actor <audit-label>
+  ${cmd} action activate --headless --capability <name> --expected-digest <sha256:...> --confirmation 'ACTIVATE <sha256:...>' --identity <operator> --identity-key <private.pem> --required-role <role> --reason <text>
   ${cmd} action validate ./synapsor/actions/billing.propose_refund_order.ts [--config ./synapsor.runner.json]
   ${cmd} action watch ./synapsor/actions/billing.propose_refund_order.ts
   ${cmd} action status [--json]
 
-Parse the restricted code-first TypeScript authoring subset without importing
-or executing agent-authored code. A successful validation writes a canonical,
-digest-addressed disabled draft and deterministic contract-test artifact.
-Editing or validating a draft never changes active Runner tools or source data.
+Open action review for the managed terminal control plane, or use the explicit
+draft/revise/preview commands in CI. The first reviewed revision is proposal-only:
+invocations create immutable proposals and cannot mutate source data. Execution
+or supervised automation requires a separately rehearsed, exact-digest revision.
 
-There is intentionally no action activate CLI command. Activation requires
-review of the exact digest and unresolved-authority checklist in the secured
-localhost Workbench. Activation, approval, apply, commit, and revert remain
-outside model-facing MCP tools.
+action suggest accepts a bounded JSON suggestion from an operator/coding agent,
+or asks OpenAI, Anthropic, or an OpenAI-compatible model after explicit structural-
+metadata egress acknowledgement. Suggestions may contain only intent plus exact
+candidate resource, operation, and field ids. They are immutable, Read-Boundary-
+digest-bound, non-authoritative, and become BLOCKED or STALE when proofs do not
+hold. Reviewing one merely preorders the normal human decisions; it never skips
+bounds, scope, conflict, approval, execution, rehearsal, or activation review.
+
+Interactive activation requires an exact successful rehearsal, exact digest
+confirmation, and an operator audit label. Noninteractive activation additionally
+requires --headless plus a short-lived, replay-safe signed_key or jwt_oidc operator
+decision carrying the reviewed role. An actor string or --yes is never sufficient.
+
+The validate/watch commands retain the restricted code-first compatibility path.
+They parse without importing or executing agent-authored code and write only
+canonical, digest-addressed disabled artifacts. Authoring, activation, approval,
+apply, policy editing, credentials, raw SQL, commit, and revert remain outside
+every model-facing MCP tool catalog.
 `,
     inspect: `Usage:
   ${cmd} inspect --from-env DATABASE_URL [--engine auto|postgres|mysql] [--schema public] [--json]

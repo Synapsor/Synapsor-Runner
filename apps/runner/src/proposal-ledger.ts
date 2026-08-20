@@ -1463,6 +1463,9 @@ export async function proposalsApprove(
   try {
     const resolvedProposalId = resolveProposalIdFromStore(proposalId, store);
     const proposal = requireLocalProposal(store, resolvedProposalId);
+    if (invocation.expectedProposalHash && proposal.proposal_hash !== invocation.expectedProposalHash) {
+      throw new Error("PROPOSAL_CHANGED: reload the proposal before recording this approval decision.");
+    }
     if (!invocation.quiet && !args.includes("--json")) {
       const evidence = store.getEvidenceBundle(proposal.change_set.evidence.bundle_id);
       process.stdout.write(formatProposalDetail(proposal, evidence?.items.length));
@@ -1578,32 +1581,57 @@ function enqueueApprovedProposalForSupervisedWorker(
 }
 
 
-export async function proposalsReject(args: string[]): Promise<number> {
+export async function proposalsReject(
+  args: string[],
+  invocation: TrustedOperatorInvocation = {},
+): Promise<number> {
   const proposalId = positional(args, 0);
   if (!proposalId) throw new Error("proposals reject requires <proposal_id>");
-  const reason = optionalArg(args, "--reason");
+  const reason = invocation.decision?.reason ?? optionalArg(args, "--reason");
   if (!reason) throw new Error("proposals reject requires --reason <text>");
   const storePath = localStorePath(args);
   const configPath = runnerConfigPath(args);
   const config = await optionalRuntimeConfig(configPath);
   assertLocalGovernanceMutationAllowed(config, "proposals reject");
   if (config && runtimeStoreBridgeRequired(args, config)) {
-    return withSharedPostgresRuntimeStoreBridge(args, config, `proposals reject ${proposalId}`, (bridgeStorePath) => proposalsReject(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
+    return withSharedPostgresRuntimeStoreBridge(
+      args,
+      config,
+      `proposals reject ${proposalId}`,
+      (bridgeStorePath) => proposalsReject(argsWithRuntimeStoreBridge(args, bridgeStorePath), invocation),
+    );
   }
   assertNoRuntimeStoreForLocalMutation(config, "proposals reject", args);
   if (sharedPostgresLedgerMirrorRequested(args, config)) {
-    return withSharedPostgresLedgerMirror(args, storePath, `proposals reject ${proposalId}`, () => proposalsReject(withoutSharedPostgresLedgerMirror(args)), config);
+    return withSharedPostgresLedgerMirror(
+      args,
+      storePath,
+      `proposals reject ${proposalId}`,
+      () => proposalsReject(withoutSharedPostgresLedgerMirror(args), invocation),
+      config,
+    );
   }
   const store = await openLocalStore(args);
   try {
     const resolvedProposalId = resolveProposalIdFromStore(proposalId, store);
     const proposal = requireLocalProposal(store, resolvedProposalId);
-    if (!args.includes("--json")) {
+    if (invocation.expectedProposalHash && proposal.proposal_hash !== invocation.expectedProposalHash) {
+      throw new Error("PROPOSAL_CHANGED: reload the proposal before recording this rejection decision.");
+    }
+    if (!invocation.quiet && !args.includes("--json")) {
       const evidence = store.getEvidenceBundle(proposal.change_set.evidence.bundle_id);
       process.stdout.write(formatProposalDetail(proposal, evidence?.items.length));
     }
     await confirmDangerousAction(args, `Reject proposal ${resolvedProposalId}?`);
-    const identity = await operatorIdentityForDecision({ args, config, configPath, proposal, action: "reject", reason });
+    const identity = await operatorIdentityForDecision({
+      args,
+      config,
+      configPath,
+      proposal,
+      action: "reject",
+      reason,
+      decision: invocation.decision,
+    });
     const updated = store.rejectProposal(resolvedProposalId, {
       actor: identity.subject,
       proposal_hash: proposal.proposal_hash,
@@ -1622,7 +1650,9 @@ export async function proposalsReject(args: string[]): Promise<number> {
       identity_verified: identity.verified,
       required_role: proposal.change_set.approval.required_role,
     });
-    process.stdout.write(args.includes("--json") ? `${JSON.stringify(updated, null, 2)}\n` : `rejected ${updated.proposal_id}\n`);
+    if (!invocation.quiet) {
+      process.stdout.write(args.includes("--json") ? `${JSON.stringify(updated, null, 2)}\n` : `rejected ${updated.proposal_id}\n`);
+    }
     return 0;
   } finally {
     store.close();

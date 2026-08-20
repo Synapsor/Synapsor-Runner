@@ -34,10 +34,11 @@ activates an action or approves, applies, commits, or reverts source data.
    visibility, bounds, conflict handling, approval, or executor authority.
 8. Report the disabled draft digest, exact generated tests, pending live tests,
    and unresolved authority. Do not claim the action is active.
-9. Tell the developer to open the secured localhost Workbench personally, run
-   the non-mutating staging preview, review the exact Data PR and digest, and
-   activate it there. There is intentionally no `action activate` CLI or MCP
-   tool.
+9. Tell the developer to use the human control plane (`action review` or the
+   secured localhost Workbench), run the non-mutating rehearsal, and review the
+   exact digest. There is intentionally no model-facing `action activate` MCP tool.
+   Interactive CLI/Workbench activation is human-owned; headless CLI
+   activation requires a replay-safe cryptographically verified operator.
 
 Never modify `.synapsor/active`, the active contract reference, Cursor MCP
 configuration, runtime credentials, approval identity, or source data. Never

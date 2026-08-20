@@ -72,7 +72,8 @@ export type OperatorDecision = {
     | "attention_acknowledge"
     | "notification_replay"
     | "boundary_review"
-    | "boundary_activate";
+    | "boundary_activate"
+    | "action_activate";
   proposal_id: string;
   proposal_version: number;
   proposal_hash: string;
