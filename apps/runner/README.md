@@ -53,10 +53,10 @@ inspects schema metadata, not source rows. It proposes conservative read access
 that grants the agent nothing until you review and activate it. You do not need
 to write DSL or JSON to begin.
 
-To use the preview Workbench instead:
+With `DATABASE_URL`, use the CLI:
 
 ```bash
-synapsor-runner start --from-env DATABASE_URL
+synapsor-runner start --cli --from-env DATABASE_URL
 ```
 
 For automation, run `synapsor-runner onboard --help`; missing decisions are reported together.
