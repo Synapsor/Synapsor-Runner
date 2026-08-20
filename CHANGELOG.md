@@ -1,6 +1,43 @@
 # Changelog
 
-## 1.7.1 (unreleased)
+## 1.7.11 (unreleased)
+
+### Ask Usability And Reviewed Exact Grouping
+
+- Makes the local `synapsor>` intent guard reject positive contradictions instead
+  of treating unfamiliar business wording as an authorization failure. A plan
+  still refuses before source execution when the question names another reviewed
+  resource or field, ambiguously matches several reviewed fields, substitutes a
+  relationship, adds an unrequested grouping, conflicts with a reviewed enum, or
+  replaces a requested distinct count with a row count. When no contradiction is
+  present, the model's reviewed plan proceeds to the same Explore validator,
+  tenant/principal scope, suppression, budgets, and drift checks used by MCP.
+  Native OpenAI and Anthropic paths share the same behavior and bounded retry.
+- Makes single-organization boundary authoring describe its real authority in the
+  terminal and Workbench. Tables show the fixed reviewed organization and state
+  that no tenant column or tenant predicate is required; stale multi-tenant
+  remediation is suppressed, while record identity and every other review gate
+  remain unchanged.
+- Generalizes the explicit exact numeric-grouping review into exact grouping for
+  safe scalar field types. Numeric, date/time, UUID, boolean, enum, and explicitly
+  reviewed text fields can be promoted with `/access`, Workbench, or
+  `--allow-exact-grouping`. Automatic defaults remain conservative. Identity,
+  foreign/reference, tenant/principal, sensitive, binary, and structural fields
+  remain ineligible, and activation, cohort suppression, response/group limits,
+  timeouts, extraction, query, and differencing budgets remain mandatory. The
+  grant is removed for fresh review when the inspected datatype changes. The
+  1.7.1 flags and stored review key remain backward-compatible.
+- Renders bounded `**bold**` and `__bold__` emphasis in terminal model
+  interpretations instead of printing Markdown markers. Non-color and piped
+  output receives plain text, and terminal-control sanitization remains in front
+  of styling.
+
+Prepared package versions: `@synapsor/runner@1.7.11` and
+`synapsor-runner@1.7.11`. Spec and DSL remain at their already-published
+additive authority versions, `@synapsor/spec@1.10.0` and
+`@synapsor/dsl@1.10.0`; this patch adds no new public plan grammar.
+
+## 1.7.1 (published 2026-08-20)
 
 ### Ask And Upgrade Recovery Corrections
 

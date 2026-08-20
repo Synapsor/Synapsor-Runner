@@ -17,6 +17,7 @@ import {
   databaseServerCompatibilityForLock,
   deactivateExplorationBoundary,
   emptyReviewOverrides,
+  exactGroupingDataTypeSupported,
   explorationBoundaryCandidateDigest,
   generationLockSharedFactsDigest,
   loadActivatedExplorationBoundary,
@@ -729,7 +730,7 @@ describe("Auto Boundary compiler", () => {
     );
   });
 
-  it("keeps numeric grouping conservative until a safe exact dimension is explicitly reviewed", () => {
+  it("keeps scalar grouping conservative until a safe exact dimension is explicitly reviewed", () => {
     const inspection = churnInspection();
     const table = inspection.tables[0]!;
     table.columns.push(column("started_year", "integer"));
@@ -782,6 +783,27 @@ describe("Auto Boundary compiler", () => {
     expect(buildAutoBoundary({ ...input, overrides: reconstructed }).exploration_boundary)
       .toEqual(reviewed.exploration_boundary);
 
+    const unchanged = pruneAutoBoundaryReviewOverrides(inspection, overrides, {
+      project: input.project,
+      previousBoundary: reviewed.exploration_boundary,
+    });
+    expect(unchanged.overrides.resources["public.subscriptions"]?.exact_numeric_grouping)
+      .toHaveProperty("started_year");
+    expect(unchanged.removed).toEqual([]);
+
+    const scalarRetyped = structuredClone(inspection);
+    scalarRetyped.tables[0]!.columns
+      .find((field) => field.name === "started_year")!.data_type = "date";
+    const staleApproval = pruneAutoBoundaryReviewOverrides(scalarRetyped, overrides, {
+      project: input.project,
+      previousBoundary: reviewed.exploration_boundary,
+    });
+    expect(staleApproval.overrides.resources["public.subscriptions"]?.exact_numeric_grouping)
+      .toBeUndefined();
+    expect(staleApproval.removed).toContain(
+      "public.subscriptions.started_year: reviewed exact grouping was removed because the field type changed from integer to date; review the new type explicitly",
+    );
+
     const removedOverrides = applyManagedBoundaryReviewDecision(overrides, {
       kind: "exact_numeric_grouping",
       resource_id: "public.subscriptions",
@@ -795,16 +817,128 @@ describe("Auto Boundary compiler", () => {
       .exploration_boundary.pack.resources[0]!.groupable_fields).not.toContain("started_year");
 
     const retyped = structuredClone(inspection);
-    retyped.tables[0]!.columns.find((field) => field.name === "started_year")!.data_type = "text";
+    retyped.tables[0]!.columns.find((field) => field.name === "started_year")!.data_type = "jsonb";
     const pruned = pruneAutoBoundaryReviewOverrides(retyped, overrides, {
       project: input.project,
     });
     expect(pruned.overrides.resources["public.subscriptions"]?.exact_numeric_grouping)
       .toBeUndefined();
-    expect(pruned.removed.join("\n")).toMatch(/started_year.*not numeric/i);
+    expect(pruned.removed.join("\n")).toMatch(/started_year.*cannot be represented faithfully/i);
   });
 
-  it("refuses exact numeric grouping for identity, reference, trusted-scope, and sensitive fields", () => {
+  it("allows exact grouping for explicitly reviewed non-numeric scalar types", () => {
+    const inspection = churnInspection();
+    const table = inspection.tables[0]!;
+    table.columns.push(
+      column("commissioned_on", "date"),
+      column("deployment_wave", "uuid"),
+    );
+    table.suggestions.default_visible_columns.push("commissioned_on", "deployment_wave");
+    const input = {
+      inspection,
+      project: projectSummary("/workspace/exact-scalar-grouping"),
+      sourceEnv: "DATABASE_URL",
+    };
+    const baseline = buildAutoBoundary(input);
+    expect(baseline.exploration_boundary.pack.resources[0]!.groupable_fields)
+      .not.toEqual(expect.arrayContaining(["commissioned_on", "deployment_wave"]));
+
+    let overrides = emptyReviewOverrides();
+    for (const field of ["commissioned_on", "deployment_wave"]) {
+      overrides = applyManagedBoundaryReviewDecision(overrides, {
+        kind: "exact_numeric_grouping",
+        resource_id: "public.subscriptions",
+        field,
+        enabled: true,
+        actor: "analytics-owner@example.test",
+        reason: `${field} is an explicitly reviewed business dimension.`,
+        decided_at: "2026-08-20T12:00:00.000Z",
+      });
+    }
+    expect(buildAutoBoundary({ ...input, overrides })
+      .exploration_boundary.pack.resources[0]!.groupable_fields)
+      .toEqual(expect.arrayContaining(["commissioned_on", "deployment_wave"]));
+  });
+
+  it.each([
+    "smallint",
+    "integer",
+    "bigint",
+    "numeric(18,2)",
+    "double precision",
+    "boolean",
+    "date",
+    "time without time zone",
+    "timestamp with time zone",
+    "uuid",
+    "varchar(64)",
+    "text",
+    "enum",
+    "citext",
+  ])("treats %s as a faithfully representable scalar exact-grouping type", (dataType) => {
+    expect(exactGroupingDataTypeSupported(dataType)).toBe(true);
+  });
+
+  it.each([
+    "bytea",
+    "varbinary(255)",
+    "longblob",
+    "json",
+    "jsonb",
+    "xml",
+    "integer[]",
+    "record",
+    "int4range",
+    "daterange",
+    "tstzmultirange",
+    "geometry",
+    "geography(point,4326)",
+    "tsvector",
+    "vector(1536)",
+    "bit varying(64)",
+  ])("refuses %s as a structural or non-faithful exact-grouping type", (dataType) => {
+    expect(exactGroupingDataTypeSupported(dataType)).toBe(false);
+  });
+
+  it("requires an explicit exposure review before exact grouping unresolved free text", () => {
+    const inspection = churnInspection();
+    const table = inspection.tables[0]!;
+    table.columns.push(column("service_note", "text"));
+    table.suggestions.default_visible_columns.push("service_note");
+    const input = {
+      inspection,
+      project: projectSummary("/workspace/exact-reviewed-text-grouping"),
+      sourceEnv: "DATABASE_URL",
+    };
+    const groupingDecision = {
+      kind: "exact_numeric_grouping" as const,
+      resource_id: "public.subscriptions",
+      field: "service_note",
+      enabled: true,
+      actor: "analytics-owner@example.test",
+      reason: "This controlled text field contains a reviewed low-cardinality business vocabulary.",
+      decided_at: "2026-08-20T12:01:00.000Z",
+    };
+    const unreviewed = applyManagedBoundaryReviewDecision(emptyReviewOverrides(), groupingDecision);
+    expect(() => buildAutoBoundary({ ...input, overrides: unreviewed }))
+      .toThrow(/must first receive an explicit reviewed model or Runner-only exposure decision/i);
+
+    let reviewed = applyManagedBoundaryReviewDecision(emptyReviewOverrides(), {
+      kind: "field_exposure",
+      resource_id: "public.subscriptions",
+      field: "service_note",
+      exposure: "allow_reviewed_use",
+      actor: "analytics-owner@example.test",
+      reason: "The owner reviewed this bounded operational vocabulary and found no personal data.",
+      decided_at: "2026-08-20T12:00:00.000Z",
+    });
+    reviewed = applyManagedBoundaryReviewDecision(reviewed, groupingDecision);
+    expect(buildAutoBoundary({ ...input, overrides: reviewed })
+      .exploration_boundary.pack.resources[0]!.groupable_fields)
+      .toContain("service_note");
+  });
+
+  it("refuses exact grouping for identity, reference, trusted-scope, and sensitive fields", () => {
     const inspection = churnInspection();
     const table = inspection.tables[0]!;
     table.columns.find((field) => field.name === "id")!.data_type = "integer";
@@ -835,7 +969,7 @@ describe("Auto Boundary compiler", () => {
     expect(() => build(decision("id"))).toThrow(/record identity/i);
     expect(() => build(decision("tenant_id"))).toThrow(/trusted tenant/i);
     expect(() => build(decision("account_id"))).toThrow(/identifier-like/i);
-    expect(() => build(decision("risk_score"))).toThrow(/sensitive or unresolved/i);
+    expect(() => build(decision("risk_score"))).toThrow(/sensitive fields/i);
 
     let principalOverrides = applyManagedBoundaryReviewDecision(base, {
       kind: "principal_key",

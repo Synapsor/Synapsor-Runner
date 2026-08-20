@@ -1116,6 +1116,39 @@ describe("boundary rescan reconciliation", () => {
     }
   });
 
+  it("requires a fresh exact-grouping review when an eligible scalar field changes type", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-exact-group-type-rescan-"));
+    try {
+      const setup = await writeReviewedCommerceProject(root, false, undefined, "quantity");
+      const progress = (await loadBoundaryReviewContext(root)).progress;
+      expect(progress).toBeDefined();
+      expect(progress!.candidate.pack.resources.find(
+        (resource) => resource.id === "public.order_items",
+      )?.groupable_fields).toContain("quantity");
+
+      const changed = structuredClone(setup.inspection);
+      changed.tables.find((table) => table.name === "order_items")!
+        .columns.find((field) => field.name === "quantity")!.data_type = "date";
+
+      const preview = await prepareBoundaryRescan({ projectRoot: root, inspection: changed });
+      const entry = preview.report.boundaries[0]!;
+      expect(entry.changed_field_types).toContainEqual({
+        resource_id: "public.order_items",
+        field: "quantity",
+      });
+      expect(entry.pruned_review_inputs).toContain(
+        "public.order_items.quantity: reviewed exact grouping was removed because the field type changed from integer to date; review the new type explicitly",
+      );
+      expect(preview.selectedProgress.review_overrides.resources["public.order_items"]
+        ?.exact_numeric_grouping).toBeUndefined();
+      expect(preview.selectedProgress.candidate.pack.resources.find(
+        (resource) => resource.id === "public.order_items",
+      )?.groupable_fields).not.toContain("quantity");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("removes a dropped reviewed column while preserving unrelated resource decisions", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-dropped-field-rescan-"));
     try {
@@ -1436,6 +1469,7 @@ async function writeReviewedCommerceProject(
   root: string,
   activate = false,
   inspectionInput?: SchemaInspection,
+  exactGroupingField?: string,
 ): Promise<{
   inspection: SchemaInspection;
   activeDigest?: `sha256:${string}`;
@@ -1474,6 +1508,17 @@ async function writeReviewedCommerceProject(
     reason: "Allow bounded adaptive quantity groups without model-authored edges.",
     decided_at: "2026-08-08T00:00:00.000Z",
   });
+  if (exactGroupingField) {
+    overrides = applyManagedBoundaryReviewDecision(overrides, {
+      kind: "exact_numeric_grouping",
+      resource_id: "public.order_items",
+      field: exactGroupingField,
+      enabled: true,
+      actor: "owner@example.test",
+      reason: "This scalar is an explicitly reviewed exact business dimension.",
+      decided_at: "2026-08-08T00:00:00.000Z",
+    });
+  }
   const build = buildAutoBoundary({
     inspection,
     project,

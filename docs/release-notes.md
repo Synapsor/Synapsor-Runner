@@ -10,7 +10,35 @@ npx -y @synapsor/runner demo --quick
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
-## 1.7.1 (unreleased)
+## 1.7.11 (unreleased)
+
+### Useful Ask With The Same Reviewed Boundary
+
+- Local `synapsor>` Ask now treats its intent check as a semantic contradiction
+  guard, not a second authorization grammar. It still refuses a plan that names
+  another reviewed resource or field, an ambiguous correction, an unrequested
+  grouping, a relationship substitution, an enum conflict, or a row count in
+  place of a requested distinct count. Unknown domain wording alone may proceed
+  through the ordinary Explore validator and all of its scope, suppression,
+  drift, and budget controls. OpenAI and Anthropic use the same logic.
+- Single-organization CLI and Workbench review now state that the fixed reviewed
+  organization needs no tenant column or predicate. Multi-tenant remediation is
+  no longer shown for those boundaries.
+- Reviewers can explicitly enable exact grouping for eligible scalar fields with
+  `X`, Workbench, or `--allow-exact-grouping`. This includes numeric, date/time,
+  UUID, boolean, enum, and explicitly reviewed text fields without changing or
+  casting the source datatype. Identity, reference, scope, sensitive, binary,
+  and structural fields remain refused. A datatype change removes the grant for
+  explicit re-review. Existing 1.7.1 numeric flags and review artifacts remain
+  compatible.
+- Terminal model interpretations render bounded bold emphasis without printing
+  Markdown stars. `NO_COLOR` and non-TTY output remain plain text.
+
+Prepared package versions: `@synapsor/runner@1.7.11` and
+`synapsor-runner@1.7.11`. Spec and DSL remain `1.10.0` because this patch adds
+no public plan grammar.
+
+## 1.7.1 (published 2026-08-20)
 
 ### Ask Compatibility And Upgrade Recovery
 

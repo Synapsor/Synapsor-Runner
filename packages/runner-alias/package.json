@@ -1,6 +1,6 @@
 {
   "name": "synapsor-runner",
-  "version": "1.7.1",
+  "version": "1.7.11",
   "description": "Short CLI for reviewed Postgres/MySQL agent access and guarded changes without model-authored SQL or commit authority.",
   "license": "Apache-2.0",
   "type": "module",
@@ -13,7 +13,7 @@
     "LICENSE"
   ],
   "dependencies": {
-    "@synapsor/runner": "workspace:1.7.1"
+    "@synapsor/runner": "workspace:1.7.11"
   },
   "engines": {
     "node": ">=22.13.0"

@@ -887,7 +887,18 @@ function styledHeading(
 }
 
 function styledModelProse(value: string, ansi: boolean): string {
-  return ansi ? `\u001b[3m${value}\u001b[0m` : value;
+  const emphasis = /\*\*([^*\n]+)\*\*|__([^_\n]+)__/g;
+  if (!ansi) return value.replace(emphasis, (_match, stars, underscores) => stars ?? underscores);
+  let rendered = "";
+  let offset = 0;
+  for (const match of value.matchAll(emphasis)) {
+    const index = match.index ?? 0;
+    rendered += value.slice(offset, index);
+    rendered += `\u001b[1;3m${match[1] ?? match[2]}\u001b[0m\u001b[3m`;
+    offset = index + match[0].length;
+  }
+  rendered += value.slice(offset);
+  return `\u001b[3m${rendered}\u001b[0m`;
 }
 
 function styledSystemStatus(value: string, ansi: boolean): string {

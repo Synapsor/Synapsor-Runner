@@ -2217,6 +2217,79 @@ export default defineCapability({
     }
   });
 
+  it("shows whole-organization authority in Workbench without tenant-column guidance", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-single-org-"));
+    const inspection = boundaryReviewInspection();
+    const table = inspection.tables[0]!;
+    table.columns = table.columns.filter((field) => field.name !== "tenant_id");
+    table.suggestions.tenant_columns = [];
+    table.suggestions.default_visible_columns = table.suggestions.default_visible_columns
+      .filter((field) => field !== "tenant_id");
+    table.row_level_security = false;
+    table.row_level_security_policies = [];
+    table.role_posture!.row_security_effective_for_current_role = false;
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root: tempDir,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+      singleOrganization: { organizationId: "university-ir-dev" },
+    });
+    expect(build.exploration_boundary).toMatchObject({
+      organization_scope: {
+        mode: "single_organization",
+        organization_id: "university-ir-dev",
+      },
+      pack: { resources: [expect.objectContaining({ id: "public.members" })] },
+    });
+    const written = await writeAutoBoundaryArtifacts({ projectRoot: tempDir, build });
+    const guided = await initializeGuidedProject({
+      projectRoot: tempDir,
+      build,
+      runnerVersion: "1.7.11",
+      instantOnboarding: true,
+    });
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      boundaryRoot: written.root,
+      configPath: guided.config_path,
+      storePath: guided.store_path,
+      token: "single-org-token",
+      csrfToken: "single-org-csrf",
+      instantOnboarding: true,
+    });
+    try {
+      const boundary = await getJson(
+        `http://${server.host}:${server.port}/api/boundary`,
+        { "x-synapsor-ui-token": "single-org-token" },
+      );
+      expect(boundary.draft.organization_scope).toMatchObject({
+        mode: "single_organization",
+        organization_id: "university-ir-dev",
+      });
+      expect(boundary.review.resources[0]).toMatchObject({
+        id: "public.members",
+        organization_scope: {
+          mode: "single_organization",
+          organization_id: "university-ir-dev",
+        },
+      });
+      expect(boundary.review.resources[0]).not.toHaveProperty("scope_resolution_guidance");
+      expect(JSON.stringify(boundary.review.resources[0])).not.toMatch(
+        /Direct tenant scope unavailable|add.*tenant column/i,
+      );
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("reviews a mandatory derived tenant path through the Workbench route", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-derived-scope-"));
     const inspection = derivedBoundaryReviewInspection();

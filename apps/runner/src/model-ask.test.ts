@@ -3946,6 +3946,109 @@ describe("Workbench BYOM Ask", () => {
     expect(requests).toBe(2);
   });
 
+  it.each(["openai", "anthropic"] as const)(
+    "accepts an authorized reviewed plan when %s business wording is unknown but does not contradict the catalog",
+    async (provider) => {
+      let exploreCalls = 0;
+      const turbineResource = {
+        id: "energy.wind_turbines",
+        label: "Wind turbines",
+        fields: [{ id: "maintenance_mode", label: "Maintenance mode" }],
+        groupable_fields: ["maintenance_mode"],
+        aggregate_measure_functions: {},
+        operator_review_metadata: { boundary_resource_count: 2 },
+      };
+      const otherResource = {
+        id: "energy.weather_readings",
+        label: "Weather readings",
+        fields: [{ id: "condition", label: "Condition" }],
+        groupable_fields: ["condition"],
+        aggregate_measure_functions: {},
+      };
+      const gateway: AskToolGateway = {
+        mode: "authoring",
+        listTools: () => authoringTools,
+        callTool: async () => {
+          exploreCalls += 1;
+          return {
+            ok: true,
+            value: {
+              ok: true,
+              data: [{ maintenance_mode: "preventive", measure_0: 12 }],
+              source_database_changed: false,
+            },
+          };
+        },
+        describeOperatorMetadata: async (args) => ({
+          ok: true,
+          value: {
+            ok: true,
+            resources: args.resource ? [turbineResource] : [turbineResource, otherResource],
+            next_cursor: args.resource ? undefined : null,
+            source_database_changed: false,
+          },
+        }),
+        close: async () => undefined,
+      };
+      const session = new WorkbenchAskSession();
+      session.configure(provider === "openai" ? {
+        provider,
+        model: "gpt-5.6-luna",
+        api_key: "openai-session-key",
+        authority_digest: askToolSurfaceDigest(authoringTools),
+        egress_acknowledged: true,
+      } : {
+        provider,
+        model: "claude-test",
+        api_key: "anthropic-session-key",
+        authority_digest: askToolSurfaceDigest(authoringTools),
+        egress_acknowledged: true,
+      });
+      const plan = {
+        kind: "aggregate",
+        resource: "energy.wind_turbines",
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "maintenance_mode" }],
+      };
+      let requests = 0;
+      const result = await session.run("Show me facilities by service strategy.", gateway, {
+        requestJson: async () => {
+          requests += 1;
+          if (provider === "openai") {
+            return requests === 1
+              ? openAiToolCall("business_wording_plan", "app__explore_data", { plan })
+              : openAiText("The reviewed service-strategy result is available.");
+          }
+          return requests === 1
+            ? {
+                status: 200,
+                body: {
+                  content: [{
+                    type: "tool_use",
+                    id: "business_wording_plan_anthropic",
+                    name: "app__explore_data",
+                    input: { plan },
+                  }],
+                },
+              }
+            : {
+                status: 200,
+                body: {
+                  content: [{ type: "text", text: "The reviewed service-strategy result is available." }],
+                },
+              };
+        },
+      });
+
+      expect(result.tool_calls).toEqual([
+        expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
+      ]);
+      expect(result.tool_calls[0]?.error_code).not.toBe("ASK_PLAN_INTENT_MISMATCH");
+      expect(exploreCalls).toBe(1);
+      expect(requests).toBe(2);
+    },
+  );
+
   it("refuses an exact dimension contradiction after one bounded correction opportunity", async () => {
     let exploreCalls = 0;
     const gateway: AskToolGateway = {
@@ -4402,7 +4505,7 @@ describe("Workbench BYOM Ask", () => {
     expect(exploreCalls).toBe(1);
   });
 
-  it("does not resolve a bare suffix unless the question names the reviewed resource", async () => {
+  it("accepts a bare reviewed suffix when the focused catalog has one possible resource", async () => {
     let exploreCalls = 0;
     const gateway: AskToolGateway = {
       mode: "authoring",
@@ -4434,21 +4537,27 @@ describe("Workbench BYOM Ask", () => {
       authority_digest: askToolSurfaceDigest(authoringTools),
       egress_acknowledged: true,
     });
+    let requests = 0;
     const result = await session.run("Break down the reviewed records by mode.", gateway, {
-      requestJson: async () => openAiToolCall("unnamed_resource_suffix", "app__explore_data", {
-        plan: {
-          kind: "aggregate",
-          resource: "public.shipments",
-          measures: [{ function: "count" }],
-          dimensions: [{ field: "carrier_mode" }],
-        },
-      }),
+      requestJson: async () => {
+        requests += 1;
+        return requests === 1
+          ? openAiToolCall("unnamed_resource_suffix", "app__explore_data", {
+              plan: {
+                kind: "aggregate",
+                resource: "public.shipments",
+                measures: [{ function: "count" }],
+                dimensions: [{ field: "carrier_mode" }],
+              },
+            })
+          : openAiText("The reviewed breakdown by carrier mode is available.");
+      },
     });
 
     expect(result.tool_calls).toEqual([
-      expect.objectContaining({ error_code: "ASK_PLAN_INTENT_MISMATCH", status: "refused" }),
+      expect.objectContaining({ tool: "app.explore_data", status: "ok" }),
     ]);
-    expect(exploreCalls).toBe(0);
+    expect(exploreCalls).toBe(1);
   });
 
   it("accepts an unqualified suffix when another reviewed measure uniquely anchors the resource", async () => {
@@ -5082,7 +5191,8 @@ describe("Workbench BYOM Ask", () => {
     });
 
     expect(result.tool_calls[0]?.result).toMatchObject({ intent_mismatch_kind: "unavailable" });
-    expect(result.tool_calls[0]?.result.message).toContain("No resource substitution occurred");
+    expect(result.tool_calls[0]?.result.message).toContain("no unambiguous reviewed Count unique field");
+    expect(result.tool_calls[0]?.result.message).toContain("will not replace a distinct count with a row count");
     expect(result.tool_calls[0]?.result.message).not.toContain("substituted reviewed data");
     expect(exploreCalls).toBe(0);
   });

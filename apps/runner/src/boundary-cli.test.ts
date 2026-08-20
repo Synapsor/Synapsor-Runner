@@ -647,6 +647,10 @@ describe("boundary operator-plane CLI", () => {
       expect(reviews.length).toBeGreaterThan(0);
       expect(reviews.every((resource) => resource.first_table_startable === true)).toBe(true);
       expect(reviews.every((resource) =>
+        resource.organization_scope?.mode === "single_organization"
+        && resource.organization_scope.organization_id === "internal-finance"
+        && resource.scope_resolution_guidance === undefined)).toBe(true);
+      expect(reviews.every((resource) =>
         resource.database_server_compatibility?.detected_version === "PostgreSQL 16"
         && resource.database_server_compatibility.tier === "full"
         && resource.database_server_compatibility.authority?.version_line === "16"))
@@ -4915,7 +4919,7 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 20_000);
 
-  it("stages exact numeric grouping without changing active authority until activation", async () => {
+  it("stages exact scalar grouping without changing active authority until activation", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-exact-numeric-grouping-"));
     const inspection = boundaryInspection();
     inspection.tables[0]!.columns.push({
@@ -4987,7 +4991,7 @@ describe("boundary operator-plane CLI", () => {
       await expect(boundaryReviewCommandInternal([
         "resource", "public.service_visits",
         "--project-root", root,
-        "--allow-exact-numeric-grouping", "started_year",
+        "--allow-exact-grouping", "started_year",
         "--actor", "analytics-owner",
         "--reason", "Calendar year is a safe, bounded operational dimension.",
         "--json",
@@ -5049,6 +5053,43 @@ describe("boundary operator-plane CLI", () => {
       });
       expect(view.fields.find((field) => field.name === "started_year")
         ?.exact_numeric_grouping_review_override).toMatchObject({ actor: "analytics-owner" });
+
+      let legacyAliasOutput = "";
+      const legacyStdout = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+        legacyAliasOutput += String(chunk);
+        return true;
+      });
+      await expect(boundaryReviewCommandInternal([
+        "resource", "public.service_visits",
+        "--project-root", root,
+        "--remove-exact-numeric-grouping", "started_year",
+        "--actor", "analytics-owner",
+        "--reason", "Verify the Runner 1.7.1 compatibility alias.",
+        "--json",
+      ], async () => inspection)).resolves.toBe(0);
+      legacyStdout.mockRestore();
+      const legacyAliasPreview = JSON.parse(legacyAliasOutput);
+      const legacyGroupingChange = legacyAliasPreview.semantic_diff
+        .analytical_operation_changes.find((change: { field: string }) =>
+          change.field === "started_year");
+      expect(legacyGroupingChange.before).toContain("group");
+      expect(legacyGroupingChange.after).not.toContain("group");
+
+      const retypedInspection = structuredClone(inspection);
+      retypedInspection.tables[0]!.columns
+        .find((field) => field.name === "started_year")!.data_type = "date";
+      const unrelatedAfterRetype = await prepareBoundaryResourceReviewMutation(root, {
+        resource_id: "public.service_visits",
+        metadata: { label: "Service visits" },
+        actor: "analytics-owner",
+        reason: "Add a reviewed display label without carrying stale field authority.",
+      }, async () => retypedInspection);
+      expect(unrelatedAfterRetype.candidate.pack.resources[0]!.groupable_fields)
+        .not.toContain("started_year");
+      expect(unrelatedAfterRetype.build.overrides.resources["public.service_visits"]
+        ?.exact_numeric_grouping).toBeUndefined();
+      expect((await loadActivatedExplorationBoundaries(root))[0]!
+        .pack.resources[0]!.groupable_fields).toContain("started_year");
 
       const removal = await prepareBoundaryResourceReviewMutation(root, {
         resource_id: "public.service_visits",
