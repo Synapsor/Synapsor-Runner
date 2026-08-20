@@ -146,6 +146,12 @@ names an unavailable entity or grouping and the model substitutes a different
 reviewed table or field, Runner returns `ASK_PLAN_INTENT_MISMATCH`. The
 substituted plan executes no source query, consumes no Explore query or
 differencing budget, and is never returned to the provider for a prose summary.
+Unfamiliar business wording by itself is not a contradiction. After Runner has
+checked the complete private catalog, a valid reviewed plan may proceed when the
+question does not positively name a different reviewed resource or field. The
+normal Explore validator remains authoritative for fields, operations, scope,
+suppression, drift, and budgets. This keeps Ask useful on unfamiliar domains
+without permitting a plausible answer to a clearly different question.
 Exact field IDs can be written with their original separators (`encounter_type`),
 hyphens (`encounter-type`), or spaces (`encounter type`). A reviewed field label
 is also valid intent evidence. A trailing term may be used when the question
@@ -628,7 +634,7 @@ latency but does not replace a suitable Runner request timeout.
 
 ## Tested Provider Matrix
 
-Status as of the unreleased 1.7.1 source:
+Status as of the unreleased 1.7.11 source:
 
 | Provider surface | Verification | Claim |
 | --- | --- | --- |

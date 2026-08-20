@@ -724,9 +724,17 @@ async function handleRequest(input: {
     const reviewForDisplay = {
       ...review,
       resources: review.resources.map((resource) => {
-        const guidance = blockedTenantScopeGuidance(resource);
+        const guidance = blockedTenantScopeGuidance({
+          ...resource,
+          ...(draft.organization_scope
+            ? { organization_scope: draft.organization_scope }
+            : {}),
+        });
         return {
           ...resource,
+          ...(draft.organization_scope
+            ? { organization_scope: structuredClone(draft.organization_scope) }
+            : {}),
           ...(guidance ? { scope_resolution_guidance: guidance } : {}),
           exact_numeric_grouping_eligibility: Object.fromEntries(
             resource.fields.map((field) => [
@@ -8338,6 +8346,7 @@ async function prepareAutoBoundaryRescan(input: {
         parsedEvidence: evidence.parsed,
         existingContracts: evidence.existingContracts,
         configuredTrustedContext,
+        previousBoundary: previousProgress?.candidate ?? oldDraft,
       },
     );
   const build = buildAutoBoundary({

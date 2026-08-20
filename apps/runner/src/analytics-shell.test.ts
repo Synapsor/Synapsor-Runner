@@ -1052,6 +1052,27 @@ describe("Synapsor Analytics shell", () => {
     expect(noQuery).toContain("No Runner data query was executed for this answer.");
   });
 
+  it("renders bounded model emphasis instead of printing Markdown markers", () => {
+    const plain = renderAnalyticsTurn(
+      turn("The **North region** leads, while __South__ follows."),
+      [],
+      100,
+      { ansi: false },
+    );
+    expect(plain).toContain("The North region leads, while South follows.");
+    expect(plain).not.toContain("**");
+    expect(plain).not.toContain("__South__");
+
+    const colored = renderAnalyticsTurn(
+      turn("The **North region** leads."),
+      [],
+      100,
+      { ansi: true },
+    );
+    expect(colored).toContain("\u001b[1;3mNorth region\u001b[0m\u001b[3m");
+    expect(colored).not.toContain("**North region**");
+  });
+
   it("honors NO_COLOR across the entire interactive answer", async () => {
     const previousNoColor = process.env.NO_COLOR;
     process.env.NO_COLOR = "1";

@@ -19,7 +19,7 @@ describe("Auto Boundary Workbench renderer", () => {
       ["reviewed relationships and visual map", ["Reviewed data map", "renderBoundaryGraphSvg", "Each reviewed join uses its own labeled connection lane", "boundary-field-matrix", "Canonical path ID"]],
       ["numeric bands", ["Add a fixed numeric band", "kind:\"numeric_band\""]],
       ["automatic numeric bands", ["Allow automatic numeric bands", "kind:\"auto_band\"", "raw edges"]],
-      ["reviewed exact numeric grouping", ["Exact numeric groups", "kind:\"exact_numeric_grouping\"", "It returns exact values; it does not create numeric bands"]],
+      ["reviewed exact grouping", ["Exact groups", "kind:\"exact_numeric_grouping\"", "It returns exact values; it does not create numeric bands"]],
       ["database capability tiers", ["Reviewed source release:", "Full reviewed grammar", "reviewed release line", "Automatic numeric bands are unavailable on", "This unavailable grammar is not shown to the model", "Supported limited database grammar", "schema_check_constraints===false", "automatic_numeric_bands===false", "Database capability changes"]],
       ["reviewed relative UTC windows", ["Reviewed UTC window", "Reviewed relative UTC window", "Exact UTC date ranges", "Operator-only resolved UTC window", "time_window", "compare_to"]],
       ["named and post-suppression measures", ["Add a named derived metric", "Add a post-suppression calculation", "kind:\"derived_measure\""]],

@@ -76,4 +76,32 @@ describe("blocked tenant-scope guidance", () => {
       relationships: [],
     })).toBeUndefined();
   });
+
+  it("does not request tenant structure for a reviewed single-organization boundary", () => {
+    const input = {
+      id: "librarydb.loan_events",
+      organization_scope: {
+        mode: "single_organization" as const,
+        organization_id: "university-ir-dev",
+        acknowledgement: "all_rows_belong_to_one_organization" as const,
+      },
+      tenant_key: {
+        candidates: [],
+        evidence: [],
+        alternatives_considered: [],
+        confidence: "low" as const,
+        confirmation_required: true,
+        safety_consequence: "No per-row tenant predicate is needed.",
+        blocked_reason: "no reviewed tenant column is available",
+      },
+      derived_tenant_scope: {
+        candidates: [],
+        confirmation_required: true as const,
+        safety_consequence: "No per-row tenant predicate is needed.",
+      },
+      relationships: [],
+    };
+
+    expect(blockedTenantScopeGuidance(input)).toBeUndefined();
+  });
 });

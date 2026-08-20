@@ -90,7 +90,7 @@ Scoped Aggregate Explore reuses and extends this suppression machinery. Its
 reviewed boundary additionally fixes aggregate-safe measures,
 `count_distinct` identifiers, numeric dispersion, missing-data measures,
 reviewer-named derived measures, fixed numeric bands, reviewer-approved
-automatic numeric-band methods, explicitly reviewed exact numeric dimensions,
+automatic numeric-band methods, explicitly reviewed exact scalar dimensions,
 hour through year and day-of-week buckets,
 typed filters, up to three activated relationship paths
 (one or two proven many-to-one links per path by default, or three after an
@@ -126,16 +126,23 @@ model output or evidence. Fixed and automatic band variants consume the same
 root-resource differencing allowance. The policy is off until a reviewer saves
 and activates it through the `G` analytics editor in CLI or Workbench.
 
-Exact numeric grouping is a different, narrower authoring decision for values
-that are already discrete business dimensions, such as a calendar year stored
-as an integer. It stays off by default and must be enabled per field with `X`
-in `/access`, **Exact numeric groups** in Workbench, or the additive
-`--allow-exact-numeric-grouping` review flag. Primary keys, foreign/reference
-columns, tenant/principal keys, sensitive fields, and unavailable fields cannot
-receive the grant. It emits an ordinary exact `GROUP BY`, not a banding `CASE`,
-and remains subject to cohort suppression, maximum groups/top-N, response
-limits, timeout, query/extraction, and differencing budgets. Use bands rather
-than exact grouping for continuous or high-cardinality values.
+Exact grouping is a different, narrower authoring decision for scalar values
+that are meaningful discrete business dimensions, such as a calendar year
+stored as an integer, a commissioning date, a UUID-backed category, or a
+reviewed text vocabulary. It stays off unless the field is already a safe
+automatic category or a reviewer enables it with `X` in `/access`, **Exact
+groups** in Workbench, or the additive `--allow-exact-grouping` review flag.
+Primary keys, foreign/reference columns, tenant/principal keys, sensitive
+fields, and binary or structural values cannot receive the grant. Unresolved
+text needs an explicit Model + Runner or Runner-only exposure review first. It
+emits an ordinary exact `GROUP BY` over the original database column, not a cast
+or banding `CASE`, and remains subject to cohort suppression, maximum
+groups/top-N, response limits, timeout, query/extraction, and differencing
+budgets. Use bands rather than exact grouping for continuous or high-cardinality
+values. The 1.7.1 `--allow-exact-numeric-grouping` and removal flags remain
+accepted as compatibility aliases. The approval is bound to the inspected
+datatype. If that datatype changes, rescan removes the grant and requires a new
+review even when the replacement datatype is also an eligible scalar.
 
 Reviewers can save ratio, percentage, and per-unit definitions assembled from
 reviewed base aggregates. They can also save running total, rank, lag change,

@@ -2448,6 +2448,16 @@ function explorePlanIntentMismatch(
         + `--count-distinct-fields ${countUniqueField.id}; the model cannot change this permission.`,
     };
   }
+  const planMeasures = Array.isArray(plan.measures) ? plan.measures.filter(isRecord) : [];
+  if (/\b(?:unique|distinct)\b/u.test(normalizedQuestion)
+    && !countUniqueField
+    && planMeasures.some((measure) => measure.function === "count")) {
+    return {
+      kind: "unavailable",
+      message: `The question requests a unique or distinct entity, but ${resource.id} has no unambiguous reviewed Count unique field matching that entity. `
+        + "Runner will not replace a distinct count with a row count. Review and name the intended Count unique field, or ask for the total row count explicitly.",
+    };
+  }
   const subject = explicitQuestionEntity(normalizedQuestion);
   const subjectMatchesPlanDimension = subject
     ? questionEntityMatchesReviewedPlanDimension(subject, plan, resource)
@@ -2465,17 +2475,38 @@ function explorePlanIntentMismatch(
   if (subject
     && !entityMatchesPlan
     && !genericQuestionEntity(subject, knownResources)) {
-    if (operatorBoundaryResourceCount(resource) === 1) {
+    const selectedResourceNames = resourceNameVariants(
+      resource.id,
+      resource.id.split(".").at(-1),
+      resource.label,
+    );
+    const strictlyExtendsSelectedResource = questionEntityStrictlyExtendsNames(
+      subject,
+      selectedResourceNames,
+    );
+    const reviewedCorrection = options.catalogResources
+      ? reviewedResourceCorrection(subject, knownResources)
+      : undefined;
+    const namesDifferentReviewedResource = reviewedCorrection !== undefined
+      && reviewedCorrection !== resource.id;
+    if (strictlyExtendsSelectedResource || namesDifferentReviewedResource) {
       return {
-        kind: "unavailable",
-        message: `The boundary contains only ${resource.id}, and ${JSON.stringify(subject)} does not name that resource or an available reviewed Count unique field. `
-          + "No resource substitution occurred. Review the requested field or ask about an available field on this resource.",
+        kind: "resource",
+        message: `The question explicitly names ${JSON.stringify(subject)}, but the plan selected resource ${resource.id}.`,
       };
     }
-    return {
-      kind: "resource",
-      message: `The question explicitly names ${JSON.stringify(subject)}, but the plan selected resource ${resource.id}.`,
-    };
+    // In a multi-resource boundary, load the complete private catalog once
+    // before deciding that unfamiliar business wording is merely unknown.
+    // After that lookup, absence of a reviewed vocabulary match is not a
+    // contradiction. Explore still validates every resource, field, scope,
+    // operation, and budget before source execution.
+    if (options.catalogResources === undefined
+      && operatorBoundaryResourceCount(resource) !== 1) {
+      return {
+        kind: "resource",
+        message: `Runner needs the complete reviewed catalog to verify whether ${JSON.stringify(subject)} names another resource.`,
+      };
+    }
   }
 
   const enumIntent = reviewedEnumIntentCheck(normalizedQuestion, plan, resource);
@@ -2498,6 +2529,7 @@ function explorePlanIntentMismatch(
         plan,
         enumFilteredFields: enumIntent.filteredFields,
         enumGroupedFields: enumIntent.groupedFields,
+        catalogResources: options.catalogResources,
       });
       if (mismatch) return relationshipDimensionMismatch(normalizedQuestion, resource, mismatch);
     }
@@ -3274,6 +3306,7 @@ function planDimensionIntentMismatch(
     plan?: Record<string, unknown>;
     enumFilteredFields?: Set<string>;
     enumGroupedFields?: Set<string>;
+    catalogResources?: Record<string, unknown>[];
   } = {},
 ): string | undefined {
   const genericMismatch = (field: string) =>
@@ -3285,9 +3318,11 @@ function planDimensionIntentMismatch(
     const named = questionMentionsMetadataName(question, dimension.numeric_band)
       || questionMentionsMetadataName(question, band?.label)
       || (typeof band?.field === "string" && questionMentionsReviewedField(question, resource, band.field));
-    return named || questionSupportsImplicitReviewedDimension(question, options.plan)
-      ? undefined
-      : genericMismatch(dimension.numeric_band);
+    if (named || questionSupportsImplicitReviewedDimension(question, options.plan)) return undefined;
+    const namedDirectFields = reviewedDirectFieldsNamedInQuestion(question, resource);
+    return namedDirectFields.length > 0
+      ? `The question names reviewed field${namedDirectFields.length === 1 ? "" : "s"} ${namedDirectFields.join(", ")} on ${resource.id}, but the plan selected numeric band ${dimension.numeric_band}.`
+      : undefined;
   }
   if (isRecord(dimension.numeric_band) && typeof dimension.numeric_band.field === "string") {
     const automaticBand = dimension.numeric_band;
@@ -3296,12 +3331,14 @@ function planDimensionIntentMismatch(
         policy.field === automaticBand.field
         && safeStringList(policy.methods).includes(String(automaticBand.method)));
     if (!reviewed) return undefined;
-    return questionMentionsReviewedField(question, resource, automaticBand.field)
-      || questionSupportsImplicitReviewedDimension(question, options.plan)
-      ? undefined
-      : genericMismatch(automaticBand.field);
+    if (questionMentionsReviewedField(question, resource, automaticBand.field)
+      || questionSupportsImplicitReviewedDimension(question, options.plan)) return undefined;
+    const namedDirectFields = reviewedDirectFieldsNamedInQuestion(question, resource);
+    return namedDirectFields.length > 0 && !namedDirectFields.includes(automaticBand.field)
+      ? `The question names reviewed field${namedDirectFields.length === 1 ? "" : "s"} ${namedDirectFields.join(", ")} on ${resource.id}, but the plan selected automatic numeric band ${automaticBand.field}.`
+      : undefined;
   }
-  if (typeof dimension.field !== "string") return genericMismatch("(unknown)");
+  if (typeof dimension.field !== "string") return undefined;
   const relationship = typeof dimension.relationship === "string"
     && Array.isArray(resource.relationships)
     ? resource.relationships.filter(isRecord).find((candidate) => candidate.id === dimension.relationship)
@@ -3312,8 +3349,12 @@ function planDimensionIntentMismatch(
     : safeStringList(resource.groupable_fields).includes(dimension.field);
   if (!reviewed) return undefined;
   const fieldReference = `${dimension.relationship ?? ""}\u0000${dimension.field}`;
-  if (options.enumFilteredFields?.has(fieldReference)
-    || options.enumGroupedFields?.has(fieldReference)) return undefined;
+  if (options.enumFilteredFields?.has(fieldReference)) {
+    return explicitGroupingRequested(question)
+      ? undefined
+      : `The question uses reviewed field ${dimension.field} as a filter, but the plan also added it as an unrequested grouping dimension.`;
+  }
+  if (options.enumGroupedFields?.has(fieldReference)) return undefined;
   if (questionMentionsReviewedField(question, fieldOwner, dimension.field)) return undefined;
   if (!relationship && questionNamesSingleReviewedTimeField(question, dimension.field, resource)) {
     return undefined;
@@ -3371,6 +3412,25 @@ function planDimensionIntentMismatch(
     if (tokenResolution.kind === "ambiguous") {
       return `The question's field wording is ambiguous among reviewed fields ${tokenResolution.fields.join(", ")} on ${resource.id}; name one exact reviewed field or label.`;
     }
+    const groupingClause = explicitGroupingClause(question);
+    if (groupingClause && groupingClausePartiallyMatchesReviewedField(
+      groupingClause,
+      resource,
+      dimension.field,
+    )) {
+      return `The grouping phrase ${JSON.stringify(groupingClause)} only shares a generic suffix with reviewed field ${dimension.field} on ${resource.id}; name the exact reviewed field or label instead of relying on that partial match.`;
+    }
+    if (groupingClause && options.allowUnqualifiedTrailingField !== true) {
+      const resources = options.catalogResources ?? [];
+      const matchingResources = resources.filter((candidate) =>
+        reviewedTrailingFieldResolution(question, candidate, true).kind !== "none"
+        || reviewedUniqueFieldTokenResolution(question, candidate, true).kind !== "none"
+        || reviewedUniqueFuzzyFieldResolution(question, candidate, true).kind !== "none");
+      if (new Set(matchingResources.flatMap((candidate) =>
+        typeof candidate.id === "string" ? [candidate.id] : [])).size > 1) {
+        return `The question's grouping wording matches reviewed fields on more than one resource; name the intended reviewed resource and field or label.`;
+      }
+    }
   } else {
     const target = typeof relationship.target_resource === "string"
       ? relationship.target_resource.split(".").at(-1)?.toLowerCase() ?? ""
@@ -3392,9 +3452,29 @@ function planDimensionIntentMismatch(
     }
     return genericMismatch(dimension.field);
   }
-  return questionSupportsImplicitReviewedDimension(question, options.plan)
-    ? undefined
-    : genericMismatch(dimension.field);
+  if (!explicitGroupingRequested(question)
+    && !questionSupportsImplicitReviewedDimension(question, options.plan)) {
+    return `The plan added reviewed dimension ${dimension.field} on ${resource.id}, but the question did not request a grouping or comparison.`;
+  }
+  // A reviewed plan dimension with no contradictory catalog match is a model
+  // interpretation, not an authorization failure. This guard rejects positive
+  // conflicts above; the shared Explore path remains the authority boundary.
+  return undefined;
+}
+
+function groupingClausePartiallyMatchesReviewedField(
+  groupingClause: string,
+  owner: Record<string, unknown>,
+  field: string,
+): boolean {
+  const clause = normalizedEntityName(groupingClause);
+  if (!clause) return false;
+  const names = [field, ...reviewedFieldLabels(owner, field)]
+    .map(normalizedEntityName)
+    .filter(Boolean);
+  if (names.some((name) => clause === name)) return false;
+  return names.some((name) => trailingNameTerms(name).some((suffix) =>
+    clause !== suffix && clause.endsWith(` ${suffix}`)));
 }
 
 type OperatorReviewField = {

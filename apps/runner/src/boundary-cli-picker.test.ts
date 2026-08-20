@@ -1673,7 +1673,7 @@ describe("boundary review terminal picker", () => {
     await expect(edited).resolves.toBe("back");
   });
 
-  it("offers reviewed exact numeric grouping without overflowing an 80x12 terminal", async () => {
+  it("offers reviewed exact grouping without overflowing an 80x12 terminal", async () => {
     const { input, output } = fakeTerminal(80, 12);
     const view = reviewView();
     const template = view.fields[0]!;
@@ -1687,7 +1687,7 @@ describe("boundary review terminal picker", () => {
       evidence: ["database column started_year integer"],
     });
     view.exact_numeric_grouping_eligibility = {
-      outcome: { eligible: false, reasons: ["the inspected database type is not numeric"] },
+      outcome: { eligible: false, reasons: ["the field is already a reviewed grouping dimension"] },
       started_year: { eligible: true, reasons: [] },
       tenant_id: { eligible: false, reasons: ["trusted tenant fields cannot be grouped"] },
     };
@@ -1725,7 +1725,7 @@ describe("boundary review terminal picker", () => {
     await send(input, "\u001b[B");
     const frame = output.read()?.toString() ?? "";
     const plain = stripAnsi(frame);
-    expect(plain).toContain("X Enable exact numeric groups");
+    expect(plain).toContain("X Enable exact groups");
     expect(terminalFrameRows(frame)).toBeLessThanOrEqual(12);
     await send(input, "x");
     await expect(edited).resolves.toMatchObject({
@@ -1928,6 +1928,78 @@ describe("boundary review terminal picker", () => {
       row_identity: "outcome",
       shared_reference_scope: "table_has_no_per_tenant_rows",
     });
+  });
+
+  it("uses whole-organization scope without asking for a tenant column", async () => {
+    const { input, output } = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const view = reviewView();
+    Object.assign(view, {
+      organization_scope: {
+        mode: "single_organization",
+        organization_id: "university-ir-dev",
+        acknowledgement: "all_rows_belong_to_one_organization",
+      },
+    });
+    view.status = "blocked_scope";
+    view.candidate = null;
+    view.generated_candidate = null;
+    view.blockers = ["trusted tenant scope is unresolved"];
+    view.tenant_key = {
+      ...view.tenant_key,
+      selected: undefined,
+      candidates: [],
+      alternatives_considered: [],
+      blocked_reason: "no reviewed tenant column is available",
+    };
+
+    const resolution = session.resolveBlockedResource!(view);
+    const rendered = stripAnsi(output.read()?.toString() ?? "");
+    const compactRendered = rendered.replace(/\s+/g, " ");
+    expect(compactRendered).toContain("Whole organization university-ir-dev");
+    expect(compactRendered).toContain("no tenant column or tenant predicate is required");
+    expect(compactRendered).not.toContain("Direct tenant scope unavailable");
+    expect(compactRendered).not.toContain("Add and populate a trusted tenant column");
+    await send(input, "\r");
+    await expect(resolution).resolves.toEqual({
+      row_identity: "outcome",
+      organization_scope: "single_organization",
+    });
+  });
+
+  it("renders whole-organization scope affirmatively in table and boundary maps", () => {
+    const view = reviewView();
+    Object.assign(view, {
+      organization_scope: {
+        mode: "single_organization",
+        organization_id: "university-ir-dev",
+        acknowledgement: "all_rows_belong_to_one_organization",
+      },
+    });
+    view.candidate = {
+      ...view.candidate!,
+      tenant_key: undefined,
+    };
+    view.generated_candidate = view.candidate;
+
+    const detail = formatBoundaryResourceMap(view);
+    expect(detail).toContain("whole organization university-ir-dev");
+    expect(detail).toContain("no tenant column or tenant predicate required");
+    expect(detail).not.toContain("shared reference");
+
+    const resource = summary(view.resource_id, 0);
+    Object.assign(resource, {
+      organization_scope: view.organization_scope,
+      status: "blocked_scope",
+      blockers: ["trusted tenant scope is unresolved"],
+      scope_resolution_guidance: undefined,
+    });
+    const overview = formatBoundaryOverviewMap([resource], { exhaustive: true })
+      .replace(/\s+/g, " ");
+    expect(overview).toContain("Whole organization:");
+    expect(overview).toContain("university-ir-dev");
+    expect(overview).not.toContain("Tenant scope: UNRESOLVED");
+    expect(overview).not.toContain("trusted tenant column");
   });
 
   it("renders affirmative derived-scope proof and an exact review command for a blocked table", () => {

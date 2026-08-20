@@ -901,11 +901,15 @@ export function pruneAutoBoundaryReviewOverrides(
     parsedEvidence?: ParsedSchema[];
     existingContracts?: SynapsorContract[];
     configuredTrustedContext?: ConfiguredTrustedContextAuthority;
+    previousBoundary?: ExplorationBoundaryDraft;
   } = {},
 ): { overrides: AutoBoundaryReviewOverrides; removed: string[] } {
   const current = normalizeAutoBoundaryReviewOverrides(input);
   const serverAuthority = databaseServerCompatibility(inspection).authority;
   const tables = new Map(inspection.tables.map((table) => [`${table.schema}.${table.name}`, table]));
+  const previousResources = new Map(
+    (context.previousBoundary?.pack.resources ?? []).map((resource) => [resource.id, resource]),
+  );
   const resources: AutoBoundaryReviewOverrides["resources"] = {};
   const removed: string[] = [];
   for (const [resourceId, decision] of Object.entries(current.resources)) {
@@ -1022,8 +1026,16 @@ export function pruneAutoBoundaryReviewOverrides(
     for (const [field, groupingDecision] of Object.entries(
       decision.exact_numeric_grouping ?? {},
     )) {
-      if (!columns.has(field)) {
-        removed.push(`${resourceId}.${field}: reviewed exact numeric grouping field no longer exists`);
+      const column = columns.get(field);
+      if (!column) {
+        removed.push(`${resourceId}.${field}: reviewed exact grouping field no longer exists`);
+        continue;
+      }
+      const previousType = previousResources.get(resourceId)?.field_types[field];
+      if (previousType !== undefined && previousType !== column.data_type) {
+        removed.push(
+          `${resourceId}.${field}: reviewed exact grouping was removed because the field type changed from ${previousType} to ${column.data_type}; review the new type explicitly`,
+        );
         continue;
       }
       exactNumericGrouping[field] = groupingDecision;
@@ -1148,7 +1160,7 @@ export function pruneAutoBoundaryReviewOverrides(
           : { eligible: false, reasons: ["the resource is no longer available"] };
         if (eligibility.eligible) continue;
         removed.push(
-          `${resourceId}.${field}: reviewed exact numeric grouping was removed because `
+          `${resourceId}.${field}: reviewed exact grouping was removed because `
           + eligibility.reasons.join("; "),
         );
         delete decision.exact_numeric_grouping![field];
@@ -2959,16 +2971,16 @@ export function normalizeAutoBoundaryReviewOverrides(input: unknown): AutoBounda
     }
     if (rawResource.exact_numeric_grouping !== undefined) {
       if (!isRecord(rawResource.exact_numeric_grouping)) {
-        throw new Error(`${resourceId} exact numeric grouping review overrides must be an object.`);
+        throw new Error(`${resourceId} exact grouping review overrides must be an object.`);
       }
       const exactNumericGrouping: NonNullable<
         AutoBoundaryReviewOverrides["resources"][string]["exact_numeric_grouping"]
       > = {};
       for (const field of Object.keys(rawResource.exact_numeric_grouping).sort()) {
-        assertSafeMapKey(field, "reviewed exact numeric grouping field");
+        assertSafeMapKey(field, "reviewed exact grouping field");
         exactNumericGrouping[field] = normalizeReviewedExactNumericGroupingDecision(
           rawResource.exact_numeric_grouping[field],
-          `${resourceId}.${field} exact numeric grouping`,
+          `${resourceId}.${field} exact grouping`,
         );
       }
       resource.exact_numeric_grouping = exactNumericGrouping;
@@ -3524,18 +3536,18 @@ function applyReviewOverrides(
     )) {
       const field = resource.fields.find((candidate) => candidate.name === fieldName);
       if (!field) {
-        throw new Error(`Exact numeric grouping review references unknown field ${resourceId}.${fieldName}.`);
+        throw new Error(`Exact grouping review references unknown field ${resourceId}.${fieldName}.`);
       }
       const eligibility = exactNumericGroupingEligibility(resource, fieldName);
       if (!eligibility.eligible) {
         throw new Error(
-          `${resourceId}.${fieldName} cannot be reviewed for exact numeric grouping: `
+          `${resourceId}.${fieldName} cannot be reviewed for exact grouping: `
           + `${eligibility.reasons.join("; ")}.`,
         );
       }
       field.exact_numeric_grouping_review_override = structuredClone(groupingOverride);
       field.groupable_suggestion = true;
-      field.evidence.push("human review override: exact numeric grouping enabled");
+      field.evidence.push("human review override: exact grouping enabled");
     }
     refreshResourceStatus(resource);
   }
@@ -5853,6 +5865,11 @@ export type ExactNumericGroupingEligibility = {
   reasons: string[];
 };
 
+/**
+ * The stored review key keeps its 1.7.1 name so existing unpublished boundary
+ * artifacts reconcile byte-for-byte. The authority itself is type-neutral:
+ * it grants exact grouping for one reviewed scalar field.
+ */
 export function exactNumericGroupingEligibility(
   resource: Pick<
     AutoBoundaryResource,
@@ -5863,7 +5880,11 @@ export function exactNumericGroupingEligibility(
   const field = resource.fields.find((candidate) => candidate.name === fieldName);
   if (!field) return { eligible: false, reasons: ["the field is not present in the inspected resource"] };
   const reasons: string[] = [];
-  if (!isNumericType(field.data_type)) reasons.push("the inspected database type is not numeric");
+  if (!exactGroupingDataTypeSupported(field.data_type)) {
+    reasons.push(
+      "the inspected database type is binary, structural, or cannot be represented faithfully as a scalar group label",
+    );
+  }
   if (field.primary_key || resource.primary_key.selected === fieldName) {
     reasons.push("record identity fields cannot be exact grouping dimensions");
   }
@@ -5879,13 +5900,24 @@ export function exactNumericGroupingEligibility(
     || resource.principal_key.candidates.includes(fieldName)) {
     reasons.push("trusted tenant and principal fields cannot be exact grouping dimensions");
   }
-  if (field.sensitivity.state !== "structurally_low_risk") {
-    reasons.push("sensitive or unresolved fields cannot be exact grouping dimensions");
+  if (field.sensitivity.state === "high_confidence_sensitive") {
+    reasons.push("sensitive fields cannot be exact grouping dimensions");
+  } else if (field.sensitivity.state !== "structurally_low_risk"
+    && field.review_override?.exposure !== "allow_reviewed_use"
+    && field.review_override?.exposure !== "withhold_from_model") {
+    reasons.push(
+      "an unresolved field must first receive an explicit reviewed model or Runner-only exposure decision",
+    );
   }
   if (!field.raw_visible_suggestion || field.sensitive_suggestion || isUnsafeRawType(field.data_type)) {
     reasons.push("the field is not available for reviewed model use");
   }
   return { eligible: reasons.length === 0, reasons: unique(reasons) };
+}
+
+export function exactGroupingDataTypeSupported(type: string): boolean {
+  return !isUnsafeRawType(type)
+    && !/(?:^|\b)(?:(?:tiny|medium|long)?blob|jsonb?|xml|interval|geometry|geography|point|multipoint|linestring|multilinestring|polygon|multipolygon|geometrycollection|line|lseg|box|path|circle|array|record|composite|(?:int4|int8|num|ts|tstz|date)(?:multi)?range|range|multirange|hstore|tsvector|tsquery|vector|varbit|bit varying|bit)(?:\b|$)|\[\]/i.test(type);
 }
 
 function isNumericType(type: string): boolean {

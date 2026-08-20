@@ -1006,6 +1006,35 @@ describe("Scoped Explore", () => {
     }
   }, 20_000);
 
+  it("compiles reviewed exact date groups without changing their database type", async () => {
+    const inspection = exactNumericGroupingInspection();
+    const fixture = await activatedFixture(
+      undefined,
+      inspection,
+      undefined,
+      undefined,
+      { exact_numeric_grouping: ["commissioned_on"] },
+    );
+    const plan = validateExplorePlan({
+      kind: "aggregate",
+      resource: "public.subscriptions",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "commissioned_on" }],
+      top_n: 10,
+    }, fixture.boundary);
+
+    for (const engine of ["postgres", "mysql"] as const) {
+      const [compiled] = compileExplorePlan(plan, fixture.boundary, {
+        tenant: "tenant-acme",
+        principal: "pm-1",
+      }, engine);
+      const quoted = engine === "postgres" ? 't0."commissioned_on"' : "t0.`commissioned_on`";
+      expect(compiled?.sql).toContain(`${quoted} AS `);
+      expect(compiled?.sql).toContain(`GROUP BY ${quoted}`);
+      expect(compiled?.sql).not.toMatch(/CAST\s*\(.*commissioned_on/i);
+    }
+  });
+
   it("compiles one reviewed quantile auto band over scoped rows on both engines", async () => {
     const fixture = await activatedFixture((candidate) => {
       candidate.pack.resources[0]!.auto_bands = [{
@@ -2336,7 +2365,7 @@ describe("Scoped Explore", () => {
       dimensions: [{ field: "monthly_revenue_cents" }],
       top_n: 10,
     }, boundary)).toThrow(
-      /review exact numeric groups.*--allow-exact-numeric-grouping monthly_revenue_cents/is,
+      /review exact groups.*--allow-exact-grouping monthly_revenue_cents/is,
     );
 
     expect(() => validateExplorePlan({
@@ -6886,8 +6915,11 @@ function churnInspection(): SchemaInspection {
 
 function exactNumericGroupingInspection(): SchemaInspection {
   const inspection = churnInspection();
-  inspection.tables[0]!.columns.push(column("started_year", "integer"));
-  inspection.tables[0]!.suggestions.default_visible_columns.push("started_year");
+  inspection.tables[0]!.columns.push(
+    column("started_year", "integer"),
+    column("commissioned_on", "date"),
+  );
+  inspection.tables[0]!.suggestions.default_visible_columns.push("started_year", "commissioned_on");
   return inspection;
 }
 

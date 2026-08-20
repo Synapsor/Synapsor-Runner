@@ -94,6 +94,12 @@ export type BoundaryBlockedResolution =
         tenant_scope_path?: never;
         shared_reference_scope: typeof SHARED_REFERENCE_ACKNOWLEDGEMENT;
       }
+      | {
+        tenant_key?: never;
+        tenant_scope_path?: never;
+        shared_reference_scope?: never;
+        organization_scope: "single_organization";
+      }
     ))
   | "back"
   | undefined;
@@ -286,6 +292,12 @@ async function resolveBlockedResource(
       label: "Shared reference - same reviewed rows for every tenant",
       selected: Boolean(view.shared_reference_scope.selected),
     }] : []),
+    ...(view.organization_scope ? [{
+      kind: "single_organization" as const,
+      value: "single_organization" as const,
+      label: `Whole organization ${view.organization_scope.organization_id} (no tenant predicate)`,
+      selected: true,
+    }] : []),
   ];
   const theme = terminalTheme(output.isTTY && !("NO_COLOR" in process.env));
   const scopeGuidance = tenantOptions.length === 0
@@ -316,14 +328,24 @@ async function resolveBlockedResource(
           ? "database foreign key is non-null and points many-to-one to a unique key on the scoped ancestor"
           : tenantOption?.kind === "shared_reference"
             ? "human confirmation is required because Runner will apply no tenant predicate to this table"
+            : tenantOption?.kind === "single_organization"
+              ? "the reviewed boundary binds every row to one fixed organization outside model arguments"
             : view.tenant_key.alternatives_considered
             .find((candidate) => candidate.value === selectedValue)?.evidence[0]
             ?? view.tenant_key.evidence.find((item) => item.detail.includes(String(selectedValue)))?.detail;
       render([
         theme.title(`RESOLVE TABLE ACCESS - ${safeTerminalText(view.resource_id)}`),
-        "Runner needs one database-backed record ID and one reviewed row-scope choice.",
-        theme.dim("Choose a direct tenant column, a proven path, or Shared reference."),
-        theme.dim("Shared reference means every tenant receives the same reviewed rows."),
+        view.organization_scope
+          ? "Runner needs one database-backed record ID; whole-organization row scope is already reviewed."
+          : "Runner needs one database-backed record ID and one reviewed row-scope choice.",
+        view.organization_scope
+          ? theme.success(
+              `Whole organization ${safeTerminalText(view.organization_scope.organization_id)} is active; no tenant column or tenant predicate is required.`,
+            )
+          : theme.dim("Choose a direct tenant column, a proven path, or Shared reference."),
+        ...(view.organization_scope
+          ? []
+          : [theme.dim("Shared reference means every tenant receives the same reviewed rows.")]),
         theme.dim("These choices stay outside model arguments and do not activate access."),
         "",
         resolutionRow(
@@ -337,7 +359,7 @@ async function resolveBlockedResource(
         resolutionRow(
           theme,
           selectedDecision === 1,
-          "Tenant isolation",
+          view.organization_scope ? "Organization scope" : "Tenant isolation",
           tenantOption?.label,
           tenantOptions.length,
           tenantOption?.selected === true,
@@ -348,7 +370,9 @@ async function resolveBlockedResource(
           : [theme.danger(
             selectedDecision === 0
               ? "No single-column primary or unique key was proven by the database."
-              : "No tenant-isolation candidate was found in the inspected structure.",
+              : view.organization_scope
+                ? "Whole-organization scope is reviewed outside the table's columns."
+                : "No tenant-isolation candidate was found in the inspected structure.",
           )]),
         ...(tenantOption?.kind === "derived" && selectedDecision === 1
           ? derivedScopeCostAdvisoryLines(
@@ -404,6 +428,9 @@ async function resolveBlockedResource(
         }
         if (tenantOption.kind === "derived") {
           return { row_identity: rowValue, tenant_scope_path: tenantOption.value };
+        }
+        if (tenantOption.kind === "single_organization") {
+          return { row_identity: rowValue, organization_scope: "single_organization" };
         }
         return {
           row_identity: rowValue,
@@ -1278,8 +1305,12 @@ async function editFieldTiers(
         highlighted.exact_numeric_grouping_review_override
         && (view.candidate ?? view.generated_candidate)?.groupable_fields.includes(highlighted.name),
       );
+      const generatedGroupingAlreadyAvailable = Boolean(
+        view.generated_candidate?.groupable_fields.includes(highlighted.name),
+      );
       const exactNumericGroupingAvailable = tiers[highlighted.name] !== "kept_out"
-        && (exactNumericGroupingEligibility?.eligible || exactNumericGroupingEnabled);
+        && (exactNumericGroupingEnabled
+          || (exactNumericGroupingEligibility?.eligible && !generatedGroupingAlreadyAvailable));
       const tableWidth = Math.max(36, Math.min(terminalContentWidth(output.columns), 116));
       const accessLayout = fieldAccessLayout(tableWidth);
       const reviewCompatibility = databaseCompatibilityLine(view.database_server_compatibility, theme);
@@ -1316,7 +1347,7 @@ async function editFieldTiers(
           ? [`${theme.key("S")} Restore the current inspected filter/sort/group/measure suggestions for this column`]
           : []),
         ...(exactNumericGroupingAvailable
-          ? [`${theme.key("X")} ${exactNumericGroupingEnabled ? "Remove" : "Enable"} exact numeric groups for this column`]
+          ? [`${theme.key("X")} ${exactNumericGroupingEnabled ? "Remove" : "Enable"} exact groups for this column`]
           : []),
       ];
       const terminalRows = typeof output.rows === "number" && Number.isFinite(output.rows)
@@ -1369,7 +1400,7 @@ async function editFieldTiers(
           ...(enumValues ? [`${theme.key("E")} Allowed values`] : []),
           ...(operationRepairAvailable ? [`${theme.key("S")} Restore operations`] : []),
           ...(exactNumericGroupingAvailable
-            ? [`${theme.key("X")} ${exactNumericGroupingEnabled ? "Remove" : "Enable"} exact numeric groups`]
+            ? [`${theme.key("X")} ${exactNumericGroupingEnabled ? "Remove" : "Enable"} exact groups`]
             : []),
           `${theme.key("B/Esc")} ${options?.focusedAccess ? "Back to tables" : "Back"}`,
           `${theme.key("Q")} Quit`,
@@ -1701,11 +1732,16 @@ function boundaryResourceMapLines(
   const candidate = view.candidate ?? view.generated_candidate;
   if (!candidate) {
     const scopeGuidance = blockedTenantScopeGuidance(view);
-    const derivedScopeLines = availableDerivedTenantScopeLines(view, theme, commandName);
+    const derivedScopeLines = view.organization_scope
+      ? []
+      : availableDerivedTenantScopeLines(view, theme, commandName);
     const selectedIdentity = view.row_identity.selected;
     const identityCandidate = view.row_identity.candidates[0];
+    const relevantBlockers = view.organization_scope
+      ? view.blockers.filter((value) => !/^trusted tenant scope is unresolved/iu.test(value))
+      : view.blockers;
     const blocker = (
-      view.blockers.join("; ") || "record identity or trusted scope is unresolved"
+      relevantBlockers.join("; ") || "record identity is unresolved"
     ).replace(/[.]+$/, "");
     return [
       theme.title(`TABLE ACCESS MAP - ${safeTerminalText(view.resource_id)}`),
@@ -1721,16 +1757,21 @@ function boundaryResourceMapLines(
           : `  Record identity: ${theme.danger("unresolved")}`,
       ...view.row_identity.evidence.slice(0, 3).map((evidence) =>
         `    evidence: ${safeTerminalText(`${evidence.source}: ${evidence.detail}`)}`),
-      `  Direct tenant scope: ${view.tenant_key.selected
-        ? theme.success(safeTerminalText(view.tenant_key.selected))
-        : view.tenant_key.candidates.length
-          ? theme.warning(`${view.tenant_key.candidates.length} candidate(s); human review required`)
-          : theme.warning("unavailable")}`,
-      ...(view.tenant_key.blocked_reason
+      ...(view.organization_scope
+        ? [
+            `  Whole-organization scope: ${theme.success(safeTerminalText(view.organization_scope.organization_id))}`,
+            theme.dim("    no tenant column or tenant predicate is required"),
+          ]
+        : [`  Direct tenant scope: ${view.tenant_key.selected
+            ? theme.success(safeTerminalText(view.tenant_key.selected))
+            : view.tenant_key.candidates.length
+              ? theme.warning(`${view.tenant_key.candidates.length} candidate(s); human review required`)
+              : theme.warning("unavailable")}`]),
+      ...(!view.organization_scope && view.tenant_key.blocked_reason
         ? [`    why: ${safeTerminalText(view.tenant_key.blocked_reason)}`]
         : []),
-      ...blockedRelationshipProofLines(view, theme),
-      ...(scopeGuidance ? [] : sharedReferenceProofLines(view, theme)),
+      ...(view.organization_scope ? [] : blockedRelationshipProofLines(view, theme)),
+      ...(scopeGuidance || view.organization_scope ? [] : sharedReferenceProofLines(view, theme)),
       ...derivedScopeLines,
       ...(scopeGuidance
         ? [
@@ -1754,7 +1795,7 @@ function boundaryResourceMapLines(
       : "Current disabled review candidate. This view cannot save or activate authority."),
     "",
     theme.bold(`${safeTerminalText(view.resource_id)}  in reviewed boundary`),
-    ...boundaryResourceScopeLines(candidate),
+    ...boundaryResourceScopeLines(candidate, view.organization_scope),
     "",
     theme.bold("FIELD AUTHORITY"),
     ...renderBoundaryMapFieldMatrix(
@@ -1948,10 +1989,13 @@ function firstTableIsStartable(resource: BoundaryResourceReviewSummary): boolean
 
 function boundaryResourceScopeLines(
   candidate: NonNullable<BoundaryResourceReviewView["candidate"]>,
+  organizationScope?: BoundaryResourceReviewView["organization_scope"],
 ): string[] {
   return [
     `  ${"record identity".padEnd(18)}${safeTerminalText(candidate.primary_key)}`,
-    `  ${"tenant scope".padEnd(18)}${candidate.tenant_key
+    `  ${"tenant scope".padEnd(18)}${organizationScope
+      ? `whole organization ${safeTerminalText(organizationScope.organization_id)}; no tenant column or tenant predicate required`
+      : candidate.tenant_key
       ? `${safeTerminalText(candidate.tenant_key)} (direct; trusted runtime value)`
       : candidate.tenant_scope
         ? `${safeTerminalText(formatDerivedScopePath(candidate.tenant_scope))} ` +
@@ -2806,11 +2850,16 @@ function blockedBoundaryTableLines(
   resource: BoundaryResourceReviewSummary,
 ): string[] {
   const lines: string[] = [];
+  if (resource.organization_scope) {
+    lines.push(`Whole organization: ${resource.organization_scope.organization_id}`);
+    lines.push("Row scope: no tenant column or tenant predicate required");
+  }
   const blockers = resource.blockers.length ? resource.blockers : ["review blocked"];
   for (const blocker of blockers) {
     const normalized = compactMapReferenceText(resource.resource_id, blocker);
     const tenantScope = /^trusted tenant scope is unresolved(?:;\s*(.+))?\.?$/iu.exec(normalized);
     if (tenantScope) {
+      if (resource.organization_scope) continue;
       lines.push("Tenant scope: UNRESOLVED");
       if (tenantScope[1]) {
         lines.push(`Review: ${tenantScope[1].replace(/^review\s+/iu, "")}`);

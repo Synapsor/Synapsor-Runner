@@ -285,6 +285,7 @@ export async function prepareBoundaryRescan(input: {
         parsedEvidence: evidence.parsed,
         existingContracts: evidence.existingContracts,
         configuredTrustedContext,
+        previousBoundary: previous.candidate,
       },
     );
     const sharedFactsUnchanged = generationLockSharedFactsDigest(comparableOldLock)

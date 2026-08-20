@@ -274,7 +274,7 @@ The Workbench requires a human to narrow and confirm:
 - selectable fields;
 - filterable fields and allowed operators;
 - sortable and groupable fields;
-- explicitly reviewed exact numeric dimensions, which remain off by default;
+- explicitly reviewed exact scalar dimensions, which remain off by default;
 - aggregate-safe numeric, dispersion, and missing-data measures;
 - identifiers allowed only for `count_distinct`;
 - timestamp fields and permitted hour/day/week/month/quarter/year/day-of-week
@@ -421,34 +421,41 @@ the vocabulary disables filter and group operations for that field; it does not
 silently reopen free-text filtering. Model-withheld and kept-out fields never
 send their value vocabulary to a model.
 
-### Exact Numeric Grouping
+### Exact Grouping
 
-Runner does not automatically make numeric columns grouping dimensions. An
-integer may be a useful discrete business category such as `started_year`, but
-it may instead be a customer ID, foreign key, tenant key, precise amount, or
-high-cardinality value. Treating every number as groupable would create noisy
-answers and could widen disclosure. Numeric measures and numeric groups are
-therefore separate reviewed permissions.
+Runner does not automatically make every scalar column a grouping dimension. An
+integer may be a useful category such as `started_year`; a date, UUID, or text
+field may also encode a real business category. The same types may instead be
+an identity, relationship key, tenant key, precise value, or high-cardinality
+attribute. Treating every scalar as groupable would create noisy answers and
+could widen disclosure, so automatic inference stays conservative.
 
-A reviewer may explicitly enable exact grouping for one low-risk numeric field
-in the terminal column editor with `X`, or in Workbench under **Exact numeric
-groups**. The scripted equivalent is additive and does not remove existing
+A reviewer may explicitly enable exact grouping for one eligible scalar field
+in the terminal column editor with `X`, or in Workbench under **Exact groups**.
+The scripted equivalent is additive and does not remove existing
 categorical dimensions:
 
 ```bash
 synapsor-runner boundary review resource public.sites \
-  --allow-exact-numeric-grouping started_year \
+  --allow-exact-grouping started_year \
   --actor reviewer@example.com \
   --reason "Calendar year is a bounded business dimension"
 ```
 
-`--group-fields` remains a narrowing flag; it cannot promote a numeric field.
-Use `--remove-exact-numeric-grouping` to retract this separate grant. Runner
-refuses the grant for record identities, foreign/reference columns,
-tenant/principal scope, sensitive or unresolved fields, and fields unavailable
-for reviewed model use. The reviewer identity and concrete reason are recorded.
+`--group-fields` remains a narrowing flag; it cannot promote a field that the
+generated boundary withheld. Use `--remove-exact-grouping` to retract this
+separate grant. The 1.7.1 numeric flag names remain compatibility aliases.
+Runner refuses record identities, foreign/reference columns, tenant/principal
+scope, sensitive fields, binary or structural types, and fields unavailable for
+reviewed use. Unresolved text must first receive an explicit exposure decision.
+The reviewer identity and concrete reason are recorded.
 The result is a disabled revision and does not affect local or HTTP Explore
 until the normal exact-digest activation succeeds.
+
+The decision is also datatype-specific. A schema rescan preserves it when the
+field and datatype are unchanged, but removes it when the datatype changes. The
+reviewer must inspect and approve the new meaning before exact grouping can be
+activated again, even when both the old and new types are supported scalars.
 
 This permission returns the exact reviewed values. It creates no fixed or
 automatic band and accepts no model-authored edges. Every query still uses the
