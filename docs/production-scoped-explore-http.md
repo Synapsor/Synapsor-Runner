@@ -179,15 +179,15 @@ five, and never returns or audits raw computed edges. Different methods and
 bucket counts share the same durable differencing pool. Production adds no
 special escape or weaker default for this grammar.
 
-Reviewed exact numeric dimensions have the same parity as well. They remain
+Reviewed exact scalar dimensions have the same parity as well. They remain
 absent by default and appear in `app.describe_data` only after a human enables
 one eligible field and activates the new digest. Production HTTP accepts the
 same ordinary field dimension used by local stdio; it adds no runtime override.
 JWT-derived tenant/principal predicates, cohort suppression, group/top-N and
 response ceilings, timeout, rolling budgets, extraction, and differencing
-controls are unchanged. The grant never creates a numeric band and cannot be
-applied to identity, reference, trusted-scope, sensitive, or unavailable
-fields.
+controls are unchanged. The grant never creates a numeric band or datatype cast
+and cannot be applied to identity, reference, trusted-scope, sensitive, binary,
+structural, or otherwise unavailable fields.
 
 Safe child counts fix one reviewed child resource and one catalog-proven,
 non-null many-to-one child-to-parent relationship. The generated SQL is a

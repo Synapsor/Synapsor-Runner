@@ -185,15 +185,17 @@ DSL, canonical JSON, and tests for a disabled named capability; it never
 activates the result.
 	`,
 	    config: `Usage:
-  ${cmd} config init [--output ./synapsor.runner.json] [--engine postgres|mysql] [--read-url-env DATABASE_URL]
-  ${cmd} config init --production-explore --engine postgres|mysql --tenant-claim tenant_id --principal-claim sub [--tenant-binding tenant_id] [--principal-binding rep] [--verify-bindings] --issuer https://identity.example --audience https://runner.example/mcp --accounting-namespace acme.analytics.production [--project-root .]
-  ${cmd} config init --production-explore --engine postgres|mysql --single-tenant-organization-id internal-finance --principal-claim sub --issuer https://identity.example --audience https://runner.example/mcp --accounting-namespace internal.finance.production
+  ${cmd} config init [--output ./synapsor.runner.json] [--engine postgres|mysql] [--read-url-env DATABASE_URL] [--force]
+  ${cmd} config init --production-explore --engine postgres|mysql --tenant-claim tenant_id --principal-claim sub [--tenant-binding tenant_id] [--principal-binding rep] [--verify-bindings] --issuer https://identity.example --audience https://runner.example/mcp --accounting-namespace acme.analytics.production [--project-root .] [--force]
+  ${cmd} config init --production-explore --engine postgres|mysql --single-tenant-organization-id internal-finance --principal-claim sub --issuer https://identity.example --audience https://runner.example/mcp --accounting-namespace internal.finance.production [--force]
   ${cmd} config validate --config ./synapsor.runner.json
   ${cmd} config migrate --config ./synapsor.runner.json --out ./synapsor.runner.migrated.json
 
 Initialize or validate local Runner wiring before tools preview, doctor, smoke,
 or MCP serve. config init creates a valid read-only zero-authority shell using
-environment-variable references and refuses to overwrite an existing file.
+environment-variable references and refuses to overwrite an existing file by default.
+Pass --force only to intentionally replace that file; Runner first writes a
+timestamped .bak copy and reports its path.
 With --production-explore it emits the complete zero-authority shared-Postgres,
 JWT/JWKS, secured HTTP, OAuth, budget, source-pool, and session-cap skeleton.
 It reuses source, claim, and reviewed column bindings from a production boundary
@@ -442,7 +444,7 @@ the local reviewed contract and proposal before writeback.
   ${cmd} boundary review resource public.product_catalog --include --shared-reference --acknowledge-table-has-no-per-tenant-rows --actor owner@example.com --reason "Every tenant receives the same reviewed catalog rows"
   ${cmd} boundary review resource public.orders --withhold-from-model customer_segment --actor reviewer@example.com --reason "Use this grouping locally without sending segment values to the model"
   ${cmd} boundary review resource public.orders --count-distinct-fields customer_id --actor reviewer@example.com --reason "Allow reviewed unique-customer counts without returning customer IDs"
-  ${cmd} boundary review resource public.sites --allow-exact-numeric-grouping started_year --actor reviewer@example.com --reason "Calendar year is a low-cardinality business dimension"
+  ${cmd} boundary review resource public.sites --allow-exact-grouping started_year --actor reviewer@example.com --reason "Calendar year is a low-cardinality business dimension"
   ${cmd} boundary review resource public.orders --label "Orders" --description "Customer purchases recorded at checkout" --field-label total_cents="Order total" --field-description total_cents="Gross amount in cents" --actor reviewer@example.com --reason "Document legacy database identifiers"
   ${cmd} boundary review resource public.orders --minimum-cohort 3 --actor owner@example.com --reason "Reviewed owner decision for this staging dataset"
   ${cmd} boundary review resource public.orders --max-ranked-groups 200 --actor reviewer@example.com --reason "Reviewed bounded ranking across this known customer population"
@@ -665,12 +667,15 @@ Resource decision flags:
   --sort-fields <column,...>
   --group-fields <column,...>
     Narrows the currently generated groupable fields; it never promotes a numeric field.
-  --allow-exact-numeric-grouping <column,...>
-    Adds exact grouping for explicitly reviewed safe numeric dimensions. Primary,
-    foreign/reference, tenant, principal, sensitive, and unavailable fields are refused.
-    This remains bounded by suppression, group/top-N, response, timeout, and query limits.
-  --remove-exact-numeric-grouping <column,...>
-    Removes a previously reviewed exact numeric grouping grant.
+  --allow-exact-grouping <column,...>
+    Adds exact grouping for explicitly reviewed scalar dimensions, including numeric,
+    date/time, UUID, boolean, enum, and reviewed text fields. Primary, foreign/reference,
+    tenant, principal, sensitive, binary, and structural fields are refused. This remains
+    bounded by suppression, group/top-N, response, timeout, and query limits.
+  --remove-exact-grouping <column,...>
+    Removes a previously reviewed exact grouping grant.
+  --allow-exact-numeric-grouping | --remove-exact-numeric-grouping
+    Backward-compatible aliases for boundaries and scripts created with Runner 1.7.1.
   --measure-fields <column,...>
   --count-distinct-fields <column,...>
     Grants the operation labelled **Count unique** under G Reviewed metrics in

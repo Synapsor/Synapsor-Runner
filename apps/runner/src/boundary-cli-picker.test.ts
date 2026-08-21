@@ -289,6 +289,11 @@ describe("boundary review terminal picker", () => {
     expect(firstViewPlain).toContain("A Add related tables");
     expect(firstViewPlain).toContain("SELECTED TABLE");
     expect(firstViewPlain).toContain("BOUNDARY");
+    expect(firstViewPlain).toContain("R Remove from draft [AVAILABLE]");
+    expect(firstViewPlain).toContain("P Privacy - withhold small groups [MIN 5]");
+    expect(firstViewPlain).toContain("G Metrics and numeric bands [AVAILABLE]");
+    expect(firstViewPlain).toContain("I Table label and description [AVAILABLE]");
+    expect(firstViewPlain).toContain("S Table sign-off - use C for the whole boundary [BOUNDARY LEVEL]");
     expect(firstViewPlain).toContain("C Review + activate");
     expect(firstViewPlain).toContain("L Limits");
     expect(firstViewPlain).not.toContain("BOUNDARIES");
@@ -309,6 +314,10 @@ describe("boundary review terminal picker", () => {
     expect(renderedPlain).toContain("check_ins_member_id_fkey");
     expect(renderedPlain).toContain("B/Esc Boundary tables");
     expect(renderedPlain).toContain("Tab All inspected tables");
+    expect(renderedPlain).toContain("R Remove from draft [NOT IN DRAFT]");
+    expect(renderedPlain).toContain("P Privacy - withhold small groups [ADD TABLE FIRST]");
+    expect(renderedPlain).toContain("G Metrics and numeric bands [ADD TABLE FIRST]");
+    expect(renderedPlain).toContain("I Table label and description [ADD TABLE FIRST]");
   });
 
   it("opens shell access management at the boundary list and exposes selected-table privacy", async () => {
@@ -338,8 +347,58 @@ describe("boundary review terminal picker", () => {
     });
     const tableView = output.read()?.toString() ?? "";
     expect(tableView).toContain("P");
-    expect(tableView).toContain("Privacy (minimum group 5)");
-    expect(tableView).toContain("minimum group 5");
+    expect(tableView).toContain("Privacy - withhold small groups [MIN 5]");
+  });
+
+  it("keeps first-boundary lifecycle keys visible with their availability", async () => {
+    const { input, output } = fakeTerminal();
+    const selected = createBoundaryReviewInteractiveSession(input, output).chooseResource(
+      [summary("public.equipment", 0)],
+      undefined,
+      { initialView: "access", startAtBoundaryList: true },
+    );
+    const rendered = stripAnsi(output.read()?.toString() ?? "");
+    expect(rendered).toContain("X Delete this saved boundary [AVAILABLE]");
+    expect(rendered).toContain("D Deactivate - stop serving it [NOT ACTIVE]");
+    await send(input, "x");
+    await expect(selected).resolves.toEqual({
+      action: "delete",
+      boundary_name: "reviewed_staging",
+    });
+  });
+
+  it("explains unavailable table controls without leaving the access editor", async () => {
+    const { input, output } = fakeTerminal();
+    const included = summary("public.orders", 0);
+    included.relationships = [{
+      relationship_id: "items_order_fkey",
+      target_resource: "public.order_items",
+      path_depth: 1,
+      state: "available",
+    }];
+    const available = summary("public.order_items", 0);
+    available.included = false;
+    const selected = createBoundaryReviewInteractiveSession(input, output).chooseResource(
+      [included, available],
+      undefined,
+      { initialView: "access" },
+    );
+    output.read();
+
+    await send(input, "a");
+    output.read();
+    await send(input, "g");
+    expect(stripAnsi(output.read()?.toString() ?? ""))
+      .toContain("G is unavailable until this table is added to the draft boundary.");
+    await send(input, "r");
+    expect(stripAnsi(output.read()?.toString() ?? ""))
+      .toContain("R is unavailable: this table is not in the draft boundary.");
+    await send(input, "s");
+    expect(stripAnsi(output.read()?.toString() ?? ""))
+      .toContain("S is not used in this editor. Press C to review and activate the whole boundary.");
+
+    await send(input, "q");
+    await expect(selected).resolves.toBeUndefined();
   });
 
   it("makes fixed reviewed analytics available for the selected included table", async () => {
@@ -351,7 +410,7 @@ describe("boundary review terminal picker", () => {
       { initialView: "access" },
     );
     const rendered = stripAnsi(output.read()?.toString() ?? "");
-    expect(rendered).toContain("G Reviewed metrics and numeric bands");
+    expect(rendered).toContain("G Metrics and numeric bands [AVAILABLE]");
     await send(input, "g");
     await expect(selected).resolves.toEqual({
       resource_id: "public.orders",
@@ -419,7 +478,7 @@ describe("boundary review terminal picker", () => {
     const rendered = stripAnsi(output.read()?.toString() ?? "");
     expect(rendered).toContain("SELECTED TABLE");
     expect(rendered).toContain("Enter Edit columns");
-    expect(rendered).toContain("P Privacy (minimum group 5)");
+    expect(rendered).toContain("P Privacy - withhold small groups [MIN 5]");
     expect(rendered).toContain("BOUNDARY");
     expect(rendered).toContain("B/Esc Boundary overview");
     expect(rendered).toContain("L Limits");
@@ -526,6 +585,43 @@ describe("boundary review terminal picker", () => {
     expect(stripAnsi(output.read()?.toString() ?? "")).toContain("P Privacy for all tables");
     await send(input, "p");
     await expect(selected).resolves.toEqual({ action: "privacy_all" });
+  });
+
+  it("shows and toggles the selected boundary's local Ask plan check with T", async () => {
+    const { input, output } = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const resource = summary("public.orders", 0);
+    resource.active = true;
+    resource.active_boundary_name = "reviewed_staging";
+    const selected = session.chooseResource(
+      [resource],
+      {
+        confirmed_decisions: 6,
+        outstanding_decisions: 0,
+        outstanding_resource_decisions: 0,
+        outstanding_boundary_decisions: 0,
+        resources_requiring_signoff: 0,
+        boundaries: [{
+          name: "reviewed_staging",
+          selected: true,
+          active: true,
+          matches_active_digest: true,
+          table_count: 1,
+          outstanding_decisions: 0,
+          ask_intent_check_mode: "boundary_only",
+        }],
+      },
+      { initialView: "access", startAtBoundaryList: true },
+    );
+    const rendered = stripAnsi(output.read()?.toString() ?? "");
+    expect(rendered).toContain("Local Ask plan check for reviewed_staging: BOUNDARY ONLY");
+    expect(rendered).toContain("Reviewed Explore validation still applies");
+    expect(rendered).toContain("T Ask plan check");
+    await send(input, "t");
+    await expect(selected).resolves.toEqual({
+      action: "intent_check",
+      boundary_name: "reviewed_staging",
+    });
   });
 
   it("keeps an active boundary's disabled edits visibly pending", async () => {
@@ -995,6 +1091,22 @@ describe("boundary review terminal picker", () => {
     const rendered = output.read()?.toString() ?? "";
     expect(rendered).toContain("D");
     expect(rendered).toContain("Deactivate");
+  });
+
+  it("keeps boundary deactivation visible and explains when it is unavailable", async () => {
+    const { input, output } = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const selected = session.chooseResource([summary("public.check_ins", 0)]);
+    const first = stripAnsi(output.read()?.toString() ?? "");
+    expect(first).toContain("D Deactivate - stop serving it [NOT ACTIVE]");
+
+    await send(input, "d");
+    const unavailable = stripAnsi(output.read()?.toString() ?? "");
+    expect(unavailable).toContain(
+      "reviewed_staging is not active; there is nothing to deactivate.",
+    );
+    await send(input, "q");
+    await expect(selected).resolves.toBeUndefined();
   });
 
   it("keeps hidden deactivate keys inert in the table editor and distinguishes draft removal", async () => {
@@ -1530,7 +1642,9 @@ describe("boundary review terminal picker", () => {
     });
 
     const rendered = stripAnsi(terminal.output.read()?.toString() ?? "");
-    expect(rendered).toContain("S Restore the current inspected filter/sort/group/measure suggestions");
+    expect(rendered).toContain(
+      "S Repair operations - restore inspected filter/sort/group/measure grants [AVAILABLE]",
+    );
     expect(rendered).toContain("Operation repair available: this usable field has no analytical grants");
   });
 
@@ -1642,6 +1756,43 @@ describe("boundary review terminal picker", () => {
     await expect(edited).resolves.toBe("back");
   });
 
+  it("keeps every selected-column control visible with its purpose and current status", async () => {
+    const { input, output } = fakeTerminal();
+    const edited = createBoundaryReviewInteractiveSession(input, output)
+      .editFieldTiers(reviewView(), { focusedAccess: true });
+    const first = stripAnsi(output.read()?.toString() ?? "");
+
+    expect(first).toContain("Left/Right/Space Change access [MODEL + RUNNER]");
+    expect(first).toContain("V Model + Runner [CURRENT]");
+    expect(first).toContain("W Runner output only");
+    expect(first).toContain("K Keep out completely");
+    expect(first).toContain("P Privacy - withhold groups below 5 [MIN 5]");
+    expect(first).toContain("O User/owner scope - restrict rows per user [not configured]");
+    expect(first).toContain("I Column vocabulary - edit its label and description [NOT SET]");
+    expect(first).toContain(
+      "E Allowed values - narrow filtering/grouping to reviewed values [UNAVAILABLE]",
+    );
+    expect(first).toContain(
+      "S Repair operations - restore inspected filter/sort/group/measure grants [NOT NEEDED]",
+    );
+    expect(first).toContain(
+      "X Exact-value groups - group by each distinct value [UNAVAILABLE]",
+    );
+
+    await send(input, "x");
+    expect(stripAnsi(output.read()?.toString() ?? ""))
+      .toContain("X is unavailable for this column.");
+    await send(input, "e");
+    expect(stripAnsi(output.read()?.toString() ?? ""))
+      .toContain("E is unavailable: this column has no database-declared reviewed value list.");
+    await send(input, "s");
+    expect(stripAnsi(output.read()?.toString() ?? ""))
+      .toContain("S is not needed: this column has no missing inspected analytical grants.");
+
+    await send(input, "q");
+    await expect(edited).resolves.toBeUndefined();
+  });
+
   it("windows columns without hiding their controls in a short terminal", async () => {
     const { input, output } = fakeTerminal(80, 24);
     const view = reviewView();
@@ -1664,7 +1815,7 @@ describe("boundary review terminal picker", () => {
     expect(plain).toContain("Up/Down Navigate");
     expect(plain).toContain("P Privacy");
     expect(plain).toContain("O User/owner");
-    expect(plain).toMatch(/I (?:Edit the selected column's reviewed label|Labels and descriptions)/u);
+    expect(plain).toMatch(/I (?:Column vocabulary|Label\/describe)/u);
     expect(plain).toMatch(/B\/Esc Back to (?:boundary )?tables/u);
     expect(plain).toContain("Showing columns");
     expect(plain).not.toContain("rows hidden");
@@ -1673,7 +1824,7 @@ describe("boundary review terminal picker", () => {
     await expect(edited).resolves.toBe("back");
   });
 
-  it("offers reviewed exact numeric grouping without overflowing an 80x12 terminal", async () => {
+  it("offers reviewed exact grouping without overflowing an 80x12 terminal", async () => {
     const { input, output } = fakeTerminal(80, 12);
     const view = reviewView();
     const template = view.fields[0]!;
@@ -1687,7 +1838,7 @@ describe("boundary review terminal picker", () => {
       evidence: ["database column started_year integer"],
     });
     view.exact_numeric_grouping_eligibility = {
-      outcome: { eligible: false, reasons: ["the inspected database type is not numeric"] },
+      outcome: { eligible: false, reasons: ["the field is already a reviewed grouping dimension"] },
       started_year: { eligible: true, reasons: [] },
       tenant_id: { eligible: false, reasons: ["trusted tenant fields cannot be grouped"] },
     };
@@ -1725,7 +1876,7 @@ describe("boundary review terminal picker", () => {
     await send(input, "\u001b[B");
     const frame = output.read()?.toString() ?? "";
     const plain = stripAnsi(frame);
-    expect(plain).toContain("X Enable exact numeric groups");
+    expect(plain).toContain("X Exact-value groups [OFF]");
     expect(terminalFrameRows(frame)).toBeLessThanOrEqual(12);
     await send(input, "x");
     await expect(edited).resolves.toMatchObject({
@@ -1753,7 +1904,7 @@ describe("boundary review terminal picker", () => {
       tiers: { outcome: "withheld_from_model" },
     });
     expect(stripAnsi(first.output.read()?.toString() ?? "")).toContain(
-      "E Edit allowed values for selected column: 2 of 2",
+      "E Allowed values - narrow filtering/grouping to reviewed values [2/2 REVIEWED]",
     );
 
     const resumed = fakeTerminal();
@@ -1794,7 +1945,7 @@ describe("boundary review terminal picker", () => {
       tiers: { outcome: "withheld_from_model" },
     });
     expect(stripAnsi(terminal.output.read()?.toString() ?? ""))
-      .toContain("I Edit the selected column's reviewed label and description");
+      .toContain("I Column vocabulary - edit its label and description [NOT SET]");
   });
 
   it("opens user-owner scope review without losing staged column choices", async () => {
@@ -1809,7 +1960,7 @@ describe("boundary review terminal picker", () => {
       tiers: { outcome: "withheld_from_model" },
     });
     const rendered = stripAnsi(terminal.output.read()?.toString() ?? "");
-    expect(rendered).toContain("O User/owner row limit: not configured");
+    expect(rendered).toContain("O User/owner scope - restrict rows per user [not configured]");
   });
 
   it("resolves blocked identity and tenant choices without leaving the terminal editor", async () => {
@@ -1898,6 +2049,47 @@ describe("boundary review terminal picker", () => {
     });
   });
 
+  it("shows resolver key status and keeps an over-depth scope path unavailable", async () => {
+    const { input, output } = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const view = reviewView();
+    const scope = twoHopDerivedScope();
+    scope.path_id = `leaf_parent_fkey__${scope.path_id}`;
+    scope.proof.links.unshift({
+      ...scope.proof.links[0]!,
+      constraint_name: "leaf_parent_fkey",
+      source_resource: "public.order_item_event_flags",
+      target_resource: "public.order_item_events",
+    });
+    view.status = "blocked_scope";
+    view.candidate = null;
+    view.generated_candidate = null;
+    view.tenant_key = {
+      ...view.tenant_key,
+      selected: undefined,
+      candidates: [],
+      alternatives_considered: [],
+    };
+    view.derived_tenant_scope = {
+      candidates: [scope],
+      selected: scope,
+      confirmation_required: true,
+      safety_consequence: "This mandatory path scopes every row.",
+    };
+
+    const resolution = session.resolveBlockedResource!(view);
+    const first = stripAnsi(output.read()?.toString() ?? "");
+    expect(first).toContain("Left/Right/Space Change available value");
+    expect(first).toContain("Enter Save choices [UNAVAILABLE]");
+    expect(first).toContain("Q Quit");
+
+    await send(input, "\r");
+    expect(stripAnsi(output.read()?.toString() ?? ""))
+      .toContain("Enter is unavailable: this 3-hop path exceeds the reviewed maximum of 2.");
+    await send(input, "b");
+    await expect(resolution).resolves.toBe("back");
+  });
+
   it("offers an eligible shared reference as an explicit reviewed row-scope choice", async () => {
     const { input, output } = fakeTerminal();
     const session = createBoundaryReviewInteractiveSession(input, output);
@@ -1928,6 +2120,78 @@ describe("boundary review terminal picker", () => {
       row_identity: "outcome",
       shared_reference_scope: "table_has_no_per_tenant_rows",
     });
+  });
+
+  it("uses whole-organization scope without asking for a tenant column", async () => {
+    const { input, output } = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const view = reviewView();
+    Object.assign(view, {
+      organization_scope: {
+        mode: "single_organization",
+        organization_id: "university-ir-dev",
+        acknowledgement: "all_rows_belong_to_one_organization",
+      },
+    });
+    view.status = "blocked_scope";
+    view.candidate = null;
+    view.generated_candidate = null;
+    view.blockers = ["trusted tenant scope is unresolved"];
+    view.tenant_key = {
+      ...view.tenant_key,
+      selected: undefined,
+      candidates: [],
+      alternatives_considered: [],
+      blocked_reason: "no reviewed tenant column is available",
+    };
+
+    const resolution = session.resolveBlockedResource!(view);
+    const rendered = stripAnsi(output.read()?.toString() ?? "");
+    const compactRendered = rendered.replace(/\s+/g, " ");
+    expect(compactRendered).toContain("Whole organization university-ir-dev");
+    expect(compactRendered).toContain("no tenant column or tenant predicate is required");
+    expect(compactRendered).not.toContain("Direct tenant scope unavailable");
+    expect(compactRendered).not.toContain("Add and populate a trusted tenant column");
+    await send(input, "\r");
+    await expect(resolution).resolves.toEqual({
+      row_identity: "outcome",
+      organization_scope: "single_organization",
+    });
+  });
+
+  it("renders whole-organization scope affirmatively in table and boundary maps", () => {
+    const view = reviewView();
+    Object.assign(view, {
+      organization_scope: {
+        mode: "single_organization",
+        organization_id: "university-ir-dev",
+        acknowledgement: "all_rows_belong_to_one_organization",
+      },
+    });
+    view.candidate = {
+      ...view.candidate!,
+      tenant_key: undefined,
+    };
+    view.generated_candidate = view.candidate;
+
+    const detail = formatBoundaryResourceMap(view);
+    expect(detail).toContain("whole organization university-ir-dev");
+    expect(detail).toContain("no tenant column or tenant predicate required");
+    expect(detail).not.toContain("shared reference");
+
+    const resource = summary(view.resource_id, 0);
+    Object.assign(resource, {
+      organization_scope: view.organization_scope,
+      status: "blocked_scope",
+      blockers: ["trusted tenant scope is unresolved"],
+      scope_resolution_guidance: undefined,
+    });
+    const overview = formatBoundaryOverviewMap([resource], { exhaustive: true })
+      .replace(/\s+/g, " ");
+    expect(overview).toContain("Whole organization:");
+    expect(overview).toContain("university-ir-dev");
+    expect(overview).not.toContain("Tenant scope: UNRESOLVED");
+    expect(overview).not.toContain("trusted tenant column");
   });
 
   it("renders affirmative derived-scope proof and an exact review command for a blocked table", () => {

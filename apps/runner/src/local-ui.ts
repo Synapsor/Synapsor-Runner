@@ -213,9 +213,22 @@ import {
   resolveSavedBoundaryReviewAuthority,
   switchSavedBoundary,
   synchronizeBoundaryLibrary,
+  type BoundaryLibrarySnapshot,
 } from "./boundary-library.js";
+import {
+  askIntentCheckModesForBoundaries,
+  deleteAskIntentCheckPreference,
+  renameAskIntentCheckPreference,
+  setAskIntentCheckMode,
+  type AskIntentCheckMode,
+} from "./ask-intent-preferences.js";
 
 type JsonRecord = Record<string, unknown>;
+type WorkbenchBoundaryLibrarySnapshot = BoundaryLibrarySnapshot & {
+  entries: Array<BoundaryLibrarySnapshot["entries"][number] & {
+    ask_intent_check_mode: AskIntentCheckMode;
+  }>;
+};
 type WorkbenchScopedExploreRuntime = ScopedExploreRuntime | ScopedExploreBoundarySetRuntime;
 type WorkbenchScopedExploreRuntimeFactory = (
   input: Parameters<typeof createScopedExploreBoundarySetRuntime>[0],
@@ -224,6 +237,22 @@ export type BoundaryReviewProgress = SharedBoundaryReviewProgress;
 export type BoundaryReviewDecision = SharedBoundaryReviewDecision;
 type BoundaryReviewConfirmation = SharedBoundaryReviewConfirmation;
 type BoundaryReviewInvalidation = SharedBoundaryReviewInvalidation;
+async function withAskIntentCheckModes(
+  projectRoot: string,
+  snapshot: BoundaryLibrarySnapshot,
+): Promise<WorkbenchBoundaryLibrarySnapshot> {
+  const modes = await askIntentCheckModesForBoundaries(
+    projectRoot,
+    snapshot.entries.map((entry) => entry.name),
+  );
+  return {
+    ...snapshot,
+    entries: snapshot.entries.map((entry) => ({
+      ...entry,
+      ask_intent_check_mode: modes[entry.name] ?? "balanced",
+    })),
+  };
+}
 const workbenchWorkerControlActions = new Set<WorkerControlAction>([
   "pause",
   "resume",
@@ -743,9 +772,17 @@ async function handleRequest(input: {
     const reviewForDisplay = {
       ...review,
       resources: review.resources.map((resource) => {
-        const guidance = blockedTenantScopeGuidance(resource);
+        const guidance = blockedTenantScopeGuidance({
+          ...resource,
+          ...(draft.organization_scope
+            ? { organization_scope: draft.organization_scope }
+            : {}),
+        });
         return {
           ...resource,
+          ...(draft.organization_scope
+            ? { organization_scope: structuredClone(draft.organization_scope) }
+            : {}),
           ...(guidance ? { scope_resolution_guidance: guidance } : {}),
           exact_numeric_grouping_eligibility: Object.fromEntries(
             resource.fields.map((field) => [
@@ -823,12 +860,15 @@ async function handleRequest(input: {
       && (!deploymentProfile || deploymentProfile === "development");
     let boundaryLibrary;
     try {
-      boundaryLibrary = await synchronizeBoundaryLibrary({
+      boundaryLibrary = await withAskIntentCheckModes(
         projectRoot,
-        draft,
-        currentCandidate: candidate,
-        ...(progress ? { currentProgress: progress } : {}),
-      });
+        await synchronizeBoundaryLibrary({
+          projectRoot,
+          draft,
+          currentCandidate: candidate,
+          ...(progress ? { currentProgress: progress } : {}),
+        }),
+      );
     } catch (error) {
       throw new Error(
         `Saved boundary workspace could not be synchronized: ${error instanceof Error ? error.message : String(error)}`,
@@ -1123,6 +1163,62 @@ async function handleRequest(input: {
     return;
   }
 
+  if (request.method === "POST" && url.pathname === "/api/boundary/ask-intent-check") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Auto Boundary review is not enabled for this Workbench session." });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required to change local Ask preferences." });
+      return;
+    }
+    const body = await readJsonBody(request);
+    const name = requiredReviewText(body.name, "boundary name");
+    const mode = body.mode === "balanced" || body.mode === "boundary_only"
+      ? body.mode
+      : undefined;
+    if (!mode) {
+      sendJson(response, 400, {
+        ok: false,
+        error: "Local Ask plan check must be balanced or boundary_only.",
+        source_database_changed: false,
+      });
+      return;
+    }
+    const draft = JSON.parse(await fs.readFile(
+      path.join(boundaryRoot, "exploration-boundary.draft.json"),
+      "utf8",
+    )) as ExplorationBoundaryDraft;
+    const progress = await readBoundaryReviewProgress(projectRoot, draft);
+    const candidate = progress?.candidate ?? recommendedBoundaryReviewCandidate(draft);
+    const library = await synchronizeBoundaryLibrary({
+      projectRoot,
+      draft,
+      currentCandidate: candidate,
+      ...(progress ? { currentProgress: progress } : {}),
+    });
+    if (!library.entries.some((entry) => entry.name === name)) {
+      sendJson(response, 404, {
+        ok: false,
+        error: `Saved boundary ${name} was not found.`,
+        source_database_changed: false,
+      });
+      return;
+    }
+    await setAskIntentCheckMode({ projectRoot, boundaryName: name, mode });
+    sendJson(response, 200, {
+      ok: true,
+      boundary_name: name,
+      ask_intent_check_mode: mode,
+      question_to_plan_checked: mode === "balanced",
+      boundary_library: await withAskIntentCheckModes(projectRoot, library),
+      authority_changed: false,
+      activation_required: false,
+      source_database_changed: false,
+    });
+    return;
+  }
+
   if (request.method === "POST"
     && [
       "/api/boundary/library/create",
@@ -1220,6 +1316,7 @@ async function handleRequest(input: {
           name,
           boundaryRoot,
         });
+        await deleteAskIntentCheckPreference(projectRoot, name);
         sendJson(response, 200, {
           ok: true,
           discarded_curated_review: true,
@@ -1233,14 +1330,18 @@ async function handleRequest(input: {
         return;
       }
       const deleted = await deleteSavedBoundary({ ...context, name });
+      await deleteAskIntentCheckPreference(projectRoot, name);
       progress = deleted.progress;
     }
-    const boundaryLibrary = await synchronizeBoundaryLibrary({
+    const boundaryLibrary = await withAskIntentCheckModes(
       projectRoot,
-      draft,
-      currentCandidate: progress.candidate,
-      currentProgress: progress,
-    });
+      await synchronizeBoundaryLibrary({
+        projectRoot,
+        draft,
+        currentCandidate: progress.candidate,
+        currentProgress: progress,
+      }),
+    );
     sendJson(response, 200, {
       ok: true,
       candidate: progress.candidate,
@@ -1351,6 +1452,13 @@ async function handleRequest(input: {
       revision: currentRevision + 1,
     });
     await saveSharedBoundaryReviewProgress(projectRoot, progress);
+    if (currentCandidate.pack.name !== preview.candidate.pack.name) {
+      await renameAskIntentCheckPreference({
+        projectRoot,
+        previousName: currentCandidate.pack.name,
+        nextName: preview.candidate.pack.name,
+      });
+    }
     sendJson(response, 200, {
       ok: true,
       digest: preview.digest,
@@ -3083,6 +3191,10 @@ async function handleRequest(input: {
           if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
           throw error;
         });
+      const askIntentCheckModes = await askIntentCheckModesForBoundaries(
+        projectRoot,
+        activeBoundaries.map((boundary) => boundary.pack.name),
+      );
       const boundaryCatalog = buildBoundaryCatalogModel(activeBoundaries);
       gateway = await askGatewayFactory({
         configPath,
@@ -3114,6 +3226,12 @@ async function handleRequest(input: {
         active_boundary_digest: authority.active_boundary_digest,
         active_boundary_set_digest: authority.active_boundary_set_digest,
         active_boundary_digests: authority.active_boundary_digests,
+        ask_intent_checks: activeBoundaries.map((boundary) => ({
+          boundary_name: boundary.pack.name,
+          mode: askIntentCheckModes[boundary.pack.name] ?? "balanced",
+          question_to_plan_checked:
+            (askIntentCheckModes[boundary.pack.name] ?? "balanced") === "balanced",
+        })),
         boundary_catalog: boundaryCatalog,
         boundary_mermaid: renderBoundaryCatalogMermaid(boundaryCatalog),
         boundary_diagrams: buildBoundaryCatalogDiagramExports(boundaryCatalog),
@@ -8490,6 +8608,7 @@ async function prepareAutoBoundaryRescan(input: {
         parsedEvidence: evidence.parsed,
         existingContracts: evidence.existingContracts,
         configuredTrustedContext,
+        previousBoundary: previousProgress?.candidate ?? oldDraft,
       },
     );
   const build = buildAutoBoundary({

@@ -21,6 +21,7 @@ import {
   normalizeExplorationAutoBandPolicy,
   normalizeExplorationNumericBand,
   ownerReviewableExplorationBudgetCeiling,
+  pruneAutoBoundaryReviewOverrides,
   reviewedAnalysisRelationshipHopLimit,
   reviewedDerivedScopeHopLimit,
   reviewExplorationBoundaryCandidate,
@@ -40,6 +41,7 @@ import {
   type GenerationLock,
   type RelationshipLinkProof,
   type SharedReferenceScopeInference,
+  type SingleOrganizationScope,
 } from "./auto-boundary.js";
 import {
   applyManagedBoundaryReviewDecision,
@@ -570,6 +572,7 @@ export type BoundaryResourceReviewView = {
   status: string;
   included: boolean;
   blockers: string[];
+  organization_scope?: SingleOrganizationScope;
   scope_resolution_guidance?: BlockedTenantScopeGuidance;
   row_identity: BoundaryInference<string>;
   tenant_key: BoundaryInference<string>;
@@ -608,6 +611,7 @@ export type BoundaryResourceReviewSummary = {
   included: boolean;
   active: boolean;
   blockers: string[];
+  organization_scope?: SingleOrganizationScope;
   scope_resolution_guidance?: BlockedTenantScopeGuidance;
   pending_decisions: string[];
   risk_count: number;
@@ -687,6 +691,9 @@ export async function inspectBoundaryResourceReview(
     status: reviewed.status,
     included: Boolean(candidate),
     blockers: reviewed.blockers,
+    ...(state.candidate.organization_scope
+      ? { organization_scope: structuredClone(state.candidate.organization_scope) }
+      : {}),
     row_identity: reviewed.primary_key,
     tenant_key: reviewed.tenant_key,
     ...(reviewed.derived_tenant_scope
@@ -740,7 +747,11 @@ export async function listBoundaryResourceReviews(
       );
       const pendingDecisions = state.candidate.unresolved_decisions
         .filter((decision) => decision.startsWith(`${resource.id}:`) && !confirmed.has(decision));
-      const scopeResolutionGuidance = blockedTenantScopeGuidance(resource);
+      const organizationScope = state.candidate.organization_scope;
+      const scopeResolutionGuidance = blockedTenantScopeGuidance({
+        ...resource,
+        ...(organizationScope ? { organization_scope: organizationScope } : {}),
+      });
       const fieldCounts = reviewedBoundaryFieldCounts(
         display,
         resource.fields.map((field) => field.name),
@@ -756,6 +767,9 @@ export async function listBoundaryResourceReviews(
         included: Boolean(candidate),
         active: Boolean(active),
         blockers: [...resource.blockers],
+        ...(organizationScope
+          ? { organization_scope: structuredClone(organizationScope) }
+          : {}),
         ...(scopeResolutionGuidance
           ? { scope_resolution_guidance: scopeResolutionGuidance }
           : {}),
@@ -773,6 +787,8 @@ export async function listBoundaryResourceReviews(
           resource.status !== "blocked_role"
           && Boolean(resource.primary_key.selected || resource.primary_key.candidates.length)
           && Boolean(
+            organizationScope
+            ||
             resource.tenant_key.selected
             || resource.tenant_key.candidates.length
             || resource.derived_tenant_scope?.candidates.length
@@ -912,13 +928,23 @@ export async function prepareBoundaryResourceReviewMutation(
     configuredTrustedContext,
   });
   const cleanBuild = mutationBuild.build;
-  let overrides = boundaryReviewOverridesForCandidate({
-    progress: state.progress,
-    baseline: cleanBuild.exploration_boundary,
-    candidate: state.candidate,
-    actor: request.actor,
-    now: request.decided_at,
-  });
+  let overrides = pruneAutoBoundaryReviewOverrides(
+    inspection,
+    boundaryReviewOverridesForCandidate({
+      progress: state.progress,
+      baseline: cleanBuild.exploration_boundary,
+      candidate: state.candidate,
+      actor: request.actor,
+      now: request.decided_at,
+    }),
+    {
+      project,
+      parsedEvidence: evidence.parsed,
+      existingContracts: evidence.existingContracts,
+      configuredTrustedContext,
+      previousBoundary: state.candidate,
+    },
+  ).overrides;
   for (const decision of managedDecisions) {
     overrides = applyManagedBoundaryReviewDecision(overrides, decision);
   }
@@ -1060,13 +1086,23 @@ export async function prepareBoundaryReviewMutationBatch(
     configuredTrustedContext,
   });
   const cleanBuild = mutationBuild.build;
-  let overrides = boundaryReviewOverridesForCandidate({
-    progress: state.progress,
-    baseline: cleanBuild.exploration_boundary,
-    candidate: state.candidate,
-    actor: requests[0]!.actor,
-    now: requests[0]!.decided_at,
-  });
+  let overrides = pruneAutoBoundaryReviewOverrides(
+    inspection,
+    boundaryReviewOverridesForCandidate({
+      progress: state.progress,
+      baseline: cleanBuild.exploration_boundary,
+      candidate: state.candidate,
+      actor: requests[0]!.actor,
+      now: requests[0]!.decided_at,
+    }),
+    {
+      project,
+      parsedEvidence: evidence.parsed,
+      existingContracts: evidence.existingContracts,
+      configuredTrustedContext,
+      previousBoundary: state.candidate,
+    },
+  ).overrides;
   for (const request of requests) {
     for (const decision of managedDecisionsForRequest(request)) {
       overrides = applyManagedBoundaryReviewDecision(overrides, decision);
@@ -2534,7 +2570,7 @@ function validateBoundaryRequestAgainstResource(
       const previous = exactGroupingChanges.get(field);
       if (previous && previous !== mode) {
         throw new Error(
-          `${resource.id}.${field} cannot enable and disable exact numeric grouping in one review decision.`,
+          `${resource.id}.${field} cannot enable and disable exact grouping in one review decision.`,
         );
       }
       exactGroupingChanges.set(field, mode);
@@ -2544,7 +2580,7 @@ function validateBoundaryRequestAgainstResource(
     const eligibility = exactNumericGroupingEligibility(resource, field);
     if (!eligibility.eligible) {
       throw new Error(
-        `${resource.id}.${field} cannot be reviewed for exact numeric grouping: `
+        `${resource.id}.${field} cannot be reviewed for exact grouping: `
         + `${eligibility.reasons.join("; ")}.`,
       );
     }
@@ -2600,14 +2636,14 @@ function assertRequestedExposureState(
   for (const field of request.allow_exact_numeric_grouping_fields ?? []) {
     if (!resource.groupable_fields.includes(field)) {
       throw new Error(
-        `Reviewed exact numeric grouping for ${request.resource_id}.${field} was not reflected in the disabled candidate.`,
+        `Reviewed exact grouping for ${request.resource_id}.${field} was not reflected in the disabled candidate.`,
       );
     }
   }
   for (const field of request.remove_exact_numeric_grouping_fields ?? []) {
     if (resource.groupable_fields.includes(field)) {
       throw new Error(
-        `Removed exact numeric grouping for ${request.resource_id}.${field} remained in the disabled candidate.`,
+        `Removed exact grouping for ${request.resource_id}.${field} remained in the disabled candidate.`,
       );
     }
   }

@@ -121,7 +121,7 @@ export function reconstructBoundaryReviewOverrides(input: {
       resource.exact_numeric_grouping = Object.fromEntries(
         exactNumericGroupingFields.map((field) => [field, {
           actor: boundedMigrationText(input.actor, "migration actor", 128),
-          reason: `Reconstructed exact numeric grouping from saved boundary ${input.candidate.pack.name}.`,
+          reason: `Reconstructed exact grouping from saved boundary ${input.candidate.pack.name}.`,
           decided_at: input.decidedAt,
         }]),
       );

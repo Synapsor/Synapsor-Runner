@@ -11,7 +11,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { cliCommandName } from "./cli-command-meta.js";
-import { writeFileGuarded } from "./cli-files.js";
+import { fileExists, writeFileGuarded } from "./cli-files.js";
 import { shellQuote } from "./cli-format.js";
 import { usage } from "./cli-help.js";
 import { assertKnownOptions, optionalArg, outputArg } from "./cli-options.js";
@@ -96,6 +96,18 @@ type ConfigCommandDependencies = {
 };
 
 
+async function backupExistingConfig(output: string): Promise<string | undefined> {
+  if (!(await fileExists(output))) return undefined;
+  const resolved = path.resolve(output);
+  const stem = `${resolved}.bak.${new Date().toISOString().replace(/[:.]/g, "-")}`;
+  let backup = stem;
+  let counter = 1;
+  while (await fileExists(backup)) backup = `${stem}.${counter++}`;
+  await fs.copyFile(resolved, backup);
+  return backup;
+}
+
+
 export async function configCommand(
   args: string[],
   dependencies: ConfigCommandDependencies = {},
@@ -123,11 +135,12 @@ async function configInit(
       "--single-tenant-organization-id",
       "--issuer", "--audience", "--accounting-namespace", "--oauth-scope",
       "--control-url-env", "--jwks-url-env", "--hmac-key-env", "--http-channel",
-      "--verify-bindings",
+      "--verify-bindings", "--force",
     ]),
     "config init",
   );
   const output = outputArg(args) ?? "synapsor.runner.json";
+  const force = args.includes("--force");
   const productionExplore = args.includes("--production-explore");
   const requireBindingVerification = args.includes("--verify-bindings");
   if (requireBindingVerification && !productionExplore) {
@@ -268,7 +281,8 @@ async function configInit(
         inspectDatabaseFn: dependencies.inspectDatabaseFn ?? inspectDatabase,
       })
     : undefined;
-  await writeFileGuarded(output, `${JSON.stringify(config, null, 2)}\n`, false);
+  const backupPath = force ? await backupExistingConfig(output) : undefined;
+  await writeFileGuarded(output, `${JSON.stringify(config, null, 2)}\n`, force);
   const parsed = JSON.parse(await fs.readFile(output, "utf8"));
   const writtenValidation = validateRunnerCapabilityConfig(parsed);
   if (!writtenValidation.ok) {
@@ -302,6 +316,7 @@ async function configInit(
     source,
     engine,
     read_url_env: readUrlEnv,
+    ...(backupPath ? { backup_path: backupPath } : {}),
     source_database_changed: false,
     ...(bindingVerification ? { binding_verification: bindingVerification } : {}),
     ...(controlStoreMigrationCommand
@@ -327,6 +342,7 @@ async function configInit(
   } else {
     process.stdout.write([
       `Created valid zero-authority ${productionExplore ? "production Explore " : ""}Runner config: ${result.config_path}`,
+      ...(backupPath ? [`Backup of replaced config: ${backupPath}`] : []),
       `Mode: ${result.mode}`,
       `Database credential reference: ${readUrlEnv} (${bindingVerification
         ? "value was read only for schema binding verification and was not written"

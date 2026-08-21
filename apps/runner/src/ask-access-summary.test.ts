@@ -267,8 +267,8 @@ describe("Ask access summaries", () => {
       review_focus: "field_operation",
     });
     expect(guidance?.message).toMatch(/not grouped automatically.*human may approve/is);
-    expect(guidance?.next_action).toContain("Exact numeric groups (X in the terminal)");
-    expect(guidance?.next_action).toContain("--allow-exact-numeric-grouping total_cents");
+    expect(guidance?.next_action).toContain("Exact groups (X in the terminal)");
+    expect(guidance?.next_action).toContain("--allow-exact-grouping total_cents");
     expect(guidance?.next_action).toContain("Review + activate");
   });
 

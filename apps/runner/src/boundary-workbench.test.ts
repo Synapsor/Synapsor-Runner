@@ -19,7 +19,7 @@ describe("Auto Boundary Workbench renderer", () => {
       ["reviewed relationships and visual map", ["Reviewed data map", "renderBoundaryGraphSvg", "Each reviewed join uses its own labeled connection lane", "boundary-field-matrix", "Canonical path ID"]],
       ["numeric bands", ["Add a fixed numeric band", "kind:\"numeric_band\""]],
       ["automatic numeric bands", ["Allow automatic numeric bands", "kind:\"auto_band\"", "raw edges"]],
-      ["reviewed exact numeric grouping", ["Exact numeric groups", "kind:\"exact_numeric_grouping\"", "It returns exact values; it does not create numeric bands"]],
+      ["reviewed exact grouping", ["Exact groups", "kind:\"exact_numeric_grouping\"", "It returns exact values; it does not create numeric bands"]],
       ["database capability tiers", ["Reviewed source release:", "Full reviewed grammar", "reviewed release line", "Automatic numeric bands are unavailable on", "This unavailable grammar is not shown to the model", "Supported limited database grammar", "schema_check_constraints===false", "automatic_numeric_bands===false", "Database capability changes"]],
       ["reviewed relative UTC windows", ["Reviewed UTC window", "Reviewed relative UTC window", "Exact UTC date ranges", "Operator-only resolved UTC window", "time_window", "compare_to"]],
       ["named and post-suppression measures", ["Add a named derived metric", "Add a post-suppression calculation", "kind:\"derived_measure\""]],
@@ -506,6 +506,12 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain('id="boundary-pack-name"');
     expect(html).toContain('id="save-boundary-name"');
     expect(html).toContain("The name is included in its final review fingerprint.");
+    expect(html).toContain("Local Ask plan check · ");
+    expect(html).toContain('id="boundary-ask-intent-mode"');
+    expect(html).toContain("Boundary only — trust the model&apos;s reviewed plan");
+    expect(html).toContain('post("/api/boundary/ask-intent-check"');
+    expect(html).toContain("It affects only Runner&apos;s local CLI and Workbench Ask");
+    expect(html).toContain("production HTTP are unchanged");
     expect(html).toContain("boundary_rescan_report");
     expect(html).toContain("authoring_baseline_refreshed");
     expect(html).toContain("renderProjectRescanPreview");

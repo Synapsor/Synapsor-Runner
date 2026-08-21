@@ -61,6 +61,13 @@ import {
   DEFAULT_TERMINAL_ANTHROPIC_ASK_MODEL,
   DEFAULT_TERMINAL_OPENAI_ASK_MODEL,
 } from "./terminal-ask-defaults.js";
+import {
+  askIntentCheckModeForBoundary,
+  askIntentCheckModesForBoundaries,
+  deleteAskIntentCheckPreference,
+  renameAskIntentCheckPreference,
+  setAskIntentCheckMode,
+} from "./ask-intent-preferences.js";
 import { disableScopedExplore } from "./protect-query.js";
 import { recommendedBoundaryReviewCandidate } from "./boundary-candidate.js";
 import {
@@ -233,6 +240,11 @@ export async function boundaryRenameCommand(args: string[]): Promise<number> {
     actor,
     reason,
   });
+  await renameAskIntentCheckPreference({
+    projectRoot,
+    previousName: currentName,
+    nextName: newName,
+  });
   const payload = {
     ok: true,
     previous_name: currentName,
@@ -299,6 +311,7 @@ export async function boundaryDeleteCommand(
       ...(context.progress ? { currentProgress: context.progress } : {}),
       name,
     });
+    await deleteAskIntentCheckPreference(projectRoot, name);
     const next = `${cliCommandName()} boundary draft --from-env ${context.lock.source_env} --project-root ${shellQuote(displayPath(projectRoot))}`;
     const payload = {
       ok: true,
@@ -329,6 +342,7 @@ export async function boundaryDeleteCommand(
     ...(context.progress ? { currentProgress: context.progress } : {}),
     name,
   });
+  await deleteAskIntentCheckPreference(projectRoot, name);
   const payload = {
     ok: true,
     deleted: name,
@@ -766,6 +780,8 @@ async function boundaryResourceReviewCommand(
     "--filter-fields",
     "--sort-fields",
     "--group-fields",
+    "--allow-exact-grouping",
+    "--remove-exact-grouping",
     "--allow-exact-numeric-grouping",
     "--remove-exact-numeric-grouping",
     "--measure-fields",
@@ -821,6 +837,8 @@ async function boundaryResourceReviewCommand(
     "--filter-fields",
     "--sort-fields",
     "--group-fields",
+    "--allow-exact-grouping",
+    "--remove-exact-grouping",
     "--allow-exact-numeric-grouping",
     "--remove-exact-numeric-grouping",
     "--measure-fields",
@@ -928,6 +946,16 @@ async function boundaryResourceReviewCommand(
     && (args.includes("--principal-key") || args.includes("--no-principal"))) {
     throw new Error("Use one of --principal-key <column>, --principal-scope-path <path>, or --no-principal.");
   }
+  if (args.includes("--allow-exact-grouping") && args.includes("--allow-exact-numeric-grouping")) {
+    throw new Error("Use --allow-exact-grouping; do not combine it with its legacy --allow-exact-numeric-grouping alias.");
+  }
+  if (args.includes("--remove-exact-grouping") && args.includes("--remove-exact-numeric-grouping")) {
+    throw new Error("Use --remove-exact-grouping; do not combine it with its legacy --remove-exact-numeric-grouping alias.");
+  }
+  const allowExactGroupingFields = listArg(args, "--allow-exact-grouping")
+    ?? listArg(args, "--allow-exact-numeric-grouping");
+  const removeExactGroupingFields = listArg(args, "--remove-exact-grouping")
+    ?? listArg(args, "--remove-exact-numeric-grouping");
   const nullableRelationship = optionalArg(args, "--nullable-relationship");
   const unmatchedRows = optionalArg(args, "--unmatched-rows");
   const minimumCohortText = optionalArg(args, "--minimum-cohort");
@@ -1017,20 +1045,14 @@ async function boundaryResourceReviewCommand(
     ...(listArg(args, "--filter-fields") ? { filterable_fields: listArg(args, "--filter-fields") } : {}),
     ...(listArg(args, "--sort-fields") ? { sortable_fields: listArg(args, "--sort-fields") } : {}),
     ...(listArg(args, "--group-fields") ? { groupable_fields: listArg(args, "--group-fields") } : {}),
-    ...(listArg(args, "--allow-exact-numeric-grouping")
+    ...(allowExactGroupingFields
       ? {
-          allow_exact_numeric_grouping_fields: listArg(
-            args,
-            "--allow-exact-numeric-grouping",
-          ),
+          allow_exact_numeric_grouping_fields: allowExactGroupingFields,
         }
       : {}),
-    ...(listArg(args, "--remove-exact-numeric-grouping")
+    ...(removeExactGroupingFields
       ? {
-          remove_exact_numeric_grouping_fields: listArg(
-            args,
-            "--remove-exact-numeric-grouping",
-          ),
+          remove_exact_numeric_grouping_fields: removeExactGroupingFields,
         }
       : {}),
     ...(listArg(args, "--measure-fields") ? { aggregate_measures: listArg(args, "--measure-fields") } : {}),
@@ -1167,11 +1189,18 @@ async function interactiveBoundaryReviewLoop(input: {
     context = await loadBoundaryReviewContext(input.projectRoot);
     const notice = accessNotice;
     accessNotice = undefined;
+    const askIntentModes = await askIntentCheckModesForBoundaries(
+      input.projectRoot,
+      boundaryLibrary.entries.map((entry) => entry.name),
+    );
     const selected = await input.session.chooseResource(
       await listBoundaryResourceReviews(input.projectRoot),
       {
         ...boundaryReviewOverview(context.bundle),
-        boundaries: boundaryLibrary.entries,
+        boundaries: boundaryLibrary.entries.map((entry) => ({
+          ...entry,
+          ask_intent_check_mode: askIntentModes[entry.name] ?? "balanced",
+        })),
       },
       {
         initialView: input.initialView ?? "boundaries",
@@ -1196,6 +1225,54 @@ async function interactiveBoundaryReviewLoop(input: {
         return input.activationHandoff(deferredActivationHandoff);
       }
       return 0;
+    }
+    if (selected.action === "intent_check") {
+      const currentMode = await askIntentCheckModeForBoundary(
+        input.projectRoot,
+        selected.boundary_name,
+      );
+      const nextMode = currentMode === "balanced" ? "boundary_only" : "balanced";
+      if (nextMode === "boundary_only") {
+        const accepted = await input.session.confirm(
+          "Turn off the English question-to-plan check for local Ask on this boundary? A model may execute a valid reviewed plan even when it does not answer the wording of the question. Reviewed fields, operations, scope, suppression, drift, read-only compilation, and budgets remain enforced.",
+          { defaultValue: false },
+        );
+        if (!accepted) {
+          accessNotice = {
+            tone: "success",
+            title: "Local Ask remains in Balanced mode.",
+            lines: [
+              "Runner still compares the English question with the model's proposed reviewed plan before execution.",
+            ],
+          };
+          continue;
+        }
+      }
+      await setAskIntentCheckMode({
+        projectRoot: input.projectRoot,
+        boundaryName: selected.boundary_name,
+        mode: nextMode,
+      });
+      accessNotice = nextMode === "boundary_only"
+        ? {
+            tone: "warning",
+            title: `Local Ask for ${selected.boundary_name} now uses Boundary-only mode.`,
+            lines: [
+              "The English question-to-plan comparison is off for this boundary.",
+              "Every plan still passes the same reviewed Explore validator and compiler; no data authority changed.",
+              "Press T again to restore Balanced mode.",
+            ],
+            footer: "No review or activation is required for this local Ask preference.",
+          }
+        : {
+            tone: "success",
+            title: `Local Ask for ${selected.boundary_name} now uses Balanced mode.`,
+            lines: [
+              "Runner will refuse a model plan that contradicts the English question before Explore execution.",
+            ],
+            footer: "Reviewed data authority and source data were unchanged.",
+          };
+      continue;
     }
     if (selected.action === "rename") {
       const result = await interactiveBoundaryRename({
@@ -1414,6 +1491,7 @@ async function interactiveBoundaryReviewLoop(input: {
         "Active Explore authority changed: no",
         "",
       ].join("\n"));
+      await deleteAskIntentCheckPreference(input.projectRoot, selected.boundary_name);
       continue;
     }
     if (selected.action === "confirm") {
@@ -2667,7 +2745,9 @@ async function resolveBlockedBoundaryResource(input: {
 }): Promise<BoundaryResourceReviewView | "back" | undefined> {
   if (!input.session.resolveBlockedResource) {
     process.stdout.write([
-      `${input.view.resource_id} still needs a reviewed record ID and tenant-isolation column.`,
+      input.view.organization_scope
+        ? `${input.view.resource_id} still needs a reviewed record ID. Whole-organization scope is already active; no tenant column is required.`
+        : `${input.view.resource_id} still needs a reviewed record ID and tenant-isolation choice.`,
       `Run ${cliCommandName()} boundary review in a terminal to choose from database-inspected candidates.`,
       "Nothing was saved or activated.",
       "",
@@ -2677,7 +2757,10 @@ async function resolveBlockedBoundaryResource(input: {
   const resolution = await input.session.resolveBlockedResource(input.view);
   if (!resolution || resolution === "back") return resolution;
   const sharedReference = "shared_reference_scope" in resolution;
-  let reason = "Selected database-inspected identity and tenant isolation in local boundary review.";
+  const singleOrganization = "organization_scope" in resolution;
+  let reason = singleOrganization
+    ? "Selected database-inspected identity under the reviewed fixed whole-organization scope."
+    : "Selected database-inspected identity and tenant isolation in local boundary review.";
   if (sharedReference) {
     while (true) {
       const answer = await input.session.promptText(
@@ -2719,7 +2802,9 @@ async function resolveBlockedBoundaryResource(input: {
           ? { tenant_key: resolution.tenant_key }
           : resolution.tenant_scope_path
             ? { tenant_scope_path: resolution.tenant_scope_path }
-            : { shared_reference_scope: SHARED_REFERENCE_ACKNOWLEDGEMENT }),
+            : sharedReference
+              ? { shared_reference_scope: SHARED_REFERENCE_ACKNOWLEDGEMENT }
+              : {}),
         actor: localInteractiveActor(),
         reason,
       },
@@ -2739,7 +2824,9 @@ async function resolveBlockedBoundaryResource(input: {
           ? `Tenant isolation: ${derivedTenantScope
             ? formatDerivedScopePath(derivedTenantScope)
             : resolution.tenant_scope_path} (mandatory relationship path; trusted value stays outside model arguments)`
-          : "Row scope: Shared reference (no tenant predicate; field, privacy, and budget controls still apply)",
+          : singleOrganization
+            ? `Row scope: Whole organization ${input.view.organization_scope?.organization_id ?? "(reviewed)"} (no tenant column or tenant predicate required)`
+            : "Row scope: Shared reference (no tenant predicate; field, privacy, and budget controls still apply)",
       "Agent authority activated: no",
       "Review column access next.",
       "",
@@ -3207,6 +3294,11 @@ async function interactiveBoundaryRename(input: {
     newName: nextName,
     actor,
     reason,
+  });
+  await renameAskIntentCheckPreference({
+    projectRoot: input.projectRoot,
+    previousName: currentName,
+    nextName,
   });
   process.stdout.write([
     `Saved boundary name "${nextName}" in review revision ${progress.revision}.`,
@@ -3842,10 +3934,10 @@ async function interactiveExactNumericGroupingReview(input: {
   if (!resource) return "cancelled";
   const budgets = input.view.reviewed_budgets;
   process.stdout.write([
-    `${input.enabled ? "ENABLE" : "REMOVE"} EXACT NUMERIC GROUPS - ${input.resourceId}.${input.field}`,
+    `${input.enabled ? "ENABLE" : "REMOVE"} EXACT GROUPS - ${input.resourceId}.${input.field}`,
     input.enabled
-      ? "Exact values will become a reviewed grouping dimension. This is separate from fixed or automatic numeric bands."
-      : "The exact numeric grouping grant will be removed from the disabled revision.",
+      ? "Exact scalar values will become a reviewed grouping dimension. This is separate from fixed or automatic numeric bands."
+      : "The exact grouping grant will be removed from the disabled revision.",
     ...(input.enabled ? [
       `Privacy and shape remain enforced: minimum group ${resource.minimum_cohort_size}; `
         + `maximum ${budgets?.max_groups ?? "reviewed"} groups; top ${budgets?.max_top_n ?? "reviewed"}; `
@@ -3863,8 +3955,8 @@ async function interactiveExactNumericGroupingReview(input: {
   while (!reason) {
     const entered = await input.session.promptText(
       input.enabled
-        ? "Required reason this numeric field is a safe, meaningful exact grouping dimension"
-        : "Required reason for removing exact numeric grouping",
+        ? "Required reason this field is a safe, meaningful exact grouping dimension"
+        : "Required reason for removing exact grouping",
     );
     if (entered === undefined) return "cancelled";
     reason = entered.trim();
@@ -3888,14 +3980,14 @@ async function interactiveExactNumericGroupingReview(input: {
     if (!input.focusedAccess) {
       process.stdout.write(formatBoundaryMutationPreview(preview, input.view));
       const confirmed = await input.session.confirm(
-        "Save this exact numeric grouping decision in the disabled boundary?",
+        "Save this exact grouping decision in the disabled boundary?",
         { defaultValue: true },
       );
       if (!confirmed) return "cancelled";
     }
     const committed = await commitBoundaryResourceReviewMutation(input.projectRoot, preview);
     process.stdout.write([
-      `Recorded: ${input.resourceId}.${input.field} exact numeric grouping ${input.enabled ? "enabled" : "removed"}.`,
+      `Recorded: ${input.resourceId}.${input.field} exact grouping ${input.enabled ? "enabled" : "removed"}.`,
       `Actor: ${actor}; reason: ${JSON.stringify(reason)}.`,
       `Saved in disabled boundary revision ${committed.review_revision}. Active authority changed: no.`,
       "Use C Review + activate before this decision reaches local or production HTTP Explore.",
@@ -3905,7 +3997,7 @@ async function interactiveExactNumericGroupingReview(input: {
   } catch (error) {
     process.stdout.write([
       `Rejected: ${redactCliErrorMessage(error instanceof Error ? error.message : String(error))}`,
-      "No exact numeric grouping change was made or activated.",
+      "No exact grouping change was made or activated.",
       "",
     ].join("\n"));
     return "cancelled";
@@ -4920,10 +5012,10 @@ function formatRequestedBoundaryChanges(
     lines.push(`Allow reviewed model-visible use: ${describeReviewedField(view, field)}`);
   }
   for (const field of request.allow_exact_numeric_grouping_fields ?? []) {
-    lines.push(`Enable exact numeric grouping: ${describeReviewedField(view, field)}`);
+    lines.push(`Enable exact grouping: ${describeReviewedField(view, field)}`);
   }
   for (const field of request.remove_exact_numeric_grouping_fields ?? []) {
-    lines.push(`Remove exact numeric grouping: ${describeReviewedField(view, field)}`);
+    lines.push(`Remove exact grouping: ${describeReviewedField(view, field)}`);
   }
   if (request.include) lines.push(`Include ${request.resource_id} in the disabled candidate.`);
   if (request.exclude) lines.push(`Exclude ${request.resource_id} from the disabled candidate.`);

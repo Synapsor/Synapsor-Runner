@@ -1052,6 +1052,27 @@ describe("Synapsor Analytics shell", () => {
     expect(noQuery).toContain("No Runner data query was executed for this answer.");
   });
 
+  it("renders bounded model emphasis instead of printing Markdown markers", () => {
+    const plain = renderAnalyticsTurn(
+      turn("The **North region** leads, while __South__ follows."),
+      [],
+      100,
+      { ansi: false },
+    );
+    expect(plain).toContain("The North region leads, while South follows.");
+    expect(plain).not.toContain("**");
+    expect(plain).not.toContain("__South__");
+
+    const colored = renderAnalyticsTurn(
+      turn("The **North region** leads."),
+      [],
+      100,
+      { ansi: true },
+    );
+    expect(colored).toContain("\u001b[1;3mNorth region\u001b[0m\u001b[3m");
+    expect(colored).not.toContain("**North region**");
+  });
+
   it("honors NO_COLOR across the entire interactive answer", async () => {
     const previousNoColor = process.env.NO_COLOR;
     process.env.NO_COLOR = "1";
@@ -1100,6 +1121,35 @@ describe("Synapsor Analytics shell", () => {
     expect(colored).toContain("Provider: \u001b[1;36mOpenAI\u001b[0m");
     expect(colored).toContain("Model: \u001b[1;36mgpt-5-mini\u001b[0m");
     expect(colored).toContain("Reviewed access: \u001b[1;35mreviewed_staging\u001b[0m");
+  });
+
+  it("makes Boundary-only Ask visible in the shell banner and each verified result", () => {
+    const banner = renderAnalyticsShellBanner({
+      providerLabel: "OpenAI",
+      modelLabel: "gpt-5.6-luna",
+      boundaryLabel: "reviewed_staging",
+      profileLabel: "development",
+      reviewedDataAreas: 1,
+      askIntentChecks: [{
+        boundary_name: "reviewed_staging",
+        mode: "boundary_only",
+      }],
+    });
+    expect(banner).toContain("Ask plan check: BOUNDARY ONLY for reviewed_staging");
+    expect(banner).toContain("reviewed Explore validation remains active");
+
+    const current = analysis("A1", 0);
+    current.ask_intent_check_mode = "boundary_only";
+    current.question_to_plan_checked = false;
+    current.boundary_name = "reviewed_staging";
+    const output = renderAnalyticsTurn(
+      turn("The model summarized the verified result."),
+      [current],
+      100,
+    );
+    expect(output).toContain("Local Ask plan check: BOUNDARY ONLY for reviewed_staging");
+    expect(output).toContain("The English question was not compared with the model plan");
+    expect(output).toContain("reviewed Explore validation remained active");
   });
 
   it("keeps a disabled boundary update visible when Ask still uses the prior revision", () => {

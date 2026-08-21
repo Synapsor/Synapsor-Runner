@@ -2,6 +2,7 @@ import type {
   BoundaryInference,
   DerivedScopeInference,
   SharedReferenceScopeInference,
+  SingleOrganizationScope,
 } from "./auto-boundary.js";
 
 type ScopeRelationship = {
@@ -16,6 +17,7 @@ type ScopeRelationship = {
 export type BlockedTenantScopeInput = {
   id?: string;
   resource_id?: string;
+  organization_scope?: SingleOrganizationScope;
   tenant_key: BoundaryInference<string>;
   derived_tenant_scope?: DerivedScopeInference;
   shared_reference_scope?: SharedReferenceScopeInference;
@@ -30,6 +32,7 @@ export type BlockedTenantScopeGuidance = {
 export function blockedTenantScopeGuidance(
   input: BlockedTenantScopeInput,
 ): BlockedTenantScopeGuidance | undefined {
+  if (input.organization_scope?.mode === "single_organization") return undefined;
   if (input.tenant_key.selected
     || input.tenant_key.candidates.length > 0
     || input.derived_tenant_scope?.selected

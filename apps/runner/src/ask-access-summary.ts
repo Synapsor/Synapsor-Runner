@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
+  exactGroupingDataTypeSupported,
   loadActivatedExplorationBoundaries,
   type ExplorationBoundaryDraft,
 } from "./auto-boundary.js";
@@ -227,18 +228,18 @@ function resolveRefusalAccessGuidance(input: {
   }
 
   if (operation === "group" && activeResource
-    && exactNumericGroupingReviewable(activeResource, field)) {
+    && exactGroupingReviewable(activeResource, field)) {
     const command = `synapsor-runner boundary review resource ${resource} `
-      + `--allow-exact-numeric-grouping ${field} --actor <reviewer> --reason '<reason>' --apply`;
+      + `--allow-exact-grouping ${field} --actor <reviewer> --reason '<reason>' --apply`;
     return {
       kind: "review_candidate",
-      title: `${resource}.${field} needs reviewed exact numeric grouping`,
-      message: "Numeric fields are not grouped automatically. A human may approve this low-risk field as an exact dimension; suppression and every reviewed result, timeout, and rolling budget limit still apply.",
+      title: `${resource}.${field} needs reviewed exact grouping`,
+      message: "This scalar field is not grouped automatically. A human may approve it as an exact dimension; suppression and every reviewed result, timeout, and rolling budget limit still apply.",
       ...(boundaryName ? { review_boundary: boundaryName } : {}),
       review_resource: resource,
       review_field: field,
       review_focus: "field_operation",
-      next_action: `Visual path: /access or Workbench -> ${reviewPath(boundaryName, resource, `column ${field} -> Exact numeric groups (X in the terminal)`)} -> Review + activate. CLI-only path: leave the shell and run ${command}.`,
+      next_action: `Visual path: /access or Workbench -> ${reviewPath(boundaryName, resource, `column ${field} -> Exact groups (X in the terminal)`)} -> Review + activate. CLI-only path: leave the shell and run ${command}.`,
     };
   }
 
@@ -269,21 +270,20 @@ function resolveRefusalAccessGuidance(input: {
 
 type ReviewedBoundaryResource = ExplorationBoundaryDraft["pack"]["resources"][number];
 
-function exactNumericGroupingReviewable(
+function exactGroupingReviewable(
   resource: ReviewedBoundaryResource,
   field: string,
 ): boolean {
   const type = resource.field_types[field] ?? "";
-  if (!/(?:^|\b)(?:smallint|integer|bigint|int2|int4|int8|serial|bigserial|decimal|numeric|real|double precision|float|tinyint|mediumint|int|double)(?:\b|$)/i.test(type)) {
-    return false;
-  }
-  if (!resource.selectable_fields.includes(field)
-    || resource.kept_out_fields.includes(field)
+  if (!exactGroupingDataTypeSupported(type)) return false;
+  if (!resource.selectable_fields?.includes(field)
+    || resource.kept_out_fields?.includes(field)
     || resource.primary_key === field
     || resource.tenant_key === field
     || resource.principal_key === field) return false;
-  if (resource.relationships.some((relationship) =>
-    relationship.local_columns.includes(field))) return false;
+  if ((resource.relationships ?? []).some((relationship) =>
+    relationship.local_columns?.includes(field)
+    || relationship.proof?.links.some((link) => link.source_columns.includes(field)))) return false;
   return field.toLowerCase() !== "id" && !/_id$/i.test(field);
 }
 
