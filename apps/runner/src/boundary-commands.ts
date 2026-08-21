@@ -58,6 +58,13 @@ import { resolveOperatorIdentity, verifyJwtOperatorProof, verifySignedOperatorPr
 import { resolveSynapsorProject } from "./project-resolution.js";
 import { formatExploreVocabularyCoverage } from "./explore-vocabulary.js";
 import { DEFAULT_TERMINAL_OPENAI_ASK_MODEL } from "./terminal-ask-defaults.js";
+import {
+  askIntentCheckModeForBoundary,
+  askIntentCheckModesForBoundaries,
+  deleteAskIntentCheckPreference,
+  renameAskIntentCheckPreference,
+  setAskIntentCheckMode,
+} from "./ask-intent-preferences.js";
 import { disableScopedExplore } from "./protect-query.js";
 import { recommendedBoundaryReviewCandidate } from "./boundary-candidate.js";
 import {
@@ -208,6 +215,11 @@ export async function boundaryRenameCommand(args: string[]): Promise<number> {
     actor,
     reason,
   });
+  await renameAskIntentCheckPreference({
+    projectRoot,
+    previousName: currentName,
+    nextName: newName,
+  });
   const payload = {
     ok: true,
     previous_name: currentName,
@@ -274,6 +286,7 @@ export async function boundaryDeleteCommand(
       ...(context.progress ? { currentProgress: context.progress } : {}),
       name,
     });
+    await deleteAskIntentCheckPreference(projectRoot, name);
     const next = `${cliCommandName()} boundary draft --from-env ${context.lock.source_env} --project-root ${shellQuote(displayPath(projectRoot))}`;
     const payload = {
       ok: true,
@@ -304,6 +317,7 @@ export async function boundaryDeleteCommand(
     ...(context.progress ? { currentProgress: context.progress } : {}),
     name,
   });
+  await deleteAskIntentCheckPreference(projectRoot, name);
   const payload = {
     ok: true,
     deleted: name,
@@ -1150,11 +1164,18 @@ async function interactiveBoundaryReviewLoop(input: {
     context = await loadBoundaryReviewContext(input.projectRoot);
     const notice = accessNotice;
     accessNotice = undefined;
+    const askIntentModes = await askIntentCheckModesForBoundaries(
+      input.projectRoot,
+      boundaryLibrary.entries.map((entry) => entry.name),
+    );
     const selected = await input.session.chooseResource(
       await listBoundaryResourceReviews(input.projectRoot),
       {
         ...boundaryReviewOverview(context.bundle),
-        boundaries: boundaryLibrary.entries,
+        boundaries: boundaryLibrary.entries.map((entry) => ({
+          ...entry,
+          ask_intent_check_mode: askIntentModes[entry.name] ?? "balanced",
+        })),
       },
       {
         initialView: input.initialView ?? "boundaries",
@@ -1179,6 +1200,54 @@ async function interactiveBoundaryReviewLoop(input: {
         return input.activationHandoff(deferredActivationHandoff);
       }
       return 0;
+    }
+    if (selected.action === "intent_check") {
+      const currentMode = await askIntentCheckModeForBoundary(
+        input.projectRoot,
+        selected.boundary_name,
+      );
+      const nextMode = currentMode === "balanced" ? "boundary_only" : "balanced";
+      if (nextMode === "boundary_only") {
+        const accepted = await input.session.confirm(
+          "Turn off the English question-to-plan check for local Ask on this boundary? A model may execute a valid reviewed plan even when it does not answer the wording of the question. Reviewed fields, operations, scope, suppression, drift, read-only compilation, and budgets remain enforced.",
+          { defaultValue: false },
+        );
+        if (!accepted) {
+          accessNotice = {
+            tone: "success",
+            title: "Local Ask remains in Balanced mode.",
+            lines: [
+              "Runner still compares the English question with the model's proposed reviewed plan before execution.",
+            ],
+          };
+          continue;
+        }
+      }
+      await setAskIntentCheckMode({
+        projectRoot: input.projectRoot,
+        boundaryName: selected.boundary_name,
+        mode: nextMode,
+      });
+      accessNotice = nextMode === "boundary_only"
+        ? {
+            tone: "warning",
+            title: `Local Ask for ${selected.boundary_name} now uses Boundary-only mode.`,
+            lines: [
+              "The English question-to-plan comparison is off for this boundary.",
+              "Every plan still passes the same reviewed Explore validator and compiler; no data authority changed.",
+              "Press T again to restore Balanced mode.",
+            ],
+            footer: "No review or activation is required for this local Ask preference.",
+          }
+        : {
+            tone: "success",
+            title: `Local Ask for ${selected.boundary_name} now uses Balanced mode.`,
+            lines: [
+              "Runner will refuse a model plan that contradicts the English question before Explore execution.",
+            ],
+            footer: "Reviewed data authority and source data were unchanged.",
+          };
+      continue;
     }
     if (selected.action === "rename") {
       const result = await interactiveBoundaryRename({
@@ -1397,6 +1466,7 @@ async function interactiveBoundaryReviewLoop(input: {
         "Active Explore authority changed: no",
         "",
       ].join("\n"));
+      await deleteAskIntentCheckPreference(input.projectRoot, selected.boundary_name);
       continue;
     }
     if (selected.action === "confirm") {
@@ -3199,6 +3269,11 @@ async function interactiveBoundaryRename(input: {
     newName: nextName,
     actor,
     reason,
+  });
+  await renameAskIntentCheckPreference({
+    projectRoot: input.projectRoot,
+    previousName: currentName,
+    nextName,
   });
   process.stdout.write([
     `Saved boundary name "${nextName}" in review revision ${progress.revision}.`,

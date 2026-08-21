@@ -169,6 +169,12 @@ reviewed source and claim names. Issuer, audience, and accounting namespace are
 required explicit inputs. The generated file contains no credentials or secret
 values.
 
+`config init` refuses to replace an existing config by default. Use `--force`
+only when replacement is intentional. Runner preserves the prior file as a
+timestamped `.bak` file and prints the exact backup path before continuing; an
+existing reviewed project should normally be resumed or reconciled instead of
+being reinitialized.
+
 Production Explore defaults the HTTP session idle timeout to 120 seconds unless
 `http_security.limits.session_idle_timeout_seconds` is explicitly configured.
 The source pool is per Runner process, so fleet connection planning must account

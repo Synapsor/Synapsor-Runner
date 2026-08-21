@@ -21,6 +21,12 @@ for the Synapsor Cloud CLI.
   place of a requested distinct count. Unknown domain wording alone may proceed
   through the ordinary Explore validator and all of its scope, suppression,
   drift, and budget controls. OpenAI and Anthropic use the same logic.
+- Each boundary now has a local Ask plan-check mode. `Balanced` remains the
+  default. `Boundary only`, selected with `T` in the terminal boundary editor
+  or from Workbench, completely skips the English question-to-plan comparison
+  while preserving the full reviewed Explore validator and compiler. The
+  preference is local, per boundary, requires no activation, and cannot affect
+  MCP or production HTTP Explore.
 - Single-organization CLI and Workbench review now state that the fixed reviewed
   organization needs no tenant column or predicate. Multi-tenant remediation is
   no longer shown for those boundaries.

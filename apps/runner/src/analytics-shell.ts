@@ -21,6 +21,7 @@ import type {
 } from "./model-ask.js";
 import type { PendingBoundaryReviewSummary } from "./ask-authority.js";
 import { formatPreservedAuthority } from "./boundary-rescan.js";
+import type { AskIntentCheckMode } from "./ask-intent-preferences.js";
 import type {
   AskAccessGuidance,
   ReviewedAskAccessSummary,
@@ -612,6 +613,10 @@ export type AnalyticsShellInput = {
   accessSummary?: ReviewedAskAccessSummary;
   boundaryCatalog?: BoundaryCatalogModel;
   pendingBoundaryReview?: PendingBoundaryReviewSummary;
+  askIntentChecks?: Array<{
+    boundary_name: string;
+    mode: AskIntentCheckMode;
+  }>;
   operatorLabel?: string;
   verboseAttempts?: boolean;
   io: AnalyticsShellIo;
@@ -703,6 +708,7 @@ export async function runAnalyticsShell(
     reviewedDataAreas: input.reviewedDataAreas,
     accessSummary: input.accessSummary,
     pendingBoundaryReview: input.pendingBoundaryReview,
+    askIntentChecks: input.askIntentChecks,
   }, input.io.isTerminal?.() === true && !("NO_COLOR" in process.env)));
   try {
     while (true) {
@@ -799,15 +805,29 @@ export function renderAnalyticsShellBanner(input: {
   reviewedDataAreas: number;
   accessSummary?: ReviewedAskAccessSummary;
   pendingBoundaryReview?: PendingBoundaryReviewSummary;
+  askIntentChecks?: Array<{
+    boundary_name: string;
+    mode: AskIntentCheckMode;
+  }>;
 }, color = false): string {
   const theme = terminalTheme(color);
   const tableCount = `${input.reviewedDataAreas} ${input.reviewedDataAreas === 1 ? "table" : "tables"}`;
+  const boundaryOnly = input.askIntentChecks?.filter((entry) => entry.mode === "boundary_only") ?? [];
   return [
     theme.title("Synapsor Analytics"),
     theme.success(`Scoped Explore active - read-only ${safeTerminalText(input.profileLabel)} access`),
     `Provider: ${theme.key(safeTerminalText(input.providerLabel))}`,
     ...(input.modelLabel ? [`Model: ${theme.key(safeTerminalText(input.modelLabel))}`] : []),
     `Reviewed access: ${theme.scope(safeTerminalText(input.boundaryLabel ?? "active boundary"))} ${theme.dim(`(${tableCount})`)}`,
+    ...(boundaryOnly.length > 0
+      ? [
+        theme.warning(
+          `Ask plan check: BOUNDARY ONLY for ${boundaryOnly.map((entry) =>
+            safeTerminalText(entry.boundary_name)).join(", ")}`,
+        ),
+        theme.dim("The English question is not compared with model plans; reviewed Explore validation remains active."),
+      ]
+      : [theme.success("Ask plan check: BALANCED")]),
     ...(input.accessSummary?.resources.length
       ? [
         theme.title("Can ask now"),
@@ -1951,6 +1971,18 @@ async function showDetails(
     "",
     theme.title("WHAT RUNNER EXECUTED"),
     renderTerminalFact("Plan validated", planValidated, { color, tone: planValidated === "yes" ? "success" : "danger" }),
+    ...(live?.analysis.ask_intent_check_mode
+      ? [renderTerminalFact(
+        "Ask question-to-plan check",
+        live.analysis.ask_intent_check_mode === "balanced"
+          ? "balanced; English question compared before execution"
+          : "boundary only; English comparison skipped, Explore validation enforced",
+        {
+          color,
+          tone: live.analysis.ask_intent_check_mode === "balanced" ? "success" : "warning",
+        },
+      )]
+      : []),
     renderTerminalFact("Boundary", operatorInspection?.boundary_name ?? boundaryName, { color, tone: "identifier" }),
     renderTerminalFact("Boundary fingerprint", selected.boundary_digest, { color, tone: "identifier" }),
     renderTerminalFact("Trusted tenant scope", operatorInspection?.trusted_scope.tenant ?? "bound outside model arguments", { color, tone: "value" }),

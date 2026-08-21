@@ -69,6 +69,7 @@ import {
   DEFAULT_TERMINAL_ANTHROPIC_ASK_MODEL,
   DEFAULT_TERMINAL_OPENAI_ASK_MODEL,
 } from "./terminal-ask-defaults.js";
+import { askIntentCheckModesForBoundaries } from "./ask-intent-preferences.js";
 
 export type TryAskDependencies = {
   env?: NodeJS.ProcessEnv;
@@ -401,6 +402,10 @@ export async function tryAsk(
       const boundaryCatalog = await (
         dependencies.boundaryCatalogLoader ?? loadActiveBoundaryCatalog
       )(projectRoot);
+      const askIntentModes = await askIntentCheckModesForBoundaries(
+        projectRoot,
+        boundaryCatalog?.boundaries.map((boundary) => boundary.name) ?? [],
+      );
       const pendingBoundaryReview = await resolvePendingBoundaryReviewSummary(projectRoot);
       const listProtectable = dependencies.listProtectable ?? listProtectableQueries;
       const createDraft = dependencies.createProtectedDraft ?? createProtectedQueryDraft;
@@ -418,6 +423,10 @@ export async function tryAsk(
       accessSummary,
       boundaryCatalog,
       pendingBoundaryReview,
+      askIntentChecks: boundaryCatalog?.boundaries.map((boundary) => ({
+        boundary_name: boundary.name,
+        mode: askIntentModes[boundary.name] ?? "balanced",
+      })),
       operatorLabel: localAskOperator(env),
       verboseAttempts: verbose,
       io: dependencies.shellIo ?? createTerminalAnalyticsShellIo(),

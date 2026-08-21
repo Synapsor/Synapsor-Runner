@@ -12,6 +12,43 @@ afterEach(() => {
 
 
 describe("production config initialization", () => {
+  it("backs up and replaces an existing config only when --force is explicit", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-config-force-"));
+    const output = path.join(tempDir, "synapsor.runner.json");
+    const original = "{\n  \"operator_note\": \"preserve this exact file\"\n}\n";
+    await fs.writeFile(output, original);
+
+    await expect(configCommand([
+      "init", "--output", output, "--engine", "mysql", "--json",
+    ])).rejects.toThrow(/already exists.*--force/i);
+    expect(await fs.readFile(output, "utf8")).toBe(original);
+
+    const stdout = captureStdout();
+    await expect(configCommand([
+      "init", "--output", output, "--engine", "mysql", "--read-url-env", "APP_DATABASE_URL",
+      "--force", "--json",
+    ])).resolves.toBe(0);
+
+    const result = JSON.parse(stdout.join(""));
+    expect(result.backup_path).toMatch(/synapsor\.runner\.json\.bak\./u);
+    expect(await fs.readFile(result.backup_path, "utf8")).toBe(original);
+    expect(JSON.parse(await fs.readFile(output, "utf8"))).toMatchObject({
+      sources: {
+        local_mysql: {
+          engine: "mysql",
+          read_url_env: "APP_DATABASE_URL",
+        },
+      },
+      capabilities: [],
+    });
+
+    stdout.length = 0;
+    await expect(configCommand([
+      "init", "--output", output, "--engine", "mysql", "--force",
+    ])).resolves.toBe(0);
+    expect(stdout.join("")).toContain("Backup of replaced config:");
+  });
+
   it("requires an explicit engine when no reviewed production draft exists", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-config-engine-"));
     const output = path.join(tempDir, "synapsor.runner.json");

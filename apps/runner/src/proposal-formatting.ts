@@ -13,6 +13,26 @@ import { describeExploreAuditAttempt, describeExploreAuditPlan, reconstructExplo
 import { renderTerminalFact, renderTerminalJson, renderTerminalSectionHeading, renderTerminalSqlFrame, renderTerminalStyledText } from "./terminal-syntax.js";
 
 
+const auditTimestampFormatter = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: true,
+  timeZone: "UTC",
+  timeZoneName: "short",
+});
+
+
+function formatAuditTimestamp(value: unknown, fallback = "not recorded"): string {
+  if (typeof value !== "string" || value.length === 0) return fallback;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : auditTimestampFormatter.format(parsed);
+}
+
+
 export function formatProposalSummary(proposal: StoredProposal): string {
   return [
     `${proposal.created_at}  ${proposal.proposal_id}  ${proposal.state}  ${proposal.action}`,
@@ -120,7 +140,7 @@ export function formatEvidenceSummary(evidence: StoredEvidenceBundle, color = fa
   const resource = evidenceResource(evidence);
   return [
     `${renderTerminalStyledText(outcomeLabel(outcome).padEnd(12), color, auditOutcomeTone(outcome))} ${renderTerminalStyledText(description, color, "value")}`,
-    `  ${renderTerminalStyledText(evidence.created_at, color, "muted")}  ${renderTerminalStyledText(evidence.evidence_bundle_id, color, "identifier")}`,
+    `  ${renderTerminalStyledText(formatAuditTimestamp(evidence.created_at), color, "muted")}  ${renderTerminalStyledText(evidence.evidence_bundle_id, color, "identifier")}`,
     `  ${renderTerminalStyledText("Resource", color, "muted")} ${renderTerminalStyledText(resource, color, "identifier")}${metrics ? `  ${renderTerminalStyledText("Result", color, "muted")} ${renderTerminalStyledText(metrics, color, Number(evidence.payload.suppressed_groups) > 0 ? "warning" : "value")}` : ""}`,
     `  ${renderTerminalStyledText("Scope", color, "muted")} tenant ${renderTerminalStyledText(shortFingerprint(evidence.tenant_id), color, "identifier")}  principal ${renderTerminalStyledText(shortFingerprint(evidence.principal ?? "not recorded"), color, evidence.principal ? "identifier" : "muted")}`,
     "",
@@ -136,7 +156,7 @@ export function formatEvidenceBrowserSummary(evidence: StoredEvidenceBundle, col
     renderTerminalStyledText(evidencePlanDescription(evidence), color, "value"),
     "",
     auditFact("Outcome", outcomeLabel(outcome), color, auditOutcomeTone(outcome)),
-    auditFact("When", evidence.created_at, color, "muted"),
+    auditFact("When", formatAuditTimestamp(evidence.created_at), color, "muted"),
     auditFact("Resource", evidenceResource(evidence), color, "identifier"),
     auditFact("Principal fingerprint", shortFingerprint(evidence.principal ?? "not recorded"), color, evidence.principal ? "identifier" : "muted"),
     auditFact("Boundary digest", shortFingerprint(stringField(payload, "boundary_digest") ?? "not recorded"), color, "identifier"),
@@ -156,7 +176,7 @@ export function formatEvidenceBrowserRow(
   const outcome = stringField(evidence.payload, "outcome") ?? "recorded";
   return [
     `${renderTerminalStyledText(String(index).padStart(2), color, "identifier")}  ${renderTerminalStyledText(outcomeLabel(outcome).padEnd(12), color, auditOutcomeTone(outcome))} ${renderTerminalStyledText(evidencePlanDescription(evidence), color, "value")}`,
-    `    ${renderTerminalStyledText(evidence.created_at, color, "muted")}  ${renderTerminalStyledText(evidenceResource(evidence), color, "identifier")}  ${renderTerminalStyledText(evidence.evidence_bundle_id, color, "muted")}`,
+    `    ${renderTerminalStyledText(formatAuditTimestamp(evidence.created_at), color, "muted")}  ${renderTerminalStyledText(evidenceResource(evidence), color, "identifier")}  ${renderTerminalStyledText(evidence.evidence_bundle_id, color, "muted")}`,
   ].join("\n") + "\n";
 }
 
@@ -194,7 +214,7 @@ export function formatEvidenceBrowserFacts(evidence: StoredEvidenceBundle, color
     auditFact("Source query executed", formatMetadataBoolean(payload.source_query_executed), color, payload.source_query_executed === true ? "success" : "warning"),
     auditFact("Source database changed", formatMetadataBoolean(payload.source_database_changed), color, payload.source_database_changed === false ? "success" : "danger"),
     auditFact("Execution duration", formatMetadataValue(payload.execution_duration_ms, " ms"), color),
-    auditFact("Created at", evidence.created_at, color),
+    auditFact("Created at", formatAuditTimestamp(evidence.created_at), color),
   ].join("\n") + "\n";
 }
 
@@ -308,7 +328,7 @@ export function formatEvidenceDetail(evidence: StoredEvidenceBundle, color = fal
     auditFact("Source database changed", formatMetadataBoolean(payload.source_database_changed), color, payload.source_database_changed === false ? "success" : "danger"),
     auditFact("Execution duration", formatMetadataValue(payload.execution_duration_ms, " ms"), color),
     auditFact("Rows captured", evidence.items.length, color),
-    auditFact("Created at", evidence.created_at, color),
+    auditFact("Created at", formatAuditTimestamp(evidence.created_at), color),
     "",
     "Evidence contains bounded metadata and keyed fingerprints, not result rows, raw SQL, credentials, or trusted tenant/principal values.",
     ...(reconstructed ? [
@@ -487,7 +507,7 @@ export function formatQueryAuditSummary(
   const description = queryAuditDescription(row, payload);
   const lines = [
     `${renderTerminalStyledText(outcomeLabel(status).padEnd(28), color, auditOutcomeTone(status))} ${renderTerminalStyledText(description, color, "value")}`,
-    `  ${renderTerminalStyledText(String(row.created_at ?? "unknown time"), color, "muted")}  ${renderTerminalStyledText(`audit ${String(row.audit_id ?? "unknown")}`, color, "identifier")}${errorCode ? `  ${renderTerminalStyledText(errorCode, color, "danger")}` : ""}`,
+    `  ${renderTerminalStyledText(formatAuditTimestamp(row.created_at, "unknown time"), color, "muted")}  ${renderTerminalStyledText(`audit ${String(row.audit_id ?? "unknown")}`, color, "identifier")}${errorCode ? `  ${renderTerminalStyledText(errorCode, color, "danger")}` : ""}`,
     `  ${renderTerminalStyledText("Resource", color, "muted")} ${renderTerminalStyledText(String(row.table_name ?? "unknown"), color, "identifier")}  ${renderTerminalStyledText("Rows/groups", color, "muted")} ${renderTerminalStyledText(String(payload.returned_rows_or_groups ?? row.row_count ?? "unknown"), color, "value")}`,
     `  ${renderTerminalStyledText("Evidence", color, "muted")} ${renderTerminalStyledText(String(row.evidence_bundle_id ?? "none"), color, row.evidence_bundle_id ? "identifier" : "muted")}`,
     ...(details ? [`  ${renderTerminalStyledText("Query fingerprint", color, "muted")} ${renderTerminalStyledText(String(row.query_fingerprint ?? "not recorded"), color, "identifier")}`] : []),
@@ -530,7 +550,7 @@ export function formatQueryAuditBrowserRow(
   const description = queryAuditDescription(row, payload);
   return [
     `${renderTerminalStyledText(`#${String(index).padStart(2)}`, color, "identifier")}  ${renderTerminalStyledText(outcomeLabel(status).padEnd(32), color, auditOutcomeTone(status))} ${renderTerminalStyledText(description, color, "value")}`,
-    `    ${renderTerminalStyledText(String(row.created_at ?? "unknown time"), color, "muted")}  ${renderTerminalStyledText(String(row.table_name ?? "unknown"), color, "identifier")}  ${renderTerminalStyledText(`audit ${String(row.audit_id ?? "unknown")}`, color, "muted")}`,
+    `    ${renderTerminalStyledText(formatAuditTimestamp(row.created_at, "unknown time"), color, "muted")}  ${renderTerminalStyledText(String(row.table_name ?? "unknown"), color, "identifier")}  ${renderTerminalStyledText(`audit ${String(row.audit_id ?? "unknown")}`, color, "muted")}`,
   ].join("\n") + "\n";
 }
 
@@ -547,7 +567,7 @@ export function formatQueryAuditBrowserSummary(row: Record<string, unknown>, col
     ),
     "",
     auditFact("Outcome", outcomeLabel(status), color, auditOutcomeTone(status)),
-    auditFact("When", String(row.created_at ?? "not recorded"), color, "muted"),
+    auditFact("When", formatAuditTimestamp(row.created_at), color, "muted"),
     auditFact("Resource", String(row.table_name ?? "unknown"), color, "identifier"),
     ...(attemptedAccessLabel(payload.attempted_access)
       ? [auditFact("Attempted access", attemptedAccessLabel(payload.attempted_access)!, color, "warning")]
@@ -661,7 +681,7 @@ export function formatQueryAuditDetail(row: Record<string, unknown>, color = fal
     auditFact("Source query executed", formatMetadataBoolean(sourceQueryExecuted(payload)), color, sourceQueryExecuted(payload) === true ? "success" : "warning"),
     auditFact("Result values persisted", formatMetadataBoolean(payload.result_values_persisted), color, payload.result_values_persisted === false ? "success" : "danger"),
     auditFact("Source database changed", formatMetadataBoolean(payload.source_database_changed), color, payload.source_database_changed === false ? "success" : "danger"),
-    auditFact("Created at", String(row.created_at ?? "not recorded"), color),
+    auditFact("Created at", formatAuditTimestamp(row.created_at), color),
     ...(reconstructed ? [
       "",
       renderTerminalSqlFrame(reconstructed.statement, {
