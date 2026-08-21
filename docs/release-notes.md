@@ -10,7 +10,7 @@ npx -y @synapsor/runner demo --quick
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
-## 1.7.11 (unreleased)
+## 1.7.11 (2026-08-21)
 
 ### Useful Ask With The Same Reviewed Boundary
 
@@ -39,8 +39,17 @@ for the Synapsor Cloud CLI.
   compatible.
 - Terminal model interpretations render bounded bold emphasis without printing
   Markdown stars. `NO_COLOR` and non-TTY output remain plain text.
+- Boundary-editor key hints now include the available setting, its current
+  on/off or mode state, and a short purpose without requiring the operator to
+  discover hidden controls.
+- `config init --force` now performs the overwrite its earlier recovery message
+  advertised. Runner first saves the prior config to a timestamped `.bak` path
+  and reports that path. The default remains refusal without explicit `--force`.
+- Human evidence and query-audit lists, browsers, and detail views show readable
+  UTC dates. Stored ledger records, JSON output, exact filtering, and exports
+  retain their original ISO timestamps.
 
-Prepared package versions: `@synapsor/runner@1.7.11` and
+Package versions: `@synapsor/runner@1.7.11` and
 `synapsor-runner@1.7.11`. Spec and DSL remain `1.10.0` because this patch adds
 no public plan grammar.
 
