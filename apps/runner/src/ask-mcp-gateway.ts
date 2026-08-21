@@ -15,6 +15,11 @@ import {
   NO_REVIEWED_ANALYTICS_ACCESS_MESSAGE,
   ScopedExploreError,
 } from "./scoped-explore.js";
+import { loadActivatedExplorationBoundaries } from "./auto-boundary.js";
+import {
+  askIntentCheckModesForBoundaries,
+  type AskIntentCheckMode,
+} from "./ask-intent-preferences.js";
 import {
   createScopedExploreBoundarySetRuntime,
   type ScopedExploreBoundarySetRuntime,
@@ -144,6 +149,12 @@ export async function createWorkbenchAskMcpGateway(input: {
           }),
         }
         : {}),
+      ...(selectedMode === "authoring"
+        ? {
+          resolveAskIntentCheck: (args: Record<string, unknown>) =>
+            resolveLocalAskIntentCheck(input.projectRoot, args),
+        }
+        : {}),
       close: async () => {
         if (closed) return;
         closed = true;
@@ -162,6 +173,41 @@ export async function createWorkbenchAskMcpGateway(input: {
     ]));
     throw error;
   }
+}
+
+async function resolveLocalAskIntentCheck(
+  projectRoot: string,
+  args: Record<string, unknown>,
+): Promise<{ mode: AskIntentCheckMode; boundary_name?: string }> {
+  const boundaries = await loadActivatedExplorationBoundaries(projectRoot);
+  const requestedBoundary = typeof args.boundary === "string" && args.boundary.length > 0
+    ? args.boundary
+    : undefined;
+  const plan = isRecord(args.plan) ? args.plan : undefined;
+  const resource = typeof plan?.resource === "string" ? plan.resource : undefined;
+  const matches = requestedBoundary
+    ? boundaries.filter((boundary) => boundary.pack.name === requestedBoundary)
+    : resource
+      ? boundaries.filter((boundary) =>
+          boundary.pack.resources.some((candidate) => candidate.id === resource))
+      : boundaries.length === 1
+        ? boundaries
+        : [];
+  if (matches.length === 0) return { mode: "balanced" };
+  const modes = await askIntentCheckModesForBoundaries(
+    projectRoot,
+    matches.map((boundary) => boundary.pack.name),
+  );
+  if (matches.length === 1) {
+    const boundaryName = matches[0]!.pack.name;
+    return {
+      mode: modes[boundaryName] ?? "balanced",
+      boundary_name: boundaryName,
+    };
+  }
+  const distinctModes = [...new Set(matches.map((boundary) =>
+    modes[boundary.pack.name] ?? "balanced"))];
+  return { mode: distinctModes.length === 1 ? distinctModes[0]! : "balanced" };
 }
 
 function invalidModelToolArgumentsMessage(name: string): string {

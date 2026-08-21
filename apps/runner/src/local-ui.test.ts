@@ -3292,8 +3292,35 @@ export default defineCapability({
       const originalName = initial.candidate.pack.name as string;
       expect(initial.boundary_library).toMatchObject({
         selected_name: originalName,
-        entries: [{ name: originalName, selected: true, active: false }],
+        entries: [{
+          name: originalName,
+          selected: true,
+          active: false,
+          ask_intent_check_mode: "balanced",
+        }],
       });
+
+      const askIntent = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/ask-intent-check`,
+        headers,
+        { name: originalName, mode: "boundary_only" },
+      );
+      expect(askIntent).toMatchObject({
+        boundary_name: originalName,
+        ask_intent_check_mode: "boundary_only",
+        question_to_plan_checked: false,
+        authority_changed: false,
+        activation_required: false,
+        source_database_changed: false,
+        boundary_library: {
+          entries: [expect.objectContaining({
+            name: originalName,
+            ask_intent_check_mode: "boundary_only",
+          })],
+        },
+      });
+      await expect(fs.access(path.join(tempDir, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
 
       const created = await postJson(
         `http://${server.host}:${server.port}/api/boundary/library/create`,

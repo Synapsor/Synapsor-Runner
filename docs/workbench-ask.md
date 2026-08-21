@@ -152,6 +152,35 @@ question does not positively name a different reviewed resource or field. The
 normal Explore validator remains authoritative for fields, operations, scope,
 suppression, drift, and budgets. This keeps Ask useful on unfamiliar domains
 without permitting a plausible answer to a clearly different question.
+
+### Per-boundary local Ask plan check
+
+Local CLI and Workbench Ask have two per-boundary modes:
+
+- **Balanced** is the default. Runner applies the contradiction check described
+  above before it sends a proposed plan to `app.explore_data`.
+- **Boundary only** turns that English question-to-plan comparison completely
+  off. The model's proposed plan goes directly to the same local Explore tool
+  path used by an MCP client.
+
+`Boundary only` does not mean validation is off. The plan must still use an
+active boundary and reviewed resource, field, operation, relationship, and
+shape. Runner still injects trusted tenant and principal scope, checks schema
+and role drift, compiles only bounded read-only SQL, suppresses small groups,
+and charges query, extraction, and differencing budgets. An invalid plan still
+refuses. The setting changes no boundary digest or database authority and needs
+no activation.
+
+In the terminal boundary editor, highlight a boundary and press `T Ask plan
+check`. Turning the comparison off requires an explicit confirmation; press
+`T` again to restore Balanced mode. Workbench exposes the same choice under
+**Local Ask plan check** in the selected boundary's settings. The choice is
+stored locally in `.synapsor/ask-preferences.json`, separately for each
+boundary. It applies only to Runner's local `synapsor>` and Workbench Ask
+sessions. It does not affect local MCP Explore or production Streamable HTTP
+Explore, because those clients submit a typed plan without giving Runner the
+original English question.
+
 Exact field IDs can be written with their original separators (`encounter_type`),
 hyphens (`encounter-type`), or spaces (`encounter type`). A reviewed field label
 is also valid intent evidence. A trailing term may be used when the question

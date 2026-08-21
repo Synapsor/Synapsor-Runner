@@ -2,6 +2,7 @@ import type {
   AskToolTrace,
   AskTurnResult,
 } from "./model-ask.js";
+import type { AskIntentCheckMode } from "./ask-intent-preferences.js";
 import type { AskAccessGuidance } from "./ask-access-summary.js";
 import {
   describeProtectableAnalysis,
@@ -33,6 +34,9 @@ export type AnalyticsAnalysis = {
   result: Record<string, unknown>;
   evidence_bundle_id?: string;
   query_audit_handle?: string;
+  ask_intent_check_mode?: AskIntentCheckMode;
+  question_to_plan_checked?: boolean;
+  boundary_name?: string;
   source_database_changed: false;
 };
 
@@ -72,6 +76,13 @@ export function collectAnalyticsAnalyses(toolCalls: AskToolTrace[]): AnalyticsAn
       ...(typeof audit.query_fingerprint === "string"
         ? { query_audit_handle: audit.query_fingerprint }
         : {}),
+      ...(call.ask_intent_check_mode
+        ? { ask_intent_check_mode: call.ask_intent_check_mode }
+        : {}),
+      ...(call.question_to_plan_checked === undefined
+        ? {}
+        : { question_to_plan_checked: call.question_to_plan_checked }),
+      ...(call.boundary_name ? { boundary_name: call.boundary_name } : {}),
       source_database_changed: false,
     };
   });
@@ -103,7 +114,19 @@ export function renderAnalyticsTurn(
     ? undefined
     : populationShareWarning(explanation, successfulData);
   const rule = "-".repeat(Math.max(32, Math.min(72, width)));
+  const boundaryOnly = analyses.filter((analysis) =>
+    analysis.tool === "app.explore_data"
+    && analysis.ask_intent_check_mode === "boundary_only");
   const lines = [
+    ...(boundaryOnly.length > 0
+      ? [
+        styledNotice(
+          `Local Ask plan check: BOUNDARY ONLY${boundaryOnly[0]?.boundary_name ? ` for ${safeTerminalText(boundaryOnly[0].boundary_name)}` : ""}. The English question was not compared with the model plan; reviewed Explore validation remained active.`,
+          options.ansi === true,
+        ),
+        "",
+      ]
+      : []),
     ...(withheldFromModel
       ? [
         "Some values are shown only in the Runner-verified result and were withheld from the model, so its summary cannot name them.",
@@ -801,6 +824,13 @@ export function analysisJson(analysis: AnalyticsAnalysis): Record<string, unknow
     ...(analysis.plan ? { normalized_plan: redactPlanLiterals(analysis.plan) } : {}),
     ...(analysis.evidence_bundle_id ? { evidence_bundle_id: analysis.evidence_bundle_id } : {}),
     ...(analysis.query_audit_handle ? { query_audit_handle: analysis.query_audit_handle } : {}),
+    ...(analysis.ask_intent_check_mode
+      ? { ask_intent_check_mode: analysis.ask_intent_check_mode }
+      : {}),
+    ...(analysis.question_to_plan_checked === undefined
+      ? {}
+      : { question_to_plan_checked: analysis.question_to_plan_checked }),
+    ...(analysis.boundary_name ? { boundary_name: analysis.boundary_name } : {}),
     result: analysis.result,
     source_database_changed: false,
   };

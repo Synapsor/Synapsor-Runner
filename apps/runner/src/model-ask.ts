@@ -10,6 +10,7 @@ import {
   isCodedExploreValueDomain,
   isClearlyOpaqueExploreIdentifier,
 } from "./explore-vocabulary.js";
+import type { AskIntentCheckMode } from "./ask-intent-preferences.js";
 
 const DEFAULT_REMOTE_TIMEOUT_SECONDS = 30;
 const DEFAULT_LOOPBACK_TIMEOUT_SECONDS = 120;
@@ -144,6 +145,10 @@ export type AskToolGateway = {
   listTools(): Promise<AskToolDefinition[]> | AskToolDefinition[];
   callTool(name: string, args: Record<string, unknown>): Promise<AskToolCallResult>;
   describeOperatorMetadata?(args: Record<string, unknown>): Promise<AskToolCallResult>;
+  resolveAskIntentCheck?(args: Record<string, unknown>): Promise<{
+    mode: AskIntentCheckMode;
+    boundary_name?: string;
+  }>;
   close(): Promise<void>;
 };
 
@@ -160,6 +165,9 @@ export type AskToolTrace = {
   arguments: Record<string, unknown>;
   result: Record<string, unknown>;
   model_withheld_values?: boolean;
+  ask_intent_check_mode?: AskIntentCheckMode;
+  question_to_plan_checked?: boolean;
+  boundary_name?: string;
 };
 
 export type AskTurnResult = {
@@ -861,7 +869,15 @@ async function runOpenAiCompatibleTurn(input: {
                 },
               );
             }
-            const requirements = focused
+            const focusedIntentCheck = focused
+              ? await resolveAskIntentCheck(input.gateway, {
+                  ...(typeof focused.trace.arguments.boundary === "string"
+                    ? { boundary: focused.trace.arguments.boundary }
+                    : {}),
+                  plan: { resource: focused.resource },
+                })
+              : { mode: "balanced" as const };
+            const requirements = focused && focusedIntentCheck.mode === "balanced"
               ? localPlanRequirements(input.question, focused.providerResult)
               : undefined;
             if (requirements?.unanswerable) {
@@ -878,7 +894,12 @@ async function runOpenAiCompatibleTurn(input: {
             });
             usage = fallback.usage;
             let fallbackArguments = fallback.arguments;
-            if (requirements && (!fallbackArguments || !localPlanMatchesRequirements(fallbackArguments, requirements))) {
+            let fallbackIntentCheck = fallbackArguments
+              ? await resolveAskIntentCheck(input.gateway, fallbackArguments)
+              : focusedIntentCheck;
+            if (requirements
+              && fallbackIntentCheck.mode === "balanced"
+              && (!fallbackArguments || !localPlanMatchesRequirements(fallbackArguments, requirements))) {
               const repaired = await requestOpenAiCompatiblePlanJson({
                 ...input,
                 messages,
@@ -887,8 +908,15 @@ async function runOpenAiCompatibleTurn(input: {
               });
               usage = repaired.usage;
               fallbackArguments = repaired.arguments;
-              if (!fallbackArguments || !localPlanMatchesRequirements(fallbackArguments, requirements)) {
+              fallbackIntentCheck = fallbackArguments
+                ? await resolveAskIntentCheck(input.gateway, fallbackArguments)
+                : focusedIntentCheck;
+              if (fallbackIntentCheck.mode === "balanced"
+                && (!fallbackArguments || !localPlanMatchesRequirements(fallbackArguments, requirements))) {
                 fallbackArguments = requirements.exactArguments;
+                fallbackIntentCheck = fallbackArguments
+                  ? await resolveAskIntentCheck(input.gateway, fallbackArguments)
+                  : focusedIntentCheck;
               }
             }
             if (!fallbackArguments) {
@@ -930,8 +958,9 @@ async function runOpenAiCompatibleTurn(input: {
               fallbackArguments,
               input.onProgress,
             );
-            traces.push(executed.trace);
-            providerHistory.push(providerHistoryEntry(executed.trace, executed.providerResult));
+            const trace = withAskIntentCheck(executed.trace, fallbackIntentCheck);
+            traces.push(trace);
+            providerHistory.push(providerHistoryEntry(trace, executed.providerResult));
             messages.push({
               role: "tool",
               tool_call_id: callId,
@@ -999,6 +1028,9 @@ async function runOpenAiCompatibleTurn(input: {
       }
       const canonicalName = input.prepared.canonicalByProvider.get(call.name);
       const directArguments = safeToolArguments(call.arguments);
+      const intentCheck = canonicalName === "app.explore_data"
+        ? await resolveAskIntentCheck(input.gateway, directArguments)
+        : undefined;
       if (input.configuration.provider === "openai_compatible"
         && canonicalName === "app.explore_data"
         && !localDirectCatalogTrace
@@ -1023,6 +1055,7 @@ async function runOpenAiCompatibleTurn(input: {
       }
       let requirements = input.configuration.provider === "openai_compatible"
         && canonicalName === "app.explore_data"
+        && intentCheck?.mode === "balanced"
         ? localPlanRequirementsFromQuestionCatalog(
           input.question,
           localDirectCatalogTrace ? [...traces, localDirectCatalogTrace] : traces,
@@ -1036,7 +1069,9 @@ async function runOpenAiCompatibleTurn(input: {
         localDirectCatalogTrace ? [...traces, localDirectCatalogTrace] : traces,
         directArguments,
       );
-      if (input.configuration.provider === "openai_compatible" && canonicalName === "app.explore_data") {
+      if (input.configuration.provider === "openai_compatible"
+        && canonicalName === "app.explore_data"
+        && intentCheck?.mode === "balanced") {
         const directPlan = isRecord(directArguments.plan) ? directArguments.plan : undefined;
         const resource = compoundQuestions.length > 0 && typeof directPlan?.resource === "string"
           ? directPlan.resource
@@ -1097,6 +1132,7 @@ async function runOpenAiCompatibleTurn(input: {
           providerName: call.name,
           args: directArguments,
           focusedResource: focusedResourceForRequirements,
+          intentCheck: intentCheck ?? { mode: "balanced" },
           retryAvailable: intentRepairAttempts === 0 && toolCalls.length === 1,
           onProgress: input.onProgress,
         });
@@ -1121,7 +1157,8 @@ async function runOpenAiCompatibleTurn(input: {
           );
         }
       }
-      if (compoundQuestions.length > 0
+      if (intentCheck?.mode === "balanced"
+        && compoundQuestions.length > 0
         && canonicalName === "app.explore_data"
         && focusedResourceForRequirements) {
         const candidates = compoundQuestions.flatMap((question, index) => {
@@ -1158,7 +1195,7 @@ async function runOpenAiCompatibleTurn(input: {
           explore_budget_consumed: false,
           source_database_changed: false,
         };
-        const trace: AskToolTrace = {
+        const trace: AskToolTrace = withAskIntentCheck({
           call_id: safeProviderIdentifier(call.id, "tool call"),
           tool: "app.explore_data",
           provider_tool: call.name,
@@ -1166,7 +1203,7 @@ async function runOpenAiCompatibleTurn(input: {
           error_code: "LOCAL_PLAN_INTENT_MISMATCH",
           arguments: directArguments,
           result: providerResult,
-        };
+        }, intentCheck ?? { mode: "balanced" });
         traces.push(trace);
         providerHistory.push(providerHistoryEntry(trace, providerResult));
         messages.push({
@@ -1204,6 +1241,10 @@ async function runOpenAiCompatibleTurn(input: {
             providerHistory,
           );
         }
+        const repairedIntentCheck = await resolveAskIntentCheck(
+          input.gateway,
+          repairedArguments,
+        );
         const repairedExecution = await executeProviderTool(
           input.gateway,
           input.prepared,
@@ -1212,8 +1253,12 @@ async function runOpenAiCompatibleTurn(input: {
           repairedArguments,
           input.onProgress,
         );
-        traces.push(repairedExecution.trace);
-        providerHistory.push(providerHistoryEntry(repairedExecution.trace, repairedExecution.providerResult));
+        const repairedTrace = withAskIntentCheck(
+          repairedExecution.trace,
+          repairedIntentCheck,
+        );
+        traces.push(repairedTrace);
+        providerHistory.push(providerHistoryEntry(repairedTrace, repairedExecution.providerResult));
         if (repairedExecution.trace.status === "ok") {
           return rememberProviderHistory(
             completeAskResult(
@@ -1244,7 +1289,9 @@ async function runOpenAiCompatibleTurn(input: {
         directArguments,
         input.onProgress,
       );
-      const trace = executed.trace;
+      const trace = canonicalName === "app.explore_data" && intentCheck
+        ? withAskIntentCheck(executed.trace, intentCheck)
+        : executed.trace;
       traces.push(trace);
       providerHistory.push(providerHistoryEntry(trace, executed.providerResult));
       messages.push({
@@ -1681,6 +1728,9 @@ async function runAnthropicTurn(input: {
       const name = safeProviderIdentifier(call.name, "tool name");
       const args = safeToolArguments(call.input);
       const canonicalName = input.prepared.canonicalByProvider.get(name);
+      const intentCheck = canonicalName === "app.explore_data"
+        ? await resolveAskIntentCheck(input.gateway, args)
+        : undefined;
       if (canonicalName === "app.explore_data") {
         const intentRefusal = await explorePlanIntentRefusal({
           question: input.question,
@@ -1690,6 +1740,7 @@ async function runAnthropicTurn(input: {
           callId: id,
           providerName: name,
           args,
+          intentCheck: intentCheck ?? { mode: "balanced" },
           retryAvailable: intentRepairAttempts === 0 && calls.length === 1,
           onProgress: input.onProgress,
         });
@@ -1723,7 +1774,9 @@ async function runAnthropicTurn(input: {
         args,
         input.onProgress,
       );
-      const trace = executed.trace;
+      const trace = canonicalName === "app.explore_data" && intentCheck
+        ? withAskIntentCheck(executed.trace, intentCheck)
+        : executed.trace;
       traces.push(trace);
       providerHistory.push(providerHistoryEntry(trace, executed.providerResult));
       results.push({
@@ -2001,6 +2054,39 @@ function providerToolName(
   return prepared.providerTools.find((tool) => tool.canonicalName === canonicalName)?.providerName;
 }
 
+type AskIntentCheckDecision = {
+  mode: AskIntentCheckMode;
+  boundary_name?: string;
+};
+
+async function resolveAskIntentCheck(
+  gateway: AskToolGateway,
+  args: Record<string, unknown>,
+): Promise<AskIntentCheckDecision> {
+  if (!gateway.resolveAskIntentCheck) return { mode: "balanced" };
+  const resolved = await gateway.resolveAskIntentCheck(args);
+  if (resolved.mode !== "balanced" && resolved.mode !== "boundary_only") {
+    throw new AskError(
+      "ASK_INTENT_CHECK_MODE_INVALID",
+      "The local Ask intent-check preference is invalid. Runner stopped before source execution.",
+      409,
+    );
+  }
+  return resolved;
+}
+
+function withAskIntentCheck(
+  trace: AskToolTrace,
+  decision: AskIntentCheckDecision,
+): AskToolTrace {
+  return {
+    ...trace,
+    ask_intent_check_mode: decision.mode,
+    question_to_plan_checked: decision.mode === "balanced",
+    ...(decision.boundary_name ? { boundary_name: decision.boundary_name } : {}),
+  };
+}
+
 async function explorePlanIntentRefusal(input: {
   question: string;
   traces: AskToolTrace[];
@@ -2010,6 +2096,7 @@ async function explorePlanIntentRefusal(input: {
   providerName: string;
   args: Record<string, unknown>;
   focusedResource?: Record<string, unknown>;
+  intentCheck: AskIntentCheckDecision;
   retryAvailable: boolean;
   onProgress?: AskProviderDependencies["onProgress"];
 }): Promise<{
@@ -2018,6 +2105,7 @@ async function explorePlanIntentRefusal(input: {
   retryable: boolean;
   retryInstruction: string;
 } | undefined> {
+  if (input.intentCheck.mode === "boundary_only") return undefined;
   if (localCompoundAnalysisQuestions(input.question, 2).length > 0) return undefined;
   const plan = isRecord(input.args.plan) ? input.args.plan : undefined;
   if (!plan || typeof plan.resource !== "string") return undefined;
@@ -2126,7 +2214,7 @@ async function explorePlanIntentRefusal(input: {
     source_database_changed: false,
   };
   return {
-    trace: {
+    trace: withAskIntentCheck({
       call_id: safeProviderIdentifier(input.callId, "tool call"),
       tool: "app.explore_data",
       provider_tool: input.providerName,
@@ -2134,7 +2222,7 @@ async function explorePlanIntentRefusal(input: {
       error_code: "ASK_PLAN_INTENT_MISMATCH",
       arguments: input.args,
       result: providerResult,
-    },
+    }, input.intentCheck),
     providerResult,
     retryable,
     retryInstruction,

@@ -93,6 +93,11 @@ enterprise SLA.
   production HTTP resource server receives a plan without the original human
   question, so an external MCP host remains responsible for that semantic
   question-to-plan check.
+  A local operator may deliberately switch one boundary to **Boundary only**
+  mode from the CLI or Workbench. That disables only this Ask-side semantic
+  comparison; the complete reviewed Explore validator, scope injection, drift
+  checks, suppression, and budgets remain mandatory. The setting never applies
+  to MCP or production HTTP Explore.
 - Reviewed bounded aggregate Explore with `count`, `count_distinct`, `sum`,
   `avg`, categorical dimensions, fixed UTC time buckets, typed filters,
   bounded top/bottom-N over a separately reviewed candidate population,

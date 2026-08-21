@@ -148,11 +148,19 @@ describe("Explore audit presentation", () => {
     const list = formatEvidenceSummary(evidence, false);
     expect(list).toContain("Members grouped by membership tier.");
     expect(list).toContain("3 rows/groups / 6 cells / 1 suppressed");
+    expect(list).toContain("Aug 16, 2026, 1:02:03 AM UTC");
+    expect(list).not.toContain(evidence.created_at);
     expect(list).not.toContain("1".repeat(64));
     expect(formatEvidenceSummary(evidence, true)).toMatch(/\u001b\[[0-9;]*32m/);
-    expect(formatEvidenceBrowserRow(evidence, 1, false)).toContain("Members grouped by membership tier.");
-    expect(formatEvidenceBrowserSummary(evidence, false)).not.toContain("Normalized reviewed plan");
-    expect(formatEvidenceBrowserFacts(evidence, false)).toContain("Generation lock");
+    const evidenceBrowserRow = formatEvidenceBrowserRow(evidence, 1, false);
+    expect(evidenceBrowserRow).toContain("Members grouped by membership tier.");
+    expect(evidenceBrowserRow).toContain("Aug 16, 2026, 1:02:03 AM UTC");
+    const evidenceBrowserSummary = formatEvidenceBrowserSummary(evidence, false);
+    expect(evidenceBrowserSummary).not.toContain("Normalized reviewed plan");
+    expect(evidenceBrowserSummary).toContain("When: Aug 16, 2026, 1:02:03 AM UTC");
+    const evidenceBrowserFacts = formatEvidenceBrowserFacts(evidence, false);
+    expect(evidenceBrowserFacts).toContain("Generation lock");
+    expect(evidenceBrowserFacts).toContain("Created at: Aug 16, 2026, 1:02:03 AM UTC");
     expect(formatEvidenceBrowserQuery(evidence, false)).toContain("RUNNER_TENANT_PREDICATE");
     expect(formatEvidenceBrowserPlan(evidence, false)).toContain('"membership_tier"');
 
@@ -212,9 +220,13 @@ describe("Explore audit presentation", () => {
         source_database_changed: false,
       },
     };
-    expect(formatQueryAuditBrowserRow(refusedRecord, 1, false)).toContain("Refused group on membership tier in members.");
-    expect(formatQueryAuditBrowserSummary(refusedRecord, false)).toContain("EXPLORE_FIELD_FORBIDDEN");
-    expect(formatQueryAuditBrowserSummary(refusedRecord, false)).toContain("librarydb.members.membership_tier (group)");
+    const queryAuditBrowserRow = formatQueryAuditBrowserRow(refusedRecord, 1, false);
+    expect(queryAuditBrowserRow).toContain("Refused group on membership tier in members.");
+    expect(queryAuditBrowserRow).toContain("Aug 16, 2026, 1:02:03 AM UTC");
+    const queryAuditBrowserSummary = formatQueryAuditBrowserSummary(refusedRecord, false);
+    expect(queryAuditBrowserSummary).toContain("EXPLORE_FIELD_FORBIDDEN");
+    expect(queryAuditBrowserSummary).toContain("librarydb.members.membership_tier (group)");
+    expect(queryAuditBrowserSummary).toContain("When: Aug 16, 2026, 1:02:03 AM UTC");
     expect(formatQueryAuditBrowserFacts(refusedRecord, false)).toContain("Source query executed: no");
     expect(formatQueryAuditBrowserQuery(refusedRecord, false)).toContain("not recorded");
     expect(formatQueryAuditBrowserPlan(refusedRecord, false)).toContain("not recorded");

@@ -55,6 +55,7 @@ import { initializeGuidedProject, readGuidedOnboardingState } from "./guided-pro
 import { prepareScopedExplore } from "./scoped-explore.js";
 import { selectActiveExploreBoundary } from "./scoped-explore-boundary-set.js";
 import { inspectProductionExploreStartup } from "./mcp-runtime.js";
+import { askIntentCheckModeForBoundary } from "./ask-intent-preferences.js";
 
 describe("boundary operator-plane CLI", () => {
   afterEach(() => {
@@ -3325,6 +3326,71 @@ describe("boundary operator-plane CLI", () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   }, 20_000);
+
+  it("toggles the selected boundary's local Ask plan check without changing authority", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-ask-intent-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const choices = [{
+      action: "intent_check" as const,
+      boundary_name: build.exploration_boundary.pack.name,
+    }, undefined];
+    const confirmations: string[] = [];
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => choices.shift(),
+      editFieldTiers: async () => undefined,
+      promptText: async () => undefined,
+      confirm: async (prompt) => {
+        confirmations.push(prompt);
+        return true;
+      },
+    };
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const lockBefore = await fs.readFile(path.join(root, ".synapsor/generation-lock.json"), "utf8");
+      const draftBefore = await fs.readFile(
+        path.join(root, "synapsor/generated/exploration-boundary.draft.json"),
+        "utf8",
+      );
+      await expect(boundaryReviewCommandInternal([
+        "--project-root", root,
+        "--access",
+      ], async () => inspection, session)).resolves.toBe(0);
+
+      await expect(askIntentCheckModeForBoundary(
+        root,
+        build.exploration_boundary.pack.name,
+      )).resolves.toBe("boundary_only");
+      expect(await fs.readFile(path.join(root, ".synapsor/generation-lock.json"), "utf8"))
+        .toBe(lockBefore);
+      expect(await fs.readFile(
+        path.join(root, "synapsor/generated/exploration-boundary.draft.json"),
+        "utf8",
+      )).toBe(draftBefore);
+      await expect(fs.access(path.join(root, ".synapsor/exploration-boundaries.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+      expect(confirmations[0]).toContain("Turn off the English question-to-plan check");
+      expect(output).toContain("Access editor closed");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
 
   it("sets one cohort threshold across the boundary, activates it, and keeps access open", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-cohort-all-"));

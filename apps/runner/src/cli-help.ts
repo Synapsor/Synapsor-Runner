@@ -184,15 +184,17 @@ DSL, canonical JSON, and tests for a disabled named capability; it never
 activates the result.
 	`,
 	    config: `Usage:
-  ${cmd} config init [--output ./synapsor.runner.json] [--engine postgres|mysql] [--read-url-env DATABASE_URL]
-  ${cmd} config init --production-explore --engine postgres|mysql --tenant-claim tenant_id --principal-claim sub [--tenant-binding tenant_id] [--principal-binding rep] [--verify-bindings] --issuer https://identity.example --audience https://runner.example/mcp --accounting-namespace acme.analytics.production [--project-root .]
-  ${cmd} config init --production-explore --engine postgres|mysql --single-tenant-organization-id internal-finance --principal-claim sub --issuer https://identity.example --audience https://runner.example/mcp --accounting-namespace internal.finance.production
+  ${cmd} config init [--output ./synapsor.runner.json] [--engine postgres|mysql] [--read-url-env DATABASE_URL] [--force]
+  ${cmd} config init --production-explore --engine postgres|mysql --tenant-claim tenant_id --principal-claim sub [--tenant-binding tenant_id] [--principal-binding rep] [--verify-bindings] --issuer https://identity.example --audience https://runner.example/mcp --accounting-namespace acme.analytics.production [--project-root .] [--force]
+  ${cmd} config init --production-explore --engine postgres|mysql --single-tenant-organization-id internal-finance --principal-claim sub --issuer https://identity.example --audience https://runner.example/mcp --accounting-namespace internal.finance.production [--force]
   ${cmd} config validate --config ./synapsor.runner.json
   ${cmd} config migrate --config ./synapsor.runner.json --out ./synapsor.runner.migrated.json
 
 Initialize or validate local Runner wiring before tools preview, doctor, smoke,
 or MCP serve. config init creates a valid read-only zero-authority shell using
-environment-variable references and refuses to overwrite an existing file.
+environment-variable references and refuses to overwrite an existing file by default.
+Pass --force only to intentionally replace that file; Runner first writes a
+timestamped .bak copy and reports its path.
 With --production-explore it emits the complete zero-authority shared-Postgres,
 JWT/JWKS, secured HTTP, OAuth, budget, source-pool, and session-cap skeleton.
 It reuses source, claim, and reviewed column bindings from a production boundary

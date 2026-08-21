@@ -1123,6 +1123,35 @@ describe("Synapsor Analytics shell", () => {
     expect(colored).toContain("Reviewed access: \u001b[1;35mreviewed_staging\u001b[0m");
   });
 
+  it("makes Boundary-only Ask visible in the shell banner and each verified result", () => {
+    const banner = renderAnalyticsShellBanner({
+      providerLabel: "OpenAI",
+      modelLabel: "gpt-5.6-luna",
+      boundaryLabel: "reviewed_staging",
+      profileLabel: "development",
+      reviewedDataAreas: 1,
+      askIntentChecks: [{
+        boundary_name: "reviewed_staging",
+        mode: "boundary_only",
+      }],
+    });
+    expect(banner).toContain("Ask plan check: BOUNDARY ONLY for reviewed_staging");
+    expect(banner).toContain("reviewed Explore validation remains active");
+
+    const current = analysis("A1", 0);
+    current.ask_intent_check_mode = "boundary_only";
+    current.question_to_plan_checked = false;
+    current.boundary_name = "reviewed_staging";
+    const output = renderAnalyticsTurn(
+      turn("The model summarized the verified result."),
+      [current],
+      100,
+    );
+    expect(output).toContain("Local Ask plan check: BOUNDARY ONLY for reviewed_staging");
+    expect(output).toContain("The English question was not compared with the model plan");
+    expect(output).toContain("reviewed Explore validation remained active");
+  });
+
   it("keeps a disabled boundary update visible when Ask still uses the prior revision", () => {
     const output = renderAnalyticsShellBanner({
       providerLabel: "OpenAI",

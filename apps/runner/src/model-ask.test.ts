@@ -1357,6 +1357,282 @@ describe("Workbench BYOM Ask", () => {
     expect(metadataCalls).toBe(2);
   });
 
+  it.each(["openai", "anthropic"] as const)(
+    "lets %s local Ask use Boundary-only mode without weakening tool validation",
+    async (provider) => {
+      const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+      const gateway: AskToolGateway = {
+        mode: "authoring",
+        listTools: () => authoringTools,
+        resolveAskIntentCheck: async () => ({
+          mode: "boundary_only",
+          boundary_name: "reviewed_staging",
+        }),
+        callTool: async (name, args) => {
+          calls.push({ name, args });
+          return {
+            ok: true,
+            value: {
+              ok: true,
+              data: [{ attending: "rep1", measure_0: 12 }],
+              source_database_changed: false,
+            },
+          };
+        },
+        close: async () => undefined,
+      };
+      const session = new WorkbenchAskSession();
+      session.configure({
+        provider,
+        model: provider === "openai" ? "gpt-5.6-luna" : "claude-test",
+        api_key: "provider-session-key",
+        authority_digest: askToolSurfaceDigest(authoringTools),
+        egress_acknowledged: true,
+      });
+      let requestCount = 0;
+      const plan = {
+        kind: "aggregate",
+        resource: "public.encounters",
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "attending" }],
+      };
+      const result = await session.run(
+        "How many patients are there by insurance tier?",
+        gateway,
+        {
+          requestJson: async () => {
+            requestCount += 1;
+            if (provider === "openai") {
+              return requestCount === 1
+                ? openAiToolCall("boundary_only_openai", "app__explore_data", {
+                    boundary: "reviewed_staging",
+                    plan,
+                  })
+                : openAiText("The verified result is available.");
+            }
+            return requestCount === 1
+              ? {
+                  status: 200,
+                  body: {
+                    content: [{
+                      type: "tool_use",
+                      id: "boundary_only_anthropic",
+                      name: "app__explore_data",
+                      input: { boundary: "reviewed_staging", plan },
+                    }],
+                  },
+                }
+              : {
+                  status: 200,
+                  body: { content: [{ type: "text", text: "The verified result is available." }] },
+                };
+          },
+        },
+      );
+
+      expect(calls).toEqual([{
+        name: "app.explore_data",
+        args: { boundary: "reviewed_staging", plan },
+      }]);
+      expect(result.tool_calls).toEqual([
+        expect.objectContaining({
+          tool: "app.explore_data",
+          status: "ok",
+          ask_intent_check_mode: "boundary_only",
+          question_to_plan_checked: false,
+          boundary_name: "reviewed_staging",
+        }),
+      ]);
+      expect(result.tool_calls[0]?.error_code).not.toBe("ASK_PLAN_INTENT_MISMATCH");
+      expect(requestCount).toBe(2);
+    },
+  );
+
+  it.each(["openai", "anthropic"] as const)(
+    "keeps reviewed Explore refusals enforced for %s in Boundary-only mode",
+    async (provider) => {
+      let exploreCalls = 0;
+      const gateway: AskToolGateway = {
+        mode: "authoring",
+        listTools: () => authoringTools,
+        resolveAskIntentCheck: async () => ({
+          mode: "boundary_only",
+          boundary_name: "reviewed_staging",
+        }),
+        callTool: async (name) => {
+          if (name !== "app.explore_data") {
+            return {
+              ok: true,
+              value: { ok: true, resources: [], source_database_changed: false },
+            };
+          }
+          exploreCalls += 1;
+          return {
+            ok: false,
+            error_code: "EXPLORE_FIELD_FORBIDDEN",
+            value: {
+              ok: false,
+              error_code: "EXPLORE_FIELD_FORBIDDEN",
+              message: "The requested field is outside the activated reviewed boundary.",
+              details: {
+                source_query_executed: false,
+                explore_budget_consumed: false,
+              },
+              source_database_changed: false,
+            },
+          };
+        },
+        close: async () => undefined,
+      };
+      const session = new WorkbenchAskSession();
+      session.configure({
+        provider,
+        model: provider === "openai" ? "gpt-5.6-luna" : "claude-test",
+        api_key: "provider-session-key",
+        authority_digest: askToolSurfaceDigest(authoringTools),
+        egress_acknowledged: true,
+      });
+      const plan = {
+        kind: "aggregate",
+        resource: "public.encounters",
+        measures: [{ function: "count" }],
+        dimensions: [{ field: "unreviewed_secret" }],
+      };
+      let requestCount = 0;
+      const result = await session.run("Show encounters by secret.", gateway, {
+        requestJson: async () => {
+          requestCount += 1;
+          if (provider === "openai") {
+            return requestCount === 1
+              ? openAiToolCall("boundary_only_refusal_openai", "app__explore_data", {
+                  boundary: "reviewed_staging",
+                  plan,
+                })
+              : openAiText("The request was refused by Runner.");
+          }
+          return requestCount === 1
+            ? {
+                status: 200,
+                body: {
+                  content: [{
+                    type: "tool_use",
+                    id: "boundary_only_refusal_anthropic",
+                    name: "app__explore_data",
+                    input: { boundary: "reviewed_staging", plan },
+                  }],
+                },
+              }
+            : {
+                status: 200,
+                body: { content: [{ type: "text", text: "The request was refused by Runner." }] },
+              };
+        },
+      });
+
+      expect(exploreCalls).toBe(1);
+      expect(result.tool_calls).toEqual([
+        expect.objectContaining({
+          tool: "app.explore_data",
+          status: "refused",
+          error_code: "EXPLORE_FIELD_FORBIDDEN",
+          ask_intent_check_mode: "boundary_only",
+          question_to_plan_checked: false,
+          boundary_name: "reviewed_staging",
+        }),
+      ]);
+      expect(result.tool_calls[0]?.error_code).not.toBe("ASK_PLAN_INTENT_MISMATCH");
+      expect(result.tool_calls[0]?.result).toMatchObject({
+        details: {
+          source_query_executed: false,
+          explore_budget_consumed: false,
+        },
+      });
+    },
+  );
+
+  it("lets a loopback OpenAI-compatible Ask use Boundary-only mode", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      resolveAskIntentCheck: async () => ({
+        mode: "boundary_only",
+        boundary_name: "reviewed_staging",
+      }),
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        if (name === "app.describe_data") {
+          return {
+            ok: true,
+            value: {
+              ok: true,
+              resources: [{
+                id: "public.encounters",
+                boundary_name: "reviewed_staging",
+                fields: [{ id: "attending", label: "Attending" }],
+                groupable_fields: ["attending"],
+              }],
+              source_database_changed: false,
+            },
+          };
+        }
+        return {
+          ok: true,
+          value: {
+            ok: true,
+            data: [{ attending: "rep1", measure_0: 12 }],
+            source_database_changed: false,
+          },
+        };
+      },
+      close: async () => undefined,
+    };
+    const session = new WorkbenchAskSession();
+    session.configure({
+      provider: "openai_compatible",
+      model: "local-fixture",
+      base_url: "http://127.0.0.1:11434/v1",
+      authority_digest: askToolSurfaceDigest(authoringTools),
+      egress_acknowledged: true,
+    });
+    let requestCount = 0;
+    const plan = {
+      kind: "aggregate",
+      resource: "public.encounters",
+      measures: [{ function: "count" }],
+      dimensions: [{ field: "attending" }],
+    };
+    const result = await session.run(
+      "How many patients are there by insurance tier?",
+      gateway,
+      {
+        requestJson: async () => {
+          requestCount += 1;
+          return requestCount === 1
+            ? openAiToolCall("boundary_only_loopback", "app__explore_data", {
+                boundary: "reviewed_staging",
+                plan,
+              })
+            : openAiText("The verified result is available.");
+        },
+      },
+    );
+
+    expect(calls.map((call) => call.name)).toEqual([
+      "app.describe_data",
+      "app.explore_data",
+    ]);
+    expect(result.tool_calls.at(-1)).toMatchObject({
+      tool: "app.explore_data",
+      status: "ok",
+      ask_intent_check_mode: "boundary_only",
+      question_to_plan_checked: false,
+      boundary_name: "reviewed_staging",
+    });
+    expect(result.tool_calls.every((call) => call.error_code !== "LOCAL_PLAN_INTENT_MISMATCH"))
+      .toBe(true);
+  });
+
   it("gives Anthropic one bounded retry for an exact reviewed relationship dimension", async () => {
     let exploreCalls = 0;
     const relationship = "observation_events_observation_id_fkey__observations_encounter_id_fkey";
@@ -5573,6 +5849,74 @@ describe("Workbench BYOM Ask", () => {
         },
       },
     ]);
+  });
+
+  it("does not reintroduce question-to-plan validation during Boundary-only local-model recovery", async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      resolveAskIntentCheck: async () => ({
+        mode: "boundary_only",
+        boundary_name: "reviewed_staging",
+      }),
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        return name === "app.describe_data"
+          ? {
+            ok: true,
+            value: {
+              ok: true,
+              resources: [{
+                id: "public.churn_events",
+                boundary_name: "reviewed_staging",
+                groupable_fields: ["reason_category"],
+                aggregate_measure_functions: { monthly_revenue_cents: ["sum"] },
+              }],
+              source_database_changed: false,
+            },
+          }
+          : {
+            ok: true,
+            value: {
+              ok: true,
+              data: [{ reason_category: "price", measure_0: 1200 }],
+              source_database_changed: false,
+            },
+          };
+      },
+      close: async () => undefined,
+    };
+    const recoveredPlan = {
+      kind: "aggregate",
+      resource: "public.churn_events",
+      measures: [{ function: "sum", field: "monthly_revenue_cents" }],
+      dimensions: [{ field: "reason_category" }],
+    };
+    const responses = [
+      openAiText(""),
+      openAiText(JSON.stringify({ plan: recoveredPlan })),
+    ];
+    const session = configuredSession(askToolSurfaceDigest(authoringTools));
+    const result = await session.run(
+      "How many churn events are there by reason category?",
+      gateway,
+      { requestJson: async () => responses.shift()! },
+    );
+
+    expect(calls.at(-1)).toEqual({
+      name: "app.explore_data",
+      args: { plan: recoveredPlan },
+    });
+    expect(result.tool_calls.at(-1)).toMatchObject({
+      tool: "app.explore_data",
+      status: "ok",
+      ask_intent_check_mode: "boundary_only",
+      question_to_plan_checked: false,
+      boundary_name: "reviewed_staging",
+    });
+    expect(result.tool_calls.every((call) => call.error_code !== "LOCAL_PLAN_INTENT_MISMATCH"))
+      .toBe(true);
   });
 
   it("refuses a semantically wrong direct local-model plan before source execution and accepts its correction", async () => {
