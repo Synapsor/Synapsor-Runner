@@ -663,7 +663,7 @@ latency but does not replace a suitable Runner request timeout.
 
 ## Tested Provider Matrix
 
-Status as of the unreleased 1.7.11 source:
+Status as of the 1.7.11 release:
 
 | Provider surface | Verification | Claim |
 | --- | --- | --- |

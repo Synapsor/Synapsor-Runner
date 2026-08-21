@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.7.11 (unreleased)
+## 1.7.11 (2026-08-21)
 
 ### Ask Usability And Reviewed Exact Grouping
 
@@ -31,8 +31,17 @@
   interpretations instead of printing Markdown markers. Non-color and piped
   output receives plain text, and terminal-control sanitization remains in front
   of styling.
+- Adds a per-boundary local Ask plan-check choice. `Balanced` remains the
+  default; an explicitly confirmed `Boundary only` preference skips only the
+  English question-to-plan comparison while retaining reviewed plan validation,
+  trusted scope, drift checks, suppression, and budgets. The local preference
+  cannot affect MCP or production HTTP Explore.
+- Makes terminal boundary controls show their current state and concise purpose,
+  accepts the previously advertised `config init --force` with a timestamped
+  backup of the replaced config, and renders evidence and query-audit times as
+  readable UTC dates while preserving exact ISO values in machine output.
 
-Prepared package versions: `@synapsor/runner@1.7.11` and
+Package versions: `@synapsor/runner@1.7.11` and
 `synapsor-runner@1.7.11`. Spec and DSL remain at their already-published
 additive authority versions, `@synapsor/spec@1.10.0` and
 `@synapsor/dsl@1.10.0`; this patch adds no new public plan grammar.
