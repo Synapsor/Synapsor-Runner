@@ -30,6 +30,14 @@
   operator leaves evidence browsing or another raw-input terminal surface.
   Pressing `Esc` now exits cleanly to the shell without requiring `Ctrl+C`,
   while an already-flowing Ask session retains control of its input stream.
+- Shows evidence and query-audit timestamps in the CLI host's local timezone,
+  including its short timezone label. Persisted records, JSON output, and
+  reproducible exports retain their exact ISO timestamps.
+- Makes the evidence browser's reconstructed-query view a fail-closed SQL
+  template instead of pseudo-function syntax. Redacted values use numbered
+  bind placeholders, direct trusted scope uses named placeholders, and SQL
+  that was intentionally not persisted remains visible as commented `1 = 0`
+  or `NULL` guards. The view never claims to be the exact executed statement.
 
 Prepared package versions: `@synapsor/runner@1.7.12` and
 `synapsor-runner@1.7.12`. Spec and DSL remain `@synapsor/spec@1.10.0` and

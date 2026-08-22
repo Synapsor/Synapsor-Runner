@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { describeExploreAuditPlan, reconstructExploreAuditQuery } from "./explore-audit-presentation.js";
-import { formatEvidenceBrowserFacts, formatEvidenceBrowserPlan, formatEvidenceBrowserQuery, formatEvidenceBrowserRow, formatEvidenceBrowserSummary, formatEvidenceDetail, formatEvidenceSummary, formatQueryAuditBrowserFacts, formatQueryAuditBrowserPlan, formatQueryAuditBrowserQuery, formatQueryAuditBrowserRow, formatQueryAuditBrowserSummary, formatQueryAuditDetail } from "./proposal-formatting.js";
+import { formatEvidenceBrowserFacts, formatEvidenceBrowserPlan, formatEvidenceBrowserQuery, formatEvidenceBrowserRow, formatEvidenceBrowserSummary, formatEvidenceDetail, formatEvidenceMarkdown, formatEvidenceSummary, formatQueryAuditBrowserFacts, formatQueryAuditBrowserPlan, formatQueryAuditBrowserQuery, formatQueryAuditBrowserRow, formatQueryAuditBrowserSummary, formatQueryAuditDetail } from "./proposal-formatting.js";
 
 describe("Explore audit presentation", () => {
   it("reconstructs a privacy-safe aggregate and makes Runner scope predicates explicit", () => {
@@ -21,9 +21,11 @@ describe("Explore audit presentation", () => {
 
     expect(result?.statement).toContain("SELECT\n  membership_tier,\n  COUNT(*) AS count");
     expect(result?.statement).toContain("FROM librarydb.members");
-    expect(result?.statement).toContain("join_year < :keyed(aaaaaaaaaaaa...)");
-    expect(result?.statement).toContain("RUNNER_TENANT_PREDICATE(direct_tenant_id)");
-    expect(result?.statement).toContain("RUNNER_PRINCIPAL_PREDICATE(derived_members_owner_fk)");
+    expect(result?.statement).toContain("join_year < :value_1 /* redacted */");
+    expect(result?.statement).toContain("tenant_id = :trusted_tenant /* Runner tenant scope */");
+    expect(result?.statement).toContain("1 = 0 /* REQUIRED Runner principal scope; see notes for members_owner_fk */");
+    expect(result?.statement).not.toContain("RUNNER_TENANT_PREDICATE");
+    expect(result?.statement).not.toContain("RUNNER_PRINCIPAL_PREDICATE");
     expect(result?.caveats).toContain("Tenant scope: predicate applied by Runner through direct column tenant_id.");
     expect(result?.caveats).toContain("Principal scope: predicate applied by Runner through derived path members_owner_fk.");
     expect(result?.statement).toContain("GROUP BY\n  membership_tier");
@@ -68,7 +70,10 @@ describe("Explore audit presentation", () => {
     });
 
     expect(result?.statement).toContain("SELECT code, label");
-    expect(result?.statement).toContain("RELATED(category, genre_parent_fk) IN (:keyed(bbbbbbbbbbbb...))");
+    expect(result?.statement).toContain("NULL /* REQUIRED relationship JOIN; see notes */ IN (:value_1 /* redacted */)");
+    expect(result?.statement).toContain("1 = 0 /* REQUIRED SQL reconstruction; see notes */");
+    expect(result?.caveats).toContain("Relationship field category uses reviewed path genre_parent_fk; exact JOIN SQL was not persisted.");
+    expect(result?.caveats).toContain("This template contains a required 1 = 0 guard and returns no source rows until every missing SQL expression is restored.");
     expect(result?.statement).toContain("tenant predicate not applied: shared reference");
     expect(result?.statement).toContain("principal predicate not applied: not configured");
     expect(result?.statement).toContain("ORDER BY label ASC");
@@ -87,8 +92,8 @@ describe("Explore audit presentation", () => {
       principalRecorded: true,
     });
 
-    expect(result?.statement).toContain("trusted tenant context was bound");
-    expect(result?.statement).toContain("trusted principal context was bound");
+    expect(result?.statement).toContain("1 = 0 /* REQUIRED Runner tenant scope; see notes */");
+    expect(result?.statement).toContain("1 = 0 /* REQUIRED Runner principal scope; see notes */");
     expect(result?.statement).not.toContain("predicate applied by Runner");
     expect(result?.caveats).toContain("Exact tenant-predicate metadata was not recorded for this legacy event.");
   });
@@ -137,7 +142,7 @@ describe("Explore audit presentation", () => {
     const plain = formatEvidenceDetail(evidence, false);
     expect(plain).toMatch(/IDENTITY AND RESOURCE[\s\S]*AUTHORITY[\s\S]*OUTCOME AND PRIVACY[\s\S]*EXECUTION/);
     expect(plain).toContain("Reconstructed reviewed query");
-    expect(plain).toContain("RUNNER_TENANT_PREDICATE(direct_tenant_id)");
+    expect(plain).toContain("tenant_id = :trusted_tenant");
     expect(plain).toContain("Tenant scope: predicate applied by Runner through direct column tenant_id.");
     expect(plain).not.toContain("\u001b[");
 
@@ -146,22 +151,33 @@ describe("Explore audit presentation", () => {
     expect(colored).toMatch(/\u001b\[[0-9;]*32m/);
 
     const list = formatEvidenceSummary(evidence, false);
+    const localTimestamp = new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: true,
+      timeZoneName: "short",
+    }).format(new Date(evidence.created_at));
     expect(list).toContain("Members grouped by membership tier.");
     expect(list).toContain("3 rows/groups / 6 cells / 1 suppressed");
-    expect(list).toContain("Aug 16, 2026, 1:02:03 AM UTC");
+    expect(list).toContain(localTimestamp);
     expect(list).not.toContain(evidence.created_at);
+    expect(formatEvidenceMarkdown(evidence)).toContain(`Created at: ${evidence.created_at}`);
     expect(list).not.toContain("1".repeat(64));
     expect(formatEvidenceSummary(evidence, true)).toMatch(/\u001b\[[0-9;]*32m/);
     const evidenceBrowserRow = formatEvidenceBrowserRow(evidence, 1, false);
     expect(evidenceBrowserRow).toContain("Members grouped by membership tier.");
-    expect(evidenceBrowserRow).toContain("Aug 16, 2026, 1:02:03 AM UTC");
+    expect(evidenceBrowserRow).toContain(localTimestamp);
     const evidenceBrowserSummary = formatEvidenceBrowserSummary(evidence, false);
     expect(evidenceBrowserSummary).not.toContain("Normalized reviewed plan");
-    expect(evidenceBrowserSummary).toContain("When: Aug 16, 2026, 1:02:03 AM UTC");
+    expect(evidenceBrowserSummary).toContain(`When: ${localTimestamp}`);
     const evidenceBrowserFacts = formatEvidenceBrowserFacts(evidence, false);
     expect(evidenceBrowserFacts).toContain("Generation lock");
-    expect(evidenceBrowserFacts).toContain("Created at: Aug 16, 2026, 1:02:03 AM UTC");
-    expect(formatEvidenceBrowserQuery(evidence, false)).toContain("RUNNER_TENANT_PREDICATE");
+    expect(evidenceBrowserFacts).toContain(`Created at: ${localTimestamp}`);
+    expect(formatEvidenceBrowserQuery(evidence, false)).toContain("tenant_id = :trusted_tenant");
     expect(formatEvidenceBrowserPlan(evidence, false)).toContain('"membership_tier"');
 
     const refused = formatQueryAuditDetail({
@@ -222,11 +238,11 @@ describe("Explore audit presentation", () => {
     };
     const queryAuditBrowserRow = formatQueryAuditBrowserRow(refusedRecord, 1, false);
     expect(queryAuditBrowserRow).toContain("Refused group on membership tier in members.");
-    expect(queryAuditBrowserRow).toContain("Aug 16, 2026, 1:02:03 AM UTC");
+    expect(queryAuditBrowserRow).toContain(localTimestamp);
     const queryAuditBrowserSummary = formatQueryAuditBrowserSummary(refusedRecord, false);
     expect(queryAuditBrowserSummary).toContain("EXPLORE_FIELD_FORBIDDEN");
     expect(queryAuditBrowserSummary).toContain("librarydb.members.membership_tier (group)");
-    expect(queryAuditBrowserSummary).toContain("When: Aug 16, 2026, 1:02:03 AM UTC");
+    expect(queryAuditBrowserSummary).toContain(`When: ${localTimestamp}`);
     expect(formatQueryAuditBrowserFacts(refusedRecord, false)).toContain("Source query executed: no");
     expect(formatQueryAuditBrowserQuery(refusedRecord, false)).toContain("not recorded");
     expect(formatQueryAuditBrowserPlan(refusedRecord, false)).toContain("not recorded");
