@@ -418,7 +418,7 @@ async function chooseRouteInTerminal(
     routeOptions.findIndex((option) => option.id === defaultRoute),
   );
   const wasRaw = input.isRaw;
-  const wasPaused = input.isPaused();
+  const wasFlowing = input.readableFlowing === true;
   const renderer = createInPlaceTerminalRenderer(output, {
     maxRows: () => output.rows,
   });
@@ -479,7 +479,7 @@ async function chooseRouteInTerminal(
     renderer.clear();
     output.write("\u001b[?25h");
     input.setRawMode(wasRaw);
-    if (wasPaused) input.pause();
+    if (!wasFlowing) input.pause();
   }
 }
 

@@ -6,6 +6,8 @@ import {
   createMcpRuntime,
   createSynapsorMcpServer,
   loadRuntimeConfigFromFile,
+  TrustedLocalToolPresentationChannel,
+  type LocalToolPresentation,
   type McpRuntime,
 } from "@synapsor-runner/mcp-server";
 import {
@@ -35,6 +37,7 @@ type ConnectedMcpSurface = {
   kind: "runtime" | "authoring";
   client: Client;
   server: McpServer;
+  localPresentation: TrustedLocalToolPresentationChannel;
   closeRuntime: () => Promise<void>;
   tools: AskToolDefinition[];
   projectResultForModel?: (
@@ -111,31 +114,41 @@ export async function createWorkbenchAskMcpGateway(input: {
           };
         }
         try {
-          const result = await surface.client.callTool({ name, arguments: args });
-          if (result.isError === true && isMcpInputValidationRefusal(result)) {
-            return invalidModelToolArgumentsResult(name);
+          const pendingPresentation = surface.localPresentation.begin();
+          try {
+            const result = await surface.client.callTool({
+              name,
+              arguments: args,
+              _meta: pendingPresentation.request_meta,
+            });
+            const localPresentation = pendingPresentation.take();
+            if (result.isError === true && isMcpInputValidationRefusal(result)) {
+              return invalidModelToolArgumentsResult(name);
+            }
+            const views = askToolResultViews(result, localPresentation);
+            const value = views.local;
+            const providerProjection = surface.projectResultForModel?.(name, args, value)
+              ?? (views.withheld
+                ? { value: views.provider, withheld: true }
+                : undefined);
+            const errorCode = typeof value.error_code === "string"
+              ? value.error_code
+              : result.isError === true
+                ? "MCP_TOOL_REFUSED"
+                : undefined;
+            return {
+              ok: result.isError !== true && value.ok !== false,
+              value,
+              ...(providerProjection
+                && (providerProjection.withheld || providerProjection.operator_metadata_withheld)
+                ? { provider_value: providerProjection.value }
+                : {}),
+              ...(providerProjection?.withheld ? { model_withheld_values: true } : {}),
+              ...(errorCode ? { error_code: errorCode } : {}),
+            };
+          } finally {
+            pendingPresentation.cancel();
           }
-          const views = askToolResultViews(result);
-          const value = views.local;
-          const providerProjection = surface.projectResultForModel?.(name, args, value)
-            ?? (views.withheld
-              ? { value: views.provider, withheld: true }
-              : undefined);
-          const errorCode = typeof value.error_code === "string"
-            ? value.error_code
-            : result.isError === true
-              ? "MCP_TOOL_REFUSED"
-              : undefined;
-          return {
-            ok: result.isError !== true && value.ok !== false,
-            value,
-            ...(providerProjection
-              && (providerProjection.withheld || providerProjection.operator_metadata_withheld)
-              ? { provider_value: providerProjection.value }
-              : {}),
-            ...(providerProjection?.withheld ? { model_withheld_values: true } : {}),
-            ...(errorCode ? { error_code: errorCode } : {}),
-          };
         } catch {
           return invalidModelToolArgumentsResult(name);
         }
@@ -158,19 +171,11 @@ export async function createWorkbenchAskMcpGateway(input: {
       close: async () => {
         if (closed) return;
         closed = true;
-        await Promise.allSettled(surfaces.flatMap((surface) => [
-          surface.client.close(),
-          surface.server.close(),
-          surface.closeRuntime(),
-        ]));
+        await Promise.allSettled(surfaces.map(closeSurface));
       },
     };
   } catch (error) {
-    await Promise.allSettled(surfaces.flatMap((surface) => [
-      surface.client.close(),
-      surface.server.close(),
-      surface.closeRuntime(),
-    ]));
+    await Promise.allSettled(surfaces.map(closeSurface));
     throw error;
   }
 }
@@ -255,8 +260,9 @@ async function connectRuntimeSurface(input: {
     storePath: input.storePath,
     env: input.env,
   });
-  const server = createSynapsorMcpServer(runtime);
-  return connectSurface("runtime", server, () => runtime.close());
+  const localPresentation = new TrustedLocalToolPresentationChannel();
+  const server = createSynapsorMcpServer(runtime, { localPresentation });
+  return connectSurface("runtime", server, localPresentation, () => runtime.close());
 }
 
 async function connectAuthoringSurface(input: {
@@ -270,8 +276,14 @@ async function connectAuthoringSurface(input: {
       transport: "loopback_workbench",
       env: input.env,
     });
-    const server = createScopedExploreMcpServer(runtime);
-    const surface = await connectSurface("authoring", server, () => runtime!.close());
+    const localPresentation = new TrustedLocalToolPresentationChannel();
+    const server = createScopedExploreMcpServer(runtime, { localPresentation });
+    const surface = await connectSurface(
+      "authoring",
+      server,
+      localPresentation,
+      () => runtime!.close(),
+    );
     surface.projectResultForModel = (tool, args, result) =>
       runtime!.projectResultForModel({
         tool,
@@ -367,6 +379,7 @@ function addAskOperatorReviewMetadata(
 async function connectSurface(
   kind: ConnectedMcpSurface["kind"],
   server: McpServer,
+  localPresentation: TrustedLocalToolPresentationChannel,
   closeRuntime: () => Promise<void>,
 ): Promise<ConnectedMcpSurface> {
   const client = new Client({
@@ -387,8 +400,9 @@ async function connectSurface(
       input_schema: asRecord(tool.inputSchema),
       ...(tool._meta ? { metadata: asRecord(tool._meta) } : {}),
     }));
-    return { kind, client, server, closeRuntime, tools };
+    return { kind, client, server, localPresentation, closeRuntime, tools };
   } catch (error) {
+    localPresentation.close();
     await Promise.allSettled([client.close(), server.close(), closeRuntime()]);
     throw error;
   }
@@ -428,6 +442,7 @@ function assertExactAuthoringSurface(tools: AskToolDefinition[]): void {
 }
 
 async function closeSurface(surface: ConnectedMcpSurface): Promise<void> {
+  surface.localPresentation.close();
   await Promise.allSettled([
     surface.client.close(),
     surface.server.close(),
@@ -437,18 +452,19 @@ async function closeSurface(surface: ConnectedMcpSurface): Promise<void> {
 
 export function askToolResultViews(
   result: Awaited<ReturnType<Client["callTool"]>>,
+  localPresentation?: LocalToolPresentation,
 ): {
   local: Record<string, unknown>;
   provider: Record<string, unknown>;
   withheld: boolean;
 } {
   const metadata = isRecord(result._meta) ? result._meta : {};
-  const localFullResult = metadata["synapsor.local_full_result"];
   const provider = modelFacingToolResult(result);
   return {
-    local: isRecord(localFullResult) ? localFullResult : provider,
+    local: localPresentation?.value ?? provider,
     provider,
-    withheld: metadata["synapsor.model_withheld_values"] === true,
+    withheld: localPresentation?.model_withheld_values
+      ?? metadata["synapsor.model_withheld_values"] === true,
   };
 }
 

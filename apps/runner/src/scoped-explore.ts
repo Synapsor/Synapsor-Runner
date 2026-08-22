@@ -9,6 +9,7 @@ import {
   type ExploreBudgetLimits,
   type ExploreBudgetReservationInput,
   type ExploreBudgetReservationDecision,
+  type ExplorePrivacyReleaseClaim,
   type ProductionExploreBudgetReservationInput,
   type ProductionExploreBudgetReservationDecision,
   type ProposalRuntimeStore,
@@ -4444,11 +4445,17 @@ async function enforcePrivacyComplementRelease(
   if (!releaseKind) return;
   let decision;
   try {
+    const additionalReleases = releaseKind === "scalar_total"
+      ? scalarFilterPrivacyReleaseClaims(input.plan, input.auditKey)
+      : [];
     const common = {
       complement_fingerprints: privacyComplementFingerprints(input.plan, input.auditKey),
       release_kind: releaseKind,
       query_fingerprint: input.queryFingerprint,
       boundary_digest: input.boundary.activation.digest,
+      ...(additionalReleases.length > 0
+        ? { additional_releases: additionalReleases }
+        : {}),
     };
     if (input.mode === "production_http") {
       if (!store.claimProductionExplorePrivacyRelease) {
@@ -4475,6 +4482,23 @@ async function enforcePrivacyComplementRelease(
     );
   }
   if (!decision.allowed) {
+    if (decision.conflicting_release_reason === "scalar_filter_complement") {
+      throw new ScopedExploreError(
+        "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
+        "An earlier scalar aggregate was released for a related reviewed filter set. Runner blocked this scalar result because subtracting the two totals could reconstruct a cohort below the reviewed minimum.",
+        {
+          reason: "complementary_scalar_filter_release",
+          resource: input.plan.resource,
+          minimum_cohort_size: resource.minimum_cohort_size,
+          attempted_release_kind: releaseKind,
+          conflicting_release_kind: "scalar_total",
+          predicate_relationship: "parent_or_child",
+          source_query_executed: true,
+          source_rows_returned_to_caller: false,
+          result_returned_to_caller: false,
+        },
+      );
+    }
     const earlierRelease = decision.conflicting_release_kind === "suppressed_grouping"
       ? "An earlier grouped result for this table withheld at least one small cohort."
       : "An earlier scalar total was released for this table.";
@@ -4496,6 +4520,85 @@ async function enforcePrivacyComplementRelease(
       },
     );
   }
+}
+
+function scalarFilterPrivacyReleaseClaims(
+  plan: AggregateExplorePlan,
+  auditKey: Buffer,
+): ExplorePrivacyReleaseClaim[] {
+  const predicates = scalarPrivacyPredicates(plan, auditKey);
+  const exactFingerprints = scalarPrivacyPredicateFingerprints(plan, predicates);
+  const parentPredicateSets = predicates.length === 0
+    ? []
+    : [
+      [],
+      ...predicates.map((_predicate, index) =>
+        predicates.filter((_candidate, candidateIndex) => candidateIndex !== index)),
+    ];
+  const parentFingerprints = [...new Set(parentPredicateSets.flatMap((parentPredicates) =>
+    scalarPrivacyPredicateFingerprints(plan, parentPredicates)))].sort();
+  return [
+    {
+      complement_fingerprints: exactFingerprints,
+      release_kind: "scalar_total",
+      conflict_reason: "scalar_filter_complement",
+    },
+    ...(parentFingerprints.length > 0
+      ? [{
+        complement_fingerprints: parentFingerprints,
+        release_kind: "suppressed_grouping" as const,
+        conflict_reason: "scalar_filter_complement" as const,
+      }]
+      : []),
+  ];
+}
+
+function scalarPrivacyPredicates(
+  plan: AggregateExplorePlan,
+  auditKey: Buffer,
+): Record<string, unknown>[] {
+  return canonicalRecordOrder([
+    ...(plan.where ?? []).map((filter) => ({
+      kind: "filter",
+      field: filter.field,
+      operator: filter.op,
+      relationship: filter.relationship ?? null,
+      value: Array.isArray(filter.value)
+        ? filter.value.map((value) => hmac(auditKey, JSON.stringify(value))).sort()
+        : hmac(auditKey, JSON.stringify(filter.value)),
+    })),
+    ...(plan.time_window
+      ? [{
+        kind: "time_window",
+        field: plan.time_window.field,
+        relationship: plan.time_window.relationship ?? null,
+        start: hmac(auditKey, JSON.stringify(plan.time_window.start)),
+        end: hmac(auditKey, JSON.stringify(plan.time_window.end)),
+      }]
+      : []),
+  ]);
+}
+
+function scalarPrivacyPredicateFingerprints(
+  plan: AggregateExplorePlan,
+  predicates: Record<string, unknown>[],
+): `sha256:${string}`[] {
+  const cohort = {
+    version: "synapsor.explore-scalar-filter-complement.v1",
+    resource: plan.resource,
+    relationship: plan.relationship ?? null,
+    predicates,
+  };
+  return [...new Set(plan.measures.map((measure) => canonicalJsonDigest({
+    cohort,
+    measure: "derived_measure" in measure
+      ? { derived_measure: measure.derived_measure }
+      : {
+        function: measure.function,
+        field: measure.field ?? null,
+        relationship: measure.relationship ?? null,
+      },
+  })))].sort();
 }
 
 function privacyComplementFingerprints(

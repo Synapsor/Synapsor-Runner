@@ -761,6 +761,11 @@ ceilings and tenant-level complementary-release accounting prevent many
 principals from bypassing limits or reconstructing a suppressed cohort by
 collusion. Minimum-cohort suppression, group caps, complexity limits, response
 limits, timeouts, and the suppression-aware total defense are unchanged.
+Related scalar totals also use atomic predicate claims at both principal and
+tenant scope: Runner refuses an unfiltered/filtered pair or a parent/child
+predicate pair whose subtraction could reconstruct a smaller cohort. This is
+a targeted subtraction defense, not differential privacy or a claim that every
+combination of otherwise legal filters is uninferable.
 
 Failed or refused attempts consume query and rate allowance. Only released
 cells consume extracted-cell allowance. Stranded reservations remain a

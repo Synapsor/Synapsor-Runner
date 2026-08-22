@@ -124,8 +124,9 @@ type ReconstructInput = {
 };
 
 /**
- * Builds a SQL-like operator explanation from redacted audit metadata only.
- * It is deliberately not executable SQL and never renders stored literal values.
+ * Builds a fail-closed SQL template from redacted audit metadata only. The
+ * exact compiled statement is intentionally not persisted, so missing values,
+ * relationship expressions, and derived scope remain explicit placeholders.
  */
 export function reconstructExploreAuditQuery(
   input: ReconstructInput,
@@ -136,15 +137,26 @@ export function reconstructExploreAuditQuery(
   if (!resource || (kind !== "rows" && kind !== "aggregate")) return undefined;
 
   const caveats = [
-    "Reconstructed from the reviewed normalized plan; this is not captured or executable SQL.",
-    "Filter values are keyed placeholders because raw values are not stored.",
+    "Reconstructed from the reviewed normalized plan; this is not the exact SQL Runner executed.",
+    "Named :value_n parameters replace filters because raw values and driver parameter positions are not stored.",
+    "Fail-closed 1 = 0 and NULL placeholders mark required scope, relationship, band, or metric SQL that the audit record cannot reconstruct.",
   ];
   const scope = scopeClauses(input);
   caveats.push(...scope.caveats);
+  caveats.push(...relationshipCaveats(plan));
+  const requiresSqlGuard = requiresSqlReconstructionGuard(plan);
+  if (requiresSqlGuard) {
+    caveats.push("This template contains a required 1 = 0 guard and returns no source rows until every missing SQL expression is restored.");
+  }
+  const predicates = [
+    ...scope.predicates,
+    ...(requiresSqlGuard ? ["1 = 0 /* REQUIRED SQL reconstruction; see notes */"] : []),
+  ];
+  const bindings = redactedBindings();
 
   const lines = kind === "rows"
-    ? reconstructRows(plan, resource, scope.predicates, scope.comments)
-    : reconstructAggregate(plan, resource, scope.predicates, scope.comments);
+    ? reconstructRows(plan, resource, predicates, scope.comments, bindings)
+    : reconstructAggregate(plan, resource, predicates, scope.comments, bindings);
   return { statement: lines.join("\n"), caveats };
 }
 
@@ -153,15 +165,16 @@ function reconstructRows(
   resource: string,
   scopePredicates: string[],
   scopeComments: string[],
+  bindings: RedactedBindings,
 ): string[] {
   const selected = strings(plan.select).map(identifier).filter(Boolean);
   const where = [
-    ...filterPredicates(plan.where),
-    ...timeWindowPredicates(plan.time_window),
+    ...filterPredicates(plan.where, bindings),
+    ...timeWindowPredicates(plan.time_window, bindings),
     ...scopePredicates,
   ];
   const lines = [
-    `SELECT ${selected.length ? selected.join(", ") : "<reviewed fields>"}`,
+    `SELECT ${selected.length ? selected.join(", ") : "NULL /* reviewed row fields were not recorded */ AS unavailable"}`,
     `FROM ${resource}`,
     ...scopeComments.map((comment) => `-- ${comment}`),
     ...whereLines(where),
@@ -182,18 +195,26 @@ function reconstructAggregate(
   resource: string,
   scopePredicates: string[],
   scopeComments: string[],
+  bindings: RedactedBindings,
 ): string[] {
-  const dimensions = records(plan.dimensions).map(dimensionExpression).filter(Boolean);
+  const dimensions = records(plan.dimensions).map(dimensionExpressions).filter((entry): entry is GroupingExpression => Boolean(entry));
   const timeBucket = record(plan.time_bucket);
-  const timeBucketExpression = identifier(timeBucket.field)
-    ? `TIME_BUCKET(${identifier(timeBucket.field)}, ${identifier(timeBucket.bucket) || "reviewed_interval"}${relationshipSuffix(timeBucket.relationship)})`
+  const timeBucketExpression: GroupingExpression | undefined = identifier(timeBucket.field)
+    ? {
+        select: "NULL AS time_bucket /* reviewed time-bucket SQL required */",
+        group: "time_bucket",
+      }
     : undefined;
-  const grouping = [...dimensions, ...(timeBucketExpression ? [timeBucketExpression] : [])];
+  const groupingExpressions = [...dimensions, ...(timeBucketExpression ? [timeBucketExpression] : [])];
+  const grouping = groupingExpressions.map((entry) => entry.group);
   const measures = records(plan.measures).map(measureExpression).filter(Boolean);
-  const select = [...grouping, ...(measures.length ? measures : ["COUNT(*) AS count"])];
+  const select = [
+    ...groupingExpressions.map((entry) => entry.select),
+    ...(measures.length ? measures : ["COUNT(*) AS count"]),
+  ];
   const where = [
-    ...filterPredicates(plan.where),
-    ...timeWindowPredicates(plan.time_window),
+    ...filterPredicates(plan.where, bindings),
+    ...timeWindowPredicates(plan.time_window, bindings),
     ...scopePredicates,
   ];
   const lines = [
@@ -212,51 +233,74 @@ function reconstructAggregate(
   if (identifier(comparison.field)) {
     lines.push(`-- comparison field: ${fieldExpression(comparison.field, comparison.relationship)}`);
     const ranges = records(comparison.ranges).map((range) =>
-      `[${literalPlaceholder(range.start)}, ${literalPlaceholder(range.end)})`);
+      `[${bindings.render(range.start)}, ${bindings.render(range.end)})`);
     if (ranges.length) lines.push(`-- comparison ranges: ${ranges.join(" versus ")}`);
   }
 
   const orderBy = record(plan.order_by);
   const orderDirection = text(orderBy.direction)?.toUpperCase() === "ASC" ? "ASC" : "DESC";
   if (text(orderBy.kind) === "measure") {
-    lines.push(`ORDER BY measure_${(positiveInteger(orderBy.index) ?? 0) + 1} ${orderDirection}`);
+    const measureIndex = positiveInteger(orderBy.index) ?? 0;
+    lines.push(`ORDER BY ${grouping.length + measureIndex + 1} ${orderDirection} /* reviewed measure ${measureIndex + 1} */`);
   } else if (text(orderBy.kind) === "comparison_change") {
-    lines.push(`ORDER BY comparison_${identifier(orderBy.change) || "change"}_${(positiveInteger(orderBy.index) ?? 0) + 1} ${orderDirection}`);
+    lines.push(`-- ORDER BY reviewed comparison ${identifier(orderBy.change) || "change"} ${orderDirection}; comparison transform SQL was not stored`);
   } else if (text(orderBy.kind) === "time_bucket") {
-    lines.push(`ORDER BY time_bucket ${orderDirection}`);
+    if (timeBucketExpression) lines.push(`ORDER BY ${dimensions.length + 1} ${orderDirection} /* reviewed time bucket */`);
   }
   const topN = positiveInteger(plan.top_n);
   if (topN) lines.push(`LIMIT ${topN}`);
   return lines;
 }
 
-function dimensionExpression(value: AuditRecord): string {
+type GroupingExpression = {
+  select: string;
+  group: string;
+};
+
+
+function dimensionExpressions(value: AuditRecord): GroupingExpression | undefined {
   const field = identifier(value.field);
-  if (field) return fieldExpression(field, value.relationship);
+  if (field) {
+    const relationship = identifier(value.relationship);
+    return relationship
+      ? {
+          select: `NULL AS ${field} /* reviewed relationship JOIN required */`,
+          group: field,
+        }
+      : { select: field, group: field };
+  }
   if (typeof value.numeric_band === "string") {
-    return `REVIEWED_BAND(${identifier(value.numeric_band)})`;
+    const band = identifier(value.numeric_band) || "reviewed_band";
+    return {
+      select: `NULL AS ${band} /* reviewed band SQL required */`,
+      group: band,
+    };
   }
   const band = record(value.numeric_band);
   const bandField = identifier(band.field);
-  if (!bandField) return "";
-  return `AUTO_BAND(${bandField}, ${identifier(band.method) || "reviewed_method"}, ${positiveInteger(band.buckets) ?? "reviewed_count"})`;
+  if (!bandField) return undefined;
+  const alias = `${bandField}_band`;
+  return {
+    select: `NULL AS ${alias} /* reviewed auto-band SQL required */`,
+    group: alias,
+  };
 }
 
 function measureExpression(value: AuditRecord): string {
   const derived = identifier(value.derived_measure);
-  if (derived) return `REVIEWED_METRIC(${derived}) AS ${derived}`;
+  if (derived) return `NULL /* REQUIRED reviewed metric ${derived}; formula SQL not stored */ AS ${derived}`;
   const operation = identifier(value.function)?.toUpperCase();
   if (!operation) return "";
   const field = identifier(value.field);
   const argument = field ? fieldExpression(field, value.relationship) : "*";
   if (operation === "COUNT_DISTINCT") return `COUNT(DISTINCT ${argument}) AS count_distinct_${field || "rows"}`;
-  if (operation === "NULL_COUNT" || operation === "NON_NULL_COUNT" || operation === "COMPLETION_RATE") {
-    return `${operation}(${argument}) AS ${operation.toLowerCase()}_${field || "rows"}`;
-  }
+  if (operation === "NULL_COUNT") return `SUM(CASE WHEN ${argument} IS NULL THEN 1 ELSE 0 END) AS null_count_${field || "rows"}`;
+  if (operation === "NON_NULL_COUNT") return `SUM(CASE WHEN ${argument} IS NULL THEN 0 ELSE 1 END) AS non_null_count_${field || "rows"}`;
+  if (operation === "COMPLETION_RATE") return `AVG(CASE WHEN ${argument} IS NULL THEN 0.0 ELSE 1.0 END) AS completion_rate_${field || "rows"}`;
   return `${operation}(${argument}) AS ${operation.toLowerCase()}${field ? `_${field.replaceAll(".", "_")}` : ""}`;
 }
 
-function filterPredicates(value: unknown): string[] {
+function filterPredicates(value: unknown, bindings: RedactedBindings): string[] {
   return records(value).map((filter) => {
     const field = identifier(filter.field);
     const operation = text(filter.op)?.toLowerCase();
@@ -272,19 +316,19 @@ function filterPredicates(value: unknown): string[] {
       in: "IN",
     }[operation];
     if (!operator) return undefined;
-    const placeholder = literalPlaceholder(filter.value);
+    const placeholder = bindings.render(filter.value);
     return operation === "in" ? `${left} IN (${placeholder})` : `${left} ${operator} ${placeholder}`;
   }).filter((value): value is string => Boolean(value));
 }
 
-function timeWindowPredicates(value: unknown): string[] {
+function timeWindowPredicates(value: unknown, bindings: RedactedBindings): string[] {
   const window = record(value);
   const field = identifier(window.field);
   if (!field) return [];
   const expression = fieldExpression(field, window.relationship);
   return [
-    `${expression} >= ${literalPlaceholder(window.start)}`,
-    `${expression} < ${literalPlaceholder(window.end)}`,
+    `${expression} >= ${bindings.render(window.start)}`,
+    `${expression} < ${bindings.render(window.end)}`,
   ];
 }
 
@@ -301,22 +345,22 @@ function scopeClauses(input: ReconstructInput): {
   const caveats: string[] = [];
 
   if (tenant.predicate_applied === true) {
-    predicates.push(`RUNNER_TENANT_PREDICATE(${scopeFunctionArgument(tenant)})`);
+    predicates.push(scopePredicate("tenant", tenant));
     caveats.push(`Tenant scope: predicate applied by Runner through ${scopeDescription(tenant)}.`);
   } else if (text(tenant.kind)) {
     comments.push(`tenant predicate not applied: ${scopeDescription(tenant)}`);
   } else if (record(input.trustedScope).tenant_bound === true || input.tenantRecorded) {
-    comments.push("trusted tenant context was bound; this legacy record does not identify the exact predicate shape");
+    predicates.push("1 = 0 /* REQUIRED Runner tenant scope; see notes */");
     caveats.push("Exact tenant-predicate metadata was not recorded for this legacy event.");
   }
 
   if (principal.predicate_applied === true) {
-    predicates.push(`RUNNER_PRINCIPAL_PREDICATE(${scopeFunctionArgument(principal)})`);
+    predicates.push(scopePredicate("principal", principal));
     caveats.push(`Principal scope: predicate applied by Runner through ${scopeDescription(principal)}.`);
   } else if (text(principal.kind)) {
     comments.push(`principal predicate not applied: ${scopeDescription(principal)}`);
   } else if (record(input.trustedScope).principal_bound === true || input.principalRecorded) {
-    comments.push("trusted principal context was bound; this legacy record does not identify the exact predicate shape");
+    predicates.push("1 = 0 /* REQUIRED Runner principal scope; see notes */");
     caveats.push("Exact principal-predicate metadata was not recorded for this legacy event.");
   }
   return { predicates, comments, caveats };
@@ -331,11 +375,13 @@ function scopeDescription(scope: AuditRecord): string {
   return kind.replaceAll("_", " ");
 }
 
-function scopeFunctionArgument(scope: AuditRecord): string {
-  const kind = identifier(scope.kind) || "reviewed_scope";
+function scopePredicate(kind: "tenant" | "principal", scope: AuditRecord): string {
   const column = identifier(scope.column);
   const path = identifier(scope.path_id);
-  return [kind, column || path].filter(Boolean).join("_");
+  if (column) {
+    return `${column} = :trusted_${kind} /* Runner ${kind} scope */`;
+  }
+  return `1 = 0 /* REQUIRED Runner ${kind} scope; see notes${path ? ` for ${path}` : ""} */`;
 }
 
 function whereLines(predicates: string[]): string[] {
@@ -349,18 +395,67 @@ function whereLines(predicates: string[]): string[] {
 function fieldExpression(fieldValue: unknown, relationshipValue: unknown): string {
   const field = identifier(fieldValue) || "<reviewed field>";
   const relationship = identifier(relationshipValue);
-  return relationship ? `RELATED(${field}, ${relationship})` : field;
+  return relationship
+    ? "NULL /* REQUIRED relationship JOIN; see notes */"
+    : field;
 }
 
-function relationshipSuffix(value: unknown): string {
-  const relationship = identifier(value);
-  return relationship ? `, ${relationship}` : "";
+
+type RedactedBindings = {
+  render(value: unknown): string;
+};
+
+
+function redactedBindings(): RedactedBindings {
+  let index = 0;
+  return {
+    render(_value: unknown): string {
+      index += 1;
+      return `:value_${index} /* redacted */`;
+    },
+  };
 }
 
-function literalPlaceholder(value: unknown): string {
-  const keyedHash = identifier(record(value).keyed_hash);
-  if (keyedHash) return `:keyed(${keyedHash.slice(0, 12)}...)`;
-  return ":redacted";
+
+function relationshipCaveats(plan: AuditRecord): string[] {
+  const candidates = [
+    ...records(plan.dimensions),
+    ...records(plan.measures),
+    ...records(plan.where),
+    record(plan.time_bucket),
+    record(plan.time_window),
+    record(plan.comparison),
+  ];
+  const seen = new Set<string>();
+  const caveats: string[] = [];
+  for (const candidate of candidates) {
+    const relationship = identifier(candidate.relationship);
+    if (!relationship || seen.has(relationship)) continue;
+    seen.add(relationship);
+    const field = identifier(candidate.field) || "reviewed field";
+    caveats.push(`Relationship field ${field} uses reviewed path ${relationship}; exact JOIN SQL was not persisted.`);
+  }
+  return caveats;
+}
+
+
+function requiresSqlReconstructionGuard(plan: AuditRecord): boolean {
+  if (strings(plan.select).length === 0 && text(plan.kind) === "rows") return true;
+  const dimensions = records(plan.dimensions);
+  const measures = records(plan.measures);
+  const relationshipCarriers = [
+    ...dimensions,
+    ...measures,
+    ...records(plan.where),
+    record(plan.time_bucket),
+    record(plan.time_window),
+    record(plan.comparison),
+  ];
+  return relationshipCarriers.some((entry) => Boolean(identifier(entry.relationship)))
+    || dimensions.some((entry) => entry.numeric_band !== undefined)
+    || measures.some((entry) => Boolean(identifier(entry.derived_measure)))
+    || Boolean(identifier(record(plan.time_bucket).field))
+    || Object.keys(record(plan.comparison)).length > 0;
 }
 
 function records(value: unknown): AuditRecord[] {

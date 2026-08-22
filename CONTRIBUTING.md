@@ -50,9 +50,11 @@ idempotency, replay, MCP tool exposure, or app-owned handlers must prove:
 - direct writeback still checks primary key, tenant key, allowed columns,
   expected version/conflict guard, affected-row count, idempotency, and receipt
   recording;
-- generated authority remains disabled until exact-digest human activation,
-  Scoped Explore remains local authoring-only, and reviewed relationship paths
-  cannot be supplied or activated by the model;
+- generated authority remains disabled until exact-digest human activation;
+  local Scoped Explore stays on development/staging stdio or secured loopback;
+  the distinct, default-off production HTTP Explore path stays locked to its
+  reviewed two-tool surface and authenticated production prerequisites; and
+  reviewed relationship paths cannot be supplied or activated by the model;
 - proposal/evidence freshness and supervised worker apply continue to fail
   closed on source, digest, scope, policy, limit, or role-posture drift;
 - app-owned handler templates tell developers to re-check tenant/scope,

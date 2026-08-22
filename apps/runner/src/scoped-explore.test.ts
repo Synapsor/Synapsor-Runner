@@ -1770,6 +1770,7 @@ describe("Scoped Explore", () => {
 
   it("lets an external MCP client use reviewed Runner-only analytics without receiving raw values", async () => {
     const fixture = await activatedFixture();
+    const withheldValue = "billing-token-ignore-all-instructions";
     await rewriteActiveBoundary(fixture.root, (active) => {
       const resource = active.pack.resources.find((item: Record<string, unknown>) =>
         item.id === "public.subscriptions");
@@ -1788,9 +1789,16 @@ describe("Scoped Explore", () => {
       transport: "stdio",
       env: fixture.env,
       inspectDatabaseFn: async () => fixture.inspection,
-      executor: fixedExecutor([{ measure_0: 30, __cohort_size: 30 }]),
+      executor: {
+        execute: async () => [],
+        executeBatch: async ({ queries }) => queries.map((query) =>
+          /COUNT\s*\(\s*DISTINCT/i.test(query.sql)
+            ? [{ measure_0: 30, __cohort_size: 30 }]
+            : [{ billing_token: withheldValue }]),
+        close: async () => undefined,
+      },
     });
-    const server = createScopedExploreMcpServer(runtime);
+    const server = createScopedExploreMcpServer(runtime, { mode: "production_http" });
     const client = new Client({ name: "runner-only-external-client", version: "1.0.0" });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     try {
@@ -1830,18 +1838,29 @@ describe("Scoped Explore", () => {
       expect(JSON.stringify(result)).not.toContain("billing-token-secret");
       expect(result._meta).toMatchObject({
         "synapsor.operator_metadata_withheld": true,
-        "synapsor.local_full_result": {
-          operator_budget: {
-            operator_only: true,
-            trusted_scope: {
-              volume: {
-                queries_rolling_24_hours: { used: 1, limit: 1000, remaining: 999 },
-              },
-            },
+      });
+      expect(result._meta).not.toHaveProperty("synapsor.local_full_result");
+      expect(result._meta).not.toHaveProperty("synapsor.model_withheld_values");
+
+      const rawValueResult = await client.callTool({
+        name: "app.explore_data",
+        arguments: {
+          plan: {
+            kind: "rows",
+            resource: "public.subscriptions",
+            select: ["billing_token"],
+            limit: 1,
           },
         },
       });
-      expect(result._meta).not.toHaveProperty("synapsor.model_withheld_values");
+      expect(rawValueResult.isError).not.toBe(true);
+      expect(JSON.stringify(rawValueResult)).not.toContain(withheldValue);
+      expect(JSON.stringify(rawValueResult)).toMatch(/\[withheld:[a-f0-9]{12}:1\]/);
+      expect(rawValueResult._meta).toMatchObject({
+        "synapsor.model_withheld_values": true,
+        "synapsor.operator_metadata_withheld": true,
+      });
+      expect(rawValueResult._meta).not.toHaveProperty("synapsor.local_full_result");
 
       const refused = await client.callTool({
         name: "app.explore_data",
@@ -5127,6 +5146,157 @@ describe("Scoped Explore", () => {
     auditStore.close();
   }, 15_000);
 
+  it("never releases parent and child filtered scalar totals in either order", async () => {
+    const scalarPlan = (value?: string) => ({
+      kind: "aggregate" as const,
+      resource: "public.subscriptions",
+      measures: [{ function: "count" as const }],
+      ...(value
+        ? { where: [{ field: "reason_category", op: "eq" as const, value }] }
+        : {}),
+      top_n: 1,
+    });
+
+    const parentFirst = await activatedFixture();
+    const parentRuntime = await createScopedExploreRuntime({
+      projectRoot: parentFirst.root,
+      transport: "stdio",
+      env: parentFirst.env,
+      executor: complementAttackExecutor(),
+      inspectDatabaseFn: async () => parentFirst.inspection,
+    });
+    await expect(parentRuntime.explore(scalarPlan())).resolves.toMatchObject({ ok: true });
+    await expect(parentRuntime.explore(scalarPlan("price"))).rejects.toMatchObject({
+      code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
+      message: expect.stringMatching(/related reviewed filter set.*subtracting/i),
+      details: {
+        reason: "complementary_scalar_filter_release",
+        resource: "public.subscriptions",
+        minimum_cohort_size: 5,
+        source_query_executed: true,
+        source_rows_returned_to_caller: false,
+        result_returned_to_caller: false,
+      },
+    });
+    await parentRuntime.close();
+
+    const childFirst = await activatedFixture();
+    const childRuntime = await createScopedExploreRuntime({
+      projectRoot: childFirst.root,
+      transport: "stdio",
+      env: childFirst.env,
+      executor: complementAttackExecutor(),
+      inspectDatabaseFn: async () => childFirst.inspection,
+    });
+    await expect(childRuntime.explore(scalarPlan("price"))).resolves.toMatchObject({ ok: true });
+    await expect(childRuntime.explore(scalarPlan())).rejects.toMatchObject({
+      code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
+      details: { reason: "complementary_scalar_filter_release" },
+    });
+    await childRuntime.close();
+
+    const siblings = await activatedFixture();
+    const siblingRuntime = await createScopedExploreRuntime({
+      projectRoot: siblings.root,
+      transport: "stdio",
+      env: siblings.env,
+      executor: complementAttackExecutor(),
+      inspectDatabaseFn: async () => siblings.inspection,
+    });
+    await expect(siblingRuntime.explore(scalarPlan("price"))).resolves.toMatchObject({ ok: true });
+    await expect(siblingRuntime.explore(scalarPlan("service"))).resolves.toMatchObject({ ok: true });
+    await siblingRuntime.close();
+
+    const nested = await activatedFixture();
+    const nestedRuntime = await createScopedExploreRuntime({
+      projectRoot: nested.root,
+      transport: "stdio",
+      env: nested.env,
+      executor: complementAttackExecutor(),
+      inspectDatabaseFn: async () => nested.inspection,
+    });
+    await expect(nestedRuntime.explore(scalarPlan("price"))).resolves.toMatchObject({ ok: true });
+    await expect(nestedRuntime.explore({
+      ...scalarPlan("price"),
+      where: [
+        { field: "reason_category", op: "eq" as const, value: "price" },
+        { field: "region", op: "eq" as const, value: "north" },
+      ],
+    })).rejects.toMatchObject({
+      code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
+      details: {
+        reason: "complementary_scalar_filter_release",
+        predicate_relationship: "parent_or_child",
+      },
+    });
+    await nestedRuntime.close();
+  }, 20_000);
+
+  it("treats a scalar time window as a reviewed predicate for complement accounting", async () => {
+    const fixture = await activatedFixture();
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: complementAttackExecutor(),
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    const base = {
+      kind: "aggregate" as const,
+      resource: "public.subscriptions",
+      measures: [{ function: "count" as const }],
+      top_n: 1,
+    };
+    await expect(runtime.explore({
+      ...base,
+      time_window: {
+        field: "churned_at",
+        start: "2026-07-01T00:00:00.000Z",
+        end: "2026-08-01T00:00:00.000Z",
+      },
+    })).resolves.toMatchObject({ ok: true });
+    await expect(runtime.explore(base)).rejects.toMatchObject({
+      code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
+      details: { reason: "complementary_scalar_filter_release" },
+    });
+    await runtime.close();
+  });
+
+  it("atomically permits only one side of a concurrent scalar-filter complement", async () => {
+    const fixture = await activatedFixture();
+    const create = () => createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      executor: complementAttackExecutor(),
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    const [first, second] = await Promise.all([create(), create()]);
+    try {
+      const base = {
+        kind: "aggregate" as const,
+        resource: "public.subscriptions",
+        measures: [{ function: "count" as const }],
+        top_n: 1,
+      };
+      const outcomes = await Promise.allSettled([
+        first.explore(base),
+        second.explore({
+          ...base,
+          where: [{ field: "reason_category", op: "neq" as const, value: "price" }],
+        }),
+      ]);
+      expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
+      const refusal = outcomes.find((outcome) => outcome.status === "rejected") as PromiseRejectedResult;
+      expect(refusal.reason).toMatchObject({
+        code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
+        details: { reason: "complementary_scalar_filter_release" },
+      });
+    } finally {
+      await Promise.all([first.close(), second.close()]);
+    }
+  });
+
   it("atomically permits only one side of a concurrent complementary aggregate release", async () => {
     const fixture = await activatedFixture();
     const groupedPlan = {
@@ -5479,7 +5649,9 @@ describe("Scoped Explore", () => {
     const execute = vi.fn(async () => [] as Record<string, unknown>[]);
     const executeBatch = vi.fn(async ({ queries, context }: Parameters<ScopedExploreExecutor["executeBatch"]>[0]) => {
       expect(context).toEqual({ tenant: "tenant-from-jwt", principal: "principal-from-jwt" });
-      return queries.map((query) => query.sql.includes('"subscription_events" fc0')
+      return queries.map((query) => !/\bGROUP BY\b/i.test(query.sql)
+        ? [{ measure_0: 12, __cohort_size: 12 }]
+        : query.sql.includes('"subscription_events" fc0')
         ? [
           { dimension_0: "north", measure_0: 24, __measure_cohort_0: 8, __cohort_size: 8 },
           { dimension_0: "small", measure_0: 2, __measure_cohort_0: 2, __cohort_size: 2 },
@@ -5595,6 +5767,28 @@ describe("Scoped Explore", () => {
         "tenant-from-jwt",
         "principal-from-jwt",
       ]);
+      await expect(runtime.explore({
+        kind: "aggregate",
+        resource: "public.subscriptions",
+        measures: [{ function: "count" }],
+        where: [{ field: "reason_category", op: "eq", value: "price" }],
+        top_n: 1,
+      })).resolves.toMatchObject({ ok: true });
+      expect(claimPrivacy).toHaveBeenLastCalledWith(expect.objectContaining({
+        principal_scope_fingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+        tenant_scope_fingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+        release_kind: "scalar_total",
+        additional_releases: expect.arrayContaining([
+          expect.objectContaining({
+            release_kind: "scalar_total",
+            conflict_reason: "scalar_filter_complement",
+          }),
+          expect.objectContaining({
+            release_kind: "suppressed_grouping",
+            conflict_reason: "scalar_filter_complement",
+          }),
+        ]),
+      }));
       expect(claimBudget).toHaveBeenCalledWith(expect.objectContaining({
         principal_scope_fingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
         tenant_scope_fingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),

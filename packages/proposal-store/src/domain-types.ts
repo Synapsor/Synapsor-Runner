@@ -244,17 +244,30 @@ export type ProductionExploreAuditEventInput = {
 
 export type ExplorePrivacyReleaseKind = "scalar_total" | "suppressed_grouping";
 
+export type ExplorePrivacyReleaseConflictReason = "scalar_filter_complement";
+
+export type ExplorePrivacyReleaseClaim = {
+  complement_fingerprints: `sha256:${string}`[];
+  release_kind: ExplorePrivacyReleaseKind;
+  conflict_reason?: ExplorePrivacyReleaseConflictReason;
+};
+
 export type ExplorePrivacyReleaseInput = {
   scope_fingerprint: `sha256:${string}`;
   complement_fingerprints: `sha256:${string}`[];
   release_kind: ExplorePrivacyReleaseKind;
   query_fingerprint: `sha256:${string}`;
   boundary_digest: `sha256:${string}`;
+  additional_releases?: ExplorePrivacyReleaseClaim[];
 };
 
 export type ExplorePrivacyReleaseDecision =
   | { allowed: true }
-  | { allowed: false; conflicting_release_kind: ExplorePrivacyReleaseKind };
+  | {
+    allowed: false;
+    conflicting_release_kind: ExplorePrivacyReleaseKind;
+    conflicting_release_reason?: ExplorePrivacyReleaseConflictReason;
+  };
 
 export type ProductionExplorePrivacyReleaseInput = Omit<ExplorePrivacyReleaseInput, "scope_fingerprint"> & {
   principal_scope_fingerprint: `sha256:${string}`;
@@ -266,6 +279,7 @@ export type ProductionExplorePrivacyReleaseDecision =
   | {
     allowed: false;
     conflicting_release_kind: ExplorePrivacyReleaseKind;
+    conflicting_release_reason?: ExplorePrivacyReleaseConflictReason;
     conflicting_scope: "principal" | "tenant";
   };
 

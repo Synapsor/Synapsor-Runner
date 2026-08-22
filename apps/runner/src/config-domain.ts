@@ -14,7 +14,7 @@ export async function validateConfigFile(configPath: string): Promise<ConfigVali
     return {
       ok: resolvedValidation.ok,
       errors: resolvedValidation.errors,
-      warnings: [...raw.warnings, ...resolvedValidation.warnings],
+      warnings: uniqueConfigWarnings([...raw.warnings, ...resolvedValidation.warnings]),
     };
   } catch (error) {
     return {
@@ -27,4 +27,16 @@ export async function validateConfigFile(configPath: string): Promise<ConfigVali
       warnings: raw.warnings,
     };
   }
+}
+
+function uniqueConfigWarnings(
+  warnings: ConfigValidationResult["warnings"],
+): ConfigValidationResult["warnings"] {
+  const seen = new Set<string>();
+  return warnings.filter((warning) => {
+    const key = JSON.stringify([warning.path, warning.code, warning.message]);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
