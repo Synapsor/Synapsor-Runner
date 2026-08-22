@@ -1052,7 +1052,7 @@ export function createTerminalAnalyticsShellIo(input: {
     };
     const existingKeypressListeners = readable.listeners("keypress");
     const wasRaw = ttyInput.isRaw === true;
-    const wasPaused = readable.isPaused();
+    const wasFlowing = readable.readableFlowing === true;
     const color = !("NO_COLOR" in process.env);
     const theme = terminalTheme(color);
 
@@ -1134,7 +1134,7 @@ export function createTerminalAnalyticsShellIo(input: {
       pickerRenderer.clear();
       writable.write("\u001b[?25h");
       ttyInput.setRawMode(wasRaw);
-      if (wasPaused) readable.pause();
+      if (!wasFlowing) readable.pause();
       for (const listener of existingKeypressListeners) {
         readable.on("keypress", listener as (...args: unknown[]) => void);
       }

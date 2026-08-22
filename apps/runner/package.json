@@ -1,6 +1,6 @@
 {
   "name": "@synapsor/runner",
-  "version": "1.7.11",
+  "version": "1.7.12",
   "description": "Database authority for AI agents: reviewed Postgres/MySQL access and guarded changes without model-authored SQL or commit authority.",
   "license": "Apache-2.0",
   "type": "module",

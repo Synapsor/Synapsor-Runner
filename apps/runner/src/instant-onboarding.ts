@@ -106,7 +106,7 @@ export async function readHiddenDatabaseUrl(
   }
   output.write(prompt);
   const wasRaw = input.isRaw;
-  const wasPaused = input.isPaused();
+  const wasFlowing = input.readableFlowing === true;
   input.setEncoding("utf8");
   input.setRawMode(true);
   input.resume();
@@ -146,6 +146,6 @@ export async function readHiddenDatabaseUrl(
     });
   } finally {
     input.setRawMode(wasRaw);
-    if (wasPaused) input.pause();
+    if (!wasFlowing) input.pause();
   }
 }

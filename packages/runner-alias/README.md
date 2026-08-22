@@ -9,8 +9,8 @@ Postgres/MySQL without giving the model SQL or commit authority.
 npx -y synapsor-runner start
 ```
 
-It contains no independent runtime. Version `1.7.11` depends on exactly
-`@synapsor/runner@1.7.11` and delegates every command to that package. The
+It contains no independent runtime. Version `1.7.12` depends on exactly
+`@synapsor/runner@1.7.12` and delegates every command to that package. The
 canonical package, documentation, source, and security policy remain under
 `@synapsor/runner`.
 

@@ -216,7 +216,7 @@ export async function withRawTerminalScreen<T>(
     throw new Error("Interactive terminal navigation requires a real terminal.");
   }
   const wasRaw = input.isRaw;
-  const wasPaused = input.isPaused();
+  const wasFlowing = input.readableFlowing === true;
   const renderer = createInPlaceTerminalRenderer(output, {
     maxRows: () => output.rows,
   });
@@ -263,7 +263,7 @@ export async function withRawTerminalScreen<T>(
     renderer.clear();
     output.write("\u001b[?25h");
     input.setRawMode(wasRaw);
-    if (wasPaused) input.pause();
+    if (!wasFlowing) input.pause();
   }
 }
 
@@ -276,7 +276,7 @@ export async function readTerminalActivationConfirmation(
     throw new Error("Interactive activation confirmation requires a real terminal.");
   }
   const wasRaw = input.isRaw;
-  const wasPaused = input.isPaused();
+  const wasFlowing = input.readableFlowing === true;
   readline.emitKeypressEvents(input);
   input.setRawMode(true);
   input.resume();
@@ -292,7 +292,7 @@ export async function readTerminalActivationConfirmation(
       input.off("close", onEnd);
       input.off("error", onError);
       input.setRawMode(wasRaw);
-      if (wasPaused) input.pause();
+      if (!wasFlowing) input.pause();
       resolve(value);
     };
     const onEnd = () => {

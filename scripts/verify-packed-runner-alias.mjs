@@ -43,7 +43,9 @@ try {
   }
   const aliasSource = await fs.readFile(path.join(root, "packages/runner-alias/bin/synapsor-runner.mjs"), "utf8");
   if (aliasSource.length > 1_000
-    || !aliasSource.includes('from "@synapsor/runner/cli"')
+    || !aliasSource.includes('import.meta.resolve("@synapsor/runner/cli")')
+    || !aliasSource.includes('"--disable-warning=ExperimentalWarning"')
+    || aliasSource.includes("--no-warnings")
     || /activate|approve|apply|database|ledger|contract/i.test(aliasSource)) {
     throw new Error("Runner alias contains independent runtime or authority logic.");
   }
@@ -60,14 +62,63 @@ try {
     },
   }, null, 2)}\n`, "utf8");
   run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund"], installRoot);
-  const output = run(path.join(installRoot, "node_modules/.bin/synapsor-runner"), ["--version"], installRoot).trim();
+  const aliasBin = path.join(installRoot, "node_modules/.bin/synapsor-runner");
+  const versionResult = runResult(aliasBin, ["--version"], installRoot);
+  assertNoExperimentalSqliteWarning(versionResult, "packed alias --version");
+  const output = versionResult.stdout.trim();
   if (output !== runner.version) throw new Error(`Packed alias returned ${output}, expected ${runner.version}.`);
+
+  const configPath = path.join(installRoot, "synapsor.runner.json");
+  await fs.writeFile(configPath, `${JSON.stringify({
+    version: 1,
+    mode: "read_only",
+    storage: { sqlite_path: "./.synapsor/local.db" },
+    sources: {
+      local_postgres: {
+        engine: "postgres",
+        read_url_env: "DATABASE_URL",
+        read_only: true,
+        statement_timeout_ms: 3000,
+      },
+    },
+    trusted_context: {
+      provider: "environment",
+      values: {
+        tenant_id_env: "SYNAPSOR_TENANT_ID",
+        principal_env: "SYNAPSOR_PRINCIPAL",
+      },
+    },
+    capabilities: [],
+    strict: true,
+  }, null, 2)}\n`, "utf8");
+  const validationResult = runResult(aliasBin, ["config", "validate", "--config", configPath], installRoot);
+  assertNoExperimentalSqliteWarning(validationResult, "packed alias config validate");
+  const repeatedWarning = validationResult.stdout.match(/READ_ONLY_CONFIG_HAS_NO_ACTIVE_CAPABILITIES/g) ?? [];
+  if (repeatedWarning.length !== 1) {
+    throw new Error(`Packed config validation printed its read-only warning ${repeatedWarning.length} times.`);
+  }
+  for (const args of [["mcp", "install", "--help"], ["mcp", "status", "--help"]]) {
+    assertNoExperimentalSqliteWarning(
+      runResult(aliasBin, args, installRoot),
+      `packed alias ${args.join(" ")}`,
+    );
+  }
+
+  const scopedCli = path.join(installRoot, "node_modules/@synapsor/runner/dist/cli.js");
+  assertNoExperimentalSqliteWarning(
+    runResult(process.execPath, [scopedCli, "--version"], installRoot),
+    "packed scoped CLI --version",
+  );
   console.log(`Packed runner alias verified at ${runner.version}.`);
 } finally {
   await fs.rm(temporary, { recursive: true, force: true });
 }
 
 function run(command, args, cwd) {
+  return runResult(command, args, cwd).stdout;
+}
+
+function runResult(command, args, cwd) {
   const result = spawnSync(command, args, {
     cwd,
     encoding: "utf8",
@@ -76,5 +127,12 @@ function run(command, args, cwd) {
   if (result.status !== 0) {
     throw new Error(`${command} ${args.join(" ")} failed:\n${result.stdout}\n${result.stderr}`);
   }
-  return result.stdout;
+  return result;
+}
+
+function assertNoExperimentalSqliteWarning(result, command) {
+  const output = `${result.stdout}\n${result.stderr}`;
+  if (/ExperimentalWarning:[^\n]*SQLite|SQLite is an experimental feature/i.test(output)) {
+    throw new Error(`${command} leaked Node's SQLite experimental warning:\n${output}`);
+  }
 }

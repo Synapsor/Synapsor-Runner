@@ -1,5 +1,40 @@
 # Changelog
 
+## 1.7.12 (unreleased)
+
+### Explore Information Flow And CLI Output
+
+- Removes raw Runner-only field values from the complete serialized MCP tool
+  result, including `_meta`. Trusted local Ask and Workbench rendering now use
+  a bounded one-time in-process handoff with no model-callable retrieval
+  surface; external stdio and production HTTP clients receive only the
+  response-local opaque projection.
+- Adds atomic related-predicate release claims for cohort-protected scalar
+  aggregates. Local SQLite and shared PostgreSQL accounting now refuse direct
+  unfiltered/filtered and nested parent/child subtraction in either order,
+  including concurrent requests and resolved time windows. Existing
+  suppression, extraction, rolling differencing, and trusted-scope isolation
+  remain in force; Runner does not claim differential privacy for every
+  combination of otherwise legal predicates.
+- Clarifies across terminal, Workbench, and security documentation that
+  **Runner only** controls raw-value egress while separately reviewed filter,
+  group, and sort operations can still reveal membership, frequency, or order.
+  **Kept out** remains the confidentiality choice. The threat model now
+  documents the real default-off, JWT-bound production HTTP Explore surface.
+- Stops the short `synapsor-runner` package alias from printing Node's
+  `node:sqlite` experimental warning on ordinary commands. Both published CLI
+  launchers suppress only `ExperimentalWarning`, leaving unrelated runtime
+  warnings visible. Config validation also deduplicates identical warnings
+  produced before and after relative contract-path resolution.
+- Restores raw mode, cursor visibility, and input-stream ownership when an
+  operator leaves evidence browsing or another raw-input terminal surface.
+  Pressing `Esc` now exits cleanly to the shell without requiring `Ctrl+C`,
+  while an already-flowing Ask session retains control of its input stream.
+
+Prepared package versions: `@synapsor/runner@1.7.12` and
+`synapsor-runner@1.7.12`. Spec and DSL remain `@synapsor/spec@1.10.0` and
+`@synapsor/dsl@1.10.0`; this patch adds no public plan grammar.
+
 ## 1.7.11 (2026-08-21)
 
 ### Ask Usability And Reviewed Exact Grouping
