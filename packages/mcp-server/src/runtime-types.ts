@@ -25,6 +25,9 @@ import type mysql from "mysql2/promise";
 import type {
   JwtAlgorithm,
 } from "./jwt-auth.js";
+import type {
+  LocalToolPresentationSink,
+} from "./local-presentation.js";
 
 export type RunnerMode = "read_only" | "shadow" | "review" | "cloud";
 export type SourceEngine = "postgres" | "mysql";
@@ -659,6 +662,7 @@ export type StreamableHttpTlsOptions = {
 export type SynapsorMcpServerOptions = {
   toolNameStyle?: ToolNameStyle;
   resultFormat?: ResultFormat;
+  localPresentation?: LocalToolPresentationSink;
 };
 
 export type ResultEnvelopeV2 = {

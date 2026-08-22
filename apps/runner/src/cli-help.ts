@@ -547,7 +547,7 @@ Plain language for the access editor:
   Record ID          A database-proven unique key for one row.
   Tenant isolation   The customer/account column Runner fixes outside AI input.
   Model + Runner     Reviewed raw values may be sent to the configured model.
-  Runner only        Raw values stay local; reviewed counts/statistics may be sent.
+  Runner only        Raw output stays local; reviewed operations may still reveal equality, frequency, or order.
   Kept out           The field cannot be used by Explore at all.
   Fingerprint        Runner's internal proof that the reviewed access did not change.
 

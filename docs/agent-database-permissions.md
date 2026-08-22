@@ -22,6 +22,10 @@ are not MCP arguments.
 Fields can be model-visible, Runner-output-only, or kept out. Relationships
 must be catalog-proven, many-to-one, human-reviewed, and revalidated before a
 query. One-to-many, many-to-many, ambiguous, or unproven paths fail closed.
+Runner-output-only keeps raw values out of the complete MCP response, but it
+does not remove separately reviewed filter, group, or sort authority; those
+operations may still reveal membership, frequency, or order. Keep a field out
+when the model must not operate on or infer from it.
 
 Runner does not silently infer that a column named `organization_id` is the
 tenant boundary. The operator must confirm the actual trusted scope mechanism.

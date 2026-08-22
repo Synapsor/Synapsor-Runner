@@ -59,11 +59,15 @@ idempotency boundary for effects.
 ## Covered Threats
 
 - Model asks for arbitrary SQL: no generic SQL tool is exposed in the Synapsor path.
-- Model tries to turn Scoped Explore into generic SQL or production authority:
-  Explore accepts only reviewed typed plans, is local authoring-only, and is
-  absent from production, unknown-profile, remote, shared HTTP, and non-loopback
-  tool catalogs. Protect output starts disabled and requires exact-digest human
-  activation.
+- Model tries to turn Scoped Explore into generic SQL or write authority:
+  Explore accepts only reviewed typed plans. Local authoring is restricted to
+  stdio or secured loopback under development/staging authority. The distinct,
+  default-off production HTTP path serves exactly `app.describe_data` and
+  `app.explore_data` only with an active production boundary, secure transport,
+  asymmetric JWT/OAuth scope and tenant/principal claim verification, and a
+  shared atomic privacy ledger. It exposes no activation, Protect, approval,
+  apply, configuration, credential, SQL, or write tool. Protect output starts
+  disabled and requires exact-digest human activation.
 - Model invents or widens a join: aggregate relationships must be activated,
   catalog-proven many-to-one paths with fan-out one; table/key/join semantics
   and activation are not plan arguments. Ambiguous, one-to-many, many-to-many,
@@ -84,7 +88,16 @@ idempotency boundary for effects.
 - Prompt injection in database content asks the model to bypass policy: the runner ignores text as authority and only accepts structured capability/job state.
 - Aggregate inference through a one-record group: reviewed aggregate tools
   require minimum-group suppression and never return member rows or IDs. This
-  reduces, but does not eliminate, statistical inference risk.
+  reduces, but does not eliminate, statistical inference risk. Atomic release
+  claims block suppression-bearing grouped/total pairs and direct parent/child
+  scalar-filter subtraction in either order; Runner does not claim differential
+  privacy or that all combinations of legal predicates are uninferable.
+- Model-withheld raw-value egress: model-facing values become response-local
+  opaque tokens, and the complete serialized MCP result contains no raw copy in
+  `_meta`. Local human rendering uses a one-time in-process handoff with no MCP
+  retrieval surface. Reviewed filter/group/sort authority may still reveal
+  membership, frequency, or order, so confidentiality requires keeping the
+  field out.
 - Policy self-expansion from favorable automated outcomes: graduated trust is
   off by default, excludes auto-approvals from human evidence, requires a
   verified operator decision, and exports without activation.
@@ -130,6 +143,9 @@ idempotency boundary for effects.
 - Credential theft outside the runner process.
 - OAuth, SSRF, token-passthrough, or confused-deputy bugs in unrelated MCP systems.
 - Sensitive data already returned to a model.
+- Statistical inference from combinations of otherwise legal reviewed queries;
+  suppression, predicate claims, and rolling budgets reduce specific attacks
+  but are not differential privacy.
 - Reviewed visible data intentionally sent to an operator-selected external
   model provider after Workbench egress consent; the provider's retention and
   training policy remains outside Runner.
@@ -165,9 +181,12 @@ idempotency boundary for effects.
   queues; `dev_env` is unverified.
 - Treat proposal/evidence/replay handles as identifiers, not authorization;
   preserve verified per-session context on every networked resource read.
-- Keep Scoped Explore and Workbench Ask local to explicit development/staging
-  authoring, verify a SELECT-only non-owner role, and disable Explore before
-  production. Production should serve only activated named capabilities.
+- Keep local Scoped Explore and Workbench Ask on explicit development/staging
+  stdio or secured loopback and use a SELECT-only non-owner role. Enable
+  production HTTP Explore only when the separately reviewed production
+  boundary, asymmetric JWT/OAuth claims, TLS posture, locked two-tool surface,
+  shared Postgres accounting ledger, source-pool limit, and operator preflight
+  all pass. Otherwise serve only activated named capabilities.
 - Review generation-lock and relationship-proof drift instead of bypassing it,
   and do not treat Prisma/Drizzle/OpenAPI names as authorization.
 - For Workbench Ask, choose provider/model/origin yourself, acknowledge direct

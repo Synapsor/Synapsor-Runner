@@ -62,6 +62,7 @@ import {
 } from "./record-codecs.js";
 import { ProposalStoreError } from "./errors.js";
 import { ProposalStore } from "./sqlite-store.js";
+import { normalizedExplorePrivacyReleaseClaims } from "./privacy-release.js";
 
 /**
  * Durable intent authority for fleet applies. It writes the intent ledger entry
@@ -571,11 +572,13 @@ VALUES ($1, $2, $3::jsonb, $4::timestamptz)`,
     input: ProductionExplorePrivacyReleaseInput,
   ): Promise<ProductionExplorePrivacyReleaseDecision> {
     assertProductionExplorePrivacyReleaseInput(input);
-    const fingerprints = [...new Set(input.complement_fingerprints)].sort();
-    if (fingerprints.length === 0) return { allowed: true };
+    const claims = normalizedExplorePrivacyReleaseClaims({
+      ...input,
+      scope_fingerprint: input.principal_scope_fingerprint,
+    });
+    if (claims.length === 0) return { allowed: true };
     await this.ensureProductionExploreMigrated();
     const client = await this.pool.connect();
-    const opposite = input.release_kind === "scalar_total" ? "suppressed_grouping" : "scalar_total";
     try {
       await client.query("BEGIN");
       const scopes = [
@@ -585,34 +588,42 @@ VALUES ($1, $2, $3::jsonb, $4::timestamptz)`,
       await lockProductionExploreScopes(client, this.schema, "privacy", scopes.map((scope) => scope.fingerprint), this.lockTimeoutMs);
       const table = `${quotePostgresIdentifier(this.schema)}.production_explore_privacy_releases`;
       for (const scope of scopes) {
-        const conflict = await client.query(`
-          SELECT release_kind FROM ${table}
-          WHERE scope_kind = $1 AND scope_fingerprint = $2
-            AND release_kind = $3 AND complement_fingerprint = ANY($4::text[])
-            AND created_at >= now() - interval '24 hours'
-          LIMIT 1
-        `, [scope.kind, scope.fingerprint, opposite, fingerprints]);
-        if (conflict.rows.length > 0) {
-          await client.query("ROLLBACK");
-          return {
-            allowed: false,
-            conflicting_release_kind: opposite,
-            conflicting_scope: scope.kind,
-          };
+        for (const claim of claims) {
+          const opposite = claim.release_kind === "scalar_total" ? "suppressed_grouping" : "scalar_total";
+          const conflict = await client.query(`
+            SELECT release_kind FROM ${table}
+            WHERE scope_kind = $1 AND scope_fingerprint = $2
+              AND release_kind = $3 AND complement_fingerprint = ANY($4::text[])
+              AND created_at >= now() - interval '24 hours'
+            LIMIT 1
+          `, [scope.kind, scope.fingerprint, opposite, claim.complement_fingerprints]);
+          if (conflict.rows.length > 0) {
+            await client.query("ROLLBACK");
+            return {
+              allowed: false,
+              conflicting_release_kind: opposite,
+              ...(claim.conflict_reason
+                ? { conflicting_release_reason: claim.conflict_reason }
+                : {}),
+              conflicting_scope: scope.kind,
+            };
+          }
         }
       }
       for (const scope of scopes) {
-        for (const fingerprint of fingerprints) {
-          await client.query(`
-            INSERT INTO ${table} (
-              scope_kind, scope_fingerprint, complement_fingerprint,
-              release_kind, query_fingerprint, boundary_digest
-            ) VALUES ($1, $2, $3, $4, $5, $6)
-            ON CONFLICT (scope_kind, scope_fingerprint, complement_fingerprint, release_kind)
-            DO UPDATE SET query_fingerprint = EXCLUDED.query_fingerprint,
-                          boundary_digest = EXCLUDED.boundary_digest,
-                          created_at = now()
-          `, [scope.kind, scope.fingerprint, fingerprint, input.release_kind, input.query_fingerprint, input.boundary_digest]);
+        for (const claim of claims) {
+          for (const fingerprint of claim.complement_fingerprints) {
+            await client.query(`
+              INSERT INTO ${table} (
+                scope_kind, scope_fingerprint, complement_fingerprint,
+                release_kind, query_fingerprint, boundary_digest
+              ) VALUES ($1, $2, $3, $4, $5, $6)
+              ON CONFLICT (scope_kind, scope_fingerprint, complement_fingerprint, release_kind)
+              DO UPDATE SET query_fingerprint = EXCLUDED.query_fingerprint,
+                            boundary_digest = EXCLUDED.boundary_digest,
+                            created_at = now()
+            `, [scope.kind, scope.fingerprint, fingerprint, claim.release_kind, input.query_fingerprint, input.boundary_digest]);
+          }
         }
       }
       await client.query("COMMIT");
@@ -1072,13 +1083,21 @@ function assertProductionExploreBudgetInput(input: ProductionExploreBudgetReserv
 }
 
 function assertProductionExplorePrivacyReleaseInput(input: ProductionExplorePrivacyReleaseInput): void {
+  const additionalReleases = input.additional_releases ?? [];
   if (!/^sha256:[a-f0-9]{64}$/.test(input.principal_scope_fingerprint)
     || !/^sha256:[a-f0-9]{64}$/.test(input.tenant_scope_fingerprint)
     || !/^sha256:[a-f0-9]{64}$/.test(input.query_fingerprint)
     || !/^sha256:[a-f0-9]{64}$/.test(input.boundary_digest)
     || input.complement_fingerprints.length > 64
     || input.complement_fingerprints.some((fingerprint) => !/^sha256:[a-f0-9]{64}$/.test(fingerprint))
-    || (input.release_kind !== "scalar_total" && input.release_kind !== "suppressed_grouping")) {
+    || (input.release_kind !== "scalar_total" && input.release_kind !== "suppressed_grouping")
+    || additionalReleases.length > 8
+    || additionalReleases.some((release) =>
+      release.complement_fingerprints.length > 64
+      || release.complement_fingerprints.some((fingerprint) => !/^sha256:[a-f0-9]{64}$/.test(fingerprint))
+      || (release.release_kind !== "scalar_total" && release.release_kind !== "suppressed_grouping")
+      || (release.conflict_reason !== undefined
+        && release.conflict_reason !== "scalar_filter_complement"))) {
     throw new ProposalStoreError(
       "EXPLORE_PRIVACY_RELEASE_INVALID",
       "Production Explore privacy release accounting input is invalid.",

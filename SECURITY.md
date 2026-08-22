@@ -6,12 +6,12 @@ Do not include production credentials, customer data, or full source rows in bug
 
 ## Supported security scope
 
-Runner protects the local model/database boundary for reviewed semantic reads,
+Runner protects the model/database boundary for reviewed semantic reads,
 structured proposals, verified approval, guarded writeback, receipts, replay,
-local authoring-only typed Explore/Protect, and optional exact-digest supervised
-execution. Optional Workbench Ask calls only that same reviewed runtime surface.
-Human-attention notifications are redacted interruption channels and never
-authority.
+local typed Explore/Protect, the separately gated production HTTP Explore
+two-tool surface, and optional exact-digest supervised execution. Optional
+Workbench Ask calls only the local reviewed runtime surface. Human-attention
+notifications are redacted interruption channels and never authority.
 
 It does not make the hosted Synapsor control plane self-hosted, prevent prompt
 injection, replace database roles/RLS, or provide HA, compliance certification,

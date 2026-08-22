@@ -45,7 +45,7 @@ export function renderBoundaryMapFieldMatrix(
 
 export function boundaryMapOperationLegend(): string[] {
   return [
-    "Access: Model + Runner may return reviewed values to the model; Runner only keeps raw output local or tokenized; Kept out is unavailable.",
+    "Access: Model + Runner may return reviewed values to the model; Runner only keeps raw output local or tokenized but does not hide inferences from reviewed operations; Kept out is unavailable.",
     "Reviewed operations are listed by name. Any operation omitted from a field is unavailable.",
   ];
 }

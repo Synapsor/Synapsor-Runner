@@ -37,6 +37,14 @@ Runner is designed to protect the model-facing database boundary:
   opaque handles are identifiers, not authorization.
 - shared-ledger mutations, reviewer decisions, worker claims, and fleet-wide
   rate buckets are serialized/atomic within one configured Postgres schema.
+- local Scoped Explore is limited to development/staging stdio or secured
+  loopback; the separate production HTTP mode is default-off and exposes only
+  `app.describe_data` and `app.explore_data` after production boundary,
+  asymmetric JWT/OAuth claim, secure transport, and shared privacy-accounting
+  checks pass;
+- model-withheld raw values never appear anywhere in a serialized MCP tool
+  result, including `_meta`; trusted local UI rendering uses a one-time
+  in-process handoff with no remote retrieval surface.
 
 ## Main Threats Addressed
 
@@ -59,6 +67,8 @@ Runner is designed to protect the model-facing database boundary:
   policy, limit, digest, scope, or writer-posture drift.
 - A notification destination, replay, or response could otherwise become a
   confused deputy or leak protected data.
+- Complementary grouped/total or parent/child filtered scalar aggregates could
+  otherwise reconstruct a cohort below the reviewed minimum by subtraction.
 
 ## Fleet Trust Boundaries
 
@@ -90,6 +100,8 @@ Runner is designed to protect the model-facing database boundary:
 Runner does not claim to solve:
 
 - prompt injection generally;
+- formal differential privacy or elimination of statistical inference across
+  every combination of otherwise legal reviewed filters;
 - malicious MCP hosts or compromised local machines;
 - stolen database credentials;
 - bugs in app-owned handler business logic;

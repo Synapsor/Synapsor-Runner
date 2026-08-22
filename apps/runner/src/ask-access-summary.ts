@@ -153,7 +153,8 @@ function resolveRefusalAccessGuidance(input: {
   const complementary = [...refused].reverse().find((call) => {
     const details = refusalDetails(call);
     return call.error_code === "EXPLORE_PRIVACY_BUDGET_EXHAUSTED"
-      && details.reason === "complementary_aggregate_release";
+      && (details.reason === "complementary_aggregate_release"
+        || details.reason === "complementary_scalar_filter_release");
   });
   if (complementary) {
     const details = refusalDetails(complementary);
@@ -169,6 +170,7 @@ function resolveRefusalAccessGuidance(input: {
       ? Number(details.minimum_cohort_size)
       : undefined;
     const groupedFirst = details.conflicting_release_kind === "suppressed_grouping";
+    const scalarFilterComplement = details.reason === "complementary_scalar_filter_release";
     const instructions = cliPrivacyReviewInstructions({
       ...(boundary ? { boundary } : {}),
       resource,
@@ -176,17 +178,21 @@ function resolveRefusalAccessGuidance(input: {
     });
     return {
       kind: "review_candidate",
-      title: groupedFirst
+      title: scalarFilterComplement
+        ? "Related scalar totals were blocked to protect a small cohort"
+        : groupedFirst
         ? "A complementary total was blocked to protect a withheld group"
         : "A grouped result was blocked to protect a withheld group",
-      message: groupedFirst
+      message: scalarFilterComplement
+        ? `Runner previously released a scalar aggregate for a related filter set on ${resource}. Subtracting that total from this result could reconstruct a cohort below the reviewed minimum${minimum ? ` of ${minimum}` : ""}, so Runner discarded this result.`
+        : groupedFirst
         ? `An earlier grouped result for ${resource} withheld at least one group below the reviewed minimum${minimum ? ` of ${minimum}` : ""}. Returning the bare total as well could reconstruct that hidden count by subtraction, so Runner discarded this result.`
         : `Runner previously returned a bare total for ${resource}. This grouping would suppress at least one small cohort, and releasing both results could reconstruct that cohort by subtraction, so Runner discarded this result.`,
       ...(boundary ? { review_boundary: boundary } : {}),
       review_resource: resource,
       review_focus: "privacy",
       source_query_executed: details.source_query_executed === true,
-      next_action: `Ask a different reviewed measure or bounded filter/time range. To permit complementary totals, the owner must explicitly turn suppression off for this table; groups of one can identify individuals.\n${instructions}`,
+      next_action: `Ask a different reviewed measure or analysis that does not combine related totals. To permit complementary totals, the owner must explicitly turn suppression off for this table; groups of one can identify individuals.\n${instructions}`,
     };
   }
 

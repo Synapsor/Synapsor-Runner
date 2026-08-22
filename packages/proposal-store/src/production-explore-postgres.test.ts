@@ -299,6 +299,112 @@ describePostgres("production Explore PostgreSQL accounting", () => {
     })).resolves.toEqual({ allowed: true });
   });
 
+  it("atomically blocks scalar-filter complements at principal and tenant scope", async () => {
+    const store = new PostgresProposalRuntimeStore({ pool, schema, lockTimeoutMs: 2_000 });
+    const tenant = fingerprint("scalar-filter-tenant");
+    const parent = fingerprint("scalar-filter-parent");
+    const child = fingerprint("scalar-filter-child");
+    const base = {
+      tenant_scope_fingerprint: tenant,
+      boundary_digest: fingerprint("scalar-filter-boundary"),
+    };
+    const unfiltered = (principal: `sha256:${string}`, query: string) => ({
+      ...base,
+      principal_scope_fingerprint: principal,
+      complement_fingerprints: [fingerprint(`legacy:${query}`)],
+      release_kind: "scalar_total" as const,
+      query_fingerprint: fingerprint(query),
+      additional_releases: [{
+        complement_fingerprints: [parent],
+        release_kind: "scalar_total" as const,
+        conflict_reason: "scalar_filter_complement" as const,
+      }],
+    });
+    const filtered = (principal: `sha256:${string}`, query: string) => ({
+      ...base,
+      principal_scope_fingerprint: principal,
+      complement_fingerprints: [fingerprint(`legacy:${query}`)],
+      release_kind: "scalar_total" as const,
+      query_fingerprint: fingerprint(query),
+      additional_releases: [{
+        complement_fingerprints: [child],
+        release_kind: "scalar_total" as const,
+        conflict_reason: "scalar_filter_complement" as const,
+      }, {
+        complement_fingerprints: [parent],
+        release_kind: "suppressed_grouping" as const,
+        conflict_reason: "scalar_filter_complement" as const,
+      }],
+    });
+
+    const alice = fingerprint("scalar-filter-alice");
+    await expect(store.claimProductionExplorePrivacyRelease(
+      unfiltered(alice, "alice-parent"),
+    )).resolves.toEqual({ allowed: true });
+    const deniedQuery = fingerprint("alice-child");
+    await expect(store.claimProductionExplorePrivacyRelease({
+      ...filtered(alice, "alice-child"),
+      query_fingerprint: deniedQuery,
+    })).resolves.toEqual({
+      allowed: false,
+      conflicting_release_kind: "scalar_total",
+      conflicting_release_reason: "scalar_filter_complement",
+      conflicting_scope: "principal",
+    });
+    const deniedRows = await pool.query(
+      `SELECT COUNT(*) AS count FROM "${schema}".production_explore_privacy_releases
+       WHERE query_fingerprint = $1`,
+      [deniedQuery],
+    );
+    expect(Number(deniedRows.rows[0]?.count)).toBe(0);
+
+    await expect(store.claimProductionExplorePrivacyRelease(
+      filtered(fingerprint("scalar-filter-bob"), "bob-child"),
+    )).resolves.toEqual({
+      allowed: false,
+      conflicting_release_kind: "scalar_total",
+      conflicting_release_reason: "scalar_filter_complement",
+      conflicting_scope: "tenant",
+    });
+
+    const reverseTenant = fingerprint("scalar-filter-reverse-tenant");
+    const reversePrincipal = fingerprint("scalar-filter-reverse-principal");
+    await expect(store.claimProductionExplorePrivacyRelease({
+      ...filtered(reversePrincipal, "reverse-child"),
+      tenant_scope_fingerprint: reverseTenant,
+    })).resolves.toEqual({ allowed: true });
+    await expect(store.claimProductionExplorePrivacyRelease({
+      ...unfiltered(reversePrincipal, "reverse-parent"),
+      tenant_scope_fingerprint: reverseTenant,
+    })).resolves.toEqual({
+      allowed: false,
+      conflicting_release_kind: "suppressed_grouping",
+      conflicting_release_reason: "scalar_filter_complement",
+      conflicting_scope: "principal",
+    });
+
+    const concurrentTenant = fingerprint("scalar-filter-concurrent-tenant");
+    const concurrentPrincipal = fingerprint("scalar-filter-concurrent-principal");
+    const concurrent = await Promise.all([
+      store.claimProductionExplorePrivacyRelease({
+        ...unfiltered(concurrentPrincipal, "concurrent-parent"),
+        tenant_scope_fingerprint: concurrentTenant,
+      }),
+      store.claimProductionExplorePrivacyRelease({
+        ...filtered(concurrentPrincipal, "concurrent-child"),
+        tenant_scope_fingerprint: concurrentTenant,
+      }),
+    ]);
+    expect(concurrent.filter((decision) => decision.allowed)).toHaveLength(1);
+    expect(concurrent.filter((decision) => !decision.allowed)).toEqual([
+      expect.objectContaining({
+        allowed: false,
+        conflicting_release_reason: "scalar_filter_complement",
+        conflicting_scope: "principal",
+      }),
+    ]);
+  });
+
   it("appends production audit volume beyond the proposal-ledger cap without blocking proposal audit writes", async () => {
     const store = new PostgresProposalRuntimeStore({
       pool,

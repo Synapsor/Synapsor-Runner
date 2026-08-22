@@ -61,6 +61,9 @@ import {
 import {
   ProposalStoreError,
 } from "./errors.js";
+import {
+  normalizedExplorePrivacyReleaseClaims,
+} from "./privacy-release.js";
 
 import type {
   ProposalStoreProposalMethods,
@@ -212,26 +215,31 @@ export const proposalStoreProposalsMethods: ProposalStoreProposalMethods & ThisT
     },
 
   claimExplorePrivacyRelease(input: ExplorePrivacyReleaseInput): ExplorePrivacyReleaseDecision {
-      const fingerprints = [...new Set(input.complement_fingerprints)].sort();
-      if (fingerprints.length === 0) return { allowed: true };
-      const opposite = input.release_kind === "scalar_total"
-        ? "suppressed_grouping"
-        : "scalar_total";
+      const claims = normalizedExplorePrivacyReleaseClaims(input);
+      if (claims.length === 0) return { allowed: true };
       return this.transaction(() => {
-        const placeholders = fingerprints.map(() => "?").join(", ");
-        const conflict = this.db.prepare(`
-          SELECT release_kind
-          FROM explore_privacy_releases
-          WHERE scope_fingerprint = ?
-            AND release_kind = ?
-            AND complement_fingerprint IN (${placeholders})
-          LIMIT 1
-        `).get(input.scope_fingerprint, opposite, ...fingerprints);
-        if (isRecord(conflict)) {
-          return {
-            allowed: false,
-            conflicting_release_kind: opposite,
-          };
+        for (const claim of claims) {
+          const opposite = claim.release_kind === "scalar_total"
+            ? "suppressed_grouping"
+            : "scalar_total";
+          const placeholders = claim.complement_fingerprints.map(() => "?").join(", ");
+          const conflict = this.db.prepare(`
+            SELECT release_kind
+            FROM explore_privacy_releases
+            WHERE scope_fingerprint = ?
+              AND release_kind = ?
+              AND complement_fingerprint IN (${placeholders})
+            LIMIT 1
+          `).get(input.scope_fingerprint, opposite, ...claim.complement_fingerprints);
+          if (isRecord(conflict)) {
+            return {
+              allowed: false,
+              conflicting_release_kind: opposite,
+              ...(claim.conflict_reason
+                ? { conflicting_release_reason: claim.conflict_reason }
+                : {}),
+            };
+          }
         }
         const insert = this.db.prepare(`
           INSERT OR IGNORE INTO explore_privacy_releases (
@@ -244,15 +252,17 @@ export const proposalStoreProposalsMethods: ProposalStoreProposalMethods & ThisT
           ) VALUES (?, ?, ?, ?, ?, ?)
         `);
         const now = new Date().toISOString();
-        for (const fingerprint of fingerprints) {
-          insert.run(
-            input.scope_fingerprint,
-            fingerprint,
-            input.release_kind,
-            input.query_fingerprint,
-            input.boundary_digest,
-            now,
-          );
+        for (const claim of claims) {
+          for (const fingerprint of claim.complement_fingerprints) {
+            insert.run(
+              input.scope_fingerprint,
+              fingerprint,
+              claim.release_kind,
+              input.query_fingerprint,
+              input.boundary_digest,
+              now,
+            );
+          }
         }
         return { allowed: true };
       });

@@ -4,6 +4,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import {
   scopedExploreDescribeToolOutputSchema,
   scopedExploreQueryToolOutputSchema,
+  type LocalToolPresentationSink,
 } from "@synapsor-runner/mcp-server";
 import { z } from "zod";
 import runnerPackage from "../package.json" with { type: "json" };
@@ -63,7 +64,10 @@ const filter = z.object({
 
 export function createScopedExploreMcpServer(
   runtime: ScopedExploreRuntime | ScopedExploreBoundarySetRuntime,
-  options: { mode?: "local_authoring" | "production_http" } = {},
+  options: {
+    mode?: "local_authoring" | "production_http";
+    localPresentation?: LocalToolPresentationSink;
+  } = {},
 ): McpServer {
   const production = options.mode === "production_http";
   const automaticBandsReviewed = (isBoundarySetRuntime(runtime)
@@ -242,15 +246,22 @@ export function createScopedExploreMcpServer(
       "synapsor.approval_tool": false,
       "synapsor.commit_tool": false,
     },
-  }, async (input) => toolResult(async () => projectDescribeDataForModel(
-    await runtime.describe({
-      ...(input.boundary ? { boundary: input.boundary } : {}),
-      ...(input.resource ? { resource: input.resource } : {}),
-      ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
-      ...(input.limit === undefined ? {} : { limit: input.limit }),
-    }),
-    Boolean(input.resource),
-  )));
+  }, async (input, extra) => toolResult(
+    async () => projectDescribeDataForModel(
+      await runtime.describe({
+        ...(input.boundary ? { boundary: input.boundary } : {}),
+        ...(input.resource ? { resource: input.resource } : {}),
+        ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
+        ...(input.limit === undefined ? {} : { limit: input.limit }),
+      }),
+      Boolean(input.resource),
+    ),
+    undefined,
+    {
+      requestMeta: extra._meta,
+      localPresentation: options.localPresentation,
+    },
+  ));
   server.registerTool(SCOPED_EXPLORE_QUERY_TOOL, {
     title: "Explore reviewed data",
     description: exploreToolDescription(production, automaticBandsReviewed),
@@ -271,7 +282,7 @@ export function createScopedExploreMcpServer(
       "synapsor.approval_tool": false,
       "synapsor.commit_tool": false,
     },
-  }, async (discoveryInput) => {
+  }, async (discoveryInput, extra) => {
     let boundary: string | undefined;
     let parsedPlan: z.infer<typeof plan> | undefined;
     return toolResult(
@@ -308,6 +319,10 @@ export function createScopedExploreMcpServer(
           result,
           boundary: runtime.boundary,
         }),
+      {
+        requestMeta: extra._meta,
+        localPresentation: options.localPresentation,
+      },
     );
   });
   return server;
@@ -657,11 +672,23 @@ async function toolResult(
     withheld: boolean;
     operator_metadata_withheld?: boolean;
   },
+  options: {
+    requestMeta?: Record<string, unknown>;
+    localPresentation?: LocalToolPresentationSink;
+  } = {},
 ) {
   try {
     const result = await action();
     const projection = projectForModel?.(result);
     const modelResult = projection?.value ?? result;
+    if (projection?.withheld || projection?.operator_metadata_withheld) {
+      options.localPresentation?.capture(options.requestMeta, {
+        value: result,
+        provider_value: modelResult,
+        model_withheld_values: projection.withheld,
+        operator_metadata_withheld: projection.operator_metadata_withheld === true,
+      });
+    }
     return {
       content: [{ type: "text" as const, text: JSON.stringify(modelResult) }],
       structuredContent: modelResult,
@@ -672,7 +699,6 @@ async function toolResult(
             ...(projection.operator_metadata_withheld
               ? { "synapsor.operator_metadata_withheld": true }
               : {}),
-            "synapsor.local_full_result": result,
           },
         }
         : {}),

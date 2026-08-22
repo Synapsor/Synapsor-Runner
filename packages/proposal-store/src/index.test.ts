@@ -691,6 +691,85 @@ describe("proposal store", () => {
     }
   });
 
+  it("atomically blocks related scalar-filter releases in either order without blocking sibling filters", () => {
+    const scope = canonicalJsonDigest("scalar-filter-scope");
+    const boundary = canonicalJsonDigest("scalar-filter-boundary");
+    const unfiltered = canonicalJsonDigest("scalar-filter-unfiltered");
+    const filteredA = canonicalJsonDigest("scalar-filter-a");
+    const filteredB = canonicalJsonDigest("scalar-filter-b");
+    const claim = (
+      query: string,
+      exact: `sha256:${string}`,
+      parent?: `sha256:${string}`,
+    ) => ({
+      scope_fingerprint: scope,
+      complement_fingerprints: [canonicalJsonDigest(`legacy:${query}`)],
+      release_kind: "scalar_total" as const,
+      query_fingerprint: canonicalJsonDigest(query),
+      boundary_digest: boundary,
+      additional_releases: [{
+        complement_fingerprints: [exact],
+        release_kind: "scalar_total" as const,
+        conflict_reason: "scalar_filter_complement" as const,
+      }, ...(parent
+        ? [{
+          complement_fingerprints: [parent],
+          release_kind: "suppressed_grouping" as const,
+          conflict_reason: "scalar_filter_complement" as const,
+        }]
+        : [])],
+    });
+
+    const parentFirst = new ProposalStore();
+    try {
+      expect(parentFirst.claimExplorePrivacyRelease(
+        claim("parent-first", unfiltered),
+      )).toEqual({ allowed: true });
+      const deniedQuery = "child-after-parent";
+      expect(parentFirst.claimExplorePrivacyRelease(
+        claim(deniedQuery, filteredA, unfiltered),
+      )).toEqual({
+        allowed: false,
+        conflicting_release_kind: "scalar_total",
+        conflicting_release_reason: "scalar_filter_complement",
+      });
+      expect(parentFirst.db.prepare(`
+        SELECT COUNT(*) AS count FROM explore_privacy_releases
+        WHERE query_fingerprint = ?
+      `).get(canonicalJsonDigest(deniedQuery))).toEqual({ count: 0 });
+    } finally {
+      parentFirst.close();
+    }
+
+    const childFirst = new ProposalStore();
+    try {
+      expect(childFirst.claimExplorePrivacyRelease(
+        claim("child-first", filteredA, unfiltered),
+      )).toEqual({ allowed: true });
+      expect(childFirst.claimExplorePrivacyRelease(
+        claim("parent-after-child", unfiltered),
+      )).toEqual({
+        allowed: false,
+        conflicting_release_kind: "suppressed_grouping",
+        conflicting_release_reason: "scalar_filter_complement",
+      });
+    } finally {
+      childFirst.close();
+    }
+
+    const siblings = new ProposalStore();
+    try {
+      expect(siblings.claimExplorePrivacyRelease(
+        claim("sibling-a", filteredA, unfiltered),
+      )).toEqual({ allowed: true });
+      expect(siblings.claimExplorePrivacyRelease(
+        claim("sibling-b", filteredB, unfiltered),
+      )).toEqual({ allowed: true });
+    } finally {
+      siblings.close();
+    }
+  });
+
   it("does not charge explicit pre-execution refusals as legacy Explore queries", () => {
     const store = new ProposalStore();
     const scopeFingerprint = `sha256:${"4".repeat(64)}` as const;

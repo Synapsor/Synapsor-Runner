@@ -219,6 +219,53 @@ describe("Ask access summaries", () => {
     expect(guidance?.next_action).toContain("groups of one can identify individuals");
   });
 
+  it("explains filtered scalar complement refusals as executed and discarded", async () => {
+    const root = await fixtureProject();
+    await activateFixtureBoundary(root);
+    const guidance = await resolveAskAccessGuidance({
+      projectRoot: root,
+      question: "How many orders are outside the north region?",
+      toolCalls: [{
+        call_id: "call-scalar-filter",
+        tool: "app.explore_data",
+        provider_tool: "app__explore_data",
+        status: "refused",
+        error_code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
+        arguments: {
+          boundary: "reviewed_staging",
+          plan: {
+            kind: "aggregate",
+            resource: "public.orders",
+            measures: [{ function: "count" }],
+            where: [{ field: "region", op: "neq", value: "north" }],
+            top_n: 1,
+          },
+        },
+        result: {
+          ok: false,
+          details: {
+            reason: "complementary_scalar_filter_release",
+            resource: "public.orders",
+            minimum_cohort_size: 5,
+            attempted_release_kind: "scalar_total",
+            conflicting_release_kind: "scalar_total",
+            source_query_executed: true,
+          },
+        },
+      }],
+    });
+    expect(guidance).toMatchObject({
+      kind: "review_candidate",
+      title: "Related scalar totals were blocked to protect a small cohort",
+      review_boundary: "reviewed_staging",
+      review_resource: "public.orders",
+      review_focus: "privacy",
+      source_query_executed: true,
+    });
+    expect(guidance?.message).toMatch(/related filter set.*subtracting.*discarded/i);
+    expect(guidance?.next_action).toContain("does not combine related totals");
+  });
+
   it("routes safe numeric grouping refusals to an explicit reviewed decision", async () => {
     const root = await fixtureProject();
     const draftPath = path.join(root, "synapsor/generated/exploration-boundary.draft.json");

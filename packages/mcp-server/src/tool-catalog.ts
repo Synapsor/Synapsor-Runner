@@ -23,13 +23,24 @@ import {
 import {
   isRecord,
 } from "./safe-values.js";
+import type {
+  LocalToolPresentationSink,
+} from "./local-presentation.js";
 export {
   zodInputShape,
   zodInputShapeFromJsonSchema,
   zodScalarArg,
 } from "./tool-input-schema.js";
 
-export async function toolCallResult(runtime: McpRuntime, toolName: string, args: Record<string, unknown>) {
+export async function toolCallResult(
+  runtime: McpRuntime,
+  toolName: string,
+  args: Record<string, unknown>,
+  options: {
+    requestMeta?: Record<string, unknown>;
+    localPresentation?: LocalToolPresentationSink;
+  } = {},
+) {
   try {
     const result = await runtime.callTool(toolName, args);
     const structuredContent = await withProposalReviewPresentation(runtime, result);
@@ -39,6 +50,14 @@ export async function toolCallResult(runtime: McpRuntime, toolName: string, args
     const projection = capability
       ? projectProtectedReadResultForModel(capability, structuredContent)
       : { value: structuredContent, withheld: false };
+    if (projection.withheld) {
+      options.localPresentation?.capture(options.requestMeta, {
+        value: structuredContent,
+        provider_value: projection.value,
+        model_withheld_values: true,
+        operator_metadata_withheld: false,
+      });
+    }
     return {
       content: [{ type: "text" as const, text: JSON.stringify(projection.value, null, 2) }],
       structuredContent: projection.value,
@@ -46,7 +65,6 @@ export async function toolCallResult(runtime: McpRuntime, toolName: string, args
         ? {
           _meta: {
             "synapsor.model_withheld_values": true,
-            "synapsor.local_full_result": structuredContent,
           },
         }
         : {}),

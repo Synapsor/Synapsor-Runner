@@ -323,7 +323,10 @@ inert because the provider never receives those instructions.
 Withheld is an egress property, not a disclosure exemption. The human channel
 still reveals the value, so trusted scope, cohort suppression, response limits,
 extraction limits, and differencing budgets apply exactly as they do to
-model-visible fields. Do not describe withheld values as private.
+model-visible fields. A reviewed filter can act as a membership test, grouping
+can reveal equality classes and frequencies, and sorting can reveal order even
+when raw labels are tokenized. Do not describe withheld values as private. Use
+**Kept out** when the model must not operate on or infer from the field.
 
 Raw visibility and aggregate use are separate permissions. A reviewer may
 allow `count_distinct(customer_id)` while keeping every `customer_id` value out
@@ -1109,7 +1112,15 @@ concurrent requests do not open a fresh pool. Invalid plans and source failures
 release extraction and differencing allowance. Runner also prevents release of
 both a suppression-bearing grouping and its complementary scalar total, in
 either order, so visible groups cannot be subtracted from a released total to
-recover the hidden aggregate. Pagination cannot bypass the maximum group count.
+recover the hidden aggregate. Scalar totals also record versioned predicate
+claims atomically: an unfiltered total and a filtered total, or parent/child
+filter sets that differ by one reviewed predicate or time window, cannot both
+be released in either order. This closes direct total-minus-filtered-total
+reconstruction, including `all rows` minus `field != value`. It does not turn
+arbitrary interactive analytics into differential privacy; non-nested legal
+predicates can still carry statistical inference risk and remain bounded by
+suppression, extraction limits, and the root-resource differencing budget.
+Pagination cannot bypass the maximum group count.
 New generated boundaries review at most 16 distinct cohort-protected variants
 per root resource in that window. Existing boundaries keep their exact prior
 value, and an operator may narrow the generated allowance during review.
@@ -1289,11 +1300,12 @@ When a plan returns a raw model-withheld field or group label,
 `app.explore_data` executes the database plan once. Its model-facing MCP
 `content` and `structuredContent` use response-local opaque tokens. Reviewed
 derived aggregate values, such as a distinct count, remain visible without
-disclosing the counted values. The full local result is attached only to the
-MCP non-model `_meta` presentation channel used by Workbench and the analytics
-CLI. A generic host that does not implement that local presentation channel
-still receives the safe tokenized result; it does not receive the withheld
-value. Protected named reads use the same split and advertise
+disclosing the counted values. The complete serialized MCP result, including
+`_meta`, contains no raw withheld value. Local Ask and Workbench receive the
+full local rendering through a one-time in-process presentation handoff that
+has no MCP tool, resource, or remote redemption endpoint. A generic or remote
+host receives only the safe tokenized result. Protected named reads use the
+same split and advertise
 `no_model_egress: true` for affected output fields.
 
 ## Runtime Enforcement

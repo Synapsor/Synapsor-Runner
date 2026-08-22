@@ -83,6 +83,14 @@ export type {
 } from "./analytics-catalog.js";
 export { createJwtVerifier } from "./jwt-auth.js";
 export type { JwtAlgorithm, JwtVerifier, JwtVerificationConfig, VerifiedJwt } from "./jwt-auth.js";
+export {
+  TrustedLocalToolPresentationChannel,
+} from "./local-presentation.js";
+export type {
+  LocalToolPresentation,
+  LocalToolPresentationSink,
+  PendingLocalToolPresentation,
+} from "./local-presentation.js";
 export { PROPOSAL_APP_SPEC_VERSION, PROPOSAL_APP_URI, proposalAppHtml, proposalAppInitializeRequest } from "./proposal-app.js";
 export { buildProposalReviewView, type ProposalReviewView } from "./proposal-review-view.js";
 export {
