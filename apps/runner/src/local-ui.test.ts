@@ -566,9 +566,9 @@ describe("local UI", () => {
           raw_sql_included: false,
           source_database_changed: false,
           reconstructed_query: {
-            statement: expect.stringContaining("RUNNER_TENANT_PREDICATE"),
+            statement: expect.stringContaining("tenant_id = :trusted_tenant"),
             caveats: expect.arrayContaining([
-              expect.stringMatching(/not captured or executable SQL/),
+              expect.stringMatching(/not the exact SQL Runner executed/),
               expect.stringMatching(/tenant scope: predicate applied by Runner/i),
             ]),
           },

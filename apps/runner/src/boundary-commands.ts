@@ -5857,6 +5857,8 @@ function formatBoundaryResourceSignoff(
       [20, 56],
     ),
     "",
+    "Runner only controls raw-value egress, not inference: reviewed filter/group/sort operations may still reveal equality, frequency, or order. Use Kept out for confidentiality.",
+    "",
     ...formatTextTable(
       ["SETTING", "REVIEWED VALUE"],
       [

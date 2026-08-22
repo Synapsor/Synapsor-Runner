@@ -95,7 +95,8 @@ describe("analytical MCP interoperability", () => {
       expect(modelFacing).not.toContain(withheldValue);
       expect(modelFacing).toMatch(/\[withheld:[a-f0-9]{12}:1\]/);
       expect(called._meta?.["synapsor.model_withheld_values"]).toBe(true);
-      expect(JSON.stringify(called._meta?.["synapsor.local_full_result"])).toContain(withheldValue);
+      expect(called._meta).not.toHaveProperty("synapsor.local_full_result");
+      expect(JSON.stringify(called)).not.toContain(withheldValue);
     } finally {
       await client.close();
       await server.close();

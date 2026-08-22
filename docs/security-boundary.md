@@ -42,6 +42,14 @@ The model does not receive:
 - MCP endpoint tokens, JWTs, refresh tokens, client secrets, or TLS keys;
 - trusted tenant or principal authority as ordinary model arguments.
 
+For a field reviewed as **Raw values: Runner only**, the full serialized MCP
+tool result contains only response-local opaque tokens, including its `_meta`.
+Local Ask/Workbench rendering receives the real value through a one-time
+in-process channel with no model-callable or remote retrieval surface. This is
+raw-output egress control, not noninterference: separately reviewed filtering,
+grouping, and sorting can still reveal membership, frequency, and order. Use
+**Kept out** for confidentiality.
+
 ## Optional Workbench model client
 
 Workbench Ask is a local client of that same reviewed surface, not another
@@ -106,15 +114,21 @@ operator identity authorizes activation, approval, apply, reconcile, and
 revert. See [HTTP MCP](http-mcp.md).
 
 Fixed named aggregate capabilities expose their contract-defined scalar.
-Authoring-only Scoped Explore separately accepts a typed, reviewed analytical
-plan over activated measures, dimensions, time grains, filters, comparisons,
-reviewed relative UTC windows, ordering, and proven many-to-one paths. It still
-accepts no SQL, arbitrary
+Scoped Explore separately accepts a typed, reviewed analytical plan over
+activated measures, dimensions, time grains, filters, comparisons, reviewed
+relative UTC windows, ordering, and proven many-to-one paths. Local authoring
+uses stdio or secured loopback in a development/staging profile. Production is
+a distinct, default-off Streamable HTTP deployment that serves exactly
+`app.describe_data` and `app.explore_data` only after a production boundary,
+asymmetric JWT/OAuth claim verification, secure transport posture, and shared
+atomic privacy accounting all pass. Every other production posture refuses
+Explore. Neither mode accepts SQL, arbitrary
 identifier, model-supplied scope, formula, or general join. Both paths enforce
 cohort and response bounds. Suppression reduces single-record inference but is
 not differential privacy or a complete privacy guarantee. Atomic rolling
-privacy reservations and a complementary-total release guard bound repeated
-subtraction attempts; they are not described as formal differential privacy.
+privacy reservations, suppression-aware total claims, and related scalar
+predicate claims block direct grouped/total and parent/child subtraction
+patterns; they do not make every combination of legal predicates uninferable.
 See [Bounded
 Aggregate Reads](aggregate-reads.md) and [Auto Boundary, Scoped Explore, And
 Protect](auto-boundary-and-scoped-explore.md).

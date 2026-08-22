@@ -3271,7 +3271,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		            :tier==="visible"
 		              ?"Values may enter the selected model provider."
 		          :tier==="withheld"
-	            ?"Usable in reviewed plans. Raw values stay local or become response-only tokens; reviewed derived results remain available."
+	            ?"Raw output stays local or becomes response-only tokens. Reviewed filter, group, and sort operations may still reveal equality, frequency, or order; use Kept out for confidentiality."
 	            :tier==="kept_out"
 	              ?"Unavailable for selection, filtering, grouping, sorting, or measures. Re-including it restores only the current inspected operation suggestions in the disabled draft."
 	              :"Unavailable until this table's safe identity and scope are resolved.";
@@ -3364,7 +3364,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		        ?'<div class="risk"><strong>Supported limited database grammar · '+esc(databaseServerCompatibility.detected_version)+'</strong><p>'+esc(serverCompatibilityLimits.join(" "))+' Fixed bands, numeric/time analysis, derived scope, and Runner-side post-suppression calculations remain available.</p></div>'
 		        :"";
 		      const header='<div class="split-actions"><div>'+resourceHeading+'<p>'+(source
-	        ?'Choose one explicit tier per column. Visible values may enter model context. Runner-only raw fields remain usable: raw values stay local or become response-only tokens, while reviewed derived results remain available. Kept-out columns cannot be used.'
+	        ?'Choose one explicit tier per column. Visible values may enter model context. Runner-only controls raw output egress, but reviewed operations can still reveal equality, frequency, or order. Use Kept out when the field must remain confidential.'
 		        :'<span class="badge bad">Blocked</span> Its columns remain visible for diagnosis, but no authority can be activated yet.')+'</p></div><div class="actions">'+privacyButton+'<button class="secondary" id="back-resources" type="button">Back to '+esc(reviewedCollectionLabel())+'</button></div></div>'
 	        +'<div class="split-actions"><div><h3>Columns</h3><p>'+(focusedAccessReview
 	          ?"Ordinary access choices are staged immediately. Exposing sensitive data still requires an explicit reviewer and reason."
@@ -6239,7 +6239,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         const relationshipReview=error.payload?.details?.relationship_review;
         const refusalDetails=error.payload?.details||{};
         const privacyComplement=error.payload?.error_code==="EXPLORE_PRIVACY_BUDGET_EXHAUSTED"
-          &&refusalDetails.reason==="complementary_aggregate_release"
+          &&["complementary_aggregate_release","complementary_scalar_filter_release"].includes(refusalDetails.reason)
           &&attemptedPlan;
         const fieldOperation=error.payload?.error_code==="EXPLORE_FIELD_FORBIDDEN"
           &&refusalDetails.reason==="field_operation_not_reviewed";

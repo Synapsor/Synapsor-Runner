@@ -1,9 +1,11 @@
 import { PassThrough } from "node:stream";
+import type { ReadStream } from "node:tty";
 import type { WriteStream } from "node:tty";
 import { describe, expect, it } from "vitest";
 import {
   createInPlaceTerminalRenderer,
   fitTerminalFrameToRows,
+  withRawTerminalScreen,
 } from "./terminal-prompt.js";
 
 describe("in-place terminal rendering", () => {
@@ -90,5 +92,39 @@ describe("in-place terminal rendering", () => {
       const fitted = fitTerminalFrameToRows(lines, rows);
       expect(fitted.length, `rows=${rows}`).toBeLessThanOrEqual(rows);
     }
+  });
+
+  it("restores a fresh terminal stream and visible cursor after Escape", async () => {
+    const input = new PassThrough() as PassThrough & {
+      isTTY: boolean;
+      isRaw: boolean;
+      setRawMode(value: boolean): void;
+    };
+    input.isTTY = true;
+    input.isRaw = false;
+    input.setRawMode = (value: boolean) => {
+      input.isRaw = value;
+    };
+    const output = new PassThrough() as WriteStream & PassThrough;
+    Object.assign(output, { isTTY: true, columns: 100, rows: 24 });
+
+    expect(input.readableFlowing).toBeNull();
+    const interaction = withRawTerminalScreen(
+      input as unknown as ReadStream,
+      output,
+      async (nextKey, render) => {
+        render(["Evidence browser", "Esc Back"]);
+        return nextKey();
+      },
+    );
+    input.emit("keypress", "\u001b", { name: "escape", sequence: "\u001b" });
+
+    await expect(interaction).resolves.toMatchObject({ name: "escape" });
+    expect(input.isRaw).toBe(false);
+    expect(input.isPaused()).toBe(true);
+    expect(input.readableFlowing).toBe(false);
+    const rendered = output.read()?.toString() ?? "";
+    expect(rendered).toContain("\u001b[?25l");
+    expect(rendered).toContain("\u001b[?25h");
   });
 });

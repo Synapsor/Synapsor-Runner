@@ -1561,6 +1561,7 @@ describe("boundary review terminal picker", () => {
       await expect(edited).resolves.toBe("back");
 
       const rendered = output.read()?.toString() ?? "";
+      const normalized = stripAnsi(rendered).replace(/\s+/gu, " ");
       expect(rendered).toContain("\u001b[1;36m");
       expect(rendered).toContain("\u001b[1;96m");
       expect(rendered).not.toContain("\u001b[7m");
@@ -1580,6 +1581,8 @@ describe("boundary review terminal picker", () => {
       expect(rendered).toContain("Back");
       expect(rendered).not.toContain("Backspace Back to tables");
       expect(rendered).toContain("Space cycles: MODEL + RUNNER -> RUNNER ONLY -> KEPT OUT");
+      expect(normalized).toContain("reviewed filter/group/sort operations can still reveal equality, frequency, or order");
+      expect(normalized).toContain("Use Kept out for confidentiality");
       expect(rendered).toContain("TABLE ACCESS MAP - public.check_ins");
       expect(rendered).toContain("Preview includes unsaved access choices.");
       expect(rendered).toContain("Reviewed operations");

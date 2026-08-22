@@ -34,6 +34,9 @@ describe("Auto Boundary Workbench renderer", () => {
     for (const [feature, markers] of parityMarkers) {
       for (const marker of markers) expect(html, feature).toContain(marker);
     }
+    expect(html).toContain("reviewed operations can still reveal equality, frequency, or order");
+    expect(html).toContain("use Kept out for confidentiality");
+    expect(html).toContain("complementary_scalar_filter_release");
     expect(html).not.toMatch(/execute_sql|model can activate|model can approve|model can apply/i);
   });
 

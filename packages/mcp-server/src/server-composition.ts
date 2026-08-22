@@ -109,8 +109,11 @@ export function createSynapsorMcpServer(runtime: McpRuntime, options: SynapsorMc
             "synapsor.approval_tool": false,
           },
         };
-        const callback = async (args: unknown) =>
-          toolCallResult(runtime, tool.name, args as Record<string, unknown>);
+        const callback = async (args: unknown, extra: { _meta?: Record<string, unknown> }) =>
+          toolCallResult(runtime, tool.name, args as Record<string, unknown>, {
+            requestMeta: extra._meta,
+            localPresentation: options.localPresentation,
+          });
         if (tool.annotations.readOnlyHint === false) {
           registerAppTool(server, exposedName, {
             ...toolConfig,
@@ -165,8 +168,11 @@ export function createSynapsorMcpServer(runtime: McpRuntime, options: SynapsorMc
               : {}),
           },
         };
-        const callback = async (args: unknown) =>
-          toolCallResult(runtime, capability.name, args as Record<string, unknown>);
+        const callback = async (args: unknown, extra: { _meta?: Record<string, unknown> }) =>
+          toolCallResult(runtime, capability.name, args as Record<string, unknown>, {
+            requestMeta: extra._meta,
+            localPresentation: options.localPresentation,
+          });
         if (capability.kind === "proposal") {
           registerAppTool(server, exposedName, {
             ...toolConfig,

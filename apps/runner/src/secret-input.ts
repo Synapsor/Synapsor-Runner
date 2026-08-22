@@ -21,7 +21,7 @@ export async function readHiddenSecret(
   }
   output.write(padTerminalBlock(prompt));
   const wasRaw = input.isRaw;
-  const wasPaused = input.isPaused();
+  const wasFlowing = input.readableFlowing === true;
   input.setEncoding("utf8");
   input.setRawMode(true);
   input.resume();
@@ -67,7 +67,7 @@ export async function readHiddenSecret(
     });
   } finally {
     input.setRawMode(wasRaw);
-    if (wasPaused) input.pause();
+    if (!wasFlowing) input.pause();
   }
 }
 

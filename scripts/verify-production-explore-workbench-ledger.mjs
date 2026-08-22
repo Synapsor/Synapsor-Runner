@@ -109,13 +109,17 @@ export async function verifyProductionExploreWorkbenchLedger(input) {
     `${input.engine} Workbench could not find a refusal through its attempted resource.`, refusedResourceResponse);
 
     const detailResponse = await jsonRequest(server, `/api/explore/history?audit_id=${encodeURIComponent(audit.audit_id)}`);
+    const reconstructedAuditStatement = String(detailResponse.payload.audit?.reconstructed_query?.statement ?? "");
+    const plaintextScopeValues = [input.tenant, input.principal]
+      .filter((value) => typeof value === "string" && value.length > 0);
     assert(detailResponse.status === 200
       && detailResponse.payload.audit?.audit_id === audit.audit_id
       && detailResponse.payload.audit?.result_values_persisted === false
       && detailResponse.payload.audit?.trusted_scope_values_persisted === false
       && detailResponse.payload.audit?.raw_sql_included === false
-      && /FROM\s+/i.test(String(detailResponse.payload.audit?.reconstructed_query?.statement ?? ""))
-      && /RUNNER_(?:TENANT|PRINCIPAL)_PREDICATE|predicate not applied/i.test(String(detailResponse.payload.audit?.reconstructed_query?.statement ?? "")),
+      && /FROM\s+/i.test(reconstructedAuditStatement)
+      && /:trusted_(?:tenant|principal)\b|REQUIRED Runner (?:tenant|principal) scope|predicate not applied/i.test(reconstructedAuditStatement)
+      && !plaintextScopeValues.some((value) => reconstructedAuditStatement.includes(value)),
     `${input.engine} Workbench query-audit detail violated production redaction.`, detailResponse);
 
     const evidenceResponse = await jsonRequest(
@@ -123,11 +127,13 @@ export async function verifyProductionExploreWorkbenchLedger(input) {
       `/api/explore/evidence?evidence_id=${encodeURIComponent(audit.evidence_bundle_id)}`,
     );
     const evidence = evidenceResponse.payload.evidence;
+    const reconstructedEvidenceStatement = String(evidence?.reconstructed_query?.statement ?? "");
     assert(evidenceResponse.status === 200
       && evidence?.evidence_bundle_id === audit.evidence_bundle_id
       && evidence?.result_values_persisted === false
       && /^keyed:[a-f0-9]{64}$/.test(String(evidence?.tenant_scope_fingerprint ?? ""))
-      && /FROM\s+/i.test(String(evidence?.reconstructed_query?.statement ?? "")),
+      && /FROM\s+/i.test(reconstructedEvidenceStatement)
+      && !plaintextScopeValues.some((value) => reconstructedEvidenceStatement.includes(value)),
     `${input.engine} Workbench evidence detail omitted keyed scope or redaction.`, evidenceResponse);
 
     const since = new Date(Math.max(0, Date.parse(audit.created_at) - 1_000)).toISOString();

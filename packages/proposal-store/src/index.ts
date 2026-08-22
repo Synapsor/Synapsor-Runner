@@ -35,6 +35,8 @@ export type {
   QueryAuditRecordInput,
   ProductionExploreAuditEventInput,
   ExplorePrivacyReleaseKind,
+  ExplorePrivacyReleaseConflictReason,
+  ExplorePrivacyReleaseClaim,
   ExplorePrivacyReleaseInput,
   ExplorePrivacyReleaseDecision,
   ProductionExplorePrivacyReleaseInput,
