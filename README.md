@@ -11,48 +11,6 @@ model SQL or commit authority.**
 
 **MCP connects the agent. A reviewed boundary controls access and commit.**
 
-## Try It Without A Database
-
-Run the isolated commit-boundary proof with no database, Docker, account, API
-key, MCP client, model, or global install:
-
-```bash
-npx -y @synapsor/runner try
-```
-
-Runner opens a separate local review for a deterministic simulated agent. After
-approval, output includes this abridged, verbatim sequence:
-
-```text
-Actor:
-  deterministic simulated agent (no LLM call)
-Model-facing tools:
-  billing.inspect_invoice
-  billing.propose_late_fee_waiver
-  No execute_sql, approve, apply, or commit tool
-Proposed effect:
-  late_fee_cents: 5500 -> 0
-Source changed:
-  No
-
-Guarded commit complete.
-Receipt status: applied
-Rows affected: 1
-```
-
-The simulated agent can inspect reviewed evidence and form an exact proposal,
-but cannot approve or commit it. Runner waits for an outside-model decision,
-rechecks the effect, and records a receipt.
-
-Run the extended retry, changed-intent, stale-write, and replay proof:
-
-```bash
-npx -y @synapsor/runner try --prove
-```
-
-This proves local mechanics, not your database configuration. Temporary state
-stays under `./.synapsor/try/`. `demo --quick` remains a noninteractive compatibility alias.
-
 ## Start With Your Database
 
 **The CLI is the preferred live-data interface. Workbench remains preview.**
@@ -88,6 +46,48 @@ before reviewed visible data leaves the machine. Changes remain disabled until
 human confirmation.
 
 See [Database To First Safe Tool](docs/guided-onboarding.md).
+
+## Prove The Boundary Without A Database
+
+Use the terminal-only proof with no database, Docker, account, API key, MCP
+client, model, or global install:
+
+```bash
+npx -y @synapsor/runner try --prove --no-open
+```
+
+Type `APPROVE` or `REJECT` at the trusted terminal prompt. Runner uses a
+deterministic simulated agent; after approval, output includes this abridged,
+verbatim sequence:
+
+```text
+Actor:
+  deterministic simulated agent (no LLM call)
+Model-facing tools:
+  billing.inspect_invoice
+  billing.propose_late_fee_waiver
+  No execute_sql, approve, apply, or commit tool
+Proposed effect:
+  late_fee_cents: 5500 -> 0
+Source changed:
+  No
+
+Guarded commit complete.
+Receipt status: applied
+Rows affected: 1
+
+Extended proof:
+  restart-safe retry: yes
+  changed-intent operation reuse rejected: yes
+  stale apply refused: yes
+```
+
+The simulated agent can inspect reviewed evidence and form an exact proposal,
+but cannot approve or commit it. Runner waits for an outside-model decision,
+rechecks the effect, and records a receipt.
+
+This proves local mechanics, not your database configuration. Temporary state
+stays under `./.synapsor/try/`. `demo --quick` remains a noninteractive compatibility alias.
 
 ## What Runner Controls
 
