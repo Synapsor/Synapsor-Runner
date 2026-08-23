@@ -9,19 +9,99 @@
 **Let agents query and propose changes to Postgres/MySQL without giving the
 model SQL or commit authority.**
 
-**MCP connects the agent. A reviewed Synapsor boundary controls database access
-and commit.**
+**MCP connects the agent. A reviewed boundary controls access and commit.**
 
-Synapsor Runner is an open-source database-authority layer between an AI agent
-and Postgres/MySQL. You review its tables, fields, relationships, operations,
-and limits. Agents may explore within it or create exact proposals; activation,
-approval, and commit stay outside model-facing tools.
+## Try It Without A Database
+
+Run the isolated commit-boundary proof with no database, Docker, account, API
+key, MCP client, model, or global install:
+
+```bash
+npx -y @synapsor/runner try
+```
+
+Runner opens a separate local review for a deterministic simulated agent. After
+approval, output includes this abridged, verbatim sequence:
 
 ```text
-Agent sees       reviewed grammar, tools, bounded results, proposals
-Agent never gets raw SQL, credentials, trusted scope, activation, approval, or commit
-Runner handles   plan validation, scope injection, direct-write rechecks, receipts
-Outside model    humans control access/rollout; humans or policy approve proposals
+Actor:
+  deterministic simulated agent (no LLM call)
+Model-facing tools:
+  billing.inspect_invoice
+  billing.propose_late_fee_waiver
+  No execute_sql, approve, apply, or commit tool
+Proposed effect:
+  late_fee_cents: 5500 -> 0
+Source changed:
+  No
+
+Guarded commit complete.
+Receipt status: applied
+Rows affected: 1
+```
+
+The simulated agent can inspect reviewed evidence and form an exact proposal,
+but cannot approve or commit it. Runner waits for an outside-model decision,
+rechecks the effect, and records a receipt.
+
+Run the extended retry, changed-intent, stale-write, and replay proof:
+
+```bash
+npx -y @synapsor/runner try --prove
+```
+
+This proves local mechanics, not your database configuration. Temporary state
+stays under `./.synapsor/try/`. `demo --quick` remains a noninteractive compatibility alias.
+
+## Start With Your Database
+
+**The CLI is the preferred live-data interface. Workbench remains preview.**
+
+Use a SELECT-only, non-owner development or staging credential:
+
+```bash
+npx -y @synapsor/runner start --cli
+```
+
+Later examples assume a global install; otherwise prefix them with
+`npx -y @synapsor/runner`:
+
+```bash
+npm install --global @synapsor/runner
+```
+
+Paste the URL into the hidden prompt or export `DATABASE_URL`. Runner inspects
+schema metadata, not source rows, then proposes conservative read access that
+grants nothing until review and activation. No DSL or JSON is required.
+
+With `DATABASE_URL`, use the CLI:
+
+```bash
+synapsor-runner start --cli --from-env DATABASE_URL
+```
+
+For automation, `synapsor-runner onboard --help` reports missing decisions together.
+
+Review the starting boundary, then press Enter to activate it. Use `M` for
+OpenAI, Anthropic, or a loopback model, and `E` to edit access. Runner asks
+before reviewed visible data leaves the machine. Changes remain disabled until
+human confirmation.
+
+See [Database To First Safe Tool](docs/guided-onboarding.md).
+
+## What Runner Controls
+
+Synapsor Runner is an open-source database-authority layer between an AI agent
+and Postgres/MySQL. You review tables, fields, relationships, operations, and
+limits. Agents may explore within that boundary or create exact proposals;
+activation, approval, and commit stay outside model-facing tools.
+
+```text
+Raw database MCP   Agent -> execute_sql --------------------------> Database
+Synapsor Explore   Agent -> app.describe_data / app.explore_data
+                            -> reviewed boundary -----------------> Database
+Synapsor writes    Agent -> exact proposal -> outside-model decision
+                            -> trusted guarded commit ------------> Receipt
 ```
 
 The authority path is `Explore -> Protect -> Propose -> outside-model decision
@@ -32,61 +112,19 @@ or start with [safe Postgres MCP](docs/safe-postgres-mcp.md),
 [prevent arbitrary LLM SQL](docs/prevent-llm-arbitrary-sql.md), or
 [human approval for agent writes](docs/human-approval-ai-database-writes.md).
 
-## Start With Your Database
-
-Use a SELECT-only, non-owner development or staging credential:
-
-```bash
-npx -y @synapsor/runner start --cli
-```
-
-The first command needs no install. Later examples use a global install:
-
-```bash
-npm install --global @synapsor/runner
-```
-
-Otherwise use `npx -y @synapsor/runner`.
-
-Paste the URL into the hidden prompt or export `DATABASE_URL`. Runner first
-inspects schema metadata, not source rows. It proposes conservative read access
-that grants the agent nothing until you review and activate it. You do not need
-to write DSL or JSON to begin.
-
-With `DATABASE_URL`, use the CLI:
-
-```bash
-synapsor-runner start --cli --from-env DATABASE_URL
-```
-
-For automation, run `synapsor-runner onboard --help`; missing decisions are reported together.
-
-Review the conservative starting boundary, then press Enter to activate it. Use
-`M` to choose OpenAI, Anthropic, or a loopback model, and `E` to change tables
-or field access. Runner asks permission before reviewed visible data can leave
-the machine. Every access change remains disabled until a human confirms it.
-
-See [Database To First Safe Tool](docs/guided-onboarding.md).
-
-**Interface status:** Prefer the CLI. Workbench is preview; production
-Streamable HTTP MCP is not.
-
 ## Ask A Useful Question
 
-After review, use either of these paths. Both call the same validation and
-execution code and receive no more authority than the reviewed boundary.
-
-**Use the preferred terminal Ask or the preview Workbench.** Supply your own
-OpenAI or Anthropic key, or use a loopback OpenAI-compatible model. Keys and
-conversation history stay in memory. A loopback model keeps provider traffic
-on the machine.
+After review, use the preferred terminal Ask, the preview Workbench, or an MCP
+client. All call the same validation and execution path. Supply an OpenAI or
+Anthropic key, or use a loopback OpenAI-compatible model. Keys and conversation
+history stay in memory; loopback traffic stays local.
 
 ```bash
 synapsor-runner try ask --provider openai --model gpt-5.6-luna
 ```
 
-**Use an MCP client that already has a model.** Runner can prepare project-local
-configuration without putting database credentials in the client file:
+Runner can also configure an MCP client without putting database credentials
+in its project file:
 
 ```bash
 synapsor-runner mcp install \
@@ -103,11 +141,10 @@ app.describe_data
 app.explore_data
 ```
 
-Agents receive reviewed operations, never SQL. They can
-combine reviewed totals, distinct counts, dimensions, filters, comparisons,
-time buckets, Runner-resolved relative UTC windows, top-N rankings, and
-many-to-one relationships. Every plan is
-scope-injected, read-only, budget-bounded, and small-cohort suppressed.
+Agents receive reviewed operations, never SQL. Plans may combine totals,
+distinct counts, dimensions, filters, comparisons, time windows, rankings, and
+many-to-one relationships. Every plan is scope-injected, read-only,
+budget-bounded, and small-cohort suppressed.
 
 ```text
 Question
@@ -145,9 +182,9 @@ After an answer proves useful, run `/protect`. Runner freezes that one successfu
 analysis into a named read-only capability with generated DSL, canonical JSON,
 tests, and provenance. It starts disabled.
 
-The CLI and Workbench show the same review and require a separate human
-activation. No browser or copied digest is required in the CLI; changed
-artifacts fail closed. The model cannot invoke Protect or activation.
+CLI and Workbench use the same review and separate human activation. The CLI
+needs no browser or copied digest; changed artifacts fail closed. Models cannot
+invoke Protect or activation.
 
 `/details A2 --sql` can show an operator-only parameterized statement with all
 values redacted. SQL never reaches the model, MCP response, or durable evidence.
@@ -169,7 +206,7 @@ secured runtime config from the boundary without secrets.
 
 ## Let Agents Propose Bounded Changes
 
-For writes, use the preferred terminal control plane:
+For writes, use the terminal control plane:
 
 ```bash
 synapsor-runner action review --project-root .
@@ -179,7 +216,7 @@ It derives structural candidates and creates disabled semantic `INSERT`,
 `UPDATE`, or `DELETE` revisions. Humans choose fields, bounds, approval, and
 execution. Optional metadata-only agent suggestions grant nothing.
 
-The code-first path remains:
+Code-first remains:
 
 ```bash
 synapsor-runner start \
@@ -209,22 +246,7 @@ mutation. See [Supervised Apply](docs/supervised-automatic-apply.md),
 complete TUI, Workbench, CI, DSL/Spec, stdio, Ask, and HTTP lifecycle is in the
 [Safe Action Human Control Plane](docs/safe-action-control-plane.md).
 
-## Other Ways To Start
-
-### See The Guardrails Without A Database
-
-Run a complete guarded-write proof with no database, Docker, MCP client, model,
-account, or configuration:
-
-```bash
-npx -y @synapsor/runner try --prove
-```
-
-The embedded fixture demonstrates an exact proposal, outside-model approval,
-one guarded mutation, a durable receipt, restart-safe retry, and stale-write
-refusal. It proves Runner's local mechanics, not a live database connection.
-Temporary proof state stays project-local under `./.synapsor/try/`.
-`demo --quick` remains a noninteractive compatibility alias.
+## Other Paths
 
 ### Audit An Existing MCP Server
 
