@@ -45,6 +45,8 @@ describe("Safe Action operator service", () => {
         source_database_mutated: false,
       }),
     ]);
+    await expect(service.count({ search: "orders.propose", state: "pending_review" })).resolves.toBe(1);
+    await expect(service.list({ search: "does-not-exist", limit: 12, offset: 0 })).resolves.toEqual([]);
     await expect(service.detail("wrp_orders_credit")).resolves.toMatchObject({
       proposal: { state: "pending_review", proposal_hash: proposalHash },
       approval_progress: { approved: 0, required: 1, complete: false },

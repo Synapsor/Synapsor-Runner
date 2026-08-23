@@ -37,6 +37,7 @@ export async function generateModelActionSuggestion(input: {
   model: string;
   options: GuidedActionOptions;
   env?: NodeJS.ProcessEnv;
+  apiKey?: string;
   apiKeyEnv?: string;
   baseUrl?: string;
   egressAcknowledged: boolean;
@@ -60,7 +61,11 @@ export async function generateModelActionSuggestion(input: {
     provider: input.provider,
     model: input.model,
     ...(input.baseUrl ? { base_url: input.baseUrl } : {}),
-    ...(input.apiKeyEnv ?? defaultKeyEnv ? { api_key_env: input.apiKeyEnv ?? defaultKeyEnv } : {}),
+    ...(input.apiKey
+      ? { api_key: input.apiKey }
+      : input.apiKeyEnv ?? defaultKeyEnv
+        ? { api_key_env: input.apiKeyEnv ?? defaultKeyEnv }
+        : {}),
     authority_digest: authorityDigest,
     egress_acknowledged: input.egressAcknowledged,
     request_timeout_seconds: 120,

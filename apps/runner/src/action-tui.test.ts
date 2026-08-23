@@ -2,8 +2,11 @@ import { PassThrough } from "node:stream";
 import type { ReadStream, WriteStream } from "node:tty";
 import { describe, expect, it, vi } from "vitest";
 import {
+  actionReviewLines,
   collectGuidedActionInput,
+  collectGuidedRehearsalArgs,
   createTerminalActionPrompter,
+  rankActionIntent,
   renderActionControlPlaneTable,
   reviewActionProposalInbox,
   type ActionControlPrompter,
@@ -42,6 +45,7 @@ const options = {
   source: "local_postgres",
   deployment_profile: "staging" as const,
   resources: [orders],
+  blocked_resources: [],
   safe_defaults: {},
 };
 
@@ -133,6 +137,90 @@ describe("Safe Action terminal control plane", () => {
       conflict_column: "version",
       approval_role: "finance_reviewer",
       confirmed_trusted_scope: true,
+    });
+  });
+
+  it("turns business intent into a proposal-only disabled design without asking execution questions", async () => {
+    const prompter = scriptedPrompter({
+      choices: ["public.orders", "update", "credit_cents", "argument", "safe", "create"],
+      texts: [
+        "0",
+        "2500",
+        "orders.propose_bounded_credit",
+        "Let support propose one bounded order credit.",
+      ],
+      confirms: [false, true],
+    });
+    const action = await collectGuidedActionInput(options, prompter, undefined, {
+      intent: "Let support change an order credit up to a reviewed limit.",
+      mode: "guided",
+    });
+    expect(action).toMatchObject({
+      capability_name: "orders.propose_bounded_credit",
+      resource: "public.orders",
+      operation: "update",
+      conflict_column: "version",
+      approval_role: "action_reviewer",
+      required_approvals: 1,
+      authority_posture: "proposal_only",
+      writeback: { mode: "none" },
+      confirmed_trusted_scope: true,
+      patches: [{ column: "credit_cents", minimum: 0, maximum: 2500 }],
+    });
+    expect(action?.auto_approval).toBeUndefined();
+    expect(action?.write_url_env).toBeUndefined();
+    expect(actionReviewLines(action!, orders).join("\n")).toContain("AGENT MAY NOT");
+    expect(actionReviewLines(action!, orders).join("\n")).toContain("Source mutation is impossible");
+  });
+
+  it("ranks only unique reviewed metadata matches and leaves ambiguous intent unselected", () => {
+    const shipments: GuidedActionResourceOption = {
+      ...orders,
+      id: "logistics.shipments",
+      schema: "logistics",
+      table: "shipments",
+      label: "Outbound shipments",
+      description: "One shipment with a reviewed carrier mode.",
+      writable_fields: [{ name: "carrier_mode", label: "Carrier mode", data_type: "text", enum_values: ["air", "ground"], nullable: false, required_for_insert: true }],
+      structurally_eligible_fields: [{ name: "carrier_mode", label: "Carrier mode", data_type: "text", enum_values: ["air", "ground"], nullable: false, required_for_insert: true }],
+    };
+    expect(rankActionIntent([orders, shipments], "Change the carrier mode for one outbound shipment")).toMatchObject({
+      resource: "logistics.shipments",
+      operation: "update",
+      fields: ["carrier_mode"],
+    });
+    expect(rankActionIntent([
+      shipments,
+      { ...shipments, id: "logistics.return_shipments", table: "return_shipments", label: "Return shipments" },
+    ], "Update a shipment").resource).toBeUndefined();
+  });
+
+  it("collects generated enum, numeric, boolean, and text rehearsal values without raw JSON", async () => {
+    const prompter = scriptedPrompter({
+      choices: ["guided", "1", "true", "run"],
+      texts: ["750", "reviewed note"],
+      confirms: [],
+    });
+    const details = {
+      draft: { capability: "orders.propose_typed_rehearsal" },
+      preview_args: { status: "open", credit_cents: 100, notify: false, note: "preview" },
+      contract: {
+        capabilities: [{
+          name: "orders.propose_typed_rehearsal",
+          args: {
+            status: { type: "string", enum: ["open", "closed"] },
+            credit_cents: { type: "number", minimum: 0, maximum: 1000 },
+            notify: { type: "boolean" },
+            note: { type: "string", max_length: 32 },
+          },
+        }],
+      },
+    } as unknown as Parameters<typeof collectGuidedRehearsalArgs>[0];
+    await expect(collectGuidedRehearsalArgs(details, prompter)).resolves.toEqual({
+      status: "closed",
+      credit_cents: 750,
+      notify: true,
+      note: "reviewed note",
     });
   });
 
@@ -252,6 +340,13 @@ describe("Safe Action terminal control plane", () => {
           updated_at: pending.proposal.updated_at,
         }];
       },
+      async count() { return 1; },
+      async page() {
+        return {
+          total: 1,
+          items: await this.list(),
+        };
+      },
       async detail() { return pending; },
       approve,
       async reject() { throw new Error("not expected"); },
@@ -260,11 +355,7 @@ describe("Safe Action terminal control plane", () => {
     };
     let reviewedApproved = false;
     const choices = [`proposal:${pending.proposal.proposal_id}`, "approve", "back", "back"];
-    const texts = [
-      `APPROVE ${pending.proposal.proposal_hash}`,
-      "Reviewed bounded credit request.",
-      "reviewer",
-    ];
+    const texts = ["Reviewed bounded credit request.", "reviewer"];
     const prompter: ActionControlPrompter = {
       async choose(title, available) {
         const value = choices.shift();
@@ -281,7 +372,11 @@ describe("Safe Action terminal control plane", () => {
         if (!value) throw new Error("Unexpected text prompt");
         return value;
       },
-      async confirm() { throw new Error("not expected"); },
+      async confirm(message) {
+        expect(message).toContain(pending.proposal.proposal_id);
+        expect(message).toContain(pending.proposal.proposal_hash.slice(0, 20));
+        return true;
+      },
       async message() {},
     };
     await reviewActionProposalInbox({ operatorService, prompter, env: {} });
@@ -314,6 +409,39 @@ describe("Safe Action terminal control plane", () => {
     await emitKey(terminal.input, { name: "enter", sequence: "\r" });
     await expect(selection).resolves.toBe("members");
     expect(terminal.input.isRaw).toBe(false);
+  });
+
+  it("pages the proposal inbox through count and offset queries instead of truncating at 200", async () => {
+    const page = vi.fn(async (filters: { offset?: number } = {}) => ({
+      total: 25,
+      items: Array.from({ length: Math.min(12, 25 - Number(filters.offset ?? 0)) }, (_, index) => ({
+      proposal_id: `proposal-${Number(filters.offset ?? 0) + index + 1}`,
+      proposal_hash: `sha256:${"a".repeat(64)}`,
+      capability: "orders.propose_credit",
+      state: "pending_review" as const,
+      business_object: "order",
+      object_id: `order-${index + 1}`,
+      writeback_mode: "read_only",
+      source_database_mutated: false,
+      created_at: "2026-08-23T12:00:00.000Z",
+      updated_at: "2026-08-23T12:00:00.000Z",
+      })),
+    }));
+    const operatorService: ActionOperatorService = {
+      async identityPosture() { return { provider: "dev_env", apply_roles: [] }; },
+      async list() { return []; },
+      async count() { return 25; },
+      page,
+      async detail() { throw new Error("not expected"); },
+      async approve() { throw new Error("not expected"); },
+      async reject() { throw new Error("not expected"); },
+      async apply() { throw new Error("not expected"); },
+      async replay() { throw new Error("not expected"); },
+    };
+    const prompter = scriptedPrompter({ choices: ["next", "back"], texts: [], confirms: [] });
+    await reviewActionProposalInbox({ operatorService, prompter, env: {} });
+    expect(page).toHaveBeenNthCalledWith(1, expect.objectContaining({ limit: 12, offset: 0 }));
+    expect(page).toHaveBeenNthCalledWith(2, expect.objectContaining({ limit: 12, offset: 12 }));
   });
 
   it("accepts typed Action text without retaining raw mode and honors NO_COLOR", async () => {

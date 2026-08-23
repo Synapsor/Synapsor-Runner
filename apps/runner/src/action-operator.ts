@@ -58,6 +58,8 @@ export type ActionOperatorDecision = TrustedOperatorDecisionOverride & {
 export type ActionOperatorService = {
   identityPosture(): Promise<ActionOperatorIdentityPosture>;
   list(filters?: ProposalSearchFilters): Promise<ActionProposalSummary[]>;
+  count(filters?: ProposalSearchFilters): Promise<number>;
+  page(filters: ProposalSearchFilters): Promise<{ items: ActionProposalSummary[]; total: number }>;
   detail(proposalId: string): Promise<ActionProposalDetail>;
   approve(proposalId: string, decision: ActionOperatorDecision): Promise<ActionProposalDetail>;
   reject(proposalId: string, decision: ActionOperatorDecision): Promise<ActionProposalDetail>;
@@ -84,6 +86,12 @@ export function createActionOperatorService(input: {
     },
     async list(filters = {}) {
       return readActionProposalSummaries(baseArgs, filters);
+    },
+    async count(filters = {}) {
+      return readActionProposalCount(baseArgs, filters);
+    },
+    async page(filters) {
+      return readActionProposalPage(baseArgs, filters);
     },
     detail,
     async approve(proposalId, decision) {
@@ -158,7 +166,7 @@ async function readActionProposalSummaries(
   filters: ProposalSearchFilters,
 ): Promise<ActionProposalSummary[]> {
   return withActionProposalStoreRead(args, "action proposal inbox", (store) =>
-    store.listProposals({ ...filters, limit: filters.limit ?? 200 }).map((proposal) => ({
+    store.listProposals({ ...filters, limit: filters.limit ?? 50 }).map((proposal) => ({
       proposal_id: proposal.proposal_id,
       proposal_hash: proposal.proposal_hash,
       capability: proposal.capability ?? proposal.action,
@@ -171,6 +179,36 @@ async function readActionProposalSummaries(
       updated_at: proposal.updated_at,
     })),
   );
+}
+
+async function readActionProposalCount(
+  args: string[],
+  filters: ProposalSearchFilters,
+): Promise<number> {
+  return withActionProposalStoreRead(args, "action proposal inbox count", (store) =>
+    store.countProposals({ ...filters, limit: undefined, offset: undefined }),
+  );
+}
+
+async function readActionProposalPage(
+  args: string[],
+  filters: ProposalSearchFilters,
+): Promise<{ items: ActionProposalSummary[]; total: number }> {
+  return withActionProposalStoreRead(args, "action proposal inbox page", (store) => ({
+    total: store.countProposals({ ...filters, limit: undefined, offset: undefined }),
+    items: store.listProposals({ ...filters, limit: filters.limit ?? 50 }).map((proposal) => ({
+      proposal_id: proposal.proposal_id,
+      proposal_hash: proposal.proposal_hash,
+      capability: proposal.capability ?? proposal.action,
+      state: proposal.state,
+      business_object: proposal.business_object,
+      object_id: proposal.object_id,
+      writeback_mode: proposal.change_set.writeback.mode,
+      source_database_mutated: proposal.source_database_mutated,
+      created_at: proposal.created_at,
+      updated_at: proposal.updated_at,
+    })),
+  }));
 }
 
 async function readActionProposalDetail(args: string[], proposalId: string): Promise<ActionProposalDetail> {

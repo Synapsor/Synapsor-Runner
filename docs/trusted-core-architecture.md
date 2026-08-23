@@ -191,6 +191,18 @@ the real semantic proposal path with a disposable ledger and must prove that
 the source stayed unchanged. Activation recomputes the exact digest and archives
 the revision before updating the separate action-runtime config.
 
+Local Ask treats `/actions` as an operator-shell handoff, not a model tool. It
+closes the current read gateway, passes only the current provider/model and
+memory-only credential to the optional suggestion adapter, and resumes the same
+conversation after the TUI closes. Intent ranking is deterministic over
+reviewed metadata; unique structural guards may be preselected, but business
+bounds and authority are never inferred. Interactive rehearsal values are
+validated against the generated contract. Interactive confirmations carry the
+selected full digest/hash internally, while non-interactive commands retain
+explicit full-digest/hash inputs. Proposal inbox count and page rows are read
+from one proposal-store snapshot, including when a shared Postgres runtime
+ledger is bridged read-only.
+
 Changing execution posture never edits an active revision. It creates another
 disabled digest. Each proposal freezes the contract digest and writeback mode
 under which it was created, so promotion cannot make older proposal-only

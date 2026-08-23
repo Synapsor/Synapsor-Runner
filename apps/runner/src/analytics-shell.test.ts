@@ -1496,7 +1496,7 @@ describe("Synapsor Analytics shell", () => {
 
   it("shows, filters, and fully clears transient slash actions while editing", async () => {
     expect(slashCommandSuggestions("/")).toContain("/access");
-    expect(slashCommandSuggestions("/ac")).toEqual(["/access", "/access-workbench"]);
+    expect(slashCommandSuggestions("/ac")).toEqual(["/access", "/actions", "/access-workbench"]);
     expect(slashCommandSuggestions("/catal")).toEqual([
       "/catalog",
       "/catalog --diagram",
@@ -2617,6 +2617,25 @@ describe("Synapsor Analytics shell", () => {
 
     expect(io.output()).toContain("Opening the terminal boundary editor");
     expect(io.output()).toContain("Model: gpt-5-mini");
+  });
+
+  it("leaves chat cleanly for the Safe Action control plane without exposing an operator tool", async () => {
+    const io = fakeIo(["/actions"]);
+    await expect(runAnalyticsShell({
+      providerLabel: "OpenAI",
+      modelLabel: "gpt-5.6-luna",
+      profileLabel: "staging",
+      reviewedDataAreas: 1,
+      io,
+      ask: vi.fn(),
+      listAnalyses: async () => [],
+      protect: vi.fn(),
+      clearConversation: vi.fn(),
+      cancel: vi.fn(() => false),
+    })).resolves.toBe("actions");
+    expect(io.output()).toContain("Opening the Safe Action control plane");
+    expect(io.output()).toContain("cannot author, activate, approve, or apply");
+    expect(io.output()).toContain("same provider, model, in-memory credential, and conversation");
   });
 
   it("withholds model prose when the complete result is privacy-suppressed", async () => {

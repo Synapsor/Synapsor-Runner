@@ -109,6 +109,41 @@ describe("model-assisted Safe Action suggestions", () => {
     expect(requestJson).not.toHaveBeenCalled();
   });
 
+  it("reuses an in-memory Ask credential without putting it in provider content", async () => {
+    const secret = "memory-only-action-suggestion-key";
+    const requestJson = vi.fn(async (request: Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0]) => {
+      expect(request.headers.authorization).toBe(`Bearer ${secret}`);
+      expect(JSON.stringify(request.body)).not.toContain(secret);
+      return {
+        status: 200,
+        body: {
+          output: [{
+            type: "function_call",
+            call_id: "call_memory_action_suggestion",
+            name: "runner__suggest_safe_action",
+            arguments: JSON.stringify({
+              intent: "Allow support to propose closing one exact order.",
+              operation: "update",
+              resource: "public.orders",
+              fields: ["status"],
+            }),
+          }],
+        },
+      };
+    });
+    await expect(generateModelActionSuggestion({
+      intent: "Let support propose closing one exact order.",
+      provider: "openai",
+      model: "gpt-5.6-luna",
+      options: actionOptions(),
+      env: {},
+      apiKey: secret,
+      egressAcknowledged: true,
+      dependencies: { requestJson },
+    })).resolves.toMatchObject({ authority_granted: false, source_database_changed: false });
+    expect(requestJson).toHaveBeenCalledOnce();
+  });
+
   it("fails closed when a provider ignores the required structured suggestion tool", async () => {
     const requestJson = vi.fn(async () => ({
       status: 200,
@@ -166,6 +201,7 @@ function actionOptions(): GuidedActionOptions {
         delete: { available: false, reason: "Delete is blocked by a cascading reference." },
       },
     }],
+    blocked_resources: [],
     safe_defaults: {},
   };
 }

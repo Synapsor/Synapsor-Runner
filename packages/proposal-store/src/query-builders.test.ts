@@ -1,5 +1,27 @@
 import { describe, expect, it } from "vitest";
 import { ProposalStore } from "./index.js";
+import { buildProposalCountQuery, buildProposalQuery } from "./query-builders.js";
+
+describe("proposal inbox queries", () => {
+  it("applies metadata search, stable paging, and an unpaged total count", () => {
+    const page = buildProposalQuery({
+      state: "pending_review",
+      search: "Orders_20%",
+      from: "2026-08-01T00:00:00.000Z",
+      limit: 12,
+      offset: 24,
+    });
+    expect(page.sql).toContain("LOWER(COALESCE(proposal_id, '')) LIKE ? ESCAPE");
+    expect(page.sql).toContain("ORDER BY created_at DESC, proposal_id DESC LIMIT ? OFFSET ?");
+    expect(page.params).toContain("%orders\\_20\\%%");
+    expect(page.params.slice(-2)).toEqual([12, 24]);
+
+    const count = buildProposalCountQuery({ state: "pending_review", search: "orders", limit: 12, offset: 24 });
+    expect(count.sql).toMatch(/^SELECT COUNT\(\*\) AS count FROM proposals/);
+    expect(count.sql).not.toContain("LIMIT");
+    expect(count.sql).not.toContain("OFFSET");
+  });
+});
 
 describe("Explore audit query filters", () => {
   it("filters keyed scopes, boundary, outcome, resource, and time without result values", () => {

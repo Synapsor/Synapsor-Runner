@@ -511,12 +511,19 @@ plain descriptions and requires an explicit `--from A2`.
 After the first read, open the preferred terminal control plane or choose
 **Add a safe action** in the preview Workbench:
 
+```text
+synapsor> /actions
+```
+
+Or from the ordinary shell:
+
 ```bash
 synapsor-runner action review --project-root .
 ```
 
-Schema metadata supplies structure, never business permission. The human
-specifies:
+Describe the allowed proposal in business language first. Runner ranks only
+reviewed metadata and schema-proven candidates. Schema metadata supplies
+structure, never business permission. The human specifies:
 
 1. the business action;
 2. target resource and exact row identity;

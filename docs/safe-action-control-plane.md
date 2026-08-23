@@ -4,7 +4,15 @@ Synapsor Safe Actions let an agent request an `INSERT`, `UPDATE`, or `DELETE`
 business effect without giving that agent SQL, database credentials, approval,
 activation, or commit authority.
 
-The terminal control plane is the preferred authoring and operator interface:
+The terminal control plane is the preferred authoring and operator interface.
+From an active local Ask session, enter:
+
+```text
+synapsor> /actions
+```
+
+The same provider, model, in-memory credential, and conversation resume when
+the control plane closes. The direct shell entry remains:
 
 ```bash
 synapsor-runner action review --project-root .
@@ -85,7 +93,8 @@ Runner deliberately distinguishes evidence from authority.
 | `ACTIVE` | A human activated that exact rehearsed digest. Only its semantic tool is added to the selected action runtime. |
 
 An imported suggestion only changes ordering in the review UI. The operator
-still answers every authority question.
+still reviews every authority-bearing choice or explicitly selects the bundled
+proposal-only safe rollout.
 
 ## What Runner Can Prove From The Schema
 
@@ -165,6 +174,12 @@ synapsor-runner start --cli
 
 Review and activate the read boundary, then open the Action control plane:
 
+```text
+synapsor> /actions
+```
+
+Outside Ask, run:
+
 ```bash
 synapsor-runner action review --project-root .
 ```
@@ -174,7 +189,13 @@ and the proposal/operator inbox.
 
 ### 2. Draft Without A Model
 
-Choose **Create a new reviewed Safe Action**. The TUI walks through:
+Choose **Create from business intent** and describe what the agent should be
+allowed to propose. Runner uses reviewed IDs, labels, descriptions, and schema
+proofs to rank candidates locally. It auto-selects a conflict or deduplication
+guard only when exactly one source-proven candidate exists; ambiguity always
+returns to the human.
+
+The recommended path then walks through:
 
 1. target resource;
 2. `INSERT`, `UPDATE`, or `DELETE`;
@@ -182,10 +203,15 @@ Choose **Create a new reviewed Safe Action**. The TUI walks through:
 4. numeric, text, enum, or transition constraints;
 5. conflict/version or insert-dedup guard;
 6. semantic capability name and business effect;
-7. approval role and optional quorum/policy;
-8. execution and receipt posture;
-9. trusted-scope confirmation;
-10. complete MAY / MAY NOT / SOURCE MUTATION review.
+7. either the proposal-only safe rollout or advanced approval/execution;
+8. trusted-scope confirmation;
+9. complete AGENT MAY PROPOSE / RUNNER SUPPLIES / AGENT MAY NOT review.
+
+The safe rollout freezes one `action_reviewer`, one approval, proposal-only
+`WRITEBACK NONE`, no automatic approval, and no executor. **Customize approval
+or execution** opens quorum, deterministic thresholds, executor, receipt,
+worker, and compensation controls. Those decisions are progressive, not
+inferred from the intent or model output.
 
 The draft writes public DSL, canonical JSON, generated tests, an ActionDesign,
 and a review explanation. Active tools and the source database remain
@@ -226,7 +252,10 @@ current Read Boundary digest and becomes stale if that digest changes.
 ### 4. Optionally Ask A Model For One Suggestion
 
 The operator can ask OpenAI, Anthropic, or an OpenAI-compatible endpoint for
-one bounded suggestion:
+one bounded suggestion. When opened through `/actions`, Runner can reuse the
+current Ask provider, model, and memory-only credential after a separate
+structural-metadata egress confirmation. The credential is not displayed,
+persisted, or sent in model content. The standalone command remains:
 
 ```bash
 synapsor-runner action suggest \
@@ -251,9 +280,11 @@ review finishes.
 
 ### 5. Rehearse The Exact Disabled Revision
 
-The TUI asks for representative staging arguments and runs the actual semantic
-proposal path against the current schema and scope. Runner uses a disposable
-ledger and verifies:
+The TUI derives typed prompts from the generated contract: enum pickers,
+booleans, bounded numbers, and length-bounded text. Raw JSON remains an
+advanced option for repeatable fixtures. Runner then runs the actual semantic
+proposal path against the current schema and scope using a disposable ledger
+and verifies:
 
 - the generated action validates;
 - the expected target and proposed effect are produced;
@@ -265,9 +296,13 @@ The rehearsal proposal is destroyed. It cannot later be approved or applied.
 
 ### 6. Activate The Exact Digest
 
-Interactive activation recomputes the artifact digest and requires the exact
-`ACTIVATE sha256:...` decision. Changed artifacts, stale boundaries, or a
-missing exact rehearsal fail closed.
+Interactive activation shows the selected short digest, asks for a human
+yes/no decision, then internally binds that decision to the full digest and
+recomputes the artifacts. No digest copy/paste is needed in the TUI. Changed
+artifacts, stale boundaries, or a missing exact rehearsal fail closed.
+
+Headless and CI activation still requires the full
+`ACTIVATE sha256:...` confirmation plus verified operator authority and nonce.
 
 Activation copies immutable artifacts under a digest-addressed revision path
 and updates the separate action runtime. It does not widen the production
@@ -275,9 +310,22 @@ Explore two-tool surface.
 
 ### 7. Invoke The Semantic Tool
 
-Start the action runtime named by `action status --json` or the activation
-result, then connect Ask or an MCP client. The client sees a business tool such
-as:
+Activation prints exact commands to inspect and test the separate action
+runtime and install it for an MCP client. Equivalent commands are:
+
+```bash
+synapsor-runner try call --list \
+  --config ./synapsor.actions.runner.json --format json
+
+synapsor-runner try call support.propose_plan_credit --sample \
+  --config ./synapsor.actions.runner.json --json
+
+synapsor-runner mcp install claude-code --project \
+  --config ./synapsor.actions.runner.json --yes
+```
+
+Use `cursor` or `vscode` in the final command for those clients. The client
+sees a business tool such as:
 
 ```text
 support.propose_plan_credit(customer_id, plan_credit_cents, reason)
@@ -295,22 +343,30 @@ Return to:
 synapsor-runner action review --project-root .
 ```
 
-Open **Proposal inbox and lifecycle** to search and inspect exact effects,
-approve or reject with the configured operator identity, apply eligible
-approved proposals, inspect receipts, and create replay records. The TUI uses
+Open **Proposal inbox and lifecycle** to page across the complete consulted
+ledger, search capability/object/proposal metadata, and filter by lifecycle
+state or age. Inspect exact effects, approve or reject with the configured
+operator identity, apply eligible approved proposals, inspect receipts, and
+create replay records. Count and page rows come from one consistent local or
+shared-runtime-store snapshot. The TUI uses
 the existing proposal, freshness, operator-identity, guarded-apply, receipt,
 and evidence services; keyboard input has no special authority.
 
-Proposal-only records show apply as unavailable. An executable proposal is
+Interactive approve, reject, and apply decisions are bound internally to the
+full current proposal hash; copied hashes are not a TUI burden. Headless
+commands retain exact-hash requirements. Proposal-only records show apply as unavailable. An executable proposal is
 still rechecked immediately before mutation for active digest, trusted scope,
 approval/quorum, freshness, conflict/version, bounds, row count, idempotency,
 and receipt authority.
 
 ## Promotion And Non-Retroactivity
 
-Select an active action and choose **Promote, demote, or replace execution
-posture**. Runner creates a disabled revision with a new digest. The current
-revision remains active until the replacement is rehearsed and activated.
+Select an active action. **Create a replacement design revision** reopens the
+reviewed fields, bounds, transitions, approval, and execution choices.
+**Promote, demote, or replace execution posture** changes only the authority
+posture. Both create a disabled digest while the current revision remains
+active. A disabled draft may also be edited/replaced or discarded by exact
+digest; neither operation mutates active authority or source rows.
 
 For a scriptable direct-SQL promotion, place this inside the project root:
 

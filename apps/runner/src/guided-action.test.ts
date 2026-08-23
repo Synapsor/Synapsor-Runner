@@ -18,8 +18,10 @@ import {
 import {
   activateGuidedAction,
   createGuidedActionDraft,
+  discardGuidedActionDraft,
   guidedActionOptions,
   prepareGuidedActionPreview,
+  readGuidedActionDesignInput,
   recordGuidedActionPreview,
   reviseGuidedActionAuthority,
 } from "./guided-action.js";
@@ -111,6 +113,35 @@ describe("guided write actions", () => {
       supervised_worker_execution: true,
     });
     await expect(fs.readFile(path.join(fixture.root, created.draft.dsl_path), "utf8")).resolves.toBe(created.dsl);
+    await expect(readGuidedActionDesignInput(
+      fixture.root,
+      "membership.set_loyalty_balance",
+      "draft",
+    )).resolves.toMatchObject({
+      capability_name: "membership.set_loyalty_balance",
+      resource: "public.members",
+      operation: "update",
+      authority_posture: "supervised_execution",
+      confirmed_trusted_scope: true,
+    });
+    await expect(discardGuidedActionDraft({
+      projectRoot: fixture.root,
+      capabilityName: "membership.set_loyalty_balance",
+      expectedDigest: `sha256:${"0".repeat(64)}`,
+    })).rejects.toThrow(/GUIDED_ACTION_DRAFT_CHANGED/);
+    await expect(discardGuidedActionDraft({
+      projectRoot: fixture.root,
+      capabilityName: "membership.set_loyalty_balance",
+      expectedDigest: created.draft.contract_digest,
+    })).resolves.toMatchObject({
+      capability: "membership.set_loyalty_balance",
+      source_database_changed: false,
+    });
+    await expect(readGuidedActionDesignInput(
+      fixture.root,
+      "membership.set_loyalty_balance",
+      "draft",
+    )).rejects.toThrow(/GUIDED_ACTION_DRAFT_REQUIRED/);
   });
 
   it("does not advertise or accept guarded writes with relationship-carried principal scope", async () => {
@@ -120,6 +151,12 @@ describe("guided write actions", () => {
       inspection: fixture.inspection,
     });
     expect(options.resources.map((resource) => resource.id)).not.toContain("public.members");
+    expect(options.blocked_resources).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "public.members",
+        reasons: expect.arrayContaining([expect.stringMatching(/direct principal column/i)]),
+      }),
+    ]));
 
     await expect(createGuidedActionDraft({
       projectRoot: fixture.root,

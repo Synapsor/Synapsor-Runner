@@ -223,6 +223,13 @@ export type GuidedActionResourceOption = {
   operation_availability: Record<GuidedActionOperation, { available: boolean; reason: string }>;
 };
 
+export type GuidedActionBlockedResource = {
+  id: string;
+  label?: string;
+  reasons: string[];
+  next_steps: string[];
+};
+
 export async function guidedActionOptions(input: {
   projectRoot: string;
   inspection: SchemaInspection;
@@ -231,6 +238,7 @@ export async function guidedActionOptions(input: {
   source: string;
   deployment_profile: "development" | "staging" | "production";
   resources: GuidedActionResourceOption[];
+  blocked_resources: GuidedActionBlockedResource[];
   safe_defaults: Record<string, unknown>;
 }> {
   const projectRoot = path.resolve(input.projectRoot);
@@ -239,6 +247,25 @@ export async function guidedActionOptions(input: {
     boundary_digest: boundary.activation.digest,
     source: boundary.source,
     deployment_profile: boundary.deployment_profile,
+    blocked_resources: boundary.pack.resources.flatMap((resource): GuidedActionBlockedResource[] => {
+      const reasons: string[] = [];
+      const nextSteps: string[] = [];
+      if (!resource.tenant_key) {
+        reasons.push("Guarded writes require a direct reviewed tenant column; relationship-carried read scope is not write authority.");
+        nextSteps.push(`Add or review a direct tenant binding on ${resource.id}, then rescan and activate the Read Boundary.`);
+      }
+      if (resource.principal_scope) {
+        reasons.push("This resource carries principal scope through a relationship; guarded writes require a direct principal column when principal scope applies.");
+        nextSteps.push(`Add or review a direct principal binding on ${resource.id}, then rescan and activate the Read Boundary.`);
+      }
+      if (!reasons.length) return [];
+      return [{
+        id: resource.id,
+        ...(resource.label ? { label: resource.label } : {}),
+        reasons,
+        next_steps: nextSteps,
+      }];
+    }),
     resources: boundary.pack.resources
       .filter((resource): resource is typeof resource & { tenant_key: string } =>
         typeof resource.tenant_key === "string"
@@ -404,6 +431,14 @@ export async function createGuidedActionDraft(input: {
   const reviewPath = path.join(outputRoot, "REVIEW.md");
   const designPath = path.join(outputRoot, "action-design.json");
   const runtimeConfigPath = path.join(projectRoot, "synapsor.actions.runner.json");
+  const priorDraft = await readOptionalJson(path.join(outputRoot, "draft.json"));
+  const preservedPreview = priorDraft?.schema_version === GUIDED_ACTION_VERSION
+    && priorDraft.capability === action.capability_name
+    && priorDraft.contract_digest === contractDigest
+    && isRecord(priorDraft.effect_preview)
+    && priorDraft.effect_preview.contract_digest === contractDigest
+      ? priorDraft.effect_preview as GuidedActionDraft["effect_preview"]
+      : undefined;
   const draft: GuidedActionDraft = {
     schema_version: GUIDED_ACTION_VERSION,
     state: "disabled",
@@ -430,6 +465,7 @@ export async function createGuidedActionDraft(input: {
     supervised_worker_execution: action.authority.supervised_worker_execution,
     ...(action.worker_policy ? { worker_policy: action.worker_policy } : {}),
     created_at: input.now ?? new Date().toISOString(),
+    ...(preservedPreview ? { effect_preview: preservedPreview } : {}),
   };
   await writeGuidedActionArtifacts({
     projectRoot,
@@ -783,6 +819,82 @@ export async function readGuidedActionActivation(
     throw new Error("GUIDED_ACTION_ACTIVATION_INVALID: managed activation metadata is invalid.");
   }
   return normalizeGuidedActionActivation(projectRoot, parsed as GuidedActionActivation);
+}
+
+/**
+ * Loads the reviewed design behind a managed draft or activation and converts
+ * its normalized authority representation back into bounded authoring input.
+ * Callers still have to create, rehearse, and activate a new immutable digest.
+ */
+export async function readGuidedActionDesignInput(
+  projectRootInput: string,
+  capabilityName: string,
+  source: "draft" | "active" = "draft",
+): Promise<GuidedActionInput> {
+  const projectRoot = path.resolve(projectRootInput);
+  let artifact: GuidedActionDraft | GuidedActionActivation | undefined;
+  if (source === "draft") {
+    try {
+      artifact = await readGuidedActionDraft(projectRoot, capabilityName);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  } else {
+    artifact = await readGuidedActionActivation(projectRoot, capabilityName);
+  }
+  if (!artifact) {
+    throw new Error(source === "draft"
+      ? `GUIDED_ACTION_DRAFT_REQUIRED: ${capabilityName} has no disabled managed revision.`
+      : `GUIDED_ACTION_ACTIVE_REQUIRED: ${capabilityName} has no active managed revision.`);
+  }
+  const parsed = JSON.parse(
+    await fs.readFile(containedProjectPath(projectRoot, artifact.design_path), "utf8"),
+  ) as ReturnType<typeof normalizeAction>;
+  if (!isRecord(parsed) || !isRecord(parsed.authority)) {
+    throw new Error("GUIDED_ACTION_DESIGN_INVALID: the managed ActionDesign is malformed.");
+  }
+  const authority = parsed.authority as unknown as ResolvedActionAuthority;
+  const {
+    authority: _authority,
+    worker_policy: workerPolicy,
+    ...reviewed
+  } = parsed;
+  return {
+    ...reviewed,
+    authority_posture: authority.posture,
+    writeback: {
+      mode: authority.writeback.mode,
+      ...(authority.writeback.executor ? { executor: authority.writeback.executor } : {}),
+    },
+    supervised_worker_execution: authority.supervised_worker_execution,
+    ...(workerPolicy ? { worker_policy: workerPolicy } : {}),
+    confirmed_trusted_scope: true,
+  } as GuidedActionInput;
+}
+
+/** Removes one exact disabled managed draft. Active revisions are untouched. */
+export async function discardGuidedActionDraft(input: {
+  projectRoot: string;
+  capabilityName: string;
+  expectedDigest: string;
+}): Promise<{ capability: string; contract_digest: `sha256:${string}`; source_database_changed: false }> {
+  const projectRoot = path.resolve(input.projectRoot);
+  const draft = await readGuidedActionDraft(projectRoot, input.capabilityName);
+  if (draft.contract_digest !== input.expectedDigest) {
+    throw new Error("GUIDED_ACTION_DRAFT_CHANGED: reload the disabled revision before discarding it.");
+  }
+  const outputRoot = path.dirname(containedProjectPath(projectRoot, draft.design_path));
+  const marker = await readOptionalJson(path.join(outputRoot, ".synapsor-guided-action.json"));
+  if (marker?.schema_version !== GUIDED_ACTION_VERSION || marker.capability !== draft.capability) {
+    throw new Error(`GUIDED_ACTION_OUTPUT_UNMANAGED: refusing to remove ${outputRoot}.`);
+  }
+  await removeActionFromIndex(projectRoot, draft.capability);
+  await fs.rm(outputRoot, { recursive: true, force: false });
+  return {
+    capability: draft.capability,
+    contract_digest: draft.contract_digest,
+    source_database_changed: false,
+  };
 }
 
 export async function guidedActionDraftDetails(
@@ -1545,6 +1657,29 @@ async function updateActionIndex(projectRoot: string, draft: GuidedActionDraft):
     inferred_write_authority: false,
     drafts: drafts.sort((left, right) => left.capability.localeCompare(right.capability)),
     next_action: "Preview the exact proposal effect, then activate only the reviewed digest.",
+  }));
+}
+
+async function removeActionFromIndex(projectRoot: string, capability: string): Promise<void> {
+  const indexPath = path.join(projectRoot, ".synapsor/guided-action-drafts.json");
+  const existing = await readOptionalJson(indexPath);
+  if (!existing
+    || (existing.schema_version !== "synapsor.guided-action-drafts.v1"
+      && existing.schema_version !== GUIDED_ACTION_INDEX_VERSION)) {
+    throw new Error("GUIDED_ACTION_INDEX_UNMANAGED: refusing to replace an unknown action index.");
+  }
+  const drafts = Array.isArray(existing.drafts)
+    ? existing.drafts.filter((item): item is GuidedActionDraft =>
+        isRecord(item) && typeof item.capability === "string" && item.capability !== capability)
+    : [];
+  await writeAtomic(indexPath, json({
+    schema_version: GUIDED_ACTION_INDEX_VERSION,
+    state: "disabled",
+    inferred_write_authority: false,
+    drafts: drafts.sort((left, right) => left.capability.localeCompare(right.capability)),
+    next_action: drafts.length
+      ? "Preview the exact proposal effect, then activate only the reviewed digest."
+      : "Create a disabled reviewed Safe Action before activating any write proposal authority.",
   }));
 }
 

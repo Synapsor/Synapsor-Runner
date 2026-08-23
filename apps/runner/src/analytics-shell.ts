@@ -77,6 +77,7 @@ const COMMANDS = [
   "/details",
   "/attempts",
   "/access",
+  "/actions",
   "/access-workbench",
   "/refresh-access",
   "/limits",
@@ -93,6 +94,7 @@ const COMMAND_DESCRIPTIONS: Record<string, string> = {
   "/details": "Show safe execution metadata",
   "/attempts": "Inspect refused model attempts",
   "/access": "Add or edit reviewed boundaries",
+  "/actions": "Create Safe Actions and review proposals",
   "/access-workbench": "Open the visual access editor",
   "/refresh-access": "Use access activated outside this shell",
   "/limits": "Show or change this Ask session's token limits",
@@ -554,7 +556,7 @@ export function renderSlashCommandMenu(line: string, color = false): string {
   ].join("\n");
 }
 
-export type AnalyticsShellExitReason = "exit" | "access";
+export type AnalyticsShellExitReason = "exit" | "access" | "actions";
 
 export type ShellAnalysisRecord = {
   token: string;
@@ -738,6 +740,10 @@ export async function runAnalyticsShell(
           exitReason = "access";
           break;
         }
+        if (action === "actions") {
+          exitReason = "actions";
+          break;
+        }
         if (line === "/clear") current = undefined;
         continue;
       }
@@ -876,7 +882,7 @@ export function renderAnalyticsShellBanner(input: {
         "You do not need to open its tables unless you want to inspect the pending changes first.",
       ]
       : []),
-    "Ask a question. /catalog shows reviewed access; /access manages boundaries; /help lists actions; Ctrl+D exits.",
+    "Ask a question. /catalog shows reviewed access; /access manages boundaries; /actions manages Safe Actions; Ctrl+D exits; /help lists commands.",
     "",
   ].join("\n");
 }
@@ -1257,6 +1263,7 @@ async function handleShellCommand(
       "  /details [last|A2] --sql     Include redacted operator-only SQL",
       "  /attempts                    Show refused attempts from the latest answer",
       "  /access                      Add or edit reviewed boundaries",
+      "  /actions                     Create Safe Actions and review proposal lifecycles",
       "  /access-workbench            Open the visual access editor",
       "  /refresh-access              Use access activated in Workbench or another terminal",
       "  /limits                      Show this Ask session's token usage and limits",
@@ -1392,6 +1399,16 @@ async function handleShellCommand(
       "",
     ].join("\n"));
     return "access";
+  }
+  if (line === "/actions") {
+    input.io.write([
+      "",
+      "Opening the Safe Action control plane.",
+      "Models may suggest candidates and invoke active semantic tools. They cannot author, activate, approve, or apply authority.",
+      "When it closes, this shell resumes with the same provider, model, in-memory credential, and conversation.",
+      "",
+    ].join("\n"));
+    return "actions";
   }
   if (line === "/access-workbench" || line === "/access workbench") {
     if (!input.openAccessEditor) {

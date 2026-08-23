@@ -196,6 +196,12 @@ dry-run result first. Installation remains a human choice.
 After the first safe read, the preferred terminal control plane can generate
 one bounded write action; the preview Workbench exposes the same domain flow:
 
+```text
+synapsor> /actions
+```
+
+Or launch it directly:
+
 ```bash
 synapsor-runner action review --project-root .
 ```

@@ -568,6 +568,8 @@ export type ProposalSearchFilters = LocalListOptions & {
   state?: LocalProposalState;
   source?: string;
   table?: string;
+  search?: string;
+  offset?: number;
 };
 
 export type EvidenceSearchFilters = LocalListOptions & {

@@ -234,6 +234,7 @@ function actionOptions(digestCharacter: string): GuidedActionOptions {
         delete: { available: false, reason: "Delete is blocked by a cascading reference." },
       },
     }],
+    blocked_resources: [],
     safe_defaults: {},
   };
 }

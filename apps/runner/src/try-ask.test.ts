@@ -617,6 +617,59 @@ describe("try ask", () => {
     expect(consent).toHaveBeenCalledOnce();
   });
 
+  it("opens /actions with the current model credential and resumes the same Ask conversation", async () => {
+    const fixture = await askProject();
+    const answers: Array<string | undefined> = ["/actions", undefined];
+    const writes: string[] = [];
+    const requestJson = vi.fn();
+    const runTerminalActionReview = vi.fn(async (input: {
+      projectRoot: string;
+      configPath: string;
+      storePath: string;
+      modelSuggestionSession: {
+        provider: string;
+        model: string;
+        apiKeyEnv?: string;
+      };
+    }) => {
+      expect(input.projectRoot).toBe(fixture.root);
+      expect(input.configPath).toBe(fixture.configPath);
+      expect(input.storePath).toBe(fixture.storePath);
+      expect(input.modelSuggestionSession).toMatchObject({
+        provider: "openai",
+        model: "gpt-action-review",
+        apiKeyEnv: "OPENAI_API_KEY",
+      });
+      return 0;
+    });
+
+    await expect(tryAsk([
+      "--project-root", fixture.root,
+      "--config", fixture.configPath,
+      "--store", fixture.storePath,
+      "--provider", "openai",
+      "--model", "gpt-action-review",
+    ], {
+      env: fixture.env,
+      gatewayFactory: testGatewayFactory([]),
+      boundaryCatalogLoader: async () => undefined,
+      confirmEgress: async () => true,
+      providerDependencies: { requestJson },
+      shellIo: {
+        read: async () => answers.shift(),
+        write: (value) => writes.push(value),
+        columns: () => 100,
+        onInterrupt: () => () => undefined,
+        close: () => undefined,
+      },
+      runTerminalActionReview,
+    })).resolves.toBe(0);
+
+    expect(runTerminalActionReview).toHaveBeenCalledOnce();
+    expect(requestJson).not.toHaveBeenCalled();
+    expect(writes.join("\n")).toContain("Opening the Safe Action control plane");
+  });
+
   it("exits cleanly only after the operator closes /access with no active boundary", async () => {
     const fixture = await askProject();
     const answers: Array<string | undefined> = ["/access"];

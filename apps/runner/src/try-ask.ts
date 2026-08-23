@@ -70,6 +70,7 @@ import {
   DEFAULT_TERMINAL_OPENAI_ASK_MODEL,
 } from "./terminal-ask-defaults.js";
 import { askIntentCheckModesForBoundaries } from "./ask-intent-preferences.js";
+import type { ActionModelSuggestionSession } from "./action-tui.js";
 
 export type TryAskDependencies = {
   env?: NodeJS.ProcessEnv;
@@ -92,6 +93,13 @@ export type TryAskDependencies = {
     projectRoot: string;
     activationReviewNotice: string;
     onActivated: () => Promise<number>;
+  }) => Promise<number>;
+  runTerminalActionReview?: (input: {
+    projectRoot: string;
+    configPath: string;
+    storePath: string;
+    env: NodeJS.ProcessEnv;
+    modelSuggestionSession: ActionModelSuggestionSession;
   }) => Promise<number>;
   runPostAccessAsk?: (args: string[]) => Promise<number>;
   readSecret?: typeof readHiddenSecret;
@@ -168,6 +176,7 @@ export async function tryAsk(
         ? "ANTHROPIC_API_KEY"
         : undefined);
   let pastedSecret: string | undefined;
+  let actionSuggestionSecret: string | undefined;
   if (provider !== "openai_compatible" && (!apiKeyEnv || !env[apiKeyEnv]?.trim())) {
     if (!dependencies.readSecret && (!process.stdin.isTTY || !process.stderr.isTTY)) {
       throw new Error(
@@ -228,6 +237,7 @@ export async function tryAsk(
       authority_digest: authority.authority_digest,
       egress_acknowledged: true,
     }, env);
+    actionSuggestionSecret = pastedSecret;
     pastedSecret = undefined;
     await requireEgressConsent({
       args,
@@ -618,6 +628,66 @@ export async function tryAsk(
       clearConversation: () => session.clearConversation(),
       cancel: () => session.cancel(),
       });
+      if (shellExit === "actions") {
+        await initialGateway?.close().catch(() => undefined);
+        initialGateway = undefined;
+        const modelSuggestionSession: ActionModelSuggestionSession = {
+          provider,
+          model,
+          ...(actionSuggestionSecret
+            ? { apiKey: actionSuggestionSecret }
+            : apiKeyEnv
+              ? { apiKeyEnv }
+              : {}),
+          ...(optionalArg(args, "--base-url") ? { baseUrl: optionalArg(args, "--base-url") } : {}),
+          ...(dependencies.providerDependencies ? { dependencies: dependencies.providerDependencies } : {}),
+        };
+        const runActionReview = dependencies.runTerminalActionReview
+          ?? (async (reviewInput: {
+            projectRoot: string;
+            configPath: string;
+            storePath: string;
+            env: NodeJS.ProcessEnv;
+            modelSuggestionSession: ActionModelSuggestionSession;
+          }) => {
+            const { runActionControlPlane } = await import("./action-tui.js");
+            await runActionControlPlane({
+              projectRoot: reviewInput.projectRoot,
+              configPath: reviewInput.configPath,
+              storePath: reviewInput.storePath,
+              env: reviewInput.env,
+              modelSuggestionSession: reviewInput.modelSuggestionSession,
+              returnToAsk: true,
+            });
+            return 0;
+          });
+        try {
+          const actionResult = await runActionReview({
+            projectRoot,
+            configPath,
+            storePath,
+            env,
+            modelSuggestionSession,
+          });
+          if (actionResult !== 0) return actionResult;
+          const theme = terminalTheme(process.stdout.isTTY === true && !("NO_COLOR" in env));
+          writeInteractiveStdout([
+            theme.success("Safe Action control plane closed"),
+            "Returning to Ask with the same provider, model, in-memory credential, and conversation.",
+            "Ask read authority and its current model-facing tool surface are unchanged.",
+            "",
+          ].join("\n"));
+        } catch (error) {
+          const theme = terminalTheme(process.stdout.isTTY === true && !("NO_COLOR" in env));
+          writeInteractiveStdout([
+            theme.warning("Safe Action control plane could not complete"),
+            redactCliErrorMessage(error instanceof Error ? error.message : String(error)),
+            "No weaker authority was used. Returning to Ask with its previous reviewed access.",
+            "",
+          ].join("\n"));
+        }
+        continue;
+      }
       if (shellExit !== "access") return 0;
 
       await initialGateway?.close().catch(() => undefined);
@@ -692,6 +762,7 @@ export async function tryAsk(
     }
   } finally {
     pastedSecret = undefined;
+    actionSuggestionSecret = undefined;
     session.clear();
     await initialGateway?.close().catch(() => undefined);
     await workbench?.close().catch(() => undefined);

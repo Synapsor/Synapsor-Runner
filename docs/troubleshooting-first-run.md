@@ -285,9 +285,18 @@ synapsor-runner tools preview \
   --store ./.synapsor/local.db
 ```
 
-Open the secured Workbench, run the real source-unchanged staging Data PR
-preview, review the complete digest, and activate it there. There is
-intentionally no activation CLI command to hand to a coding agent.
+Type `/actions` in local Ask, or run:
+
+```bash
+synapsor-runner action review --project-root .
+```
+
+Select the disabled draft, enter typed rehearsal values, and run the real
+source-unchanged proposal path. After a successful rehearsal, interactive
+activation binds the terminal decision to the selected full digest without
+copy/paste. This remains an operator-only TUI action; it is not an MCP tool.
+Headless activation keeps the stricter full-digest confirmation, verified
+operator identity, reason, expiry, and one-use nonce requirements.
 
 ## Activated Tool Does Not Appear In The MCP Client
 
@@ -296,8 +305,14 @@ confirm that Runner's active tool surface changed:
 
 ```bash
 synapsor-runner action status --json
+synapsor-runner try call --list \
+  --config ./synapsor.actions.runner.json --format json
 synapsor-runner mcp status claude-code --project --check-launch
 ```
+
+Activation prints the exact `try call` and `mcp install` commands for the
+separate action runtime. Production Explore deliberately remains its exact
+two-tool read surface and will not show Safe Actions.
 
 Use `cursor` or `vscode` instead of `claude-code` for those clients.
 Then reconnect or restart the project MCP server as directed by the Workbench.

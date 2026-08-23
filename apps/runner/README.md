@@ -13,7 +13,7 @@ model SQL or commit authority.**
 
 ## Start With Your Database
 
-**The CLI is the preferred live-data interface. Workbench remains preview.**
+**The CLI is preferred. Workbench remains preview.**
 
 Use a SELECT-only, non-owner development or staging credential:
 
@@ -29,8 +29,8 @@ npm install --global @synapsor/runner
 ```
 
 Paste the URL into the hidden prompt or export `DATABASE_URL`. Runner inspects
-schema metadata, not source rows, then proposes conservative read access that
-grants nothing until review and activation. No DSL or JSON is required.
+metadata, not rows, and proposes conservative access. Nothing is granted until
+review and activation. No DSL or JSON is required.
 
 With `DATABASE_URL`, use the CLI:
 
@@ -114,10 +114,9 @@ or start with [safe Postgres MCP](docs/safe-postgres-mcp.md),
 
 ## Ask A Useful Question
 
-After review, use the preferred terminal Ask, the preview Workbench, or an MCP
-client. All call the same validation and execution path. Supply an OpenAI or
-Anthropic key, or use a loopback OpenAI-compatible model. Keys and conversation
-history stay in memory; loopback traffic stays local.
+After review, use terminal Ask, preview Workbench, or an MCP client. All share
+one validation and execution path. Supply an OpenAI or Anthropic key, or use a
+loopback model. Keys and history stay in memory; loopback traffic stays local.
 
 ```bash
 synapsor-runner try ask --provider openai --model gpt-5.6-luna
@@ -206,15 +205,21 @@ secured runtime config from the boundary without secrets.
 
 ## Let Agents Propose Bounded Changes
 
-For writes, use the terminal control plane:
+Open the write control plane from Ask:
+
+```text
+synapsor> /actions
+```
+
+Or directly:
 
 ```bash
 synapsor-runner action review --project-root .
 ```
 
-It derives candidates and creates disabled semantic `INSERT`,
-`UPDATE`, or `DELETE` revisions. Humans choose fields, bounds, approval, and
-execution. Metadata-only agent suggestions grant nothing.
+Runner ranks schema-proven candidates. Humans review bounds, scope, approval,
+and execution. Proposal-only `WRITEBACK NONE` is the default; model suggestions
+grant nothing. The TUI handles rehearsal, activation, drafts, and the inbox.
 
 Code-first remains:
 

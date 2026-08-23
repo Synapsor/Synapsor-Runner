@@ -22,11 +22,7 @@ export function inWhere(column: string, values: string[]): { sql: string; params
 
 export function buildProposalQuery(filters: ProposalSearchFilters): SqlQuery {
   const { clauses, params } = proposalQueryParts(filters);
-  const where = clauses.length ? ` WHERE ${clauses.join(" AND ")}` : "";
-  return {
-    sql: `SELECT * FROM proposals${where} ORDER BY created_at DESC, proposal_id DESC${filters.limit ? " LIMIT ?" : ""}`,
-    params: filters.limit ? [...params, filters.limit] : params,
-  };
+  return finishQuery("SELECT * FROM proposals", clauses, params, filters.limit, filters.offset, "created_at DESC, proposal_id DESC");
 }
 
 export function buildProposalCountQuery(filters: ProposalSearchFilters): SqlQuery {
@@ -46,6 +42,9 @@ export function proposalQueryParts(filters: ProposalSearchFilters): { clauses: s
   addEqual(clauses, params, "state", filters.status ?? filters.state);
   addEqual(clauses, params, "action", filters.capability ?? filters.action);
   addObjectFilter(clauses, params, "business_object", "source_table", "object_id", filters.objectType, filters.objectId);
+  addMetadataSearch(clauses, params, filters.search, [
+    "proposal_id", "action", "capability", "business_object", "object_id", "source_table", "state",
+  ]);
   addTimeRange(clauses, params, "created_at", filters.from, filters.to);
   return { clauses, params };
 }
@@ -246,10 +245,11 @@ export function finishQuery(
   params: SqlParam[],
   limit?: number,
   offset?: number,
+  orderBy = "created_at DESC",
 ): SqlQuery {
   const where = clauses.length ? ` WHERE ${clauses.join(" AND ")}` : "";
   const boundedOffset = Number.isSafeInteger(offset) && Number(offset) > 0 ? Number(offset) : 0;
-  const sql = `${base}${where} ORDER BY created_at DESC${limit ? " LIMIT ?" : boundedOffset ? " LIMIT -1" : ""}${boundedOffset ? " OFFSET ?" : ""}`;
+  const sql = `${base}${where} ORDER BY ${orderBy}${limit ? " LIMIT ?" : boundedOffset ? " LIMIT -1" : ""}${boundedOffset ? " OFFSET ?" : ""}`;
   return {
     sql,
     params: [

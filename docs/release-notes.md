@@ -14,6 +14,26 @@ for the Synapsor Cloud CLI.
 
 ### Safe Action Human Control Plane
 
+- Local `synapsor>` Ask now opens the same operator-only control plane with
+  `/actions`, then resumes the same provider, model, memory-only credential,
+  and conversation. Production Explore remains the locked two-tool read
+  surface; activated actions use a separate semantic runtime whose exact test
+  and MCP-install commands are printed after activation.
+- New action setup is intent-first. Runner locally ranks reviewed metadata and
+  schema-proven candidates, while an optional bounded model suggestion reuses
+  the current Ask provider only after separate metadata-egress consent. The
+  recommended rollout bundles one human reviewer with proposal-only
+  `WRITEBACK NONE`; quorum, deterministic policy, execution, receipts, and
+  workers stay behind an explicit advanced choice.
+- Rehearsal uses contract-derived enum, boolean, numeric-bound, and text-length
+  prompts, with raw JSON retained for advanced fixtures. Interactive activation
+  and proposal decisions bind the selected revision/proposal to its full
+  digest/hash internally; headless and CI paths keep exact copied confirmations.
+- Disabled designs can be edited into replacement revisions or discarded by
+  exact digest without changing active authority. The control plane now shows
+  eligible and blocked targets with remediation, and its proposal inbox uses
+  ledger-backed search, state/age filters, stable paging, and one consistent
+  count-plus-page snapshot rather than truncating at 200 records.
 - The preferred terminal `action review` control plane now covers bounded
   `INSERT`, `UPDATE`, and `DELETE` design, exact source-unchanged rehearsal,
   immutable activation/revision history, proposal review, verified approval,
