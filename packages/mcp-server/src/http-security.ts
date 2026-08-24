@@ -481,8 +481,18 @@ export function jsonRpcError(id: unknown, code: number, message: string): Record
 }
 
 export function sanitizeHttpError(error: unknown, ...authTokens: Array<string | undefined>): string {
-  const raw = error instanceof Error ? error.message : String(error);
-  return sanitizeHttpString(raw, ...authTokens);
+  const publicMessage = error instanceof McpRuntimeError
+    ? publicHttpRequestErrorMessage(error.code)
+    : undefined;
+  return sanitizeHttpString(publicMessage ?? "The MCP request failed safely.", ...authTokens);
+}
+
+function publicHttpRequestErrorMessage(code: string): string | undefined {
+  if (code === "HTTP_BODY_TOO_LARGE") return "The MCP request exceeds the configured size limit.";
+  if (code === "HTTP_TOOL_NAME_REQUIRED") return "tools/call requires params.name.";
+  if (code === "HTTP_RESOURCE_URI_REQUIRED") return "resources/read requires params.uri.";
+  if (code === "HTTP_JSONRPC_METHOD_UNSUPPORTED") return "The requested MCP HTTP method is unsupported.";
+  return undefined;
 }
 
 export function sanitizeHttpPayload(value: unknown, ...authTokens: Array<string | undefined>): unknown {
