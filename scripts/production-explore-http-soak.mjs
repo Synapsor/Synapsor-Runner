@@ -928,7 +928,9 @@ export function verifyProductionExploreOperatorLedger(input) {
     return output;
   };
   const configArgs = ["--config", input.config_path];
-  const evidenceList = readJson(["evidence", "list", ...configArgs, "--json"]);
+  const evidenceList = readJson([
+    "evidence", "list", ...configArgs, "--json", "--limit", "5",
+  ]);
   const evidence = evidenceList.payload.evidence ?? [];
   if (evidenceList.payload.ledger_source?.kind !== "shared_postgres"
     || evidenceList.payload.ledger_source?.schema !== input.schema
@@ -940,7 +942,7 @@ export function verifyProductionExploreOperatorLedger(input) {
     ...(input.principal ? ["--principal", input.principal] : []),
   ];
   const identityList = identityArgs.length
-    ? readJson(["evidence", "list", ...configArgs, "--json", ...identityArgs, "--limit", "200"])
+    ? readJson(["evidence", "list", ...configArgs, "--json", ...identityArgs, "--limit", "5"])
     : evidenceList;
   const identityEvidence = identityList.payload.evidence ?? [];
   if (identityArgs.length && identityEvidence.length === 0) {
@@ -1009,8 +1011,10 @@ export function verifyProductionExploreOperatorLedger(input) {
     || !evidenceShow.stdout.includes("Role posture:")
     || !evidenceShow.stdout.includes("Result fingerprint:")
     || !evidenceShow.stdout.includes("Execution duration:")
-    || !evidenceShow.stdout.includes("Reconstructed reviewed query")
-    || !evidenceShow.stdout.includes("predicate applied by Runner")
+    || !evidenceShow.stdout.includes("Captured parameterized source SQL")
+    || !evidenceShow.stdout.includes("Parameterized SQL captured: yes")
+    || !evidenceShow.stdout.includes("Parameter values persisted: no")
+    || !evidenceShow.stdout.includes("SELECT")
     || !/Normalized reviewed plan \(reference\)/i.test(evidenceShow.stdout)) {
     throw new Error(`Production evidence show did not identify the shared ledger: ${evidenceShow.stdout}`);
   }
@@ -1032,7 +1036,9 @@ export function verifyProductionExploreOperatorLedger(input) {
   const selectedAudit = audits.find((item) => item.evidence_bundle_id === selectedEvidence.evidence_bundle_id) ?? audits[0];
   const auditShow = invoke(["query-audit", "show", String(selectedAudit.audit_id), ...configArgs, "--details"]);
   if (!auditShow.stdout.includes(`Ledger: shared PostgreSQL schema ${input.schema}`)
-    || !auditShow.stdout.includes("Reconstructed reviewed query")
+    || !auditShow.stdout.includes("Captured parameterized source SQL")
+    || !auditShow.stdout.includes("Parameterized SQL captured: yes")
+    || !auditShow.stdout.includes("Parameter values persisted: no")
     || !/Raw metadata payload \(reference\)/i.test(auditShow.stdout)
     || !auditShow.stdout.includes("normalized_plan")) {
     throw new Error(`Production query-audit show was incomplete: ${auditShow.stdout}`);

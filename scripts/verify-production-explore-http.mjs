@@ -2552,11 +2552,18 @@ async function main() {
       `%${tieBandResult.evidence_bundle_id}%`,
     ]);
     const autoBandEvidence = JSON.stringify(autoBandEvidenceRows.rows);
+    const autoBandEvidenceWithoutOperatorSql = JSON.stringify(
+      autoBandEvidenceRows.rows,
+      (key, value) => key === "parameterized_sql" ? undefined : value,
+    );
     assert(autoBandEvidenceRows.rows.some((row) => row.event_kind === "evidence_bundle")
       && /"result_values_persisted":false/i.test(autoBandEvidence)
-      && !/__auto_|"edges"|"raw_edges"|"bucket_min"|"bucket_max"/i.test(autoBandEvidence)
+      && /"parameterized_sql_included":true/i.test(autoBandEvidence)
+      && /"parameter_values_persisted":false/i.test(autoBandEvidence)
+      && !/"parameter_values"\s*:/i.test(autoBandEvidence)
+      && !/__auto_|"edges"|"raw_edges"|"bucket_min"|"bucket_max"/i.test(autoBandEvidenceWithoutOperatorSql)
       && !autoBandEvidence.includes("pm-auto-ties"),
-    "PostgreSQL automatic-band evidence persisted raw edges, result values, or principal identity.",
+    "PostgreSQL automatic-band evidence persisted raw edges, result values, SQL parameter values, or principal identity.",
     autoBandEvidenceRows.rows);
 
     const runningTotalPlan = {
