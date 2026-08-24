@@ -562,13 +562,17 @@ describe("local UI", () => {
           execution_duration_ms: expect.any(Number),
           result_values_persisted: false,
           trusted_scope_values_persisted: false,
+          parameterized_sql_included: true,
+          parameter_values_persisted: false,
           raw_sql_included: false,
           source_database_changed: false,
           reconstructed_query: {
-            statement: expect.stringContaining("tenant_id = :trusted_tenant"),
+            source: "captured_parameterized_sql",
+            title: "Captured parameterized source SQL",
+            statement: expect.stringContaining('t0."tenant_id" = $1'),
             caveats: expect.arrayContaining([
-              expect.stringMatching(/not the exact SQL Runner executed/),
-              expect.stringMatching(/tenant scope: predicate applied by Runner/i),
+              expect.stringMatching(/captured before source execution/i),
+              expect.stringMatching(/parameter values were not persisted/i),
             ]),
           },
         },
@@ -590,7 +594,8 @@ describe("local UI", () => {
           source_table: "public.members",
           result_values_persisted: false,
           reconstructed_query: {
-            statement: expect.stringContaining("FROM public.members"),
+            source: "captured_parameterized_sql",
+            statement: expect.stringContaining('FROM "public"."members"'),
           },
         },
       });

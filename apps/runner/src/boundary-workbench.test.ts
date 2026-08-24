@@ -694,10 +694,10 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain('return "history-status-error"');
     expect(html).toContain("historyStatusClass(audit.status)");
     expect(html).toContain("historyStatusClass(evidencePayload.outcome)");
-    expect(html).toContain("Reconstructed reviewed query");
+    expect(html).toContain("reconstructed.title");
     expect(html).toContain('class="history-detail-grid"');
     expect(html).toContain('renderSyntaxCode("ask-history-sql",reconstructed.statement,"SQL")');
-    expect(html).toContain("Runner does not persist model conversations, result values, trusted scope values, or raw SQL.");
+    expect(html).toContain("New records retain operator-only parameterized SQL");
     expect(html).toContain('id="ask-submit-consent"');
     expect(html).toContain("Submitting your first question confirms");
     expect(html).toContain("No provider request occurs before you submit.");

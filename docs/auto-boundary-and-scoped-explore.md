@@ -1355,10 +1355,15 @@ Every successful call records a normalized query audit in
 - reviewed resource/relationship aliases;
 - operators and time buckets;
 - keyed hashes of filter literals;
+- the parameterized SQL statement shape and parameter types captured before
+  source execution;
 - timing, suppression decisions, and result-size metadata.
 
 It does not retain returned rows/groups, credentials, raw sensitive literals,
-or trusted tenant/principal values.
+SQL parameter values, or trusted tenant/principal values. The statement is an
+operator audit artifact and is removed from every model-facing evidence or
+replay resource. Records created before statement capture retain the
+non-executable, fail-closed SQL template.
 
 A successful query also creates encrypted, expiring local Protect state. The
 Workbench discovers recent queries itself; developers do not copy opaque

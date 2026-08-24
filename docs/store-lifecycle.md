@@ -148,8 +148,9 @@ synapsor-runner query-audit show <audit-id> --details \
 ```
 
 Production Explore records plans, outcome/count metadata, keyed scope
-fingerprints, and result fingerprints. It does not persist result values, raw
-tenant/principal claims, SQL, parameters, credentials, or source rows.
+fingerprints, result fingerprints, and value-free parameterized SQL for new
+events. It does not persist result values, raw tenant/principal claims, SQL
+parameter values, credentials, or source rows.
 
 `evidence browse` keeps a bounded audit session open instead of printing the
 entire result set. It supports pages, timestamp jumps, metadata search, and live
@@ -164,8 +165,9 @@ metadata, record and resource/source IDs, capability, and query fingerprint; it
 does not search original question text because that text is not stored. An empty
 search result states both the term and the fields searched. A selected record
 starts with a compact, plan-derived English description; use its D, Q, and P
-commands for authority facts, the privacy-safe reconstructed query, and the
-normalized plan, with Up/Down scrolling for long sections. The description is
+commands for authority facts, operator audit SQL, and the normalized plan, with
+Up/Down scrolling for long sections. New records show the captured parameterized
+statement; legacy records show the privacy-safe non-executable template. The description is
 reconstructed from persisted reviewed-plan metadata, not from a
 stored model conversation. Successful shared-store reads are quiet by default;
 use `--debug` only when the structured snapshot event is needed.
@@ -215,14 +217,12 @@ an interactive terminal viewer. `--follow --json` emits newline-delimited JSON.
 identity lookup when one combined lifecycle view is more useful than a focused
 record type.
 
-Detailed evidence/audit views lead with grouped operator facts and a
-reconstructed reviewed query. That SQL-like rendering is derived solely from
-the normalized redacted plan: it is not captured SQL, is not executable, and
-shows filter values only as keyed/redacted placeholders. New events also record
-the value-free scope-application kind so the view can say whether Runner applied
-a direct/derived tenant or principal predicate, or intentionally applied none
-for shared-reference/single-organization scope. Raw JSON remains available as
-reference metadata below the readable view.
+Detailed evidence/audit views lead with grouped operator facts and audit SQL.
+New events show the parameterized statement shape captured before source
+execution, including reviewed JOIN and scope expressions, while omitting every
+parameter value. Legacy records show a clearly labelled non-executable template
+derived from the normalized keyed plan and value-free scope-application kind.
+Raw JSON remains available as reference metadata below the readable view.
 
 ## Focused inspection commands
 

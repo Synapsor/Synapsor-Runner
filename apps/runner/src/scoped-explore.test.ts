@@ -32,6 +32,7 @@ import {
 } from "./scoped-explore.js";
 import { createScopedExploreMcpServer, projectDescribeDataForModel } from "./authoring-mcp.js";
 import { compileOperatorExploreEvidence } from "./explore-operator-evidence.js";
+import { captureExploreParameterizedSql } from "./explore-parameterized-sql.js";
 
 const temporaryRoots: string[] = [];
 
@@ -3709,6 +3710,12 @@ describe("Scoped Explore", () => {
         : "JOIN `public`.`orders` t3 ON t2.`order_id` = t3.`id`");
       expect(query!.sql).toContain(engine === "postgres" ? 't3."region"' : "t3.`region`");
       expect(query!.sql).not.toMatch(/CROSS JOIN|SELECT\s+\*/i);
+      const captured = captureExploreParameterizedSql({ engine, statements: [query!] });
+      expect(captured.statements[0]?.statement).toBe(query!.sql);
+      expect(captured.statements[0]?.statement).toContain(engine === "postgres"
+        ? 'JOIN "public"."orders" t3 ON t2."order_id" = t3."id"'
+        : "JOIN `public`.`orders` t3 ON t2.`order_id` = t3.`id`");
+      expect(JSON.stringify(captured)).not.toMatch(/tenant-acme|order-owner-7/);
     }
   });
 
@@ -4521,6 +4528,24 @@ describe("Scoped Explore", () => {
         outcome: "ok",
         boundary: fixture.boundary.activation.digest,
       })).toHaveLength(1);
+      const persistedAudit = store.listQueryAudit()[0]?.payload as Record<string, unknown>;
+      const capturedSql = persistedAudit.parameterized_sql as Record<string, unknown>;
+      const capturedStatements = capturedSql.statements as Array<Record<string, unknown>>;
+      expect(persistedAudit).toMatchObject({
+        parameterized_sql_included: true,
+        parameter_values_persisted: false,
+        raw_sql_included: false,
+      });
+      expect(capturedSql).toMatchObject({
+        schema_version: "synapsor.explore-parameterized-sql.v1",
+        engine: "postgres",
+        parameter_values_persisted: false,
+        model_received_sql: false,
+      });
+      expect(capturedStatements[0]?.statement).toContain('FROM "public"."subscriptions" t0');
+      expect(capturedStatements[0]?.statement).toContain('t0."tenant_id" = $1');
+      expect(capturedStatements[0]?.statement).toContain('t0."reason_category" = $2');
+      expect(JSON.stringify(result)).not.toMatch(/\bSELECT\b|parameterized_sql/i);
       expect(auditText).not.toContain("private-literal");
       expect(auditText).not.toContain("tenant-acme");
       expect(auditText).not.toContain("pm-1");
