@@ -71,6 +71,14 @@ export type BoundaryFieldTierEditResult =
 
 export type BoundaryFieldEnumEditResult = string[] | "back" | undefined;
 
+export type BoundaryRelationshipPathEditResult =
+  | {
+      action: "add" | "remove";
+      relationship_id: string;
+    }
+  | "back"
+  | undefined;
+
 async function withRawKeys<T>(
   input: ReadStream,
   output: WriteStream,
@@ -107,7 +115,8 @@ export type BoundaryBlockedResolution =
 export type BoundaryResourceSelection =
   | {
       resource_id: string;
-      action: "add" | "review" | "remove" | "signoff" | "privacy" | "analytics" | "metadata";
+      action: "add" | "review" | "remove" | "signoff" | "privacy" | "analytics" | "metadata"
+        | "relationships";
     }
   | {
       action: "create" | "rename" | "confirm" | "limits" | "privacy_all";
@@ -169,6 +178,10 @@ export type BoundaryReviewInteractiveSession = {
     view: BoundaryResourceReviewView,
     field: string,
   ): Promise<BoundaryFieldEnumEditResult>;
+  editRelationshipPaths?(
+    view: BoundaryResourceReviewView,
+    summary: BoundaryResourceReviewSummary,
+  ): Promise<BoundaryRelationshipPathEditResult>;
   resolveBlockedResource?(
     view: BoundaryResourceReviewView,
   ): Promise<BoundaryBlockedResolution>;
@@ -245,6 +258,8 @@ export function createBoundaryReviewInteractiveSession(
       chooseResource(resources, overview, options, input, output),
     editFieldTiers: (view, options) => editFieldTiers(view, options, input, output),
     editFieldEnumValues: (view, field) => editFieldEnumValues(view, field, input, output),
+    editRelationshipPaths: (view, summary) =>
+      editRelationshipPaths(view, summary, input, output),
     resolveBlockedResource: (view) => resolveBlockedResource(view, input, output),
     promptText: (prompt) => readTerminalTextWithEscape(
       formatTextPromptWithBack(prompt, theme),
@@ -1076,11 +1091,14 @@ async function chooseResource(
         : safeTerminalText(reviewLeft);
       const actionWidth = terminalContentWidth(output.columns);
       const selectedIncluded = resourceView === "boundary" && highlighted.included;
+      const relationshipStatus = relationshipPathActionStatus(highlighted);
       const selectedTableActions = [
         `${theme.key("Up/Down")} Select`,
         `${theme.key("Enter")} ${resourceView === "boundary" ? "Edit columns" : "Review and add"}`,
         `${theme.key("R")} Remove from draft ` +
           `[${selectedIncluded ? "AVAILABLE" : "NOT IN DRAFT"}]`,
+        `${theme.key("J")} Relationship paths ` +
+          `[${selectedIncluded ? relationshipStatus : "ADD TABLE FIRST"}]`,
         ...(focusedAccess
           ? [
               `${theme.key("P")} Privacy - withhold small groups ` +
@@ -1289,6 +1307,13 @@ async function chooseResource(
         actionNotice = "G is unavailable until this table is added to the draft boundary.";
         continue;
       }
+      if (key.name === "j" && selectedIncluded) {
+        return { resource_id: highlighted.resource_id, action: "relationships" };
+      }
+      if (key.name === "j") {
+        actionNotice = "J is unavailable until this table is added to the draft boundary.";
+        continue;
+      }
       if (key.name === "i" && focusedAccess && selectedIncluded) {
         return { resource_id: highlighted.resource_id, action: "metadata" };
       }
@@ -1353,6 +1378,263 @@ async function chooseResource(
       }
     }
   });
+}
+
+function relationshipPathActionStatus(resource: BoundaryResourceReviewSummary): string {
+  const available = resource.relationships.filter((relationship) =>
+    relationship.state === "available").length;
+  const reviewed = resource.relationships.length - available;
+  if (available > 0) return `${reviewed} REVIEWED, ${available} AVAILABLE`;
+  if (reviewed > 0) return `${reviewed} REVIEWED`;
+  return "NONE FOUND";
+}
+
+async function editRelationshipPaths(
+  view: BoundaryResourceReviewView,
+  summary: BoundaryResourceReviewSummary,
+  input: ReadStream,
+  output: WriteStream,
+): Promise<BoundaryRelationshipPathEditResult> {
+  const generated = [...(view.generated_candidate?.relationships ?? [])].sort((left, right) =>
+    (left.path_depth ?? 1) - (right.path_depth ?? 1)
+      || left.target_resource.localeCompare(right.target_resource)
+      || left.id.localeCompare(right.id));
+  const candidateIds = new Set(view.candidate?.relationships.map((relationship) =>
+    relationship.id) ?? []);
+  const stateById = new Map(summary.relationships.map((relationship) => [
+    relationship.relationship_id,
+    relationship.state,
+  ]));
+  const includedResources = new Set(view.included_resource_ids ?? [view.resource_id]);
+  const reviewedMaximum = view.reviewed_budgets?.max_analysis_relationship_hops
+    ?? view.reviewed_budgets?.max_relationship_hops
+    ?? 2;
+  const theme = terminalTheme(output.isTTY && !("NO_COLOR" in process.env));
+  let selected = 0;
+  let showIds = false;
+  let actionNotice: string | undefined;
+
+  return withRawKeys(input, output, async (nextKey, render) => {
+    while (true) {
+      if (!generated.length) {
+        render([
+          theme.title(`RELATIONSHIP PATHS - ${safeTerminalText(view.resource_id)}`),
+          "No catalog-proven many-to-one analysis path is available from this table.",
+          theme.dim("Runner never infers joins from similar names or lets the model author a path."),
+          "",
+          `${theme.key("B/Esc/Q")} Back to boundary tables`,
+        ]);
+        const key = await nextKey();
+        if (isCancel(key) || isBackKey(key) || isEscapeKey(key)) return "back";
+        continue;
+      }
+
+      selected = Math.min(selected, generated.length - 1);
+      const start = boundedWindowStart(selected, generated.length, 7);
+      const visible = generated.slice(start, start + 7);
+      const selectedRelationship = generated[selected]!;
+      const selectedState = relationshipPathEditorState({
+        relationship: selectedRelationship,
+        candidateIds,
+        stateById,
+        includedResources,
+        reviewedMaximum,
+      });
+      const selectedDisplay = relationshipPathDisplay(view.resource_id, selectedRelationship);
+      const selectedJoinColumns = formatRelationshipJoinColumns(selectedDisplay);
+
+      render([
+        theme.title(`REVIEW RELATIONSHIP PATHS - ${safeTerminalText(view.resource_id)}`),
+        `Analysis-path depth limit: ${reviewedMaximum} proven ${plural(reviewedMaximum, "hop", "hops")}.`,
+        theme.dim(
+          "The limit makes a path eligible. Each exact path below still requires human review and separate activation.",
+        ),
+        "",
+        ...visible.map((relationship, index) => {
+          const absolute = start + index;
+          const state = relationshipPathEditorState({
+            relationship,
+            candidateIds,
+            stateById,
+            includedResources,
+            reviewedMaximum,
+          });
+          const display = relationshipPathDisplay(view.resource_id, relationship);
+          const line = `${absolute === selected ? ">" : " "} ` +
+            `[${state.label}] ${relationship.path_depth ?? 1} ` +
+            `${plural(relationship.path_depth ?? 1, "hop", "hops")}  ` +
+            safeTerminalText(formatRelationshipPath(display));
+          if (absolute === selected) return theme.focus(line);
+          if (state.kind === "active" || state.kind === "included") return theme.success(line);
+          if (state.kind === "available" || state.kind === "pending_removal") return theme.warning(line);
+          return theme.dim(line);
+        }),
+        ...(generated.length > visible.length
+          ? [theme.dim(
+              `Showing ${start + 1}-${start + visible.length} of ${generated.length}. Use Up/Down for the rest.`,
+            )]
+          : []),
+        "",
+        theme.bold("SELECTED PATH"),
+        `  ${safeTerminalText(formatRelationshipPath(selectedDisplay))}`,
+        ...(selectedJoinColumns
+          ? [`  via columns: ${safeTerminalText(selectedJoinColumns)}`]
+          : []),
+        `  state: ${relationshipPathStateStyled(selectedState, theme)}`,
+        ...(selectedState.missingResources.length
+          ? [`  add first: ${selectedState.missingResources.map(safeTerminalText).join(", ")}`]
+          : []),
+        ...(showIds
+          ? [`  ${theme.dim(`path ID: ${safeTerminalText(selectedRelationship.id)}`)}`]
+          : []),
+        ...(actionNotice ? ["", theme.warning(actionNotice)] : []),
+        "",
+        `${theme.key("Up/Down")} Select   ${theme.key("Enter")} ${selectedState.actionLabel}   ` +
+          `${theme.key("D")} ${showIds ? "Hide" : "Show"} path ID`,
+        `${theme.key("B/Esc/Q")} Back to boundary tables`,
+        theme.dim("No active authority changes here. Press C later to review and activate the disabled boundary."),
+      ]);
+
+      const key = await nextKey();
+      if (isCancel(key) || isBackKey(key) || isEscapeKey(key)) return "back";
+      if (key.name === "up") {
+        selected = (selected - 1 + generated.length) % generated.length;
+        actionNotice = undefined;
+        continue;
+      }
+      if (key.name === "down") {
+        selected = (selected + 1) % generated.length;
+        actionNotice = undefined;
+        continue;
+      }
+      if (key.name === "d") {
+        showIds = !showIds;
+        continue;
+      }
+      if (key.name !== "return" && key.name !== "enter") continue;
+      if (selectedState.missingResources.length) {
+        actionNotice = `Add ${selectedState.missingResources.join(", ")} to this boundary first.`;
+        continue;
+      }
+      if (selectedState.depthExceeded) {
+        actionNotice = `Raise Analysis-path depth to ${selectedRelationship.path_depth ?? 1} under L Limits first.`;
+        continue;
+      }
+      return {
+        relationship_id: selectedRelationship.id,
+        action: candidateIds.has(selectedRelationship.id) ? "remove" : "add",
+      };
+    }
+  });
+}
+
+type RelationshipPathEditorState = {
+  kind: "active" | "included" | "available" | "pending_removal" | "missing_tables" | "over_depth";
+  label: string;
+  actionLabel: string;
+  missingResources: string[];
+  depthExceeded: boolean;
+};
+
+function relationshipPathEditorState(input: {
+  relationship: NonNullable<BoundaryResourceReviewView["generated_candidate"]>["relationships"][number];
+  candidateIds: ReadonlySet<string>;
+  stateById: ReadonlyMap<string, BoundaryResourceReviewSummary["relationships"][number]["state"]>;
+  includedResources: ReadonlySet<string>;
+  reviewedMaximum: number;
+}): RelationshipPathEditorState {
+  const requiredResources = relationshipPathRequiredResources(input.relationship);
+  const missingResources = requiredResources.filter((resource) =>
+    !input.includedResources.has(resource));
+  const depthExceeded = (input.relationship.path_depth ?? 1) > input.reviewedMaximum;
+  const inCandidate = input.candidateIds.has(input.relationship.id);
+  const active = input.stateById.get(input.relationship.id) === "active";
+  if (inCandidate && active) {
+    return {
+      kind: "active",
+      label: "ACTIVE",
+      actionLabel: "Review removal",
+      missingResources,
+      depthExceeded,
+    };
+  }
+  if (inCandidate) {
+    return {
+      kind: "included",
+      label: "IN DRAFT",
+      actionLabel: "Remove from draft",
+      missingResources,
+      depthExceeded,
+    };
+  }
+  if (active) {
+    return {
+      kind: "pending_removal",
+      label: "ACTIVE; REMOVED IN DRAFT",
+      actionLabel: "Restore to draft",
+      missingResources,
+      depthExceeded,
+    };
+  }
+  if (missingResources.length) {
+    return {
+      kind: "missing_tables",
+      label: "ADD TABLES FIRST",
+      actionLabel: "Unavailable",
+      missingResources,
+      depthExceeded,
+    };
+  }
+  if (depthExceeded) {
+    return {
+      kind: "over_depth",
+      label: `NEEDS DEPTH ${input.relationship.path_depth ?? 1}`,
+      actionLabel: "Unavailable",
+      missingResources,
+      depthExceeded,
+    };
+  }
+  return {
+    kind: "available",
+    label: "AVAILABLE",
+    actionLabel: "Review and add",
+    missingResources,
+    depthExceeded,
+  };
+}
+
+function relationshipPathStateStyled(
+  state: RelationshipPathEditorState,
+  theme: TerminalTheme,
+): string {
+  if (state.kind === "active" || state.kind === "included") return theme.success(state.label);
+  if (state.kind === "available" || state.kind === "pending_removal") {
+    return theme.warning(state.label);
+  }
+  return theme.danger(state.label);
+}
+
+function relationshipPathDisplay(
+  sourceResource: string,
+  relationship: NonNullable<BoundaryResourceReviewView["generated_candidate"]>["relationships"][number],
+) {
+  return {
+    source_resource: sourceResource,
+    target_resource: relationship.target_resource,
+    links: relationship.proof?.links,
+  };
+}
+
+function relationshipPathRequiredResources(
+  relationship: NonNullable<BoundaryResourceReviewView["generated_candidate"]>["relationships"][number],
+): string[] {
+  return [...new Set([
+    relationship.target_resource,
+    ...(relationship.proof?.links ?? []).flatMap((link) => [
+      link.source_resource,
+      link.target_resource,
+    ]),
+  ])].sort();
 }
 
 async function editFieldTiers(
@@ -1980,11 +2262,65 @@ function boundaryResourceMapLines(
     ...(details ? mapFieldOperationDetailLines(view, candidate, tiers, theme) : []),
     ...operationRepairLines(view, tiers, theme, commandName),
     ...mapRelationshipLines(candidate, theme, details),
-    ...(!details && mapHasExactDetails(candidate)
+    ...availableRelationshipReviewLines(view, theme, details),
+    ...(!details && (mapHasExactDetails(candidate)
+      || hasAvailableRelationshipDetails(view))
       ? ["", theme.dim("Exact filter/time vocabularies and canonical path IDs: rerun with --details or use --json.")]
       : []),
   ];
   return lines;
+}
+
+function hasAvailableRelationshipDetails(view: BoundaryResourceReviewView): boolean {
+  const reviewed = new Set(view.candidate?.relationships.map((relationship) =>
+    relationship.id) ?? []);
+  return (view.generated_candidate?.relationships ?? []).some((relationship) =>
+    !reviewed.has(relationship.id));
+}
+
+function availableRelationshipReviewLines(
+  view: BoundaryResourceReviewView,
+  theme: TerminalTheme,
+  details: boolean,
+): string[] {
+  const reviewed = new Set(view.candidate?.relationships.map((relationship) =>
+    relationship.id) ?? []);
+  const available = (view.generated_candidate?.relationships ?? [])
+    .filter((relationship) => !reviewed.has(relationship.id))
+    .sort((left, right) =>
+      (left.path_depth ?? 1) - (right.path_depth ?? 1)
+        || left.target_resource.localeCompare(right.target_resource)
+        || left.id.localeCompare(right.id));
+  if (!available.length) return [];
+  const includedResources = new Set(view.included_resource_ids ?? [view.resource_id]);
+  const reviewedMaximum = view.reviewed_budgets?.max_analysis_relationship_hops
+    ?? view.reviewed_budgets?.max_relationship_hops
+    ?? 2;
+  return [
+    "",
+    theme.bold("RELATIONSHIP PATHS AVAILABLE FOR REVIEW"),
+    ...available.flatMap((relationship) => {
+      const display = relationshipPathDisplay(view.resource_id, relationship);
+      const joinColumns = formatRelationshipJoinColumns(display);
+      const missingResources = relationshipPathRequiredResources(relationship).filter((resource) =>
+        !includedResources.has(resource));
+      const depth = relationship.path_depth ?? 1;
+      const state = missingResources.length
+        ? theme.danger(`ADD TABLES FIRST: ${missingResources.join(", ")}`)
+        : depth > reviewedMaximum
+          ? theme.warning(`NEEDS ANALYSIS-PATH DEPTH ${depth}; CURRENTLY ${reviewedMaximum}`)
+          : theme.warning("AVAILABLE - HUMAN REVIEW REQUIRED");
+      return [
+        `  ${state}`,
+        `    ${safeTerminalText(formatRelationshipPath(display))} ` +
+          `(${depth} ${plural(depth, "hop", "hops")})`,
+        ...(joinColumns ? [`    via columns: ${safeTerminalText(joinColumns)}`] : []),
+        ...(details ? [`    ${theme.dim(`path ID: ${safeTerminalText(relationship.id)}`)}`] : []),
+      ];
+    }),
+    theme.bold("Review interactively: open boundary review --access, select this table, then press J."),
+    theme.dim("Saving the path creates a disabled revision. C remains the separate review and activation step."),
+  ];
 }
 
 function operationRepairLines(

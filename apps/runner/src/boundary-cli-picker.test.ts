@@ -418,6 +418,139 @@ describe("boundary review terminal picker", () => {
     });
   });
 
+  it("makes exact relationship review visible from the selected table", async () => {
+    const { input, output } = fakeTerminal();
+    const resource = summary("institutional_research.student_term_enrollments", 0);
+    resource.relationships = [{
+      relationship_id: threeHopRelationship().id,
+      target_resource: "institutional_research.colleges",
+      path_depth: 3,
+      state: "available",
+      path_links: threeHopRelationship().proof!.links.map((link) => ({
+        source_resource: link.source_resource,
+        target_resource: link.target_resource,
+        source_columns: link.source_columns,
+      })),
+    }];
+    const selected = createBoundaryReviewInteractiveSession(input, output).chooseResource(
+      [resource],
+      undefined,
+      { initialView: "access" },
+    );
+    expect(stripAnsi(output.read()?.toString() ?? ""))
+      .toContain("J Relationship paths [0 REVIEWED, 1 AVAILABLE]");
+    await send(input, "j");
+    await expect(selected).resolves.toEqual({
+      resource_id: "institutional_research.student_term_enrollments",
+      action: "relationships",
+    });
+  });
+
+  it("reviews a readable eligible depth-three path without leading with its ID", async () => {
+    const { input, output } = fakeTerminal(112, 28);
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const view = relationshipReviewView(3, [
+      "institutional_research.student_term_enrollments",
+      "institutional_research.programs",
+      "institutional_research.departments",
+      "institutional_research.colleges",
+    ]);
+    const resource = summary(view.resource_id, 0);
+    resource.relationships = [{
+      relationship_id: threeHopRelationship().id,
+      target_resource: "institutional_research.colleges",
+      path_depth: 3,
+      state: "available",
+      path_links: threeHopRelationship().proof!.links.map((link) => ({
+        source_resource: link.source_resource,
+        target_resource: link.target_resource,
+        source_columns: link.source_columns,
+      })),
+    }];
+    const selected = session.editRelationshipPaths!(view, resource);
+    const first = stripAnsi(output.read()?.toString() ?? "");
+    expect(first).toContain("REVIEW RELATIONSHIP PATHS - institutional_research.student_term_enrollments");
+    expect(first).toContain("Analysis-path depth limit: 3 proven hops");
+    expect(first).toContain(
+      "student_term_enrollments -> programs -> departments -> colleges",
+    );
+    expect(first).toContain("via columns: program_id -> department_id -> college_id");
+    expect(first).not.toContain(threeHopRelationship().id);
+    await send(input, "\r");
+    await expect(selected).resolves.toEqual({
+      action: "add",
+      relationship_id: threeHopRelationship().id,
+    });
+  });
+
+  it("explains depth and table blockers instead of selecting an ineligible relationship", async () => {
+    for (const scenario of [
+      {
+        maxDepth: 2,
+        included: [
+          "institutional_research.student_term_enrollments",
+          "institutional_research.programs",
+          "institutional_research.departments",
+          "institutional_research.colleges",
+        ],
+        expected: "Raise Analysis-path depth to 3 under L Limits first.",
+      },
+      {
+        maxDepth: 3,
+        included: [
+          "institutional_research.student_term_enrollments",
+          "institutional_research.programs",
+          "institutional_research.departments",
+        ],
+        expected: "Add institutional_research.colleges to this boundary first.",
+      },
+    ]) {
+      const { input, output } = fakeTerminal(112, 28);
+      const session = createBoundaryReviewInteractiveSession(input, output);
+      const view = relationshipReviewView(
+        scenario.maxDepth as 1 | 2 | 3,
+        scenario.included,
+      );
+      const resource = summary(view.resource_id, 0);
+      resource.relationships = [{
+        relationship_id: threeHopRelationship().id,
+        target_resource: "institutional_research.colleges",
+        path_depth: 3,
+        state: "available",
+      }];
+      const selected = session.editRelationshipPaths!(view, resource);
+      output.read();
+      await send(input, "\r");
+      expect(stripAnsi(output.read()?.toString() ?? "")).toContain(scenario.expected);
+      await emitKey(input, { name: "escape", sequence: "\u001b" });
+      await expect(selected).resolves.toBe("back");
+    }
+  });
+
+  it("shows review-available relationships in the focused map with a J handoff", () => {
+    const view = relationshipReviewView(3, [
+      "institutional_research.student_term_enrollments",
+      "institutional_research.programs",
+      "institutional_research.departments",
+      "institutional_research.colleges",
+    ]);
+    const concise = formatBoundaryResourceMap(view, { color: false, columns: 112 });
+    expect(concise).toContain("RELATIONSHIP PATHS AVAILABLE FOR REVIEW");
+    expect(concise).toContain("AVAILABLE - HUMAN REVIEW REQUIRED");
+    expect(concise).toContain(
+      "student_term_enrollments -> programs -> departments -> colleges",
+    );
+    expect(concise).toContain("select this table, then press J");
+    expect(concise).not.toContain(threeHopRelationship().id);
+
+    const details = formatBoundaryResourceMap(view, {
+      color: false,
+      columns: 112,
+      details: true,
+    });
+    expect(details).toContain(`path ID: ${threeHopRelationship().id}`);
+  });
+
   it("makes reviewed table metadata a first-class focused-access action", async () => {
     const { input, output } = fakeTerminal();
     const session = createBoundaryReviewInteractiveSession(input, output);
@@ -2587,6 +2720,122 @@ function reviewView(): BoundaryResourceReviewView {
       review_revision: 0,
     },
     source_database_changed: false,
+  };
+}
+
+function relationshipReviewView(
+  maxAnalysisDepth: 1 | 2 | 3,
+  includedResourceIds: string[],
+): BoundaryResourceReviewView {
+  const view = reviewView();
+  view.resource_id = "institutional_research.student_term_enrollments";
+  view.included_resource_ids = includedResourceIds;
+  view.candidate = {
+    ...view.candidate!,
+    id: view.resource_id,
+    schema: "institutional_research",
+    table: "student_term_enrollments",
+    relationships: [],
+  };
+  view.generated_candidate = {
+    ...view.generated_candidate!,
+    id: view.resource_id,
+    schema: "institutional_research",
+    table: "student_term_enrollments",
+    relationships: [threeHopRelationship()],
+  };
+  view.reviewed_budgets = reviewedRelationshipBudgets(maxAnalysisDepth);
+  return view;
+}
+
+function reviewedRelationshipBudgets(
+  maxAnalysisDepth: 1 | 2 | 3,
+): NonNullable<BoundaryResourceReviewView["reviewed_budgets"]> {
+  return {
+    max_rows: 50,
+    max_groups: 50,
+    max_top_n: 25,
+    max_response_cells: 500,
+    max_response_bytes: 65_536,
+    statement_timeout_ms: 3_000,
+    max_measures: 3,
+    max_dimensions: 3,
+    max_time_ranges: 2,
+    max_complexity: 24,
+    max_queries_per_session: 1_000,
+    rate_limit_per_minute: 120,
+    max_differencing_queries: 16,
+    max_extracted_cells_per_session: 4_000,
+    max_ranked_groups: 500,
+    max_relationship_hops: 2,
+    max_derived_scope_hops: 3,
+    max_analysis_relationship_hops: maxAnalysisDepth,
+  };
+}
+
+function threeHopRelationship(): NonNullable<
+  BoundaryResourceReviewView["generated_candidate"]
+>["relationships"][number] {
+  const link = (
+    constraintName: string,
+    sourceResource: string,
+    sourceColumn: string,
+    targetResource: string,
+    targetColumn: string,
+  ) => ({
+    constraint_name: constraintName,
+    source_resource: sourceResource,
+    target_resource: targetResource,
+    source_columns: [sourceColumn],
+    target_columns: [targetColumn],
+    target_uniqueness: {
+      kind: "unique_constraint" as const,
+      name: `${targetResource.split(".").at(-1)}_${targetColumn}_key`,
+      columns: [targetColumn],
+    },
+    nullable: false,
+    cardinality: "many_to_one" as const,
+    max_fan_out: 1 as const,
+  });
+  const links = [
+    link(
+      "student_term_enrollments_program_id_fkey",
+      "institutional_research.student_term_enrollments",
+      "program_id",
+      "institutional_research.programs",
+      "program_id",
+    ),
+    link(
+      "programs_department_id_fkey",
+      "institutional_research.programs",
+      "department_id",
+      "institutional_research.departments",
+      "department_id",
+    ),
+    link(
+      "departments_college_id_fkey",
+      "institutional_research.departments",
+      "college_id",
+      "institutional_research.colleges",
+      "college_id",
+    ),
+  ];
+  return {
+    id: "student_term_enrollments_program_id_fkey__programs_department_id_fkey__departments_college_id_fkey",
+    target_resource: "institutional_research.colleges",
+    local_columns: ["program_id"],
+    target_columns: ["college_id"],
+    counted_entity: "enrollment_id",
+    cardinality: "many_to_one" as const,
+    max_fan_out: 1 as const,
+    path_depth: 3,
+    proof: {
+      source: "database_catalog" as const,
+      links,
+      digest: `sha256:${"7".repeat(64)}` as `sha256:${string}`,
+    },
+    nullable: false,
+    unmatched_rows: "exclude" as const,
   };
 }
 

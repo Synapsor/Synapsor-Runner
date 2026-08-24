@@ -4126,6 +4126,10 @@ describe("Scoped Explore", () => {
         activation: "review_required",
         operator_review_required: true,
         cardinality: "many_to_one",
+        path: {
+          resources: ["public.subscriptions", "public.regions"],
+          via_columns: [["region_id"]],
+        },
       }));
       expect(description.resources[0]?.suggested_questions).toContainEqual(expect.objectContaining({
         relationship_review_required: true,
@@ -4148,8 +4152,14 @@ describe("Scoped Explore", () => {
         code: "EXPLORE_RELATIONSHIP_FORBIDDEN",
         details: {
           relationship_review: {
-            action: "Review and add this relationship",
+            action: "Review and add this relationship in the operator plane",
             operator_plane_only: true,
+            cli_command: "synapsor-runner boundary review --access --project-root .",
+            cli_steps: [
+              "Select public.subscriptions",
+              "Press J Relationship paths",
+            ],
+            workbench: "Review and add this relationship",
             resource: "public.subscriptions",
             relationship: "subscriptions_region_id_fkey",
             target_resource: "public.regions",
