@@ -117,8 +117,11 @@ export async function verifyProductionExploreWorkbenchLedger(input) {
       && detailResponse.payload.audit?.result_values_persisted === false
       && detailResponse.payload.audit?.trusted_scope_values_persisted === false
       && detailResponse.payload.audit?.raw_sql_included === false
+      && detailResponse.payload.audit?.parameterized_sql_included === true
+      && detailResponse.payload.audit?.parameter_values_persisted === false
+      && detailResponse.payload.audit?.reconstructed_query?.source === "captured_parameterized_sql"
       && /FROM\s+/i.test(reconstructedAuditStatement)
-      && /:trusted_(?:tenant|principal)\b|REQUIRED Runner (?:tenant|principal) scope|predicate not applied/i.test(reconstructedAuditStatement)
+      && /\$\d+|\?/.test(reconstructedAuditStatement)
       && !plaintextScopeValues.some((value) => reconstructedAuditStatement.includes(value)),
     `${input.engine} Workbench query-audit detail violated production redaction.`, detailResponse);
 
@@ -131,8 +134,12 @@ export async function verifyProductionExploreWorkbenchLedger(input) {
     assert(evidenceResponse.status === 200
       && evidence?.evidence_bundle_id === audit.evidence_bundle_id
       && evidence?.result_values_persisted === false
+      && evidence?.payload?.parameterized_sql_included === true
+      && evidence?.payload?.parameter_values_persisted === false
+      && evidence?.reconstructed_query?.source === "captured_parameterized_sql"
       && /^keyed:[a-f0-9]{64}$/.test(String(evidence?.tenant_scope_fingerprint ?? ""))
       && /FROM\s+/i.test(reconstructedEvidenceStatement)
+      && /\$\d+|\?/.test(reconstructedEvidenceStatement)
       && !plaintextScopeValues.some((value) => reconstructedEvidenceStatement.includes(value)),
     `${input.engine} Workbench evidence detail omitted keyed scope or redaction.`, evidenceResponse);
 

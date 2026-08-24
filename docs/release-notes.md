@@ -81,6 +81,17 @@ No package is published by this unreleased change.
   with hostile PostgreSQL, MySQL, and SQLite exception strings. Result envelope
   v2 and production Explore behavior remain unchanged.
 
+### Exact Operator SQL Shape Without Values
+
+- New Explore evidence and query-audit records retain the parameterized SQL
+  statement shape that Runner handed to the source driver. Operator detail now
+  shows the actual reviewed JOIN and scope structure instead of a guarded
+  approximation.
+- SQL parameters, trusted identities, result values, credentials, and URLs are
+  never included. The model-facing result and evidence/replay resources strip
+  operator SQL, and legacy records continue to use a clearly labelled
+  non-executable audit template.
+
 Package versions: `@synapsor/runner@1.7.13` and
 `synapsor-runner@1.7.13`. Spec and DSL remain `1.10.0` because this patch adds
 no public plan grammar.

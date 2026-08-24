@@ -1042,7 +1042,7 @@ async function browseAuditRecord(options: AuditRecordBrowserOptions): Promise<bo
           : []),
         "",
         renderTerminalStyledText(
-          "S Summary   D Details   Q Reconstructed query   P Plan   Up/Down Scroll   Esc Back   X Quit",
+          "S Summary   D Details   Q Audit SQL   P Plan   Up/Down Scroll   Esc Back   X Quit",
           options.color,
           "identifier",
         ),

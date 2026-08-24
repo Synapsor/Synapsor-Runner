@@ -597,7 +597,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
             <details id="ask-history" class="ask-history">
               <summary>Query history</summary>
               <div class="ask-history-body">
-                <p>Recent references can still be inspected or protected. Durable history contains bounded audit metadata only; Runner does not persist model conversations, result values, trusted scope values, or raw SQL.</p>
+                <p>Recent references can still be inspected or protected. Durable history does not persist model conversations, result values, trusted scope values, or SQL parameter values. New records retain operator-only parameterized SQL so the reviewed joins and scope shape remain auditable.</p>
                 <div class="grid two ask-history-filters">
                   <label class="field">Tenant<input id="ask-history-tenant" type="text" maxlength="160" placeholder="Plain tenant ID or keyed fingerprint"></label>
                   <label class="field">Principal<input id="ask-history-principal" type="text" maxlength="160" placeholder="Plain principal ID or keyed fingerprint"></label>
@@ -5103,10 +5103,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         const attemptedLabel=attempted
           ?attempted.resource+(attempted.field?"."+attempted.field:"")+(attempted.operation?" ("+attempted.operation+")":"")
           :null;
-        const facts=[["Outcome",String(audit.status).replaceAll("_"," ")],["Error code",audit.error_code||"None"],["Resource",audit.resource],...(attemptedLabel?[["Attempted access",attemptedLabel]]:[]),["Boundary digest",audit.boundary_digest||"Not recorded"],["Tenant fingerprint",audit.tenant_scope_fingerprint||"Not recorded"],["Principal fingerprint",audit.principal_scope_fingerprint||"Not recorded"],["Rows / groups",audit.returned_rows_or_groups],["Suppressed groups",audit.suppressed_groups],["Result values persisted",audit.result_values_persisted?"Yes":"No"],["Source query executed",audit.source_query_executed?"Yes":"No"]];
+        const facts=[["Outcome",String(audit.status).replaceAll("_"," ")],["Error code",audit.error_code||"None"],["Resource",audit.resource],...(attemptedLabel?[["Attempted access",attemptedLabel]]:[]),["Boundary digest",audit.boundary_digest||"Not recorded"],["Tenant fingerprint",audit.tenant_scope_fingerprint||"Not recorded"],["Principal fingerprint",audit.principal_scope_fingerprint||"Not recorded"],["Rows / groups",audit.returned_rows_or_groups],["Suppressed groups",audit.suppressed_groups],["Result values persisted",audit.result_values_persisted?"Yes":"No"],["Parameterized SQL captured",audit.parameterized_sql_included?"Yes":"No"],["Parameter values persisted",audit.parameter_values_persisted?"Yes":"No"],["Source query executed",audit.source_query_executed?"Yes":"No"]];
         const factHtml='<dl class="history-detail-grid">'+facts.map((fact,index)=>'<dt>'+esc(fact[0])+'</dt><dd class="'+(index===0?statusClass:'')+'">'+esc(fact[1])+'</dd>').join("")+'</dl>';
         const reconstructed=audit.reconstructed_query;
-        const queryHtml=reconstructed?'<h4>Reconstructed reviewed query</h4><p class="muted">'+reconstructed.caveats.map(esc).join(" ")+'</p><pre id="ask-history-sql"></pre>':'';
+        const queryHtml=reconstructed?'<h4>'+esc(reconstructed.title||"Audit SQL")+'</h4><p class="muted">'+reconstructed.caveats.map(esc).join(" ")+'</p><pre id="ask-history-sql"></pre>':'';
         target.innerHTML='<section class="history-audit-section"><h4>Audit '+esc(audit.audit_id)+'</h4><p><strong>Ledger source:</strong> '+esc(ledgerSourceSentence(payload.ledger_source))+'</p>'+factHtml+queryHtml+'<details><summary>Raw metadata (reference)</summary><pre id="ask-history-json"></pre></details></section>';
         if(reconstructed)renderSyntaxCode("ask-history-sql",reconstructed.statement,"SQL");
         renderSyntaxCode("ask-history-json",JSON.stringify(audit,null,2),"JSON");
@@ -5123,11 +5123,11 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         const payload=await getJson("/api/explore/evidence?evidence_id="+encodeURIComponent(evidenceId));
         const evidence=payload.evidence;
         const evidencePayload=evidence.payload||{};
-        const facts=[["Outcome",String(evidencePayload.outcome||"recorded").replaceAll("_"," ")],["Resource",evidence.source_table||"Not recorded"],["Boundary digest",evidencePayload.boundary_digest||"Not recorded"],["Tenant fingerprint",evidence.tenant_scope_fingerprint||"Not recorded"],["Suppressed groups",evidencePayload.suppressed_groups??"Not recorded"],["Result fingerprint",evidencePayload.result_fingerprint||"Not recorded"],["Result values persisted",evidence.result_values_persisted?"Yes":"No"],["Execution duration",evidencePayload.execution_duration_ms==null?"Not recorded":evidencePayload.execution_duration_ms+" ms"]];
+        const facts=[["Outcome",String(evidencePayload.outcome||"recorded").replaceAll("_"," ")],["Resource",evidence.source_table||"Not recorded"],["Boundary digest",evidencePayload.boundary_digest||"Not recorded"],["Tenant fingerprint",evidence.tenant_scope_fingerprint||"Not recorded"],["Suppressed groups",evidencePayload.suppressed_groups??"Not recorded"],["Result fingerprint",evidencePayload.result_fingerprint||"Not recorded"],["Result values persisted",evidence.result_values_persisted?"Yes":"No"],["Parameterized SQL captured",evidencePayload.parameterized_sql_included?"Yes":"No"],["Parameter values persisted",evidencePayload.parameter_values_persisted?"Yes":"No"],["Execution duration",evidencePayload.execution_duration_ms==null?"Not recorded":evidencePayload.execution_duration_ms+" ms"]];
         const statusClass=historyStatusClass(evidencePayload.outcome);
         const factHtml='<dl class="history-detail-grid">'+facts.map((fact,index)=>'<dt>'+esc(fact[0])+'</dt><dd class="'+(index===0?statusClass:'')+'">'+esc(fact[1])+'</dd>').join("")+'</dl>';
         const reconstructed=evidence.reconstructed_query;
-        const queryHtml=reconstructed?'<h4>Reconstructed reviewed query</h4><p class="muted">'+reconstructed.caveats.map(esc).join(" ")+'</p><pre id="ask-history-evidence-sql"></pre>':'';
+        const queryHtml=reconstructed?'<h4>'+esc(reconstructed.title||"Audit SQL")+'</h4><p class="muted">'+reconstructed.caveats.map(esc).join(" ")+'</p><pre id="ask-history-evidence-sql"></pre>':'';
         target.innerHTML='<section class="history-audit-section"><h4>Evidence '+esc(evidenceId)+'</h4><p><strong>Ledger source:</strong> '+esc(ledgerSourceSentence(payload.ledger_source))+'</p>'+factHtml+queryHtml+'<details><summary>Raw metadata (reference)</summary><pre id="ask-history-evidence-json"></pre></details></section>';
         if(reconstructed)renderSyntaxCode("ask-history-evidence-sql",reconstructed.statement,"SQL");
         renderSyntaxCode("ask-history-evidence-json",JSON.stringify(payload.evidence,null,2),"JSON");

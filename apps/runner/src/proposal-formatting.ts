@@ -9,7 +9,7 @@ import { protocolVersions } from "@synapsor-runner/protocol";
 import process from "node:process";
 import { cliCommandName } from "./cli-command-meta.js";
 import { approvalBoundary, boundedSetReviewLines, currentApprovalStatus, currentWritebackStatus, formatChangeLines, formatReceiptId, formatScalar, humanStatus, isRecord, plural, proposalNextCommands, receiptOperationLabel, stringField } from "./cli-format.js";
-import { describeExploreAuditAttempt, describeExploreAuditPlan, reconstructExploreAuditQuery } from "./explore-audit-presentation.js";
+import { describeExploreAuditAttempt, describeExploreAuditPlan, presentExploreAuditQuery } from "./explore-audit-presentation.js";
 import { renderTerminalFact, renderTerminalJson, renderTerminalSectionHeading, renderTerminalSqlFrame, renderTerminalStyledText } from "./terminal-syntax.js";
 
 
@@ -229,16 +229,17 @@ export function formatEvidenceBrowserPlan(evidence: StoredEvidenceBundle, color 
 
 export function formatEvidenceBrowserQuery(evidence: StoredEvidenceBundle, color = false): string {
   const trustedScope = isRecord(evidence.payload.trusted_scope) ? evidence.payload.trusted_scope : {};
-  const reconstructed = reconstructExploreAuditQuery({
+  const reconstructed = presentExploreAuditQuery({
     normalizedPlan: evidenceNormalizedPlan(evidence),
+    parameterizedSql: evidence.payload.parameterized_sql,
     scopeApplication: evidence.payload.scope_application,
     trustedScope,
     tenantRecorded: Boolean(evidence.tenant_id),
     principalRecorded: Boolean(evidence.principal),
   });
-  if (!reconstructed) return `${renderTerminalSectionHeading("Reconstructed reviewed query", color)}\nnot recorded\n`;
+  if (!reconstructed) return `${renderTerminalSectionHeading("Audit SQL", color)}\nnot recorded\n`;
   return `${renderTerminalSqlFrame(reconstructed.statement, {
-    title: "Reconstructed reviewed query",
+    title: reconstructed.title,
     metadata: reconstructed.caveats,
     color,
     columns: process.stdout.columns,
@@ -289,8 +290,9 @@ export function formatEvidenceDetail(evidence: StoredEvidenceBundle, color = fal
   const principal = evidence.principal
     ?? (trustedScope.principal_bound === false ? "not applicable (this resource has no reviewed principal scope)" : "not recorded");
   const outcome = stringField(payload, "outcome") ?? "recorded";
-  const reconstructed = reconstructExploreAuditQuery({
+  const reconstructed = presentExploreAuditQuery({
     normalizedPlan,
+    parameterizedSql: payload.parameterized_sql ?? (isRecord(audit?.payload) ? audit.payload.parameterized_sql : undefined),
     scopeApplication: payload.scope_application,
     trustedScope,
     tenantRecorded: Boolean(evidence.tenant_id),
@@ -321,6 +323,8 @@ export function formatEvidenceDetail(evidence: StoredEvidenceBundle, color = fal
     auditFact("Result fingerprint", stringField(payload, "result_fingerprint") ?? "not recorded", color, "identifier"),
     auditFact("Result values persisted", formatMetadataBoolean(payload.result_values_persisted), color, payload.result_values_persisted === false ? "success" : "danger"),
     auditFact("Trusted scope values persisted", formatMetadataBoolean(payload.trusted_scope_values_persisted ?? trustedScope.values_persisted), color, (payload.trusted_scope_values_persisted ?? trustedScope.values_persisted) === false ? "success" : "danger"),
+    auditFact("Parameterized SQL captured", formatMetadataBoolean(payload.parameterized_sql_included), color, payload.parameterized_sql_included === true ? "success" : "muted"),
+    auditFact("Parameter values persisted", formatMetadataBoolean(payload.parameter_values_persisted), color, payload.parameter_values_persisted === false ? "success" : payload.parameter_values_persisted === true ? "danger" : "muted"),
     "",
     renderTerminalSectionHeading("Execution", color),
     auditFact("Source query executed", formatMetadataBoolean(payload.source_query_executed), color, payload.source_query_executed === true ? "success" : "warning"),
@@ -329,11 +333,11 @@ export function formatEvidenceDetail(evidence: StoredEvidenceBundle, color = fal
     auditFact("Rows captured", evidence.items.length, color),
     auditFact("Created at", formatAuditTimestamp(evidence.created_at), color),
     "",
-    "Evidence contains bounded metadata and keyed fingerprints, not result rows, raw SQL, credentials, or trusted tenant/principal values.",
+    "Evidence contains bounded metadata and keyed fingerprints, not result rows, parameter values, credentials, or trusted tenant/principal values. New records may include operator-only parameterized SQL text without values.",
     ...(reconstructed ? [
       "",
       renderTerminalSqlFrame(reconstructed.statement, {
-        title: "Reconstructed reviewed query",
+        title: reconstructed.title,
         metadata: reconstructed.caveats,
         color,
         columns: process.stdout.columns,
@@ -467,6 +471,15 @@ function formatEvidenceFieldLines(key: string, value: unknown): string[] {
 
 
 export function formatEvidenceMarkdown(evidence: StoredEvidenceBundle): string {
+  const trustedScope = isRecord(evidence.payload.trusted_scope) ? evidence.payload.trusted_scope : {};
+  const auditSql = presentExploreAuditQuery({
+    normalizedPlan: evidenceNormalizedPlan(evidence),
+    parameterizedSql: evidence.payload.parameterized_sql,
+    scopeApplication: evidence.payload.scope_application,
+    trustedScope,
+    tenantRecorded: Boolean(evidence.tenant_id),
+    principalRecorded: Boolean(evidence.principal),
+  });
   return [
     `# Evidence ${evidence.evidence_bundle_id}`,
     "",
@@ -490,6 +503,16 @@ export function formatEvidenceMarkdown(evidence: StoredEvidenceBundle): string {
     "```json",
     JSON.stringify(evidence.query_audit, null, 2),
     "```",
+    ...(auditSql ? [
+      "",
+      `## ${auditSql.title}`,
+      "",
+      ...auditSql.caveats.map((caveat) => `- ${caveat}`),
+      "",
+      "```sql",
+      auditSql.statement,
+      "```",
+    ] : []),
   ].join("\n") + "\n";
 }
 
@@ -624,15 +647,16 @@ export function formatQueryAuditBrowserPlan(row: Record<string, unknown>, color 
 
 export function formatQueryAuditBrowserQuery(row: Record<string, unknown>, color = false): string {
   const payload = isRecord(row.payload) ? row.payload : {};
-  const reconstructed = reconstructExploreAuditQuery({
+  const reconstructed = presentExploreAuditQuery({
     normalizedPlan: payload.normalized_plan,
+    parameterizedSql: payload.parameterized_sql,
     scopeApplication: payload.scope_application,
     tenantRecorded: typeof row.tenant_id === "string",
     principalRecorded: typeof row.principal === "string",
   });
-  if (!reconstructed) return `${renderTerminalSectionHeading("Reconstructed reviewed query", color)}\nnot recorded\n`;
+  if (!reconstructed) return `${renderTerminalSectionHeading("Audit SQL", color)}\nnot recorded\n`;
   return `${renderTerminalSqlFrame(reconstructed.statement, {
-    title: "Reconstructed reviewed query",
+    title: reconstructed.title,
     metadata: reconstructed.caveats,
     color,
     columns: process.stdout.columns,
@@ -644,8 +668,9 @@ export function formatQueryAuditDetail(row: Record<string, unknown>, color = fal
   const payload = isRecord(row.payload) ? row.payload : {};
   const status = String(payload.status ?? "recorded");
   const normalizedPlan = isRecord(payload.normalized_plan) ? payload.normalized_plan : undefined;
-  const reconstructed = reconstructExploreAuditQuery({
+  const reconstructed = presentExploreAuditQuery({
     normalizedPlan,
+    parameterizedSql: payload.parameterized_sql,
     scopeApplication: payload.scope_application,
     tenantRecorded: typeof row.tenant_id === "string",
     principalRecorded: typeof row.principal === "string",
@@ -679,12 +704,14 @@ export function formatQueryAuditDetail(row: Record<string, unknown>, color = fal
     auditFact("Parameters redacted", formatMetadataBoolean(payload.parameters_redacted), color, payload.parameters_redacted === true ? "success" : "muted"),
     auditFact("Source query executed", formatMetadataBoolean(sourceQueryExecuted(payload)), color, sourceQueryExecuted(payload) === true ? "success" : "warning"),
     auditFact("Result values persisted", formatMetadataBoolean(payload.result_values_persisted), color, payload.result_values_persisted === false ? "success" : "danger"),
+    auditFact("Parameterized SQL captured", formatMetadataBoolean(payload.parameterized_sql_included), color, payload.parameterized_sql_included === true ? "success" : "muted"),
+    auditFact("Parameter values persisted", formatMetadataBoolean(payload.parameter_values_persisted), color, payload.parameter_values_persisted === false ? "success" : payload.parameter_values_persisted === true ? "danger" : "muted"),
     auditFact("Source database changed", formatMetadataBoolean(payload.source_database_changed), color, payload.source_database_changed === false ? "success" : "danger"),
     auditFact("Created at", formatAuditTimestamp(row.created_at), color),
     ...(reconstructed ? [
       "",
       renderTerminalSqlFrame(reconstructed.statement, {
-        title: "Reconstructed reviewed query",
+        title: reconstructed.title,
         metadata: reconstructed.caveats,
         color,
         columns: process.stdout.columns,

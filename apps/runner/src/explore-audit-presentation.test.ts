@@ -125,6 +125,20 @@ describe("Explore audit presentation", () => {
           tenant: { kind: "direct", predicate_applied: true, column: "tenant_id" },
           principal: { kind: "not_configured", predicate_applied: false },
         },
+        parameterized_sql: {
+          schema_version: "synapsor.explore-parameterized-sql.v1",
+          engine: "mysql",
+          provenance: "captured_before_source_execution",
+          parameter_values_persisted: false,
+          model_received_sql: false,
+          statements: [{
+            statement: "SELECT t0.`membership_tier`, COUNT(*) FROM `librarydb`.`members` t0 WHERE t0.`tenant_id` = ? GROUP BY t0.`membership_tier` LIMIT ?",
+            parameter_count: 2,
+            parameter_types: ["string", "integer"],
+          }],
+        },
+        parameterized_sql_included: true,
+        parameter_values_persisted: false,
         returned_rows_or_groups: 3,
         returned_cells: 6,
         suppressed_groups: 1,
@@ -141,9 +155,11 @@ describe("Explore audit presentation", () => {
 
     const plain = formatEvidenceDetail(evidence, false);
     expect(plain).toMatch(/IDENTITY AND RESOURCE[\s\S]*AUTHORITY[\s\S]*OUTCOME AND PRIVACY[\s\S]*EXECUTION/);
-    expect(plain).toContain("Reconstructed reviewed query");
-    expect(plain).toContain("tenant_id = :trusted_tenant");
-    expect(plain).toContain("Tenant scope: predicate applied by Runner through direct column tenant_id.");
+    expect(plain).toContain("Captured parameterized source SQL");
+    expect(plain).toContain("t0.`tenant_id` = ?");
+    expect(plain).toContain("Captured before source execution from the parameterized MySQL statement shape");
+    expect(plain).toContain("Parameter values persisted: no");
+    expect(plain).not.toContain("1 = 0");
     expect(plain).not.toContain("\u001b[");
 
     const colored = formatEvidenceDetail(evidence, true);
@@ -168,6 +184,7 @@ describe("Explore audit presentation", () => {
     expect(formatEvidenceMarkdown(evidence)).toContain(`Created at: ${evidence.created_at}`);
     expect(list).not.toContain("1".repeat(64));
     expect(formatEvidenceSummary(evidence, true)).toMatch(/\u001b\[[0-9;]*32m/);
+    expect(formatEvidenceMarkdown(evidence)).toContain("## Captured parameterized source SQL");
     const evidenceBrowserRow = formatEvidenceBrowserRow(evidence, 1, false);
     expect(evidenceBrowserRow).toContain("Members grouped by membership tier.");
     expect(evidenceBrowserRow).toContain(localTimestamp);
@@ -177,8 +194,14 @@ describe("Explore audit presentation", () => {
     const evidenceBrowserFacts = formatEvidenceBrowserFacts(evidence, false);
     expect(evidenceBrowserFacts).toContain("Generation lock");
     expect(evidenceBrowserFacts).toContain(`Created at: ${localTimestamp}`);
-    expect(formatEvidenceBrowserQuery(evidence, false)).toContain("tenant_id = :trusted_tenant");
+    expect(formatEvidenceBrowserQuery(evidence, false)).toContain("t0.`tenant_id` = ?");
     expect(formatEvidenceBrowserPlan(evidence, false)).toContain('"membership_tier"');
+    expect(formatQueryAuditBrowserQuery({
+      audit_id: 7,
+      tenant_id: evidence.tenant_id,
+      principal: evidence.principal,
+      payload: evidence.payload,
+    }, false)).toContain("Captured parameterized source SQL");
 
     const refused = formatQueryAuditDetail({
       audit_id: 8,
@@ -209,7 +232,7 @@ describe("Explore audit presentation", () => {
     expect(refused).toContain("EXPLORE_FIELD_FORBIDDEN");
     expect(refused).toContain("librarydb.members.membership_tier (group)");
     expect(refused).toMatch(/\u001b\[[0-9;]*31m/);
-    expect(refused).toContain("Reconstructed reviewed query");
+    expect(refused).toContain("Non-executable legacy audit SQL template");
 
     const refusedRecord = {
       audit_id: 8,

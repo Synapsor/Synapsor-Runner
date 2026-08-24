@@ -1,6 +1,10 @@
+import { readCapturedExploreParameterizedSql } from "./explore-parameterized-sql.js";
+
 type AuditRecord = Record<string, unknown>;
 
 export type ReconstructedExploreAuditQuery = {
+  source: "captured_parameterized_sql" | "legacy_safe_template";
+  title: string;
   statement: string;
   caveats: string[];
 };
@@ -117,11 +121,44 @@ function sentence(value: string): string {
 
 type ReconstructInput = {
   normalizedPlan: unknown;
+  parameterizedSql?: unknown;
   scopeApplication?: unknown;
   trustedScope?: unknown;
   tenantRecorded?: boolean;
   principalRecorded?: boolean;
 };
+
+/**
+ * Prefers the value-free parameterized SQL captured at execution time. Older
+ * records retain the explicit non-executable template instead of pretending a
+ * later reconstruction is the statement that ran.
+ */
+export function presentExploreAuditQuery(
+  input: ReconstructInput,
+): ReconstructedExploreAuditQuery | undefined {
+  const captured = readCapturedExploreParameterizedSql(input.parameterizedSql);
+  if (!captured) return reconstructExploreAuditQuery(input);
+
+  const statement = captured.statements.length === 1
+    ? captured.statements[0]!.statement
+    : captured.statements.map((item, index) => [
+        `-- Statement ${index + 1}${item.period ? ` (${item.period})` : ""}`,
+        item.statement,
+      ].join("\n")).join("\n\n");
+  const parameterSummary = captured.statements.map((item, index) =>
+    `Statement ${index + 1}${item.period ? ` (${item.period})` : ""}: ${item.parameter_count} redacted parameter${item.parameter_count === 1 ? "" : "s"}; types ${item.parameter_types.join(", ") || "none"}.`);
+  return {
+    source: "captured_parameterized_sql",
+    title: "Captured parameterized source SQL",
+    statement,
+    caveats: [
+      `Captured before source execution from the parameterized ${captured.engine === "postgres" ? "PostgreSQL" : "MySQL"} statement shape Runner handed to the driver.`,
+      "Parameter values were not persisted; placeholders remain where the driver bound trusted scope and reviewed filter values.",
+      "The model never received this SQL. This operator record is not executable without the separately held parameter values.",
+      ...parameterSummary,
+    ],
+  };
+}
 
 /**
  * Builds a fail-closed SQL template from redacted audit metadata only. The
@@ -157,7 +194,12 @@ export function reconstructExploreAuditQuery(
   const lines = kind === "rows"
     ? reconstructRows(plan, resource, predicates, scope.comments, bindings)
     : reconstructAggregate(plan, resource, predicates, scope.comments, bindings);
-  return { statement: lines.join("\n"), caveats };
+  return {
+    source: "legacy_safe_template",
+    title: "Non-executable legacy audit SQL template",
+    statement: lines.join("\n"),
+    caveats,
+  };
 }
 
 function reconstructRows(

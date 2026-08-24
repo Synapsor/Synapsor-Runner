@@ -36,6 +36,21 @@
   joins. This is metadata only; no path becomes reviewed or executable by being
   described.
 
+### Auditable Explore SQL
+
+- Captures the exact value-free parameterized statement shape immediately
+  before each Explore source execution. Evidence and query-audit detail now
+  show the real reviewed JOIN chain, scope predicates, grouping, ordering, and
+  driver placeholders instead of substituting `NULL` and `1 = 0` for new
+  records.
+- Persists parameter types but never parameter values, trusted tenant/principal
+  values, result rows, credentials, or database URLs. The captured statement is
+  operator-only: MCP evidence and replay resources recursively remove it, and
+  the Explore result envelope and two-tool model surface remain unchanged.
+- Keeps the explicitly labelled non-executable SQL template for legacy records
+  that predate statement capture. CLI, Markdown export, and Workbench distinguish
+  captured parameterized SQL from that historical fallback.
+
 Prepared package versions: `@synapsor/runner@1.7.13` and
 `synapsor-runner@1.7.13`. Spec and DSL remain `@synapsor/spec@1.10.0` and
 `@synapsor/dsl@1.10.0`; this patch adds no public plan grammar.

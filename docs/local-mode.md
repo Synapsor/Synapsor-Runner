@@ -298,9 +298,12 @@ evidence handle. Use `evidence show`, `evidence list`, and `query-audit list`
 to inspect those captured rows and fingerprints later without rerunning the
 external database read.
 
-Explore evidence contains only released-result metadata. Query audit is the
-complete attempt history and includes pre-execution refusals, post-execution
-privacy refusals, source failures, and successful releases. Tenant/principal
+Explore evidence contains released-result metadata and, for new records, the
+value-free parameterized SQL statement shape captured before source execution.
+Query audit is the complete attempt history and includes pre-execution refusals,
+post-execution privacy refusals, source failures, and successful releases.
+Neither ledger stores SQL parameter values, trusted scope values, credentials,
+or result rows. Tenant/principal
 filters accept plaintext or `keyed:<HMAC>` values; Runner derives the keyed
 candidate locally and never echoes or stores the plaintext filter. Use
 `--resource`, `--boundary`, `--outcome`, `--since`, `--to`, and `--limit` to
@@ -314,11 +317,12 @@ scrollback. Record numbers remain continuous across pages, and empty searches
 identify the term and fields that were checked.
 
 Detailed evidence and query-audit views group the fields an auditor usually
-needs first: identity/resource, authority, outcome/privacy, and execution. They
-also reconstruct a SQL-like reviewed query from the redacted normalized plan.
-It is labelled as reconstructed, never contains raw filter values, and is not
-captured or executable SQL. Interactive terminals use outcome-aware color and
-dim reference labels; `NO_COLOR` and piped output remain plain text.
+needs first: identity/resource, authority, outcome/privacy, and execution. New
+records show the captured parameterized statement, including reviewed JOIN and
+scope structure, without values. Legacy records use a clearly labelled
+non-executable SQL template reconstructed from the redacted plan. Interactive
+terminals use outcome-aware color and dim reference labels; `NO_COLOR` and
+piped output remain plain text.
 
 This is local indexed search over the runner's SQLite ledger. It is not
 external Postgres/MySQL time travel, not native branching, and not a hosted
