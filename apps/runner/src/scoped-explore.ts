@@ -67,6 +67,10 @@ import {
   type ExploreHttpSessionContext,
   type ExploreTrustedScope,
 } from "./explore-trusted-scope.js";
+import {
+  captureExploreParameterizedSql,
+  type CapturedExploreParameterizedSql,
+} from "./explore-parameterized-sql.js";
 import { runAllCleanups } from "./resource-lifecycle.js";
 import {
   RELATIVE_TIME_COMPARISONS,
@@ -828,6 +832,10 @@ export async function createScopedExploreRuntime(input: {
         });
         throw refusal;
       }
+      const parameterizedSql = captureExploreParameterizedSql({
+        engine: prepared.lock.engine,
+        statements: compiledQueries,
+      });
       const resultRows: Record<string, unknown>[] = [];
       try {
         const batches = await executor.executeBatch({
@@ -855,6 +863,7 @@ export async function createScopedExploreRuntime(input: {
           familyFingerprint,
           variantFingerprint,
           normalizedPlan: normalizedAuditPlan,
+          parameterizedSql,
           resolvedTimeWindows,
           plan,
           status: "failed",
@@ -886,6 +895,7 @@ export async function createScopedExploreRuntime(input: {
           familyFingerprint,
           variantFingerprint,
           normalizedPlan: normalizedAuditPlan,
+          parameterizedSql,
           resolvedTimeWindows,
           plan,
           status: "refused_privacy_boundary",
@@ -910,6 +920,7 @@ export async function createScopedExploreRuntime(input: {
           familyFingerprint,
           variantFingerprint,
           normalizedPlan: normalizedAuditPlan,
+          parameterizedSql,
           resolvedTimeWindows,
           plan,
           status: "refused_response_budget",
@@ -944,6 +955,7 @@ export async function createScopedExploreRuntime(input: {
           familyFingerprint,
           variantFingerprint,
           normalizedPlan: normalizedAuditPlan,
+          parameterizedSql,
           resolvedTimeWindows,
           plan,
           status: "refused_privacy_complement",
@@ -978,6 +990,7 @@ export async function createScopedExploreRuntime(input: {
           familyFingerprint,
           variantFingerprint,
           normalizedPlan: normalizedAuditPlan,
+          parameterizedSql,
           resolvedTimeWindows,
           plan,
           status: "refused_budget_completion",
@@ -1020,6 +1033,7 @@ export async function createScopedExploreRuntime(input: {
         familyFingerprint,
         variantFingerprint,
         normalizedPlan: normalizedAuditPlan,
+        parameterizedSql,
         resolvedTimeWindows,
         plan,
         status: response.status,
@@ -4739,6 +4753,8 @@ async function recordPreExecutionRefusalAudit(
       evidence_bundle_created: false,
       result_values_persisted: false,
       trusted_scope_values_persisted: false,
+      parameterized_sql_included: false,
+      parameter_values_persisted: false,
       raw_sql_included: false,
       source_database_changed: false,
       recorded_at: new Date(input.now).toISOString(),
@@ -4805,6 +4821,7 @@ async function recordExploreAudit(
     familyFingerprint: string;
     variantFingerprint: string;
     normalizedPlan: Record<string, unknown>;
+    parameterizedSql: CapturedExploreParameterizedSql;
     resolvedTimeWindows: ResolvedRelativeTimeWindow[];
     plan: ExplorePlan;
     status: string;
@@ -4832,6 +4849,10 @@ async function recordExploreAudit(
       differencing_family: input.familyFingerprint,
       differencing_variant: input.variantFingerprint,
       normalized_plan: input.normalizedPlan,
+      parameterized_sql: input.parameterizedSql,
+      parameterized_sql_included: true,
+      parameters_redacted: true,
+      parameter_values_persisted: false,
       scope_application: auditScopeApplication(input.boundary, input.plan.resource),
       ...(input.resolvedTimeWindows.length
         ? { resolved_time_windows: input.resolvedTimeWindows }
@@ -4846,6 +4867,7 @@ async function recordExploreAudit(
       result_returned_to_caller: false,
       result_values_persisted: false,
       trusted_scope_values_persisted: false,
+      raw_sql_included: false,
       source_database_changed: false,
       recorded_at: new Date(input.now).toISOString(),
     },
@@ -4879,6 +4901,7 @@ async function recordExploreEvidence(
     familyFingerprint: string;
     variantFingerprint: string;
     normalizedPlan: Record<string, unknown>;
+    parameterizedSql: CapturedExploreParameterizedSql;
     resolvedTimeWindows: ResolvedRelativeTimeWindow[];
     plan: ExplorePlan;
     status: "ok" | "empty" | "fully_suppressed" | "incomplete_comparison";
@@ -4907,6 +4930,10 @@ async function recordExploreEvidence(
     differencing_family: input.familyFingerprint,
     differencing_variant: input.variantFingerprint,
     normalized_plan: input.normalizedPlan,
+    parameterized_sql: input.parameterizedSql,
+    parameterized_sql_included: true,
+    parameters_redacted: true,
+    parameter_values_persisted: false,
     scope_application: scopeApplication,
     ...(input.resolvedTimeWindows.length
       ? { resolved_time_windows: input.resolvedTimeWindows }
@@ -4948,6 +4975,10 @@ async function recordExploreEvidence(
       },
       scope_application: scopeApplication,
       normalized_plan: input.normalizedPlan,
+      parameterized_sql: input.parameterizedSql,
+      parameterized_sql_included: true,
+      parameters_redacted: true,
+      parameter_values_persisted: false,
       ...(input.resolvedTimeWindows.length
         ? { resolved_time_windows: input.resolvedTimeWindows }
         : {}),
@@ -4964,6 +4995,7 @@ async function recordExploreEvidence(
       completed_at: recordedAt,
       execution_duration_ms: Math.max(0, input.completedAt - input.executionStartedAt),
       result_values_persisted: false,
+      raw_sql_included: false,
       source_database_changed: false,
     },
     items: [],

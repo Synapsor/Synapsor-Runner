@@ -361,8 +361,10 @@ sessions independently for each verified tenant/principal pair. Unless
 `http_security.limits.session_idle_timeout_seconds` is set explicitly,
 production Explore reclaims an idle session after 120 seconds.
 
-The shared Postgres control database stores only opaque accounting
-fingerprints, reservations, and metadata. Production Explore query evidence is
+The shared Postgres control database stores opaque accounting fingerprints,
+reservations, and bounded audit metadata. New query records include the
+parameterized SQL statement shape and parameter types, but never parameter
+values, trusted claim values, credentials, URLs, or result rows. Production Explore query evidence is
 appended to a dedicated metadata-only table rather than the proposal ledger, so
 query volume cannot consume proposal/writeback capacity. Audit events are kept
 for seven days. Privacy-release records are retained for the complete rolling
@@ -417,7 +419,7 @@ query fingerprint. It does not search original question text because that text
 is not stored. A zero-result view repeats the search term and those fields;
 `text` in older `/text` examples is treated as a placeholder rather than silently
 becoming part of the query. Selecting a record opens a compact summary;
-authority details, reconstructed query, and normalized JSON plan are expanded
+authority details, operator SQL, and normalized JSON plan are expanded
 and scrolled separately. The original model or
 user wording is not persisted, so lists show a deterministic plain-English
 description reconstructed from the reviewed plan rather than pretending to
@@ -459,18 +461,23 @@ fingerprint from otherwise-matching legacy records that cannot be attributed.
 `evidence show --details` and `query-audit show --details` group identity,
 authority, outcome/privacy, and execution metadata. In a color terminal,
 successful outcomes are green, refusals are red, warnings are yellow, and
-reference labels are dimmed; pipes and `NO_COLOR` receive plain text. The detail
-view also renders a **reconstructed reviewed query** from the stored normalized
-plan. It is SQL-like operator guidance, not captured or executable SQL. Literal
-values remain `:keyed(...)`/`:redacted` placeholders. New records state whether
-direct or derived tenant/principal predicates were applied, or whether no tenant
-predicate was correct for a reviewed shared-reference/single-organization scope.
-Legacy records that lack that exact predicate metadata are labelled as such.
+reference labels are dimmed; pipes and `NO_COLOR` receive plain text. For new
+records, the detail view renders the **captured parameterized source SQL** that
+Runner handed to the driver, including the exact reviewed JOIN and scope shape.
+Driver placeholders and parameter types remain; parameter values are absent.
+Legacy records instead show an explicitly labelled non-executable template
+reconstructed from the keyed plan and scope metadata.
+
+The compatibility field `raw_sql_included: false` continues to mean that no
+literal-bearing SQL or parameter values were recorded. New records separately
+set `parameterized_sql_included: true` and
+`parameter_values_persisted: false`.
 
 These commands open
 a bounded read-only PostgreSQL snapshot and do not take the serving writer's
 advisory lock. They never print the control URL, credentials, raw tenant or
-principal claims, source rows, result values, SQL, or SQL parameters. If the
+principal claims, source rows, result values, or SQL parameter values. Operator
+detail and exports may print the value-free parameterized SQL statement. If the
 control store is unavailable, the error names only the configured environment
 variable and schema and never falls back to unrelated local data.
 
@@ -797,9 +804,10 @@ inspection remains the draft/rescan discovery path.
 - Remote Explore results do not create local Protect tokens. An operator can
   separately reproduce and Protect an analysis in the local authoring register.
 - Returned database text remains untrusted data.
-- Ordinary evidence stores normalized metadata and opaque fingerprints, not
-  result rows, credentials, trusted claim values, compiled SQL, or SQL
-  parameters.
+- Ordinary evidence stores normalized metadata, opaque fingerprints, and the
+  value-free parameterized SQL shape. It does not store result rows,
+  credentials, trusted claim values, or SQL parameter values. Model-facing
+  evidence/replay resources remove the operator SQL field.
 - The application source executes only parameterized, validated reads in a
   read-only transaction. Use a separate control database so accounting writes
   do not touch the application source database.

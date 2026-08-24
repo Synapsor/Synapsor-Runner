@@ -49,7 +49,7 @@ export async function readLocalResource(
       principal: evidence.principal,
       capability: evidence.capability,
     });
-    return evidence;
+    return projectOperatorOnlyAuditMetadata(evidence) as Record<string, unknown>;
   }
   if (collection === "replay") {
     const proposalId = id.startsWith("replay_") ? id.slice("replay_".length) : id;
@@ -60,9 +60,19 @@ export async function readLocalResource(
       principal: proposal.principal ?? proposal.change_set.principal.id,
       capability: proposal.capability ?? proposal.action,
     });
-    return await store.replay(proposalId);
+    return projectOperatorOnlyAuditMetadata(await store.replay(proposalId)) as Record<string, unknown>;
   }
   throw localResourceNotFound();
+}
+
+/** Operator SQL diagnostics are never part of a model-facing MCP resource. */
+export function projectOperatorOnlyAuditMetadata(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(projectOperatorOnlyAuditMetadata);
+  if (typeof value !== "object" || value === null) return value;
+  return Object.fromEntries(Object.entries(value).flatMap(([key, item]) =>
+    key === "parameterized_sql"
+      ? []
+      : [[key, projectOperatorOnlyAuditMetadata(item)]]));
 }
 
 export function assertLocalResourceAccess(

@@ -26,6 +26,20 @@ describe("shared PostgreSQL production Explore audit hydration", () => {
             source_id: "app_postgres",
             source_table: "public.orders",
             query_fingerprint: "sha256:query-fixture",
+            parameterized_sql: {
+              schema_version: "synapsor.explore-parameterized-sql.v1",
+              engine: "postgres",
+              provenance: "captured_before_source_execution",
+              parameter_values_persisted: false,
+              model_received_sql: false,
+              statements: [{
+                statement: 'SELECT COUNT(*) FROM "public"."orders" t0 WHERE t0."tenant_id" = $1',
+                parameter_count: 1,
+                parameter_types: ["string"],
+              }],
+            },
+            parameterized_sql_included: true,
+            parameter_values_persisted: false,
             result_values_persisted: false,
           },
           items: [],
@@ -64,6 +78,13 @@ describe("shared PostgreSQL production Explore audit hydration", () => {
       });
       expect(store.listEvidenceBundles({ tenant: "keyed:tenant-fixture" })).toHaveLength(1);
       expect(store.listQueryAudit({ table: "public.orders" })).toHaveLength(1);
+      expect(evidence?.payload).toMatchObject({
+        parameterized_sql_included: true,
+        parameter_values_persisted: false,
+        parameterized_sql: {
+          statements: [{ statement: expect.stringContaining('t0."tenant_id" = $1') }],
+        },
+      });
       expect(JSON.stringify(evidence)).not.toContain("result_rows");
     } finally {
       store.close();

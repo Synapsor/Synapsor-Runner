@@ -145,7 +145,7 @@ import {
   redactPlanLiterals,
 } from "./analytics-shell-render.js";
 import { inspectCompiledExplorePlan } from "./explore-operator-evidence.js";
-import { describeExploreAuditAttempt, describeExploreAuditPlan, reconstructExploreAuditQuery } from "./explore-audit-presentation.js";
+import { describeExploreAuditAttempt, describeExploreAuditPlan, presentExploreAuditQuery } from "./explore-audit-presentation.js";
 import { queryAuditFiltersFromArgs } from "./ledger-options.js";
 import { resolveExploreLedgerFilters } from "./ledger-search.js";
 import { createWorkbenchAskMcpGateway } from "./ask-mcp-gateway.js";
@@ -2243,8 +2243,9 @@ async function handleRequest(input: {
         sendJson(response, 404, { ok: false, error: "That Explore audit record was not found." });
         return;
       }
-      const reconstructedQuery = reconstructExploreAuditQuery({
+      const reconstructedQuery = presentExploreAuditQuery({
         normalizedPlan: payload.normalized_plan,
+        parameterizedSql: payload.parameterized_sql,
         scopeApplication: payload.scope_application,
         tenantRecorded: typeof record.tenant_id === "string",
         principalRecorded: typeof record.principal === "string",
@@ -2295,6 +2296,8 @@ async function handleRequest(input: {
           source_query_executed: payload.source_query_executed === true,
           result_values_persisted: payload.result_values_persisted === true,
           trusted_scope_values_persisted: payload.trusted_scope_values_persisted === true,
+          parameterized_sql_included: payload.parameterized_sql_included === true,
+          parameter_values_persisted: payload.parameter_values_persisted === true,
           raw_sql_included: payload.raw_sql_included === true,
           source_database_changed: payload.source_database_changed === true,
           reconstructed_query: reconstructedQuery ?? null,
@@ -2402,6 +2405,8 @@ async function handleRequest(input: {
         model_conversation: false,
         result_values: false,
         trusted_scope_values: false,
+        parameterized_sql_for_new_records: true,
+        sql_parameter_values: false,
         raw_sql: false,
       },
     });
@@ -2424,8 +2429,9 @@ async function handleRequest(input: {
         sendJson(response, 404, { ok: false, error: "That Explore evidence bundle was not found in the configured ledger." });
         return;
       }
-      const reconstructedQuery = reconstructExploreAuditQuery({
+      const reconstructedQuery = presentExploreAuditQuery({
         normalizedPlan: evidence.payload.normalized_plan,
+        parameterizedSql: evidence.payload.parameterized_sql,
         scopeApplication: evidence.payload.scope_application,
         trustedScope: evidence.payload.trusted_scope,
         tenantRecorded: Boolean(evidence.tenant_id),

@@ -1176,8 +1176,9 @@ prompt. C clears every active filter and returns to the newest page. The browser
 uses an in-place terminal screen, so paging, search, and detail navigation do not
 append duplicate lists to scrollback. Stable record numbers continue across pages. Search checks redacted plan
 metadata, resource/source/capability and record IDs, and query fingerprints.
-Selected records separate compact, authority, reconstructed-query, and raw-plan
-views. --follow emits NDJSON when combined with --json. Routine shared-store
+Selected records separate compact, authority, operator-SQL, and raw-plan views.
+New records show captured parameterized SQL without values; legacy records show
+an explicitly non-executable safe template. --follow emits NDJSON when combined with --json. Routine shared-store
 reads are quiet; add --debug for the operational snapshot event.
 `,
     "query-audit": `Usage:
@@ -1193,8 +1194,9 @@ reads are quiet; add --debug for the operational snapshot event.
 Inspect every recorded Explore attempt, including refusals before source execution,
 released results, privacy refusals after execution, and source failures. Metadata
 includes the exact boundary digest, normalized keyed plan, result fingerprint where
-one exists, suppression/cell/timing facts, and persistence guarantees. Result values,
-raw SQL, and raw trusted-scope values are not stored.
+one exists, suppression/cell/timing facts, and persistence guarantees. New records
+also retain operator-only parameterized SQL and parameter types. Result values, SQL
+parameter values, and raw trusted-scope values are not stored or exposed to the model.
 `,
     receipts: `Usage:
 	  ${cmd} receipts list [--proposal wrp_...] [--status applied]
