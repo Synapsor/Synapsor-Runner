@@ -170,7 +170,9 @@ Before returning a local MCP resource, Runner resolves the resource's owning
 capability context again and requires both tenant and principal to match the
 current trusted session. Missing resources and ownership mismatches return the
 same generic `RESOURCE_NOT_FOUND` result. Local operator CLI access remains an
-explicit host-level administrative boundary.
+explicit host-level administrative boundary. Unexpected local or shared-store
+exceptions are also replaced at the MCP resource boundary; raw database, SQL,
+schema, host, and credential details never enter the resource error response.
 
 Proposal tools read the current row through the read credential, store evidence
 and an exact before/after diff, and leave the source database unchanged.

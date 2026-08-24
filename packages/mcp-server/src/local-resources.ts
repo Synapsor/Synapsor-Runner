@@ -13,6 +13,7 @@ import {
 } from "./capability-authority.js";
 import {
   McpRuntimeError,
+  safeToolError,
 } from "./runtime-errors.js";
 import {
   resolveTrustedContext,
@@ -84,16 +85,32 @@ export function localResourceNotFound(): McpRuntimeError {
 }
 
 export async function resourceResult(uri: string, reader: (uri: string) => Promise<Record<string, unknown>>) {
-  const payload = await reader(uri);
-  return {
-    contents: [
-      {
-        uri,
-        mimeType: "application/json",
-        text: JSON.stringify(payload, null, 2),
-      },
-    ],
-  };
+  try {
+    const payload = await reader(uri);
+    return {
+      contents: [
+        {
+          uri,
+          mimeType: "application/json",
+          text: JSON.stringify(payload, null, 2),
+        },
+      ],
+    };
+  } catch (error) {
+    if (error instanceof McpRuntimeError && error.code === "RESOURCE_NOT_FOUND") throw error;
+    const safe = safeToolError(error);
+    if (safe.code === "TEMPORARILY_UNAVAILABLE") {
+      throw new McpRuntimeError(
+        "RESOURCE_TEMPORARILY_UNAVAILABLE",
+        "The requested Synapsor resource is temporarily unavailable. Retry later.",
+        safe.retry_after_ms ? { retry_after_ms: safe.retry_after_ms } : undefined,
+      );
+    }
+    throw new McpRuntimeError(
+      "RESOURCE_READ_FAILED",
+      "The requested Synapsor resource could not be read safely. Check the local runner logs for details.",
+    );
+  }
 }
 
 export function selectTemplate(capability: RuntimeCapabilityConfig): string {

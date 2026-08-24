@@ -328,7 +328,7 @@ importers:
   packages/runner-alias:
     dependencies:
       '@synapsor/runner':
-        specifier: workspace:1.7.12
+        specifier: workspace:1.7.13
         version: link:../../apps/runner
 
   packages/schema-inspector:
