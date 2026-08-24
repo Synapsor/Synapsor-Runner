@@ -109,7 +109,7 @@
   },
   "devDependencies": {
     "@anthropic-ai/mcpb": "2.1.2",
-    "@modelcontextprotocol/sdk": "1.29.0",
+    "@modelcontextprotocol/sdk": "1.30.0",
     "@synapsor-runner/config": "workspace:*",
     "@synapsor-runner/control-plane-client": "workspace:*",
     "@synapsor-runner/mcp-server": "workspace:*",
@@ -123,14 +123,14 @@
     "@synapsor/handler": "workspace:*",
     "@synapsor/runner": "workspace:*",
     "@synapsor/spec": "workspace:*",
-    "@types/node": "^22.10.0",
-    "@types/pg": "^8.20.0",
-    "esbuild": "0.28.1",
-    "mermaid": "11.16.1",
-    "pg": "^8.22.0",
-    "tsx": "^4.20.0",
+    "@types/node": "^22.20.1",
+    "@types/pg": "^8.23.1",
+    "esbuild": "0.28.2",
+    "mermaid": "11.17.0",
+    "pg": "^8.23.0",
+    "tsx": "^4.23.12",
     "typescript": "^5.7.0",
-    "vitest": "^3.2.0"
+    "vitest": "^3.2.7"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
