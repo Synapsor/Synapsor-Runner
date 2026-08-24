@@ -1,6 +1,30 @@
 # Changelog
 
-## 1.7.12 (unreleased)
+## 1.7.13 (unreleased)
+
+### MCP Error Information-Flow Hardening
+
+- Prevents raw database, SQL, schema, host, credential, and store exception
+  text from entering legacy result-format-v1 MCP tool errors. Legacy error
+  codes and retry metadata remain compatible; result-format v2 behavior is
+  unchanged.
+- Applies the same fail-closed boundary to proposal, evidence, and replay
+  resource reads. Deliberate ownership-safe `RESOURCE_NOT_FOUND` responses are
+  preserved, while unexpected local SQLite or shared PostgreSQL failures use a
+  generic public resource error.
+- Hardens the final HTTP request boundary so unexpected readiness, metrics,
+  session-construction, SDK, or JSON-RPC exceptions cannot be reflected to a
+  remote caller. Fixed request-validation guidance remains actionable.
+- Adds official MCP client regressions for the shared stdio server composition
+  and Streamable HTTP transport using hostile PostgreSQL, MySQL, and SQLite
+  exception strings. The complete serialized client result is checked for
+  relation names, SQL text, hosts, credentials, and driver codes.
+
+Prepared package versions: `@synapsor/runner@1.7.13` and
+`synapsor-runner@1.7.13`. Spec and DSL remain `@synapsor/spec@1.10.0` and
+`@synapsor/dsl@1.10.0`; this patch adds no public plan grammar.
+
+## 1.7.12 (published 2026-08-22)
 
 ### Explore Information Flow And CLI Output
 

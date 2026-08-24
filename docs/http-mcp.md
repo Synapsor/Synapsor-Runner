@@ -321,7 +321,9 @@ configured.
 `/readyz` reports bounded dependency status codes without credentials or raw
 infrastructure errors. `/metrics` is disabled unless separately configured and
 uses its own authorization; the MCP endpoint credential does not implicitly
-grant metrics access.
+grant metrics access. Unexpected request-handler, session, SDK, resource-store,
+or JSON-RPC exceptions are replaced by a fixed public error at the final HTTP
+boundary rather than being reflected to the caller.
 
 ## Legacy JSON-RPC Bridge
 

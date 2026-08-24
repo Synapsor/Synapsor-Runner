@@ -45,6 +45,12 @@ import {
   disposeStreamableSession,
   formatStreamableHttpAccessLog,
 } from "./http-transport.js";
+import {
+  sanitizeHttpError,
+} from "./http-security.js";
+import {
+  toolErrorPayload,
+} from "./runtime-errors.js";
 import type { StreamableHttpSession } from "./runtime-types.js";
 
 const {
@@ -1135,6 +1141,65 @@ describe("local Synapsor MCP runtime", () => {
       await server.close().catch(() => undefined);
       await runtime.close().catch(() => undefined);
     }
+  });
+
+  it("keeps legacy tool and resource failures free of database exception details", async () => {
+    const privateFailure = "relation private.payroll does not exist; SQL: SELECT * FROM private.payroll; postgresql://reader:leaked-password@db.internal/payroll";
+    expect(toolErrorPayload(new McpRuntimeError("PROPOSAL_ALREADY_EXISTS", privateFailure))).toEqual({
+      ok: false,
+      code: "PROPOSAL_ALREADY_EXISTS",
+      error: "An active proposal already exists for this object. Inspect or resolve it before proposing again.",
+    });
+    const runtime = createMcpRuntime(config, {
+      readRow: async () => {
+        throw Object.assign(new Error(privateFailure), { code: "42P01" });
+      },
+    });
+    runtime.readResource = async () => {
+      throw Object.assign(new Error(privateFailure), { code: "SQLITE_ERROR" });
+    };
+    const server = createSynapsorMcpServer(runtime);
+    const client = new Client({ name: "synapsor-error-egress-test", version: "0.0.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    try {
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+
+      const result = await client.callTool({
+        name: "billing.inspect_invoice",
+        arguments: { invoice_id: "INV-PRIVATE" },
+      });
+      expect(result).toMatchObject({
+        isError: true,
+        structuredContent: {
+          ok: false,
+          code: "MCP_TOOL_FAILED",
+          error: "The capability failed safely. Check the local runner logs for details.",
+        },
+      });
+      expect(JSON.stringify(result)).not.toMatch(/private\.payroll|SELECT \*|leaked-password|db\.internal|42P01/i);
+
+      let resourceFailure: unknown;
+      try {
+        await client.readResource({ uri: "synapsor://evidence/ev_private" });
+      } catch (error) {
+        resourceFailure = error;
+      }
+      expect(resourceFailure).toBeInstanceOf(Error);
+      expect((resourceFailure as Error).message).toContain("resource could not be read safely");
+      expect(String((resourceFailure as Error).message)).not.toMatch(/private\.payroll|SELECT \*|leaked-password|db\.internal|SQLITE_ERROR/i);
+    } finally {
+      await client.close().catch(() => undefined);
+      await server.close().catch(() => undefined);
+      await runtime.close().catch(() => undefined);
+    }
+  });
+
+  it("does not reflect unexpected request-handler exceptions through the HTTP error boundary", () => {
+    const privateFailure = "relation private.payroll does not exist; SQL: SELECT * FROM private.payroll; postgresql://reader:leaked-password@db.internal/payroll";
+    expect(sanitizeHttpError(new Error(privateFailure), "endpoint-secret")).toBe("The MCP request failed safely.");
+    expect(sanitizeHttpError(new McpRuntimeError("HTTP_TOOL_NAME_REQUIRED", privateFailure))).toBe("tools/call requires params.name.");
+    expect(sanitizeHttpError(new McpRuntimeError("UNEXPECTED_INTERNAL", privateFailure))).toBe("The MCP request failed safely.");
   });
 
   it("emits a standards-valid MCP Apps initialize request without privileged handoff data", () => {
@@ -4066,6 +4131,47 @@ describe("local Synapsor MCP runtime", () => {
         code: "PROPOSAL_ALREADY_EXISTS",
       });
       expect(JSON.stringify(duplicate)).not.toContain(databaseUrl);
+    } finally {
+      await client.close().catch(() => undefined);
+      await server.close();
+    }
+  });
+
+  it("redacts database exceptions from legacy results over Streamable HTTP", async () => {
+    const token = "test-streamable-error-redaction-token";
+    const privateFailure = "Table 'private.payroll' doesn't exist; SQL: SELECT salary FROM private.payroll; mysql://reader:leaked-password@mysql.internal/payroll";
+    const server = await startStreamableHttpMcpServer({
+      config,
+      storePath: ":memory:",
+      port: 0,
+      env: {
+        SYNAPSOR_RUNNER_HTTP_TOKEN: token,
+        APP_POSTGRES_READ_URL: "postgresql://reader:secret@db.example/app",
+      },
+      log: false,
+      readRow: async () => {
+        throw Object.assign(new Error(privateFailure), { code: "ER_NO_SUCH_TABLE", errno: 1146 });
+      },
+    });
+    const transport = new StreamableHTTPClientTransport(new URL(server.url), {
+      requestInit: { headers: { authorization: `Bearer ${token}` } },
+    });
+    const client = new Client({ name: "synapsor-http-error-egress-test", version: "0.0.0" });
+    try {
+      await client.connect(transport);
+      const result = await client.callTool({
+        name: "billing.inspect_invoice",
+        arguments: { invoice_id: "INV-PRIVATE" },
+      });
+      expect(result).toMatchObject({
+        isError: true,
+        structuredContent: {
+          ok: false,
+          code: "MCP_TOOL_FAILED",
+          error: "The capability failed safely. Check the local runner logs for details.",
+        },
+      });
+      expect(JSON.stringify(result)).not.toMatch(/private\.payroll|SELECT salary|leaked-password|mysql\.internal|ER_NO_SUCH_TABLE|1146/i);
     } finally {
       await client.close().catch(() => undefined);
       await server.close();

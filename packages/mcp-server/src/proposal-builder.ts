@@ -622,5 +622,6 @@ export function proposalAlreadyExists(existing: StoredProposal): McpRuntimeError
   return new McpRuntimeError(
     "PROPOSAL_ALREADY_EXISTS",
     `Active proposal ${existing.proposal_id} is already ${existing.state} for this object. Inspect or resolve it before proposing again.`,
+    { proposal_id: existing.proposal_id },
   );
 }

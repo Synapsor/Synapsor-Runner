@@ -62,6 +62,44 @@ for the Synapsor Cloud CLI.
 
 No package is published by this unreleased change.
 
+## 1.7.13 (unreleased)
+
+### Safe Errors On Every MCP Path
+
+- Legacy result-format-v1 tools now preserve their existing public error codes
+  and retry metadata without returning raw exception messages. Database URLs,
+  relation names, SQL text, hosts, credentials, and driver details remain
+  inside Runner.
+- Proposal, evidence, and replay resource reads now preserve the generic
+  ownership-safe not-found response and fail with a generic public error for
+  unexpected local or shared-store failures.
+- The final HTTP request boundary now replaces unexpected readiness, metrics,
+  session, SDK, and JSON-RPC exceptions with a fixed safe message. The
+  deliberate missing-tool-name, missing-resource-URI, unsupported-method, and
+  request-size guidance remains specific.
+- Official MCP client tests cover local server composition and Streamable HTTP
+  with hostile PostgreSQL, MySQL, and SQLite exception strings. Result envelope
+  v2 and production Explore behavior remain unchanged.
+
+Package versions: `@synapsor/runner@1.7.13` and
+`synapsor-runner@1.7.13`. Spec and DSL remain `1.10.0` because this patch adds
+no public plan grammar.
+
+## 1.7.12 (published 2026-08-22)
+
+### Explore Information Flow And CLI Output
+
+- Keeps Runner-only values out of the entire serialized MCP result, adds
+  atomic related-predicate accounting for direct subtraction attempts, and
+  documents the distinction between output redaction and operation authority.
+- Restores terminal state after interactive audit browsing, suppresses only
+  Node's SQLite experimental warning in published launchers, localizes human
+  audit timestamps, and renders reconstructed queries as fail-closed SQL
+  templates. Exact ledger timestamps and machine exports remain unchanged.
+
+Package versions: `@synapsor/runner@1.7.12` and
+`synapsor-runner@1.7.12`. Spec and DSL remained `1.10.0`.
+
 ## 1.7.11 (2026-08-21)
 
 ### Useful Ask With The Same Reviewed Boundary

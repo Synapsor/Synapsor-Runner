@@ -24,7 +24,18 @@ export function safeToolError(error: unknown): NonNullable<ResultEnvelopeV2["err
     return { code: "APPROVAL_REQUIRED", message: "Proposal tools are disabled for this runner mode.", retryable: false };
   }
   if (runtimeCode === "PROPOSAL_ALREADY_EXISTS") {
-    return { code: "PROPOSAL_ALREADY_EXISTS", message: error instanceof Error ? error.message : "An active proposal already exists.", retryable: false };
+    const proposalId = error instanceof McpRuntimeError
+      && typeof error.details?.proposal_id === "string"
+      && /^wrp_[a-f0-9]{20}$/.test(error.details.proposal_id)
+      ? error.details.proposal_id
+      : undefined;
+    return {
+      code: "PROPOSAL_ALREADY_EXISTS",
+      message: proposalId
+        ? `Active proposal ${proposalId} already exists for this object. Inspect or resolve it before proposing again.`
+        : "An active proposal already exists for this object. Inspect or resolve it before proposing again.",
+      retryable: false,
+    };
   }
   if (runtimeCode === "RATE_LIMITED") {
     const retryAfter = error instanceof McpRuntimeError && typeof error.details?.retry_after_ms === "number"
@@ -237,19 +248,14 @@ export function errorMessage(error: unknown): string {
 }
 
 export function toolErrorPayload(error: unknown): Record<string, unknown> {
-  if (error instanceof McpRuntimeError) {
-    if (error.code === "LOCAL_STORE_UNAVAILABLE") {
-      return { ok: false, code: "TEMPORARILY_UNAVAILABLE", error: "The local runner store is temporarily unavailable. Restart the runner or recreate the store before retrying." };
-    }
-    const retryAfter = error.code === "RATE_LIMITED" && typeof error.details?.retry_after_ms === "number"
-      ? Math.max(1, Math.round(error.details.retry_after_ms))
-      : undefined;
-    return {
-      ok: false,
-      code: error.code,
-      error: error.message,
-      ...(retryAfter ? { retry_after_ms: retryAfter } : {}),
-    };
-  }
-  return { ok: false, code: "MCP_TOOL_FAILED", error: error instanceof Error ? error.message : String(error) };
+  const safe = safeToolError(error);
+  const code = error instanceof McpRuntimeError
+    ? error.code === "LOCAL_STORE_UNAVAILABLE" ? "TEMPORARILY_UNAVAILABLE" : error.code
+    : "MCP_TOOL_FAILED";
+  return {
+    ok: false,
+    code,
+    error: safe.message,
+    ...(safe.retry_after_ms ? { retry_after_ms: safe.retry_after_ms } : {}),
+  };
 }
