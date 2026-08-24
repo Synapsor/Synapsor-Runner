@@ -592,6 +592,7 @@ export type BoundaryResourceReviewView = {
     cardinality_proven: boolean;
     target_uniqueness?: RelationshipLinkProof["target_uniqueness"];
   }>;
+  included_resource_ids?: string[];
   candidate: ExplorationBoundaryDraft["pack"]["resources"][number] | null;
   generated_candidate: ExplorationBoundaryDraft["pack"]["resources"][number] | null;
   operation_repair_fields?: string[];
@@ -708,6 +709,7 @@ export async function inspectBoundaryResourceReview(
       : {}),
     fields: reviewed.fields,
     relationships: reviewed.relationships,
+    included_resource_ids: state.candidate.pack.resources.map((resource) => resource.id).sort(),
     candidate,
     generated_candidate: generatedCandidate,
     operation_repair_fields: reviewedBoundaryOperationRepairFields(candidate, generatedCandidate),

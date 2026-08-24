@@ -946,6 +946,15 @@ displaying speculative schema or access advice. The original provider answer
 remains available in JSON and Workbench's advanced disclosure. A derived ratio
 or formula requires a reviewed view or named metric.
 
+To review an analysis relationship in the primary terminal flow, run
+`synapsor-runner boundary review --access --project-root .`, select the root
+table, and press `J Relationship paths`. Runner shows the readable table chain,
+join columns, hop count, current state, missing-table prerequisites, and depth
+limit before asking for a human reason. Saving stages only a disabled boundary
+revision; `C` remains the separate whole-boundary review and activation step.
+Canonical path IDs stay available under `D` or `--details` for audit and
+non-interactive automation. Workbench exposes the same stage-only decision.
+
 ## Optional Workbench Ask Client
 
 After the no-model composer succeeds, Workbench can optionally send a

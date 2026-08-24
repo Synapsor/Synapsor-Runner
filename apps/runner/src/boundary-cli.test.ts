@@ -3552,6 +3552,113 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 15_000);
 
+  it("stages an available relationship through the terminal editor without activating it", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-relationship-tui-"));
+    const inspection = boundaryInspection();
+    const visits = inspection.tables[0]!;
+    const routeId = structuredClone(visits.columns[0]!);
+    routeId.name = "route_id";
+    routeId.nullable = true;
+    visits.columns.push(routeId);
+    visits.suggestions.default_visible_columns.push("route_id");
+    visits.foreign_keys = [{
+      name: "service_visits_route_id_fkey",
+      columns: ["route_id"],
+      referenced_schema: "public",
+      referenced_table: "service_routes",
+      referenced_columns: ["id"],
+      delete_rule: "RESTRICT",
+    }];
+    const routes = structuredClone(visits);
+    routes.name = "service_routes";
+    routes.foreign_keys = [];
+    routes.unique_constraints = [{ name: "service_routes_pkey", columns: ["id"] }];
+    routes.indexes = [{ name: "service_routes_pkey", columns: ["id"], unique: true }];
+    inspection.tables.push(routes);
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const candidate = structuredClone(build.exploration_boundary);
+    expect(candidate.pack.resources.map((resource) => resource.id)).toEqual(expect.arrayContaining([
+      "public.service_visits",
+      "public.service_routes",
+    ]));
+    candidate.pack.resources.find((resource) =>
+      resource.id === "public.service_visits")!.relationships = [];
+    const progress = createBoundaryReviewProgress({
+      draft: build.exploration_boundary,
+      candidate,
+      confirmedDecisions: candidate.unresolved_decisions,
+      actor: "alice",
+      revision: 1,
+    });
+    let pickerCalls = 0;
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => {
+        pickerCalls += 1;
+        return pickerCalls === 1
+          ? { resource_id: "public.service_visits", action: "relationships" }
+          : undefined;
+      },
+      editFieldTiers: async () => undefined,
+      editRelationshipPaths: async (view, summary) => {
+        expect(view.candidate?.relationships).toEqual([]);
+        expect(view.generated_candidate?.relationships.find((relationship) =>
+          relationship.id === "service_visits_route_id_fkey")).toMatchObject({
+          nullable: true,
+          unmatched_rows: "review_required",
+        });
+        expect(summary.relationships).toContainEqual(expect.objectContaining({
+          relationship_id: "service_visits_route_id_fkey",
+          state: "available",
+        }));
+        return { action: "add", relationship_id: "service_visits_route_id_fkey" };
+      },
+      promptText: async (prompt) => prompt.startsWith("Missing related rows")
+        ? "2"
+        : "Reviewed the exact visit-to-route many-to-one path and retained unmatched visits.",
+      confirm: async () => undefined,
+    };
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await saveBoundaryReviewProgress(root, progress);
+      await expect(boundaryReviewCommandInternal([
+        "--project-root", root,
+        "--access",
+      ], async () => inspection, session)).resolves.toBe(0);
+      const rawProgress = JSON.parse(await fs.readFile(
+        path.join(root, ".synapsor", "boundary-review-progress.json"),
+        "utf8",
+      ));
+      expect(rawProgress.candidate.pack.resources.find((resource: { id: string }) =>
+        resource.id === "public.service_visits").relationships.find((relationship: { id: string }) =>
+        relationship.id === "service_visits_route_id_fkey").unmatched_rows).toBe("keep_null");
+      const saved = (await loadBoundaryReviewContext(root)).progress;
+      expect(saved?.candidate.pack.resources.find((resource) =>
+        resource.id === "public.service_visits")?.relationships.map((relationship) =>
+        relationship.id)).toContain("service_visits_route_id_fkey");
+      expect(saved?.candidate.pack.resources.find((resource) =>
+        resource.id === "public.service_visits")?.relationships.find((relationship) =>
+        relationship.id === "service_visits_route_id_fkey")?.unmatched_rows).toBe("keep_null");
+      expect(saved?.revision).toBe(2);
+      expect(stdout.mock.calls.flat().join(" ")).toContain("Active authority changed: no");
+      await expect(fs.access(path.join(root, ".synapsor", "exploration-boundary.active.json")))
+        .rejects.toThrow();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 20_000);
+
   it("creates, switches, and deletes named disabled boundaries without changing active authority", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-library-cli-"));
     const inspection = boundaryInspection();

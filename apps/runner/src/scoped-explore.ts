@@ -1272,16 +1272,26 @@ function enrichReviewableRelationshipError(
     max_fan_out: link.max_fan_out,
     nullable: link.nullable,
   }));
+  const operatorCliCommand = "synapsor-runner boundary review --access --project-root .";
+  const operatorCliSteps = [
+    `Select ${activeRoot.id}`,
+    "Press J Relationship paths",
+  ];
   return new ScopedExploreError(
     "EXPLORE_RELATIONSHIP_FORBIDDEN",
     `Relationship ${candidate.id} is structurally proven but is not in the active reviewed boundary. `
       + `Catalog evidence: ${evidence.map((link) =>
         `${link.constraint} maps ${link.source_resource}.${link.source_columns.join(",")} to unique ${link.target_resource}.${link.target_columns.join(",")}${link.nullable ? " (nullable)" : ""}`).join("; ")}. `
-      + "An operator may choose Review and add this relationship in Workbench; the model cannot add or approve it.",
+      + `An operator may run ${operatorCliCommand}, select ${activeRoot.id}, and press J Relationship paths; `
+      + "or choose Review and add this relationship in Workbench; "
+      + "the model cannot add or approve it.",
     {
       relationship_review: {
-        action: "Review and add this relationship",
+        action: "Review and add this relationship in the operator plane",
         operator_plane_only: true,
+        cli_command: operatorCliCommand,
+        cli_steps: operatorCliSteps,
+        workbench: "Review and add this relationship",
         resource: activeRoot.id,
         relationship: candidate.id,
         target_resource: candidate.target_resource,
@@ -3629,6 +3639,14 @@ function describeBoundary(
           })),
         ].map(({ relationship, activation }) => {
           const target = resourceFor(boundary, relationship.target_resource);
+          const relationshipLinks = relationship.proof?.links ?? [];
+          const pathResources = relationshipLinks.length
+            ? [relationshipLinks[0]!.source_resource, ...relationshipLinks.map((link) =>
+                link.target_resource)]
+            : [resource.id, relationship.target_resource];
+          const pathViaColumns = relationshipLinks.length
+            ? relationshipLinks.map((link) => [...link.source_columns])
+            : [[...relationship.local_columns]];
           const targetFields = unique([
             ...target.selectable_fields,
             ...Object.keys(target.filterable_fields),
@@ -3653,6 +3671,10 @@ function describeBoundary(
             cardinality: relationship.cardinality,
             counted_entity: relationship.counted_entity,
             path_depth: relationship.path_depth ?? 1,
+            path: {
+              resources: pathResources,
+              via_columns: pathViaColumns,
+            },
             nullable: relationship.nullable ?? false,
             unmatched_rows: relationship.unmatched_rows ?? "exclude",
             structural_evidence: relationship.proof?.links.map((link) => ({
