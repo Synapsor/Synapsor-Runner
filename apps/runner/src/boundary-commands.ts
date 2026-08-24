@@ -1553,6 +1553,17 @@ async function interactiveBoundaryReviewLoop(input: {
       if (result !== "back" && result !== 0) return result;
       continue;
     }
+    if (selected.action === "relationships") {
+      const result = await interactiveReviewedRelationshipPathReview({
+        projectRoot: input.projectRoot,
+        resourceId: selected.resource_id,
+        view,
+        schemaInspector: input.schemaInspector,
+        session: input.session,
+      });
+      if (result !== 0) return result;
+      continue;
+    }
     if (selected.action === "analytics") {
       const result = await interactiveReviewedAnalyticsReview({
         projectRoot: input.projectRoot,
@@ -1814,6 +1825,152 @@ type ReviewedAnalyticsOperandChoice = {
   label: string;
   value: ReviewedAnalyticsOperand;
 };
+
+async function interactiveReviewedRelationshipPathReview(input: {
+  projectRoot: string;
+  resourceId: string;
+  view: BoundaryResourceReviewView;
+  schemaInspector: typeof inspectDatabase;
+  session: BoundaryReviewInteractiveSession;
+}): Promise<number> {
+  if (!input.session.editRelationshipPaths) {
+    process.stdout.write([
+      "This terminal session cannot open the relationship-path editor.",
+      `Use boundary review resource ${input.resourceId} --map --details to inspect scripted review IDs.`,
+      "No change was made.",
+      "",
+    ].join("\n"));
+    return 0;
+  }
+  const summary = (await listBoundaryResourceReviews(input.projectRoot)).find((resource) =>
+    resource.resource_id === input.resourceId);
+  if (!summary) {
+    process.stdout.write(`${input.resourceId} is no longer present in the current boundary review. No change was made.\n\n`);
+    return 0;
+  }
+  const selected = await input.session.editRelationshipPaths(input.view, summary);
+  if (!selected || selected === "back") return 0;
+
+  const generatedRelationship = input.view.generated_candidate?.relationships.find(
+    (relationship) => relationship.id === selected.relationship_id,
+  );
+  if (!generatedRelationship) {
+    process.stdout.write([
+      `Relationship ${selected.relationship_id} is no longer available in the inspected catalog.`,
+      "Rescan and review the current path proof. No change was made.",
+      "",
+    ].join("\n"));
+    return 0;
+  }
+  const display = {
+    source_resource: input.resourceId,
+    target_resource: generatedRelationship.target_resource,
+    links: generatedRelationship.proof?.links,
+  };
+  const pathLabel = formatRelationshipPath(display);
+  const currentIds = new Set(input.view.candidate?.relationships.map((relationship) =>
+    relationship.id) ?? []);
+  const nextIds = new Set(currentIds);
+  if (selected.action === "add") nextIds.add(selected.relationship_id);
+  else nextIds.delete(selected.relationship_id);
+
+  if (selected.action === "remove") {
+    const confirmed = await input.session.confirm(
+      `Remove the reviewed analysis path ${pathLabel} from the disabled boundary? Queries that need it will be refused after activation.`,
+      { defaultValue: false },
+    );
+    if (!confirmed) {
+      process.stdout.write("Relationship-path removal cancelled. No draft or active authority changed.\n\n");
+      return 0;
+    }
+  }
+
+  let unmatchedRows: "exclude" | "keep_null" | undefined;
+  if (selected.action === "add" && generatedRelationship.nullable === true) {
+    process.stdout.write([
+      `The path ${pathLabel} contains an optional relationship. Choose how unmatched root rows behave:`,
+      "  1  Exclude unmatched rows from this analysis",
+      "  2  Keep unmatched rows under an empty/null related value",
+      "",
+    ].join("\n"));
+    const choice = await input.session.promptText("Missing related rows [1-2; Esc returns]");
+    if (choice === undefined) {
+      process.stdout.write("Relationship review cancelled. No draft or active authority changed.\n\n");
+      return 0;
+    }
+    unmatchedRows = choice.trim() === "1"
+      ? "exclude"
+      : choice.trim() === "2"
+        ? "keep_null"
+        : undefined;
+    if (!unmatchedRows) {
+      process.stdout.write("Choose 1 or 2. No relationship decision was saved.\n\n");
+      return 0;
+    }
+  }
+
+  const reason = await requiredReviewedRelationshipReason(
+    input.session,
+    selected.action,
+    pathLabel,
+  );
+  if (reason === undefined) {
+    process.stdout.write("Relationship review cancelled. No draft or active authority changed.\n\n");
+    return 0;
+  }
+
+  try {
+    const preview = await prepareBoundaryResourceReviewMutation(input.projectRoot, {
+      resource_id: input.resourceId,
+      relationship_ids: [...nextIds].sort(),
+      ...(unmatchedRows
+        ? {
+            nullable_relationship: {
+              relationship_id: selected.relationship_id,
+              unmatched_rows: unmatchedRows,
+            },
+          }
+        : {}),
+      actor: localInteractiveActor(),
+      reason,
+    }, input.schemaInspector);
+    const committed = await commitBoundaryResourceReviewMutation(input.projectRoot, preview);
+    process.stdout.write([
+      `${selected.action === "add" ? "Saved" : "Removed"} reviewed relationship path in disabled boundary revision ${committed.review_revision}:`,
+      `  ${pathLabel}`,
+      ...(formatRelationshipJoinColumns(display)
+        ? [`  via columns: ${formatRelationshipJoinColumns(display)}`]
+        : []),
+      "Active authority changed: no",
+      "Press C in /access to review and activate this exact boundary revision.",
+      "",
+    ].join("\n"));
+  } catch (error) {
+    process.stdout.write([
+      `Relationship decision was not saved: ${redactCliErrorMessage(
+        error instanceof Error ? error.message : String(error),
+      )}`,
+      "You are still in /access. No draft decision was committed and no authority was activated.",
+      "",
+    ].join("\n"));
+  }
+  return 0;
+}
+
+async function requiredReviewedRelationshipReason(
+  session: BoundaryReviewInteractiveSession,
+  action: "add" | "remove",
+  pathLabel: string,
+): Promise<string | undefined> {
+  while (true) {
+    const reason = await session.promptText(
+      `${action === "add" ? "Why may this exact relationship be used" : "Why should this relationship be removed"} (${pathLabel})? A concrete reason is required`,
+    );
+    if (reason === undefined) return undefined;
+    if (reason.trim()) return reason.trim();
+    process.stdout.write("A concrete relationship-review reason is required; no change was made.\n");
+  }
+}
 
 async function interactiveReviewedAnalyticsReview(input: {
   projectRoot: string;

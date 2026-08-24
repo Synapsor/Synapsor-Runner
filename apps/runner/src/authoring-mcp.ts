@@ -510,6 +510,7 @@ function modelResourceDetail(resource: Record<string, unknown>): Record<string, 
     cardinality: modelString(relationship.cardinality),
     counted_entity: modelString(relationship.counted_entity),
     path_depth: modelNumber(relationship.path_depth),
+    path: modelRelationshipPath(relationship.path),
     nullable: typeof relationship.nullable === "boolean" ? relationship.nullable : undefined,
     unmatched_rows: modelString(relationship.unmatched_rows),
     model_withheld_fields: withheldFieldNames(relationship.field_egress),
@@ -589,6 +590,16 @@ function modelStrings(value: unknown): string[] {
 function modelStringArrayRecord(value: unknown): Record<string, string[]> {
   if (!modelRecord(value)) return {};
   return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, modelStrings(item)]));
+}
+
+function modelRelationshipPath(value: unknown): Record<string, unknown> | undefined {
+  if (!modelRecord(value)) return undefined;
+  return {
+    resources: modelStrings(value.resources),
+    via_columns: Array.isArray(value.via_columns)
+      ? value.via_columns.map((columns) => modelStrings(columns))
+      : [],
+  };
 }
 
 function withheldFieldNames(value: unknown): string[] {

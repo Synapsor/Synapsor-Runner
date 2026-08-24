@@ -20,6 +20,22 @@
   exception strings. The complete serialized client result is checked for
   relation names, SQL text, hosts, credentials, and driver codes.
 
+### Relationship-Path Review UX
+
+- Adds a primary CLI relationship-path editor under `/access`: select an
+  included table and press `J`. It renders readable resource chains, join
+  columns, hop count, active/draft/available state, missing-table prerequisites,
+  and the reviewed analysis-depth ceiling while keeping canonical constraint
+  IDs secondary. Nullable paths retain the existing explicit unmatched-row
+  decision, and every change remains a disabled revision until separate `C`
+  review and activation.
+- Makes focused resource maps and relationship refusals point to the CLI editor
+  as well as Workbench. Focused `app.describe_data` relationship metadata now
+  includes a compact ordered resource path and join-column sequence so MCP
+  clients can distinguish multi-hop business relationships without inventing
+  joins. This is metadata only; no path becomes reviewed or executable by being
+  described.
+
 Prepared package versions: `@synapsor/runner@1.7.13` and
 `synapsor-runner@1.7.13`. Spec and DSL remain `@synapsor/spec@1.10.0` and
 `@synapsor/dsl@1.10.0`; this patch adds no public plan grammar.

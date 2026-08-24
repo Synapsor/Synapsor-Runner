@@ -544,6 +544,10 @@ export const scopedExploreDescribeOutputSchema = z.object({
       cardinality: z.literal("many_to_one"),
       counted_entity: z.string(),
       path_depth: z.number().int().positive(),
+      path: z.object({
+        resources: z.array(z.string()).min(2),
+        via_columns: z.array(z.array(z.string()).min(1)).min(1),
+      }).strict(),
       nullable: z.boolean(),
       unmatched_rows: z.enum(["exclude", "keep_null"]),
       structural_evidence: z.array(z.object({
