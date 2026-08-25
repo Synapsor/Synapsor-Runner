@@ -276,8 +276,34 @@ export type ScopedExploreRuntime = {
     limit?: number;
     include_time_coverage?: boolean;
   }): Promise<Record<string, unknown>>;
+  validate(plan: unknown): Promise<ScopedExploreValidationResult>;
   explore(plan: unknown): Promise<Record<string, unknown>>;
   close(): Promise<void>;
+};
+
+export type ScopedExploreValidationResult = {
+  ok: true;
+  outcome: {
+    type: "validated";
+    status: "ready";
+  };
+  normalized_plan: ExplorePlan;
+  boundary_name: string;
+  boundary_digest: string;
+  generation_lock_fingerprint: string;
+  database_engine: "postgres" | "mysql";
+  trusted_scope: NonNullable<ScopedExploreRuntime["trusted_scope"]>;
+  parameterized_sql: CapturedExploreParameterizedSql;
+  validation: {
+    source_catalog_rechecked: true;
+    source_query_executed: false;
+    explore_budget_consumed: false;
+    estimated_response_cells: number;
+    statement_count: number;
+    parameter_values_included: false;
+  };
+  operator_time_windows?: ResolvedRelativeTimeWindow[];
+  source_database_changed: false;
 };
 
 export type CompiledExploreQuery = {
@@ -616,6 +642,100 @@ export async function createScopedExploreRuntime(input: {
         ? {}
         : await reviewedTimeCoverage(),
     ),
+    validate: async (unknownPlan) => {
+      const validationStartedAt = clock();
+      const currentPrepared = await prepareScopedExplore({
+        projectRoot,
+        transport: input.transport,
+        mode,
+        boundaryName: prepared.boundary.pack.name,
+        env,
+        ...(input.inspectDatabaseFn ? { inspectDatabaseFn: input.inspectDatabaseFn } : {}),
+      });
+      if (currentPrepared.boundary.activation.digest !== prepared.boundary.activation.digest
+        || currentPrepared.boundary.generation_lock_fingerprint !== prepared.boundary.generation_lock_fingerprint) {
+        throw new ScopedExploreError(
+          "EXPLORE_BOUNDARY_MISMATCH",
+          "Reviewed analytics access changed while this authoring session was open.",
+        );
+      }
+      const currentScope = await trustedScopeResolver({
+        boundary: currentPrepared.boundary,
+        lock: currentPrepared.lock,
+        inspection: currentPrepared.inspection,
+        env,
+        ...(input.sessionContext ? { sessionContext: input.sessionContext } : {}),
+      }).catch((error) => {
+        throw scopedExploreTrustedScopeError(
+          error,
+          principalRequired,
+          currentPrepared.boundary.trusted_context,
+        );
+      });
+      assertTrustedScopeUnchanged(trustedScope, currentScope);
+
+      let validated: ValidatedExploreRequest;
+      try {
+        validated = validateExploreRequest(unknownPlan, currentPrepared.boundary, {
+          now: validationStartedAt,
+        });
+      } catch (error) {
+        throw enrichReviewableRelationshipError(
+          error,
+          unknownPlan,
+          currentPrepared.boundary,
+          reviewableBoundary,
+        );
+      }
+      assertPreparedExplorePlanAuthority(validated.plan, currentPrepared);
+      assertExploreComplexity(validated.plan, currentPrepared.boundary);
+      const statements = compileExplorePlan(
+        validated.plan,
+        currentPrepared.boundary,
+        { tenant: trustedTenant, principal },
+        currentPrepared.lock.engine,
+      );
+      const parameterizedSql = captureExploreParameterizedSql({
+        engine: currentPrepared.lock.engine,
+        statements,
+      });
+      const scopeDescription: NonNullable<ScopedExploreRuntime["trusted_scope"]> = {
+        tenant: {
+          source: currentScope.tenant_source,
+          binding: currentScope.tenant_binding,
+        },
+        principal: {
+          source: currentScope.principal_source,
+          ...(currentScope.principal_binding ? { binding: currentScope.principal_binding } : {}),
+        },
+      };
+      return {
+        ok: true,
+        outcome: {
+          type: "validated",
+          status: "ready",
+        },
+        normalized_plan: validated.plan,
+        boundary_name: currentPrepared.boundary.pack.name,
+        boundary_digest: currentPrepared.boundary.activation.digest,
+        generation_lock_fingerprint: currentPrepared.boundary.generation_lock_fingerprint,
+        database_engine: currentPrepared.lock.engine,
+        trusted_scope: scopeDescription,
+        parameterized_sql: parameterizedSql,
+        validation: {
+          source_catalog_rechecked: true,
+          source_query_executed: false,
+          explore_budget_consumed: false,
+          estimated_response_cells: estimatedExploreResponseCells(validated.plan),
+          statement_count: statements.length,
+          parameter_values_included: false,
+        },
+        ...(validated.resolved_time_windows.length
+          ? { operator_time_windows: validated.resolved_time_windows }
+          : {}),
+        source_database_changed: false,
+      };
+    },
     explore: async (unknownPlan) => {
       let currentPrepared: PreparedExplore;
       try {

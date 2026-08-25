@@ -51,6 +51,11 @@ import {
 import { derivedScopeIndexDoctorChecks } from "../apps/runner/dist/derived-scope-index-doctor.js";
 import { createScopedExploreBoundarySetRuntime } from "../apps/runner/dist/scoped-explore-boundary-set.js";
 import { createScopedExploreRuntime } from "../apps/runner/dist/scoped-explore.js";
+import { connectRemotePlayground } from "../apps/runner/dist/explore-playground.js";
+import {
+  runExplorePlaygroundRequest,
+  validateExplorePlaygroundRequest,
+} from "../apps/runner/dist/explore-playground-service.js";
 import {
   productionExploreRunnerInvocation,
   startProductionExploreCli,
@@ -1227,7 +1232,24 @@ async function runLocalParityPlan(env, principal, plan, tenant = "acme") {
     },
   });
   try {
-    return await runtime.explore(plan);
+    return await runExplorePlaygroundRequest(runtime, { plan });
+  } finally {
+    await runtime.close();
+  }
+}
+
+async function validateLocalParityPlan(env, principal, plan, tenant = "acme") {
+  const runtime = await createScopedExploreRuntime({
+    projectRoot: localParityProjectRoot,
+    transport: "stdio",
+    env: {
+      ...env,
+      SYNAPSOR_TENANT_ID: tenant,
+      SYNAPSOR_PRINCIPAL: principal,
+    },
+  });
+  try {
+    return await validateExplorePlaygroundRequest(runtime, { plan });
   } finally {
     await runtime.close();
   }
@@ -2132,6 +2154,43 @@ async function main() {
       order_by: { kind: "measure", index: 0, direction: "desc" },
       top_n: 10,
     };
+    const localPlaygroundValidation = await validateLocalParityPlan(
+      env,
+      "plan-playground-mysql-local",
+      plan,
+    );
+    assert(localPlaygroundValidation.ok === true
+      && localPlaygroundValidation.validation.source_query_executed === false
+      && localPlaygroundValidation.validation.explore_budget_consumed === false
+      && localPlaygroundValidation.parameterized_sql.engine === "mysql"
+      && !JSON.stringify(localPlaygroundValidation.parameterized_sql).includes("acme"),
+    "Local MySQL playground validation did not remain compile-only and value-free.", localPlaygroundValidation);
+    const playgroundTokenEnv = "SYNAPSOR_PLAYGROUND_MYSQL_HTTP_TEST_TOKEN";
+    env[playgroundTokenEnv] = signedToken(privateKey, {
+      tenant: "acme",
+      principal: "plan-playground-mysql",
+    });
+    const playground = await connectRemotePlayground({
+      url: server.url,
+      tokenEnv: playgroundTokenEnv,
+      env,
+    });
+    try {
+      assert(playground.validate === undefined,
+        "MySQL production HTTP playground added a third validate tool to the fixed MCP surface.");
+      const playgroundCatalog = await playground.describe({ resource: sourceId });
+      const playgroundResult = await playground.run({ plan });
+      assert(playgroundCatalog.ok === true
+        && playgroundResult.ok === true
+        && playgroundResult.source_database_changed === false,
+      "MySQL production HTTP playground did not use the reviewed MCP path.", {
+        catalog: playgroundCatalog,
+        result: playgroundResult,
+      });
+    } finally {
+      await playground.close();
+      delete env[playgroundTokenEnv];
+    }
     const alice = mcpClient(server.url, signedToken(privateKey, { tenant: "acme", principal: "alice" }));
     clients.push(alice.client);
     await alice.client.connect(alice.transport);

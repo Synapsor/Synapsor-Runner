@@ -109,6 +109,40 @@ try {
           comparison_partners: ["preceding_period", "same_period_last_year"],
         },
       }),
+      validate: async (plan) => ({
+        ok: true,
+        outcome: { type: "validated", status: "ready" },
+        normalized_plan: plan,
+        boundary_name: boundary.pack.name,
+        boundary_digest: boundary.activation.digest,
+        generation_lock_fingerprint: boundary.generation_lock_fingerprint,
+        database_engine: "postgres",
+        trusted_scope: {
+          tenant: { source: "environment", binding: "SYNAPSOR_TENANT_ID" },
+          principal: { source: "not_required" },
+        },
+        parameterized_sql: {
+          schema_version: "synapsor.explore-parameterized-sql.v1",
+          engine: "postgres",
+          provenance: "captured_before_source_execution",
+          parameter_values_persisted: false,
+          model_received_sql: false,
+          statements: [{
+            statement: 'SELECT COUNT(*) AS "count" FROM "public"."operational_resources" WHERE "tenant_id" = $1',
+            parameter_count: 1,
+            parameter_types: ["string"],
+          }],
+        },
+        validation: {
+          source_catalog_rechecked: true,
+          source_query_executed: false,
+          explore_budget_consumed: false,
+          estimated_response_cells: 25,
+          statement_count: 1,
+          parameter_values_included: false,
+        },
+        source_database_changed: false,
+      }),
       explore: async (plan) => {
         const grouped = plan.dimensions?.[0]?.field;
         const relativeWindow = plan.time_window;
@@ -673,6 +707,64 @@ try {
     })()`);
     await waitForExpression(page, "document.querySelector('#open-client-setup')?.offsetParent !== null");
     await clickSelector(page, "#ask-open-no-model");
+    await evaluate(page, `(() => {
+      const playground=document.querySelector("#json-plan-playground");
+      playground.open=true;
+      playground.scrollIntoView({block:"start"});
+    })()`);
+    await clickSelector(page, "#playground-validate");
+    await waitForExpression(page, "document.querySelector('#playground-status')?.textContent.includes('Validated')");
+    const playgroundValidation = await evaluate(page, `(() => {
+      const panel=document.querySelector("#playground-result");
+      const text=panel?.textContent||"";
+      return {
+        text,
+        sql:[...(panel?.querySelectorAll("pre")||[])].at(-1)?.textContent||"",
+        horizontalOverflow:document.documentElement.scrollWidth>document.documentElement.clientWidth+1,
+      };
+    })()`);
+    assert(
+      /No data query/.test(playgroundValidation.text)
+        && /No budget consumed/.test(playgroundValidation.text)
+        && /SELECT COUNT/.test(playgroundValidation.sql)
+        && !playgroundValidation.text.includes("visual-tenant")
+        && !playgroundValidation.horizontalOverflow,
+      "Workbench plan playground validation was not bounded or visually stable",
+      playgroundValidation,
+    );
+    await screenshot(page, "workbench-plan-playground-validated-desktop.png");
+    await clickSelector(page, "#playground-run");
+    await waitForExpression(page, "document.querySelector('#playground-status')?.textContent.includes('Reviewed result released')");
+    assert(
+      await evaluate(page, `(() => {
+        const text=document.querySelector("#playground-result")?.textContent||"";
+        return /Reviewed plan executed/.test(text)&&/Evidence/.test(text)&&!text.includes("visual-tenant");
+      })()`),
+      "Workbench plan playground did not render the reviewed execution result",
+    );
+    await screenshot(page, "workbench-plan-playground-result-desktop.png");
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true,
+      screenWidth: 390,
+      screenHeight: 844,
+    });
+    await evaluate(page, `document.querySelector("#json-plan-playground")?.scrollIntoView({block:"start"})`);
+    assert(
+      await evaluate(page, "document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1"),
+      "Workbench plan playground overflowed the mobile viewport",
+    );
+    await screenshot(page, "workbench-plan-playground-result-mobile.png");
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 1440,
+      height: 1100,
+      deviceScaleFactor: 1,
+      mobile: false,
+      screenWidth: 1440,
+      screenHeight: 1100,
+    });
     await waitForExpression(page, `[...document.querySelectorAll('#aggregate-window-field option')]
       .some(option=>{try{return JSON.parse(option.value).field==='created_at'}catch{return false}})`);
     await evaluate(page, `(() => {
@@ -876,8 +968,8 @@ try {
     })`);
     assert(
       withheldReview.tier === "withheld"
-        && /raw values stay local or become response-only tokens/i.test(String(withheldReview.editorCopy))
-        && /reviewed derived results remain available/i.test(String(withheldReview.editorCopy))
+        && /raw output stays local or becomes response-only tokens/i.test(String(withheldReview.editorCopy))
+        && /reviewed filter, group, and sort operations may still reveal/i.test(String(withheldReview.editorCopy))
         && !withheldReview.stagedHidden,
       "an ordinary low-risk tier change did not stage directly in the focused editor",
       withheldReview,

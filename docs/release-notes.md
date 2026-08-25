@@ -10,7 +10,34 @@ npx -y @synapsor/runner demo --quick
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
-## 1.7.13 (unreleased)
+## 1.7.14 (unreleased)
+
+### Explore Plan Playground
+
+- Adds the CLI-first `explore playground`, `explore describe`, `explore
+  validate`, and `explore run` workflow for inspecting, compiling, and replaying
+  one fixed `app.explore_data` JSON plan without a model. It accepts a raw plan
+  or the exact `{plan, boundary?}` MCP envelope, never SQL or caller-supplied
+  tenant/principal scope.
+- Local validate-only repeats catalog, role, generation-lock, trusted-scope,
+  reviewed-authority, complexity, relative-window, and SQL compilation checks.
+  It executes no source data query, consumes no Explore budget, and writes no
+  evidence or query audit. Its SQL preview contains placeholders and parameter
+  types, never values.
+- Local run uses the normal Explore execution path with drift checks, scope,
+  suppression, response bounds, rolling budgets, evidence, and query audit.
+  The preview Workbench now exposes the same shared validator and runner in its
+  no-model tools.
+- Production HTTP replay reads a short-lived token only from an environment
+  variable and calls the existing `app.explore_data` tool through authenticated
+  Streamable HTTP. Verified JWT claims remain the only tenant/principal source;
+  no third MCP tool or remote dry-run surface was added.
+
+Package versions: `@synapsor/runner@1.7.14` and
+`synapsor-runner@1.7.14`. Spec and DSL remain `1.10.0` because this release
+reuses the existing public Explore plan grammar.
+
+## 1.7.13 (published 2026-08-24)
 
 ### Safe Errors On Every MCP Path
 

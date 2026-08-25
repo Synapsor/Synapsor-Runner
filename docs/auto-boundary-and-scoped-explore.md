@@ -849,6 +849,21 @@ synapsor-runner try explore --suggested --json
 synapsor-runner try ask --provider openai
 ```
 
+To inspect, validate, or replay the exact JSON plan used by an MCP client
+without involving a model, use the CLI-first Explore Plan Playground:
+
+```bash
+synapsor-runner explore describe --resource public.orders --json
+synapsor-runner explore validate --plan ./explore-plan.json
+synapsor-runner explore run --plan ./explore-plan.json --details
+```
+
+Validate-only repeats live drift, role, scope, authority, complexity, relative
+window, and compilation checks without querying source rows, consuming Explore
+budget, or writing evidence. Run uses the normal `app.explore_data` execution
+path. The preview Workbench exposes the same local service in its no-model
+tools. See [Explore Plan Playground](explore-plan-playground.md).
+
 Terminal Ask uses the `gpt-5.6-luna` OpenAI default and the tested
 Claude Sonnet default when `--model` is omitted. A loopback OpenAI-compatible
 endpoint still requires `--model` because its installed models are local

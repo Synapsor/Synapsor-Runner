@@ -202,6 +202,79 @@ describe("Scoped Explore", () => {
     expect(aggregatePlan).toMatchObject({ kind: "aggregate", top_n: 25 });
   });
 
+  it("validates and compiles an exact plan without querying rows, consuming budget, or writing audit evidence", async () => {
+    const fixture = await activatedFixture();
+    const store = new ProposalStore(path.join(fixture.root, ".synapsor/local.db"));
+    const executeBatch = vi.fn(async () => [] as Array<Record<string, unknown>[]>);
+    const executor: ScopedExploreExecutor = {
+      execute: async () => [],
+      executeBatch,
+      close: async () => undefined,
+    };
+    const inspectDatabaseFn = vi.fn(async () => fixture.inspection);
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn,
+      executor,
+      store,
+      clock: () => Date.parse("2026-08-25T12:00:00.000Z"),
+    });
+    try {
+      const result = await runtime.validate(aggregatePlan("one"));
+
+      expect(result).toMatchObject({
+        ok: true,
+        outcome: { type: "validated", status: "ready" },
+        boundary_name: fixture.boundary.pack.name,
+        boundary_digest: fixture.boundary.activation.digest,
+        database_engine: "postgres",
+        trusted_scope: {
+          tenant: { source: "environment", binding: "SYNAPSOR_TENANT_ID" },
+          principal: { source: "not_required" },
+        },
+        validation: {
+          source_catalog_rechecked: true,
+          source_query_executed: false,
+          explore_budget_consumed: false,
+          estimated_response_cells: 6,
+          statement_count: 1,
+          parameter_values_included: false,
+        },
+        source_database_changed: false,
+      });
+      expect(result.normalized_plan).toMatchObject(aggregatePlan("one"));
+      expect(result.parameterized_sql).toMatchObject({
+        provenance: "captured_before_source_execution",
+        parameter_values_persisted: false,
+        model_received_sql: false,
+        statements: [expect.objectContaining({
+          parameter_count: expect.any(Number),
+          statement: expect.stringContaining("SELECT"),
+        })],
+      });
+      expect(JSON.stringify(result.parameterized_sql)).not.toContain("tenant-acme");
+
+      await expect(runtime.validate({
+        kind: "rows",
+        resource: "public.subscriptions",
+        select: ["tenant_id"],
+        limit: 1,
+      })).rejects.toMatchObject({
+        code: "EXPLORE_FIELD_FORBIDDEN",
+      });
+      expect(executeBatch).not.toHaveBeenCalled();
+      expect(inspectDatabaseFn).toHaveBeenCalledTimes(3);
+      expect(store.stats().explore_budget_reservations).toBe(0);
+      expect(store.listEvidenceBundles()).toHaveLength(0);
+      expect(store.listQueryAudit()).toHaveLength(0);
+    } finally {
+      await runtime.close();
+      store.close();
+    }
+  });
+
   it("freshly inspects only generation-lock resource dependencies on startup and every query", async () => {
     const fixture = await activatedFixture();
     const inspectionCalls: Array<Record<string, unknown>> = [];

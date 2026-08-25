@@ -29,6 +29,9 @@ your database, then read deeper concepts.
   reviewed tool surface, with direct-egress consent, session-only credentials,
   and no added authority. The terminal CLI remains the preferred operator
   interface.
+- [Explore Plan Playground](explore-plan-playground.md): validate or replay one
+  exact JSON Explore plan without a model, locally or through authenticated
+  production HTTP, with a preview Workbench editor.
 - [Troubleshooting First Run](troubleshooting-first-run.md): common first-run
   failures, redacted diagnostics, and fixes.
 
@@ -94,6 +97,9 @@ your database, then read deeper concepts.
   and aggregate questions repeatedly through Workbench, CLI, or any MCP client,
   and optionally turn one useful result into a disabled named production
   capability.
+- [Explore Plan Playground](explore-plan-playground.md): inspect the reviewed
+  catalog, compile without querying source rows, then run through the normal
+  scope, privacy, budget, evidence, and audit path.
 - [Workbench Ask With Your Model](workbench-ask.md): use the same reviewed
   tools from Workbench without requiring Cursor or giving the model activation,
   approval, or apply authority.

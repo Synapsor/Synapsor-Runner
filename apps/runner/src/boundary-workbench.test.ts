@@ -742,6 +742,14 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("parseDimensionChoice");
     expect(html).toContain("Choose each reviewed grouping field only once.");
     expect(html).toContain("One record");
+    expect(html).toContain("JSON plan playground");
+    expect(html).toContain('id="playground-plan-json"');
+    expect(html).toContain('id="playground-validate"');
+    expect(html).toContain('id="playground-run"');
+    expect(html).toContain('post("/api/explore/validate",request)');
+    expect(html).toContain('post("/api/explore/run",request)');
+    expect(html).toContain("Values are never shown or accepted by this editor.");
+    expect(html).toContain("No source data query ran and no Explore budget was consumed.");
     expect(html).toContain("Make this analysis reusable");
     expect(html).toContain("Make this reusable");
     expect(html).toContain("Choose an analysis to make reusable");

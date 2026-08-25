@@ -20,6 +20,7 @@ import {
   type ResolveExploreTrustedScopeFn,
   type ScopedExploreExecutor,
   type ScopedExploreRuntime,
+  type ScopedExploreValidationResult,
   type ScopedExploreMode,
   type ScopedExploreTransport,
 } from "./scoped-explore.js";
@@ -45,6 +46,9 @@ export type ScopedExploreBoundarySetRuntime = {
   session_fingerprint: `sha256:${string}`;
   trusted_scope?: ScopedExploreRuntime["trusted_scope"];
   describe(input?: BoundarySetDescribeInput): Promise<Record<string, unknown>>;
+  validate(plan: unknown, boundaryName?: string): Promise<ScopedExploreValidationResult & {
+    active_boundary_set_digest: `sha256:${string}`;
+  }>;
   explore(plan: unknown, boundaryName?: string): Promise<Record<string, unknown>>;
   projectResultForModel(input: {
     tool: string;
@@ -222,6 +226,24 @@ export async function createScopedExploreBoundarySetRuntime(input: {
         raw_sql_available: false,
         source_rows_available_before_activation: false,
         source_database_changed: false,
+      };
+    },
+    validate: async (unknownPlan, boundaryName) => {
+      await refresh();
+      const resource = isRecord(unknownPlan) && typeof unknownPlan.resource === "string"
+        ? unknownPlan.resource
+        : undefined;
+      const target = route(boundaryName, resource);
+      const boundary = target.boundary;
+      const child = await childFor(boundary);
+      const canonicalPlan = target.resource && isRecord(unknownPlan)
+        ? { ...unknownPlan, resource: target.resource.id }
+        : unknownPlan;
+      const result = await child.validate(canonicalPlan);
+      return {
+        ...result,
+        boundary_name: boundary.pack.name,
+        active_boundary_set_digest: setDigest,
       };
     },
     explore: async (unknownPlan, boundaryName) => {

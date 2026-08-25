@@ -1545,6 +1545,7 @@ export default defineCapability({
       instantOnboarding: true,
     });
     const plans: unknown[] = [];
+    const validatedPlans: unknown[] = [];
     const previousTenant = process.env.SYNAPSOR_TENANT_ID;
     const previousPrincipal = process.env.SYNAPSOR_PRINCIPAL;
     process.env.SYNAPSOR_TENANT_ID = "acme";
@@ -1562,6 +1563,19 @@ export default defineCapability({
         boundary: {} as never,
         session_fingerprint: `sha256:${"c".repeat(64)}`,
         describe: async () => ({}),
+        validate: async (plan: unknown) => {
+          validatedPlans.push(plan);
+          return {
+            ok: true,
+            normalized_plan: plan,
+            validation: {
+              source_catalog_rechecked: true,
+              source_query_executed: false,
+              explore_budget_consumed: false,
+            },
+            source_database_changed: false,
+          } as never;
+        },
         explore: async (plan: unknown) => {
           plans.push(plan);
           return {
@@ -1679,6 +1693,33 @@ export default defineCapability({
       expect(reviewBaseline.confirmed_decisions).toHaveLength(
         reviewBaseline.confirmations.length,
       );
+      const validated = await postJson(
+        `http://${server.host}:${server.port}/api/explore/validate`,
+        headers,
+        {
+          plan: {
+            kind: "aggregate",
+            resource: "public.members",
+            measures: [{ function: "count" }],
+            top_n: 5,
+          },
+        },
+      );
+      expect(validated).toMatchObject({
+        ok: true,
+        source_query_executed: false,
+        explore_budget_consumed: false,
+        source_database_changed: false,
+        result: {
+          validation: {
+            source_catalog_rechecked: true,
+            source_query_executed: false,
+            explore_budget_consumed: false,
+          },
+        },
+      });
+      expect(validatedPlans).toHaveLength(1);
+      expect(plans).toHaveLength(1);
       const followUp = await postJson(
         `http://${server.host}:${server.port}/api/explore/run`,
         headers,

@@ -89,6 +89,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     .ask-tool-trace{margin-top:10px;border-top:1px solid var(--line);padding-top:10px}.ask-tool-trace summary{font-size:12px}
     .active-scope-line{display:flex;gap:9px;align-items:center;flex-wrap:wrap}.active-scope-line .scope-dot{width:8px;height:8px;border-radius:50%;background:var(--good)}.active-scope-line span:last-child{color:var(--muted)}.ask-verified-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.ask-verified-head h3{margin:0}.runner-verified{color:var(--good);border-color:var(--good);background:var(--good-soft);text-transform:uppercase;font-weight:800}.ask-refused{margin-top:16px;padding:18px;border:1px solid var(--warn);border-left:3px solid var(--warn);border-radius:8px;background:var(--warn-soft)}.ask-refused h3{margin-bottom:6px}.ask-recovery{color:var(--muted)}.ask-access-guidance{margin-top:16px;padding-top:16px;border-top:1px solid var(--line)}.ask-access-guidance h3{margin:4px 0 6px}.ask-access-guidance p{max-width:720px}
     .no-model-surface{margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}.no-model-content{margin-top:12px}
+    .plan-playground-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(260px,.5fr);gap:14px;align-items:start}.plan-playground-editor{display:grid;gap:8px}.plan-playground-editor textarea{min-height:280px;resize:vertical;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;tab-size:2}.plan-playground-side{display:grid;gap:10px}.plan-playground-side .band{margin:0;padding:12px}.plan-playground-result{margin-top:14px}.plan-playground-result pre{max-height:520px}
     .instant-path{scroll-margin-top:76px}.instant-reveal{display:grid;grid-template-columns:minmax(310px,.8fr) minmax(520px,1.2fr);gap:54px;align-items:center;min-height:calc(100vh - 160px)}.instant-copy{display:grid;gap:20px;align-content:center}.instant-kicker{margin:0;color:#71e2b7;font-size:11px;font-weight:850;text-transform:uppercase}.instant-copy h2{max-width:610px;margin:0;color:#f4f8f6;font-size:46px;line-height:1.2}.instant-copy h2 span{display:block;color:#718078}.instant-copy>p{max-width:520px;margin:0;color:#aab6b0;font-size:17px;line-height:1.65}.instant-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.instant-actions button{min-height:52px;padding:12px 20px}.instant-actions .secondary{border-color:#314038;color:#d9e2dd}.instant-trust{display:block;color:#718078;font-size:11px;text-transform:uppercase}.instant-path .status-message{flex:1 0 100%;color:#aab6b0}.instant-boundary{min-width:0;padding:24px;border:1px solid #2a3e34;border-radius:8px;background:#101a16;color:#eef5f1}.instant-boundary-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}.instant-boundary-head h3{margin:5px 0 1px;font-size:26px}.instant-boundary-head code{color:#75847c}.instant-badge{display:inline-flex;align-items:center;padding:5px 9px;border:1px solid #60412f;border-radius:999px;background:#211813;color:#f3b276;font-size:11px;font-weight:800;text-transform:uppercase}.instant-flow{display:grid;grid-template-columns:minmax(82px,1fr) minmax(124px,1.2fr) minmax(82px,1fr);gap:18px;align-items:center;min-height:190px;margin:18px 0;padding:18px 0;border-bottom:1px solid #23322b}.instant-node{position:relative;display:grid;place-items:center;min-height:84px;padding:10px;border:1px solid #33433b;border-radius:8px;text-align:center;color:#dfe9e4}.instant-node strong{display:block;font-size:18px}.instant-node span{color:#728078;font-size:10px;text-transform:uppercase}.instant-node.boundary{border-color:#5cd7a5;background:#142a21}.instant-node.boundary::before,.instant-node.boundary::after{content:"";position:absolute;top:calc(50% - 1px);width:20px;height:3px;background-image:repeating-linear-gradient(90deg,#78e6bb 0 8px,transparent 8px 16px),linear-gradient(#33433b,#33433b);background-position:0 0,center;background-repeat:repeat-x,no-repeat;background-size:32px 3px,100% 1px;animation:instant-edge-flow 1.9s linear infinite}.instant-node.boundary::before{right:100%}.instant-node.boundary::after{left:100%}@keyframes instant-edge-flow{to{background-position:32px 0,center}}.instant-blocked{position:absolute;top:calc(100% + 12px);left:50%;width:max-content;max-width:180px;transform:translateX(-50%);padding:3px 8px;border:1px solid #344039;border-radius:999px;background:#0c1411;color:#77847d;font-size:10px}.instant-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 28px}.instant-fact strong{display:block;margin-bottom:5px;color:#748279;font-size:10px;text-transform:uppercase}.instant-fact p{margin:0;color:#dce5e0}.instant-preview{display:grid;grid-template-columns:auto minmax(0,1fr);gap:14px;align-items:start;margin-top:22px;padding:17px;border:1px solid #2a3b32;border-radius:8px;background:#0b1310}.instant-preview-icon{display:grid;place-items:center;width:34px;height:34px;border-radius:7px;background:#173127;color:#77e7ba;font-weight:800}.instant-preview strong{display:block;color:#748279;font-size:10px;text-transform:uppercase}.instant-preview p{margin:5px 0 0;color:#eef5f1;font-size:16px}.instant-preview small{display:block;margin-top:6px;color:#718078}.instant-result{margin-top:12px}
     @media(prefers-reduced-motion:reduce){.instant-node.boundary::before,.instant-node.boundary::after{animation:none}}
     body.quick-start-mode,body.ask-focus-mode{--bg:#07100c;--surface:#101a16;--surface-2:#14211b;--text:#f2f7f4;--muted:#9aa8a1;--line:#27372f;--line-strong:#3b5045;--accent:#75e3b7;--accent-strong:#8aebc5;--accent-soft:#142d23;--good:#75e3b7;--good-soft:#142d23;background:#07100c}
@@ -161,7 +162,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	    .access-final{position:sticky;bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:16px;margin:18px 0 0 auto;max-width:calc(100% - 318px);padding:12px 14px;border:1px solid var(--accent);border-radius:8px;background:color-mix(in srgb,var(--surface) 96%,transparent);box-shadow:0 10px 32px rgba(0,0,0,.18);backdrop-filter:blur(10px);z-index:2}.access-final p{min-width:0;margin:0;overflow-wrap:anywhere}.access-final strong{color:var(--text);overflow-wrap:anywhere}
 	    .hidden{display:none!important}.screen-reader{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 	    @media(max-width:960px){.workbench-layout{grid-template-columns:1fr;gap:18px}.workflow-rail{position:static}.rail-label,.rail-note{display:none}.steps{display:flex;overflow-x:auto;border-bottom:1px solid var(--line);padding-bottom:1px}.step{flex:0 0 auto;min-width:150px;border-left:0;border-bottom:3px solid transparent;border-radius:6px 6px 0 0}.step.active{border-left:0;border-bottom-color:var(--accent)}}
-	    @media(max-width:820px){header>div,main,body.quick-start-mode header>div,body.quick-start-mode main,body.ask-focus-mode header>div,body.ask-focus-mode main,body.access-focus-mode header>div,body.access-focus-mode main{width:calc(100% - 24px)}.summary{grid-template-columns:1fr 1fr}.metric:nth-child(2){border-right:0}.resource-list,.scope-grid,.form-grid,.preflight,.journey,.ask-grid,.instant-reveal,.access-editor,.access-column,.boundary-version-list{grid-template-columns:1fr}.boundary-overview-head{flex-direction:column}.access-editor-head{align-items:flex-start;flex-direction:column}.access-nav{position:static}.access-resource-list{max-height:270px}.access-final{position:static;max-width:none;flex-direction:column;align-items:stretch}.instant-reveal{gap:28px;min-height:auto;padding:28px 0 44px}.instant-copy{display:contents}.instant-copy .instant-kicker{order:1}.instant-copy h2{order:2;font-size:36px}.instant-copy>p{order:3}.instant-boundary{order:4;padding:18px}.instant-actions{order:5}.instant-trust{order:6}.instant-flow{min-height:160px}.footer-actions{position:static}.ask-head{grid-template-columns:1fr}.ask-state{text-align:left}.ask-state .badge{margin:0 5px 0 0}body.ask-focus-mode .ask-state{position:static}}
+	    @media(max-width:820px){header>div,main,body.quick-start-mode header>div,body.quick-start-mode main,body.ask-focus-mode header>div,body.ask-focus-mode main,body.access-focus-mode header>div,body.access-focus-mode main{width:calc(100% - 24px)}.summary{grid-template-columns:1fr 1fr}.metric:nth-child(2){border-right:0}.resource-list,.scope-grid,.form-grid,.preflight,.journey,.ask-grid,.instant-reveal,.access-editor,.access-column,.boundary-version-list,.plan-playground-grid{grid-template-columns:1fr}.boundary-overview-head{flex-direction:column}.access-editor-head{align-items:flex-start;flex-direction:column}.access-nav{position:static}.access-resource-list{max-height:270px}.access-final{position:static;max-width:none;flex-direction:column;align-items:stretch}.instant-reveal{gap:28px;min-height:auto;padding:28px 0 44px}.instant-copy{display:contents}.instant-copy .instant-kicker{order:1}.instant-copy h2{order:2;font-size:36px}.instant-copy>p{order:3}.instant-boundary{order:4;padding:18px}.instant-actions{order:5}.instant-trust{order:6}.instant-flow{min-height:160px}.footer-actions{position:static}.ask-head{grid-template-columns:1fr}.ask-state{text-align:left}.ask-state .badge{margin:0 5px 0 0}body.ask-focus-mode .ask-state{position:static}}
     @media(max-width:560px){.ask-composer{grid-template-columns:1fr}.ask-composer-actions{display:flex;flex-wrap:wrap;width:auto}.ask-composer-actions button{flex:1 1 120px}}
     @media(max-width:480px){header>div,main,body.quick-start-mode header>div,body.quick-start-mode main,body.ask-focus-mode header>div,body.ask-focus-mode main{width:calc(100% - 20px)}.brand-copy p{display:none}.header-status .badge{display:none}.summary{grid-template-columns:1fr}.metric{border-right:0;border-bottom:1px solid var(--line)}.toolbar>*,.actions>button{width:100%}.step{min-width:132px}.ask-head,.ask-body{padding:14px}.instant-copy{gap:16px}.instant-copy h2{font-size:32px}.instant-copy>p{font-size:15px}.instant-actions{display:grid}.instant-actions button{width:100%}.instant-facts{grid-template-columns:1fr}.instant-flow{grid-template-columns:72px minmax(108px,1fr) 72px;gap:12px}.instant-node.boundary::before,.instant-node.boundary::after{width:14px}.instant-boundary-head h3{font-size:21px}.instant-preview{padding:13px}.instant-trust{margin-top:4px}}
 
@@ -479,6 +480,24 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
             </div>
             <div id="no-model-content" class="no-model-content hidden">
 	            <div id="first-reviewed-question" class="band"></div>
+	            <details id="json-plan-playground" class="band">
+	              <summary>JSON plan playground <span class="badge">Workbench preview</span></summary>
+	              <div class="plan-playground-grid" style="margin-top:14px">
+	                <label class="field plan-playground-editor">Explore plan or MCP envelope
+	                  <textarea id="playground-plan-json" spellcheck="false" autocomplete="off" aria-describedby="playground-plan-help"></textarea>
+	                  <span id="playground-plan-help">Use exact IDs from the reviewed catalog. Tenant and principal are read-only trusted context and are never accepted here.</span>
+	                </label>
+	                <div class="plan-playground-side">
+	                  <label class="field">Active boundary<select id="playground-boundary"><option value="">Automatic from exact resource ID</option></select></label>
+	                  <div id="playground-scope" class="band"></div>
+	                  <button id="playground-use-generated" class="secondary" type="button">Use current generated plan</button>
+	                  <button id="playground-validate" class="secondary" type="button">Validate only</button>
+	                  <button id="playground-run" type="button">Run reviewed plan</button>
+	                </div>
+	              </div>
+	              <div id="playground-status" class="status-message" role="status" aria-live="polite"></div>
+	              <div id="playground-result" class="plan-playground-result"></div>
+	            </details>
 	            <details id="explore-composer" class="band">
 	              <summary>Build another reviewed question</summary>
 	              <div class="tabs" role="tablist" aria-label="Explore mode">
@@ -726,6 +745,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     let reviewInvalidations=[];
     let exploreDescription=null;
     let exploreBudgets=null;
+    let exploreTrustedScope=null;
     let exploreMode="aggregate";
     let lastExplorePlan=null;
     let preferredProtectQueryRef=null;
@@ -3937,6 +3957,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         const payload=await getJson("/api/explore/preflight");
 	        exploreDescription=payload.description;
 	        exploreBudgets=payload.budgets;
+	        exploreTrustedScope=payload.trusted_scope||null;
 	        panel.className="band success";
 	        panel.innerHTML='<h3>Reviewed access ready.</h3><p>Read-only local authoring boundary active.</p><details><summary>Advanced readiness checks</summary><div class="preflight">'+payload.checks.map(check=>'<div><span class="badge good">Ready</span><strong style="display:block;margin-top:5px">'+esc(check.name)+'</strong><p>'+esc(check.detail)+'</p></div>').join("")+'</div></details>';
         byId("explorer").classList.remove("hidden");
@@ -5536,6 +5557,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const firstSuggestion=suggestions[0];
       populateAggregateBuilder(describedResourceKey(firstSuggestion?.resource||resources[0]),firstSuggestion?.question);
       populateRowBuilder(describedResourceKey(resources[0]));
+      renderPlanPlayground();
       renderFirstReviewedQuestion(firstSuggestion);
       renderClientConfigs();
       if(openNoModelAfterLoad){
@@ -5545,6 +5567,109 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       if(openClientAfterLoad){
         openClientAfterLoad=false;
         requestAnimationFrame(revealExistingClientSetup);
+      }
+    }
+
+    function renderPlanPlayground(){
+      const editor=byId("playground-plan-json");
+      const boundarySelect=byId("playground-boundary");
+      const boundaryNames=[...new Set(resourcesFromDescription().map(resource=>resource.boundary_name).filter(Boolean))].sort();
+      const previousBoundary=boundarySelect.value;
+      boundarySelect.innerHTML='<option value="">Automatic from exact resource ID</option>'
+        +boundaryNames.map(name=>'<option value="'+esc(name)+'">'+esc(name)+'</option>').join("");
+      if(boundaryNames.includes(previousBoundary))boundarySelect.value=previousBoundary;
+      if(!editor.value.trim()){
+        try{editor.value=JSON.stringify(currentPlan(),null,2)}catch{}
+      }
+      const tenant=exploreTrustedScope?.tenant;
+      const principal=exploreTrustedScope?.principal;
+      byId("playground-scope").innerHTML='<strong>Trusted scope</strong>'
+        +'<p>Tenant: '+esc(tenant?.source||"Runner configured")+(tenant?.binding?' via <code>'+esc(tenant.binding)+'</code>':"")+'<br>'
+        +'Principal: '+esc(principal?.required?(principal.source||"Runner configured"):"not required")+(principal?.binding?' via <code>'+esc(principal.binding)+'</code>':"")+'</p>'
+        +'<small>Values are never shown or accepted by this editor.</small>';
+      byId("playground-use-generated").onclick=()=>{
+        try{
+          const plan=currentPlan();
+          const resource=describedResourceForPlan(plan);
+          editor.value=JSON.stringify(plan,null,2);
+          boundarySelect.value=resource?.boundary_name||"";
+          byId("playground-status").className="status-message";
+          byId("playground-status").textContent="Current reviewed composer plan loaded.";
+        }catch(error){
+          byId("playground-status").className="status-message error";
+          byId("playground-status").textContent=error.message;
+        }
+      };
+      byId("playground-validate").onclick=validatePlanPlayground;
+      byId("playground-run").onclick=runPlanPlayground;
+    }
+
+    function playgroundRequestFromEditor(){
+      const serialized=byId("playground-plan-json").value.trim();
+      if(!serialized)throw new Error("Enter one Explore plan or MCP envelope.");
+      let document;
+      try{document=JSON.parse(serialized)}catch(error){throw new Error("Plan JSON is invalid: "+error.message)}
+      if(!document||typeof document!=="object"||Array.isArray(document))throw new Error("Plan JSON must be one object.");
+      const selected=byId("playground-boundary").value||undefined;
+      if(Object.prototype.hasOwnProperty.call(document,"plan")){
+        const keys=Object.keys(document).filter(key=>key!=="plan"&&key!=="boundary");
+        if(keys.length)throw new Error("MCP envelope accepts only plan and optional boundary. Remove: "+keys.join(", "));
+        if(!document.plan||typeof document.plan!=="object"||Array.isArray(document.plan))throw new Error("MCP envelope plan must be one object.");
+        if(selected&&document.boundary&&selected!==document.boundary)throw new Error("The editor and envelope select different boundaries.");
+        return {plan:document.plan,...(selected||document.boundary?{boundary:selected||document.boundary}:{})};
+      }
+      return {plan:document,...(selected?{boundary:selected}:{})};
+    }
+
+    async function validatePlanPlayground(){
+      const status=byId("playground-status");
+      const panel=byId("playground-result");
+      status.className="status-message";
+      status.textContent="Rechecking live catalog and reviewed authority...";
+      panel.textContent="";
+      try{
+        const request=playgroundRequestFromEditor();
+        const payload=await post("/api/explore/validate",request);
+        const result=payload.result;
+        const statements=result.parameterized_sql?.statements||[];
+        status.className="status-message";
+        status.textContent="Validated. No source data query ran and no Explore budget was consumed.";
+        panel.innerHTML='<section class="band success"><h3>Plan is ready</h3>'
+          +'<div class="result-meta"><span class="badge good">Catalog rechecked</span><span class="badge good">No data query</span><span class="badge good">No budget consumed</span></div>'
+          +'<p><strong>Boundary:</strong> '+esc(result.boundary_name)+'<br><strong>Estimated maximum response:</strong> '+esc(result.validation?.estimated_response_cells??"unknown")+' cells<br><strong>Trusted scope values in preview:</strong> no</p>'
+          +'<details open><summary>Normalized plan</summary><pre>'+esc(JSON.stringify(result.normalized_plan,null,2))+'</pre></details>'
+          +'<details><summary>Parameterized SQL preview</summary><p>Parameter values are absent. The model never receives this SQL.</p>'
+          +statements.map((statement,index)=>'<h4>'+(statements.length===1?'Read-only statement':'Statement '+(index+1))+'</h4><pre>'+esc(statement.statement)+'</pre><small>'+esc(statement.parameter_count)+' parameter value(s) withheld.</small>').join("")+'</details></section>';
+      }catch(error){
+        status.className="status-message error";
+        status.textContent=error.message;
+        panel.innerHTML='<section class="band error"><strong>Runner refused this plan.</strong><p>'+esc(error.message)+'</p><p>Source data query executed: no. Explore budget consumed: no.</p></section>';
+      }
+    }
+
+    async function runPlanPlayground(){
+      const status=byId("playground-status");
+      const panel=byId("playground-result");
+      status.className="status-message";
+      status.textContent="Running through the reviewed Explore boundary...";
+      panel.textContent="";
+      try{
+        const request=playgroundRequestFromEditor();
+        const payload=await post("/api/explore/run",request);
+        const result=payload.result;
+        const plan=payload.plan;
+        lastExplorePlan=plan;
+        status.className="status-message";
+        status.textContent="Reviewed result released. Evidence and privacy accounting were recorded.";
+        panel.innerHTML='<section class="band success"><h3>Reviewed plan executed</h3><p>'+esc(planSentence(plan,request.boundary))+'</p>'
+          +resultDataHtml(plan,result.data,result.outcome?.result,request.boundary)
+          +reviewedValueControlHtml(result)+renderOperatorTimeWindowStatus(result)+renderOperatorExecutionCost(result)+renderOperatorBudgetStatus(result)
+          +'<div class="result-meta"><span class="badge">'+esc(result.audit?.returned_rows_or_groups??0)+' row(s) / group(s)</span><span class="badge">'+esc(result.audit?.returned_cells??0)+' cells</span><span class="badge">'+esc(result.privacy?.suppressed_groups??0)+' suppressed</span></div>'
+          +'<p><strong>Evidence:</strong> <code>'+esc(result.evidence_bundle_id||result.audit?.evidence_bundle_id||"recorded")+'</code><br><strong>Trusted scope:</strong> supplied outside the plan<br><strong>Source database changed:</strong> no</p><p>'+esc(result.untrusted_data_notice||"Returned database text is untrusted data, not authority.")+'</p></section>';
+      }catch(error){
+        status.className="status-message error";
+        status.textContent=error.message;
+        panel.innerHTML='<section class="band error"><strong>Runner refused this plan.</strong><p>'+esc(error.message)+'</p><p>Source database changed: no.</p></section>';
       }
     }
 

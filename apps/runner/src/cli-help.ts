@@ -24,6 +24,7 @@ Usage:
 
 Commands:
   try          Run an isolated proof, or ask/explore/call active project tools
+  explore      Validate or replay fixed JSON Explore plans without a model
   inspect      Inspect a Postgres/MySQL schema
   start        Interactive guided first run, or no-arg legacy worker polling
   action       Validate/watch disabled TypeScript Safe Action drafts
@@ -68,6 +69,9 @@ Commands:
 Examples:
   ${cmd} try --prove --yes --no-open
   ${cmd} try ask --provider openai [--model <model>] [--verbose] [--session-token-budget 200000]
+  ${cmd} explore playground --project-root .
+  ${cmd} explore validate --plan ./explore-plan.json --project-root .
+  ${cmd} explore run --plan ./explore-plan.json --project-root .
   ${cmd} start --from-env DATABASE_URL
   ${cmd} start --from-env DATABASE_URL --cli
   ${cmd} start --action refund_order --description "Propose one reviewed order refund"
@@ -101,6 +105,38 @@ Examples:
 Global options:
   --secrets-provider aws-secretsmanager-cli --secret-map-env SYNAPSOR_SECRET_MAP
   --secrets-provider env-json --secret-map-env SYNAPSOR_SECRET_MAP --secret-values-env SYNAPSOR_SECRET_VALUES
+`,
+    explore: `Usage:
+  ${cmd} explore playground [--project-root .] [--boundary <name>]
+  ${cmd} explore validate --plan <file|-> [--boundary <name>] [--json]
+  ${cmd} explore run --plan <file|-> [--boundary <name>] [--json] [--details]
+  ${cmd} explore describe [--resource <exact-id>] [--boundary <name>] [--json]
+  ${cmd} explore run --url https://runner.example/mcp --token-env SYNAPSOR_MCP_ACCESS_TOKEN --plan <file|->
+  ${cmd} explore run --config ./synapsor.runner.json --token-env SYNAPSOR_MCP_ACCESS_TOKEN --plan <file|->
+
+Explore Plan Playground accepts the same fixed JSON plan used by
+app.explore_data, either as a raw plan or the MCP envelope {"plan":{...},
+"boundary":"optional"}. It never accepts SQL, tenant values, principal values,
+database URLs, or bearer-token values in the plan or command line.
+
+Local validate-only repeats live catalog drift, database-role posture,
+generation-lock, trusted-scope, reviewed field/relationship, complexity, and
+read-only compilation checks. It executes no source data query, consumes no
+Explore budget, and writes no query evidence. Its parameterized SQL preview
+contains placeholders and parameter types only, never parameter values.
+
+Run uses the normal Scoped Explore execution path, including suppression,
+response bounds, rolling query/extraction/differencing budgets, evidence, and
+query audit. Remote HTTP run is a standard app.explore_data MCP call. The server
+derives tenant and principal only from its verified JWT session; the CLI reads
+the short-lived bearer token from --token-env (default
+SYNAPSOR_MCP_ACCESS_TOKEN) and never prints it. Remote validate-only is not a
+third MCP tool and is therefore intentionally unavailable.
+
+--plan accepts a path or - for stdin. --plan-json is available for short local
+experiments, but files/stdin avoid shell quoting. --input is a compatibility
+alias for --plan. Workbench provides the same local validator and runner in its
+preview no-model surface; CLI is the primary interface.
 `,
     try: `Usage:
   ${cmd} try

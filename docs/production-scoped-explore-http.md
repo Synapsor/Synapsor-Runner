@@ -737,6 +737,32 @@ client file while preserving other servers and creating a backup. The same
 secret-free checks apply. Claude Desktop remains a local stdio target; use the
 `claude-code` client target for remote Streamable HTTP.
 
+### Replay one exact plan from the operator CLI
+
+For debugging, audit reproduction, and demos, the CLI can replay a fixed JSON
+plan through the same authenticated MCP endpoint:
+
+```bash
+export SYNAPSOR_MCP_ACCESS_TOKEN="$(your-idp-token-command)"
+
+synapsor-runner explore run \
+  --config ./synapsor.runner.json \
+  --token-env SYNAPSOR_MCP_ACCESS_TOKEN \
+  --plan ./explore-plan.json
+```
+
+`--url https://runner.example/mcp` can replace `--config`. The token is read
+only from the named environment variable; no inline token option exists. The
+server derives tenant and principal from the verified JWT session, never the
+plan. The command calls exactly `app.explore_data`, so production scope, drift,
+budgets, suppression, response bounds, evidence, and query audit are unchanged.
+
+Remote validate-only is intentionally not exposed because production MCP stays
+fixed at two tools. Validate the same reviewed artifacts locally for a
+compile-only preview, or run remotely and let the server validate before source
+execution. See [Explore Plan Playground](explore-plan-playground.md) for plan
+shapes, local validation, Workbench preview, and audit behavior.
+
 ## Privacy And Concurrency
 
 Runner reserves query, rate, extracted-cell, and differencing allowance before

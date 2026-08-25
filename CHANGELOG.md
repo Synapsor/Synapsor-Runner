@@ -1,6 +1,41 @@
 # Changelog
 
-## 1.7.13 (unreleased)
+## 1.7.14 (unreleased)
+
+### CLI-First Explore Plan Playground
+
+- Adds `synapsor-runner explore playground` as a stateful terminal workflow,
+  plus automatable `explore describe`, `explore validate`, and `explore run`
+  commands. Inputs are either one raw Explore plan or the exact MCP
+  `{ "plan": {...}, "boundary": "optional" }` envelope. Expanded envelopes,
+  SQL, credentials, database URLs, and model-selected trusted scope are refused.
+- Adds a shared playground service over `ScopedExploreRuntime` and the active
+  boundary-set router. The run path delegates to the existing `explore()`
+  implementation instead of introducing another validator, compiler, or
+  executor.
+- Adds a true local `validate()` path that freshly inspects catalog and role
+  posture, checks generation and trusted-context authority, normalizes relative
+  windows once, validates every field/relationship/limit, and compiles the
+  read-only statements. It does not reserve budgets, execute source data
+  queries, or create evidence/query-audit records. Parameterized SQL capture
+  omits every parameter value.
+- Adds the preview Workbench JSON editor with exact boundary selection,
+  read-only trusted binding status, validate/run controls, normalized plan,
+  parameterized SQL, released results, privacy, budget, timing, and evidence.
+  Its CSRF-protected endpoints use the same shared service as the CLI.
+- Adds production HTTP replay through the official Streamable HTTP MCP client.
+  Tokens are accepted only by environment-variable name, HTTPS is mandatory
+  outside loopback, and tenant/principal scope remains verified JWT session
+  state. Remote validate-only is deliberately unavailable so production stays
+  exactly `app.describe_data` plus `app.explore_data`.
+- Extends live PostgreSQL and MySQL qualification, production JWT HTTP gates,
+  unchanged-source snapshots, and desktop/mobile Workbench visual coverage.
+
+Prepared package versions: `@synapsor/runner@1.7.14` and
+`synapsor-runner@1.7.14`. Spec and DSL remain `@synapsor/spec@1.10.0` and
+`@synapsor/dsl@1.10.0`; this release reuses the existing public plan grammar.
+
+## 1.7.13 (published 2026-08-24)
 
 ### MCP Error Information-Flow Hardening
 

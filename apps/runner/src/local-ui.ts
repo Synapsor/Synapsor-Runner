@@ -75,6 +75,11 @@ import {
 } from "./scoped-explore-boundary-set.js";
 import type { ScopedExploreRuntime } from "./scoped-explore.js";
 import {
+  normalizeExplorePlaygroundRequest,
+  runExplorePlaygroundRequest,
+  validateExplorePlaygroundRequest,
+} from "./explore-playground-service.js";
+import {
   ExploreTrustedScopeError,
   resolveExploreTrustedScope,
   type ExploreTrustedScope,
@@ -2992,21 +2997,19 @@ async function handleRequest(input: {
       return;
     }
     const body = await readJsonBody(request);
-    if (!isRecord(body.plan)) throw new Error("Scoped Explore requires one structured plan.");
     let runtime: WorkbenchScopedExploreRuntime | undefined;
     try {
+      const playgroundRequest = normalizeExplorePlaygroundRequest(body);
       runtime = await scopedExploreRuntimeFactory({
         projectRoot,
         transport: "loopback_workbench",
         env: { ...process.env, ...bootstrapState.trustedContext },
       });
-      const boundary = typeof body.boundary === "string" ? body.boundary.trim() : undefined;
-      const result = withWorkbenchProtectQueryRef(await (
-        isBoundarySetRuntime(runtime)
-          ? runtime.explore(body.plan, boundary)
-          : runtime.explore(body.plan)
+      const result = withWorkbenchProtectQueryRef(await runExplorePlaygroundRequest(
+        runtime,
+        playgroundRequest,
       ));
-      const aggregate = body.plan.kind === "aggregate";
+      const aggregate = playgroundRequest.plan.kind === "aggregate";
       await updateGuidedOnboardingState({
         projectRoot,
         status: aggregate ? "protect" : "first_value",
@@ -3019,7 +3022,7 @@ async function handleRequest(input: {
       sendJson(response, 200, {
         ok: true,
         result,
-        plan: body.plan,
+        plan: playgroundRequest.plan,
         source_database_changed: false,
         protected_artifact_created: false,
         next_action: "Ask another bounded question. Protect this analysis only if it should become a reusable named capability.",
@@ -3032,6 +3035,51 @@ async function handleRequest(input: {
         error: error instanceof ScopedExploreError ? error.message : "Scoped Explore refused the request.",
         ...(error instanceof ScopedExploreError && error.details ? { details: error.details } : {}),
         remediation,
+        source_database_changed: false,
+      });
+    } finally {
+      await runtime?.close().catch(() => undefined);
+    }
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/explore/validate") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Scoped Explore is available only in an Auto Boundary authoring Workbench." });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required for Scoped Explore." });
+      return;
+    }
+    const body = await readJsonBody(request);
+    let runtime: WorkbenchScopedExploreRuntime | undefined;
+    try {
+      const playgroundRequest = normalizeExplorePlaygroundRequest(body);
+      runtime = await scopedExploreRuntimeFactory({
+        projectRoot,
+        transport: "loopback_workbench",
+        env: { ...process.env, ...bootstrapState.trustedContext },
+      });
+      const result = await validateExplorePlaygroundRequest(runtime, playgroundRequest);
+      sendJson(response, 200, {
+        ok: true,
+        result,
+        plan: result.normalized_plan,
+        source_query_executed: false,
+        explore_budget_consumed: false,
+        source_database_changed: false,
+      });
+    } catch (error) {
+      const remediation = scopedExploreRemediation(error);
+      sendJson(response, 409, {
+        ok: false,
+        error_code: error instanceof ScopedExploreError ? error.code : "EXPLORE_INTERNAL",
+        error: error instanceof ScopedExploreError ? error.message : "Scoped Explore validation refused the plan.",
+        ...(error instanceof ScopedExploreError && error.details ? { details: error.details } : {}),
+        remediation,
+        source_query_executed: false,
+        explore_budget_consumed: false,
         source_database_changed: false,
       });
     } finally {
