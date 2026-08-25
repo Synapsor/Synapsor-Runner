@@ -4,12 +4,12 @@
 [![license: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![ci](https://github.com/Synapsor/Synapsor-Runner/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Synapsor/Synapsor-Runner/actions/workflows/ci.yml?query=branch%3Amain)
 
-**Database authority for AI agents.**
+**Open-ended investigations. Bounded actions.**
 
-**Let agents query and propose changes to Postgres/MySQL without giving the
-model SQL or commit authority.**
+**Let customer-facing agents answer questions you did not prebuild without
+crossing tenant boundaries.**
 
-**MCP connects the agent. A reviewed boundary controls access and commit.**
+**The model chooses the question. Runner enforces the authority.**
 
 ## Start With Your Database
 
@@ -91,10 +91,10 @@ stays under `./.synapsor/try/`. `demo --quick` remains a noninteractive compatib
 
 ## What Runner Controls
 
-Synapsor Runner is an open-source database-authority layer between an AI agent
-and Postgres/MySQL. You review tables, fields, relationships, operations, and
-limits. Agents may explore within that boundary or create exact proposals;
-activation, approval, and commit stay outside model-facing tools.
+Synapsor Runner is an open-source database-authority layer for Postgres/MySQL.
+Keep RLS, views, and database permissions underneath it. You review what agents
+may ask, combine, reveal, and propose; scope, limits, activation, approval, and
+commit stay outside model-facing tools.
 
 ```text
 Raw database MCP   Agent -> execute_sql --------------------------> Database
@@ -303,10 +303,10 @@ and [HTTP MCP](docs/http-mcp.md).
 
 ## You May Not Need Runner
 
-A read-only account or a few fixed low-risk operations may suffice. Runner is
-useful when flexible agent questions or multiple tools need one reviewed
-boundary, writes require outside-model decisions, or integrations need common
-evidence, retries, conflicts, receipts, and replay.
+Read-only views or fixed low-risk operations may suffice when questions and
+actions are known in advance. Runner is for open-ended investigations inside a
+reviewed boundary, bounded writes, and shared evidence, approvals, retries,
+conflicts, receipts, and replay.
 
 ## Trust And Verification
 
