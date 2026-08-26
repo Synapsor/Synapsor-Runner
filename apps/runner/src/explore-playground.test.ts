@@ -1,4 +1,6 @@
 import process from "node:process";
+import { PassThrough } from "node:stream";
+import type { ReadStream, WriteStream } from "node:tty";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { exploreCommand } from "./explore-playground.js";
 import { ScopedExploreError } from "./scoped-explore.js";
@@ -190,6 +192,133 @@ describe("Explore Plan Playground CLI", () => {
     })).rejects.toThrow(/cannot reuse stdin/i);
     expect(close).toHaveBeenCalledOnce();
   });
+
+  it("accepts formatted multiline JSON immediately, navigates with Escape, and shows exact SQL captured for the run", async () => {
+    const terminal = testTerminal();
+    const plan = aggregatePlan();
+    const explore = vi.fn(async () => ({
+      ok: true,
+      boundary_digest: `sha256:${"c".repeat(64)}`,
+      data: [{ dimension_0: "west", measure_0: 7 }],
+      source_database_changed: false,
+      audit: {
+        evidence_bundle_id: "ev_playground_exact_sql",
+        returned_rows_or_groups: 1,
+        returned_cells: 2,
+      },
+      privacy: { suppressed_groups: 0 },
+      evidence_bundle_id: "ev_playground_exact_sql",
+    }));
+    const close = vi.fn(async () => undefined);
+    const readEvidenceSql = vi.fn(async () => ({
+      source: "captured_parameterized_sql",
+      evidence_bundle_id: "ev_playground_exact_sql",
+      parameterized_sql: {
+        engine: "postgres",
+        statements: [{
+          statement: "SELECT region, COUNT(*) FROM public.orders GROUP BY region",
+          parameter_count: 1,
+        }],
+      },
+    }));
+
+    const interaction = exploreCommand([
+      "playground",
+      "--project-root",
+      ".",
+      "--no-color",
+    ], {
+      createRuntime: (async () => localRuntime({ validate: vi.fn(), explore, close })) as never,
+      readEvidenceSql,
+      stdin: terminal.input as unknown as NodeJS.ReadStream,
+      stdout: terminal.output as unknown as NodeJS.WriteStream,
+      stderr: terminal.output as unknown as NodeJS.WriteStream,
+      env: {},
+    });
+
+    await waitForTerminalText(terminal, "Paste one formatted plan or MCP envelope");
+    terminal.input.write(`${JSON.stringify(plan, null, 2)}\n`);
+    await waitForTerminalText(terminal, "Run reviewed plan");
+    await emitTerminalKey(terminal, { name: "r", sequence: "r" });
+    await waitForTerminalText(terminal, "RUN RESULT");
+    expect(terminal.text()).toContain("| Validating and running through the reviewed Explore boundary");
+    expect(terminal.text()).toContain("\r\u001b[2K\u001b[?25h");
+    await emitTerminalKey(terminal, { name: "escape", sequence: "\u001b" });
+    await waitForTerminalText(terminal, "Press S for captured SQL");
+    await emitTerminalKey(terminal, { name: "s", sequence: "s" });
+    await waitForTerminalText(terminal, "SQL CAPTURED FOR THE LAST RUN");
+    expect(terminal.text()).toContain("SELECT");
+    expect(terminal.text()).toContain("public.orders");
+    expect(terminal.text()).toContain("GROUP BY");
+    await emitTerminalKey(terminal, { name: "escape", sequence: "\u001b" });
+    await emitTerminalKey(terminal, { name: "escape", sequence: "\u001b" });
+
+    await expect(interaction).resolves.toBe(0);
+    expect(explore).toHaveBeenCalledWith(plan, undefined);
+    expect(readEvidenceSql).toHaveBeenCalledWith(
+      expect.stringMatching(/\.synapsor\/local\.db$/),
+      "ev_playground_exact_sql",
+    );
+    expect(close).toHaveBeenCalledOnce();
+    expect(terminal.input.isRaw).toBe(false);
+    expect(terminal.text()).toContain("\u001b[?25h");
+  });
+
+  it("lets Escape cancel the initial JSON paste and exit without changing authority or querying data", async () => {
+    const terminal = testTerminal();
+    const validate = vi.fn();
+    const explore = vi.fn();
+    const close = vi.fn(async () => undefined);
+    const interaction = exploreCommand(["playground", "--no-color"], {
+      createRuntime: (async () => localRuntime({ validate, explore, close })) as never,
+      stdin: terminal.input as unknown as NodeJS.ReadStream,
+      stdout: terminal.output as unknown as NodeJS.WriteStream,
+      stderr: terminal.output as unknown as NodeJS.WriteStream,
+      env: {},
+    });
+
+    await waitForTerminalText(terminal, "Esc cancels");
+    await emitTerminalKey(terminal, { name: "escape", sequence: "\u001b" });
+    await waitForTerminalText(terminal, "Paste cancelled. No plan is loaded.");
+    await emitTerminalKey(terminal, { name: "escape", sequence: "\u001b" });
+
+    await expect(interaction).resolves.toBe(0);
+    expect(validate).not.toHaveBeenCalled();
+    expect(explore).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledOnce();
+    expect(terminal.input.isRaw).toBe(false);
+  });
+
+  it("launches Workbench directly at the authenticated JSON playground", async () => {
+    const openWorkbench = vi.fn(async () => 0);
+    const resolveWorkbenchProject = vi.fn(async () => ({
+      boundaryRoot: "/project/synapsor/generated",
+      configPath: "/project/synapsor.runner.json",
+      storePath: "/project/.synapsor/local.db",
+    }));
+
+    await expect(exploreCommand([
+      "workbench",
+      "--project-root",
+      "/project",
+    ], {
+      openWorkbench,
+      resolveWorkbenchProject,
+      env: {},
+    })).resolves.toBe(0);
+
+    expect(resolveWorkbenchProject).toHaveBeenCalledWith("/project", {});
+    expect(openWorkbench).toHaveBeenCalledWith([
+      "--open",
+      "--playground",
+      "--boundary-root",
+      "/project/synapsor/generated",
+      "--config",
+      "/project/synapsor.runner.json",
+      "--store",
+      "/project/.synapsor/local.db",
+    ]);
+  });
 });
 
 function aggregatePlan(): Record<string, unknown> {
@@ -258,4 +387,48 @@ function validationResult(plan: Record<string, unknown>): Record<string, unknown
     },
     source_database_changed: false,
   };
+}
+
+function testTerminal(): {
+  input: ReadStream & PassThrough & { isRaw: boolean };
+  output: WriteStream & PassThrough;
+  text(): string;
+} {
+  const input = new PassThrough() as ReadStream & PassThrough & {
+    isRaw: boolean;
+    setRawMode(value: boolean): ReadStream;
+  };
+  input.isTTY = true;
+  input.isRaw = false;
+  input.setRawMode = (value: boolean) => {
+    input.isRaw = value;
+    return input;
+  };
+  const output = new PassThrough() as WriteStream & PassThrough;
+  Object.assign(output, { isTTY: true, columns: 100, rows: 28 });
+  const chunks: string[] = [];
+  output.on("data", (chunk) => chunks.push(String(chunk)));
+  return { input, output, text: () => chunks.join("") };
+}
+
+async function emitTerminalKey(
+  terminal: ReturnType<typeof testTerminal>,
+  key: { name: string; sequence: string },
+): Promise<void> {
+  terminal.input.emit("keypress", key.sequence, key);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+}
+
+async function waitForTerminalText(
+  terminal: ReturnType<typeof testTerminal>,
+  expected: string,
+): Promise<void> {
+  const deadline = Date.now() + 2_000;
+  while (!terminal.text().includes(expected)) {
+    if (Date.now() >= deadline) {
+      throw new Error(`Timed out waiting for terminal text ${JSON.stringify(expected)}. Output:\n${terminal.text()}`);
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 5));
+  }
+  await new Promise<void>((resolve) => setImmediate(resolve));
 }

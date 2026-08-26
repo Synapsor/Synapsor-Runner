@@ -26,8 +26,9 @@ for the Synapsor Cloud CLI.
   types, never values.
 - Local run uses the normal Explore execution path with drift checks, scope,
   suppression, response bounds, rolling budgets, evidence, and query audit.
-  The preview Workbench now exposes the same shared validator and runner in its
-  no-model tools.
+  `explore workbench` opens its preview code editor directly, with highlighted
+  JSON, line numbers, format controls, and placeholder-only SQL from the same
+  shared validator and runner.
 - Production HTTP replay reads a short-lived token only from an environment
   variable and calls the existing `app.explore_data` tool through authenticated
   Streamable HTTP. Verified JWT claims remain the only tenant/principal source;

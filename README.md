@@ -139,10 +139,11 @@ app.describe_data
 app.explore_data
 ```
 
-Replay a fixed plan without a model with `synapsor-runner explore playground`.
-`explore validate` compiles without source-row queries or budget; `explore run`
-keeps scope, suppression, budgets, evidence, and audit. HTTP replay reads JWT
-from an environment variable. See [Explore Plan Playground](docs/explore-plan-playground.md).
+Replay a fixed plan with `synapsor-runner explore playground`, or open its
+highlighted editor with `synapsor-runner explore workbench --project-root .`.
+`explore validate` compiles placeholder-only SQL without querying rows or
+spending budget; `explore run` preserves enforcement and audit. See
+[Explore Plan Playground](docs/explore-plan-playground.md).
 
 Agents receive reviewed operations, never SQL. Plans may combine totals,
 distinct counts, dimensions, filters, comparisons, time windows, rankings, and

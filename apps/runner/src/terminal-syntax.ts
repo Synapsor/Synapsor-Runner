@@ -151,7 +151,7 @@ function highlightTerminalJson(serialized: string): string {
 }
 
 export function renderTerminalSql(value: string, color = false): string {
-  const statement = formatSqlForTerminal(safeTerminalText(value));
+  const statement = formatSqlForDisplay(safeTerminalText(value));
   return color ? highlightTerminalSql(statement) : statement;
 }
 
@@ -312,7 +312,7 @@ function wrapTerminalFrameLine(value: string, width: number): string[] {
   return lines;
 }
 
-function formatSqlForTerminal(statement: string): string {
+export function formatSqlForDisplay(statement: string): string {
   const tokens = tokenizeSqlForDisplay(statement);
   const firstWord = tokens.find((token) => token.kind !== "comment")?.value.toUpperCase();
   if (firstWord !== "SELECT") return statement;
@@ -598,6 +598,17 @@ function sqlJoinAt(
     }
   }
   return undefined;
+}
+
+export function sqlDisplayFormatterScript(): string {
+  return [
+    `const tokenizeSqlForDisplay=${tokenizeSqlForDisplay.toString()};`,
+    `const joinSqlDisplayTokens=${joinSqlDisplayTokens.toString()};`,
+    `const sqlDisplayTokenNeedsSpace=${sqlDisplayTokenNeedsSpace.toString()};`,
+    `const tokenWord=${tokenWord.toString()};`,
+    `const sqlJoinAt=${sqlJoinAt.toString()};`,
+    `const formatSqlForDisplay=${formatSqlForDisplay.toString()};`,
+  ].join("\n");
 }
 
 function escapeTerminalControls(value: string, preserveNewlines: boolean): string {

@@ -1,10 +1,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
-import readline from "node:readline/promises";
+import readline from "node:readline";
+import type { ReadStream, WriteStream } from "node:tty";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { ProposalStore } from "@synapsor-runner/proposal-store";
 import runnerPackage from "../package.json" with { type: "json" };
+import { loadBoundaryReviewContext } from "./boundary-commands.js";
 import { cliCommandName } from "./cli-command-meta.js";
 import { assertKnownOptions, optionalArg } from "./cli-options.js";
 import { activeProjectResolutionState, readRuntimeConfig } from "./cli-project.js";
@@ -18,6 +21,15 @@ import {
 } from "./explore-playground-service.js";
 import { createScopedExploreBoundarySetRuntime } from "./scoped-explore-boundary-set.js";
 import { ScopedExploreError } from "./scoped-explore.js";
+import { resolveSynapsorProject } from "./project-resolution.js";
+import { terminalContentWidth, wrapStyledTerminalLine } from "./terminal-layout.js";
+import {
+  readTerminalTextWithEscape,
+  withAlternateTerminalScreen,
+  withRawTerminalScreen,
+  withTerminalProgress,
+  type TerminalKeypress,
+} from "./terminal-prompt.js";
 import {
   renderTerminalFact,
   renderTerminalJson,
@@ -28,6 +40,7 @@ import {
   safeTerminalText,
   terminalSyntaxColorEnabled,
 } from "./terminal-syntax.js";
+import { ui } from "./ui-command.js";
 
 type PlaygroundGateway = {
   target: "local" | "remote_http";
@@ -36,6 +49,7 @@ type PlaygroundGateway = {
   describe(input?: Record<string, unknown>): Promise<Record<string, unknown>>;
   validate?: (request: ExplorePlaygroundRequest) => Promise<Record<string, unknown>>;
   run(request: ExplorePlaygroundRequest): Promise<Record<string, unknown>>;
+  sqlForEvidence?: (evidenceId: string) => Promise<Record<string, unknown> | undefined>;
   close(): Promise<void>;
 };
 
@@ -47,6 +61,9 @@ type ExplorePlaygroundDependencies = {
   stdout?: NodeJS.WriteStream;
   stderr?: NodeJS.WriteStream;
   env?: NodeJS.ProcessEnv;
+  openWorkbench?: typeof ui;
+  readEvidenceSql?: typeof readLocalEvidenceSql;
+  resolveWorkbenchProject?: typeof resolveExplorePlaygroundWorkbenchProject;
 };
 
 const PLAYGROUND_OPTIONS = new Set([
@@ -66,6 +83,15 @@ const PLAYGROUND_OPTIONS = new Set([
   "--no-color",
 ]);
 
+const PLAYGROUND_WORKBENCH_OPTIONS = new Set([
+  "--project-root",
+  "--config",
+  "--store",
+  "--host",
+  "--port",
+  "--no-open",
+]);
+
 export async function exploreCommand(
   args: string[],
   dependencies: ExplorePlaygroundDependencies = {},
@@ -77,8 +103,16 @@ export async function exploreCommand(
       ? "playground"
       : rawSubcommand;
   const options = !rawSubcommand || rawSubcommand.startsWith("-") ? args : rest;
-  if (!new Set(["playground", "run", "validate", "describe"]).has(subcommand)) {
-    throw new Error("explore accepts playground, run, validate, or describe.");
+  if (!new Set(["playground", "workbench", "run", "validate", "describe"]).has(subcommand)) {
+    throw new Error("explore accepts playground, workbench, run, validate, or describe.");
+  }
+  if (subcommand === "workbench") {
+    assertKnownOptions(options, PLAYGROUND_WORKBENCH_OPTIONS, "explore workbench");
+    return openExplorePlaygroundWorkbench(options, {
+      env: dependencies.env ?? process.env,
+      openWorkbench: dependencies.openWorkbench ?? ui,
+      resolveProject: dependencies.resolveWorkbenchProject ?? resolveExplorePlaygroundWorkbenchProject,
+    });
   }
   assertKnownOptions(options, PLAYGROUND_OPTIONS, `explore ${subcommand}`);
 
@@ -91,6 +125,7 @@ export async function exploreCommand(
   const gateway = await createPlaygroundGateway(options, {
     createRuntime: dependencies.createRuntime,
     connectRemote: dependencies.connectRemote,
+    readEvidenceSql: dependencies.readEvidenceSql,
     env,
   });
   try {
@@ -165,6 +200,7 @@ async function createPlaygroundGateway(
   dependencies: {
     createRuntime?: typeof createScopedExploreBoundarySetRuntime;
     connectRemote?: typeof connectRemotePlayground;
+    readEvidenceSql?: typeof readLocalEvidenceSql;
     env: NodeJS.ProcessEnv;
   },
 ): Promise<PlaygroundGateway> {
@@ -183,17 +219,25 @@ async function createPlaygroundGateway(
       ?? activeProjectResolutionState.current?.project_root
       ?? process.cwd(),
   );
+  const project = await resolveSynapsorProject(projectRoot, dependencies.env);
   const runtime = await (dependencies.createRuntime ?? createScopedExploreBoundarySetRuntime)({
     projectRoot,
     transport: "stdio",
     env: dependencies.env,
   });
-  return localPlaygroundGateway(runtime, projectRoot);
+  return localPlaygroundGateway(
+    runtime,
+    projectRoot,
+    project?.store_path ?? path.join(projectRoot, ".synapsor/local.db"),
+    dependencies.readEvidenceSql ?? readLocalEvidenceSql,
+  );
 }
 
 function localPlaygroundGateway(
   runtime: ExplorePlaygroundRuntime,
   projectRoot: string,
+  storePath: string,
+  readEvidenceSql: typeof readLocalEvidenceSql,
 ): PlaygroundGateway {
   const scope = describeExplorePlaygroundScope(runtime);
   return {
@@ -211,8 +255,78 @@ function localPlaygroundGateway(
     describe: (input = {}) => runtime.describe(input),
     validate: (request) => validateExplorePlaygroundRequest(runtime, request),
     run: (request) => runExplorePlaygroundRequest(runtime, request),
+    sqlForEvidence: (evidenceId) => readEvidenceSql(storePath, evidenceId),
     close: () => runtime.close(),
   };
+}
+
+async function openExplorePlaygroundWorkbench(
+  args: string[],
+  dependencies: {
+    env: NodeJS.ProcessEnv;
+    openWorkbench: typeof ui;
+    resolveProject: typeof resolveExplorePlaygroundWorkbenchProject;
+  },
+): Promise<number> {
+  const projectRoot = path.resolve(
+    optionalArg(args, "--project-root")
+      ?? activeProjectResolutionState.current?.project_root
+      ?? process.cwd(),
+  );
+  const project = await dependencies.resolveProject(projectRoot, dependencies.env);
+  const configPath = optionalArg(args, "--config")
+    ?? project.configPath
+    ?? path.join(projectRoot, "synapsor.runner.json");
+  const storePath = optionalArg(args, "--store")
+    ?? project.storePath
+    ?? path.join(projectRoot, ".synapsor/local.db");
+  return dependencies.openWorkbench([
+    ...(args.includes("--no-open") ? [] : ["--open"]),
+    "--playground",
+    "--boundary-root",
+    project.boundaryRoot,
+    "--config",
+    configPath,
+    "--store",
+    storePath,
+    ...(optionalArg(args, "--host") ? ["--host", optionalArg(args, "--host")!] : []),
+    ...(optionalArg(args, "--port") ? ["--port", optionalArg(args, "--port")!] : []),
+  ]);
+}
+
+async function resolveExplorePlaygroundWorkbenchProject(
+  projectRoot: string,
+  env: NodeJS.ProcessEnv,
+): Promise<{ boundaryRoot: string; configPath?: string; storePath?: string }> {
+  const project = await resolveSynapsorProject(projectRoot, env);
+  const review = await loadBoundaryReviewContext(projectRoot);
+  return {
+    boundaryRoot: review.boundaryRoot,
+    configPath: project?.config_path,
+    storePath: project?.store_path,
+  };
+}
+
+async function readLocalEvidenceSql(
+  storePath: string,
+  evidenceId: string,
+): Promise<Record<string, unknown> | undefined> {
+  const store = new ProposalStore(storePath);
+  try {
+    const evidence = store.getEvidenceBundle(evidenceId);
+    if (!evidence || !isRecord(evidence.payload) || !isRecord(evidence.payload.parameterized_sql)) {
+      return undefined;
+    }
+    return {
+      source: "captured_parameterized_sql",
+      evidence_bundle_id: evidence.evidence_bundle_id,
+      boundary_digest: evidence.payload.boundary_digest,
+      normalized_plan: evidence.payload.normalized_plan,
+      parameterized_sql: evidence.payload.parameterized_sql,
+    };
+  } finally {
+    store.close();
+  }
 }
 
 export async function connectRemotePlayground(input: {
@@ -374,116 +488,516 @@ async function runInteractivePlayground(input: {
   stderr: NodeJS.WriteStream;
   color: boolean;
 }): Promise<number> {
-  const rl = readline.createInterface({ input: input.stdin, output: input.stdout });
-  let document = input.initialDocument;
-  let boundary = input.initialBoundary;
-  input.stdout.write(formatPlaygroundHeader(input.gateway, input.color));
-  try {
-    const catalog = await input.gateway.describe({ limit: 10 });
-    input.stdout.write(formatPlaygroundCatalog(catalog, input.gateway, input.color));
-    input.stdout.write(playgroundHelp(input.gateway.validate !== undefined));
-    while (true) {
-      const command = (await rl.question("playground> ")).trim();
-      const normalized = command.toLowerCase();
-      if (normalized === "q" || normalized === "quit" || normalized === "exit") return 0;
-      if (normalized === "?" || normalized === "h" || normalized === "help") {
-        input.stdout.write(playgroundHelp(input.gateway.validate !== undefined));
-        continue;
-      }
-      if (normalized === "p" || normalized === "paste") {
-        input.stdout.write("Paste one JSON plan or MCP envelope. Finish with a line containing only a period.\n");
-        const lines: string[] = [];
-        while (true) {
-          const line = await rl.question("json> ");
-          if (line.trim() === ".") break;
-          lines.push(line);
-        }
-        try {
-          document = JSON.parse(lines.join("\n"));
-          input.stdout.write(`${renderTerminalStyledText("Plan loaded.", input.color, "success")} Use V to validate or R to run.\n`);
-        } catch (error) {
-          input.stderr.write(`Plan JSON was not loaded: ${safeTerminalText(error instanceof Error ? error.message : String(error))}\n`);
-        }
-        continue;
-      }
-      if (normalized === "f" || normalized === "file") {
-        const requested = (await rl.question("Plan file: ")).trim();
-        try {
-          document = JSON.parse(await fs.readFile(path.resolve(requested), "utf8"));
-          input.stdout.write(`${renderTerminalStyledText("Plan loaded.", input.color, "success")} Use V to validate or R to run.\n`);
-        } catch (error) {
-          input.stderr.write(`Plan file was not loaded: ${safeTerminalText(error instanceof Error ? error.message : String(error))}\n`);
-        }
-        continue;
-      }
-      if (normalized === "s" || normalized === "show") {
-        input.stdout.write(document === undefined
-          ? "No plan loaded. Use P to paste or F to load a file.\n"
-          : `${renderTerminalJson(document, input.color)}\n`);
-        continue;
-      }
-      if (normalized === "b" || normalized === "boundary") {
-        const selected = (await rl.question("Exact active boundary (blank for automatic routing): ")).trim();
-        boundary = selected || undefined;
-        input.stdout.write(`Boundary selector: ${boundary ?? "automatic from exact resource id"}\n`);
-        continue;
-      }
-      if (normalized === "c" || normalized === "catalog") {
-        const catalog = await input.gateway.describe({ ...(boundary ? { boundary } : {}), limit: 10 });
-        input.stdout.write(formatPlaygroundCatalog(catalog, input.gateway, input.color));
-        continue;
-      }
-      if (normalized === "v" || normalized === "validate") {
-        if (!input.gateway.validate) {
-          input.stdout.write("Remote validate-only is unavailable on the fixed two-tool MCP surface. R runs server validation before execution.\n");
-          continue;
-        }
-        if (document === undefined) {
-          input.stdout.write("No plan loaded. Use P to paste or F to load a file.\n");
-          continue;
-        }
-        try {
-          const request = normalizeExplorePlaygroundRequest(document, boundary);
-          const result = await input.gateway.validate(request);
-          input.stdout.write(formatPlaygroundValidation(result, input.gateway, input.color, input.stdout.columns));
-        } catch (error) {
-          input.stderr.write(error instanceof ScopedExploreError
-            ? formatPlaygroundRefusal(error, input.color, true)
-            : `${safeTerminalText(error instanceof Error ? error.message : String(error))}\n`);
-        }
-        continue;
-      }
-      if (normalized === "r" || normalized === "run") {
-        if (document === undefined) {
-          input.stdout.write("No plan loaded. Use P to paste or F to load a file.\n");
-          continue;
-        }
-        try {
-          const request = normalizeExplorePlaygroundRequest(document, boundary);
-          const result = await input.gateway.run(request);
-          input.stdout.write(formatPlaygroundExecution(result, request, input.gateway, input.color, false));
-        } catch (error) {
-          input.stderr.write(error instanceof ScopedExploreError
-            ? formatPlaygroundRefusal(error, input.color, false)
-            : `${safeTerminalText(error instanceof Error ? error.message : String(error))}\n`);
-        }
-        continue;
-      }
-      input.stdout.write("Unknown command. Use P paste, F file, V validate, R run, C catalog, B boundary, S show, ? help, or Q quit.\n");
+  const terminalInput = input.stdin as unknown as ReadStream;
+  const terminalOutput = input.stdout as unknown as WriteStream;
+  const state: InteractivePlaygroundState = {
+    document: input.initialDocument,
+    boundary: input.initialBoundary,
+    selectedAction: input.initialDocument === undefined
+      ? "paste"
+      : input.gateway.validate ? "validate" : "run",
+    message: input.initialDocument === undefined
+      ? "Paste a plan to begin. Esc returns to this menu."
+      : "Plan loaded from the command line.",
+  };
+
+  return withAlternateTerminalScreen(terminalOutput, async () => {
+    if (state.document === undefined) {
+      await pasteInteractivePlan(state, terminalInput, terminalOutput, input.color);
     }
-  } finally {
-    rl.close();
+    while (true) {
+      const action = await choosePlaygroundAction({
+        gateway: input.gateway,
+        state,
+        input: terminalInput,
+        output: terminalOutput,
+        color: input.color,
+      });
+      state.selectedAction = action;
+      if (action === "quit") return 0;
+
+      if (action === "paste") {
+        await pasteInteractivePlan(state, terminalInput, terminalOutput, input.color);
+        continue;
+      }
+      if (action === "file") {
+        const requested = await readTerminalTextWithEscape(
+          "LOAD JSON PLAN\nPath [Esc Back]: ",
+          terminalInput,
+          terminalOutput,
+        );
+        if (requested === undefined) {
+          state.message = "File selection cancelled. The loaded plan is unchanged.";
+          continue;
+        }
+        try {
+          state.document = JSON.parse(await fs.readFile(path.resolve(requested), "utf8"));
+          state.lastSql = undefined;
+          state.lastEvidenceId = undefined;
+          state.message = `Plan loaded from ${requested}.`;
+        } catch (error) {
+          state.message = "Plan file was not loaded.";
+          await showPlaygroundPage({
+            title: "PLAN FILE NOT LOADED",
+            content: safeTerminalText(error instanceof Error ? error.message : String(error)),
+            input: terminalInput,
+            output: terminalOutput,
+          });
+        }
+        continue;
+      }
+      if (action === "boundary") {
+        const selected = await readTerminalTextWithEscape(
+          [
+            "SELECT ACTIVE BOUNDARY",
+            "Leave blank for automatic routing from the exact resource ID.",
+            `Current: ${state.boundary ?? "automatic"}`,
+            "Boundary [Esc Back]: ",
+          ].join("\n"),
+          terminalInput,
+          terminalOutput,
+        );
+        if (selected === undefined) {
+          state.message = "Boundary selection cancelled.";
+          continue;
+        }
+        state.boundary = selected || undefined;
+        state.lastSql = undefined;
+        state.lastEvidenceId = undefined;
+        state.message = `Boundary: ${state.boundary ?? "automatic from exact resource ID"}.`;
+        continue;
+      }
+      if (action === "catalog") {
+        try {
+          const catalog = await withTerminalProgress(
+            terminalOutput,
+            "Loading the reviewed catalog",
+            () => input.gateway.describe({
+              ...(state.boundary ? { boundary: state.boundary } : {}),
+              limit: 25,
+            }),
+          );
+          await showPlaygroundPage({
+            title: "REVIEWED CATALOG",
+            content: formatPlaygroundCatalog(catalog, input.gateway, input.color),
+            input: terminalInput,
+            output: terminalOutput,
+          });
+          state.message = "Reviewed catalog inspected. No source rows were queried.";
+        } catch (error) {
+          await showPlaygroundError(error, false, terminalInput, terminalOutput, input.color);
+          state.message = "Catalog lookup was refused.";
+        }
+        continue;
+      }
+      if (action === "json") {
+        await showPlaygroundPage({
+          title: "LOADED JSON PLAN",
+          content: state.document === undefined
+            ? "No plan is loaded. Press P to paste formatted JSON or F to load a file."
+            : renderTerminalJson(state.document, input.color),
+          input: terminalInput,
+          output: terminalOutput,
+        });
+        continue;
+      }
+      if (action === "sql") {
+        await showPlaygroundPage({
+          title: "LAST COMPILED SQL",
+          content: formatInteractivePlaygroundSql(state, input.gateway, input.color, input.stdout.columns),
+          input: terminalInput,
+          output: terminalOutput,
+        });
+        continue;
+      }
+      if (action === "help") {
+        await showPlaygroundPage({
+          title: "PLAYGROUND HELP",
+          content: playgroundHelp(input.gateway.validate !== undefined),
+          input: terminalInput,
+          output: terminalOutput,
+        });
+        continue;
+      }
+      if (state.document === undefined) {
+        state.message = "No plan is loaded. Press P to paste formatted JSON or F to load a file.";
+        continue;
+      }
+
+      const request = normalizeExplorePlaygroundRequest(state.document, state.boundary);
+      if (action === "validate") {
+        if (!input.gateway.validate) {
+          state.message = "Remote validate-only is unavailable; Run performs server validation before execution.";
+          continue;
+        }
+        try {
+          const result = await withTerminalProgress(
+            terminalOutput,
+            "Rechecking catalog, authority, trusted scope, and read-only SQL",
+            () => input.gateway.validate!(request),
+          );
+          state.lastSql = result;
+          state.lastEvidenceId = undefined;
+          state.message = "SQL preview ready. No source rows queried and no Explore budget consumed.";
+          await showPlaygroundPage({
+            title: "PARAMETERIZED SQL PREVIEW",
+            content: formatPlaygroundValidation(result, input.gateway, input.color, input.stdout.columns),
+            input: terminalInput,
+            output: terminalOutput,
+          });
+        } catch (error) {
+          state.message = "Runner refused validation. No source rows were queried.";
+          await showPlaygroundError(error, true, terminalInput, terminalOutput, input.color);
+        }
+        continue;
+      }
+
+      try {
+        const execution = await withTerminalProgress(
+          terminalOutput,
+          "Validating and running through the reviewed Explore boundary",
+          async () => {
+            const result = await input.gateway.run(request);
+            const evidenceId = evidenceIdFromResult(result);
+            const sql = evidenceId && input.gateway.sqlForEvidence
+              ? await input.gateway.sqlForEvidence(evidenceId)
+              : undefined;
+            return { result, evidenceId, sql };
+          },
+        );
+        const { result } = execution;
+        state.lastEvidenceId = execution.evidenceId;
+        state.lastSql = execution.sql;
+        state.message = result.ok === false
+          ? "Runner refused the plan. No result was released."
+          : "Reviewed result released. Press S for captured SQL or J for the plan.";
+        await showPlaygroundPage({
+          title: "RUN RESULT",
+          content: formatPlaygroundExecution(result, request, input.gateway, input.color, false),
+          input: terminalInput,
+          output: terminalOutput,
+        });
+      } catch (error) {
+        state.message = "Runner refused the plan. No result was released.";
+        await showPlaygroundError(error, false, terminalInput, terminalOutput, input.color);
+      }
+    }
+  });
+}
+
+type PlaygroundAction =
+  | "paste"
+  | "file"
+  | "catalog"
+  | "boundary"
+  | "validate"
+  | "run"
+  | "sql"
+  | "json"
+  | "help"
+  | "quit";
+
+type InteractivePlaygroundState = {
+  document?: unknown;
+  boundary?: string;
+  selectedAction: PlaygroundAction;
+  message: string;
+  lastSql?: Record<string, unknown>;
+  lastEvidenceId?: string;
+};
+
+type PlaygroundActionItem = {
+  action: PlaygroundAction;
+  key: string;
+  label: string;
+  detail: string;
+};
+
+async function choosePlaygroundAction(input: {
+  gateway: PlaygroundGateway;
+  state: InteractivePlaygroundState;
+  input: ReadStream;
+  output: WriteStream;
+  color: boolean;
+}): Promise<PlaygroundAction> {
+  const actions: PlaygroundActionItem[] = [
+    { action: "paste", key: "P", label: "Paste or replace JSON", detail: "formatted multiline JSON loads automatically" },
+    { action: "file", key: "F", label: "Load JSON file", detail: "read one plan or MCP envelope" },
+    { action: "catalog", key: "C", label: "Reviewed catalog", detail: "inspect exact available resource IDs" },
+    { action: "boundary", key: "B", label: "Boundary routing", detail: input.state.boundary ?? "automatic from exact resource ID" },
+    ...(input.gateway.validate
+      ? [{ action: "validate" as const, key: "V", label: "Preview parameterized SQL", detail: "compile with values withheld; no rows queried or budget spent" }]
+      : []),
+    { action: "run", key: "R", label: "Run reviewed plan", detail: "normal scope, privacy, budget, and evidence path" },
+    {
+      action: "sql",
+      key: "S",
+      label: "Show last SQL",
+      detail: input.state.lastSql
+        ? "captured parameterized statement; values withheld"
+        : input.state.lastEvidenceId
+          ? "inspect the server-side evidence record"
+          : "available after local validation or execution",
+    },
+    { action: "json", key: "J", label: "Show loaded JSON", detail: input.state.document === undefined ? "no plan loaded" : planDocumentSummary(input.state.document) },
+    { action: "help", key: "?", label: "Help", detail: "input shape, navigation, and safety" },
+    { action: "quit", key: "Q", label: "Exit playground", detail: "return to the terminal" },
+  ];
+  let selected = Math.max(0, actions.findIndex((item) => item.action === input.state.selectedAction));
+  return withRawTerminalScreen(input.input, input.output, async (nextKey, render) => {
+    while (true) {
+      const planStatus = input.state.document === undefined
+        ? renderTerminalStyledText("not loaded", input.color, "warning")
+        : `${renderTerminalStyledText("loaded", input.color, "success")} - ${planDocumentSummary(input.state.document)}`;
+      render([
+        renderTerminalSectionHeading("Explore Plan Playground", input.color),
+        `Target: ${safeTerminalText(input.gateway.targetLabel)}`,
+        `Plan: ${planStatus}`,
+        `Boundary: ${safeTerminalText(input.state.boundary ?? "automatic")}`,
+        `Status: ${safeTerminalText(input.state.message)}`,
+        "",
+        ...actions.map((item, index) =>
+          `${index === selected ? ">" : " "} [${item.key}] ${item.label} - ${item.detail}`),
+        "",
+        "Up/Down Move   Enter Open   Letter shortcuts   Esc/Q Exit",
+      ]);
+      const key = await nextKey();
+      if (isTerminalExitKey(key)) return "quit";
+      if (key.name === "up") {
+        selected = (selected - 1 + actions.length) % actions.length;
+        continue;
+      }
+      if (key.name === "down") {
+        selected = (selected + 1) % actions.length;
+        continue;
+      }
+      if (isTerminalEnterKey(key)) return actions[selected]!.action;
+      const shortcut = terminalShortcut(key);
+      const matched = actions.find((item) => item.key.toLowerCase() === shortcut);
+      if (matched) return matched.action;
+    }
+  });
+}
+
+async function pasteInteractivePlan(
+  state: InteractivePlaygroundState,
+  input: ReadStream,
+  output: WriteStream,
+  color: boolean,
+): Promise<void> {
+  try {
+    const document = await readMultilinePlaygroundJson(input, output);
+    if (document === undefined) {
+      state.message = state.document === undefined
+        ? "Paste cancelled. No plan is loaded."
+        : "Paste cancelled. The loaded plan is unchanged.";
+      return;
+    }
+    state.document = document;
+    state.lastSql = undefined;
+    state.lastEvidenceId = undefined;
+    state.selectedAction = "run";
+    state.message = `${renderTerminalStyledText("Plan loaded.", color, "success")} Validate or run when ready.`;
+  } catch (error) {
+    state.message = "Plan JSON was not loaded.";
+    await showPlaygroundPage({
+      title: "JSON NOT LOADED",
+      content: [
+        safeTerminalText(error instanceof Error ? error.message : String(error)),
+        "",
+        "Press P to paste again. Formatted multiline JSON is supported.",
+      ].join("\n"),
+      input,
+      output,
+    });
   }
 }
 
-function formatPlaygroundHeader(gateway: PlaygroundGateway, color: boolean): string {
-  return [
-    renderTerminalSectionHeading("Explore Plan Playground", color),
-    "Paste the same fixed JSON plan shape used by app.explore_data. Runner accepts no SQL and no tenant/principal value from this editor.",
-    renderTerminalFact("Target", gateway.targetLabel, { color, tone: "identifier" }),
-    ...gateway.scopeLabel,
+async function readMultilinePlaygroundJson(
+  input: ReadStream,
+  output: WriteStream,
+): Promise<unknown | undefined> {
+  if (!input.isTTY || !output.isTTY || typeof input.setRawMode !== "function") {
+    throw new Error("Interactive JSON paste requires a real terminal.");
+  }
+  output.write([
+    "PASTE EXPLORE JSON",
+    "Paste one formatted plan or MCP envelope. It loads automatically when the JSON is complete.",
+    "Esc cancels. A line containing only . can still finish input manually.",
     "",
-  ].join("\n");
+  ].join("\n"));
+  readline.emitKeypressEvents(input);
+  const rl = readline.createInterface({ input, output, terminal: true, prompt: "json> " });
+  return new Promise<unknown | undefined>((resolve, reject) => {
+    const lines: string[] = [];
+    let settled = false;
+    const finish = (value: unknown | undefined, error?: Error) => {
+      if (settled) return;
+      settled = true;
+      input.off("keypress", onKeypress);
+      rl.off("line", onLine);
+      rl.off("close", onClose);
+      rl.close();
+      if (error) reject(error);
+      else resolve(value);
+    };
+    const parse = () => {
+      const serialized = lines.join("\n").trim();
+      if (!serialized) return finish(undefined);
+      try {
+        finish(JSON.parse(serialized));
+      } catch (error) {
+        finish(undefined, new Error(`Explore plan is not valid JSON: ${error instanceof Error ? error.message : String(error)}`));
+      }
+    };
+    const onLine = (line: string) => {
+      if (line.trim() === ".") {
+        parse();
+        return;
+      }
+      lines.push(line);
+      if (jsonDocumentComplete(lines.join("\n"))) {
+        parse();
+        return;
+      }
+      rl.prompt();
+    };
+    const onClose = () => {
+      if (settled) return;
+      if (lines.length) parse();
+      else finish(undefined);
+    };
+    const onKeypress = (_text: string, key: TerminalKeypress) => {
+      if (key.name !== "escape" && key.sequence !== "\u001b") return;
+      output.write("\n");
+      finish(undefined);
+    };
+    input.on("keypress", onKeypress);
+    rl.on("line", onLine);
+    rl.on("close", onClose);
+    rl.prompt();
+  });
+}
+
+function jsonDocumentComplete(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  const stack: string[] = [];
+  let inString = false;
+  let escaped = false;
+  let rootStarted = false;
+  let rootClosed = false;
+  for (const character of trimmed) {
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === '"') inString = false;
+      continue;
+    }
+    if (character === '"') {
+      inString = true;
+      continue;
+    }
+    if (rootClosed && !/\s/u.test(character)) return true;
+    if (character === "{" || character === "[") {
+      rootStarted = true;
+      stack.push(character);
+      continue;
+    }
+    if (character === "}" || character === "]") {
+      if (!stack.length) return true;
+      const opened = stack.pop();
+      if ((opened === "{" && character !== "}") || (opened === "[" && character !== "]")) return true;
+      if (rootStarted && !stack.length) rootClosed = true;
+    }
+  }
+  return rootStarted && rootClosed && !inString && stack.length === 0;
+}
+
+async function showPlaygroundError(
+  error: unknown,
+  validationOnly: boolean,
+  input: ReadStream,
+  output: WriteStream,
+  color: boolean,
+): Promise<void> {
+  await showPlaygroundPage({
+    title: "RUNNER REFUSAL",
+    content: error instanceof ScopedExploreError
+      ? formatPlaygroundRefusal(error, color, validationOnly)
+      : safeTerminalText(error instanceof Error ? error.message : String(error)),
+    input,
+    output,
+  });
+}
+
+async function showPlaygroundPage(input: {
+  title: string;
+  content: string;
+  input: ReadStream;
+  output: WriteStream;
+}): Promise<void> {
+  const width = Math.min(terminalContentWidth(input.output.columns), 116);
+  const wrapped = input.content
+    .split("\n")
+    .flatMap((line) => wrapStyledTerminalLine(line, width));
+  const bodyRows = Math.max(3, Math.floor(input.output.rows ?? 24) - 5);
+  let offset = 0;
+  await withRawTerminalScreen(input.input, input.output, async (nextKey, render) => {
+    while (true) {
+      const maximumOffset = Math.max(0, wrapped.length - bodyRows);
+      offset = Math.max(0, Math.min(offset, maximumOffset));
+      const end = Math.min(wrapped.length, offset + bodyRows);
+      render([
+        input.title,
+        wrapped.length > bodyRows ? `Lines ${offset + 1}-${end} of ${wrapped.length}` : "",
+        ...wrapped.slice(offset, end),
+        "",
+        "Up/Down Scroll   PgUp/PgDn Page   Home/End Jump   Esc/Enter Back",
+      ]);
+      const key = await nextKey();
+      if (key.name === "escape" || key.name === "left" || key.name === "backspace" || isTerminalEnterKey(key)) return;
+      if (key.name === "up") offset -= 1;
+      else if (key.name === "down") offset += 1;
+      else if (key.name === "pageup") offset -= bodyRows;
+      else if (key.name === "pagedown" || key.name === "space") offset += bodyRows;
+      else if (key.name === "home") offset = 0;
+      else if (key.name === "end") offset = maximumOffset;
+      else if (terminalShortcut(key) === "q") return;
+    }
+  });
+}
+
+function isTerminalExitKey(key: TerminalKeypress): boolean {
+  return key.name === "escape"
+    || (key.ctrl === true && (key.name === "c" || key.name === "d"))
+    || terminalShortcut(key) === "q";
+}
+
+function isTerminalEnterKey(key: TerminalKeypress): boolean {
+  return key.name === "return"
+    || key.name === "enter"
+    || key.sequence === "\r"
+    || key.sequence === "\n";
+}
+
+function terminalShortcut(key: TerminalKeypress): string {
+  const value = key.name?.length === 1 ? key.name : key.sequence;
+  return typeof value === "string" && value.length === 1 ? value.toLowerCase() : "";
+}
+
+function planDocumentSummary(document: unknown): string {
+  if (!isRecord(document)) return "invalid non-object input";
+  const plan = isRecord(document.plan) ? document.plan : document;
+  const kind = typeof plan.kind === "string" ? plan.kind : "unknown plan";
+  const resource = typeof plan.resource === "string" ? plan.resource : "resource not selected";
+  return `${kind} on ${resource}`;
+}
+
+function evidenceIdFromResult(result: Record<string, unknown>): string | undefined {
+  if (typeof result.evidence_bundle_id === "string") return result.evidence_bundle_id;
+  const audit = isRecord(result.audit) ? result.audit : undefined;
+  return typeof audit?.evidence_bundle_id === "string" ? audit.evidence_bundle_id : undefined;
 }
 
 function formatPlaygroundCatalog(
@@ -513,6 +1027,64 @@ function formatPlaygroundCatalog(
   ].join("\n");
 }
 
+function formatInteractivePlaygroundSql(
+  state: InteractivePlaygroundState,
+  gateway: PlaygroundGateway,
+  color: boolean,
+  columns?: number,
+): string {
+  const captured = state.lastSql;
+  const parameterized = captured && isRecord(captured.parameterized_sql)
+    ? captured.parameterized_sql
+    : undefined;
+  const statements = parameterized && Array.isArray(parameterized.statements)
+    ? parameterized.statements.filter(isRecord)
+    : [];
+  if (statements.length) {
+    const source = captured?.source === "captured_parameterized_sql"
+      ? "Captured from the evidence bundle written for the last execution."
+      : "Compiled by validate-only for the currently loaded plan; no source query ran.";
+    return [
+      renderTerminalStyledText(
+        captured?.source === "captured_parameterized_sql"
+          ? "SQL CAPTURED FOR THE LAST RUN"
+          : "VALIDATED SQL PREVIEW",
+        color,
+        "success",
+      ),
+      source,
+      "Parameter values are intentionally absent. SQL and parameters were never exposed to the model.",
+      ...(state.lastEvidenceId
+        ? [renderTerminalFact("Evidence", state.lastEvidenceId, { color, tone: "identifier" })]
+        : []),
+      "",
+      ...statements.map((statement, index) => renderTerminalSqlFrame(String(statement.statement ?? ""), {
+        title: statements.length === 1 ? "Parameterized read-only statement" : `Parameterized statement ${index + 1}`,
+        metadata: [
+          `Engine: ${String(parameterized!.engine ?? captured?.database_engine ?? "unknown")}`,
+          `Parameters: ${String(statement.parameter_count ?? 0)} values withheld`,
+        ],
+        color,
+        columns,
+      })),
+    ].join("\n");
+  }
+  if (gateway.target === "remote_http") {
+    return [
+      "Production MCP deliberately does not return operator SQL to the client.",
+      state.lastEvidenceId
+        ? `The last run wrote evidence ${state.lastEvidenceId}. On the Runner host, inspect it with:`
+        : "Run a plan first, then inspect its evidence on the Runner host:",
+      `${cliCommandName()} evidence show ${state.lastEvidenceId ?? "<evidence-id>"} --details --config ./synapsor.runner.json`,
+      "This keeps the production MCP surface model-safe while preserving exact operator audit evidence.",
+    ].join("\n");
+  }
+  return [
+    "No compiled SQL is available yet.",
+    "Use V to validate without querying source rows, or R to execute and capture the exact parameterized statement in evidence.",
+  ].join("\n");
+}
+
 function formatPlaygroundValidation(
   result: Record<string, unknown>,
   gateway: PlaygroundGateway,
@@ -533,9 +1105,6 @@ function formatPlaygroundValidation(
     renderTerminalFact("Explore budget consumed", validation.explore_budget_consumed === false ? "no" : "unknown", { color, tone: "success" }),
     renderTerminalFact("Estimated maximum response cells", String(validation.estimated_response_cells ?? "unknown"), { color }),
     "",
-    renderTerminalSectionHeading("Normalized Plan", color),
-    renderTerminalJson(result.normalized_plan, color),
-    "",
     renderTerminalSectionHeading("Parameterized SQL Preview", color),
     "Parameter values are intentionally absent. This is the exact compiled statement shape, not model-visible SQL.",
     ...statements.map((statement, index) => renderTerminalSqlFrame(String(statement.statement ?? ""), {
@@ -547,6 +1116,9 @@ function formatPlaygroundValidation(
       color,
       columns,
     })),
+    "",
+    renderTerminalSectionHeading("Normalized Plan", color),
+    renderTerminalJson(result.normalized_plan, color),
     "",
     ...gateway.scopeLabel,
     "",
@@ -671,9 +1243,18 @@ function formatPlaygroundRefusal(
 
 function playgroundHelp(validateAvailable: boolean): string {
   return [
-    "Commands:",
-    "  P paste JSON   F load file   S show plan   C catalog   B boundary",
-    `  ${validateAvailable ? "V validate only   " : ""}R run plan   ? help   Q quit`,
+    "Navigation:",
+    "  Up/Down move   Enter open   Esc back or exit",
+    "  P paste JSON   F load file   C catalog   B boundary",
+    `  ${validateAvailable ? "V preview SQL   " : ""}R run plan   S last SQL   J loaded JSON   ? help   Q quit`,
+    "",
+    "Formatted JSON:",
+    "  With no plan loaded, paste immediately. The editor detects the closing object and loads it automatically.",
+    "  P replaces the plan. Esc cancels without changing it. A line containing only . remains an optional manual finish.",
+    "",
+    "Result screens:",
+    "  Up/Down or PgUp/PgDn scroll. Esc or Enter returns to the action menu.",
+    "",
     "Validation never queries source rows or consumes Explore budget. Run uses the normal app.explore_data enforcement path.",
     "",
   ].join("\n");

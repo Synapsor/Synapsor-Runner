@@ -164,6 +164,26 @@ function freshnessEvaluation(
 }
 
 describe("local UI", () => {
+  it("preserves the one-time bootstrap gate while deep-linking to the JSON playground", async () => {
+    const server = await startLocalUiServer({
+      token: "playground-bootstrap-token",
+      initialView: "playground",
+    });
+    try {
+      expect(server.url).toContain("token=playground-bootstrap-token");
+      expect(server.url).toContain("view=playground");
+      const bootstrap = await fetch(server.url, { redirect: "manual" });
+      expect(bootstrap.status).toBe(303);
+      expect(bootstrap.headers.get("location")).toBe("/#explore?playground=1");
+      expect(bootstrap.headers.get("set-cookie")).toContain("HttpOnly");
+      const reused = await fetch(server.url, { redirect: "manual" });
+      expect(reused.status).toBe(401);
+      expect(server.reissueBootstrapUrl()).toContain("view=playground");
+    } finally {
+      await server.close();
+    }
+  });
+
   it("loads an exact disabled protected draft for the shell-to-Workbench handoff", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-protect-handoff-"));
     const capability = "analytics.weekly_revenue";

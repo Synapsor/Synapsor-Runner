@@ -151,16 +151,32 @@ Open the stateful terminal playground:
 synapsor-runner explore playground --project-root .
 ```
 
-The commands are:
+When no plan is preloaded, the terminal opens directly in paste mode. Paste the
+formatted JSON exactly as copied; Runner detects the complete JSON object and
+loads it without requiring a one-line conversion or a special terminator.
+`Esc` cancels and opens the action menu.
+
+The action menu supports Up/Down plus Enter and these shortcuts:
 
 ```text
-P paste JSON   F load file   S show plan   C catalog   B boundary
-V validate     R run plan    ? help        Q quit
+P paste JSON   F load file   C catalog   B boundary
+V preview SQL  R run plan    S last SQL    J loaded JSON   ? help   Q quit
 ```
 
-Paste mode ends when a line contains only `.`. Interactive mode cannot use
-`--plan -`, because stdin must remain available for commands. Use `P`, a file,
-or noninteractive `validate`/`run` instead.
+Every detail screen uses Up/Down or PgUp/PgDn to scroll; `Esc` or Enter returns
+to the menu. `Esc` from the menu exits and restores the normal terminal cursor.
+Paste mode also retains a line containing only `.` as an optional manual finish.
+Interactive mode cannot use `--plan -`, because stdin must remain available for
+navigation. Use direct paste, `P`, a file, or noninteractive `validate`/`run`.
+
+After local validation, `S` shows the compiled value-free SQL preview. After a
+local run, `S` reads the exact parameterized SQL shape captured in that run's
+evidence bundle. Parameter values remain absent. A production HTTP client never
+receives operator SQL; the remote SQL view points to the server-side evidence
+command instead. SQL is laid out across clauses for inspection; formatting is
+display-only and does not alter the statement Runner compiled or executed. The
+terminal keeps an animated status line visible while catalog, validation,
+execution, or evidence SQL is loading.
 
 When several active boundaries overlap, select one exact boundary with `B`,
 `--boundary`, or the envelope's `boundary` key. Automatic routing remains
@@ -168,20 +184,28 @@ available when the exact resource ID maps to only one active boundary.
 
 ## Workbench Preview
 
-Launch the local preview Workbench through the existing authoring command:
+Launch Workbench directly at the JSON playground:
 
 ```bash
-synapsor-runner start --from-env DATABASE_URL
+synapsor-runner explore workbench --project-root .
 ```
 
-After reviewed Explore is ready, open the no-model tools and expand **JSON plan
+The command starts the existing secured localhost Workbench, opens the one-time
+bootstrap URL, authenticates the browser session, and then focuses **JSON plan
 playground**. It provides:
 
-- an editable plan or MCP-envelope field;
+- a code-editor surface with JSON syntax highlighting, synchronized line
+  numbers, live parse state, cursor position, Format, and Copy;
+- formatted paste plus Tab indentation, `Ctrl`/`Command`+`S` or
+  `Ctrl`/`Command`+`Enter` to preview SQL, and
+  `Ctrl`/`Command`+`Shift`+`Enter` to run;
 - active-boundary selection;
 - read-only trusted-scope source and binding names;
-- **Validate only** and **Run reviewed plan** actions;
-- normalized-plan and parameterized-SQL details;
+- **Preview parameterized SQL** and **Run reviewed plan** actions;
+- highlighted normalized-plan and SQL output, with engine placeholders and
+  parameter counts but no values;
+- visible loading state with editing and run controls temporarily disabled, so
+  one plan cannot be changed underneath an in-flight validation or run;
 - released result, privacy, budget, timing, and evidence details.
 
 Workbench sends neither tenant nor principal values in the plan. Its local

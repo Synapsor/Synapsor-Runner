@@ -70,6 +70,7 @@ Examples:
   ${cmd} try --prove --yes --no-open
   ${cmd} try ask --provider openai [--model <model>] [--verbose] [--session-token-budget 200000]
   ${cmd} explore playground --project-root .
+  ${cmd} explore workbench --project-root .
   ${cmd} explore validate --plan ./explore-plan.json --project-root .
   ${cmd} explore run --plan ./explore-plan.json --project-root .
   ${cmd} start --from-env DATABASE_URL
@@ -108,6 +109,7 @@ Global options:
 `,
     explore: `Usage:
   ${cmd} explore playground [--project-root .] [--boundary <name>]
+  ${cmd} explore workbench [--project-root .] [--no-open]
   ${cmd} explore validate --plan <file|-> [--boundary <name>] [--json]
   ${cmd} explore run --plan <file|-> [--boundary <name>] [--json] [--details]
   ${cmd} explore describe [--resource <exact-id>] [--boundary <name>] [--json]
@@ -135,8 +137,10 @@ third MCP tool and is therefore intentionally unavailable.
 
 --plan accepts a path or - for stdin. --plan-json is available for short local
 experiments, but files/stdin avoid shell quoting. --input is a compatibility
-alias for --plan. Workbench provides the same local validator and runner in its
-preview no-model surface; CLI is the primary interface.
+alias for --plan. The interactive terminal accepts formatted multiline JSON.
+Explore workbench opens its authenticated localhost preview directly at a
+syntax-highlighted JSON editor and placeholder-only SQL preview; CLI remains
+the primary interface.
 `,
     try: `Usage:
   ${cmd} try

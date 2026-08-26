@@ -19,10 +19,13 @@
   read-only statements. It does not reserve budgets, execute source data
   queries, or create evidence/query-audit records. Parameterized SQL capture
   omits every parameter value.
-- Adds the preview Workbench JSON editor with exact boundary selection,
-  read-only trusted binding status, validate/run controls, normalized plan,
-  parameterized SQL, released results, privacy, budget, timing, and evidence.
-  Its CSRF-protected endpoints use the same shared service as the CLI.
+- Adds `synapsor-runner explore workbench --project-root .` to open the preview
+  Workbench directly at a code-editor surface with JSON highlighting, line
+  numbers, live parse status, formatting, keyboard commands, exact boundary
+  selection, and multiline highlighted parameterized SQL. Workbench and the
+  terminal playground show active progress while catalog, validation, SQL
+  evidence, or execution is loading. Its CSRF-protected validate/run endpoints
+  use the same shared service as the CLI.
 - Adds production HTTP replay through the official Streamable HTTP MCP client.
   Tokens are accepted only by environment-variable name, HTTPS is mandatory
   outside loopback, and tenant/principal scope remains verified JWT session

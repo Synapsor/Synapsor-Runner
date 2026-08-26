@@ -3,6 +3,24 @@ import { describe, expect, it } from "vitest";
 import { renderBoundaryWorkbench } from "./boundary-workbench.js";
 
 describe("Auto Boundary Workbench renderer", () => {
+  it("ships an executable code-editor playground with parameterized SQL as a primary path", () => {
+    const html = renderBoundaryWorkbench("test-csrf");
+    const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? "";
+
+    expect(() => new vm.Script(script)).not.toThrow();
+    expect(html).toContain("playground-line-numbers");
+    expect(html).toContain("playground-json-highlight");
+    expect(html).toContain(".plan-code-highlight .syntax-code{font:inherit;line-height:inherit}");
+    expect(html).toContain("Preview parameterized SQL");
+    expect(html).toContain("Placeholders remain variables");
+    expect(script).toContain('renderSyntaxCode("playground-normalized-json"');
+    expect(script).toContain('renderSyntaxCode("playground-sql-"+index');
+    expect(script).toContain("parameter value(s) withheld");
+    expect(script).toContain("setPlanPlaygroundBusy(true");
+    expect(script).toContain('root.setAttribute("aria-busy","true")');
+    expect(script).toContain("setPlanPlaygroundBusy(false)");
+  });
+
   it("keeps the 1.7.0 reviewed-access controls discoverable in both Workbench and CLI", () => {
     const html = renderBoundaryWorkbench("test-csrf");
     const parityMarkers: Array<[string, string[]]> = [

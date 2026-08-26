@@ -262,6 +262,7 @@ export type LocalUiOptions = {
   csrfToken?: string;
   allowRemoteBind?: boolean;
   tour?: boolean;
+  initialView?: "playground";
   boundaryRoot?: string;
   projectRoot?: string;
   storeAccess?: LocalUiStoreAccess;
@@ -551,7 +552,7 @@ export async function startLocalUiServer(options: LocalUiOptions = {}): Promise<
   const address = server.address() as AddressInfo;
   const port = address.port;
   const bootstrapUrl = () =>
-    `http://${host}:${port}/?token=${encodeURIComponent(bootstrapState.bootstrapToken)}${options.tour ? "&tour=1" : ""}`;
+    `http://${host}:${port}/?token=${encodeURIComponent(bootstrapState.bootstrapToken)}${options.tour ? "&tour=1" : ""}${options.initialView ? `&view=${encodeURIComponent(options.initialView)}` : ""}`;
   const url = bootstrapUrl();
   return {
     server,
@@ -687,6 +688,8 @@ async function handleRequest(input: {
         query_ref: requestedQueryRef!,
         capability: requestedCapability!,
       }).toString()}`
+      : requestedView === "playground"
+        ? "/#explore?playground=1"
       : tour || url.searchParams.get("tour") === "1"
         ? "/?tour=1"
         : "/";

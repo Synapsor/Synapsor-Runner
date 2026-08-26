@@ -89,9 +89,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     .ask-tool-trace{margin-top:10px;border-top:1px solid var(--line);padding-top:10px}.ask-tool-trace summary{font-size:12px}
     .active-scope-line{display:flex;gap:9px;align-items:center;flex-wrap:wrap}.active-scope-line .scope-dot{width:8px;height:8px;border-radius:50%;background:var(--good)}.active-scope-line span:last-child{color:var(--muted)}.ask-verified-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.ask-verified-head h3{margin:0}.runner-verified{color:var(--good);border-color:var(--good);background:var(--good-soft);text-transform:uppercase;font-weight:800}.ask-refused{margin-top:16px;padding:18px;border:1px solid var(--warn);border-left:3px solid var(--warn);border-radius:8px;background:var(--warn-soft)}.ask-refused h3{margin-bottom:6px}.ask-recovery{color:var(--muted)}.ask-access-guidance{margin-top:16px;padding-top:16px;border-top:1px solid var(--line)}.ask-access-guidance h3{margin:4px 0 6px}.ask-access-guidance p{max-width:720px}
     .no-model-surface{margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}.no-model-content{margin-top:12px}
-    .plan-playground-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(260px,.5fr);gap:14px;align-items:start}.plan-playground-editor{display:grid;gap:8px}.plan-playground-editor textarea{min-height:280px;resize:vertical;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;tab-size:2}.plan-playground-side{display:grid;gap:10px}.plan-playground-side .band{margin:0;padding:12px}.plan-playground-result{margin-top:14px}.plan-playground-result pre{max-height:520px}
+    .plan-playground-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin:14px 0}.plan-playground-head h3{font-size:20px}.plan-playground-head p{max-width:720px;margin:3px 0 0}.plan-playground-grid{display:grid;grid-template-columns:minmax(0,1fr) 286px;gap:16px;align-items:start}.plan-playground-editor{min-width:0}.plan-code-shell{overflow:hidden;border:1px solid var(--line-strong);border-radius:7px;background:#09110e;box-shadow:0 14px 34px rgba(0,0,0,.18)}.plan-code-shell.invalid{border-color:var(--bad);box-shadow:0 0 0 2px color-mix(in srgb,var(--bad) 22%,transparent)}.plan-code-toolbar,.plan-code-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:42px;padding:7px 10px;border-bottom:1px solid #26372f;background:#101a16}.plan-code-footer{min-height:34px;border-top:1px solid #26372f;border-bottom:0;color:#8d9a94;font-size:11px}.plan-code-title,.plan-code-state{display:flex;align-items:center;gap:7px;min-width:0}.plan-code-title strong{color:#eef5f1;font-size:12px}.plan-code-toolbar .badge{padding:2px 7px;font-size:10px}.plan-code-toolbar button{min-height:30px;padding:4px 9px;font-size:11px}.plan-code-editor{display:grid;grid-template-columns:auto minmax(0,1fr);min-height:430px;max-height:65vh;overflow:hidden}.plan-line-numbers{min-width:48px;margin:0;padding:14px 11px 30px 7px;overflow:hidden;border:0;border-right:1px solid #22322a;border-radius:0;background:#0b1511;color:#52635b;font:12px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;text-align:right;user-select:none}.plan-code-stage{position:relative;min-width:0;min-height:430px;overflow:hidden}.plan-code-highlight,.plan-code-stage textarea{position:absolute;inset:0;width:100%;height:100%;min-height:0;margin:0;padding:14px 16px 30px;overflow:auto;border:0;border-radius:0;background:transparent;font:12px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;tab-size:2;white-space:pre}.plan-code-highlight{max-height:none;pointer-events:none}.plan-code-highlight.syntax-block{padding-top:14px}.plan-code-highlight.syntax-block::before{display:none}.plan-code-stage textarea{z-index:1;resize:none;color:transparent;-webkit-text-fill-color:transparent;caret-color:#eef5f1;outline:0}.plan-code-stage textarea::selection{background:rgba(117,227,183,.24)}.plan-code-stage textarea:focus-visible{outline:0}.plan-playground-side{position:sticky;top:86px;display:grid;gap:10px}.plan-playground-side .field{padding:12px;border:1px solid var(--line);border-radius:7px;background:var(--surface)}.plan-playground-scope{padding:12px;border:1px solid var(--line);border-radius:7px;background:var(--surface-2)}.plan-playground-scope p{font-size:12px}.plan-playground-side button{width:100%}.plan-playground-side small{color:var(--muted)}.plan-playground-result{margin-top:16px}.plan-playground-result pre{max-height:520px}.plan-output-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:12px;margin-top:12px}.plan-output-grid details{min-width:0;margin:0;padding:12px;border:1px solid var(--line);border-radius:7px}.plan-output-grid pre{margin-bottom:4px}.plan-sql-note{display:flex;gap:7px;align-items:flex-start;margin:8px 0;color:var(--muted);font-size:12px}
     .instant-path{scroll-margin-top:76px}.instant-reveal{display:grid;grid-template-columns:minmax(310px,.8fr) minmax(520px,1.2fr);gap:54px;align-items:center;min-height:calc(100vh - 160px)}.instant-copy{display:grid;gap:20px;align-content:center}.instant-kicker{margin:0;color:#71e2b7;font-size:11px;font-weight:850;text-transform:uppercase}.instant-copy h2{max-width:610px;margin:0;color:#f4f8f6;font-size:46px;line-height:1.2}.instant-copy h2 span{display:block;color:#718078}.instant-copy>p{max-width:520px;margin:0;color:#aab6b0;font-size:17px;line-height:1.65}.instant-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.instant-actions button{min-height:52px;padding:12px 20px}.instant-actions .secondary{border-color:#314038;color:#d9e2dd}.instant-trust{display:block;color:#718078;font-size:11px;text-transform:uppercase}.instant-path .status-message{flex:1 0 100%;color:#aab6b0}.instant-boundary{min-width:0;padding:24px;border:1px solid #2a3e34;border-radius:8px;background:#101a16;color:#eef5f1}.instant-boundary-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}.instant-boundary-head h3{margin:5px 0 1px;font-size:26px}.instant-boundary-head code{color:#75847c}.instant-badge{display:inline-flex;align-items:center;padding:5px 9px;border:1px solid #60412f;border-radius:999px;background:#211813;color:#f3b276;font-size:11px;font-weight:800;text-transform:uppercase}.instant-flow{display:grid;grid-template-columns:minmax(82px,1fr) minmax(124px,1.2fr) minmax(82px,1fr);gap:18px;align-items:center;min-height:190px;margin:18px 0;padding:18px 0;border-bottom:1px solid #23322b}.instant-node{position:relative;display:grid;place-items:center;min-height:84px;padding:10px;border:1px solid #33433b;border-radius:8px;text-align:center;color:#dfe9e4}.instant-node strong{display:block;font-size:18px}.instant-node span{color:#728078;font-size:10px;text-transform:uppercase}.instant-node.boundary{border-color:#5cd7a5;background:#142a21}.instant-node.boundary::before,.instant-node.boundary::after{content:"";position:absolute;top:calc(50% - 1px);width:20px;height:3px;background-image:repeating-linear-gradient(90deg,#78e6bb 0 8px,transparent 8px 16px),linear-gradient(#33433b,#33433b);background-position:0 0,center;background-repeat:repeat-x,no-repeat;background-size:32px 3px,100% 1px;animation:instant-edge-flow 1.9s linear infinite}.instant-node.boundary::before{right:100%}.instant-node.boundary::after{left:100%}@keyframes instant-edge-flow{to{background-position:32px 0,center}}.instant-blocked{position:absolute;top:calc(100% + 12px);left:50%;width:max-content;max-width:180px;transform:translateX(-50%);padding:3px 8px;border:1px solid #344039;border-radius:999px;background:#0c1411;color:#77847d;font-size:10px}.instant-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 28px}.instant-fact strong{display:block;margin-bottom:5px;color:#748279;font-size:10px;text-transform:uppercase}.instant-fact p{margin:0;color:#dce5e0}.instant-preview{display:grid;grid-template-columns:auto minmax(0,1fr);gap:14px;align-items:start;margin-top:22px;padding:17px;border:1px solid #2a3b32;border-radius:8px;background:#0b1310}.instant-preview-icon{display:grid;place-items:center;width:34px;height:34px;border-radius:7px;background:#173127;color:#77e7ba;font-weight:800}.instant-preview strong{display:block;color:#748279;font-size:10px;text-transform:uppercase}.instant-preview p{margin:5px 0 0;color:#eef5f1;font-size:16px}.instant-preview small{display:block;margin-top:6px;color:#718078}.instant-result{margin-top:12px}
-    @media(prefers-reduced-motion:reduce){.instant-node.boundary::before,.instant-node.boundary::after{animation:none}}
+    .plan-code-highlight{overflow:hidden}.plan-code-highlight .syntax-code{font:inherit;line-height:inherit}.status-message.loading{display:flex;align-items:center;gap:9px;color:var(--text)}.status-message.loading::before{content:"";width:14px;height:14px;flex:0 0 auto;border:2px solid color-mix(in srgb,var(--accent) 28%,transparent);border-top-color:var(--accent);border-radius:50%;animation:plan-progress-spin .75s linear infinite}#json-plan-playground[aria-busy=true] .plan-code-shell{border-color:color-mix(in srgb,var(--accent) 70%,var(--line-strong))}@keyframes plan-progress-spin{to{transform:rotate(360deg)}}
+    @media(prefers-reduced-motion:reduce){.instant-node.boundary::before,.instant-node.boundary::after,.status-message.loading::before{animation:none}}
     body.quick-start-mode,body.ask-focus-mode{--bg:#07100c;--surface:#101a16;--surface-2:#14211b;--text:#f2f7f4;--muted:#9aa8a1;--line:#27372f;--line-strong:#3b5045;--accent:#75e3b7;--accent-strong:#8aebc5;--accent-soft:#142d23;--good:#75e3b7;--good-soft:#142d23;background:#07100c}
     body.quick-start-mode header,body.ask-focus-mode header{background:#07100c;border-color:#1d2a24;backdrop-filter:none}
     body.quick-start-mode header>div,body.quick-start-mode main,body.ask-focus-mode header>div,body.ask-focus-mode main{width:min(1380px,calc(100% - 64px))}
@@ -162,9 +163,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	    .access-final{position:sticky;bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:16px;margin:18px 0 0 auto;max-width:calc(100% - 318px);padding:12px 14px;border:1px solid var(--accent);border-radius:8px;background:color-mix(in srgb,var(--surface) 96%,transparent);box-shadow:0 10px 32px rgba(0,0,0,.18);backdrop-filter:blur(10px);z-index:2}.access-final p{min-width:0;margin:0;overflow-wrap:anywhere}.access-final strong{color:var(--text);overflow-wrap:anywhere}
 	    .hidden{display:none!important}.screen-reader{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 	    @media(max-width:960px){.workbench-layout{grid-template-columns:1fr;gap:18px}.workflow-rail{position:static}.rail-label,.rail-note{display:none}.steps{display:flex;overflow-x:auto;border-bottom:1px solid var(--line);padding-bottom:1px}.step{flex:0 0 auto;min-width:150px;border-left:0;border-bottom:3px solid transparent;border-radius:6px 6px 0 0}.step.active{border-left:0;border-bottom-color:var(--accent)}}
-	    @media(max-width:820px){header>div,main,body.quick-start-mode header>div,body.quick-start-mode main,body.ask-focus-mode header>div,body.ask-focus-mode main,body.access-focus-mode header>div,body.access-focus-mode main{width:calc(100% - 24px)}.summary{grid-template-columns:1fr 1fr}.metric:nth-child(2){border-right:0}.resource-list,.scope-grid,.form-grid,.preflight,.journey,.ask-grid,.instant-reveal,.access-editor,.access-column,.boundary-version-list,.plan-playground-grid{grid-template-columns:1fr}.boundary-overview-head{flex-direction:column}.access-editor-head{align-items:flex-start;flex-direction:column}.access-nav{position:static}.access-resource-list{max-height:270px}.access-final{position:static;max-width:none;flex-direction:column;align-items:stretch}.instant-reveal{gap:28px;min-height:auto;padding:28px 0 44px}.instant-copy{display:contents}.instant-copy .instant-kicker{order:1}.instant-copy h2{order:2;font-size:36px}.instant-copy>p{order:3}.instant-boundary{order:4;padding:18px}.instant-actions{order:5}.instant-trust{order:6}.instant-flow{min-height:160px}.footer-actions{position:static}.ask-head{grid-template-columns:1fr}.ask-state{text-align:left}.ask-state .badge{margin:0 5px 0 0}body.ask-focus-mode .ask-state{position:static}}
+	    @media(max-width:820px){header>div,main,body.quick-start-mode header>div,body.quick-start-mode main,body.ask-focus-mode header>div,body.ask-focus-mode main,body.access-focus-mode header>div,body.access-focus-mode main{width:calc(100% - 24px)}.summary{grid-template-columns:1fr 1fr}.metric:nth-child(2){border-right:0}.resource-list,.scope-grid,.form-grid,.preflight,.journey,.ask-grid,.instant-reveal,.access-editor,.access-column,.boundary-version-list,.plan-playground-grid,.plan-output-grid{grid-template-columns:1fr}.boundary-overview-head,.plan-playground-head{flex-direction:column}.access-editor-head{align-items:flex-start;flex-direction:column}.access-nav,.plan-playground-side{position:static}.access-resource-list{max-height:270px}.access-final{position:static;max-width:none;flex-direction:column;align-items:stretch}.instant-reveal{gap:28px;min-height:auto;padding:28px 0 44px}.instant-copy{display:contents}.instant-copy .instant-kicker{order:1}.instant-copy h2{order:2;font-size:36px}.instant-copy>p{order:3}.instant-boundary{order:4;padding:18px}.instant-actions{order:5}.instant-trust{order:6}.instant-flow{min-height:160px}.footer-actions{position:static}.ask-head{grid-template-columns:1fr}.ask-state{text-align:left}.ask-state .badge{margin:0 5px 0 0}body.ask-focus-mode .ask-state{position:static}}
     @media(max-width:560px){.ask-composer{grid-template-columns:1fr}.ask-composer-actions{display:flex;flex-wrap:wrap;width:auto}.ask-composer-actions button{flex:1 1 120px}}
-    @media(max-width:480px){header>div,main,body.quick-start-mode header>div,body.quick-start-mode main,body.ask-focus-mode header>div,body.ask-focus-mode main{width:calc(100% - 20px)}.brand-copy p{display:none}.header-status .badge{display:none}.summary{grid-template-columns:1fr}.metric{border-right:0;border-bottom:1px solid var(--line)}.toolbar>*,.actions>button{width:100%}.step{min-width:132px}.ask-head,.ask-body{padding:14px}.instant-copy{gap:16px}.instant-copy h2{font-size:32px}.instant-copy>p{font-size:15px}.instant-actions{display:grid}.instant-actions button{width:100%}.instant-facts{grid-template-columns:1fr}.instant-flow{grid-template-columns:72px minmax(108px,1fr) 72px;gap:12px}.instant-node.boundary::before,.instant-node.boundary::after{width:14px}.instant-boundary-head h3{font-size:21px}.instant-preview{padding:13px}.instant-trust{margin-top:4px}}
+    @media(max-width:480px){header>div,main,body.quick-start-mode header>div,body.quick-start-mode main,body.ask-focus-mode header>div,body.ask-focus-mode main{width:calc(100% - 20px)}.brand-copy p{display:none}.header-status .badge{display:none}.summary{grid-template-columns:1fr}.metric{border-right:0;border-bottom:1px solid var(--line)}.toolbar>*,.actions>button{width:100%}.plan-code-toolbar{align-items:flex-start;flex-direction:column}.plan-code-toolbar .toolbar{width:100%}.plan-code-toolbar .toolbar>*{width:auto}.plan-code-footer{align-items:flex-start;flex-direction:column}.plan-code-editor,.plan-code-stage{min-height:360px}.step{min-width:132px}.ask-head,.ask-body{padding:14px}.instant-copy{gap:16px}.instant-copy h2{font-size:32px}.instant-copy>p{font-size:15px}.instant-actions{display:grid}.instant-actions button{width:100%}.instant-facts{grid-template-columns:1fr}.instant-flow{grid-template-columns:72px minmax(108px,1fr) 72px;gap:12px}.instant-node.boundary::before,.instant-node.boundary::after{width:14px}.instant-boundary-head h3{font-size:21px}.instant-preview{padding:13px}.instant-trust{margin-top:4px}}
 
     /* The visual reference changes presentation only. Existing controls and authority remain intact. */
     :root{color-scheme:dark;--bg:#07100c;--surface:#0f1915;--surface-2:#131f1a;--text:#f1f6f3;--muted:#8d9a94;--line:#26372f;--line-strong:#40544a;--accent:#75e3b7;--accent-strong:#8becC6;--accent-soft:#142d23;--warn:#f0aa68;--warn-soft:#2a1d15;--bad:#ff958b;--bad-soft:#321d1b;--good:#75e3b7;--good-soft:#142d23;--shadow:0 18px 56px rgba(0,0,0,.22)}
@@ -482,20 +483,37 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	            <div id="first-reviewed-question" class="band"></div>
 	            <details id="json-plan-playground" class="band">
 	              <summary>JSON plan playground <span class="badge">Workbench preview</span></summary>
-	              <div class="plan-playground-grid" style="margin-top:14px">
-	                <label class="field plan-playground-editor">Explore plan or MCP envelope
-	                  <textarea id="playground-plan-json" spellcheck="false" autocomplete="off" aria-describedby="playground-plan-help"></textarea>
-	                  <span id="playground-plan-help">Use exact IDs from the reviewed catalog. Tenant and principal are read-only trusted context and are never accepted here.</span>
-	                </label>
-	                <div class="plan-playground-side">
-	                  <label class="field">Active boundary<select id="playground-boundary"><option value="">Automatic from exact resource ID</option></select></label>
-	                  <div id="playground-scope" class="band"></div>
-	                  <button id="playground-use-generated" class="secondary" type="button">Use current generated plan</button>
-	                  <button id="playground-validate" class="secondary" type="button">Validate only</button>
-	                  <button id="playground-run" type="button">Run reviewed plan</button>
-	                </div>
+	              <div class="plan-playground-head">
+	                <div><h3>Paste a plan. Inspect the SQL. Run through the boundary.</h3><p>Formatted JSON works directly. Runner validates every identifier and injects trusted scope outside this editor.</p></div>
+	                <span class="badge">Local operator tool</span>
 	              </div>
-	              <div id="playground-status" class="status-message" role="status" aria-live="polite"></div>
+	              <div class="plan-playground-grid">
+	                <section class="plan-playground-editor" aria-label="Explore plan JSON editor">
+	                  <div id="playground-code-shell" class="plan-code-shell">
+	                    <div class="plan-code-toolbar">
+	                      <div class="plan-code-title"><strong>plan.json</strong><span id="playground-json-state" class="badge">Waiting for JSON</span><span id="playground-line-count" class="badge">1 line</span></div>
+	                      <div class="toolbar"><button id="playground-format" class="quiet" type="button" title="Format JSON (Ctrl or Command + Shift + F)">Format</button><button id="playground-copy" class="quiet" type="button">Copy</button></div>
+	                    </div>
+	                    <div class="plan-code-editor">
+	                      <pre id="playground-line-numbers" class="plan-line-numbers" aria-hidden="true">1</pre>
+	                      <div class="plan-code-stage">
+	                        <pre id="playground-json-highlight" class="plan-code-highlight" aria-hidden="true"></pre>
+	                        <textarea id="playground-plan-json" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Explore plan or MCP envelope JSON" aria-describedby="playground-plan-help" wrap="off"></textarea>
+	                      </div>
+	                    </div>
+	                    <div class="plan-code-footer"><span id="playground-plan-help">Exact reviewed IDs only. Tenant and principal values cannot be entered here.</span><span id="playground-cursor-position">Ln 1, Col 1</span></div>
+	                  </div>
+	                </section>
+	                <aside class="plan-playground-side" aria-label="Plan actions">
+	                  <label class="field">Active boundary<select id="playground-boundary"><option value="">Automatic from exact resource ID</option></select></label>
+	                  <div id="playground-scope" class="plan-playground-scope"></div>
+	                  <button id="playground-use-generated" class="quiet" type="button">Load generated plan</button>
+	                  <button id="playground-validate" class="secondary" type="button">Preview parameterized SQL</button>
+	                  <small>Compiles only. No source query runs and parameter values stay withheld.</small>
+	                  <button id="playground-run" type="button">Run reviewed plan</button>
+	                </aside>
+	              </div>
+	              <div id="playground-status" class="status-message" role="status" aria-live="polite" aria-atomic="true"></div>
 	              <div id="playground-result" class="plan-playground-result"></div>
 	            </details>
 	            <details id="explore-composer" class="band">
@@ -769,6 +787,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     let instantOnboarding=null;
     let focusAskAfterLoad=false;
     let openNoModelAfterLoad=false;
+	    let openPlanPlaygroundAfterLoad=false;
 	    let openClientAfterLoad=false;
 	    let reviewProgressHealthy=true;
 	    let progressSave=Promise.resolve();
@@ -1158,6 +1177,23 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       content.scrollIntoView({behavior:"auto",block:"start"});
     }
 
+	    function revealPlanPlayground(){
+	      if(byId("explorer").classList.contains("hidden")){
+	        openPlanPlaygroundAfterLoad=true;
+	        return;
+	      }
+	      document.body.classList.add("no-model-focus");
+	      const content=byId("no-model-content");
+	      const playground=byId("json-plan-playground");
+	      content.classList.remove("hidden");
+	      playground.open=true;
+	      byId("explore-composer").open=false;
+	      byId("open-no-model").textContent="No-model composer open";
+	      byId("open-no-model").disabled=true;
+	      playground.scrollIntoView({behavior:"auto",block:"start"});
+	      byId("playground-plan-json").focus();
+	    }
+
     function setView(view,historyMode="push"){
       if(!validViews.has(view))view="overview";
 	      const previousView=currentView;
@@ -1246,6 +1282,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         if(/^A[1-9][0-9]*$/.test(queryRef||""))preferredProtectQueryRef=queryRef;
         if(/^[A-Za-z][A-Za-z0-9_.-]{0,127}$/.test(capability||""))preferredProtectedCapability=capability;
       }
+	      if(view==="explore"&&separator>=0){
+	        const params=new URLSearchParams(raw.slice(separator+1));
+	        if(params.get("playground")==="1")openPlanPlaygroundAfterLoad=true;
+	      }
       return view;
     }
 
@@ -5560,13 +5600,141 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       renderPlanPlayground();
       renderFirstReviewedQuestion(firstSuggestion);
       renderClientConfigs();
-      if(openNoModelAfterLoad){
+	      if(openPlanPlaygroundAfterLoad){
+	        openPlanPlaygroundAfterLoad=false;
+	        requestAnimationFrame(revealPlanPlayground);
+	      }else if(openNoModelAfterLoad){
         openNoModelAfterLoad=false;
         requestAnimationFrame(revealNoModelComposer);
       }
       if(openClientAfterLoad){
         openClientAfterLoad=false;
         requestAnimationFrame(revealExistingClientSetup);
+      }
+    }
+
+    function playgroundJsonError(error,source){
+      const message=String(error?.message||error||"Invalid JSON");
+      const explicit=message.match(/line\\s+(\\d+)\\s+column\\s+(\\d+)/i);
+      if(explicit)return {message,line:Number(explicit[1]),column:Number(explicit[2])};
+      const positioned=message.match(/position\\s+(\\d+)/i);
+      if(!positioned)return {message};
+      const offset=Math.max(0,Math.min(source.length,Number(positioned[1])));
+      const before=source.slice(0,offset).split("\\n");
+      return {message,line:before.length,column:(before.at(-1)?.length||0)+1};
+    }
+
+    function updatePlanPlaygroundCursor(){
+      const editor=byId("playground-plan-json");
+      const before=editor.value.slice(0,editor.selectionStart).split("\\n");
+      byId("playground-cursor-position").textContent="Ln "+before.length+", Col "+((before.at(-1)?.length||0)+1);
+    }
+
+    function syncPlanPlaygroundScroll(){
+      const editor=byId("playground-plan-json");
+      const highlight=byId("playground-json-highlight");
+      const numbers=byId("playground-line-numbers");
+      highlight.scrollTop=editor.scrollTop;
+      highlight.scrollLeft=editor.scrollLeft;
+      numbers.scrollTop=editor.scrollTop;
+    }
+
+    function updatePlanPlaygroundEditor(){
+      const editor=byId("playground-plan-json");
+      const source=editor.value;
+      const lineCount=Math.max(1,source.split("\\n").length);
+      byId("playground-line-numbers").textContent=Array.from({length:lineCount},(_,index)=>String(index+1)).join("\\n");
+      byId("playground-line-count").textContent=lineCount+" "+(lineCount===1?"line":"lines");
+      renderSyntaxCode("playground-json-highlight",source||" ","JSON");
+      const state=byId("playground-json-state");
+      const shell=byId("playground-code-shell");
+      if(!source.trim()){
+        state.className="badge";
+        state.textContent="Waiting for JSON";
+        state.removeAttribute("title");
+        shell.classList.remove("invalid");
+      }else{
+        try{
+          const parsed=JSON.parse(source);
+          if(!parsed||typeof parsed!=="object"||Array.isArray(parsed))throw new Error("Plan JSON must be one object.");
+          state.className="badge good";
+          state.textContent="Valid JSON";
+          state.removeAttribute("title");
+          shell.classList.remove("invalid");
+        }catch(error){
+          const detail=playgroundJsonError(error,source);
+          state.className="badge bad";
+          state.textContent=detail.line?"Invalid · Ln "+detail.line:"Invalid JSON";
+          state.title=detail.message;
+          shell.classList.add("invalid");
+        }
+      }
+      updatePlanPlaygroundCursor();
+      requestAnimationFrame(syncPlanPlaygroundScroll);
+    }
+
+    function formatPlanPlaygroundJson(){
+      const editor=byId("playground-plan-json");
+      try{
+        const parsed=JSON.parse(editor.value);
+        if(!parsed||typeof parsed!=="object"||Array.isArray(parsed))throw new Error("Plan JSON must be one object.");
+        editor.value=JSON.stringify(parsed,null,2);
+        updatePlanPlaygroundEditor();
+        byId("playground-status").className="status-message";
+        byId("playground-status").textContent="Plan JSON formatted. Nothing was executed.";
+      }catch(error){
+        const detail=playgroundJsonError(error,editor.value);
+        byId("playground-status").className="status-message error";
+        byId("playground-status").textContent="Cannot format invalid JSON"+(detail.line?" at line "+detail.line+", column "+detail.column:"")+": "+detail.message;
+        updatePlanPlaygroundEditor();
+      }
+    }
+
+    async function copyPlanPlaygroundJson(){
+      const editor=byId("playground-plan-json");
+      try{
+        await navigator.clipboard.writeText(editor.value);
+        byId("playground-status").className="status-message";
+        byId("playground-status").textContent="Plan JSON copied.";
+      }catch(_error){
+        editor.focus();
+        editor.select();
+        byId("playground-status").className="status-message warn";
+        byId("playground-status").textContent="Clipboard access was unavailable. The plan is selected for copying.";
+      }
+    }
+
+    function handlePlanPlaygroundKeydown(event){
+      const editor=event.currentTarget;
+      const command=event.ctrlKey||event.metaKey;
+      if(event.key==="Tab"){
+        event.preventDefault();
+        const start=editor.selectionStart;
+        const end=editor.selectionEnd;
+        editor.setRangeText("  ",start,end,"end");
+        updatePlanPlaygroundEditor();
+        return;
+      }
+      if(command&&event.shiftKey&&event.key.toLowerCase()==="f"){
+        event.preventDefault();
+        formatPlanPlaygroundJson();
+        return;
+      }
+      if(command&&event.shiftKey&&event.key==="Enter"){
+        event.preventDefault();
+        runPlanPlayground();
+        return;
+      }
+      if(command&&(event.key==="Enter"||event.key.toLowerCase()==="s")){
+        event.preventDefault();
+        validatePlanPlayground();
+        return;
+      }
+      if(event.key==="Escape"){
+        event.preventDefault();
+        const playground=byId("json-plan-playground");
+        playground.open=false;
+        playground.querySelector("summary")?.focus();
       }
     }
 
@@ -5581,6 +5749,14 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       if(!editor.value.trim()){
         try{editor.value=JSON.stringify(currentPlan(),null,2)}catch{}
       }
+      editor.oninput=updatePlanPlaygroundEditor;
+      editor.onscroll=syncPlanPlaygroundScroll;
+      editor.onclick=updatePlanPlaygroundCursor;
+      editor.onkeyup=updatePlanPlaygroundCursor;
+      editor.onkeydown=handlePlanPlaygroundKeydown;
+      byId("playground-format").onclick=formatPlanPlaygroundJson;
+      byId("playground-copy").onclick=copyPlanPlaygroundJson;
+      updatePlanPlaygroundEditor();
       const tenant=exploreTrustedScope?.tenant;
       const principal=exploreTrustedScope?.principal;
       byId("playground-scope").innerHTML='<strong>Trusted scope</strong>'
@@ -5592,6 +5768,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           const plan=currentPlan();
           const resource=describedResourceForPlan(plan);
           editor.value=JSON.stringify(plan,null,2);
+          updatePlanPlaygroundEditor();
           boundarySelect.value=resource?.boundary_name||"";
           byId("playground-status").className="status-message";
           byId("playground-status").textContent="Current reviewed composer plan loaded.";
@@ -5621,11 +5798,36 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       return {plan:document,...(selected?{boundary:selected}:{})};
     }
 
+    function setPlanPlaygroundBusy(busy,message){
+      const root=byId("json-plan-playground");
+      const status=byId("playground-status");
+      const controlIds=[
+        "playground-plan-json",
+        "playground-boundary",
+        "playground-use-generated",
+        "playground-validate",
+        "playground-run",
+        "playground-format",
+        "playground-copy",
+      ];
+      for(const id of controlIds){
+        const control=byId(id);
+        if(control)control.disabled=busy;
+      }
+      if(busy){
+        root.setAttribute("aria-busy","true");
+        status.className="status-message loading";
+        status.textContent=message;
+      }else{
+        root.removeAttribute("aria-busy");
+        status.classList.remove("loading");
+      }
+    }
+
     async function validatePlanPlayground(){
       const status=byId("playground-status");
       const panel=byId("playground-result");
-      status.className="status-message";
-      status.textContent="Rechecking live catalog and reviewed authority...";
+      setPlanPlaygroundBusy(true,"Rechecking live catalog, reviewed authority, and read-only SQL...");
       panel.textContent="";
       try{
         const request=playgroundRequestFromEditor();
@@ -5634,24 +5836,27 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         const statements=result.parameterized_sql?.statements||[];
         status.className="status-message";
         status.textContent="Validated. No source data query ran and no Explore budget was consumed.";
-        panel.innerHTML='<section class="band success"><h3>Plan is ready</h3>'
-          +'<div class="result-meta"><span class="badge good">Catalog rechecked</span><span class="badge good">No data query</span><span class="badge good">No budget consumed</span></div>'
+        panel.innerHTML='<section class="band success"><h3>Parameterized SQL preview is ready</h3>'
+          +'<div class="result-meta"><span class="badge good">Catalog rechecked</span><span class="badge good">No source query</span><span class="badge good">No budget consumed</span><span class="badge">Parameter values withheld</span></div>'
           +'<p><strong>Boundary:</strong> '+esc(result.boundary_name)+'<br><strong>Estimated maximum response:</strong> '+esc(result.validation?.estimated_response_cells??"unknown")+' cells<br><strong>Trusted scope values in preview:</strong> no</p>'
-          +'<details open><summary>Normalized plan</summary><pre>'+esc(JSON.stringify(result.normalized_plan,null,2))+'</pre></details>'
-          +'<details><summary>Parameterized SQL preview</summary><p>Parameter values are absent. The model never receives this SQL.</p>'
-          +statements.map((statement,index)=>'<h4>'+(statements.length===1?'Read-only statement':'Statement '+(index+1))+'</h4><pre>'+esc(statement.statement)+'</pre><small>'+esc(statement.parameter_count)+' parameter value(s) withheld.</small>').join("")+'</details></section>';
+          +'<div class="plan-output-grid"><details open><summary>Parameterized SQL</summary><p class="plan-sql-note">This is the compiler output. Placeholders remain variables; their trusted or user-supplied values are not displayed.</p>'
+          +statements.map((statement,index)=>'<h4>'+(statements.length===1?'Read-only statement':'Statement '+(index+1))+'</h4><pre id="playground-sql-'+index+'"></pre><small>'+esc(statement.parameter_count)+' parameter value(s) withheld.</small>').join("")+'</details>'
+          +'<details><summary>Normalized reviewed plan</summary><pre id="playground-normalized-json"></pre></details></div></section>';
+        statements.forEach((statement,index)=>renderSyntaxCode("playground-sql-"+index,statement.statement,"SQL"));
+        renderSyntaxCode("playground-normalized-json",JSON.stringify(result.normalized_plan,null,2),"JSON");
       }catch(error){
         status.className="status-message error";
         status.textContent=error.message;
         panel.innerHTML='<section class="band error"><strong>Runner refused this plan.</strong><p>'+esc(error.message)+'</p><p>Source data query executed: no. Explore budget consumed: no.</p></section>';
+      }finally{
+        setPlanPlaygroundBusy(false);
       }
     }
 
     async function runPlanPlayground(){
       const status=byId("playground-status");
       const panel=byId("playground-result");
-      status.className="status-message";
-      status.textContent="Running through the reviewed Explore boundary...";
+      setPlanPlaygroundBusy(true,"Validating and running through the reviewed Explore boundary...");
       panel.textContent="";
       try{
         const request=playgroundRequestFromEditor();
@@ -5670,6 +5875,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         status.className="status-message error";
         status.textContent=error.message;
         panel.innerHTML='<section class="band error"><strong>Runner refused this plan.</strong><p>'+esc(error.message)+'</p><p>Source database changed: no.</p></section>';
+      }finally{
+        setPlanPlaygroundBusy(false);
       }
     }
 
