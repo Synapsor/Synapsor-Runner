@@ -2,8 +2,10 @@ import type { Readable, Writable } from "node:stream";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
+  projectAuthorityMetadataForModel,
   scopedExploreDescribeToolOutputSchema,
   scopedExploreQueryToolOutputSchema,
+  type ModelAuthorityMetadataMode,
   type LocalToolPresentationSink,
 } from "@synapsor-runner/mcp-server";
 import { z } from "zod";
@@ -247,19 +249,29 @@ export function createScopedExploreMcpServer(
       "synapsor.commit_tool": false,
     },
   }, async (input, extra) => toolResult(
-    async () => projectDescribeDataForModel(
-      await runtime.describe({
+    async () => runtime.describe({
         ...(input.boundary ? { boundary: input.boundary } : {}),
         ...(input.resource ? { resource: input.resource } : {}),
         ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
         ...(input.limit === undefined ? {} : { limit: input.limit }),
       }),
-      Boolean(input.resource),
-    ),
-    undefined,
+    (result) => {
+      const authorityMetadata = runtime.model_authority_metadata ?? "semantic";
+      const authority = projectAuthorityMetadataForModel(result, authorityMetadata);
+      return {
+        value: projectDescribeDataForModel(
+          result,
+          Boolean(input.resource),
+          authorityMetadata,
+        ),
+        withheld: false,
+        ...(authority.withheld ? { operator_metadata_withheld: true } : {}),
+      };
+    },
     {
       requestMeta: extra._meta,
       localPresentation: options.localPresentation,
+      authorityMetadata: runtime.model_authority_metadata ?? "semantic",
     },
   ));
   server.registerTool(SCOPED_EXPLORE_QUERY_TOOL, {
@@ -318,10 +330,12 @@ export function createScopedExploreMcpServer(
           arguments: { plan: omitUndefinedModelArguments(parsedPlan ?? {}) },
           result,
           boundary: runtime.boundary,
+          authorityMetadata: runtime.model_authority_metadata ?? "semantic",
         }),
       {
         requestMeta: extra._meta,
         localPresentation: options.localPresentation,
+        authorityMetadata: runtime.model_authority_metadata ?? "semantic",
       },
     );
   });
@@ -405,8 +419,11 @@ function exploreToolDescription(production: boolean, automaticBandsReviewed: boo
 export function projectDescribeDataForModel(
   result: Record<string, unknown>,
   resourceDetail: boolean,
+  authorityMetadata: ModelAuthorityMetadataMode = "semantic",
 ): Record<string, unknown> {
-  if (result.ok === false || !Array.isArray(result.resources)) return structuredClone(result);
+  if (result.ok === false || !Array.isArray(result.resources)) {
+    return projectAuthorityMetadataForModel(result, authorityMetadata).value;
+  }
   const resources = result.resources
     .filter(modelRecord)
     .map((resource) => resourceDetail
@@ -427,7 +444,7 @@ export function projectDescribeDataForModel(
   // Keep the compact index small for weaker models. The fixed vocabulary is
   // useful only after one resource and its reviewed time fields are selected.
   if (!resourceDetail) delete projected.relative_time_windows;
-  return projected;
+  return projectAuthorityMetadataForModel(projected, authorityMetadata).value;
 }
 
 function modelResourceIndex(resource: Record<string, unknown>): Record<string, unknown> {
@@ -629,11 +646,13 @@ export async function serveScopedExploreStdio(options: {
   env?: NodeJS.ProcessEnv;
   stdin?: Readable;
   stdout?: Writable;
+  modelAuthorityMetadata?: ModelAuthorityMetadataMode;
 }): Promise<void> {
   const runtime = await createScopedExploreBoundarySetRuntime({
     projectRoot: options.projectRoot,
     transport: "stdio",
     env: options.env,
+    modelAuthorityMetadata: options.modelAuthorityMetadata ?? "semantic",
   });
   const server = createScopedExploreMcpServer(runtime);
   const input = options.stdin ?? process.stdin;
@@ -686,28 +705,35 @@ async function toolResult(
   options: {
     requestMeta?: Record<string, unknown>;
     localPresentation?: LocalToolPresentationSink;
+    authorityMetadata?: ModelAuthorityMetadataMode;
   } = {},
 ) {
   try {
     const result = await action();
     const projection = projectForModel?.(result);
-    const modelResult = projection?.value ?? result;
-    if (projection?.withheld || projection?.operator_metadata_withheld) {
+    const authority = projectAuthorityMetadataForModel(
+      projection?.value ?? result,
+      options.authorityMetadata ?? "semantic",
+    );
+    const modelResult = authority.value;
+    const operatorMetadataWithheld = projection?.operator_metadata_withheld === true
+      || authority.withheld;
+    if (projection?.withheld || operatorMetadataWithheld) {
       options.localPresentation?.capture(options.requestMeta, {
         value: result,
         provider_value: modelResult,
-        model_withheld_values: projection.withheld,
-        operator_metadata_withheld: projection.operator_metadata_withheld === true,
+        model_withheld_values: projection?.withheld === true,
+        operator_metadata_withheld: operatorMetadataWithheld,
       });
     }
     return {
       content: [{ type: "text" as const, text: JSON.stringify(modelResult) }],
       structuredContent: modelResult,
-      ...(projection?.withheld || projection?.operator_metadata_withheld
+      ...(projection?.withheld || operatorMetadataWithheld
         ? {
           _meta: {
-            ...(projection.withheld ? { "synapsor.model_withheld_values": true } : {}),
-            ...(projection.operator_metadata_withheld
+            ...(projection?.withheld ? { "synapsor.model_withheld_values": true } : {}),
+            ...(operatorMetadataWithheld
               ? { "synapsor.operator_metadata_withheld": true }
               : {}),
           },
@@ -740,10 +766,25 @@ async function toolResult(
         message: "Scoped Explore refused the request.",
         source_database_changed: false,
       };
+    const authority = projectAuthorityMetadataForModel(
+      payload,
+      options.authorityMetadata ?? "semantic",
+    );
+    if (authority.withheld) {
+      options.localPresentation?.capture(options.requestMeta, {
+        value: payload,
+        provider_value: authority.value,
+        model_withheld_values: false,
+        operator_metadata_withheld: true,
+      });
+    }
     return {
-      content: [{ type: "text" as const, text: JSON.stringify(payload) }],
-      structuredContent: payload,
+      content: [{ type: "text" as const, text: JSON.stringify(authority.value) }],
+      structuredContent: authority.value,
       isError: true,
+      ...(authority.withheld
+        ? { _meta: { "synapsor.operator_metadata_withheld": true } }
+        : {}),
     };
   }
 }

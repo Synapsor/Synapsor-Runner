@@ -18,6 +18,11 @@ This is a plan playground, not a SQL console:
 
 The MCP surface remains exactly `app.describe_data` and `app.explore_data`.
 
+The playground is an operator surface, so it always retains exact authority
+and evidence metadata. `model_output.authority_metadata` controls only what is
+serialized to a model-facing MCP client or Ask provider; it does not reduce the
+playground, CLI evidence, query-audit, or Workbench audit details.
+
 ## Prepare A Plan
 
 Start from the reviewed catalog, not from the physical database schema:

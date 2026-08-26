@@ -332,6 +332,21 @@ Raw visibility and aggregate use are separate permissions. A reviewer may
 allow `count_distinct(customer_id)` while keeping every `customer_id` value out
 of results.
 
+### Model-facing authority metadata
+
+Scoped Explore uses `model_output.authority_metadata: semantic` by default.
+The model still receives the exact reviewed IDs needed to author a plan, the
+released result, and privacy outcomes, but not boundary/schema/role digests,
+fingerprints, hashes, or the query-audit hash. The opaque evidence resource ID
+remains usable; its model-readable payload follows the same projection.
+
+Operators always retain the exact values in `/details`, the plan playground,
+Workbench audit views, evidence, and query audit. Use `synapsor-runner config
+model-output --authority-metadata exact --config ./synapsor.runner.json` only
+when a diagnostic client needs exact digest pinning. This is runtime
+presentation, not reviewed data authority, so it requires a server restart but
+no boundary revision or activation.
+
 ### Reviewed Names And Descriptions
 
 Legacy or abbreviated database names can be given bounded business context

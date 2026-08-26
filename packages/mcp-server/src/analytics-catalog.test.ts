@@ -79,6 +79,7 @@ describe("analytical MCP interoperability", () => {
         "synapsor.model_withheld_fields": ["region"],
         "synapsor.model_withheld_values_in_model_content": false,
       });
+      expect(tool?._meta).not.toHaveProperty("synapsor.contract_digest");
       expect(JSON.stringify(tool?.outputSchema)).toContain("no_model_egress: true");
 
       const called = await client.callTool({
@@ -107,6 +108,7 @@ describe("analytical MCP interoperability", () => {
 
   it("advertises output schemas and a safe digest-pinned catalog through the official client", async () => {
     const config = aggregateConfig();
+    config.model_output = { authority_metadata: "exact" };
     const generated = await generatedAuthorityFixture(config);
     let observedReportingTimezone: string | undefined;
     const runtime = createMcpRuntime(config, {
@@ -127,6 +129,7 @@ describe("analytical MCP interoperability", () => {
 
       const listed = await client.listTools();
       const tool = listed.tools.find((candidate) => candidate.name === "analytics.churn_by_week");
+      expect(tool?._meta?.["synapsor.contract_digest"]).toBe(contractDigest);
       expect(tool?.outputSchema).toMatchObject({
         type: "object",
         properties: {

@@ -260,7 +260,7 @@ const resultEnvelopeMetaSchema = z.object({
 }).strict();
 
 const protectedQueryAuditSchema = z.object({
-  query_fingerprint: sha256Schema,
+  query_fingerprint: sha256Schema.optional(),
   result_values_persisted: z.literal(false),
   trusted_values_persisted: z.literal(false),
   returned_rows_or_groups: z.number().int().nonnegative(),

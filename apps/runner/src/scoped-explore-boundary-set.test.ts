@@ -277,6 +277,63 @@ describe("Scoped Explore active boundary routing", () => {
     }
   });
 
+  it("applies semantic and exact authority metadata modes to boundary-set results", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-set-metadata-"));
+    const support = validBoundary("support", ["public.tickets"], "UTC");
+    try {
+      await writeActiveSet(projectRoot, [support], "support");
+      const result = {
+        ok: true,
+        boundary_digest: support.activation.digest,
+        active_boundary_set_digest: `sha256:${"4".repeat(64)}`,
+        data: [{ digest: support.activation.digest }],
+        source_database_changed: false,
+      };
+      const semantic = await createScopedExploreBoundarySetRuntime({
+        projectRoot,
+        transport: "stdio",
+        modelAuthorityMetadata: "semantic",
+        runtimeFactory: (async () => fakeChildRuntime(support)) as never,
+      });
+      try {
+        expect(semantic.projectResultForModel({
+          tool: "app.explore_data",
+          arguments: {
+            plan: { kind: "rows", resource: "public.tickets", select: ["id"] },
+          },
+          result,
+        })).toMatchObject({
+          value: {
+            data: [{ digest: support.activation.digest }],
+          },
+          operator_metadata_withheld: true,
+        });
+      } finally {
+        await semantic.close();
+      }
+
+      const exact = await createScopedExploreBoundarySetRuntime({
+        projectRoot,
+        transport: "stdio",
+        modelAuthorityMetadata: "exact",
+        runtimeFactory: (async () => fakeChildRuntime(support)) as never,
+      });
+      try {
+        expect(exact.projectResultForModel({
+          tool: "app.explore_data",
+          arguments: {
+            plan: { kind: "rows", resource: "public.tickets", select: ["id"] },
+          },
+          result,
+        })).toEqual({ value: result, withheld: false });
+      } finally {
+        await exact.close();
+      }
+    } finally {
+      await fs.rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
   it("keeps the production MCP surface at two read-only tools and routes an explicit reviewed boundary", async () => {
     const support = validBoundary("support", ["public.tickets"]);
     const finance = validBoundary("finance", ["public.invoices"]);

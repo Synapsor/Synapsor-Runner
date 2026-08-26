@@ -228,6 +228,7 @@ activates the result.
   ${cmd} config init --production-explore --engine postgres|mysql --tenant-claim tenant_id --principal-claim sub [--tenant-binding tenant_id] [--principal-binding rep] [--verify-bindings] --issuer https://identity.example --audience https://runner.example/mcp --accounting-namespace acme.analytics.production [--project-root .] [--force]
   ${cmd} config init --production-explore --engine postgres|mysql --single-tenant-organization-id internal-finance --principal-claim sub --issuer https://identity.example --audience https://runner.example/mcp --accounting-namespace internal.finance.production [--force]
   ${cmd} config validate --config ./synapsor.runner.json
+  ${cmd} config model-output [--authority-metadata semantic|exact] [--config ./synapsor.runner.json]
   ${cmd} config migrate --config ./synapsor.runner.json --out ./synapsor.runner.migrated.json
 
 Initialize or validate local Runner wiring before tools preview, doctor, smoke,
@@ -235,6 +236,12 @@ or MCP serve. config init creates a valid read-only zero-authority shell using
 environment-variable references and refuses to overwrite an existing file by default.
 Pass --force only to intentionally replace that file; Runner first writes a
 timestamped .bak copy and reports its path.
+Model-facing authority metadata defaults to semantic: reviewed names, outcomes,
+privacy controls, data, and opaque evidence-resource handles remain available,
+while exact digests, fingerprints, and query-audit hashes stay in operator
+details and evidence. Use config model-output
+to inspect or switch to exact diagnostic output. Restart long-lived MCP servers
+after changing this presentation-only setting; no boundary review is required.
 With --production-explore it emits the complete zero-authority shared-Postgres,
 JWT/JWKS, secured HTTP, OAuth, budget, source-pool, and session-cap skeleton.
 It reuses source, claim, and reviewed column bindings from a production boundary

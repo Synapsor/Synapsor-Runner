@@ -15,6 +15,10 @@ import {
   type ProposalRuntimeStore,
 } from "@synapsor-runner/proposal-store";
 import {
+  projectAuthorityMetadataForModel,
+  type ModelAuthorityMetadataMode,
+} from "@synapsor-runner/mcp-server";
+import {
   PrivacyBoundaryError,
   applyReviewedAggregateTransforms,
   canonicalJsonDigest,
@@ -266,6 +270,7 @@ export function scopedExploreBoundaryLoadError(error: unknown): ScopedExploreErr
 export type ScopedExploreRuntime = {
   boundary: ActivatedExplorationBoundary;
   session_fingerprint: `sha256:${string}`;
+  model_authority_metadata?: ModelAuthorityMetadataMode;
   trusted_scope?: {
     tenant: { source: "environment" | "postgres_role_setting" | "verified_http_claim" | "reviewed_organization"; binding: string };
     principal: { source: "environment" | "verified_http_claim" | "not_required"; binding?: string };
@@ -517,6 +522,7 @@ export async function createScopedExploreRuntime(input: {
   clock?: () => number;
   inspectDatabaseFn?: InspectDatabaseFn;
   resolveTrustedScopeFn?: ResolveExploreTrustedScopeFn;
+  modelAuthorityMetadata?: ModelAuthorityMetadataMode;
 }): Promise<ScopedExploreRuntime> {
   const projectRoot = path.resolve(input.projectRoot);
   const env = input.env ?? process.env;
@@ -624,6 +630,7 @@ export async function createScopedExploreRuntime(input: {
   return {
     boundary: prepared.boundary,
     session_fingerprint: sessionFingerprint,
+    model_authority_metadata: input.modelAuthorityMetadata ?? "semantic",
     trusted_scope: {
       tenant: {
         source: trustedScope.tenant_source,
@@ -1495,13 +1502,31 @@ export function projectScopedExploreResultForModel(input: {
   arguments: Record<string, unknown>;
   result: Record<string, unknown>;
   boundary: ActivatedExplorationBoundary;
+  authorityMetadata?: ModelAuthorityMetadataMode;
 }): {
   value: Record<string, unknown>;
   withheld: boolean;
   operator_metadata_withheld?: boolean;
 } {
+  const finalize = (
+    value: Record<string, unknown>,
+    valuesWithheld: boolean,
+    operatorMetadataWithheld = false,
+  ) => {
+    const authority = projectAuthorityMetadataForModel(
+      value,
+      input.authorityMetadata ?? "semantic",
+    );
+    return {
+      value: authority.value,
+      withheld: valuesWithheld,
+      ...(operatorMetadataWithheld || authority.withheld
+        ? { operator_metadata_withheld: true }
+        : {}),
+    };
+  };
   if (input.tool !== SCOPED_EXPLORE_QUERY_TOOL || input.result.ok === false) {
-    return { value: structuredClone(input.result), withheld: false };
+    return finalize(input.result, false);
   }
   const rawPlan = input.arguments.plan;
   const operatorTimeWindows = Array.isArray(input.result.operator_time_windows)
@@ -1535,11 +1560,7 @@ export function projectScopedExploreResultForModel(input: {
   }
   const columns = new Set(modelWithheldExploreOutputColumns(plan, input.boundary));
   if (columns.size === 0) {
-    return {
-      value: projected,
-      withheld: false,
-      ...(operatorMetadataWithheld ? { operator_metadata_withheld: true } : {}),
-    };
+    return finalize(projected, false, operatorMetadataWithheld);
   }
   if (Array.isArray(projected.data)) {
     const nonce = crypto.randomBytes(6).toString("hex");
@@ -1568,11 +1589,7 @@ export function projectScopedExploreResultForModel(input: {
     tokenized_columns: [...columns].sort(),
     token_scope: "this_tool_response_only",
   };
-  return {
-    value: projected,
-    withheld: true,
-    ...(operatorMetadataWithheld ? { operator_metadata_withheld: true } : {}),
-  };
+  return finalize(projected, true, operatorMetadataWithheld);
 }
 
 export function modelWithheldExploreOutputColumns(

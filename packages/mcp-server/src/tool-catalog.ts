@@ -18,6 +18,10 @@ import {
   projectProtectedReadResultForModel,
 } from "./protected-read-runtime.js";
 import {
+  modelAuthorityMetadataMode,
+  projectAuthorityMetadataForModel,
+} from "./model-output-policy.js";
+import {
   toolErrorPayload,
 } from "./runtime-errors.js";
 import {
@@ -47,34 +51,62 @@ export async function toolCallResult(
     const capability = runtime.config.mode === "cloud"
       ? undefined
       : localCapabilities(runtime.config).find((item) => item.name === toolName);
+    const authorityMetadata = modelAuthorityMetadataMode(runtime.config);
+    const authorityOnlyProjection = capability
+      ? undefined
+      : projectAuthorityMetadataForModel(structuredContent, authorityMetadata);
     const projection = capability
-      ? projectProtectedReadResultForModel(capability, structuredContent)
-      : { value: structuredContent, withheld: false };
-    if (projection.withheld) {
+      ? projectProtectedReadResultForModel(capability, structuredContent, authorityMetadata)
+      : {
+          value: authorityOnlyProjection!.value,
+          withheld: false,
+          ...(authorityOnlyProjection!.withheld
+            ? { operator_metadata_withheld: true }
+            : {}),
+        };
+    if (projection.withheld || projection.operator_metadata_withheld) {
       options.localPresentation?.capture(options.requestMeta, {
         value: structuredContent,
         provider_value: projection.value,
-        model_withheld_values: true,
-        operator_metadata_withheld: false,
+        model_withheld_values: projection.withheld,
+        operator_metadata_withheld: projection.operator_metadata_withheld === true,
       });
     }
     return {
       content: [{ type: "text" as const, text: JSON.stringify(projection.value, null, 2) }],
       structuredContent: projection.value,
-      ...(projection.withheld
+      ...(projection.withheld || projection.operator_metadata_withheld
         ? {
           _meta: {
-            "synapsor.model_withheld_values": true,
+            ...(projection.withheld ? { "synapsor.model_withheld_values": true } : {}),
+            ...(projection.operator_metadata_withheld
+              ? { "synapsor.operator_metadata_withheld": true }
+              : {}),
           },
         }
         : {}),
     };
   } catch (error) {
     const payload = toolErrorPayload(error);
+    const projection = projectAuthorityMetadataForModel(
+      payload,
+      modelAuthorityMetadataMode(runtime.config),
+    );
+    if (projection.withheld) {
+      options.localPresentation?.capture(options.requestMeta, {
+        value: payload,
+        provider_value: projection.value,
+        model_withheld_values: false,
+        operator_metadata_withheld: true,
+      });
+    }
     return {
       isError: true,
-      content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }],
-      structuredContent: payload,
+      content: [{ type: "text" as const, text: JSON.stringify(projection.value, null, 2) }],
+      structuredContent: projection.value,
+      ...(projection.withheld
+        ? { _meta: { "synapsor.operator_metadata_withheld": true } }
+        : {}),
     };
   }
 }

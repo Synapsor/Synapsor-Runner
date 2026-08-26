@@ -10,6 +10,13 @@ It serves exactly two MCP tools:
 The model receives no raw SQL tool, database credential, unrestricted schema,
 activation, approval, apply, Protect, or configuration authority.
 
+It also receives semantic authority metadata by default: reviewed names and
+results remain available, while exact Runner digests, fingerprints, hashes,
+and query-audit hashes stay in operator evidence. Set
+`model_output.authority_metadata: exact` only for a diagnostic client that
+deliberately needs digest pinning. This changes no boundary or budget and takes
+effect after the serving processes restart.
+
 This mode is off by default. Normal local and staging Explore keep their
 existing stdio and loopback behavior.
 

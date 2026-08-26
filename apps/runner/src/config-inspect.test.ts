@@ -12,6 +12,52 @@ afterEach(() => {
 
 
 describe("production config initialization", () => {
+  it("shows and atomically updates model-facing authority metadata without changing authority", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-model-output-"));
+    const configPath = path.join(tempDir, "synapsor.runner.json");
+    captureStdout();
+    await configCommand([
+      "init", "--output", configPath, "--engine", "postgres", "--json",
+    ]);
+    vi.restoreAllMocks();
+
+    const initial = JSON.parse(await fs.readFile(configPath, "utf8"));
+    expect(initial.model_output).toEqual({ authority_metadata: "semantic" });
+    await fs.chmod(configPath, 0o640);
+
+    const stdout = captureStdout();
+    await expect(configCommand([
+      "model-output", "--authority-metadata", "exact", "--config", configPath, "--json",
+    ])).resolves.toBe(0);
+    expect(JSON.parse(stdout.join(""))).toMatchObject({
+      authority_metadata: "exact",
+      changed: true,
+      model_receives_exact_authority_metadata: true,
+      operator_evidence_changed: false,
+      restart_required: true,
+    });
+    const exact = JSON.parse(await fs.readFile(configPath, "utf8"));
+    expect((await fs.stat(configPath)).mode & 0o777).toBe(0o640);
+    expect(exact.model_output).toEqual({ authority_metadata: "exact" });
+    expect(exact.sources).toEqual(initial.sources);
+    expect(exact.trusted_context).toEqual(initial.trusted_context);
+
+    stdout.length = 0;
+    await expect(configCommand([
+      "model-output", "--config", configPath, "--json",
+    ])).resolves.toBe(0);
+    expect(JSON.parse(stdout.join(""))).toMatchObject({
+      authority_metadata: "exact",
+      changed: false,
+      restart_required: false,
+    });
+
+    await expect(configCommand([
+      "model-output", "--authority-metadata", "verbose", "--config", configPath,
+    ])).rejects.toThrow(/must be semantic or exact/i);
+    expect(JSON.parse(await fs.readFile(configPath, "utf8"))).toEqual(exact);
+  });
+
   it("backs up and replaces an existing config only when --force is explicit", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-config-force-"));
     const output = path.join(tempDir, "synapsor.runner.json");

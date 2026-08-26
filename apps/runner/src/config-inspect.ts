@@ -11,7 +11,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { cliCommandName } from "./cli-command-meta.js";
-import { fileExists, writeFileGuarded } from "./cli-files.js";
+import { fileExists, readJsonFileWithLocation, writeFileGuarded } from "./cli-files.js";
 import { shellQuote } from "./cli-format.js";
 import { usage } from "./cli-help.js";
 import { assertKnownOptions, optionalArg, outputArg } from "./cli-options.js";
@@ -117,6 +117,7 @@ export async function configCommand(
   if (subcommand === "validate") return configValidate(args.slice(1));
   if (subcommand === "show") return configShow(args.slice(1));
   if (subcommand === "migrate") return configMigrate(args.slice(1));
+  if (subcommand === "model-output") return configModelOutput(args.slice(1));
   usage();
   return 2;
 }
@@ -263,6 +264,7 @@ async function configInit(
       principal_binding: requestedPrincipalBinding ?? "principal",
     },
     capabilities: [],
+    model_output: { authority_metadata: "semantic" },
     strict: true,
     result_format: 2,
   };
@@ -677,10 +679,102 @@ function productionExploreConfigTemplate(input: {
         max_response_cells_per_response: 500,
       },
     },
+    model_output: { authority_metadata: "semantic" },
     capabilities: [],
     strict: true,
     result_format: 2,
   };
+}
+
+async function configModelOutput(args: string[]): Promise<number> {
+  assertKnownOptions(
+    args,
+    new Set(["--config", "--authority-metadata", "--json"]),
+    "config model-output",
+  );
+  const configPath = path.resolve(optionalArg(args, "--config") ?? "synapsor.runner.json");
+  const parsed = await readJsonFileWithLocation<Record<string, unknown>>(
+    configPath,
+    "Runner config",
+  );
+  const before = validateRunnerCapabilityConfig(parsed);
+  if (!before.ok) {
+    throw new Error(
+      `Cannot change model output because the Runner config is invalid: ${before.errors.map((issue) => `${issue.path} ${issue.code}`).join(", ")}`,
+    );
+  }
+  const requested = optionalArg(args, "--authority-metadata");
+  if (requested !== undefined && requested !== "semantic" && requested !== "exact") {
+    throw new Error("config model-output --authority-metadata must be semantic or exact.");
+  }
+  const current = modelOutputAuthorityMetadata(parsed);
+  let changed = false;
+  if (requested && requested !== current) {
+    parsed.model_output = { authority_metadata: requested };
+    const after = validateRunnerCapabilityConfig(parsed);
+    if (!after.ok) {
+      throw new Error(
+        `Refused to write an invalid Runner config: ${after.errors.map((issue) => `${issue.path} ${issue.code}`).join(", ")}`,
+      );
+    }
+    await writeJsonAtomically(configPath, parsed);
+    changed = true;
+  }
+  const authorityMetadata = requested ?? current;
+  const result = {
+    ok: true,
+    config_path: configPath,
+    authority_metadata: authorityMetadata,
+    changed,
+    model_receives_exact_authority_metadata: authorityMetadata === "exact",
+    operator_evidence_changed: false,
+    restart_required: changed,
+  };
+  if (args.includes("--json")) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return 0;
+  }
+  process.stdout.write([
+    `Model-facing authority metadata: ${authorityMetadata.toUpperCase()}${changed ? " (updated)" : ""}`,
+    authorityMetadata === "semantic"
+      ? "Models receive reviewed names, semantics, privacy outcomes, data, and opaque evidence-resource handles, but not exact Runner digests, fingerprints, or query-audit hashes."
+      : "Models receive exact Runner digests, fingerprints, and query-audit hashes for diagnostic workflows.",
+    "Operator details, evidence, query audit, and internal authority checks always retain exact metadata.",
+    ...(changed ? ["Restart a long-lived MCP server and reconnect clients to apply this presentation change."] : []),
+    `Change it with: ${cliCommandName()} config model-output --authority-metadata ${authorityMetadata === "semantic" ? "exact" : "semantic"} --config ${shellQuote(configPath)}`,
+    "",
+  ].join("\n"));
+  return 0;
+}
+
+function modelOutputAuthorityMetadata(
+  config: Record<string, unknown>,
+): "semantic" | "exact" {
+  const modelOutput = config.model_output;
+  if (!modelOutput || typeof modelOutput !== "object" || Array.isArray(modelOutput)) {
+    return "semantic";
+  }
+  return (modelOutput as Record<string, unknown>).authority_metadata === "exact"
+    ? "exact"
+    : "semantic";
+}
+
+async function writeJsonAtomically(
+  destination: string,
+  value: Record<string, unknown>,
+): Promise<void> {
+  const temporary = `${destination}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    const existingMode = (await fs.stat(destination)).mode & 0o777;
+    await fs.writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, {
+      flag: "wx",
+      mode: existingMode,
+    });
+    await fs.chmod(temporary, existingMode);
+    await fs.rename(temporary, destination);
+  } finally {
+    await fs.rm(temporary, { force: true });
+  }
 }
 
 function optionalTrimmedArg(args: string[], option: string): string | undefined {

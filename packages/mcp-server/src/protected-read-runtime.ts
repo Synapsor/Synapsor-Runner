@@ -22,6 +22,10 @@ import {
   queryFingerprintFor,
 } from "./read-planning.js";
 import {
+  projectAuthorityMetadataForModel,
+  type ModelAuthorityMetadataMode,
+} from "./model-output-policy.js";
+import {
   McpRuntimeError,
 } from "./runtime-errors.js";
 import {
@@ -33,13 +37,15 @@ import {
 export function projectProtectedReadResultForModel(
   capability: RuntimeCapabilityConfig,
   result: Record<string, unknown>,
+  authorityMetadata: ModelAuthorityMetadataMode = "semantic",
 ): {
   value: Record<string, unknown>;
   withheld: boolean;
+  operator_metadata_withheld?: boolean;
 } {
   const fields = new Set(capability.model_withheld_fields ?? []);
   if (fields.size === 0) {
-    return { value: structuredClone(result), withheld: false };
+    return finalizeModelProjection(result, false, authorityMetadata);
   }
   const projected = structuredClone(result);
   const data = isRecord(projected.data) ? projected.data : undefined;
@@ -56,7 +62,7 @@ export function projectProtectedReadResultForModel(
   const fieldsPresent = rows.some((item) =>
     isRecord(item) && [...fields].some((field) => Object.hasOwn(item, field)));
   if (!fieldsPresent) {
-    return { value: projected, withheld: false };
+    return finalizeModelProjection(projected, false, authorityMetadata);
   }
   const nonce = crypto.randomBytes(6).toString("hex");
   const tokens = new Map<string, string>();
@@ -89,7 +95,24 @@ export function projectProtectedReadResultForModel(
     tokenized_columns: [...fields].sort(),
     token_scope: "this_tool_response_only",
   };
-  return { value: projected, withheld: true };
+  return finalizeModelProjection(projected, true, authorityMetadata);
+}
+
+function finalizeModelProjection(
+  result: Record<string, unknown>,
+  valuesWithheld: boolean,
+  authorityMetadata: ModelAuthorityMetadataMode,
+): {
+  value: Record<string, unknown>;
+  withheld: boolean;
+  operator_metadata_withheld?: boolean;
+} {
+  const authority = projectAuthorityMetadataForModel(result, authorityMetadata);
+  return {
+    value: authority.value,
+    withheld: valuesWithheld,
+    ...(authority.withheld ? { operator_metadata_withheld: true } : {}),
+  };
 }
 
 export type ProtectedReadBudgetReservation = {

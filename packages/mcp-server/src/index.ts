@@ -56,6 +56,13 @@ export type {
   ProposalFreshnessEvaluation,
 } from "./runtime-types.js";
 export {
+  modelAuthorityMetadataMode,
+  projectAuthorityMetadataForModel,
+} from "./model-output-policy.js";
+export type {
+  ModelAuthorityMetadataMode,
+} from "./model-output-policy.js";
+export {
   analyticalToolOutputSchema,
   schemaAsJsonSchema,
   scopedExploreDescribeOutputSchema,

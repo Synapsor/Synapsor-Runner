@@ -34,6 +34,21 @@ for the Synapsor Cloud CLI.
   Streamable HTTP. Verified JWT claims remain the only tenant/principal source;
   no third MCP tool or remote dry-run surface was added.
 
+### Semantic Model Output By Default
+
+- Model-visible MCP output now defaults to semantic authority metadata. Exact
+  Runner digests, fingerprints, hashes, and query-audit hashes remain available
+  to operators and internal checks but are omitted from tool results, tool
+  discovery metadata, and model-readable resources.
+- Reviewed identifiers, labels, operations, outcomes, privacy decisions,
+  released data, and opaque evidence-resource handles remain available. Source
+  data is opaque to this policy, so business columns or values that resemble a
+  hash are not altered.
+- Use `synapsor-runner config model-output --authority-metadata exact` for a
+  diagnostic or digest-pinning client, and switch back with `semantic`. The
+  setting changes presentation only: no review or activation is required, and
+  evidence/query-audit records keep their exact metadata in either mode.
+
 Package versions: `@synapsor/runner@1.7.14` and
 `synapsor-runner@1.7.14`. Spec and DSL remain `1.10.0` because this release
 reuses the existing public Explore plan grammar.

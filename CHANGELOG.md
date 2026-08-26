@@ -37,6 +37,27 @@
 - Extends live PostgreSQL and MySQL qualification, production JWT HTTP gates,
   unchanged-source snapshots, and desktop/mobile Workbench visual coverage.
 
+### Model-Facing Authority Metadata
+
+- Adds `model_output.authority_metadata` with `semantic` as the default and
+  `exact` as an explicit diagnostic mode. Semantic responses retain reviewed
+  names, operations, outcomes, privacy decisions, released data, and opaque
+  evidence-resource handles while omitting Runner digests, fingerprints,
+  hashes, and query-audit hashes from model-visible tool results, tool
+  metadata, and MCP resources.
+- Applies the policy consistently to local Ask, local stdio, protected named
+  reads, and production HTTP. A source field named `digest`, or a business
+  value that happens to contain `sha256:`, remains unchanged inside released
+  `data`; the policy removes metadata keys rather than pattern-scrubbing data.
+- Keeps exact metadata in internal authority checks, trusted local operator
+  presentation, the Explore playground, Workbench audit views, evidence,
+  query audit, and stored records. Opaque evidence IDs remain usable, while
+  the model-readable evidence payload follows the selected presentation mode.
+- Adds `synapsor-runner config model-output --authority-metadata
+  semantic|exact`. The atomic edit preserves file permissions, changes no
+  reviewed boundary or digest, and requires only a restart/reconnect for a
+  long-lived MCP process.
+
 Prepared package versions: `@synapsor/runner@1.7.14` and
 `synapsor-runner@1.7.14`. Spec and DSL remain `@synapsor/spec@1.10.0` and
 `@synapsor/dsl@1.10.0`; this release reuses the existing public plan grammar.

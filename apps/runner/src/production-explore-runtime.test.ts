@@ -547,6 +547,7 @@ describe("production Explore startup posture", () => {
 
   it("shares one bounded source executor across sessions and servers in the same process", async () => {
     const config = productionConfig();
+    config.model_output = { authority_metadata: "exact" };
     config.production_explore!.source_max_connections = 3;
     config.production_explore!.max_sessions_per_principal = 2;
     const store = new ProposalStore();
@@ -555,6 +556,7 @@ describe("production Explore startup posture", () => {
     let sessionRuntimeCloses = 0;
     const executorsSeen: unknown[] = [];
     const inspectorsSeen: unknown[] = [];
+    const modelAuthorityModes: unknown[] = [];
     const inspectDatabase = async () => {
       throw new Error("not invoked by this wiring test");
     };
@@ -574,6 +576,7 @@ describe("production Explore startup posture", () => {
       createBoundarySetRuntime: (async (input) => {
         executorsSeen.push(input.executor);
         inspectorsSeen.push(input.inspectDatabaseFn);
+        modelAuthorityModes.push(input.modelAuthorityMetadata);
         return {
           close: async () => { sessionRuntimeCloses += 1; },
         };
@@ -604,6 +607,7 @@ describe("production Explore startup posture", () => {
     expect(executorCreations).toBe(1);
     expect(executorsSeen).toEqual([executor, executor, executor]);
     expect(inspectorsSeen).toEqual([inspectDatabase, inspectDatabase, inspectDatabase]);
+    expect(modelAuthorityModes).toEqual(["exact", "exact", "exact"]);
     expect(factory.maxSessionsPerPrincipal).toBe(2);
 
     await Promise.all([first.close(), second.close(), third.close()]);
