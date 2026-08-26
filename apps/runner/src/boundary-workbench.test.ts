@@ -19,6 +19,10 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(script).toContain("setPlanPlaygroundBusy(true");
     expect(script).toContain('root.setAttribute("aria-busy","true")');
     expect(script).toContain("setPlanPlaygroundBusy(false)");
+    expect(script).toContain('error.payload?.error_code==="EXPLORE_SOURCE_UNAVAILABLE"');
+    expect(script).toContain("Database connection environment is missing.");
+    expect(script).toContain("is not set in the process that launched Workbench");
+    expect(script).toContain("Retry after setting ");
   });
 
   it("keeps the 1.7.0 reviewed-access controls discoverable in both Workbench and CLI", () => {

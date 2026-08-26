@@ -29,6 +29,10 @@
   terminal playground show active progress while catalog, validation, SQL
   evidence, or execution is loading. Its CSRF-protected validate/run endpoints
   use the same shared service as the CLI.
+- When the reviewed read-only database URL environment variable is absent,
+  Workbench preflight now names that variable, explains that it must be set in
+  the launching terminal, and offers an in-place retry. The boundary, generated
+  files, ledger, and source remain unchanged.
 - Adds production HTTP replay through the official Streamable HTTP MCP client.
   Tokens are accepted only by environment-variable name, HTTPS is mandatory
   outside loopback, and tenant/principal scope remains verified JWT session
