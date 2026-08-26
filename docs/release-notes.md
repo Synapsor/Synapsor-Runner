@@ -52,6 +52,10 @@ for the Synapsor Cloud CLI.
   `/access` and as **Model response details** in Workbench. Local Ask and
   Workbench Ask pick up the change before their next question; restart other
   long-lived MCP servers.
+- Pressing `O` keeps its confirmation inside the current access-editor screen;
+  other review prompts use a clean terminal screen instead of exposing prior
+  shell output. Both TUI and Workbench show the active mode in brackets with a
+  short operator-facing explanation.
 
 Package versions: `@synapsor/runner@1.7.14` and
 `synapsor-runner@1.7.14`. Spec and DSL remain `1.10.0` because this release

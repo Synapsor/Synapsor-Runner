@@ -534,6 +534,7 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("It affects only Runner&apos;s local CLI and Workbench Ask");
     expect(html).toContain("production HTTP are unchanged");
     expect(html).toContain("Model response details · ");
+    expect(html).toContain("[SEMANTIC] exact hashes stay operator-only");
     expect(html).toContain('id="boundary-model-output-mode"');
     expect(html).toContain("Semantic — keep hashes operator-only");
     expect(html).toContain("Exact diagnostics — include hashes");

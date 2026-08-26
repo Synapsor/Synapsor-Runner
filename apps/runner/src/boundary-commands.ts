@@ -1272,7 +1272,7 @@ async function interactiveBoundaryReviewLoop(input: {
         continue;
       }
       const nextMode = modelAuthorityMetadataMode === "semantic" ? "exact" : "semantic";
-      if (nextMode === "exact") {
+      if (nextMode === "exact" && selected.exact_metadata_confirmed !== true) {
         const accepted = await input.session.confirm(
           "Show exact Runner digests, fingerprints, and query-audit hashes to model-facing MCP clients and local Ask? Operator evidence is already exact. Use this only for a diagnostic client.",
           { defaultValue: false },

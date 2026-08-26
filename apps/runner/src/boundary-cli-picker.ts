@@ -119,7 +119,11 @@ export type BoundaryResourceSelection =
         | "relationships";
     }
   | {
-      action: "create" | "rename" | "confirm" | "limits" | "privacy_all" | "model_output";
+      action: "create" | "rename" | "confirm" | "limits" | "privacy_all";
+    }
+  | {
+      action: "model_output";
+      exact_metadata_confirmed?: true;
     }
   | {
       action: "intent_check";
@@ -262,12 +266,15 @@ export function createBoundaryReviewInteractiveSession(
     editRelationshipPaths: (view, summary) =>
       editRelationshipPaths(view, summary, input, output),
     resolveBlockedResource: (view) => resolveBlockedResource(view, input, output),
-    promptText: (prompt) => readTerminalTextWithEscape(
-      formatTextPromptWithBack(prompt, theme),
-      input,
+    promptText: (prompt) => withAlternateTerminalScreen(
       output,
+      () => readTerminalTextWithEscape(
+        formatTextPromptWithBack(prompt, theme),
+        input,
+        output,
+      ),
     ),
-    confirm: async (prompt, options = {}) => {
+    confirm: (prompt, options = {}) => withAlternateTerminalScreen(output, async () => {
       const defaultValue = options.defaultValue === true;
       const answer = await readTerminalTextWithEscape(
         `${theme.bold(prompt)} ${theme.key(defaultValue ? "[Y/n]" : "[y/N]")} ` +
@@ -278,11 +285,14 @@ export function createBoundaryReviewInteractiveSession(
       if (answer === undefined) return undefined;
       if (!answer) return defaultValue;
       return answer.toLowerCase() === "y" || answer.toLowerCase() === "yes";
-    },
-    confirmActivation: (prompt) => readTerminalActivationConfirmation(
-      theme.bold(prompt),
-      input,
+    }),
+    confirmActivation: (prompt) => withAlternateTerminalScreen(
       output,
+      () => readTerminalActivationConfirmation(
+        theme.bold(prompt),
+        input,
+        output,
+      ),
     ),
   };
 }
@@ -512,6 +522,33 @@ function uniqueCandidates(selected: string | undefined, candidates: string[]): s
   return [...new Set([...(selected ? [selected] : []), ...candidates])];
 }
 
+function exactModelOutputConfirmationLines(theme: TerminalTheme): string[] {
+  return [
+    "",
+    theme.warning("MODEL OUTPUT [SEMANTIC] -> [EXACT]"),
+    "Exact mode sends Runner digests, fingerprints, and query-audit hashes to models.",
+    theme.dim("Operator evidence is already exact. Use this only for a diagnostic client."),
+    `${theme.key("Y")} Enable Exact   ${theme.key("N/Enter/Esc")} Keep Semantic`,
+  ];
+}
+
+function exactModelOutputConfirmationDecision(
+  key: Keypress,
+): "accept" | "cancel" | "wait" {
+  const value = (key.sequence ?? "").toLowerCase();
+  if (key.name === "y" || value === "y") return "accept";
+  if (
+    key.name === "n"
+    || value === "n"
+    || key.name === "return"
+    || key.name === "enter"
+    || key.sequence === "\r"
+    || key.sequence === "\n"
+    || isEscapeKey(key)
+  ) return "cancel";
+  return "wait";
+}
+
 function resolutionRow(
   theme: TerminalTheme,
   selected: boolean,
@@ -556,10 +593,14 @@ async function chooseResource(
   let mapOffset = 0;
   let startingTableNotice: string | undefined;
   let actionNotice: string | undefined;
+  let confirmExactModelOutput = false;
   const modelOutputMode = overview?.model_authority_metadata_mode ?? "semantic";
   const modelOutputStatus = modelOutputMode === "exact"
-    ? theme.warning("Model response metadata: EXACT - diagnostic hashes visible")
-    : theme.success("Model response metadata: SEMANTIC - hashes stay operator-only");
+    ? theme.warning("Model output [EXACT] - diagnostic hashes are visible to models")
+    : theme.success("Model output [SEMANTIC] - exact hashes stay operator-only");
+  const modelOutputActionStatus = modelOutputMode === "exact"
+    ? "EXACT: hashes model-visible"
+    : "SEMANTIC: hashes operator-only";
   return withRawKeys(input, output, async (nextKey, render) => {
     while (true) {
       if (startingBoundaryName) {
@@ -826,7 +867,7 @@ async function chooseResource(
               `${theme.key("P")} Privacy for all tables`,
               `${theme.key("L")} Limits`,
               `${theme.key("T")} Ask plan check`,
-              `${theme.key("O")} Model output [${modelOutputMode.toUpperCase()}]`,
+              `${theme.key("O")} Model output [${modelOutputActionStatus}]`,
               `${theme.key("M")} Map`,
               `${theme.key("N")} Rename`,
               `${theme.key("X")} Delete this saved boundary [AVAILABLE]`,
@@ -843,8 +884,20 @@ async function chooseResource(
             ...(options?.notice
               ? ["", ...formatBoundaryAccessNotice(theme, options.notice)]
               : []),
+            ...(confirmExactModelOutput ? exactModelOutputConfirmationLines(theme) : []),
           ]);
           const key = await nextKey();
+          if (confirmExactModelOutput) {
+            const decision = exactModelOutputConfirmationDecision(key);
+            if (decision === "accept") {
+              return { action: "model_output", exact_metadata_confirmed: true };
+            }
+            if (decision === "cancel") {
+              confirmExactModelOutput = false;
+              actionNotice = "Model output [SEMANTIC] is unchanged; exact hashes remain operator-only.";
+            }
+            continue;
+          }
           if (key.name === "return" || key.name === "enter" || key.name === "c") {
             return { action: "confirm" };
           }
@@ -866,7 +919,14 @@ async function chooseResource(
           if (key.name === "t") {
             return { action: "intent_check", boundary_name: candidateBoundaryName };
           }
-          if (key.name === "o") return { action: "model_output" };
+          if (key.name === "o") {
+            if (modelOutputMode === "semantic") {
+              confirmExactModelOutput = true;
+              actionNotice = undefined;
+              continue;
+            }
+            return { action: "model_output" };
+          }
           if (key.name === "n") return { action: "rename" };
           if (key.name === "x") {
             return { action: "delete", boundary_name: candidateBoundaryName };
@@ -949,7 +1009,7 @@ async function chooseResource(
             `${theme.key("P")} Privacy for all tables`,
             `${theme.key("L")} Limits`,
             `${theme.key("T")} Ask plan check`,
-            `${theme.key("O")} Model output [${modelOutputMode.toUpperCase()}]`,
+            `${theme.key("O")} Model output [${modelOutputActionStatus}]`,
             `${theme.key("M")} Map`,
             `${theme.key("N")} Rename`,
             `${theme.key("X")} Delete this saved boundary [AVAILABLE]`,
@@ -960,8 +1020,20 @@ async function chooseResource(
           ...(actionNotice ? [theme.warning(actionNotice)] : []),
           theme.dim("New boundaries start with a table you choose, then open its column access for review."),
           theme.dim("Activation adds or updates this reviewed boundary. Each query remains inside one boundary."),
+          ...(confirmExactModelOutput ? exactModelOutputConfirmationLines(theme) : []),
         ]);
         const key = await nextKey();
+        if (confirmExactModelOutput) {
+          const decision = exactModelOutputConfirmationDecision(key);
+          if (decision === "accept") {
+            return { action: "model_output", exact_metadata_confirmed: true };
+          }
+          if (decision === "cancel") {
+            confirmExactModelOutput = false;
+            actionNotice = "Model output [SEMANTIC] is unchanged; exact hashes remain operator-only.";
+          }
+          continue;
+        }
         if (key.name === "up") {
           selectedBoundary = (selectedBoundary - 1 + boundaryEntries.length) % boundaryEntries.length;
           actionNotice = undefined;
@@ -991,7 +1063,14 @@ async function chooseResource(
         if (key.name === "t") {
           return { action: "intent_check", boundary_name: highlightedBoundary.name };
         }
-        if (key.name === "o") return { action: "model_output" };
+        if (key.name === "o") {
+          if (modelOutputMode === "semantic") {
+            confirmExactModelOutput = true;
+            actionNotice = undefined;
+            continue;
+          }
+          return { action: "model_output" };
+        }
         if (key.name === "n") {
           if (!highlightedBoundary.selected) {
             return { action: "switch", boundary_name: highlightedBoundary.name };
@@ -1141,7 +1220,7 @@ async function chooseResource(
         `${theme.key("N")} Rename`,
         `${theme.key("L")} Limits`,
         `${theme.key("T")} Ask plan check`,
-        `${theme.key("O")} Model output [${modelOutputMode.toUpperCase()}]`,
+        `${theme.key("O")} Model output [${modelOutputActionStatus}]`,
         `${theme.key("C")} ${focusedAccess ? "Review + activate" : "Complete review"}`,
         `${theme.key("Q")} Quit`,
       ];
@@ -1284,8 +1363,20 @@ async function chooseResource(
         theme.bold("BOUNDARY"),
         ...packTerminalActions(boundaryActions, actionWidth),
         theme.dim("Edits stay disabled until separate activation."),
+        ...(confirmExactModelOutput ? exactModelOutputConfirmationLines(theme) : []),
       ]);
       const key = await nextKey();
+      if (confirmExactModelOutput) {
+        const decision = exactModelOutputConfirmationDecision(key);
+        if (decision === "accept") {
+          return { action: "model_output", exact_metadata_confirmed: true };
+        }
+        if (decision === "cancel") {
+          confirmExactModelOutput = false;
+          actionNotice = "Model output [SEMANTIC] is unchanged; exact hashes remain operator-only.";
+        }
+        continue;
+      }
       if (isEscapeKey(key)) {
         if (resourceView !== "boundary" && boundaryResources.length) {
           resourceView = "boundary";
@@ -1339,7 +1430,14 @@ async function chooseResource(
       if (key.name === "t") {
         return { action: "intent_check", boundary_name: highlighted.candidate_boundary_name };
       }
-      if (key.name === "o") return { action: "model_output" };
+      if (key.name === "o") {
+        if (modelOutputMode === "semantic") {
+          confirmExactModelOutput = true;
+          actionNotice = undefined;
+          continue;
+        }
+        return { action: "model_output" };
+      }
       if (key.name === "c") return { action: "confirm" };
       if (key.name === "a" && resourceView === "boundary") {
         resourceView = "related";

@@ -61,6 +61,10 @@
   `/access` TUI always shows the current state, and Workbench provides a
   **Model response details** selector. Workbench Ask refreshes before its next
   question; neither path requires boundary review or activation.
+- Keeps the `O` diagnostic-mode confirmation inside the current access-editor
+  frame and keeps other review prompts off the normal shell buffer. TUI and
+  Workbench labels show `[SEMANTIC]` or `[EXACT]` with a short explanation of
+  whether hashes are model-visible.
 
 Prepared package versions: `@synapsor/runner@1.7.14` and
 `synapsor-runner@1.7.14`. Spec and DSL remain `@synapsor/spec@1.10.0` and

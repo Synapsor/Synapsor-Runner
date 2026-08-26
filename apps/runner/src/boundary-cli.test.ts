@@ -3407,7 +3407,10 @@ describe("boundary operator-plane CLI", () => {
       sourceEnv: "DATABASE_URL",
       inspectedSchema: "public",
     });
-    const choices = [{ action: "model_output" as const }, undefined];
+    const choices = [{
+      action: "model_output" as const,
+      exact_metadata_confirmed: true as const,
+    }, undefined];
     const confirmations: string[] = [];
     const notices: Array<unknown> = [];
     const displayedModes: Array<unknown> = [];
@@ -3453,7 +3456,7 @@ describe("boundary operator-plane CLI", () => {
       expect(await fs.readFile(draftPath, "utf8")).toBe(draftBefore);
       await expect(fs.access(path.join(root, ".synapsor/exploration-boundaries.active.json")))
         .rejects.toMatchObject({ code: "ENOENT" });
-      expect(confirmations[0]).toContain("Show exact Runner digests");
+      expect(confirmations).toEqual([]);
       expect(displayedModes).toEqual(["semantic", "exact"]);
       expect(notices[1]).toMatchObject({
         tone: "warning",
