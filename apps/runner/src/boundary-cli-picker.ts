@@ -119,7 +119,7 @@ export type BoundaryResourceSelection =
         | "relationships";
     }
   | {
-      action: "create" | "rename" | "confirm" | "limits" | "privacy_all";
+      action: "create" | "rename" | "confirm" | "limits" | "privacy_all" | "model_output";
     }
   | {
       action: "intent_check";
@@ -136,6 +136,7 @@ export type BoundaryReviewOverview = {
   outstanding_resource_decisions: number;
   outstanding_boundary_decisions: number;
   resources_requiring_signoff: number;
+  model_authority_metadata_mode?: "semantic" | "exact";
   boundaries?: Array<{
     name: string;
     selected: boolean;
@@ -555,6 +556,10 @@ async function chooseResource(
   let mapOffset = 0;
   let startingTableNotice: string | undefined;
   let actionNotice: string | undefined;
+  const modelOutputMode = overview?.model_authority_metadata_mode ?? "semantic";
+  const modelOutputStatus = modelOutputMode === "exact"
+    ? theme.warning("Model response metadata: EXACT - diagnostic hashes visible")
+    : theme.success("Model response metadata: SEMANTIC - hashes stay operator-only");
   return withRawKeys(input, output, async (nextKey, render) => {
     while (true) {
       if (startingBoundaryName) {
@@ -810,6 +815,7 @@ async function chooseResource(
                 ? "English question-to-plan comparison is off. Reviewed Explore validation still applies."
                 : "Runner refuses a valid but contradictory model plan before Explore execution.",
             ),
+            modelOutputStatus,
             "",
             theme.bold(
               `${theme.key("Enter/C")} Review + activate`,
@@ -820,6 +826,7 @@ async function chooseResource(
               `${theme.key("P")} Privacy for all tables`,
               `${theme.key("L")} Limits`,
               `${theme.key("T")} Ask plan check`,
+              `${theme.key("O")} Model output [${modelOutputMode.toUpperCase()}]`,
               `${theme.key("M")} Map`,
               `${theme.key("N")} Rename`,
               `${theme.key("X")} Delete this saved boundary [AVAILABLE]`,
@@ -859,6 +866,7 @@ async function chooseResource(
           if (key.name === "t") {
             return { action: "intent_check", boundary_name: candidateBoundaryName };
           }
+          if (key.name === "o") return { action: "model_output" };
           if (key.name === "n") return { action: "rename" };
           if (key.name === "x") {
             return { action: "delete", boundary_name: candidateBoundaryName };
@@ -912,6 +920,7 @@ async function chooseResource(
               ? "English question-to-plan comparison is off. Reviewed Explore validation still applies."
               : "Runner refuses a valid but contradictory model plan before Explore execution.",
           ),
+          modelOutputStatus,
           ...(options?.notice
             ? ["", ...formatBoundaryAccessNotice(theme, options.notice)]
             : []),
@@ -940,6 +949,7 @@ async function chooseResource(
             `${theme.key("P")} Privacy for all tables`,
             `${theme.key("L")} Limits`,
             `${theme.key("T")} Ask plan check`,
+            `${theme.key("O")} Model output [${modelOutputMode.toUpperCase()}]`,
             `${theme.key("M")} Map`,
             `${theme.key("N")} Rename`,
             `${theme.key("X")} Delete this saved boundary [AVAILABLE]`,
@@ -981,6 +991,7 @@ async function chooseResource(
         if (key.name === "t") {
           return { action: "intent_check", boundary_name: highlightedBoundary.name };
         }
+        if (key.name === "o") return { action: "model_output" };
         if (key.name === "n") {
           if (!highlightedBoundary.selected) {
             return { action: "switch", boundary_name: highlightedBoundary.name };
@@ -1130,6 +1141,7 @@ async function chooseResource(
         `${theme.key("N")} Rename`,
         `${theme.key("L")} Limits`,
         `${theme.key("T")} Ask plan check`,
+        `${theme.key("O")} Model output [${modelOutputMode.toUpperCase()}]`,
         `${theme.key("C")} ${focusedAccess ? "Review + activate" : "Complete review"}`,
         `${theme.key("Q")} Quit`,
       ];
@@ -1152,6 +1164,7 @@ async function chooseResource(
             )]
             : [theme.success("Local Ask plan check: BALANCED")];
         })(),
+        modelOutputStatus,
         ...(candidateHasPendingChange
           ? [
             theme.warning("1 PENDING BOUNDARY CHANGE IS NOT ACTIVE"),
@@ -1326,6 +1339,7 @@ async function chooseResource(
       if (key.name === "t") {
         return { action: "intent_check", boundary_name: highlighted.candidate_boundary_name };
       }
+      if (key.name === "o") return { action: "model_output" };
       if (key.name === "c") return { action: "confirm" };
       if (key.name === "a" && resourceView === "boundary") {
         resourceView = "related";

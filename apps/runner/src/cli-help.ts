@@ -82,6 +82,7 @@ Examples:
   ${cmd} inspect --from-env DATABASE_URL
   ${cmd} init --wizard --from-env DATABASE_URL
   ${cmd} config validate --config ./synapsor.runner.json
+  ${cmd} config model-output --authority-metadata semantic --config ./synapsor.runner.json
   ${cmd} contract validate ./synapsor.contract.json
   ${cmd} contract normalize ./synapsor.contract.json --out ./synapsor.contract.normalized.json
   ${cmd} contract explain ./contract.synapsor.sql --format markdown

@@ -533,6 +533,13 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain('post("/api/boundary/ask-intent-check"');
     expect(html).toContain("It affects only Runner&apos;s local CLI and Workbench Ask");
     expect(html).toContain("production HTTP are unchanged");
+    expect(html).toContain("Model response details · ");
+    expect(html).toContain('id="boundary-model-output-mode"');
+    expect(html).toContain("Semantic — keep hashes operator-only");
+    expect(html).toContain("Exact diagnostics — include hashes");
+    expect(html).toContain('post("/api/config/model-output"');
+    expect(html).toContain("operator evidence");
+    expect(html).toContain("changes no reviewed data authority and needs no activation");
     expect(html).toContain("boundary_rescan_report");
     expect(html).toContain("authoring_baseline_refreshed");
     expect(html).toContain("renderProjectRescanPreview");

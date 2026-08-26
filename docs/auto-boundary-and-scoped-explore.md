@@ -341,11 +341,15 @@ fingerprints, hashes, or the query-audit hash. The opaque evidence resource ID
 remains usable; its model-readable payload follows the same projection.
 
 Operators always retain the exact values in `/details`, the plan playground,
-Workbench audit views, evidence, and query audit. Use `synapsor-runner config
-model-output --authority-metadata exact --config ./synapsor.runner.json` only
-when a diagnostic client needs exact digest pinning. This is runtime
-presentation, not reviewed data authority, so it requires a server restart but
-no boundary revision or activation.
+Workbench audit views, evidence, and query audit. In `/access`, press `O` to
+switch the visible `SEMANTIC`/`EXACT` setting. Workbench exposes the same choice
+under **Model response details**. The scriptable equivalent is
+`synapsor-runner config model-output --authority-metadata exact --config
+./synapsor.runner.json`. Use exact output only when a diagnostic client needs
+exact digest pinning. This is runtime presentation, not reviewed data authority,
+so external long-lived MCP servers must restart, but no boundary revision or
+activation is required. Workbench Ask refreshes automatically before its next
+question.
 
 ### Reviewed Names And Descriptions
 

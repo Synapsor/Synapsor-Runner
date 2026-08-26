@@ -750,11 +750,35 @@ describe("boundary review terminal picker", () => {
     expect(rendered).toContain("Local Ask plan check for reviewed_staging: BOUNDARY ONLY");
     expect(rendered).toContain("Reviewed Explore validation still applies");
     expect(rendered).toContain("T Ask plan check");
+    expect(rendered).toContain("Model response metadata: SEMANTIC - hashes stay operator-only");
+    expect(rendered).toContain("O Model output [SEMANTIC]");
     await send(input, "t");
     await expect(selected).resolves.toEqual({
       action: "intent_check",
       boundary_name: "reviewed_staging",
     });
+  });
+
+  it("opens the global model-output preference with O and shows its current state", async () => {
+    const { input, output } = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const selected = session.chooseResource(
+      [summary("public.orders", 0)],
+      {
+        confirmed_decisions: 0,
+        outstanding_decisions: 1,
+        outstanding_resource_decisions: 1,
+        outstanding_boundary_decisions: 0,
+        resources_requiring_signoff: 1,
+        model_authority_metadata_mode: "exact",
+      },
+      { initialView: "access", startAtBoundaryList: true },
+    );
+    const rendered = stripAnsi(output.read()?.toString() ?? "");
+    expect(rendered).toContain("Model response metadata: EXACT - diagnostic hashes visible");
+    expect(rendered).toContain("O Model output [EXACT]");
+    await send(input, "o");
+    await expect(selected).resolves.toEqual({ action: "model_output" });
   });
 
   it("keeps an active boundary's disabled edits visibly pending", async () => {

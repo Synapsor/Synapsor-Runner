@@ -3356,6 +3356,7 @@ export default defineCapability({
     try {
       const initial = await getJson(`http://${server.host}:${server.port}/api/boundary`, headers);
       const originalName = initial.candidate.pack.name as string;
+      expect(initial.model_authority_metadata_mode).toBe("semantic");
       expect(initial.boundary_library).toMatchObject({
         selected_name: originalName,
         entries: [{
@@ -3365,6 +3366,53 @@ export default defineCapability({
           ask_intent_check_mode: "balanced",
         }],
       });
+
+      const lockPath = path.join(tempDir, ".synapsor/generation-lock.json");
+      const draftPath = path.join(written.root, "exploration-boundary.draft.json");
+      const lockBeforeModelOutput = await fs.readFile(lockPath, "utf8");
+      const draftBeforeModelOutput = await fs.readFile(draftPath, "utf8");
+      const missingModelOutputCsrf = await fetch(
+        `http://${server.host}:${server.port}/api/config/model-output`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-synapsor-ui-token": "boundary-library-token",
+          },
+          body: JSON.stringify({ mode: "exact" }),
+        },
+      );
+      expect(missingModelOutputCsrf.status).toBe(403);
+      expect(await missingModelOutputCsrf.json()).toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/CSRF token required/i),
+      });
+
+      const modelOutput = await postJson(
+        `http://${server.host}:${server.port}/api/config/model-output`,
+        headers,
+        { mode: "exact" },
+      );
+      expect(modelOutput).toMatchObject({
+        authority_metadata: "exact",
+        changed: true,
+        operator_evidence_changed: false,
+        authority_changed: false,
+        activation_required: false,
+        external_mcp_restart_required: true,
+        workbench_ask_refresh_pending: false,
+        source_database_changed: false,
+      });
+      expect(JSON.parse(await fs.readFile(guided.config_path, "utf8"))).toMatchObject({
+        model_output: { authority_metadata: "exact" },
+      });
+      expect(await fs.readFile(lockPath, "utf8")).toBe(lockBeforeModelOutput);
+      expect(await fs.readFile(draftPath, "utf8")).toBe(draftBeforeModelOutput);
+      const afterModelOutput = await getJson(
+        `http://${server.host}:${server.port}/api/boundary`,
+        headers,
+      );
+      expect(afterModelOutput.model_authority_metadata_mode).toBe("exact");
 
       const askIntent = await postJson(
         `http://${server.host}:${server.port}/api/boundary/ask-intent-check`,

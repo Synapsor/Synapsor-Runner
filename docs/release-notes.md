@@ -48,6 +48,10 @@ for the Synapsor Cloud CLI.
   diagnostic or digest-pinning client, and switch back with `semantic`. The
   setting changes presentation only: no review or activation is required, and
   evidence/query-audit records keep their exact metadata in either mode.
+- The same preference is visible as `O Model output [SEMANTIC|EXACT]` in
+  `/access` and as **Model response details** in Workbench. Local Ask and
+  Workbench Ask pick up the change before their next question; restart other
+  long-lived MCP servers.
 
 Package versions: `@synapsor/runner@1.7.14` and
 `synapsor-runner@1.7.14`. Spec and DSL remain `1.10.0` because this release

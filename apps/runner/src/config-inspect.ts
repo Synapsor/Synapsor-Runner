@@ -18,6 +18,7 @@ import { assertKnownOptions, optionalArg, outputArg } from "./cli-options.js";
 import { databaseInputFromArgs } from "./cli-project.js";
 import { configMigrate, configShow, configValidate } from "./contract-commands.js";
 import { inferPrimaryKeyCandidate } from "./onboarding.js";
+import { updateModelAuthorityMetadataMode } from "./model-output-config.js";
 import {
   DEFAULT_GENERATED_DIR,
   type ExplorationBoundaryDraft,
@@ -710,15 +711,10 @@ async function configModelOutput(args: string[]): Promise<number> {
   const current = modelOutputAuthorityMetadata(parsed);
   let changed = false;
   if (requested && requested !== current) {
-    parsed.model_output = { authority_metadata: requested };
-    const after = validateRunnerCapabilityConfig(parsed);
-    if (!after.ok) {
-      throw new Error(
-        `Refused to write an invalid Runner config: ${after.errors.map((issue) => `${issue.path} ${issue.code}`).join(", ")}`,
-      );
-    }
-    await writeJsonAtomically(configPath, parsed);
-    changed = true;
+    changed = (await updateModelAuthorityMetadataMode({
+      configPath,
+      mode: requested,
+    })).changed;
   }
   const authorityMetadata = requested ?? current;
   const result = {
@@ -757,24 +753,6 @@ function modelOutputAuthorityMetadata(
   return (modelOutput as Record<string, unknown>).authority_metadata === "exact"
     ? "exact"
     : "semantic";
-}
-
-async function writeJsonAtomically(
-  destination: string,
-  value: Record<string, unknown>,
-): Promise<void> {
-  const temporary = `${destination}.${process.pid}.${Date.now()}.tmp`;
-  try {
-    const existingMode = (await fs.stat(destination)).mode & 0o777;
-    await fs.writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, {
-      flag: "wx",
-      mode: existingMode,
-    });
-    await fs.chmod(temporary, existingMode);
-    await fs.rename(temporary, destination);
-  } finally {
-    await fs.rm(temporary, { force: true });
-  }
 }
 
 function optionalTrimmedArg(args: string[], option: string): string | undefined {

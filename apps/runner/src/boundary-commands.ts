@@ -59,6 +59,10 @@ import { resolveSynapsorProject } from "./project-resolution.js";
 import { formatExploreVocabularyCoverage } from "./explore-vocabulary.js";
 import { DEFAULT_TERMINAL_OPENAI_ASK_MODEL } from "./terminal-ask-defaults.js";
 import {
+  readModelAuthorityMetadataMode,
+  updateModelAuthorityMetadataMode,
+} from "./model-output-config.js";
+import {
   askIntentCheckModeForBoundary,
   askIntentCheckModesForBoundaries,
   deleteAskIntentCheckPreference,
@@ -1168,10 +1172,16 @@ async function interactiveBoundaryReviewLoop(input: {
       input.projectRoot,
       boundaryLibrary.entries.map((entry) => entry.name),
     );
+    const resolvedProject = await resolveSynapsorProject(input.projectRoot, process.env);
+    const modelOutputConfigPath = resolvedProject?.config_path;
+    const modelAuthorityMetadataMode = modelOutputConfigPath
+      ? await readModelAuthorityMetadataMode(modelOutputConfigPath)
+      : "semantic";
     const selected = await input.session.chooseResource(
       await listBoundaryResourceReviews(input.projectRoot),
       {
         ...boundaryReviewOverview(context.bundle),
+        model_authority_metadata_mode: modelAuthorityMetadataMode,
         boundaries: boundaryLibrary.entries.map((entry) => ({
           ...entry,
           ask_intent_check_mode: askIntentModes[entry.name] ?? "balanced",
@@ -1246,6 +1256,68 @@ async function interactiveBoundaryReviewLoop(input: {
               "Runner will refuse a model plan that contradicts the English question before Explore execution.",
             ],
             footer: "Reviewed data authority and source data were unchanged.",
+          };
+      continue;
+    }
+    if (selected.action === "model_output") {
+      if (!modelOutputConfigPath) {
+        accessNotice = {
+          tone: "danger",
+          title: "Runner config was not found.",
+          lines: [
+            "Model output cannot be changed until this project has one discoverable synapsor.runner.json.",
+          ],
+          footer: `Scriptable path: ${cliCommandName()} config model-output --config <path>`,
+        };
+        continue;
+      }
+      const nextMode = modelAuthorityMetadataMode === "semantic" ? "exact" : "semantic";
+      if (nextMode === "exact") {
+        const accepted = await input.session.confirm(
+          "Show exact Runner digests, fingerprints, and query-audit hashes to model-facing MCP clients and local Ask? Operator evidence is already exact. Use this only for a diagnostic client.",
+          { defaultValue: false },
+        );
+        if (!accepted) {
+          accessNotice = {
+            tone: "success",
+            title: "Model responses remain Semantic.",
+            lines: ["Exact Runner metadata stays in operator details, evidence, and query audit."],
+          };
+          continue;
+        }
+      }
+      try {
+        await updateModelAuthorityMetadataMode({
+          configPath: modelOutputConfigPath,
+          mode: nextMode,
+        });
+      } catch (error) {
+        accessNotice = {
+          tone: "danger",
+          title: "Model output was not changed.",
+          lines: [redactCliErrorMessage(error instanceof Error ? error.message : String(error))],
+          footer: "Reviewed authority and source data are unchanged.",
+        };
+        continue;
+      }
+      accessNotice = nextMode === "semantic"
+        ? {
+            tone: "success",
+            title: "Model responses now use Semantic metadata.",
+            lines: [
+              "Reviewed names, results, privacy outcomes, and evidence handles remain available.",
+              "Exact digests, fingerprints, and query-audit hashes stay operator-only.",
+            ],
+            footer: "Local Ask uses this on its next question. Restart other long-lived MCP servers; no boundary review or activation is required.",
+          }
+        : {
+            tone: "warning",
+            title: "Model responses now include Exact diagnostic metadata.",
+            lines: [
+              "Model-facing clients can receive Runner digests, fingerprints, and query-audit hashes.",
+              "Press O again to return to Semantic output.",
+            ],
+            footer: "Local Ask uses this on its next question. Restart other long-lived MCP servers; reviewed data authority is unchanged.",
           };
       continue;
     }

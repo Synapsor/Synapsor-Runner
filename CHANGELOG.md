@@ -57,6 +57,10 @@
   semantic|exact`. The atomic edit preserves file permissions, changes no
   reviewed boundary or digest, and requires only a restart/reconnect for a
   long-lived MCP process.
+- Exposes the same preference in operator interfaces: `O Model output` in the
+  `/access` TUI always shows the current state, and Workbench provides a
+  **Model response details** selector. Workbench Ask refreshes before its next
+  question; neither path requires boundary review or activation.
 
 Prepared package versions: `@synapsor/runner@1.7.14` and
 `synapsor-runner@1.7.14`. Spec and DSL remain `@synapsor/spec@1.10.0` and

@@ -166,6 +166,10 @@ import {
 import { WORKBENCH_SYNTAX_CSS, workbenchSyntaxScript } from "./workbench-syntax.js";
 import { exploreVocabularyStructuralProfile } from "./explore-vocabulary.js";
 import {
+  readModelAuthorityMetadataMode,
+  updateModelAuthorityMetadataMode,
+} from "./model-output-config.js";
+import {
   BOUNDARY_REVIEW_PROGRESS_VERSION,
   boundaryReviewDecisions as sharedBoundaryReviewDecisions,
   createBoundaryReviewProgress as createSharedBoundaryReviewProgress,
@@ -891,6 +895,7 @@ async function handleRequest(input: {
       },
       review: reviewForDisplay,
       database_server_compatibility: serverCompatibility,
+      model_authority_metadata_mode: await readModelAuthorityMetadataMode(configPath),
       candidate_digest: explorationBoundaryCandidateDigest(candidate),
       boundary_library: boundaryLibrary,
       boundary_rescan_report: await readBoundaryRescanReport(projectRoot),
@@ -1203,6 +1208,46 @@ async function handleRequest(input: {
       boundary_library: await withAskIntentCheckModes(projectRoot, library),
       authority_changed: false,
       activation_required: false,
+      source_database_changed: false,
+    });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/config/model-output") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Boundary Workbench is not enabled for this session." });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required to change model response metadata." });
+      return;
+    }
+    const body = await readJsonBody(request);
+    const mode = body.mode === "semantic" || body.mode === "exact"
+      ? body.mode
+      : undefined;
+    if (!mode) {
+      sendJson(response, 400, {
+        ok: false,
+        error: "Model response metadata must be semantic or exact.",
+        source_database_changed: false,
+      });
+      return;
+    }
+    const updated = await updateModelAuthorityMetadataMode({ configPath, mode });
+    const configuredAsk = askSession.status().configuration;
+    if (updated.changed && configuredAsk) {
+      bootstrapState.askAuthorityRefreshPending = true;
+    }
+    sendJson(response, 200, {
+      ok: true,
+      authority_metadata: updated.authority_metadata,
+      changed: updated.changed,
+      operator_evidence_changed: false,
+      authority_changed: false,
+      activation_required: false,
+      external_mcp_restart_required: updated.changed,
+      workbench_ask_refresh_pending: updated.changed && Boolean(configuredAsk),
       source_database_changed: false,
     });
     return;

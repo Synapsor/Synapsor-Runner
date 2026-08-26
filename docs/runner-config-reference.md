@@ -123,12 +123,20 @@ synapsor-runner config model-output \
 synapsor-runner config model-output --config ./synapsor.runner.json
 ```
 
+Interactive operator paths expose the same setting without editing JSON:
+
+- In `/access`, press `O Model output`; the current `SEMANTIC` or `EXACT`
+  state is always visible before you press it.
+- In Workbench, open **Model response details** on the boundary overview and
+  choose **Semantic** or **Exact diagnostics**.
+
 The command atomically preserves the config file's permissions. This setting
 does not change reviewed authority, a boundary digest, query behavior, budget
 accounting, or persisted evidence. CLI/Workbench operator details, the Explore
 playground, evidence, query audit, and internal drift checks always retain exact
-metadata. Restart a long-lived MCP server and reconnect its client after a
-change; no boundary review or activation is required.
+metadata. Workbench Ask refreshes before its next question. Restart other
+long-lived MCP servers and reconnect their clients after a change; no boundary
+review or activation is required.
 
 ## Storage
 

@@ -2,7 +2,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { readModelAuthorityMetadataMode } from "./model-output-config.js";
+import {
+  readModelAuthorityMetadataMode,
+  updateModelAuthorityMetadataMode,
+} from "./model-output-config.js";
 
 const roots: string[] = [];
 
@@ -37,5 +40,42 @@ describe("model output config preference", () => {
     await expect(readModelAuthorityMetadataMode(missing)).resolves.toBe("semantic");
     await expect(readModelAuthorityMetadataMode(malformed)).resolves.toBe("semantic");
     await expect(readModelAuthorityMetadataMode(unknown)).resolves.toBe("semantic");
+  });
+
+  it("updates only model presentation and preserves config permissions", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-model-output-"));
+    roots.push(root);
+    const configPath = path.join(root, "synapsor.runner.json");
+    const config = {
+      version: 1,
+      mode: "read_only",
+      storage: { sqlite_path: "./.synapsor/local.db" },
+      sources: {
+        local_postgres: {
+          engine: "postgres",
+          read_url_env: "DATABASE_URL",
+          read_only: true,
+        },
+      },
+      trusted_context: { provider: "environment" },
+      capabilities: [],
+      strict: true,
+      result_format: 2,
+    };
+    await fs.writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o640 });
+
+    await expect(updateModelAuthorityMetadataMode({
+      configPath,
+      mode: "exact",
+    })).resolves.toEqual({ authority_metadata: "exact", changed: true });
+    expect((await fs.stat(configPath)).mode & 0o777).toBe(0o640);
+    expect(JSON.parse(await fs.readFile(configPath, "utf8"))).toEqual({
+      ...config,
+      model_output: { authority_metadata: "exact" },
+    });
+    await expect(updateModelAuthorityMetadataMode({
+      configPath,
+      mode: "exact",
+    })).resolves.toEqual({ authority_metadata: "exact", changed: false });
   });
 });
