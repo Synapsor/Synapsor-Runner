@@ -148,6 +148,9 @@ describe("Scoped Explore", () => {
             arguments: { plan: rowPlan },
           });
           expect(explored.isError).not.toBe(true);
+          expect(JSON.stringify(explored.structuredContent)).not.toContain("sha256:");
+          expect(explored.structuredContent).not.toHaveProperty("boundary_digest");
+          expect(explored.structuredContent).toHaveProperty("evidence_resource");
           expect(explored.structuredContent).toMatchObject({
             ok: true,
             data: [{
@@ -184,6 +187,51 @@ describe("Scoped Explore", () => {
     }));
   });
 
+  it("restores exact authority metadata on the MCP wire only when configured", async () => {
+    const fixture = await activatedFixture();
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+      executor: fixedExecutor([{
+        dimension_0: "west",
+        measure_0: 12,
+        __cohort_size: 12,
+      }]),
+      modelAuthorityMetadata: "exact",
+    });
+    const server = createScopedExploreMcpServer(runtime);
+    const client = new Client({ name: "exact-authority-metadata", version: "1.0.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    try {
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+      const described = await client.callTool({
+        name: "app.describe_data",
+        arguments: {},
+      });
+      expect(described.structuredContent).toHaveProperty(
+        "boundary_digest",
+        fixture.boundary.activation.digest,
+      );
+
+      const explored = await client.callTool({
+        name: "app.explore_data",
+        arguments: { plan: aggregatePlan("one") },
+      });
+      expect(explored.isError).not.toBe(true);
+      expect(explored.structuredContent).toHaveProperty(
+        "boundary_digest",
+        fixture.boundary.activation.digest,
+      );
+      expect(explored.structuredContent).toHaveProperty("outcome.result.query_audit_handle");
+      expect(explored.structuredContent).toHaveProperty("evidence_resource");
+    } finally {
+      await Promise.allSettled([client.close(), server.close(), runtime.close()]);
+    }
+  });
+
   it("uses boundary-bounded defaults when a model omits row and aggregate limits", async () => {
     const fixture = await activatedFixture();
     const rowPlan = validateExplorePlan({
@@ -200,6 +248,79 @@ describe("Scoped Explore", () => {
 
     expect(rowPlan).toMatchObject({ kind: "rows", limit: 50 });
     expect(aggregatePlan).toMatchObject({ kind: "aggregate", top_n: 25 });
+  });
+
+  it("validates and compiles an exact plan without querying rows, consuming budget, or writing audit evidence", async () => {
+    const fixture = await activatedFixture();
+    const store = new ProposalStore(path.join(fixture.root, ".synapsor/local.db"));
+    const executeBatch = vi.fn(async () => [] as Array<Record<string, unknown>[]>);
+    const executor: ScopedExploreExecutor = {
+      execute: async () => [],
+      executeBatch,
+      close: async () => undefined,
+    };
+    const inspectDatabaseFn = vi.fn(async () => fixture.inspection);
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn,
+      executor,
+      store,
+      clock: () => Date.parse("2026-08-25T12:00:00.000Z"),
+    });
+    try {
+      const result = await runtime.validate(aggregatePlan("one"));
+
+      expect(result).toMatchObject({
+        ok: true,
+        outcome: { type: "validated", status: "ready" },
+        boundary_name: fixture.boundary.pack.name,
+        boundary_digest: fixture.boundary.activation.digest,
+        database_engine: "postgres",
+        trusted_scope: {
+          tenant: { source: "environment", binding: "SYNAPSOR_TENANT_ID" },
+          principal: { source: "not_required" },
+        },
+        validation: {
+          source_catalog_rechecked: true,
+          source_query_executed: false,
+          explore_budget_consumed: false,
+          estimated_response_cells: 6,
+          statement_count: 1,
+          parameter_values_included: false,
+        },
+        source_database_changed: false,
+      });
+      expect(result.normalized_plan).toMatchObject(aggregatePlan("one"));
+      expect(result.parameterized_sql).toMatchObject({
+        provenance: "captured_before_source_execution",
+        parameter_values_persisted: false,
+        model_received_sql: false,
+        statements: [expect.objectContaining({
+          parameter_count: expect.any(Number),
+          statement: expect.stringContaining("SELECT"),
+        })],
+      });
+      expect(JSON.stringify(result.parameterized_sql)).not.toContain("tenant-acme");
+
+      await expect(runtime.validate({
+        kind: "rows",
+        resource: "public.subscriptions",
+        select: ["tenant_id"],
+        limit: 1,
+      })).rejects.toMatchObject({
+        code: "EXPLORE_FIELD_FORBIDDEN",
+      });
+      expect(executeBatch).not.toHaveBeenCalled();
+      expect(inspectDatabaseFn).toHaveBeenCalledTimes(3);
+      expect(store.stats().explore_budget_reservations).toBe(0);
+      expect(store.listEvidenceBundles()).toHaveLength(0);
+      expect(store.listQueryAudit()).toHaveLength(0);
+    } finally {
+      await runtime.close();
+      store.close();
+    }
   });
 
   it("freshly inspects only generation-lock resource dependencies on startup and every query", async () => {
@@ -344,6 +465,115 @@ describe("Scoped Explore", () => {
     expect(JSON.stringify(first.value)).not.toContain("north");
     expect((first.value.data as Array<Record<string, unknown>>)[0]?.region)
       .not.toBe((second.value.data as Array<Record<string, unknown>>)[0]?.region);
+  });
+
+  it("toggles exact authority metadata without changing data or operator results", async () => {
+    const fixture = await activatedFixture();
+    const plan = aggregatePlan("one");
+    const digest = fixture.boundary.activation.digest;
+    const full = {
+      ok: true,
+      boundary_digest: digest,
+      active_boundary_set_digest: digest,
+      outcome: {
+        type: "success",
+        result: {
+          query_audit_handle: digest,
+        },
+      },
+      audit: {
+        query_fingerprint: digest,
+        evidence_bundle_id: "ev_operator_record",
+      },
+      evidence_bundle_id: "ev_operator_record",
+      data: [{
+        region: "west",
+        digest,
+        boundary_digest: digest,
+      }],
+      source_database_changed: false,
+    };
+
+    const semantic = projectScopedExploreResultForModel({
+      tool: "app.explore_data",
+      arguments: { plan },
+      result: full,
+      boundary: fixture.boundary,
+      authorityMetadata: "semantic",
+    });
+    expect(semantic.operator_metadata_withheld).toBe(true);
+    expect(semantic.value).not.toHaveProperty("boundary_digest");
+    expect(semantic.value).not.toHaveProperty("active_boundary_set_digest");
+    expect(semantic.value).toMatchObject({
+      outcome: { type: "success", result: {} },
+      audit: { evidence_bundle_id: "ev_operator_record" },
+      evidence_bundle_id: "ev_operator_record",
+      data: [{ region: "west", digest, boundary_digest: digest }],
+    });
+
+    const exact = projectScopedExploreResultForModel({
+      tool: "app.explore_data",
+      arguments: { plan },
+      result: full,
+      boundary: fixture.boundary,
+      authorityMetadata: "exact",
+    });
+    expect(exact).toEqual({ value: full, withheld: false });
+    expect(full.boundary_digest).toBe(digest);
+  });
+
+  it("withholds exact relationship-refusal proofs in semantic mode", async () => {
+    const fixture = await activatedFixture();
+    const digest = fixture.boundary.activation.digest;
+    const refusal = {
+      ok: false,
+      error_code: "EXPLORE_RELATIONSHIP_REVIEW_REQUIRED",
+      message: "Review the relationship before use.",
+      details: {
+        relationship: "subscriptions_account_id_fkey",
+        proof_digest: digest,
+        active_boundary_digest: digest,
+      },
+      source_database_changed: false,
+    };
+    const semantic = projectScopedExploreResultForModel({
+      tool: "app.explore_data",
+      arguments: {},
+      result: refusal,
+      boundary: fixture.boundary,
+      authorityMetadata: "semantic",
+    });
+    expect(semantic).toMatchObject({
+      value: {
+        details: { relationship: "subscriptions_account_id_fkey" },
+      },
+      withheld: false,
+      operator_metadata_withheld: true,
+    });
+    expect(JSON.stringify(semantic.value)).not.toContain(digest);
+    expect(refusal.details.proof_digest).toBe(digest);
+  });
+
+  it("toggles authority metadata in app.describe_data while keeping catalog semantics", async () => {
+    const fixture = await activatedFixture();
+    const described = await createScopedExploreRuntime({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection,
+      executor: fixedExecutor([]),
+    });
+    try {
+      const raw = await described.describe();
+      const semantic = projectDescribeDataForModel(raw, false, "semantic");
+      const exact = projectDescribeDataForModel(raw, false, "exact");
+      expect(semantic).not.toHaveProperty("boundary_digest");
+      expect(semantic).toHaveProperty("resources");
+      expect(exact).toHaveProperty("boundary_digest", fixture.boundary.activation.digest);
+      expect(raw).toHaveProperty("boundary_digest", fixture.boundary.activation.digest);
+    } finally {
+      await described.close();
+    }
   });
 
   it("returns a reviewed count-distinct measure without sending the model any withheld field value", async () => {

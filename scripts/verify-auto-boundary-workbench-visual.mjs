@@ -109,7 +109,45 @@ try {
           comparison_partners: ["preceding_period", "same_period_last_year"],
         },
       }),
+      validate: async (plan) => {
+        await new Promise((resolve) => setTimeout(resolve, 160));
+        return {
+        ok: true,
+        outcome: { type: "validated", status: "ready" },
+        normalized_plan: plan,
+        boundary_name: boundary.pack.name,
+        boundary_digest: boundary.activation.digest,
+        generation_lock_fingerprint: boundary.generation_lock_fingerprint,
+        database_engine: "postgres",
+        trusted_scope: {
+          tenant: { source: "environment", binding: "SYNAPSOR_TENANT_ID" },
+          principal: { source: "not_required" },
+        },
+        parameterized_sql: {
+          schema_version: "synapsor.explore-parameterized-sql.v1",
+          engine: "postgres",
+          provenance: "captured_before_source_execution",
+          parameter_values_persisted: false,
+          model_received_sql: false,
+          statements: [{
+            statement: 'SELECT COUNT(*) AS "count" FROM "public"."operational_resources" WHERE "tenant_id" = $1',
+            parameter_count: 1,
+            parameter_types: ["string"],
+          }],
+        },
+        validation: {
+          source_catalog_rechecked: true,
+          source_query_executed: false,
+          explore_budget_consumed: false,
+          estimated_response_cells: 25,
+          statement_count: 1,
+          parameter_values_included: false,
+        },
+          source_database_changed: false,
+        };
+      },
       explore: async (plan) => {
+        await new Promise((resolve) => setTimeout(resolve, 160));
         const grouped = plan.dimensions?.[0]?.field;
         const relativeWindow = plan.time_window;
         return {
@@ -673,6 +711,196 @@ try {
     })()`);
     await waitForExpression(page, "document.querySelector('#open-client-setup')?.offsetParent !== null");
     await clickSelector(page, "#ask-open-no-model");
+    await evaluate(page, `(() => {
+      const playground=document.querySelector("#json-plan-playground");
+      playground.open=true;
+      playground.scrollIntoView({block:"start"});
+    })()`);
+    const playgroundEditor = await evaluate(page, `(() => {
+      const editor=document.querySelector("#playground-plan-json");
+      const original=JSON.parse(editor.value);
+      editor.value=JSON.stringify(original);
+      editor.dispatchEvent(new Event("input",{bubbles:true}));
+      return {
+        state:document.querySelector("#playground-json-state")?.textContent||"",
+        highlightedTokens:document.querySelectorAll("#playground-json-highlight .syntax-token").length,
+        lineNumbers:document.querySelector("#playground-line-numbers")?.textContent||"",
+      };
+    })()`);
+    assert(
+      /Valid JSON/.test(playgroundEditor.state)
+        && playgroundEditor.highlightedTokens > 0
+        && playgroundEditor.lineNumbers === "1",
+      "Workbench plan editor did not highlight valid pasted JSON or synchronize its line gutter",
+      playgroundEditor,
+    );
+    await clickSelector(page, "#playground-format");
+    assert(
+      await evaluate(page, `(() => {
+        const editor=document.querySelector("#playground-plan-json");
+        const lines=(document.querySelector("#playground-line-numbers")?.textContent||"").split("\\n");
+        return editor.value.includes("\\n  ")&&lines.length===editor.value.split("\\n").length;
+      })()`),
+      "Workbench plan editor did not format JSON or keep line numbers aligned",
+    );
+    const playgroundSelection = await evaluate(page, `(() => {
+      const editor=document.querySelector("#playground-plan-json");
+      const highlight=document.querySelector("#playground-json-highlight");
+      const code=highlight?.querySelector(".syntax-code");
+      editor.focus();
+      editor.setSelectionRange(0,Math.min(editor.value.length,editor.value.split("\\n").slice(0,3).join("\\n").length));
+      const editorStyle=getComputedStyle(editor);
+      const highlightStyle=getComputedStyle(highlight);
+      const codeStyle=getComputedStyle(code);
+      const contentTop=highlight.getBoundingClientRect().top+parseFloat(highlightStyle.paddingTop);
+      const report={
+        selected:editor.selectionEnd>editor.selectionStart,
+        editorLineHeight:editorStyle.lineHeight,
+        codeLineHeight:codeStyle.lineHeight,
+        editorFontSize:editorStyle.fontSize,
+        codeFontSize:codeStyle.fontSize,
+        editorFontFamily:editorStyle.fontFamily,
+        codeFontFamily:codeStyle.fontFamily,
+        contentTopDelta:Math.abs(code.getBoundingClientRect().top-contentTop),
+      };
+      editor.setSelectionRange(0,0);
+      editor.blur();
+      return report;
+    })()`);
+    assert(
+      playgroundSelection.selected
+        && playgroundSelection.editorLineHeight===playgroundSelection.codeLineHeight
+        && playgroundSelection.editorFontSize===playgroundSelection.codeFontSize
+        && playgroundSelection.editorFontFamily===playgroundSelection.codeFontFamily
+        && playgroundSelection.contentTopDelta<=0.5,
+      "Workbench plan selection and syntax overlay use different row geometry",
+      playgroundSelection,
+    );
+    await evaluate(page, `document.querySelector("#playground-validate")?.click()`);
+    await waitForExpression(page, "document.querySelector('#playground-status')?.classList.contains('loading') === true");
+    const playgroundValidateLoader = await evaluate(page, `(() => ({
+      busy:document.querySelector("#json-plan-playground")?.getAttribute("aria-busy"),
+      status:document.querySelector("#playground-status")?.textContent||"",
+      validateDisabled:document.querySelector("#playground-validate")?.disabled,
+      runDisabled:document.querySelector("#playground-run")?.disabled,
+    }))()`);
+    assert(
+      playgroundValidateLoader.busy==="true"
+        && /Rechecking live catalog/.test(playgroundValidateLoader.status)
+        && playgroundValidateLoader.validateDisabled
+        && playgroundValidateLoader.runDisabled,
+      "Workbench did not expose a bounded loading state while compiling SQL",
+      playgroundValidateLoader,
+    );
+    await waitForExpression(page, "document.querySelector('#playground-status')?.textContent.includes('Validated')");
+    const playgroundValidation = await evaluate(page, `(() => {
+      const panel=document.querySelector("#playground-result");
+      const text=panel?.textContent||"";
+      return {
+        text,
+        sql:panel?.querySelector('[id^="playground-sql-"]')?.textContent||"",
+        sqlTokens:panel?.querySelectorAll('[id^="playground-sql-"] .syntax-token').length||0,
+        normalizedTokens:panel?.querySelectorAll('#playground-normalized-json .syntax-token').length||0,
+        horizontalOverflow:document.documentElement.scrollWidth>document.documentElement.clientWidth+1,
+      };
+    })()`);
+    assert(
+      /No source query/.test(playgroundValidation.text)
+        && /No budget consumed/.test(playgroundValidation.text)
+        && /SELECT\s+COUNT/.test(playgroundValidation.sql)
+        && playgroundValidation.sql.split("\n").length>=5
+        && /(?:\$1|\?)/.test(playgroundValidation.sql)
+        && /parameter value\(s\) withheld/.test(playgroundValidation.text)
+        && playgroundValidation.sqlTokens > 0
+        && playgroundValidation.normalizedTokens > 0
+        && !playgroundValidation.text.includes("visual-tenant")
+        && !playgroundValidation.horizontalOverflow,
+      "Workbench parameterized SQL preview was not bounded, highlighted, or visually stable",
+      playgroundValidation,
+    );
+    assert(
+      await evaluate(page, `document.querySelector("#json-plan-playground")?.hasAttribute("aria-busy")===false
+        && document.querySelector("#playground-validate")?.disabled===false
+        && document.querySelector("#playground-run")?.disabled===false`),
+      "Workbench left playground controls busy after SQL compilation",
+    );
+    const exploreModeTabContrast = await evaluate(page, `(() => {
+      const rgb=value=>{
+        const match=value.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
+        return match?match.slice(1,4).map(Number):null;
+      };
+      const luminance=value=>{
+        const channels=rgb(value);
+        if(!channels)return null;
+        const linear=channels.map(channel=>{
+          const normalized=channel/255;
+          return normalized<=0.04045?normalized/12.92:Math.pow((normalized+0.055)/1.055,2.4);
+        });
+        return 0.2126*linear[0]+0.7152*linear[1]+0.0722*linear[2];
+      };
+      const inspect=selector=>{
+        const node=document.querySelector(selector);
+        const style=getComputedStyle(node);
+        const foreground=luminance(style.color);
+        const background=luminance(style.backgroundColor);
+        return {
+          text:node?.textContent?.trim()||"",
+          color:style.color,
+          background:style.backgroundColor,
+          contrast:foreground===null||background===null?0:(Math.max(foreground,background)+0.05)/(Math.min(foreground,background)+0.05),
+        };
+      };
+      return {active:inspect("#aggregate-tab"),inactive:inspect("#row-tab")};
+    })()`);
+    assert(
+      exploreModeTabContrast.active.text==="Trends and totals"
+        && exploreModeTabContrast.inactive.text==="One record"
+        && exploreModeTabContrast.active.contrast>=4.5
+        && exploreModeTabContrast.inactive.contrast>=4.5
+        && exploreModeTabContrast.active.color!==exploreModeTabContrast.active.background,
+      "Workbench Explore mode tabs do not maintain readable active and inactive contrast",
+      exploreModeTabContrast,
+    );
+    await evaluate(page, `document.querySelector('[id^="playground-sql-"]')?.scrollIntoView({block:"center"})`);
+    await screenshot(page, "workbench-plan-playground-validated-desktop.png");
+    await evaluate(page, `document.querySelector("#playground-run")?.click()`);
+    await waitForExpression(page, "document.querySelector('#playground-status')?.classList.contains('loading') === true");
+    assert(
+      await evaluate(page, `document.querySelector("#json-plan-playground")?.getAttribute("aria-busy")==="true"
+        && document.querySelector("#playground-status")?.textContent.includes("Validating and running")`),
+      "Workbench did not show its execution loader",
+    );
+    await waitForExpression(page, "document.querySelector('#playground-status')?.textContent.includes('Reviewed result released')");
+    assert(
+      await evaluate(page, `(() => {
+        const text=document.querySelector("#playground-result")?.textContent||"";
+        return /Reviewed plan executed/.test(text)&&/Evidence/.test(text)&&!text.includes("visual-tenant");
+      })()`),
+      "Workbench plan playground did not render the reviewed execution result",
+    );
+    await screenshot(page, "workbench-plan-playground-result-desktop.png");
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true,
+      screenWidth: 390,
+      screenHeight: 844,
+    });
+    await evaluate(page, `document.querySelector("#json-plan-playground")?.scrollIntoView({block:"start"})`);
+    assert(
+      await evaluate(page, "document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1"),
+      "Workbench plan playground overflowed the mobile viewport",
+    );
+    await screenshot(page, "workbench-plan-playground-result-mobile.png");
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 1440,
+      height: 1100,
+      deviceScaleFactor: 1,
+      mobile: false,
+      screenWidth: 1440,
+      screenHeight: 1100,
+    });
     await waitForExpression(page, `[...document.querySelectorAll('#aggregate-window-field option')]
       .some(option=>{try{return JSON.parse(option.value).field==='created_at'}catch{return false}})`);
     await evaluate(page, `(() => {
@@ -876,8 +1104,8 @@ try {
     })`);
     assert(
       withheldReview.tier === "withheld"
-        && /raw values stay local or become response-only tokens/i.test(String(withheldReview.editorCopy))
-        && /reviewed derived results remain available/i.test(String(withheldReview.editorCopy))
+        && /raw output stays local or becomes response-only tokens/i.test(String(withheldReview.editorCopy))
+        && /reviewed filter, group, and sort operations may still reveal/i.test(String(withheldReview.editorCopy))
         && !withheldReview.stagedHidden,
       "an ordinary low-risk tier change did not stage directly in the focused editor",
       withheldReview,

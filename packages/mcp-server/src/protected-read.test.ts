@@ -29,6 +29,37 @@ const digest = `sha256:${"a".repeat(64)}` as const;
 const lock = `sha256:${"b".repeat(64)}` as const;
 
 describe("protected named reads", () => {
+  it("toggles exact metadata without hiding evidence resources or source values", () => {
+    const capability = aggregateConfig().capabilities?.[0];
+    if (!capability) throw new Error("protected aggregate fixture is incomplete");
+    const full = {
+      status: "ok",
+      boundary_digest: digest,
+      query_audit: { query_fingerprint: digest },
+      evidence_resource: "synapsor://evidence/ev_protected",
+      data: {
+        groups: [{ digest, churned_accounts: 8 }],
+      },
+      source_database_changed: false,
+    };
+
+    const semantic = projectProtectedReadResultForModel(capability, full, "semantic");
+    expect(semantic).toMatchObject({
+      withheld: false,
+      operator_metadata_withheld: true,
+      value: {
+        evidence_resource: "synapsor://evidence/ev_protected",
+        data: { groups: [{ digest, churned_accounts: 8 }] },
+      },
+    });
+    expect(semantic.value).not.toHaveProperty("boundary_digest");
+    expect(JSON.stringify(semantic.value)).not.toContain("query_fingerprint");
+
+    const exact = projectProtectedReadResultForModel(capability, full, "exact");
+    expect(exact).toEqual({ value: full, withheld: false });
+    expect(full.boundary_digest).toBe(digest);
+  });
+
   it("also withholds reviewed values from ordinary named read model content", () => {
     const capability: RuntimeCapabilityConfig = {
       name: "members.inspect_member",

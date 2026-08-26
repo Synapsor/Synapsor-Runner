@@ -337,6 +337,7 @@ export async function ui(args: string[]): Promise<number> {
     port: portArg ? Number(portArg) : 0,
     allowRemoteBind: args.includes("--allow-remote-bind"),
     tour: args.includes("--tour"),
+    initialView: args.includes("--playground") ? "playground" : undefined,
     boundaryRoot,
     projectRoot,
     ledgerScope,
@@ -352,7 +353,9 @@ export async function ui(args: string[]): Promise<number> {
   process.stdout.write(`Synapsor Runner local UI: ${server.url}\n`);
   if (args.includes("--open")) {
     openBrowser(server.url);
-    process.stdout.write("Opening the local review UI in your browser when a desktop opener is available.\n");
+    process.stdout.write(args.includes("--playground")
+      ? "Opening Workbench directly at the JSON Plan Playground when a desktop opener is available.\n"
+      : "Opening the local review UI in your browser when a desktop opener is available.\n");
   }
   const reissueBootstrap = (chunk: Buffer | string) => {
     if (String(chunk).trim().toLowerCase() !== "r") return;
@@ -368,7 +371,9 @@ export async function ui(args: string[]): Promise<number> {
     .then(() => true)
     .catch(() => false);
   process.stdout.write([
-    scopedExploreActive
+    args.includes("--playground") && scopedExploreActive
+      ? "Next: paste or edit one fixed Explore JSON plan, then Validate only or Run reviewed plan."
+      : scopedExploreActive
       ? "Next: ask your reviewed data in Workbench. Access review remains available when you need to change it."
       : "Next: review the proposed boundary, then ask your first question in Workbench.",
     "Approval and guarded apply are separate trusted-operator actions protected by the per-run local session and CSRF token.",

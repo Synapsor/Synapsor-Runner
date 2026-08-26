@@ -592,6 +592,7 @@ describe("runner cli", () => {
       ["proposals", "--help"],
       ["evidence", "--help"],
       ["query-audit", "--help"],
+      ["explore", "--help"],
       ["receipts", "--help"],
       ["activity", "--help"],
       ["events", "--help"],
@@ -628,6 +629,7 @@ describe("runner cli", () => {
     expect(output.join("")).toContain("smoke");
     expect(output.join("")).toContain("writeback");
     expect(output.join("")).toContain("handler");
+    expect(output.join("")).toContain("explore");
 
     output.length = 0;
     await expect(main(["config", "--help"])).resolves.toBe(0);
@@ -641,6 +643,12 @@ describe("runner cli", () => {
     expect(output.join("")).toContain("With --dry-run it makes no network request");
     expect(output.join("")).toContain("uploads to the authenticated Cloud registry");
     expect(output.join("")).not.toContain("until a real Cloud registry endpoint is wired");
+
+    output.length = 0;
+    await expect(main(["explore", "--help"])).resolves.toBe(0);
+    expect(output.join("")).toContain("Explore Plan Playground");
+    expect(output.join("")).toContain("source data query");
+    expect(output.join("")).toContain("SYNAPSOR_MCP_ACCESS_TOKEN");
 
     output.length = 0;
     await expect(main(["revert", "--help"])).resolves.toBe(0);

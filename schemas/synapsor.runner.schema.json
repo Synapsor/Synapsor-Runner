@@ -65,6 +65,19 @@
       "enum": [1, 2],
       "default": 1
     },
+    "model_output": {
+      "description": "Controls model-facing presentation only. Exact authority metadata always remains in operator details, evidence, and internal checks.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "authority_metadata": {
+          "description": "semantic omits exact Runner digests, fingerprints, and query-audit hashes from model responses while retaining opaque evidence-resource handles; exact includes diagnostic metadata.",
+          "type": "string",
+          "enum": ["semantic", "exact"],
+          "default": "semantic"
+        }
+      }
+    },
     "strict": {
       "description": "Reject unknown configuration keys when true.",
       "type": "boolean",

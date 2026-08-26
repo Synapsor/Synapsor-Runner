@@ -6,6 +6,7 @@ import {
   terminalContentWidth,
   wrapStyledTerminalLine,
 } from "./terminal-layout.js";
+import { safeTerminalText } from "./terminal-syntax.js";
 
 export type TerminalKeypress = {
   name?: string;
@@ -157,6 +158,35 @@ export async function withAlternateTerminalScreen<T>(
     return await operation();
   } finally {
     output.write("\u001b[?25h\u001b[?1049l");
+  }
+}
+
+export async function withTerminalProgress<T>(
+  output: WriteStream,
+  message: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const safeMessage = safeTerminalText(message).replace(/\s+/gu, " ").trim();
+  if (!output.isTTY) {
+    output.write(`${safeMessage}...\n`);
+    return operation();
+  }
+
+  const frames = ["|", "/", "-", "\\"] as const;
+  let frame = 0;
+  const render = () => {
+    output.write(`\r\u001b[2K${frames[frame % frames.length]} ${safeMessage}`);
+    frame += 1;
+  };
+  output.write("\u001b[?25l");
+  render();
+  const timer = setInterval(render, 90);
+  timer.unref();
+  try {
+    return await operation();
+  } finally {
+    clearInterval(timer);
+    output.write("\r\u001b[2K\u001b[?25h");
   }
 }
 

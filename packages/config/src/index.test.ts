@@ -73,6 +73,29 @@ const safeConfig = {
 };
 
 describe("runner capability config validation", () => {
+  it("validates semantic and exact model authority metadata modes", () => {
+    for (const authority_metadata of ["semantic", "exact"] as const) {
+      expect(validateRunnerCapabilityConfig({
+        ...structuredClone(safeConfig),
+        model_output: { authority_metadata },
+      })).toMatchObject({ ok: true, errors: [] });
+    }
+    expect(validateRunnerCapabilityConfig({
+      ...structuredClone(safeConfig),
+      model_output: { authority_metadata: "verbose" },
+    }).errors).toContainEqual(expect.objectContaining({
+      path: "$.model_output.authority_metadata",
+      code: "INVALID_MODEL_AUTHORITY_METADATA",
+    }));
+    expect(validateRunnerCapabilityConfig({
+      ...structuredClone(safeConfig),
+      model_output: "semantic",
+    }).errors).toContainEqual(expect.objectContaining({
+      path: "$.model_output",
+      code: "MODEL_OUTPUT_NOT_OBJECT",
+    }));
+  });
+
   it("accepts only explicit local required generation-lock enforcement", () => {
     const generated = {
       ...structuredClone(safeConfig),

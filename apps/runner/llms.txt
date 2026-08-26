@@ -9,6 +9,7 @@ Start here:
 - README: https://github.com/Synapsor/Synapsor-Runner
 - Database authority and application guardrails: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/why-synapsor-vs-app-guardrails.md
 - Auto Boundary, Scoped Explore, and Protect: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/auto-boundary-and-scoped-explore.md
+- Explore Plan Playground: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/explore-plan-playground.md
 - Connect a staging database: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/getting-started-own-database.md
 - Security boundary: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/security-boundary.md
 - Proposal and evidence freshness: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/proposal-evidence-freshness.md
@@ -29,6 +30,8 @@ exact proposal -> outside-model decision -> guarded commit -> receipt and replay
 
 Important boundaries:
 - No raw SQL or SQL-string tool argument.
+- The operator-only Plan Playground validates or replays the existing fixed
+  Explore JSON grammar. It adds no MCP tool and cannot accept trusted scope.
 - Scoped Explore is disabled by default. Local development/staging may expose
   exactly `app.describe_data` and `app.explore_data` over stdio or loopback.
   Separately reviewed production Explore may expose those same two read-only

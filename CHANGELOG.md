@@ -1,6 +1,76 @@
 # Changelog
 
-## 1.7.13 (unreleased)
+## 1.7.14 (unreleased)
+
+### CLI-First Explore Plan Playground
+
+- Adds `synapsor-runner explore playground` as a stateful terminal workflow,
+  plus automatable `explore describe`, `explore validate`, and `explore run`
+  commands. Inputs are either one raw Explore plan or the exact MCP
+  `{ "plan": {...}, "boundary": "optional" }` envelope. Expanded envelopes,
+  SQL, credentials, database URLs, and model-selected trusted scope are refused.
+  Formatted paste and the following menu shortcut share a lossless terminal
+  handoff, so the first action runs immediately instead of waiting for another
+  keypress.
+- Adds a shared playground service over `ScopedExploreRuntime` and the active
+  boundary-set router. The run path delegates to the existing `explore()`
+  implementation instead of introducing another validator, compiler, or
+  executor.
+- Adds a true local `validate()` path that freshly inspects catalog and role
+  posture, checks generation and trusted-context authority, normalizes relative
+  windows once, validates every field/relationship/limit, and compiles the
+  read-only statements. It does not reserve budgets, execute source data
+  queries, or create evidence/query-audit records. Parameterized SQL capture
+  omits every parameter value.
+- Adds `synapsor-runner explore workbench --project-root .` to open the preview
+  Workbench directly at a code-editor surface with JSON highlighting, line
+  numbers, live parse status, formatting, keyboard commands, exact boundary
+  selection, and multiline highlighted parameterized SQL. Workbench and the
+  terminal playground show active progress while catalog, validation, SQL
+  evidence, or execution is loading. Its CSRF-protected validate/run endpoints
+  use the same shared service as the CLI.
+- Adds production HTTP replay through the official Streamable HTTP MCP client.
+  Tokens are accepted only by environment-variable name, HTTPS is mandatory
+  outside loopback, and tenant/principal scope remains verified JWT session
+  state. Remote validate-only is deliberately unavailable so production stays
+  exactly `app.describe_data` plus `app.explore_data`.
+- Extends live PostgreSQL and MySQL qualification, production JWT HTTP gates,
+  unchanged-source snapshots, and desktop/mobile Workbench visual coverage.
+
+### Model-Facing Authority Metadata
+
+- Adds `model_output.authority_metadata` with `semantic` as the default and
+  `exact` as an explicit diagnostic mode. Semantic responses retain reviewed
+  names, operations, outcomes, privacy decisions, released data, and opaque
+  evidence-resource handles while omitting Runner digests, fingerprints,
+  hashes, and query-audit hashes from model-visible tool results, tool
+  metadata, and MCP resources.
+- Applies the policy consistently to local Ask, local stdio, protected named
+  reads, and production HTTP. A source field named `digest`, or a business
+  value that happens to contain `sha256:`, remains unchanged inside released
+  `data`; the policy removes metadata keys rather than pattern-scrubbing data.
+- Keeps exact metadata in internal authority checks, trusted local operator
+  presentation, the Explore playground, Workbench audit views, evidence,
+  query audit, and stored records. Opaque evidence IDs remain usable, while
+  the model-readable evidence payload follows the selected presentation mode.
+- Adds `synapsor-runner config model-output --authority-metadata
+  semantic|exact`. The atomic edit preserves file permissions, changes no
+  reviewed boundary or digest, and requires only a restart/reconnect for a
+  long-lived MCP process.
+- Exposes the same preference in operator interfaces: `O Model output` in the
+  `/access` TUI always shows the current state, and Workbench provides a
+  **Model response details** selector. Workbench Ask refreshes before its next
+  question; neither path requires boundary review or activation.
+- Keeps the `O` diagnostic-mode confirmation inside the current access-editor
+  frame and keeps other review prompts off the normal shell buffer. TUI and
+  Workbench labels show `[SEMANTIC]` or `[EXACT]` with a short explanation of
+  whether hashes are model-visible.
+
+Prepared package versions: `@synapsor/runner@1.7.14` and
+`synapsor-runner@1.7.14`. Spec and DSL remain `@synapsor/spec@1.10.0` and
+`@synapsor/dsl@1.10.0`; this release reuses the existing public plan grammar.
+
+## 1.7.13 (published 2026-08-24)
 
 ### MCP Error Information-Flow Hardening
 

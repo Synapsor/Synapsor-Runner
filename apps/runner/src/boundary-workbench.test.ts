@@ -3,6 +3,24 @@ import { describe, expect, it } from "vitest";
 import { renderBoundaryWorkbench } from "./boundary-workbench.js";
 
 describe("Auto Boundary Workbench renderer", () => {
+  it("ships an executable code-editor playground with parameterized SQL as a primary path", () => {
+    const html = renderBoundaryWorkbench("test-csrf");
+    const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? "";
+
+    expect(() => new vm.Script(script)).not.toThrow();
+    expect(html).toContain("playground-line-numbers");
+    expect(html).toContain("playground-json-highlight");
+    expect(html).toContain(".plan-code-highlight .syntax-code{font:inherit;line-height:inherit}");
+    expect(html).toContain("Preview parameterized SQL");
+    expect(html).toContain("Placeholders remain variables");
+    expect(script).toContain('renderSyntaxCode("playground-normalized-json"');
+    expect(script).toContain('renderSyntaxCode("playground-sql-"+index');
+    expect(script).toContain("parameter value(s) withheld");
+    expect(script).toContain("setPlanPlaygroundBusy(true");
+    expect(script).toContain('root.setAttribute("aria-busy","true")');
+    expect(script).toContain("setPlanPlaygroundBusy(false)");
+  });
+
   it("keeps the 1.7.0 reviewed-access controls discoverable in both Workbench and CLI", () => {
     const html = renderBoundaryWorkbench("test-csrf");
     const parityMarkers: Array<[string, string[]]> = [
@@ -515,6 +533,14 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain('post("/api/boundary/ask-intent-check"');
     expect(html).toContain("It affects only Runner&apos;s local CLI and Workbench Ask");
     expect(html).toContain("production HTTP are unchanged");
+    expect(html).toContain("Model response details · ");
+    expect(html).toContain("[SEMANTIC] exact hashes stay operator-only");
+    expect(html).toContain('id="boundary-model-output-mode"');
+    expect(html).toContain("Semantic — keep hashes operator-only");
+    expect(html).toContain("Exact diagnostics — include hashes");
+    expect(html).toContain('post("/api/config/model-output"');
+    expect(html).toContain("operator evidence");
+    expect(html).toContain("changes no reviewed data authority and needs no activation");
     expect(html).toContain("boundary_rescan_report");
     expect(html).toContain("authoring_baseline_refreshed");
     expect(html).toContain("renderProjectRescanPreview");
@@ -742,6 +768,14 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("parseDimensionChoice");
     expect(html).toContain("Choose each reviewed grouping field only once.");
     expect(html).toContain("One record");
+    expect(html).toContain("JSON plan playground");
+    expect(html).toContain('id="playground-plan-json"');
+    expect(html).toContain('id="playground-validate"');
+    expect(html).toContain('id="playground-run"');
+    expect(html).toContain('post("/api/explore/validate",request)');
+    expect(html).toContain('post("/api/explore/run",request)');
+    expect(html).toContain("Values are never shown or accepted by this editor.");
+    expect(html).toContain("No source data query ran and no Explore budget was consumed.");
     expect(html).toContain("Make this analysis reusable");
     expect(html).toContain("Make this reusable");
     expect(html).toContain("Choose an analysis to make reusable");
@@ -765,6 +799,7 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("docs/approval-roles-and-operator-identity.md");
     expect(html).toContain("Try your first reviewed question");
     expect(html).toContain("Build another reviewed question");
+    expect(html).toContain("body.ask-focus-mode button.tab.active");
     expect(html).toContain("No time grouping");
     expect(html).toContain("Model + Runner");
     expect(html).toContain("Withheld from model");

@@ -61,6 +61,10 @@ import {
   toolDescriptionWithCanonical,
 } from "./tool-catalog.js";
 import {
+  modelAuthorityMetadataMode,
+  projectAuthorityMetadataForModel,
+} from "./model-output-policy.js";
+import {
   zodInputShape,
   zodInputShapeFromJsonSchema,
 } from "./tool-input-schema.js";
@@ -83,6 +87,9 @@ export function createSynapsorMcpServer(runtime: McpRuntime, options: SynapsorMc
   );
   const toolNameStyle = options.toolNameStyle ?? "canonical";
   const resultFormat = options.resultFormat ?? runtime.config.result_format ?? 1;
+  const authorityMetadata = modelAuthorityMetadataMode(runtime.config);
+  const projectToolMetadata = (metadata: Record<string, unknown>) =>
+    projectAuthorityMetadataForModel(metadata, authorityMetadata).value;
 
   if (runtime.config.mode === "cloud") {
     const tools = runtime.listTools();
@@ -99,7 +106,7 @@ export function createSynapsorMcpServer(runtime: McpRuntime, options: SynapsorMc
             idempotentHint: Boolean(tool.annotations.idempotentHint),
             openWorldHint: false,
           },
-          _meta: {
+          _meta: projectToolMetadata({
             ...tool.annotations,
             "synapsor.cloud_delegated": true,
             "synapsor.canonical_tool_name": tool.name,
@@ -107,7 +114,7 @@ export function createSynapsorMcpServer(runtime: McpRuntime, options: SynapsorMc
             "synapsor.tool_name_style": toolNameStyle,
             "synapsor.raw_sql_exposed": false,
             "synapsor.approval_tool": false,
-          },
+          }),
         };
         const callback = async (args: unknown, extra: { _meta?: Record<string, unknown> }) =>
           toolCallResult(runtime, tool.name, args as Record<string, unknown>, {
@@ -145,7 +152,7 @@ export function createSynapsorMcpServer(runtime: McpRuntime, options: SynapsorMc
             idempotentHint: capability.kind === "read" || capability.kind === "aggregate_read",
             openWorldHint: false,
           },
-          _meta: {
+          _meta: projectToolMetadata({
             "synapsor.kind": capability.kind,
             "synapsor.source": capability.source,
             "synapsor.target": `${capability.target.schema}.${capability.target.table}`,
@@ -166,7 +173,7 @@ export function createSynapsorMcpServer(runtime: McpRuntime, options: SynapsorMc
                 "synapsor.contract_version": capability.contract_provenance.version,
               }
               : {}),
-          },
+          }),
         };
         const callback = async (args: unknown, extra: { _meta?: Record<string, unknown> }) =>
           toolCallResult(runtime, capability.name, args as Record<string, unknown>, {
@@ -223,6 +230,10 @@ export function createSynapsorMcpServer(runtime: McpRuntime, options: SynapsorMc
   const analyticsCatalog = runtime.config.mode === "cloud"
     ? undefined
     : buildAnalyticsCatalog(runtime.config, resultFormat);
+  const projectModelResource = async (uri: string) => projectAuthorityMetadataForModel(
+    await runtime.readResource(uri),
+    authorityMetadata,
+  ).value;
   if (analyticsCatalog?.capabilities.length) {
     server.registerResource(
       "synapsor-analytics-catalog-v1",
@@ -232,7 +243,10 @@ export function createSynapsorMcpServer(runtime: McpRuntime, options: SynapsorMc
         description: "Safe, digest-pinned metadata for active analytical capabilities in this authenticated deployment.",
         mimeType: "application/json",
       },
-      async () => jsonResourceResult(ANALYTICS_CATALOG_URI, analyticsCatalog),
+      async () => jsonResourceResult(
+        ANALYTICS_CATALOG_URI,
+        projectAuthorityMetadataForModel(analyticsCatalog, authorityMetadata).value,
+      ),
     );
     server.registerResource(
       "synapsor-analytics-capability-pin-v1",
@@ -244,11 +258,14 @@ export function createSynapsorMcpServer(runtime: McpRuntime, options: SynapsorMc
       },
       async (uri, variables) => jsonResourceResult(
         uri.toString(),
-        pinAnalyticsCatalogCapability(
-          analyticsCatalog,
-          resourceVariable(variables.capability),
-          resourceVariable(variables.digest),
-        ),
+        projectAuthorityMetadataForModel(
+          pinAnalyticsCatalogCapability(
+            analyticsCatalog,
+            resourceVariable(variables.capability),
+            resourceVariable(variables.digest),
+          ),
+          authorityMetadata,
+        ).value,
       ),
     );
   }
@@ -257,19 +274,19 @@ export function createSynapsorMcpServer(runtime: McpRuntime, options: SynapsorMc
     "synapsor-proposals",
     new ResourceTemplate("synapsor://proposals/{proposal_id}", { list: undefined }),
     { title: "Synapsor proposal", mimeType: "application/json" },
-    async (_uri, variables) => resourceResult(`synapsor://proposals/${variables.proposal_id}`, runtime.readResource),
+    async (_uri, variables) => resourceResult(`synapsor://proposals/${variables.proposal_id}`, projectModelResource),
   );
   server.registerResource(
     "synapsor-evidence",
     new ResourceTemplate("synapsor://evidence/{evidence_bundle_id}", { list: undefined }),
     { title: "Synapsor evidence bundle", mimeType: "application/json" },
-    async (_uri, variables) => resourceResult(`synapsor://evidence/${variables.evidence_bundle_id}`, runtime.readResource),
+    async (_uri, variables) => resourceResult(`synapsor://evidence/${variables.evidence_bundle_id}`, projectModelResource),
   );
   server.registerResource(
     "synapsor-replay",
     new ResourceTemplate("synapsor://replay/{replay_id}", { list: undefined }),
     { title: "Synapsor replay record", mimeType: "application/json" },
-    async (_uri, variables) => resourceResult(`synapsor://replay/${variables.replay_id}`, runtime.readResource),
+    async (_uri, variables) => resourceResult(`synapsor://replay/${variables.replay_id}`, projectModelResource),
   );
 
   return server;

@@ -30,15 +30,13 @@ npm install --global @synapsor/runner
 
 Paste the URL into the hidden prompt or export `DATABASE_URL`. Runner inspects
 schema metadata, not source rows, then proposes conservative read access that
-grants nothing until review and activation. No DSL or JSON is required.
+grants nothing until review and activation.
 
 With `DATABASE_URL`, use the CLI:
 
 ```bash
 synapsor-runner start --cli --from-env DATABASE_URL
 ```
-
-For automation, `synapsor-runner onboard --help` reports missing decisions together.
 
 Review the starting boundary, then press Enter to activate it. Use `M` for
 OpenAI, Anthropic, or a loopback model, and `E` to edit access. Runner asks
@@ -49,7 +47,7 @@ See [Database To First Safe Tool](docs/guided-onboarding.md).
 
 ## Prove The Boundary Without A Database
 
-Use the terminal-only proof with no database, Docker, account, API key, MCP
+Run with no database, Docker, account, API key, MCP
 client, model, or global install:
 
 ```bash
@@ -57,7 +55,7 @@ npx -y @synapsor/runner try --prove --no-open
 ```
 
 Type `APPROVE` or `REJECT` at the trusted terminal prompt. Runner uses a
-deterministic simulated agent; after approval, output includes this abridged,
+deterministic simulated agent; output includes this abridged,
 verbatim sequence:
 
 ```text
@@ -86,8 +84,8 @@ The simulated agent can inspect reviewed evidence and form an exact proposal,
 but cannot approve or commit it. Runner waits for an outside-model decision,
 rechecks the effect, and records a receipt.
 
-This proves local mechanics, not your database configuration. Temporary state
-stays under `./.synapsor/try/`. `demo --quick` remains a noninteractive compatibility alias.
+Temporary state stays under `./.synapsor/try/`.
+`demo --quick` remains a noninteractive compatibility alias.
 
 ## What Runner Controls
 
@@ -140,6 +138,12 @@ Local development/staging Explore exposes only:
 app.describe_data
 app.explore_data
 ```
+
+Replay a fixed plan with `synapsor-runner explore playground`, or open its
+highlighted editor with `synapsor-runner explore workbench --project-root .`.
+`explore validate` compiles placeholder-only SQL without querying rows or
+spending budget; `explore run` preserves enforcement and audit. See
+[Explore Plan Playground](docs/explore-plan-playground.md).
 
 Agents receive reviewed operations, never SQL. Plans may combine totals,
 distinct counts, dimensions, filters, comparisons, time windows, rankings, and

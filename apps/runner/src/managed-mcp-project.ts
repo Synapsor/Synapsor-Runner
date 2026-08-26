@@ -375,6 +375,8 @@ function managedEntry(
         "--authoring",
         "--project-root",
         path.posix.dirname(configPath),
+        "--config",
+        configPath,
       ]
       : ["-y", resolvedPackage, "mcp", "serve", "--config", configPath, "--store", storePath],
   };

@@ -20,7 +20,8 @@ export type ConfigValidationResult = {
 
 type JsonRecord = Record<string, unknown>;
 
-const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "contexts", "executors", "capabilities", "contracts", "policies", "approvals", "proposal_freshness", "operator_identity", "session_auth", "http_security", "rate_limits", "metrics", "graduated_trust", "cloud", "governance", "generated_authority", "supervised_worker", "notifications", "production_explore", "strict", "result_format"]);
+const TOP_LEVEL_KEYS = new Set(["version", "mode", "storage", "sources", "trusted_context", "contexts", "executors", "capabilities", "contracts", "policies", "approvals", "proposal_freshness", "operator_identity", "session_auth", "http_security", "rate_limits", "metrics", "graduated_trust", "cloud", "governance", "generated_authority", "supervised_worker", "notifications", "production_explore", "model_output", "strict", "result_format"]);
+const MODEL_OUTPUT_KEYS = new Set(["authority_metadata"]);
 const STORAGE_KEYS = new Set(["sqlite_path", "shared_postgres"]);
 const SHARED_POSTGRES_STORAGE_KEYS = new Set(["mode", "url_env", "schema", "lock_timeout_ms", "max_entries"]);
 const APPROVALS_KEYS = new Set(["disable_auto_approval"]);
@@ -318,6 +319,7 @@ export function validateRunnerCapabilityConfig(input: unknown): ConfigValidation
   if (input.result_format !== undefined && input.result_format !== 1 && input.result_format !== 2) {
     errors.push({ path: "$.result_format", code: "INVALID_RESULT_FORMAT", message: "result_format must be 1 or 2." });
   }
+  validateModelOutput(input.model_output, strict, errors);
   if (!isRunnerMode(input.mode)) {
     errors.push({ path: "$.mode", code: "INVALID_MODE", message: "mode must be read_only, shadow, review, or cloud." });
   }
@@ -362,6 +364,32 @@ export function validateRunnerCapabilityConfig(input: unknown): ConfigValidation
   scanForForbiddenFields(input, "$", errors);
 
   return { ok: errors.length === 0, errors, warnings };
+}
+
+function validateModelOutput(
+  value: unknown,
+  strict: boolean,
+  errors: ConfigIssue[],
+): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    errors.push({
+      path: "$.model_output",
+      code: "MODEL_OUTPUT_NOT_OBJECT",
+      message: "model_output must be an object.",
+    });
+    return;
+  }
+  if (strict) checkUnknownKeys(value, MODEL_OUTPUT_KEYS, "$.model_output", errors);
+  if (value.authority_metadata !== undefined
+    && value.authority_metadata !== "semantic"
+    && value.authority_metadata !== "exact") {
+    errors.push({
+      path: "$.model_output.authority_metadata",
+      code: "INVALID_MODEL_AUTHORITY_METADATA",
+      message: "model_output.authority_metadata must be semantic or exact.",
+    });
+  }
 }
 
 function validateProductionExplore(

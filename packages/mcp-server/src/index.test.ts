@@ -4066,7 +4066,11 @@ describe("local Synapsor MCP runtime", () => {
 
       const evidence = await client.readResource({ uri: structuredContent.evidence_resource });
       const firstEvidenceContent = evidence.contents[0];
-      expect(firstEvidenceContent && "text" in firstEvidenceContent ? firstEvidenceContent.text : "").toContain("INV-3001");
+      const evidenceText = firstEvidenceContent && "text" in firstEvidenceContent
+        ? firstEvidenceContent.text
+        : "";
+      expect(evidenceText).toContain("INV-3001");
+      expect(evidenceText).not.toMatch(/(?:hmac-)?sha256:/u);
       expect(JSON.stringify(result)).not.toContain(token);
       expect(JSON.stringify(result)).not.toContain(databaseUrl);
 

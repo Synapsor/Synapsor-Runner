@@ -7,6 +7,7 @@ const config = {
   version: 1,
   mode: "shadow",
   result_format: 2,
+  model_output: { authority_metadata: "exact" },
   storage: { sqlite_path: ":memory:" },
   sources: {
     local_postgres: {

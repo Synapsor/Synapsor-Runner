@@ -273,6 +273,9 @@ export type RuntimeConfig = {
   version: 1;
   mode: RunnerMode;
   result_format?: ResultFormat;
+  model_output?: {
+    authority_metadata?: "semantic" | "exact";
+  };
   contracts?: string[];
   policies?: PolicySpec[];
   approvals?: { disable_auto_approval?: boolean };

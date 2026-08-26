@@ -43,6 +43,8 @@ describe("boundary review terminal picker", () => {
     const confirmationOutput = confirmTerminal.output.read()?.toString() ?? "";
     expect(confirmationOutput).toContain("[Y/n]");
     expect(confirmationOutput).toContain("[Esc Back]");
+    expect(confirmationOutput).toContain("\u001b[?1049h");
+    expect(confirmationOutput).toContain("\u001b[?1049l");
   });
 
   it("treats terminal EOF as a safe cancellation for text and raw-key prompts", async () => {
@@ -97,7 +99,7 @@ describe("boundary review terminal picker", () => {
     await expect(confirmed).resolves.toBe(true);
   });
 
-  it("restores the normal terminal buffer before naming a boundary from access", async () => {
+  it("keeps the shell buffer hidden while naming a boundary from access", async () => {
     const terminal = fakeTerminal(80, 24);
     const session = createBoundaryReviewInteractiveSession(terminal.input, terminal.output);
     const create = session.chooseResource(
@@ -121,7 +123,9 @@ describe("boundary review terminal picker", () => {
     const prompt = terminal.output.read()?.toString() ?? "";
     expect(prompt).toContain("New boundary name");
     expect(prompt).toContain("test_sites");
-    expect(prompt).not.toContain("\u001b[?1049h");
+    expect(prompt).toContain("\u001b[?1049h");
+    expect(prompt.lastIndexOf("\u001b[?1049l"))
+      .toBeGreaterThan(prompt.lastIndexOf("\u001b[?1049h"));
   });
 
   it("keeps a multiline review explanation above a short visible text-entry line", async () => {
@@ -750,11 +754,96 @@ describe("boundary review terminal picker", () => {
     expect(rendered).toContain("Local Ask plan check for reviewed_staging: BOUNDARY ONLY");
     expect(rendered).toContain("Reviewed Explore validation still applies");
     expect(rendered).toContain("T Ask plan check");
+    expect(rendered).toContain("Model output [SEMANTIC] - exact hashes stay operator-only");
+    expect(rendered).toContain("O Model output [SEMANTIC: hashes operator-only]");
     await send(input, "t");
     await expect(selected).resolves.toEqual({
       action: "intent_check",
       boundary_name: "reviewed_staging",
     });
+  });
+
+  it("opens the global model-output preference with O and shows its current state", async () => {
+    const { input, output } = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const selected = session.chooseResource(
+      [summary("public.orders", 0)],
+      {
+        confirmed_decisions: 0,
+        outstanding_decisions: 1,
+        outstanding_resource_decisions: 1,
+        outstanding_boundary_decisions: 0,
+        resources_requiring_signoff: 1,
+        model_authority_metadata_mode: "exact",
+      },
+      { initialView: "access", startAtBoundaryList: true },
+    );
+    const rendered = stripAnsi(output.read()?.toString() ?? "");
+    expect(rendered).toContain("Model output [EXACT] - diagnostic hashes are visible to models");
+    expect(rendered).toContain("O Model output [EXACT: hashes model-visible]");
+    await send(input, "o");
+    await expect(selected).resolves.toEqual({ action: "model_output" });
+  });
+
+  it("confirms Exact model output inside the current access frame", async () => {
+    const { input, output } = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const selected = session.chooseResource(
+      [summary("public.orders", 0)],
+      {
+        confirmed_decisions: 0,
+        outstanding_decisions: 1,
+        outstanding_resource_decisions: 1,
+        outstanding_boundary_decisions: 0,
+        resources_requiring_signoff: 1,
+        model_authority_metadata_mode: "semantic",
+      },
+      { initialView: "access", startAtBoundaryList: true },
+    );
+    output.read();
+
+    await send(input, "o");
+    const confirmationOutput = output.read()?.toString() ?? "";
+    const confirmation = stripAnsi(confirmationOutput);
+    expect(confirmation).toContain("YOUR DATA BOUNDARY");
+    expect(confirmation).toContain("Show exact Runner digests, fingerprints, and query-audit hashes");
+    expect(confirmation).toContain("Operator evidence is already exact");
+    expect(confirmation).toContain("[y/N] [Esc Back]:");
+    expect(confirmationOutput).not.toContain("\u001b[?1049l");
+
+    await send(input, "y");
+    await expect(selected).resolves.toEqual({
+      action: "model_output",
+      exact_metadata_confirmed: true,
+    });
+  });
+
+  it("keeps Semantic model output and returns to access when inline confirmation is cancelled", async () => {
+    const { input, output } = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const selected = session.chooseResource(
+      [summary("public.orders", 0)],
+      {
+        confirmed_decisions: 0,
+        outstanding_decisions: 1,
+        outstanding_resource_decisions: 1,
+        outstanding_boundary_decisions: 0,
+        resources_requiring_signoff: 1,
+        model_authority_metadata_mode: "semantic",
+      },
+      { initialView: "access", startAtBoundaryList: true },
+    );
+    output.read();
+
+    await send(input, "o");
+    output.read();
+    await emitKey(input, { name: "escape", sequence: "\u001b" });
+    const restored = stripAnsi(output.read()?.toString() ?? "");
+    expect(restored).toContain("Model output [SEMANTIC] is unchanged");
+    expect(restored).toContain("O Model output [SEMANTIC: hashes operator-only]");
+
+    await send(input, "q");
+    await expect(selected).resolves.toBeUndefined();
   });
 
   it("keeps an active boundary's disabled edits visibly pending", async () => {

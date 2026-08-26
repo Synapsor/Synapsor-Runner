@@ -10,6 +10,13 @@ It serves exactly two MCP tools:
 The model receives no raw SQL tool, database credential, unrestricted schema,
 activation, approval, apply, Protect, or configuration authority.
 
+It also receives semantic authority metadata by default: reviewed names and
+results remain available, while exact Runner digests, fingerprints, hashes,
+and query-audit hashes stay in operator evidence. Set
+`model_output.authority_metadata: exact` only for a diagnostic client that
+deliberately needs digest pinning. This changes no boundary or budget and takes
+effect after the serving processes restart.
+
 This mode is off by default. Normal local and staging Explore keep their
 existing stdio and loopback behavior.
 
@@ -736,6 +743,32 @@ password and never issues or refreshes this token.
 client file while preserving other servers and creating a backup. The same
 secret-free checks apply. Claude Desktop remains a local stdio target; use the
 `claude-code` client target for remote Streamable HTTP.
+
+### Replay one exact plan from the operator CLI
+
+For debugging, audit reproduction, and demos, the CLI can replay a fixed JSON
+plan through the same authenticated MCP endpoint:
+
+```bash
+export SYNAPSOR_MCP_ACCESS_TOKEN="$(your-idp-token-command)"
+
+synapsor-runner explore run \
+  --config ./synapsor.runner.json \
+  --token-env SYNAPSOR_MCP_ACCESS_TOKEN \
+  --plan ./explore-plan.json
+```
+
+`--url https://runner.example/mcp` can replace `--config`. The token is read
+only from the named environment variable; no inline token option exists. The
+server derives tenant and principal from the verified JWT session, never the
+plan. The command calls exactly `app.explore_data`, so production scope, drift,
+budgets, suppression, response bounds, evidence, and query audit are unchanged.
+
+Remote validate-only is intentionally not exposed because production MCP stays
+fixed at two tools. Validate the same reviewed artifacts locally for a
+compile-only preview, or run remotely and let the server validate before source
+execution. See [Explore Plan Playground](explore-plan-playground.md) for plan
+shapes, local validation, Workbench preview, and audit behavior.
 
 ## Privacy And Concurrency
 

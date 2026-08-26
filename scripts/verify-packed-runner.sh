@@ -195,6 +195,7 @@ test -f "$PACKED_ROOT/schemas/freshness-proof.v1.schema.json"
 test -f "$PACKED_ROOT/docs/schema-api-candidates.md"
 test -f "$PACKED_ROOT/docs/proposal-evidence-freshness.md"
 test -f "$PACKED_ROOT/docs/production-scoped-explore-http.md"
+test -f "$PACKED_ROOT/docs/explore-plan-playground.md"
 test -f "$PACKED_ROOT/fixtures/effects/dataset.json"
 test -f "$PACKED_ROOT/fixtures/protocol/change-set.freshness-update.v2.json"
 test -f "$PACKED_ROOT/fixtures/protocol/freshness-proof.fresh.v1.json"
@@ -474,6 +475,10 @@ npx synapsor-runner evidence --help >/dev/null
 npx synapsor-runner query-audit --help >/dev/null
 npx synapsor-runner receipts --help >/dev/null
 npx synapsor-runner replay --help >/dev/null
+npx synapsor-runner explore --help > explore-help.txt
+grep -F "synapsor-runner explore playground" explore-help.txt >/dev/null
+grep -F "Remote validate-only" explore-help.txt >/dev/null
+grep -F "third MCP tool" explore-help.txt >/dev/null
 npx synapsor-runner store --help >/dev/null
 npx synapsor-runner --help >/dev/null
 npx synapsor-runner store stats --store ./.synapsor/try/ledger.db >/dev/null
