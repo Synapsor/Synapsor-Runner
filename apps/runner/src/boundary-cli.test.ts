@@ -152,6 +152,27 @@ describe("boundary operator-plane CLI", () => {
         "--json",
       ];
 
+      const unsafeInspection = structuredClone(inspection);
+      unsafeInspection.current_user = "postgres";
+      unsafeInspection.role_posture = {
+        verified: true,
+        superuser: true,
+        bypass_rls: true,
+        read_only: false,
+        writable_relations: ["public.service_visits"],
+        owned_relations: ["public.service_visits"],
+        reasons: [],
+      };
+      await expect(boundaryActivateCommand(
+        activationArgs,
+        async () => unsafeInspection,
+      )).rejects.toMatchObject({
+        code: "DATABASE_ROLE_UNSAFE",
+        message: expect.stringMatching(/PostgreSQL superuser[\s\S]*BYPASSRLS[\s\S]*not activated/is),
+      });
+      await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+
       await expect(boundaryActivateCommand(
         [...activationArgs.slice(0, activationArgs.indexOf("--required-role") + 1), "finance_reviewer", ...activationArgs.slice(activationArgs.indexOf("--required-role") + 2)],
         async () => inspection,

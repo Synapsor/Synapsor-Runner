@@ -1366,9 +1366,11 @@ all of these are true:
 - every query also runs in an enforced read-only transaction.
 
 Missing, malformed, unknown, and production profiles cannot enter the local
-authoring runtime. A superuser, relation owner, write-capable role, `BYPASSRLS` role,
-or unverifiable role may inspect metadata with a warning but cannot read source
-rows through Scoped Explore.
+authoring runtime. A superuser, relation owner, write-capable, elevated,
+`BYPASSRLS`, or unverifiable role may run metadata-only `inspect` for diagnosis
+but cannot draft, rescan, activate, serve, or read source rows through Scoped
+Explore. The refusal names the observed facts and source URL environment
+variable while keeping its value secret.
 
 Production Explore is a separate explicit register. It requires a separately
 reviewed production boundary, secured shared Streamable HTTP, asymmetrically

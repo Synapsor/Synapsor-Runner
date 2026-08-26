@@ -9009,7 +9009,7 @@ function scopedExploreRemediation(error: unknown): {
       };
     case "EXPLORE_ROLE_UNSAFE":
       return {
-        action: "Reconnect with a verified non-owner, non-superuser, non-BYPASSRLS, SELECT-only database role, then rescan.",
+        action: "Reconnect with a dedicated verified SELECT-only, non-owner source credential that has no elevated/global or RLS-bypass authority, then rescan.",
         preserved,
       };
     case "EXPLORE_SCOPE_FORBIDDEN":

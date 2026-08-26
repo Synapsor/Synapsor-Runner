@@ -25,6 +25,18 @@ function workspacePath(...segments: string[]): string {
   return path.resolve(process.cwd(), ...segments);
 }
 
+function verifiedReadOnlyPosture(): NonNullable<SchemaInspection["role_posture"]> {
+  return {
+    verified: true,
+    superuser: false,
+    bypass_rls: false,
+    read_only: true,
+    writable_relations: [],
+    owned_relations: [],
+    reasons: [],
+  };
+}
+
 function writerPostureTable(
   schema: string,
   name: string,
@@ -445,6 +457,7 @@ describe("runner cli", () => {
       engine: "postgres",
       server_version: "PostgreSQL 16 fixture",
       current_user: "analytics_reader",
+      role_posture: verifiedReadOnlyPosture(),
       inspected_at: "2026-08-05T00:00:00.000Z",
       schemas: ["public"],
       warnings: [],
@@ -1073,6 +1086,7 @@ describe("runner cli", () => {
       engine: "postgres",
       server_version: "PostgreSQL 16 fixture",
       current_user: "synapsor_reader",
+      role_posture: verifiedReadOnlyPosture(),
       inspected_at: "2026-07-20T00:00:00Z",
       schemas: ["public"],
       warnings: [],
@@ -2341,6 +2355,7 @@ END
       engine: "postgres",
       server_version: "PostgreSQL 16 fixture",
       current_user: "synapsor_reader",
+      role_posture: verifiedReadOnlyPosture(),
       inspected_at: "2026-06-21T00:00:00Z",
       schemas: ["public"],
       warnings: [],
@@ -2425,6 +2440,65 @@ END
     }
   });
 
+  it("returns a secret-free structured refusal for an unsafe inspected read credential", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-init-unsafe-role-"));
+    const inspectionPath = path.join(tempDir, "schema-inspection.json");
+    const unsafeInspection = {
+      engine: "postgres",
+      server_version: "PostgreSQL 16 fixture",
+      current_user: "postgres",
+      role_posture: {
+        ...verifiedReadOnlyPosture(),
+        superuser: true,
+        bypass_rls: true,
+        read_only: false,
+        writable_relations: ["public.invoices"],
+        owned_relations: ["public.invoices"],
+      },
+      inspected_at: "2026-08-26T00:00:00Z",
+      schemas: ["public"],
+      warnings: [],
+      tables: [],
+    };
+    await fs.writeFile(inspectionPath, JSON.stringify(unsafeInspection), "utf8");
+    const output: string[] = [];
+    const diagnostics: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      output.push(String(chunk));
+      return true;
+    });
+    vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
+      diagnostics.push(String(chunk));
+      return true;
+    });
+
+    await expect(runCliProcess([
+      "init",
+      "--inspection-json",
+      inspectionPath,
+      "--from-env",
+      "SUPERUSER_DATABASE_URL",
+      "--json",
+      "--yes",
+    ])).resolves.toBe(1);
+
+    const payload = JSON.parse(output.join(""));
+    expect(payload).toMatchObject({
+      ok: false,
+      error: {
+        code: "DATABASE_ROLE_UNSAFE",
+        message: expect.stringMatching(/PostgreSQL superuser[\s\S]*BYPASSRLS/is),
+      },
+      recovery: {
+        state_preserved: expect.stringMatching(/model-facing capability[\s\S]*source database was not changed/is),
+        source_database_changed: false,
+        next_action: expect.stringContaining("SUPERUSER_DATABASE_URL"),
+      },
+    });
+    expect(`${output.join("")}\n${diagnostics.join("")}`).not.toMatch(/postgres(?:ql)?:\/\/|password=/i);
+    await expect(fs.access(path.join(tempDir, "synapsor.runner.json"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("initializes guarded INSERT and DELETE from inspected source constraints", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-cli-init-crud-"));
     const oldCwd = process.cwd();
@@ -2433,6 +2507,7 @@ END
       engine: "postgres",
       server_version: "PostgreSQL 16 fixture",
       current_user: "synapsor_reader",
+      role_posture: verifiedReadOnlyPosture(),
       inspected_at: "2026-07-13T00:00:00Z",
       schemas: ["public"],
       warnings: [],
@@ -2519,6 +2594,7 @@ END
       engine: "postgres",
       server_version: "PostgreSQL 16 fixture",
       current_user: "synapsor_reader",
+      role_posture: verifiedReadOnlyPosture(),
       inspected_at: "2026-06-21T00:00:00Z",
       schemas: ["public"],
       warnings: [],
@@ -2744,6 +2820,7 @@ END
           engine: "postgres",
           server_version: "PostgreSQL 16 fixture",
           current_user: "synapsor_reader",
+          role_posture: verifiedReadOnlyPosture(),
           inspected_at: "2026-06-21T00:00:00Z",
           schemas: ["public"],
           warnings: [],
@@ -2880,6 +2957,7 @@ END
           engine: "postgres",
           server_version: "PostgreSQL 16 fixture",
           current_user: "synapsor_reader",
+          role_posture: verifiedReadOnlyPosture(),
           inspected_at: "2026-06-21T00:00:00Z",
           schemas: ["public"],
           warnings: [],
@@ -2998,6 +3076,7 @@ END
           engine: "postgres",
           server_version: "PostgreSQL 16 fixture",
           current_user: "synapsor_reader",
+          role_posture: verifiedReadOnlyPosture(),
           inspected_at: "2026-06-21T00:00:00Z",
           schemas: ["public"],
           warnings: [],

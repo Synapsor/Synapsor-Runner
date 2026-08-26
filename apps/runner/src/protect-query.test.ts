@@ -90,6 +90,7 @@ describe("Protect This Query", () => {
       description: "Show reviewed weekly revenue by store and product category.",
       returnsHint: "Returns privacy-suppressed reviewed groups.",
       now: Date.parse("2026-07-22T12:00:01.000Z"),
+      env: fixture.env,
       inspectDatabaseFn: async () => fixture.inspection,
     });
 
@@ -325,6 +326,7 @@ describe("Protect This Query", () => {
       description: "Count reviewed subscriptions by the exact three-hop department path.",
       returnsHint: "Returns privacy-suppressed department groups.",
       now: Date.parse("2026-08-11T12:00:01.000Z"),
+      env: fixture.env,
       inspectDatabaseFn: async () => fixture.inspection,
     });
 
@@ -385,6 +387,7 @@ describe("Protect This Query", () => {
       description: "Count reviewed churn rows from the resolved previous UTC month.",
       returnsHint: "Returns privacy-suppressed reviewed regional counts.",
       now: Date.parse("2026-07-22T12:00:01.000Z"),
+      env: fixture.env,
       inspectDatabaseFn: async () => fixture.inspection,
     });
 
@@ -446,6 +449,7 @@ describe("Protect This Query", () => {
       description: "Rank reviewed regions by two-period revenue growth.",
       returnsHint: "Returns privacy-suppressed reviewed period movers.",
       now: Date.parse("2026-07-22T12:00:01.000Z"),
+      env: fixture.env,
       inspectDatabaseFn: async () => fixture.inspection,
     });
 
@@ -510,6 +514,7 @@ describe("Protect This Query", () => {
       description: "Show the reviewed running revenue total after suppression.",
       returnsHint: "Returns only privacy-released time groups.",
       now: Date.parse("2026-07-22T12:00:01.000Z"),
+      env: fixture.env,
       inspectDatabaseFn: async () => fixture.inspection,
     });
     expect(created.dsl).toContain(
@@ -557,6 +562,7 @@ describe("Protect This Query", () => {
       description: "Count reviewed subscriptions by region.",
       returnsHint: "Returns reviewed groups while region values stay outside model context.",
       now: Date.parse("2026-07-29T12:00:01.000Z"),
+      env: fixture.env,
       inspectDatabaseFn: async () => fixture.inspection,
     });
 
@@ -853,6 +859,7 @@ describe("Protect This Query", () => {
       "--json",
     ], {
       inspectDatabaseFn: async () => fixture.inspection,
+      env: fixture.env,
     })).resolves.toBe(0);
 
     expect(JSON.parse(output.join(""))).toMatchObject({
@@ -912,6 +919,7 @@ describe("Protect This Query", () => {
       "--json",
     ], {
       inspectDatabaseFn: async () => fixture.inspection,
+      env: fixture.env,
     })).resolves.toBe(0);
 
     expect(JSON.parse(output.join(""))).toMatchObject({
@@ -1013,6 +1021,7 @@ describe("Protect This Query", () => {
         },
       ],
       now: Date.parse("2026-07-22T12:00:01.000Z"),
+      env: fixture.env,
       inspectDatabaseFn: async () => fixture.inspection,
     });
 
@@ -1086,6 +1095,7 @@ describe("Protect This Query", () => {
       description: "List reviewed churn reason categories for one fixed region.",
       returnsHint: "Returns at most ten reviewed rows with no kept-out fields.",
       now: Date.parse("2026-07-22T12:00:01.000Z"),
+      env: fixture.env,
       inspectDatabaseFn: async () => fixture.inspection,
     });
     const lock = JSON.parse(await fs.readFile(path.join(fixture.root, ".synapsor/generation-lock.json"), "utf8")) as GenerationLock;
@@ -1208,6 +1218,7 @@ describe("Protect This Query", () => {
       description: "List reviewed reason categories for one fixed region.",
       returnsHint: "Returns at most ten reviewed rows.",
       now: Date.parse("2026-07-22T12:00:01.000Z"),
+      env: fixture.env,
       inspectDatabaseFn: async () => fixture.inspection,
     });
 
@@ -1293,6 +1304,7 @@ describe("Protect This Query", () => {
       description: "Show owner-reviewed regional counts.",
       returnsHint: "Returns reviewed aggregate groups.",
       now: Date.parse("2026-07-28T00:10:01.000Z"),
+      env: fixture.env,
       inspectDatabaseFn: async () => fixture.inspection,
     })).rejects.toThrow(/Protect requires an explicit human re-confirmation/i);
 
@@ -1305,6 +1317,7 @@ describe("Protect This Query", () => {
       minimumCohortConfirmation: protectConfirmation,
       minimumCohortActor: "owner@example.test",
       now: Date.parse("2026-07-28T00:10:01.000Z"),
+      env: fixture.env,
       inspectDatabaseFn: async () => fixture.inspection,
     });
     expect(created.draft.minimum_cohort_override).toMatchObject({
@@ -1427,6 +1440,7 @@ describe("Protect This Query", () => {
       description: "This draft must not be created from stale reviewed authority.",
       returnsHint: "No result.",
       now: Date.parse("2026-07-22T12:00:01.000Z"),
+      env: fixture.env,
       inspectDatabaseFn: async () => drifted,
     })).rejects.toMatchObject({
       code: "EXPLORE_LOCK_STALE",

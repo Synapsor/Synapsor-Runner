@@ -91,6 +91,10 @@ import {
   exploreFieldSemanticStatus,
   exploreVocabularyCoverage,
 } from "./explore-vocabulary.js";
+import {
+  assessDatabaseRolePosture,
+  formatUnsafeDatabaseRoleMessage,
+} from "./database-role-posture.js";
 
 export const SCOPED_EXPLORE_DESCRIBE_TOOL = "app.describe_data";
 export const SCOPED_EXPLORE_QUERY_TOOL = "app.explore_data";
@@ -494,6 +498,7 @@ export async function prepareScopedExplore(input: {
     }
     if (credentialPostureFingerprintForAuthority(inspection)
       !== lock.authority_dependencies.credential_posture_fingerprint) {
+      assertGlobalReadOnlyPosture(inspection);
       throw new ScopedExploreError(
         "EXPLORE_LOCK_STALE",
         [
@@ -512,6 +517,7 @@ export async function prepareScopedExplore(input: {
       ].join("\n"));
     }
     if (rolePostureFingerprint(inspection) !== boundary.role_posture_fingerprint) {
+      assertGlobalReadOnlyPosture(inspection);
       throw new ScopedExploreError("EXPLORE_ROLE_UNSAFE", "Database role, grant, ownership, or RLS posture changed after boundary activation.");
     }
     assertReadOnlyPosture(inspection, boundary);
@@ -5596,13 +5602,14 @@ function assertReadOnlyPosture(inspection: SchemaInspection, boundary: Activated
 }
 
 function assertGlobalReadOnlyPosture(inspection: SchemaInspection): void {
-  const role = inspection.role_posture;
-  const enginePrivilegePostureSafe = inspection.engine === "mysql"
-    ? (role?.superuser === false || role?.superuser === "unsupported")
-      && (role?.bypass_rls === false || role?.bypass_rls === "unsupported")
-    : role?.superuser === false && role?.bypass_rls === false;
-  if (!role?.verified || !role.read_only || !enginePrivilegePostureSafe) {
-    throw new ScopedExploreError("EXPLORE_ROLE_UNSAFE", "Scoped Explore requires a verified read-only, non-owner, non-superuser, non-BYPASSRLS role.");
+  if (!assessDatabaseRolePosture(inspection).safe_for_model_reads) {
+    throw new ScopedExploreError(
+      "EXPLORE_ROLE_UNSAFE",
+      formatUnsafeDatabaseRoleMessage({
+        inspection,
+        statePreserved: "The query was refused before source execution, no Explore budget was consumed, active authority was not changed, and the source database was not changed.",
+      }),
+    );
   }
 }
 

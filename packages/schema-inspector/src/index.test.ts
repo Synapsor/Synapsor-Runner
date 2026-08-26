@@ -298,6 +298,12 @@ describe("schema inspector helpers", () => {
     expect(mysqlGrantPosture([
       "GRANT ALL PRIVILEGES ON *.* TO `fitflow_worker`@`%` WITH GRANT OPTION",
     ], relations)).toMatchObject({ verified: true, elevated: true });
+    expect(mysqlGrantPosture([
+      "GRANT APPLICATION_PASSWORD_ADMIN, TELEMETRY_LOG_ADMIN ON *.* TO `root`@`%`",
+    ], relations)).toMatchObject({ verified: false, elevated: true });
+    expect(mysqlGrantPosture([
+      "GRANT FUTURE_TABLE_PRIVILEGE ON `fitflow`.`memberships` TO `fitflow_worker`@`%`",
+    ], relations)).toMatchObject({ verified: false, elevated: false });
   });
 
   it("never generates a weak UPDATE guard silently during onboarding", () => {

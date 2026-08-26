@@ -53,6 +53,8 @@ import {
   formatRelationshipJoinColumns,
   formatRelationshipPath,
 } from "./derived-scope-display.js";
+import { assertDatabaseRoleSafeForModelReads } from "./database-role-posture.js";
+import { cliCommandName } from "./cli-command-meta.js";
 
 export { resolveConfiguredTrustedContextAuthority } from "./configured-trusted-context.js";
 
@@ -204,6 +206,12 @@ export async function prepareBoundaryRescan(input: {
     databaseUrlEnv: oldLock.source_env,
     schema: oldLock.inspected_schema,
     env: process.env,
+  });
+  assertDatabaseRoleSafeForModelReads({
+    inspection,
+    sourceEnv: oldLock.source_env,
+    nextAction: `Rerun ${cliCommandName()} boundary rescan --from-env ${oldLock.source_env}.`,
+    statePreserved: "The existing draft, review decisions, active boundaries, and source database were not changed.",
   });
   const project = await detectProjectContext(projectRoot);
   const evidence = await loadStructuredProjectEvidence(project);

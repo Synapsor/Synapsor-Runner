@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
-import { configCommand } from "./config-inspect.js";
+import { configCommand, formatSchemaInspectionForCli } from "./config-inspect.js";
 
 
 afterEach(() => {
@@ -12,6 +12,26 @@ afterEach(() => {
 
 
 describe("production config initialization", () => {
+  it("makes elevated role posture prominent and suppresses the onboarding recommendation", () => {
+    const inspection = schemaInspection("postgres", [inspectedColumn("tenant_id", false, "text")]);
+    inspection.current_user = "postgres";
+    inspection.role_posture = {
+      verified: true,
+      superuser: true,
+      bypass_rls: true,
+      read_only: false,
+      writable_relations: ["public.orders"],
+      owned_relations: ["public.orders"],
+      reasons: [],
+    };
+    const output = formatSchemaInspectionForCli(inspection, "DATABASE_URL");
+    expect(output).toContain("Database role: UNSAFE FOR MODEL-FACING READS");
+    expect(output).toContain("PostgreSQL superuser");
+    expect(output).toContain("BYPASSRLS");
+    expect(output).toContain("Update DATABASE_URL");
+    expect(output).not.toContain("onboard db --from-env DATABASE_URL");
+  });
+
   it("shows and atomically updates model-facing authority metadata without changing authority", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-model-output-"));
     const configPath = path.join(tempDir, "synapsor.runner.json");

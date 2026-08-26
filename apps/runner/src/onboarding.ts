@@ -31,6 +31,7 @@ import { CapabilityRecipe, loadBuiltInRecipes, requireRecipe } from "./recipe-do
 import type { SchemaCandidateFormat } from "./schema-candidates.js";
 import { quoteSqlIdentifier } from "./sql-identifiers.js";
 import { formatSourceReceiptMode } from "./writeback-domain.js";
+import { assertDatabaseRoleSafeForModelReads } from "./database-role-posture.js";
 
 
 export async function init(args: string[]): Promise<number> {
@@ -177,6 +178,12 @@ export async function runInitWizard(
   });
   stdout.write(summarizeInspection(inspection));
   stdout.write("\n");
+  assertDatabaseRoleSafeForModelReads({
+    inspection,
+    sourceEnv: configDatabaseUrlEnv,
+    nextAction: "Rerun guided init with the same options.",
+    statePreserved: "No generated setup file or model-facing capability was created, and the source database was not changed.",
+  });
 
   const schema = await askDefault(ask, "Schema/database to inspect", optionalArg(args, "--schema") ?? inspection.schemas[0] ?? "public");
   const tables = inspection.tables.filter((table) => table.schema === schema);
@@ -858,6 +865,12 @@ function resultFormatFromAnswerValue(value: unknown): 1 | 2 | undefined {
 
 
 async function initFromInspection(args: string[], inspection: SchemaInspection, databaseUrlEnv: string): Promise<number> {
+  assertDatabaseRoleSafeForModelReads({
+    inspection,
+    sourceEnv: databaseUrlEnv,
+    nextAction: "Rerun the same onboarding command.",
+    statePreserved: "No generated setup file or model-facing capability was created, and the source database was not changed.",
+  });
   const tableName = optionalArg(args, "--table");
   if (!tableName) {
     const available = inspection.tables.slice(0, 12).map((table) => `${table.schema}.${table.name}`).join(", ");

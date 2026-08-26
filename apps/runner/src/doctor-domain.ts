@@ -12,6 +12,10 @@ import { envValue } from "./cli-options.js";
 import { RunnerCapabilityConfig } from "./cli-runtime.js";
 import { sharedPostgresLedgerMirrorOptions, sharedPostgresLedgerTableCounts } from "./shared-ledger-domain.js";
 import { capabilityOperation } from "./writeback-domain.js";
+import {
+  assessDatabaseRolePosture,
+  formatUnsafeDatabaseRoleMessage,
+} from "./database-role-posture.js";
 
 
 type TrustedContextDoctorEntry = {
@@ -312,6 +316,7 @@ export async function inspectConfiguredSource(input: {
   source: NonNullable<RuntimeConfig["sources"]>[string];
   checks: DoctorCheck[];
   additionalSchemas?: string[];
+  inspectDatabaseFn?: typeof inspectDatabase;
 }): Promise<SchemaInspection[]> {
   if (!envValue(process.env, input.source.read_url_env)) return [];
   const capabilities = (input.config.capabilities ?? []).filter((capability) => capability.source === input.sourceName);
@@ -322,7 +327,7 @@ export async function inspectConfiguredSource(input: {
   const inspections: SchemaInspection[] = [];
   for (const schema of schemas.length ? schemas : [undefined]) {
     try {
-      const inspection = await inspectDatabase({
+      const inspection = await (input.inspectDatabaseFn ?? inspectDatabase)({
         engine: input.source.engine,
         databaseUrlEnv: input.source.read_url_env,
         schema,
@@ -332,7 +337,21 @@ export async function inspectConfiguredSource(input: {
         name: `source:${input.sourceName}:read-connectivity${schema ? `:${schema}` : ""}`,
         ok: true,
         level: "pass",
-        message: `Read-only metadata inspection succeeded for ${input.sourceName}${schema ? ` schema ${schema}` : ""}.`,
+        message: `Metadata inspection succeeded for ${input.sourceName}${schema ? ` schema ${schema}` : ""}. No source rows were sampled or changed.`,
+      });
+      const role = assessDatabaseRolePosture(inspection);
+      input.checks.push({
+        name: `source:${input.sourceName}:read-role-posture${schema ? `:${schema}` : ""}`,
+        ok: role.safe_for_model_reads,
+        level: role.safe_for_model_reads ? "pass" : "fail",
+        message: role.safe_for_model_reads
+          ? `Database role ${role.role} is verified SELECT-only, non-owner, and safe for model-facing reads.`
+          : formatUnsafeDatabaseRoleMessage({
+              inspection,
+              sourceEnv: input.source.read_url_env,
+              nextAction: `Rerun ${cliCommandName()} doctor after updating the credential.`,
+              statePreserved: "Doctor changed no Runner authority or source data.",
+            }),
       });
       for (const capability of capabilities.filter((item) => !schema || item.target.schema === schema)) {
         const table = inspection.tables.find((item) => item.schema === capability.target.schema && item.name === capability.target.table);
