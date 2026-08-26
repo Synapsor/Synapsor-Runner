@@ -824,6 +824,43 @@ try {
         && document.querySelector("#playground-run")?.disabled===false`),
       "Workbench left playground controls busy after SQL compilation",
     );
+    const exploreModeTabContrast = await evaluate(page, `(() => {
+      const rgb=value=>{
+        const match=value.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
+        return match?match.slice(1,4).map(Number):null;
+      };
+      const luminance=value=>{
+        const channels=rgb(value);
+        if(!channels)return null;
+        const linear=channels.map(channel=>{
+          const normalized=channel/255;
+          return normalized<=0.04045?normalized/12.92:Math.pow((normalized+0.055)/1.055,2.4);
+        });
+        return 0.2126*linear[0]+0.7152*linear[1]+0.0722*linear[2];
+      };
+      const inspect=selector=>{
+        const node=document.querySelector(selector);
+        const style=getComputedStyle(node);
+        const foreground=luminance(style.color);
+        const background=luminance(style.backgroundColor);
+        return {
+          text:node?.textContent?.trim()||"",
+          color:style.color,
+          background:style.backgroundColor,
+          contrast:foreground===null||background===null?0:(Math.max(foreground,background)+0.05)/(Math.min(foreground,background)+0.05),
+        };
+      };
+      return {active:inspect("#aggregate-tab"),inactive:inspect("#row-tab")};
+    })()`);
+    assert(
+      exploreModeTabContrast.active.text==="Trends and totals"
+        && exploreModeTabContrast.inactive.text==="One record"
+        && exploreModeTabContrast.active.contrast>=4.5
+        && exploreModeTabContrast.inactive.contrast>=4.5
+        && exploreModeTabContrast.active.color!==exploreModeTabContrast.active.background,
+      "Workbench Explore mode tabs do not maintain readable active and inactive contrast",
+      exploreModeTabContrast,
+    );
     await evaluate(page, `document.querySelector('[id^="playground-sql-"]')?.scrollIntoView({block:"center"})`);
     await screenshot(page, "workbench-plan-playground-validated-desktop.png");
     await evaluate(page, `document.querySelector("#playground-run")?.click()`);

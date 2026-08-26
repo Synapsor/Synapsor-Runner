@@ -100,6 +100,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     body.quick-start-mode .header-status,body.ask-focus-mode .header-status{padding:7px 12px;border:1px solid #27372f;border-radius:999px;background:#0d1713}
     body.quick-start-mode button,body.ask-focus-mode button{background:#75e3b7;border-color:#75e3b7;color:#07100c}
     body.quick-start-mode button.secondary,body.quick-start-mode button.quiet,body.ask-focus-mode button.secondary,body.ask-focus-mode button.quiet{background:transparent;border-color:#34443c;color:#dce6e1}
+    body.ask-focus-mode .tabs{display:inline-flex;width:max-content;max-width:100%;gap:4px;padding:4px;border:1px solid #304239;border-radius:7px;background:#0b1511}
+    body.ask-focus-mode button.tab{min-height:36px;padding:7px 12px;border:0;border-radius:5px;background:#0b1511;color:#aebbb5}
+    body.ask-focus-mode button.tab:not(:disabled):hover{border-color:transparent;background:#17261f;color:#f1f6f3;transform:none}
+    body.ask-focus-mode button.tab.active,body.ask-focus-mode button.tab.active:not(:disabled):hover{border-color:#75e3b7;background:#75e3b7;color:#07100c}
     body.quick-start-mode .workbench-layout{grid-template-columns:minmax(0,1fr);justify-content:center}
     body.quick-start-mode .workflow-rail{display:none}
     body.quick-start-mode #view-overview>*{display:none!important}

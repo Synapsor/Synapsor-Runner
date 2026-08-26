@@ -791,6 +791,7 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("docs/approval-roles-and-operator-identity.md");
     expect(html).toContain("Try your first reviewed question");
     expect(html).toContain("Build another reviewed question");
+    expect(html).toContain("body.ask-focus-mode button.tab.active");
     expect(html).toContain("No time grouping");
     expect(html).toContain("Model + Runner");
     expect(html).toContain("Withheld from model");
