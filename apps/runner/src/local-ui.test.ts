@@ -185,6 +185,78 @@ describe("local UI", () => {
     }
   });
 
+  it("names the missing reviewed database environment in Explore Workbench preflight", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-workbench-missing-source-"));
+    const inspection = boundaryReviewInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root: tempDir,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const written = await writeAutoBoundaryArtifacts({ projectRoot: tempDir, build });
+    const guided = await initializeGuidedProject({
+      projectRoot: tempDir,
+      build,
+      runnerVersion: "1.7.14",
+    });
+    const candidate = structuredClone(build.exploration_boundary);
+    const digest = explorationBoundaryCandidateDigest(candidate);
+    await activateExplorationBoundary({
+      projectRoot: tempDir,
+      candidate,
+      expectedDigest: digest,
+      actor: "workbench-reviewer",
+      confirmation: `ACTIVATE ${digest}`,
+      confirmedDecisions: candidate.unresolved_decisions,
+      currentInspection: inspection,
+    });
+
+    const previousDatabaseUrl = process.env.DATABASE_URL;
+    delete process.env.DATABASE_URL;
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      boundaryRoot: written.root,
+      configPath: guided.config_path,
+      storePath: guided.store_path,
+      token: "missing-source-token",
+      csrfToken: "missing-source-csrf",
+      schemaInspector: async () => inspection,
+    });
+    try {
+      const response = await fetch(`http://${server.host}:${server.port}/api/explore/preflight`, {
+        headers: { "x-synapsor-ui-token": "missing-source-token" },
+      });
+      expect(response.status).toBe(409);
+      await expect(response.json()).resolves.toMatchObject({
+        ok: false,
+        ready: false,
+        error_code: "EXPLORE_SOURCE_UNAVAILABLE",
+        error: "DATABASE_URL is not set.",
+        source_requirement: {
+          environment: "DATABASE_URL",
+          configured: false,
+        },
+        remediation: {
+          action: expect.stringMatching(/Set DATABASE_URL in the terminal that launched Workbench/),
+          preserved: expect.stringMatching(/reviewed boundary.*source database were not changed/i),
+        },
+        source_database_changed: false,
+      });
+    } finally {
+      await server.close();
+      if (previousDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = previousDatabaseUrl;
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("loads an exact disabled protected draft for the shell-to-Workbench handoff", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-protect-handoff-"));
     const capability = "analytics.weekly_revenue";

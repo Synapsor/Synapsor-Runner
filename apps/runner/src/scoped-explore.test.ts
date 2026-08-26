@@ -41,6 +41,29 @@ afterEach(async () => {
 });
 
 describe("Scoped Explore", () => {
+  it("classifies a missing reviewed source environment before database inspection", async () => {
+    const fixture = await activatedFixture();
+    const inspectDatabaseFn = vi.fn(async () => fixture.inspection);
+
+    await expect(prepareScopedExplore({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: {
+        SYNAPSOR_TENANT_ID: fixture.env.SYNAPSOR_TENANT_ID,
+        SYNAPSOR_PRINCIPAL: fixture.env.SYNAPSOR_PRINCIPAL,
+      },
+      inspectDatabaseFn,
+    })).rejects.toMatchObject({
+      code: "EXPLORE_SOURCE_UNAVAILABLE",
+      message: "DATABASE_URL is not set.",
+      details: {
+        reason: "source_environment_missing",
+        source_env: "DATABASE_URL",
+      },
+    });
+    expect(inspectDatabaseFn).not.toHaveBeenCalled();
+  });
+
   it("compiles exact reviewed database identifiers that require dialect quoting", async () => {
     const fixture = await activatedFixture(undefined, quotedIdentifierInspection());
     const rowPlan = validateExplorePlan({

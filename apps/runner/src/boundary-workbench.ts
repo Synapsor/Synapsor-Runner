@@ -4096,6 +4096,19 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	          byId("retry-preflight").onclick=runPreflight;
 	          return;
 	        }
+        const sourceRequirement=error.payload?.source_requirement;
+        if(error.payload?.error_code==="EXPLORE_SOURCE_UNAVAILABLE"&&sourceRequirement?.configured===false){
+          const environment=typeof sourceRequirement.environment==="string"?sourceRequirement.environment:"the reviewed database URL environment variable";
+          panel.className="band notice";
+          panel.innerHTML='<h3>Database connection environment is missing.</h3>'
+            +'<p><code>'+esc(environment)+'</code> is not set in the process that launched Workbench. Runner cannot recheck the reviewed schema or role until that read-only connection is available.</p>'
+            +'<p><strong>Next action:</strong> '+esc(remediation?.action||("Set "+environment+" in the terminal that launched Workbench, then retry."))+'</p>'
+            +'<p>'+esc(remediation?.preserved||"The reviewed boundary, generated files, and source database were not changed.")+'</p>'
+            +'<div class="actions"><button id="retry-preflight" type="button">Retry after setting '+esc(environment)+'</button></div>';
+          byId("explorer").classList.add("hidden");
+          byId("retry-preflight").onclick=runPreflight;
+          return;
+        }
         panel.className="band error";
         panel.innerHTML='<h3>Explore is not ready</h3><p>'+esc(error.message)+'</p>'+(remediation?'<p><strong>Next action:</strong> '+esc(remediation.action)+'</p><p>'+esc(remediation.preserved)+'</p>':"")+'<button id="retry-preflight" type="button">Retry preflight</button>';
         byId("explorer").classList.add("hidden");
