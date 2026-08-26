@@ -332,6 +332,25 @@ Raw visibility and aggregate use are separate permissions. A reviewer may
 allow `count_distinct(customer_id)` while keeping every `customer_id` value out
 of results.
 
+### Model-facing authority metadata
+
+Scoped Explore uses `model_output.authority_metadata: semantic` by default.
+The model still receives the exact reviewed IDs needed to author a plan, the
+released result, and privacy outcomes, but not boundary/schema/role digests,
+fingerprints, hashes, or the query-audit hash. The opaque evidence resource ID
+remains usable; its model-readable payload follows the same projection.
+
+Operators always retain the exact values in `/details`, the plan playground,
+Workbench audit views, evidence, and query audit. In `/access`, press `O` to
+switch the visible `SEMANTIC`/`EXACT` setting. Workbench exposes the same choice
+under **Model response details**. The scriptable equivalent is
+`synapsor-runner config model-output --authority-metadata exact --config
+./synapsor.runner.json`. Use exact output only when a diagnostic client needs
+exact digest pinning. This is runtime presentation, not reviewed data authority,
+so external long-lived MCP servers must restart, but no boundary revision or
+activation is required. Workbench Ask refreshes automatically before its next
+question.
+
 ### Reviewed Names And Descriptions
 
 Legacy or abbreviated database names can be given bounded business context
@@ -848,6 +867,21 @@ synapsor-runner try call --list --format json
 synapsor-runner try explore --suggested --json
 synapsor-runner try ask --provider openai
 ```
+
+To inspect, validate, or replay the exact JSON plan used by an MCP client
+without involving a model, use the CLI-first Explore Plan Playground:
+
+```bash
+synapsor-runner explore describe --resource public.orders --json
+synapsor-runner explore validate --plan ./explore-plan.json
+synapsor-runner explore run --plan ./explore-plan.json --details
+```
+
+Validate-only repeats live drift, role, scope, authority, complexity, relative
+window, and compilation checks without querying source rows, consuming Explore
+budget, or writing evidence. Run uses the normal `app.explore_data` execution
+path. The preview Workbench exposes the same local service in its no-model
+tools. See [Explore Plan Playground](explore-plan-playground.md).
 
 Terminal Ask uses the `gpt-5.6-luna` OpenAI default and the tested
 Claude Sonnet default when `--model` is omitted. A loopback OpenAI-compatible

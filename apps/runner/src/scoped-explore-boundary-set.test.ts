@@ -131,9 +131,14 @@ describe("Scoped Explore active boundary routing", () => {
     const support = validBoundary("support", ["public.tickets"]);
     const finance = validBoundary("finance", ["public.invoices"]);
     const exploredPlans: unknown[] = [];
+    const validatedPlans: unknown[] = [];
     const runtimeFactory = vi.fn(async (input: { boundaryName?: string }) => {
       const selected = [support, finance].find((candidate) => candidate.pack.name === input.boundaryName)!;
-      return fakeChildRuntime(selected, (plan) => exploredPlans.push(plan));
+      return fakeChildRuntime(
+        selected,
+        (plan) => exploredPlans.push(plan),
+        (plan) => validatedPlans.push(plan),
+      );
     });
     try {
       await writeActiveSet(projectRoot, [support], "support");
@@ -163,6 +168,14 @@ describe("Scoped Explore active boundary routing", () => {
           "finance",
         )).resolves.toMatchObject({ boundary_name: "finance" });
         expect(exploredPlans.at(-1)).toMatchObject({ resource: "public.invoices" });
+        await expect(runtime.validate(
+          { kind: "rows", resource: "Invoices" },
+          "finance",
+        )).resolves.toMatchObject({
+          boundary_name: "finance",
+          active_boundary_set_digest: runtime.active_boundary_set_digest,
+        });
+        expect(validatedPlans.at(-1)).toMatchObject({ resource: "public.invoices" });
         await expect(runtime.describe({ resource: "Tickets" })).resolves.toMatchObject({
           resources: [{ id: "public.tickets", boundary_name: "support" }],
         });
@@ -264,6 +277,63 @@ describe("Scoped Explore active boundary routing", () => {
     }
   });
 
+  it("applies semantic and exact authority metadata modes to boundary-set results", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-set-metadata-"));
+    const support = validBoundary("support", ["public.tickets"], "UTC");
+    try {
+      await writeActiveSet(projectRoot, [support], "support");
+      const result = {
+        ok: true,
+        boundary_digest: support.activation.digest,
+        active_boundary_set_digest: `sha256:${"4".repeat(64)}`,
+        data: [{ digest: support.activation.digest }],
+        source_database_changed: false,
+      };
+      const semantic = await createScopedExploreBoundarySetRuntime({
+        projectRoot,
+        transport: "stdio",
+        modelAuthorityMetadata: "semantic",
+        runtimeFactory: (async () => fakeChildRuntime(support)) as never,
+      });
+      try {
+        expect(semantic.projectResultForModel({
+          tool: "app.explore_data",
+          arguments: {
+            plan: { kind: "rows", resource: "public.tickets", select: ["id"] },
+          },
+          result,
+        })).toMatchObject({
+          value: {
+            data: [{ digest: support.activation.digest }],
+          },
+          operator_metadata_withheld: true,
+        });
+      } finally {
+        await semantic.close();
+      }
+
+      const exact = await createScopedExploreBoundarySetRuntime({
+        projectRoot,
+        transport: "stdio",
+        modelAuthorityMetadata: "exact",
+        runtimeFactory: (async () => fakeChildRuntime(support)) as never,
+      });
+      try {
+        expect(exact.projectResultForModel({
+          tool: "app.explore_data",
+          arguments: {
+            plan: { kind: "rows", resource: "public.tickets", select: ["id"] },
+          },
+          result,
+        })).toEqual({ value: result, withheld: false });
+      } finally {
+        await exact.close();
+      }
+    } finally {
+      await fs.rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
   it("keeps the production MCP surface at two read-only tools and routes an explicit reviewed boundary", async () => {
     const support = validBoundary("support", ["public.tickets"]);
     const finance = validBoundary("finance", ["public.invoices"]);
@@ -286,6 +356,7 @@ describe("Scoped Explore active boundary routing", () => {
       active_boundary_set_digest: `sha256:${"4".repeat(64)}`,
       session_fingerprint: `sha256:${"3".repeat(64)}`,
       describe,
+      validate: async () => ({}) as never,
       explore,
       projectResultForModel: ({ result }: { result: Record<string, unknown> }) => ({
         value: result,
@@ -702,6 +773,7 @@ function validBoundary(
 function fakeChildRuntime(
   boundary: ActivatedExplorationBoundary,
   onExplore?: (plan: unknown) => void,
+  onValidate?: (plan: unknown) => void,
 ): ScopedExploreRuntime {
   return {
     boundary,
@@ -721,6 +793,10 @@ function fakeChildRuntime(
         next_cursor: cursor + page.length < resources.length ? cursor + page.length : null,
         source_database_changed: false,
       };
+    },
+    validate: async (plan) => {
+      onValidate?.(plan);
+      return {} as never;
     },
     explore: async (plan) => {
       onExplore?.(plan);

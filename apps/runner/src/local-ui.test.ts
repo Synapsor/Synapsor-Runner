@@ -165,6 +165,26 @@ function freshnessEvaluation(
 }
 
 describe("local UI", () => {
+  it("preserves the one-time bootstrap gate while deep-linking to the JSON playground", async () => {
+    const server = await startLocalUiServer({
+      token: "playground-bootstrap-token",
+      initialView: "playground",
+    });
+    try {
+      expect(server.url).toContain("token=playground-bootstrap-token");
+      expect(server.url).toContain("view=playground");
+      const bootstrap = await fetch(server.url, { redirect: "manual" });
+      expect(bootstrap.status).toBe(303);
+      expect(bootstrap.headers.get("location")).toBe("/#explore?playground=1");
+      expect(bootstrap.headers.get("set-cookie")).toContain("HttpOnly");
+      const reused = await fetch(server.url, { redirect: "manual" });
+      expect(reused.status).toBe(401);
+      expect(server.reissueBootstrapUrl()).toContain("view=playground");
+    } finally {
+      await server.close();
+    }
+  });
+
   it("loads an exact disabled protected draft for the shell-to-Workbench handoff", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-protect-handoff-"));
     const capability = "analytics.weekly_revenue";
@@ -1693,6 +1713,7 @@ export default defineCapability({
       instantOnboarding: true,
     });
     const plans: unknown[] = [];
+    const validatedPlans: unknown[] = [];
     const previousTenant = process.env.SYNAPSOR_TENANT_ID;
     const previousPrincipal = process.env.SYNAPSOR_PRINCIPAL;
     process.env.SYNAPSOR_TENANT_ID = "acme";
@@ -1710,6 +1731,19 @@ export default defineCapability({
         boundary: {} as never,
         session_fingerprint: `sha256:${"c".repeat(64)}`,
         describe: async () => ({}),
+        validate: async (plan: unknown) => {
+          validatedPlans.push(plan);
+          return {
+            ok: true,
+            normalized_plan: plan,
+            validation: {
+              source_catalog_rechecked: true,
+              source_query_executed: false,
+              explore_budget_consumed: false,
+            },
+            source_database_changed: false,
+          } as never;
+        },
         explore: async (plan: unknown) => {
           plans.push(plan);
           return {
@@ -1827,6 +1861,33 @@ export default defineCapability({
       expect(reviewBaseline.confirmed_decisions).toHaveLength(
         reviewBaseline.confirmations.length,
       );
+      const validated = await postJson(
+        `http://${server.host}:${server.port}/api/explore/validate`,
+        headers,
+        {
+          plan: {
+            kind: "aggregate",
+            resource: "public.members",
+            measures: [{ function: "count" }],
+            top_n: 5,
+          },
+        },
+      );
+      expect(validated).toMatchObject({
+        ok: true,
+        source_query_executed: false,
+        explore_budget_consumed: false,
+        source_database_changed: false,
+        result: {
+          validation: {
+            source_catalog_rechecked: true,
+            source_query_executed: false,
+            explore_budget_consumed: false,
+          },
+        },
+      });
+      expect(validatedPlans).toHaveLength(1);
+      expect(plans).toHaveLength(1);
       const followUp = await postJson(
         `http://${server.host}:${server.port}/api/explore/run`,
         headers,
@@ -3443,6 +3504,7 @@ export default defineCapability({
     try {
       const initial = await getJson(`http://${server.host}:${server.port}/api/boundary`, headers);
       const originalName = initial.candidate.pack.name as string;
+      expect(initial.model_authority_metadata_mode).toBe("semantic");
       expect(initial.boundary_library).toMatchObject({
         selected_name: originalName,
         entries: [{
@@ -3452,6 +3514,53 @@ export default defineCapability({
           ask_intent_check_mode: "balanced",
         }],
       });
+
+      const lockPath = path.join(tempDir, ".synapsor/generation-lock.json");
+      const draftPath = path.join(written.root, "exploration-boundary.draft.json");
+      const lockBeforeModelOutput = await fs.readFile(lockPath, "utf8");
+      const draftBeforeModelOutput = await fs.readFile(draftPath, "utf8");
+      const missingModelOutputCsrf = await fetch(
+        `http://${server.host}:${server.port}/api/config/model-output`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-synapsor-ui-token": "boundary-library-token",
+          },
+          body: JSON.stringify({ mode: "exact" }),
+        },
+      );
+      expect(missingModelOutputCsrf.status).toBe(403);
+      expect(await missingModelOutputCsrf.json()).toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/CSRF token required/i),
+      });
+
+      const modelOutput = await postJson(
+        `http://${server.host}:${server.port}/api/config/model-output`,
+        headers,
+        { mode: "exact" },
+      );
+      expect(modelOutput).toMatchObject({
+        authority_metadata: "exact",
+        changed: true,
+        operator_evidence_changed: false,
+        authority_changed: false,
+        activation_required: false,
+        external_mcp_restart_required: true,
+        workbench_ask_refresh_pending: false,
+        source_database_changed: false,
+      });
+      expect(JSON.parse(await fs.readFile(guided.config_path, "utf8"))).toMatchObject({
+        model_output: { authority_metadata: "exact" },
+      });
+      expect(await fs.readFile(lockPath, "utf8")).toBe(lockBeforeModelOutput);
+      expect(await fs.readFile(draftPath, "utf8")).toBe(draftBeforeModelOutput);
+      const afterModelOutput = await getJson(
+        `http://${server.host}:${server.port}/api/boundary`,
+        headers,
+      );
+      expect(afterModelOutput.model_authority_metadata_mode).toBe("exact");
 
       const askIntent = await postJson(
         `http://${server.host}:${server.port}/api/boundary/ask-intent-check`,

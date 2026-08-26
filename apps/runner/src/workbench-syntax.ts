@@ -1,3 +1,5 @@
+import { sqlDisplayFormatterScript } from "./terminal-syntax.js";
+
 export type WorkbenchSyntaxTokenKind =
   | "comment"
   | "identifier"
@@ -182,7 +184,7 @@ const synapsorDslKeywords = new Set<string>(synapsorDslKeywordValues);
 export const WORKBENCH_SYNTAX_CSS = `
     .syntax-block{position:relative;padding-top:32px;white-space:pre;tab-size:2}
     .syntax-block::before{content:attr(data-language-label);position:absolute;top:8px;right:10px;color:var(--muted);font:700 10px/1.2 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;text-transform:uppercase}
-    .syntax-code{display:block;min-width:max-content;color:var(--text,var(--ink))}
+    .syntax-code{display:block;min-width:max-content;color:var(--text,var(--ink));font:inherit;line-height:inherit}
     .syntax-token.keyword{color:#006d77;font-weight:750}.syntax-token.identifier{color:#234a8a}.syntax-token.string{color:#8a3d00}.syntax-token.number{color:#7554a3}.syntax-token.comment{color:#627176;font-style:italic}.syntax-token.operator{color:#9b2c2c;font-weight:700}.syntax-token.punctuation{color:var(--muted)}
     @media(prefers-color-scheme:dark){.syntax-token.keyword{color:#70ded0}.syntax-token.identifier{color:#9fc3ff}.syntax-token.string{color:#ffc07a}.syntax-token.number{color:#d6b2ff}.syntax-token.comment{color:#95a7aa}.syntax-token.operator{color:#ff9d96}}
 `;
@@ -262,14 +264,73 @@ export function tokenizeSynapsorDsl(
   return tokens;
 }
 
+export function tokenizeJson(sourceInput: string): WorkbenchSyntaxToken[] {
+  const source = String(sourceInput);
+  const tokens: WorkbenchSyntaxToken[] = [];
+  let index = 0;
+
+  const push = (kind: WorkbenchSyntaxTokenKind, end: number): void => {
+    tokens.push({ kind, text: source.slice(index, end) });
+    index = end;
+  };
+
+  while (index < source.length) {
+    const rest = source.slice(index);
+    const whitespace = rest.match(/^\s+/)?.[0];
+    if (whitespace) {
+      push("whitespace", index + whitespace.length);
+      continue;
+    }
+    if (source[index] === "\"") {
+      let cursor = index + 1;
+      while (cursor < source.length) {
+        if (source[cursor] === "\\") {
+          cursor = Math.min(source.length, cursor + 2);
+          continue;
+        }
+        if (source[cursor] === "\"") {
+          cursor += 1;
+          break;
+        }
+        cursor += 1;
+      }
+      const after = source.slice(cursor).match(/^\s*/)?.[0].length ?? 0;
+      const isProperty = source[cursor + after] === ":";
+      push(isProperty ? "identifier" : "string", cursor);
+      continue;
+    }
+    const number = rest.match(/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/)?.[0];
+    if (number) {
+      push("number", index + number.length);
+      continue;
+    }
+    const literal = rest.match(/^(?:true|false|null)\b/)?.[0];
+    if (literal) {
+      push("keyword", index + literal.length);
+      continue;
+    }
+    if ("{}[],:".includes(source[index] ?? "")) {
+      push("punctuation", index + 1);
+      continue;
+    }
+    push("plain", index + 1);
+  }
+  return tokens;
+}
+
 export function workbenchSyntaxScript(): string {
   return `
+    ${sqlDisplayFormatterScript()}
     const synapsorDslKeywords=new Set(${JSON.stringify(synapsorDslKeywordValues)});
     const tokenizeSynapsorDsl=${tokenizeSynapsorDsl.toString()};
+    const tokenizeJson=${tokenizeJson.toString()};
     function renderSyntaxCode(target,sourceInput,language){
       const host=typeof target==="string"?document.getElementById(target):target;
       if(!host)return;
-      const source=String(sourceInput??"");
+      const rawSource=String(sourceInput??"");
+      const source=String(language||"").toLowerCase()==="sql"
+        ?formatSqlForDisplay(rawSource)
+        :rawSource;
       const label=language==="synapsor-dsl"?"Synapsor DSL":String(language||"Code");
       host.classList.add("syntax-block");
       host.setAttribute("data-language-label",label);
@@ -283,7 +344,10 @@ export function workbenchSyntaxScript(): string {
         const code=document.createElement("code");
         code.className="syntax-code language-synapsor-dsl";
         code.setAttribute("aria-label",label+" source");
-        for(const token of tokenizeSynapsorDsl(source,synapsorDslKeywords)){
+        const tokens=String(language||"").toLowerCase()==="json"
+          ?tokenizeJson(source)
+          :tokenizeSynapsorDsl(source,synapsorDslKeywords);
+        for(const token of tokens){
           if(token.kind==="whitespace"||token.kind==="plain"){
             code.append(document.createTextNode(token.text));
             continue;

@@ -75,6 +75,11 @@ import {
 } from "./scoped-explore-boundary-set.js";
 import type { ScopedExploreRuntime } from "./scoped-explore.js";
 import {
+  normalizeExplorePlaygroundRequest,
+  runExplorePlaygroundRequest,
+  validateExplorePlaygroundRequest,
+} from "./explore-playground-service.js";
+import {
   ExploreTrustedScopeError,
   resolveExploreTrustedScope,
   type ExploreTrustedScope,
@@ -175,6 +180,10 @@ import {
 import { WORKBENCH_SYNTAX_CSS, workbenchSyntaxScript } from "./workbench-syntax.js";
 import { exploreVocabularyStructuralProfile } from "./explore-vocabulary.js";
 import {
+  readModelAuthorityMetadataMode,
+  updateModelAuthorityMetadataMode,
+} from "./model-output-config.js";
+import {
   BOUNDARY_REVIEW_PROGRESS_VERSION,
   boundaryReviewDecisions as sharedBoundaryReviewDecisions,
   createBoundaryReviewProgress as createSharedBoundaryReviewProgress,
@@ -271,6 +280,7 @@ export type LocalUiOptions = {
   csrfToken?: string;
   allowRemoteBind?: boolean;
   tour?: boolean;
+  initialView?: "playground";
   boundaryRoot?: string;
   projectRoot?: string;
   storeAccess?: LocalUiStoreAccess;
@@ -563,7 +573,7 @@ export async function startLocalUiServer(options: LocalUiOptions = {}): Promise<
   const address = server.address() as AddressInfo;
   const port = address.port;
   const bootstrapUrl = () =>
-    `http://${host}:${port}/?token=${encodeURIComponent(bootstrapState.bootstrapToken)}${options.tour ? "&tour=1" : ""}`;
+    `http://${host}:${port}/?token=${encodeURIComponent(bootstrapState.bootstrapToken)}${options.tour ? "&tour=1" : ""}${options.initialView ? `&view=${encodeURIComponent(options.initialView)}` : ""}`;
   const url = bootstrapUrl();
   return {
     server,
@@ -701,6 +711,8 @@ async function handleRequest(input: {
         query_ref: requestedQueryRef!,
         capability: requestedCapability!,
       }).toString()}`
+      : requestedView === "playground"
+        ? "/#explore?playground=1"
       : tour || url.searchParams.get("tour") === "1"
         ? "/?tour=1"
         : "/";
@@ -902,6 +914,7 @@ async function handleRequest(input: {
       },
       review: reviewForDisplay,
       database_server_compatibility: serverCompatibility,
+      model_authority_metadata_mode: await readModelAuthorityMetadataMode(configPath),
       candidate_digest: explorationBoundaryCandidateDigest(candidate),
       boundary_library: boundaryLibrary,
       boundary_rescan_report: await readBoundaryRescanReport(projectRoot),
@@ -1214,6 +1227,46 @@ async function handleRequest(input: {
       boundary_library: await withAskIntentCheckModes(projectRoot, library),
       authority_changed: false,
       activation_required: false,
+      source_database_changed: false,
+    });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/config/model-output") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Boundary Workbench is not enabled for this session." });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required to change model response metadata." });
+      return;
+    }
+    const body = await readJsonBody(request);
+    const mode = body.mode === "semantic" || body.mode === "exact"
+      ? body.mode
+      : undefined;
+    if (!mode) {
+      sendJson(response, 400, {
+        ok: false,
+        error: "Model response metadata must be semantic or exact.",
+        source_database_changed: false,
+      });
+      return;
+    }
+    const updated = await updateModelAuthorityMetadataMode({ configPath, mode });
+    const configuredAsk = askSession.status().configuration;
+    if (updated.changed && configuredAsk) {
+      bootstrapState.askAuthorityRefreshPending = true;
+    }
+    sendJson(response, 200, {
+      ok: true,
+      authority_metadata: updated.authority_metadata,
+      changed: updated.changed,
+      operator_evidence_changed: false,
+      authority_changed: false,
+      activation_required: false,
+      external_mcp_restart_required: updated.changed,
+      workbench_ask_refresh_pending: updated.changed && Boolean(configuredAsk),
       source_database_changed: false,
     });
     return;
@@ -3011,21 +3064,19 @@ async function handleRequest(input: {
       return;
     }
     const body = await readJsonBody(request);
-    if (!isRecord(body.plan)) throw new Error("Scoped Explore requires one structured plan.");
     let runtime: WorkbenchScopedExploreRuntime | undefined;
     try {
+      const playgroundRequest = normalizeExplorePlaygroundRequest(body);
       runtime = await scopedExploreRuntimeFactory({
         projectRoot,
         transport: "loopback_workbench",
         env: { ...process.env, ...bootstrapState.trustedContext },
       });
-      const boundary = typeof body.boundary === "string" ? body.boundary.trim() : undefined;
-      const result = withWorkbenchProtectQueryRef(await (
-        isBoundarySetRuntime(runtime)
-          ? runtime.explore(body.plan, boundary)
-          : runtime.explore(body.plan)
+      const result = withWorkbenchProtectQueryRef(await runExplorePlaygroundRequest(
+        runtime,
+        playgroundRequest,
       ));
-      const aggregate = body.plan.kind === "aggregate";
+      const aggregate = playgroundRequest.plan.kind === "aggregate";
       await updateGuidedOnboardingState({
         projectRoot,
         status: aggregate ? "protect" : "first_value",
@@ -3038,7 +3089,7 @@ async function handleRequest(input: {
       sendJson(response, 200, {
         ok: true,
         result,
-        plan: body.plan,
+        plan: playgroundRequest.plan,
         source_database_changed: false,
         protected_artifact_created: false,
         next_action: "Ask another bounded question. Protect this analysis only if it should become a reusable named capability.",
@@ -3051,6 +3102,51 @@ async function handleRequest(input: {
         error: error instanceof ScopedExploreError ? error.message : "Scoped Explore refused the request.",
         ...(error instanceof ScopedExploreError && error.details ? { details: error.details } : {}),
         remediation,
+        source_database_changed: false,
+      });
+    } finally {
+      await runtime?.close().catch(() => undefined);
+    }
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/explore/validate") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Scoped Explore is available only in an Auto Boundary authoring Workbench." });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required for Scoped Explore." });
+      return;
+    }
+    const body = await readJsonBody(request);
+    let runtime: WorkbenchScopedExploreRuntime | undefined;
+    try {
+      const playgroundRequest = normalizeExplorePlaygroundRequest(body);
+      runtime = await scopedExploreRuntimeFactory({
+        projectRoot,
+        transport: "loopback_workbench",
+        env: { ...process.env, ...bootstrapState.trustedContext },
+      });
+      const result = await validateExplorePlaygroundRequest(runtime, playgroundRequest);
+      sendJson(response, 200, {
+        ok: true,
+        result,
+        plan: result.normalized_plan,
+        source_query_executed: false,
+        explore_budget_consumed: false,
+        source_database_changed: false,
+      });
+    } catch (error) {
+      const remediation = scopedExploreRemediation(error);
+      sendJson(response, 409, {
+        ok: false,
+        error_code: error instanceof ScopedExploreError ? error.code : "EXPLORE_INTERNAL",
+        error: error instanceof ScopedExploreError ? error.message : "Scoped Explore validation refused the plan.",
+        ...(error instanceof ScopedExploreError && error.details ? { details: error.details } : {}),
+        remediation,
+        source_query_executed: false,
+        explore_budget_consumed: false,
         source_database_changed: false,
       });
     } finally {

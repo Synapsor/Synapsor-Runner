@@ -15,6 +15,10 @@ import {
   type ProposalRuntimeStore,
 } from "@synapsor-runner/proposal-store";
 import {
+  projectAuthorityMetadataForModel,
+  type ModelAuthorityMetadataMode,
+} from "@synapsor-runner/mcp-server";
+import {
   PrivacyBoundaryError,
   applyReviewedAggregateTransforms,
   canonicalJsonDigest,
@@ -266,6 +270,7 @@ export function scopedExploreBoundaryLoadError(error: unknown): ScopedExploreErr
 export type ScopedExploreRuntime = {
   boundary: ActivatedExplorationBoundary;
   session_fingerprint: `sha256:${string}`;
+  model_authority_metadata?: ModelAuthorityMetadataMode;
   trusted_scope?: {
     tenant: { source: "environment" | "postgres_role_setting" | "verified_http_claim" | "reviewed_organization"; binding: string };
     principal: { source: "environment" | "verified_http_claim" | "not_required"; binding?: string };
@@ -276,8 +281,34 @@ export type ScopedExploreRuntime = {
     limit?: number;
     include_time_coverage?: boolean;
   }): Promise<Record<string, unknown>>;
+  validate(plan: unknown): Promise<ScopedExploreValidationResult>;
   explore(plan: unknown): Promise<Record<string, unknown>>;
   close(): Promise<void>;
+};
+
+export type ScopedExploreValidationResult = {
+  ok: true;
+  outcome: {
+    type: "validated";
+    status: "ready";
+  };
+  normalized_plan: ExplorePlan;
+  boundary_name: string;
+  boundary_digest: string;
+  generation_lock_fingerprint: string;
+  database_engine: "postgres" | "mysql";
+  trusted_scope: NonNullable<ScopedExploreRuntime["trusted_scope"]>;
+  parameterized_sql: CapturedExploreParameterizedSql;
+  validation: {
+    source_catalog_rechecked: true;
+    source_query_executed: false;
+    explore_budget_consumed: false;
+    estimated_response_cells: number;
+    statement_count: number;
+    parameter_values_included: false;
+  };
+  operator_time_windows?: ResolvedRelativeTimeWindow[];
+  source_database_changed: false;
 };
 
 export type CompiledExploreQuery = {
@@ -491,6 +522,7 @@ export async function createScopedExploreRuntime(input: {
   clock?: () => number;
   inspectDatabaseFn?: InspectDatabaseFn;
   resolveTrustedScopeFn?: ResolveExploreTrustedScopeFn;
+  modelAuthorityMetadata?: ModelAuthorityMetadataMode;
 }): Promise<ScopedExploreRuntime> {
   const projectRoot = path.resolve(input.projectRoot);
   const env = input.env ?? process.env;
@@ -598,6 +630,7 @@ export async function createScopedExploreRuntime(input: {
   return {
     boundary: prepared.boundary,
     session_fingerprint: sessionFingerprint,
+    model_authority_metadata: input.modelAuthorityMetadata ?? "semantic",
     trusted_scope: {
       tenant: {
         source: trustedScope.tenant_source,
@@ -616,6 +649,100 @@ export async function createScopedExploreRuntime(input: {
         ? {}
         : await reviewedTimeCoverage(),
     ),
+    validate: async (unknownPlan) => {
+      const validationStartedAt = clock();
+      const currentPrepared = await prepareScopedExplore({
+        projectRoot,
+        transport: input.transport,
+        mode,
+        boundaryName: prepared.boundary.pack.name,
+        env,
+        ...(input.inspectDatabaseFn ? { inspectDatabaseFn: input.inspectDatabaseFn } : {}),
+      });
+      if (currentPrepared.boundary.activation.digest !== prepared.boundary.activation.digest
+        || currentPrepared.boundary.generation_lock_fingerprint !== prepared.boundary.generation_lock_fingerprint) {
+        throw new ScopedExploreError(
+          "EXPLORE_BOUNDARY_MISMATCH",
+          "Reviewed analytics access changed while this authoring session was open.",
+        );
+      }
+      const currentScope = await trustedScopeResolver({
+        boundary: currentPrepared.boundary,
+        lock: currentPrepared.lock,
+        inspection: currentPrepared.inspection,
+        env,
+        ...(input.sessionContext ? { sessionContext: input.sessionContext } : {}),
+      }).catch((error) => {
+        throw scopedExploreTrustedScopeError(
+          error,
+          principalRequired,
+          currentPrepared.boundary.trusted_context,
+        );
+      });
+      assertTrustedScopeUnchanged(trustedScope, currentScope);
+
+      let validated: ValidatedExploreRequest;
+      try {
+        validated = validateExploreRequest(unknownPlan, currentPrepared.boundary, {
+          now: validationStartedAt,
+        });
+      } catch (error) {
+        throw enrichReviewableRelationshipError(
+          error,
+          unknownPlan,
+          currentPrepared.boundary,
+          reviewableBoundary,
+        );
+      }
+      assertPreparedExplorePlanAuthority(validated.plan, currentPrepared);
+      assertExploreComplexity(validated.plan, currentPrepared.boundary);
+      const statements = compileExplorePlan(
+        validated.plan,
+        currentPrepared.boundary,
+        { tenant: trustedTenant, principal },
+        currentPrepared.lock.engine,
+      );
+      const parameterizedSql = captureExploreParameterizedSql({
+        engine: currentPrepared.lock.engine,
+        statements,
+      });
+      const scopeDescription: NonNullable<ScopedExploreRuntime["trusted_scope"]> = {
+        tenant: {
+          source: currentScope.tenant_source,
+          binding: currentScope.tenant_binding,
+        },
+        principal: {
+          source: currentScope.principal_source,
+          ...(currentScope.principal_binding ? { binding: currentScope.principal_binding } : {}),
+        },
+      };
+      return {
+        ok: true,
+        outcome: {
+          type: "validated",
+          status: "ready",
+        },
+        normalized_plan: validated.plan,
+        boundary_name: currentPrepared.boundary.pack.name,
+        boundary_digest: currentPrepared.boundary.activation.digest,
+        generation_lock_fingerprint: currentPrepared.boundary.generation_lock_fingerprint,
+        database_engine: currentPrepared.lock.engine,
+        trusted_scope: scopeDescription,
+        parameterized_sql: parameterizedSql,
+        validation: {
+          source_catalog_rechecked: true,
+          source_query_executed: false,
+          explore_budget_consumed: false,
+          estimated_response_cells: estimatedExploreResponseCells(validated.plan),
+          statement_count: statements.length,
+          parameter_values_included: false,
+        },
+        ...(validated.resolved_time_windows.length
+          ? { operator_time_windows: validated.resolved_time_windows }
+          : {}),
+        source_database_changed: false,
+      };
+    },
     explore: async (unknownPlan) => {
       let currentPrepared: PreparedExplore;
       try {
@@ -1375,13 +1502,31 @@ export function projectScopedExploreResultForModel(input: {
   arguments: Record<string, unknown>;
   result: Record<string, unknown>;
   boundary: ActivatedExplorationBoundary;
+  authorityMetadata?: ModelAuthorityMetadataMode;
 }): {
   value: Record<string, unknown>;
   withheld: boolean;
   operator_metadata_withheld?: boolean;
 } {
+  const finalize = (
+    value: Record<string, unknown>,
+    valuesWithheld: boolean,
+    operatorMetadataWithheld = false,
+  ) => {
+    const authority = projectAuthorityMetadataForModel(
+      value,
+      input.authorityMetadata ?? "semantic",
+    );
+    return {
+      value: authority.value,
+      withheld: valuesWithheld,
+      ...(operatorMetadataWithheld || authority.withheld
+        ? { operator_metadata_withheld: true }
+        : {}),
+    };
+  };
   if (input.tool !== SCOPED_EXPLORE_QUERY_TOOL || input.result.ok === false) {
-    return { value: structuredClone(input.result), withheld: false };
+    return finalize(input.result, false);
   }
   const rawPlan = input.arguments.plan;
   const operatorTimeWindows = Array.isArray(input.result.operator_time_windows)
@@ -1415,11 +1560,7 @@ export function projectScopedExploreResultForModel(input: {
   }
   const columns = new Set(modelWithheldExploreOutputColumns(plan, input.boundary));
   if (columns.size === 0) {
-    return {
-      value: projected,
-      withheld: false,
-      ...(operatorMetadataWithheld ? { operator_metadata_withheld: true } : {}),
-    };
+    return finalize(projected, false, operatorMetadataWithheld);
   }
   if (Array.isArray(projected.data)) {
     const nonce = crypto.randomBytes(6).toString("hex");
@@ -1448,11 +1589,7 @@ export function projectScopedExploreResultForModel(input: {
     tokenized_columns: [...columns].sort(),
     token_scope: "this_tool_response_only",
   };
-  return {
-    value: projected,
-    withheld: true,
-    ...(operatorMetadataWithheld ? { operator_metadata_withheld: true } : {}),
-  };
+  return finalize(projected, true, operatorMetadataWithheld);
 }
 
 export function modelWithheldExploreOutputColumns(

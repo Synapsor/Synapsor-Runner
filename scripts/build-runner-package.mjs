@@ -208,6 +208,7 @@ const publicDocs = [
   "database-server-compatibility.md",
   "doctor.md",
   "effect-regression.md",
+  "explore-plan-playground.md",
   "fresh-developer-usability.md",
   "getting-started-own-database.md",
   "guided-onboarding.md",

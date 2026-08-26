@@ -38,6 +38,7 @@ Unknown keys fail when `strict` is true (the default).
 | `session_auth` | HTTP claims | HS256 development or asymmetric RS256/ES256 session-token verification. |
 | `http_security` | Networked HTTP | Deployment profile, protected channel, endpoint-token env names, OAuth protected-resource metadata, exact Origin/Host policy, and request/session bounds. |
 | `production_explore` | Opt-in production analytics | Separately reviewed production-boundary root, required OAuth scope, opaque shared accounting, source/session ceilings, and tenant-wide limits. |
+| `model_output` | No | Model-facing authority-metadata presentation: semantic by default, or exact for diagnostics. |
 | `rate_limits` | No | Operational fixed-window limits; fleet-wide only with shared `runtime_store`. |
 | `metrics` | No | Separately authorized scrapeable HTTP metrics. Disabled by default. |
 | `graduated_trust` | No | Off-by-default, operator-only policy recommendation criteria and kill switch. |
@@ -86,6 +87,56 @@ timezone before that connection can be reused by another boundary.
 Manual and legacy projects omit `generated_authority`. Runner does not create
 an implicit lock, rescan their database, change their startup path, or alter
 their existing contract digest merely because they upgrade.
+
+## Model-facing authority metadata
+
+```json
+{
+  "model_output": {
+    "authority_metadata": "semantic"
+  }
+}
+```
+
+`semantic` is the default, including when this block is absent. It keeps the
+reviewed catalog, exact resource/field/relationship IDs, labels, operations,
+outcomes, privacy decisions, released data, and opaque evidence-resource
+handles available to the model. It omits Runner metadata keys that contain
+exact digests, fingerprints, or hashes, including query-audit hashes, from tool
+results, tool discovery metadata, and model-readable MCP resources.
+
+This is a metadata projection, not string redaction. Runner does not alter a
+released source column named `digest`, `hash`, or `fingerprint`, and does not
+rewrite a business value merely because it begins with `sha256:`. Source values
+inside the result `data` envelope remain governed by the boundary's existing
+visible/withheld/kept-out decision.
+
+`exact` restores the prior diagnostic metadata for clients that deliberately
+pin contract digests or inspect exact authority. Change or inspect the setting
+without hand-editing JSON:
+
+```bash
+synapsor-runner config model-output \
+  --authority-metadata semantic \
+  --config ./synapsor.runner.json
+
+synapsor-runner config model-output --config ./synapsor.runner.json
+```
+
+Interactive operator paths expose the same setting without editing JSON:
+
+- In `/access`, press `O Model output`; the current `SEMANTIC` or `EXACT`
+  state is always visible before you press it.
+- In Workbench, open **Model response details** on the boundary overview and
+  choose **Semantic** or **Exact diagnostics**.
+
+The command atomically preserves the config file's permissions. This setting
+does not change reviewed authority, a boundary digest, query behavior, budget
+accounting, or persisted evidence. CLI/Workbench operator details, the Explore
+playground, evidence, query audit, and internal drift checks always retain exact
+metadata. Workbench Ask refreshes before its next question. Restart other
+long-lived MCP servers and reconnect their clients after a change; no boundary
+review or activation is required.
 
 ## Storage
 

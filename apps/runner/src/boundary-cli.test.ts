@@ -3392,6 +3392,83 @@ describe("boundary operator-plane CLI", () => {
     }
   });
 
+  it("toggles model-facing authority metadata from access without changing reviewed authority", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-model-output-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const choices = [{
+      action: "model_output" as const,
+      exact_metadata_confirmed: true as const,
+    }, undefined];
+    const confirmations: string[] = [];
+    const notices: Array<unknown> = [];
+    const displayedModes: Array<unknown> = [];
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async (_resources, overview, options) => {
+        displayedModes.push(overview?.model_authority_metadata_mode);
+        notices.push(options?.notice);
+        return choices.shift();
+      },
+      editFieldTiers: async () => undefined,
+      promptText: async () => undefined,
+      confirm: async (prompt) => {
+        confirmations.push(prompt);
+        return true;
+      },
+    };
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const guided = await initializeGuidedProject({
+        projectRoot: root,
+        build,
+        runnerVersion: "1.7.14",
+      });
+      const lockPath = path.join(root, ".synapsor/generation-lock.json");
+      const draftPath = path.join(root, "synapsor/generated/exploration-boundary.draft.json");
+      const lockBefore = await fs.readFile(lockPath, "utf8");
+      const draftBefore = await fs.readFile(draftPath, "utf8");
+
+      await expect(boundaryReviewCommandInternal([
+        "--project-root", root,
+        "--access",
+      ], async () => inspection, session)).resolves.toBe(0);
+
+      expect(JSON.parse(await fs.readFile(guided.config_path, "utf8"))).toMatchObject({
+        model_output: { authority_metadata: "exact" },
+      });
+      expect(await fs.readFile(lockPath, "utf8")).toBe(lockBefore);
+      expect(await fs.readFile(draftPath, "utf8")).toBe(draftBefore);
+      await expect(fs.access(path.join(root, ".synapsor/exploration-boundaries.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+      expect(confirmations).toEqual([]);
+      expect(displayedModes).toEqual(["semantic", "exact"]);
+      expect(notices[1]).toMatchObject({
+        tone: "warning",
+        title: "Model responses now include Exact diagnostic metadata.",
+        footer: expect.stringContaining("reviewed data authority is unchanged"),
+      });
+      expect(output).toContain("Access editor closed");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("sets one cohort threshold across the boundary, activates it, and keeps access open", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-cohort-all-"));
     const inspection = boundaryInspection();
@@ -5485,6 +5562,7 @@ describe("boundary operator-plane CLI", () => {
           "mcp", "serve",
           "--authoring",
           "--project-root", root,
+          "--config", guided.config_path,
         ],
       });
       expect(clientConfig.agent_instructions).toMatchObject({

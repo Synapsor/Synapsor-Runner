@@ -32,6 +32,7 @@ import type {
   AskToolGateway,
 } from "./model-ask.js";
 import { AskError } from "./model-ask.js";
+import { readModelAuthorityMetadataMode } from "./model-output-config.js";
 
 type ConnectedMcpSurface = {
   kind: "runtime" | "authoring";
@@ -127,10 +128,15 @@ export async function createWorkbenchAskMcpGateway(input: {
             }
             const views = askToolResultViews(result, localPresentation);
             const value = views.local;
-            const providerProjection = surface.projectResultForModel?.(name, args, value)
-              ?? (views.withheld
-                ? { value: views.provider, withheld: true }
-                : undefined);
+            const providerProjection = views.withheld || views.operator_metadata_withheld
+              ? {
+                value: views.provider,
+                withheld: views.withheld,
+                ...(views.operator_metadata_withheld
+                  ? { operator_metadata_withheld: true }
+                  : {}),
+              }
+              : surface.projectResultForModel?.(name, args, value);
             const errorCode = typeof value.error_code === "string"
               ? value.error_code
               : result.isError === true
@@ -266,15 +272,18 @@ async function connectRuntimeSurface(input: {
 }
 
 async function connectAuthoringSurface(input: {
+  configPath: string;
   projectRoot: string;
   env: NodeJS.ProcessEnv;
 }): Promise<ConnectedMcpSurface | undefined> {
   let runtime: ScopedExploreBoundarySetRuntime | undefined;
   try {
+    const modelAuthorityMetadata = await readModelAuthorityMetadataMode(input.configPath);
     runtime = await createScopedExploreBoundarySetRuntime({
       projectRoot: input.projectRoot,
       transport: "loopback_workbench",
       env: input.env,
+      modelAuthorityMetadata,
     });
     const localPresentation = new TrustedLocalToolPresentationChannel();
     const server = createScopedExploreMcpServer(runtime, { localPresentation });
@@ -457,6 +466,7 @@ export function askToolResultViews(
   local: Record<string, unknown>;
   provider: Record<string, unknown>;
   withheld: boolean;
+  operator_metadata_withheld: boolean;
 } {
   const metadata = isRecord(result._meta) ? result._meta : {};
   const provider = modelFacingToolResult(result);
@@ -465,6 +475,8 @@ export function askToolResultViews(
     provider,
     withheld: localPresentation?.model_withheld_values
       ?? metadata["synapsor.model_withheld_values"] === true,
+    operator_metadata_withheld: localPresentation?.operator_metadata_withheld
+      ?? metadata["synapsor.operator_metadata_withheld"] === true,
   };
 }
 

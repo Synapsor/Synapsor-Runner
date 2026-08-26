@@ -62,7 +62,58 @@ for the Synapsor Cloud CLI.
 
 No package is published by this unreleased change.
 
-## 1.7.13 (unreleased)
+## 1.7.14 (unreleased)
+
+### Explore Plan Playground
+
+- Adds the CLI-first `explore playground`, `explore describe`, `explore
+  validate`, and `explore run` workflow for inspecting, compiling, and replaying
+  one fixed `app.explore_data` JSON plan without a model. It accepts a raw plan
+  or the exact `{plan, boundary?}` MCP envelope, never SQL or caller-supplied
+  tenant/principal scope.
+- Local validate-only repeats catalog, role, generation-lock, trusted-scope,
+  reviewed-authority, complexity, relative-window, and SQL compilation checks.
+  It executes no source data query, consumes no Explore budget, and writes no
+  evidence or query audit. Its SQL preview contains placeholders and parameter
+  types, never values.
+- Local run uses the normal Explore execution path with drift checks, scope,
+  suppression, response bounds, rolling budgets, evidence, and query audit.
+  `explore workbench` opens its preview code editor directly, with highlighted
+  JSON, line numbers, format controls, and placeholder-only SQL from the same
+  shared validator and runner.
+- Production HTTP replay reads a short-lived token only from an environment
+  variable and calls the existing `app.explore_data` tool through authenticated
+  Streamable HTTP. Verified JWT claims remain the only tenant/principal source;
+  no third MCP tool or remote dry-run surface was added.
+
+### Semantic Model Output By Default
+
+- Model-visible MCP output now defaults to semantic authority metadata. Exact
+  Runner digests, fingerprints, hashes, and query-audit hashes remain available
+  to operators and internal checks but are omitted from tool results, tool
+  discovery metadata, and model-readable resources.
+- Reviewed identifiers, labels, operations, outcomes, privacy decisions,
+  released data, and opaque evidence-resource handles remain available. Source
+  data is opaque to this policy, so business columns or values that resemble a
+  hash are not altered.
+- Use `synapsor-runner config model-output --authority-metadata exact` for a
+  diagnostic or digest-pinning client, and switch back with `semantic`. The
+  setting changes presentation only: no review or activation is required, and
+  evidence/query-audit records keep their exact metadata in either mode.
+- The same preference is visible as `O Model output [SEMANTIC|EXACT]` in
+  `/access` and as **Model response details** in Workbench. Local Ask and
+  Workbench Ask pick up the change before their next question; restart other
+  long-lived MCP servers.
+- Pressing `O` keeps its confirmation inside the current access-editor screen;
+  other review prompts use a clean terminal screen instead of exposing prior
+  shell output. Both TUI and Workbench show the active mode in brackets with a
+  short operator-facing explanation.
+
+Package versions: `@synapsor/runner@1.7.14` and
+`synapsor-runner@1.7.14`. Spec and DSL remain `1.10.0` because this release
+reuses the existing public Explore plan grammar.
+
+## 1.7.13 (published 2026-08-24)
 
 ### Safe Errors On Every MCP Path
 

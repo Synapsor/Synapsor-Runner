@@ -46,6 +46,7 @@ import { cloud, runnerCommand } from "./cloud-commands.js";
 import { configCommand, inspect } from "./config-inspect.js";
 import { contractCommand, dslCommand, effectCommand, policyCommand, reportCommand } from "./contract-commands.js";
 import { doctor } from "./first-run-doctor.js";
+import { exploreCommand } from "./explore-playground.js";
 import { boundaryCommand, onboard, start } from "./guided-start.js";
 import { runLanguageServer } from "./language-server.js";
 import { activation, activity, events, evidence, lifecycle, metrics, proposals, queryAudit, receipts, replay, storeCommand } from "./ledger-commands.js";
@@ -203,6 +204,7 @@ const projectAwareCommands = new Set([
   "doctor",
   "events",
   "evidence",
+  "explore",
   "handler",
   "mcp",
   "metrics",
@@ -292,6 +294,7 @@ export async function main(
   if (command === "handler") return handler(rest);
   if (command === "onboard") return onboard(rest);
   if (command === "try") return tryCommand(rest);
+  if (command === "explore") return exploreCommand(rest);
   if (command === "demo") return demo(rest);
   if (command === "recipes") return recipes(rest);
   if (command === "benchmark") return benchmark(rest);

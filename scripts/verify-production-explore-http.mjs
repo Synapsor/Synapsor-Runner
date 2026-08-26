@@ -24,6 +24,7 @@ import {
 } from "../apps/runner/dist/mcp-runtime.js";
 import { derivedScopeIndexDoctorChecks } from "../apps/runner/dist/derived-scope-index-doctor.js";
 import { createScopedExploreRuntime } from "../apps/runner/dist/scoped-explore.js";
+import { connectRemotePlayground } from "../apps/runner/dist/explore-playground.js";
 import {
   WorkbenchAskSession,
   askToolSurfaceDigest,
@@ -2165,6 +2166,32 @@ async function main() {
       order_by: { kind: "measure", index: 0, direction: "desc" },
       top_n: 10,
     };
+    const playgroundTokenEnv = "SYNAPSOR_PLAYGROUND_HTTP_TEST_TOKEN";
+    env[playgroundTokenEnv] = await token(privateKey, {
+      tenant: "acme",
+      principal: "plan-playground-postgres",
+    });
+    const playground = await connectRemotePlayground({
+      url: server.url,
+      tokenEnv: playgroundTokenEnv,
+      env,
+    });
+    try {
+      assert(playground.validate === undefined,
+        "Production HTTP playground added a third validate tool to the fixed MCP surface.");
+      const playgroundCatalog = await playground.describe({ resource: "public.churn_events" });
+      const playgroundResult = await playground.run({ plan });
+      assert(playgroundCatalog.ok === true
+        && playgroundResult.ok === true
+        && playgroundResult.source_database_changed === false,
+      "PostgreSQL production HTTP playground did not use the reviewed MCP path.", {
+        catalog: playgroundCatalog,
+        result: playgroundResult,
+      });
+    } finally {
+      await playground.close();
+      delete env[playgroundTokenEnv];
+    }
     const aliceToken = await token(privateKey, { tenant: "acme", principal: "pm-1" });
     const alice = clientFor(server.url, aliceToken, { tenant_id: "globex", principal: "pm-2" });
     clients.push(alice.client);

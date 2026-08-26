@@ -5,6 +5,10 @@ import {
   type ProposalRuntimeStore,
 } from "@synapsor-runner/proposal-store";
 import {
+  projectAuthorityMetadataForModel,
+  type ModelAuthorityMetadataMode,
+} from "@synapsor-runner/mcp-server";
+import {
   activatedExplorationBoundarySetDigest,
   loadActivatedExplorationBoundaries,
   type ActivatedExplorationBoundary,
@@ -20,6 +24,7 @@ import {
   type ResolveExploreTrustedScopeFn,
   type ScopedExploreExecutor,
   type ScopedExploreRuntime,
+  type ScopedExploreValidationResult,
   type ScopedExploreMode,
   type ScopedExploreTransport,
 } from "./scoped-explore.js";
@@ -43,8 +48,12 @@ export type ScopedExploreBoundarySetRuntime = {
   boundaries: ActivatedExplorationBoundary[];
   active_boundary_set_digest: `sha256:${string}`;
   session_fingerprint: `sha256:${string}`;
+  model_authority_metadata?: ModelAuthorityMetadataMode;
   trusted_scope?: ScopedExploreRuntime["trusted_scope"];
   describe(input?: BoundarySetDescribeInput): Promise<Record<string, unknown>>;
+  validate(plan: unknown, boundaryName?: string): Promise<ScopedExploreValidationResult & {
+    active_boundary_set_digest: `sha256:${string}`;
+  }>;
   explore(plan: unknown, boundaryName?: string): Promise<Record<string, unknown>>;
   projectResultForModel(input: {
     tool: string;
@@ -83,6 +92,7 @@ export async function createScopedExploreBoundarySetRuntime(input: {
   inspectDatabaseFn?: InspectDatabaseFn;
   resolveTrustedScopeFn?: ResolveExploreTrustedScopeFn;
   runtimeFactory?: typeof createScopedExploreRuntime;
+  modelAuthorityMetadata?: ModelAuthorityMetadataMode;
 }): Promise<ScopedExploreBoundarySetRuntime> {
   const projectRoot = path.resolve(input.projectRoot);
   const ownsStore = !input.store;
@@ -135,6 +145,7 @@ export async function createScopedExploreBoundarySetRuntime(input: {
       ...(input.clock ? { clock: input.clock } : {}),
       ...(input.inspectDatabaseFn ? { inspectDatabaseFn: input.inspectDatabaseFn } : {}),
       ...(input.resolveTrustedScopeFn ? { resolveTrustedScopeFn: input.resolveTrustedScopeFn } : {}),
+      modelAuthorityMetadata: input.modelAuthorityMetadata ?? "semantic",
     });
     children.set(boundary.pack.name, {
       digest: boundary.activation.digest,
@@ -161,6 +172,7 @@ export async function createScopedExploreBoundarySetRuntime(input: {
       return children.get(selected.pack.name)?.runtime.session_fingerprint
         ?? initialRuntime.session_fingerprint;
     },
+    model_authority_metadata: input.modelAuthorityMetadata ?? "semantic",
     get trusted_scope() {
       return children.get(selected.pack.name)?.runtime.trusted_scope
         ?? initialRuntime.trusted_scope;
@@ -224,6 +236,24 @@ export async function createScopedExploreBoundarySetRuntime(input: {
         source_database_changed: false,
       };
     },
+    validate: async (unknownPlan, boundaryName) => {
+      await refresh();
+      const resource = isRecord(unknownPlan) && typeof unknownPlan.resource === "string"
+        ? unknownPlan.resource
+        : undefined;
+      const target = route(boundaryName, resource);
+      const boundary = target.boundary;
+      const child = await childFor(boundary);
+      const canonicalPlan = target.resource && isRecord(unknownPlan)
+        ? { ...unknownPlan, resource: target.resource.id }
+        : unknownPlan;
+      const result = await child.validate(canonicalPlan);
+      return {
+        ...result,
+        boundary_name: boundary.pack.name,
+        active_boundary_set_digest: setDigest,
+      };
+    },
     explore: async (unknownPlan, boundaryName) => {
       await refresh();
       const resource = isRecord(unknownPlan) && typeof unknownPlan.resource === "string"
@@ -260,10 +290,16 @@ export async function createScopedExploreBoundarySetRuntime(input: {
           || Object.hasOwn(value, "operator_time_windows");
         delete value.operator_budget;
         delete value.operator_time_windows;
-        return {
+        const authority = projectAuthorityMetadataForModel(
           value,
+          input.modelAuthorityMetadata ?? "semantic",
+        );
+        return {
+          value: authority.value,
           withheld: false,
-          ...(operatorMetadataWithheld ? { operator_metadata_withheld: true } : {}),
+          ...(operatorMetadataWithheld || authority.withheld
+            ? { operator_metadata_withheld: true }
+            : {}),
         };
       }
       const rawPlan = isRecord(args.plan) ? args.plan : undefined;
@@ -278,6 +314,7 @@ export async function createScopedExploreBoundarySetRuntime(input: {
         arguments: canonicalArguments,
         result,
         boundary,
+        authorityMetadata: input.modelAuthorityMetadata ?? "semantic",
       });
     },
     close: async () => {

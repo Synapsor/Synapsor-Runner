@@ -29,6 +29,10 @@ import {
   createScopedExploreRuntime,
   prepareScopedExplore,
 } from "../apps/runner/dist/scoped-explore.js";
+import {
+  runExplorePlaygroundRequest,
+  validateExplorePlaygroundRequest,
+} from "../apps/runner/dist/explore-playground-service.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const fixture = path.join(root, "examples/auto-boundary-churn");
@@ -237,6 +241,23 @@ async function main() {
       order_by: { kind: "measure", index: 0, direction: "desc" },
       top_n: 10,
     };
+    const playgroundValidation = await validateExplorePlaygroundRequest(exploreRuntime, {
+      plan: goldenPlan,
+    });
+    assert(playgroundValidation.ok === true
+      && playgroundValidation.validation.source_query_executed === false
+      && playgroundValidation.validation.explore_budget_consumed === false
+      && playgroundValidation.parameterized_sql.parameter_values_persisted === false
+      && !JSON.stringify(playgroundValidation.parameterized_sql).includes("acme"),
+    "Local PostgreSQL playground validation did not remain compile-only and value-free.", playgroundValidation);
+    const playgroundExplored = await runExplorePlaygroundRequest(exploreRuntime, {
+      plan: goldenPlan,
+    });
+    assert(playgroundExplored.ok === true
+      && playgroundExplored.source_database_changed === false
+      && Array.isArray(playgroundExplored.data)
+      && playgroundExplored.data.length === 2,
+    "Local PostgreSQL playground did not use the normal reviewed Explore path.", playgroundExplored);
     const called = await authoringClient.callTool({
       name: "app.explore_data",
       arguments: { plan: goldenPlan },

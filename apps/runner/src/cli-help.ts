@@ -24,6 +24,7 @@ Usage:
 
 Commands:
   try          Run an isolated proof, or ask/explore/call active project tools
+  explore      Validate or replay fixed JSON Explore plans without a model
   inspect      Inspect a Postgres/MySQL schema
   start        Interactive guided first run, or no-arg legacy worker polling
   action       Review Safe Actions and operate immutable proposals
@@ -68,6 +69,10 @@ Commands:
 Examples:
   ${cmd} try --prove --yes --no-open
   ${cmd} try ask --provider openai [--model <model>] [--verbose] [--session-token-budget 200000]
+  ${cmd} explore playground --project-root .
+  ${cmd} explore workbench --project-root .
+  ${cmd} explore validate --plan ./explore-plan.json --project-root .
+  ${cmd} explore run --plan ./explore-plan.json --project-root .
   ${cmd} start --from-env DATABASE_URL
   ${cmd} start --from-env DATABASE_URL --cli
   ${cmd} action review --project-root .
@@ -78,6 +83,7 @@ Examples:
   ${cmd} inspect --from-env DATABASE_URL
   ${cmd} init --wizard --from-env DATABASE_URL
   ${cmd} config validate --config ./synapsor.runner.json
+  ${cmd} config model-output --authority-metadata semantic --config ./synapsor.runner.json
   ${cmd} contract validate ./synapsor.contract.json
   ${cmd} contract normalize ./synapsor.contract.json --out ./synapsor.contract.normalized.json
   ${cmd} contract explain ./contract.synapsor.sql --format markdown
@@ -102,6 +108,41 @@ Examples:
 Global options:
   --secrets-provider aws-secretsmanager-cli --secret-map-env SYNAPSOR_SECRET_MAP
   --secrets-provider env-json --secret-map-env SYNAPSOR_SECRET_MAP --secret-values-env SYNAPSOR_SECRET_VALUES
+`,
+    explore: `Usage:
+  ${cmd} explore playground [--project-root .] [--boundary <name>]
+  ${cmd} explore workbench [--project-root .] [--no-open]
+  ${cmd} explore validate --plan <file|-> [--boundary <name>] [--json]
+  ${cmd} explore run --plan <file|-> [--boundary <name>] [--json] [--details]
+  ${cmd} explore describe [--resource <exact-id>] [--boundary <name>] [--json]
+  ${cmd} explore run --url https://runner.example/mcp --token-env SYNAPSOR_MCP_ACCESS_TOKEN --plan <file|->
+  ${cmd} explore run --config ./synapsor.runner.json --token-env SYNAPSOR_MCP_ACCESS_TOKEN --plan <file|->
+
+Explore Plan Playground accepts the same fixed JSON plan used by
+app.explore_data, either as a raw plan or the MCP envelope {"plan":{...},
+"boundary":"optional"}. It never accepts SQL, tenant values, principal values,
+database URLs, or bearer-token values in the plan or command line.
+
+Local validate-only repeats live catalog drift, database-role posture,
+generation-lock, trusted-scope, reviewed field/relationship, complexity, and
+read-only compilation checks. It executes no source data query, consumes no
+Explore budget, and writes no query evidence. Its parameterized SQL preview
+contains placeholders and parameter types only, never parameter values.
+
+Run uses the normal Scoped Explore execution path, including suppression,
+response bounds, rolling query/extraction/differencing budgets, evidence, and
+query audit. Remote HTTP run is a standard app.explore_data MCP call. The server
+derives tenant and principal only from its verified JWT session; the CLI reads
+the short-lived bearer token from --token-env (default
+SYNAPSOR_MCP_ACCESS_TOKEN) and never prints it. Remote validate-only is not a
+third MCP tool and is therefore intentionally unavailable.
+
+--plan accepts a path or - for stdin. --plan-json is available for short local
+experiments, but files/stdin avoid shell quoting. --input is a compatibility
+alias for --plan. The interactive terminal accepts formatted multiline JSON.
+Explore workbench opens its authenticated localhost preview directly at a
+syntax-highlighted JSON editor and placeholder-only SQL preview; CLI remains
+the primary interface.
 `,
     try: `Usage:
   ${cmd} try
@@ -189,6 +230,7 @@ activates the result.
   ${cmd} config init --production-explore --engine postgres|mysql --tenant-claim tenant_id --principal-claim sub [--tenant-binding tenant_id] [--principal-binding rep] [--verify-bindings] --issuer https://identity.example --audience https://runner.example/mcp --accounting-namespace acme.analytics.production [--project-root .] [--force]
   ${cmd} config init --production-explore --engine postgres|mysql --single-tenant-organization-id internal-finance --principal-claim sub --issuer https://identity.example --audience https://runner.example/mcp --accounting-namespace internal.finance.production [--force]
   ${cmd} config validate --config ./synapsor.runner.json
+  ${cmd} config model-output [--authority-metadata semantic|exact] [--config ./synapsor.runner.json]
   ${cmd} config migrate --config ./synapsor.runner.json --out ./synapsor.runner.migrated.json
 
 Initialize or validate local Runner wiring before tools preview, doctor, smoke,
@@ -196,6 +238,12 @@ or MCP serve. config init creates a valid read-only zero-authority shell using
 environment-variable references and refuses to overwrite an existing file by default.
 Pass --force only to intentionally replace that file; Runner first writes a
 timestamped .bak copy and reports its path.
+Model-facing authority metadata defaults to semantic: reviewed names, outcomes,
+privacy controls, data, and opaque evidence-resource handles remain available,
+while exact digests, fingerprints, and query-audit hashes stay in operator
+details and evidence. Use config model-output
+to inspect or switch to exact diagnostic output. Restart long-lived MCP servers
+after changing this presentation-only setting; no boundary review is required.
 With --production-explore it emits the complete zero-authority shared-Postgres,
 JWT/JWKS, secured HTTP, OAuth, budget, source-pool, and session-cap skeleton.
 It reuses source, claim, and reviewed column bindings from a production boundary

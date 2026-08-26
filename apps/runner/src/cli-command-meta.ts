@@ -39,6 +39,7 @@ export function isKnownTopLevelCommand(command: string): boolean {
     "handler",
     "onboard",
     "try",
+    "explore",
     "demo",
     "recipes",
     "benchmark",

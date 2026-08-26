@@ -6,9 +6,36 @@ import {
   createInPlaceTerminalRenderer,
   fitTerminalFrameToRows,
   withRawTerminalScreen,
+  withTerminalProgress,
 } from "./terminal-prompt.js";
 
 describe("in-place terminal rendering", () => {
+  it("animates long terminal work and always restores the cursor", async () => {
+    const output = new PassThrough() as WriteStream & PassThrough;
+    Object.assign(output, { isTTY: true });
+    const chunks: string[] = [];
+    output.on("data", (chunk) => chunks.push(String(chunk)));
+    let finish: (() => void) | undefined;
+    const operation = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+
+    const pending = withTerminalProgress(
+      output,
+      "Loading reviewed SQL",
+      () => operation,
+    );
+    await new Promise<void>((resolve) => setTimeout(resolve, 195));
+    finish?.();
+    await pending;
+
+    const rendered = chunks.join("");
+    expect(rendered).toContain("| Loading reviewed SQL");
+    expect(rendered).toContain("/ Loading reviewed SQL");
+    expect(rendered).toContain("- Loading reviewed SQL");
+    expect(rendered).toMatch(/\r\u001b\[2K\u001b\[\?25h$/u);
+  });
+
   it("does not append a scrolling newline after the final frame row", () => {
     const output = new PassThrough() as WriteStream & PassThrough;
     const chunks: string[] = [];

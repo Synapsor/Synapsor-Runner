@@ -1,4 +1,4 @@
-import { createMcpRuntime, describeIsolationAssurance, preflightGeneratedAuthority, serveStdio, startHttpMcpServer, startStreamableHttpMcpServer, toolNameExposures, type RuntimeCapabilityConfig, type RuntimeConfig, type SourceIsolationAssurance, type StreamableHttpSessionFactory, type StreamableHttpTlsOptions, type ToolNameStyle } from "@synapsor-runner/mcp-server";
+import { createMcpRuntime, describeIsolationAssurance, modelAuthorityMetadataMode, preflightGeneratedAuthority, serveStdio, startHttpMcpServer, startStreamableHttpMcpServer, toolNameExposures, type RuntimeCapabilityConfig, type RuntimeConfig, type SourceIsolationAssurance, type StreamableHttpSessionFactory, type StreamableHttpTlsOptions, type ToolNameStyle } from "@synapsor-runner/mcp-server";
 import {
   ProposalStore
 } from "@synapsor-runner/proposal-store";
@@ -26,6 +26,7 @@ import { assertKnownOptions, envValue, firstPositional, optionalArg } from "./cl
 import { confirmDangerousAction, defaultConfigPath, defaultStorePath, envWithDemoDefaults, optionalResolvedLocalStorePath, readRuntimeConfig, resolvedLocalStorePath, runnerConfigPath } from "./cli-project.js";
 import { LocalDoctorGovernance, trustedContextsForDoctor } from "./doctor-domain.js";
 import { formatSmokeCallResult, resultFormatOption } from "./mcp-shared.js";
+import { readModelAuthorityMetadataMode } from "./model-output-config.js";
 import { writeStoreLease } from "./store-lease.js";
 import { sharedPostgresLedgerMirrorRequested, withoutSharedPostgresLedgerMirror, withSharedPostgresLedgerMirror } from "./store-shared.js";
 import { capabilityOperation, formatSourceReceiptMode, sourceNeedsSqlWriteback } from "./writeback-domain.js";
@@ -116,9 +117,16 @@ export async function mcpServe(args: string[]): Promise<number> {
     if (transport !== "stdio") {
       throw new Error("Scoped Explore is authoring-only and may be served only over local stdio.");
     }
-    assertKnownOptions(args, new Set(["--authoring", "--project-root", "--transport"]), "mcp serve --authoring");
+    assertKnownOptions(args, new Set(["--authoring", "--project-root", "--transport", "--config"]), "mcp serve --authoring");
+    const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
+    const explicitConfigPath = optionalArg(args, "--config");
+    const configPath = path.resolve(explicitConfigPath ?? path.join(projectRoot, "synapsor.runner.json"));
+    const modelAuthorityMetadata = explicitConfigPath || await fileExists(configPath)
+      ? await readModelAuthorityMetadataMode(configPath)
+      : "semantic";
     await serveScopedExploreStdio({
-      projectRoot: path.resolve(optionalArg(args, "--project-root") ?? process.cwd()),
+      projectRoot,
+      modelAuthorityMetadata,
     });
     return 0;
   }
@@ -147,7 +155,10 @@ export async function mcpServe(args: string[]): Promise<number> {
     process.stderr.write(
       `Active local Explore authority selected from ${configPath}; exposing exactly ${EXPLORE_TOOL_NAMES.join(" and ")}.\n`,
     );
-    await serveScopedExploreStdio({ projectRoot: localExploreProjectRoot });
+    await serveScopedExploreStdio({
+      projectRoot: localExploreProjectRoot,
+      modelAuthorityMetadata: modelAuthorityMetadataMode(config),
+    });
     return 0;
   }
   if (isLocalExploreOnlyConfig(config)) {
@@ -555,6 +566,14 @@ export async function inspectProductionExploreStartup(
     true,
     "The model receives only app.describe_data and app.explore_data; activation, approval, apply, Protect, configuration, credentials, and SQL remain unavailable.",
   );
+  const authorityMetadata = modelAuthorityMetadataMode(config);
+  add(
+    "model-authority-metadata",
+    true,
+    authorityMetadata === "semantic"
+      ? "Model responses use semantic authority metadata; exact digests, fingerprints, and query-audit hashes remain available to operators and in evidence."
+      : "Model responses include exact authority digests, fingerprints, and query-audit hashes for diagnostics. Operator evidence remains unchanged.",
+  );
   return {
     ok: checks.every((check) => check.ok),
     checks,
@@ -819,6 +838,7 @@ export function productionExploreSessionFactory(
       productionAccountingNamespace: production.accounting_namespace,
       productionTenantLimits: tenantLimits,
       executor,
+      modelAuthorityMetadata: modelAuthorityMetadataMode(config),
       ...(executor.inspectDatabase ? { inspectDatabaseFn: executor.inspectDatabase } : {}),
     });
     const server = (dependencies.createMcpServer ?? createScopedExploreMcpServer)(runtime, { mode: "production_http" });
@@ -1319,6 +1339,8 @@ function serveArgsForClient(configPath: string, storePath: string, options: McpC
       "--authoring",
       "--project-root",
       options.localExploreProjectRoot ?? ".",
+      "--config",
+      configPath,
     ];
   }
   const args = options.transport === "streamable-http"
