@@ -9,6 +9,9 @@
   commands. Inputs are either one raw Explore plan or the exact MCP
   `{ "plan": {...}, "boundary": "optional" }` envelope. Expanded envelopes,
   SQL, credentials, database URLs, and model-selected trusted scope are refused.
+  Formatted paste and the following menu shortcut share a lossless terminal
+  handoff, so the first action runs immediately instead of waiting for another
+  keypress.
 - Adds a shared playground service over `ScopedExploreRuntime` and the active
   boundary-set router. The run path delegates to the existing `explore()`
   implementation instead of introducing another validator, compiler, or

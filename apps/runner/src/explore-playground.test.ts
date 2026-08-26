@@ -237,9 +237,8 @@ describe("Explore Plan Playground CLI", () => {
     });
 
     await waitForTerminalText(terminal, "Paste one formatted plan or MCP envelope");
-    terminal.input.write(`${JSON.stringify(plan, null, 2)}\n`);
+    terminal.input.write(`\u001b[200~${JSON.stringify(plan, null, 2)}\n\u001b[201~r`);
     await waitForTerminalText(terminal, "Run reviewed plan");
-    await emitTerminalKey(terminal, { name: "r", sequence: "r" });
     await waitForTerminalText(terminal, "RUN RESULT");
     expect(terminal.text()).toContain("| Validating and running through the reviewed Explore boundary");
     expect(terminal.text()).toContain("\r\u001b[2K\u001b[?25h");
@@ -262,6 +261,39 @@ describe("Explore Plan Playground CLI", () => {
     expect(close).toHaveBeenCalledOnce();
     expect(terminal.input.isRaw).toBe(false);
     expect(terminal.text()).toContain("\u001b[?25h");
+  });
+
+  it("dispatches post-paste shortcuts immediately instead of replaying them on the next key", async () => {
+    const terminal = testTerminal();
+    const plan = aggregatePlan();
+    const validate = vi.fn(async () => validationResult(plan));
+    const explore = vi.fn();
+    const close = vi.fn(async () => undefined);
+    const interaction = exploreCommand(["playground", "--no-color"], {
+      createRuntime: (async () => localRuntime({ validate, explore, close })) as never,
+      stdin: terminal.input as unknown as NodeJS.ReadStream,
+      stdout: terminal.output as unknown as NodeJS.WriteStream,
+      stderr: terminal.output as unknown as NodeJS.WriteStream,
+      env: {},
+    });
+
+    await waitForTerminalText(terminal, "Paste one formatted plan or MCP envelope");
+    terminal.input.write(`\u001b[200~${JSON.stringify(plan, null, 2)}\ntrailing copied text with r\u001b[201~j`);
+    await waitForTerminalText(terminal, "LOADED JSON PLAN");
+    expect(validate).not.toHaveBeenCalled();
+    expect(explore).not.toHaveBeenCalled();
+
+    await emitTerminalKey(terminal, { name: "escape", sequence: "\u001b" });
+    terminal.input.write("v");
+    await waitForTerminalText(terminal, "PARAMETERIZED SQL PREVIEW");
+    expect(validate).toHaveBeenCalledOnce();
+    expect(explore).not.toHaveBeenCalled();
+
+    await emitTerminalKey(terminal, { name: "escape", sequence: "\u001b" });
+    await emitTerminalKey(terminal, { name: "escape", sequence: "\u001b" });
+    await expect(interaction).resolves.toBe(0);
+    expect(close).toHaveBeenCalledOnce();
+    expect(terminal.input.isRaw).toBe(false);
   });
 
   it("lets Escape cancel the initial JSON paste and exit without changing authority or querying data", async () => {

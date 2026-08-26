@@ -493,6 +493,7 @@ async function runInteractivePlayground(input: {
   const state: InteractivePlaygroundState = {
     document: input.initialDocument,
     boundary: input.initialBoundary,
+    pendingKeys: [],
     selectedAction: input.initialDocument === undefined
       ? "paste"
       : input.gateway.validate ? "validate" : "run",
@@ -700,6 +701,7 @@ type PlaygroundAction =
 type InteractivePlaygroundState = {
   document?: unknown;
   boundary?: string;
+  pendingKeys: TerminalKeypress[];
   selectedAction: PlaygroundAction;
   message: string;
   lastSql?: Record<string, unknown>;
@@ -761,7 +763,7 @@ async function choosePlaygroundAction(input: {
         "",
         "Up/Down Move   Enter Open   Letter shortcuts   Esc/Q Exit",
       ]);
-      const key = await nextKey();
+      const key = input.state.pendingKeys.shift() ?? await nextKey();
       if (isTerminalExitKey(key)) return "quit";
       if (key.name === "up") {
         selected = (selected - 1 + actions.length) % actions.length;
@@ -786,7 +788,7 @@ async function pasteInteractivePlan(
   color: boolean,
 ): Promise<void> {
   try {
-    const document = await readMultilinePlaygroundJson(input, output);
+    const document = await readMultilinePlaygroundJson(input, output, state.pendingKeys);
     if (document === undefined) {
       state.message = state.document === undefined
         ? "Paste cancelled. No plan is loaded."
@@ -816,6 +818,7 @@ async function pasteInteractivePlan(
 async function readMultilinePlaygroundJson(
   input: ReadStream,
   output: WriteStream,
+  pendingKeys: TerminalKeypress[],
 ): Promise<unknown | undefined> {
   if (!input.isTTY || !output.isTTY || typeof input.setRawMode !== "function") {
     throw new Error("Interactive JSON paste requires a real terminal.");
@@ -831,6 +834,21 @@ async function readMultilinePlaygroundJson(
   return new Promise<unknown | undefined>((resolve, reject) => {
     const lines: string[] = [];
     let settled = false;
+    let bracketedPasteActive = false;
+    let handoffKeyHandled = false;
+    const captureTrailingKeypress = (_text: string, key: TerminalKeypress) => {
+      if (isBracketedPasteStartKey(key)) {
+        bracketedPasteActive = true;
+        return;
+      }
+      if (isBracketedPasteEndKey(key)) {
+        bracketedPasteActive = false;
+        return;
+      }
+      if (bracketedPasteActive || handoffKeyHandled) return;
+      handoffKeyHandled = true;
+      if (isPlaygroundHandoffKey(key)) pendingKeys.push(key);
+    };
     const finish = (value: unknown | undefined, error?: Error) => {
       if (settled) return;
       settled = true;
@@ -838,8 +856,22 @@ async function readMultilinePlaygroundJson(
       rl.off("line", onLine);
       rl.off("close", onClose);
       rl.close();
-      if (error) reject(error);
-      else resolve(value);
+      const settle = () => {
+        if (error) reject(error);
+        else resolve(value);
+      };
+      if (value === undefined || error) {
+        settle();
+        return;
+      }
+      // A terminal can deliver the final JSON newline and the first menu key
+      // in one input burst. Keep that key while readline releases stdin so the
+      // raw menu receives it instead of requiring a second keypress.
+      input.on("keypress", captureTrailingKeypress);
+      setImmediate(() => {
+        input.off("keypress", captureTrailingKeypress);
+        settle();
+      });
     };
     const parse = () => {
       const serialized = lines.join("\n").trim();
@@ -868,6 +900,14 @@ async function readMultilinePlaygroundJson(
       else finish(undefined);
     };
     const onKeypress = (_text: string, key: TerminalKeypress) => {
+      if (isBracketedPasteStartKey(key)) {
+        bracketedPasteActive = true;
+        return;
+      }
+      if (isBracketedPasteEndKey(key)) {
+        bracketedPasteActive = false;
+        return;
+      }
       if (key.name !== "escape" && key.sequence !== "\u001b") return;
       output.write("\n");
       finish(undefined);
@@ -877,6 +917,22 @@ async function readMultilinePlaygroundJson(
     rl.on("close", onClose);
     rl.prompt();
   });
+}
+
+function isBracketedPasteStartKey(key: TerminalKeypress): boolean {
+  return key.sequence === "\u001b[200~" || key.name === "paste-start";
+}
+
+function isBracketedPasteEndKey(key: TerminalKeypress): boolean {
+  return key.sequence === "\u001b[201~" || key.name === "paste-end";
+}
+
+function isPlaygroundHandoffKey(key: TerminalKeypress): boolean {
+  return isTerminalExitKey(key)
+    || isTerminalEnterKey(key)
+    || key.name === "up"
+    || key.name === "down"
+    || ["p", "f", "c", "b", "v", "r", "s", "j", "?"].includes(terminalShortcut(key));
 }
 
 function jsonDocumentComplete(value: string): boolean {

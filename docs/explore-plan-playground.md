@@ -168,6 +168,8 @@ to the menu. `Esc` from the menu exits and restores the normal terminal cursor.
 Paste mode also retains a line containing only `.` as an optional manual finish.
 Interactive mode cannot use `--plan -`, because stdin must remain available for
 navigation. Use direct paste, `P`, a file, or noninteractive `validate`/`run`.
+The first menu shortcut is accepted immediately even when the terminal delivers
+it in the same input burst as the end of a formatted paste.
 
 After local validation, `S` shows the compiled value-free SQL preview. After a
 local run, `S` reads the exact parameterized SQL shape captured in that run's
