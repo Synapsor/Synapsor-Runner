@@ -525,10 +525,12 @@ function uniqueCandidates(selected: string | undefined, candidates: string[]): s
 function exactModelOutputConfirmationLines(theme: TerminalTheme): string[] {
   return [
     "",
-    theme.warning("MODEL OUTPUT [SEMANTIC] -> [EXACT]"),
-    "Exact mode sends Runner digests, fingerprints, and query-audit hashes to models.",
-    theme.dim("Operator evidence is already exact. Use this only for a diagnostic client."),
-    `${theme.key("Y")} Enable Exact   ${theme.key("N/Enter/Esc")} Keep Semantic`,
+    theme.bold(
+      "Show exact Runner digests, fingerprints, and query-audit hashes to model-facing " +
+      "MCP clients and local Ask? Operator evidence is already exact. Use this only for " +
+      "a diagnostic client.",
+    ),
+    `${theme.key("[y/N]")} ${theme.key("[Esc Back]")}:`,
   ];
 }
 

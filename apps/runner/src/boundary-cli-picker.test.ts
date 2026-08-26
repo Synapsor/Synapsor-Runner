@@ -803,11 +803,13 @@ describe("boundary review terminal picker", () => {
     output.read();
 
     await send(input, "o");
-    const confirmation = stripAnsi(output.read()?.toString() ?? "");
+    const confirmationOutput = output.read()?.toString() ?? "";
+    const confirmation = stripAnsi(confirmationOutput);
     expect(confirmation).toContain("YOUR DATA BOUNDARY");
-    expect(confirmation).toContain("MODEL OUTPUT [SEMANTIC] -> [EXACT]");
-    expect(confirmation).toContain("Y Enable Exact");
-    expect(confirmation).toContain("N/Enter/Esc Keep Semantic");
+    expect(confirmation).toContain("Show exact Runner digests, fingerprints, and query-audit hashes");
+    expect(confirmation).toContain("Operator evidence is already exact");
+    expect(confirmation).toContain("[y/N] [Esc Back]:");
+    expect(confirmationOutput).not.toContain("\u001b[?1049l");
 
     await send(input, "y");
     await expect(selected).resolves.toEqual({
