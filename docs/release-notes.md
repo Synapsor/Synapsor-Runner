@@ -29,6 +29,10 @@ for the Synapsor Cloud CLI.
   `explore workbench` opens its preview code editor directly, with highlighted
   JSON, line numbers, format controls, and placeholder-only SQL from the same
   shared validator and runner.
+- If the reviewed read-only database environment variable is missing,
+  Workbench now names it, explains that it must be set in the launching
+  terminal, preserves all project and source state, and provides an in-place
+  retry instead of a generic preflight failure.
 - Production HTTP replay reads a short-lived token only from an environment
   variable and calls the existing `app.explore_data` tool through authenticated
   Streamable HTTP. Verified JWT claims remain the only tenant/principal source;

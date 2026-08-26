@@ -2981,6 +2981,7 @@ async function handleRequest(input: {
       });
     } catch (error) {
       const remediation = scopedExploreRemediation(error);
+      const sourceRequirement = scopedExploreSourceRequirement(error);
       sendJson(response, 409, {
         ok: false,
         ready: false,
@@ -2989,6 +2990,7 @@ async function handleRequest(input: {
         ...(error instanceof ScopedExploreError && error.code === "EXPLORE_SCOPE_FORBIDDEN"
           ? { scope_requirements: error.details }
           : {}),
+        ...(sourceRequirement ? { source_requirement: sourceRequirement } : {}),
         remediation,
         source_database_changed: false,
       });
@@ -9026,6 +9028,15 @@ function scopedExploreRemediation(error: unknown): {
         };
       }
     case "EXPLORE_SOURCE_UNAVAILABLE":
+      {
+        const sourceRequirement = scopedExploreSourceRequirement(error);
+        if (sourceRequirement) {
+          return {
+            action: `Set ${sourceRequirement.environment} in the terminal that launched Workbench, then retry. Runner reads the value from the process environment and does not write it to project files.`,
+            preserved,
+          };
+        }
+      }
       return {
         action: "Restore the reviewed read-only database connection and retry. Runner will recheck role and schema posture.",
         preserved,
@@ -9056,6 +9067,23 @@ function scopedExploreRemediation(error: unknown): {
         preserved,
       };
   }
+}
+
+function scopedExploreSourceRequirement(error: unknown): {
+  environment: string;
+  configured: false;
+} | undefined {
+  if (!(error instanceof ScopedExploreError)
+    || error.code !== "EXPLORE_SOURCE_UNAVAILABLE"
+    || error.details?.reason !== "source_environment_missing"
+    || typeof error.details.source_env !== "string"
+    || !error.details.source_env) {
+    return undefined;
+  }
+  return {
+    environment: error.details.source_env,
+    configured: false,
+  };
 }
 
 function isRecord(value: unknown): value is JsonRecord {

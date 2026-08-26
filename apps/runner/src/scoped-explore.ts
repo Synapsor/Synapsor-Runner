@@ -394,6 +394,18 @@ export async function prepareScopedExplore(input: {
   if (lock.authority_dependencies) {
     assertAuthorityDependenciesShape(lock.authority_dependencies);
   }
+  const env = input.env ?? process.env;
+  const sourceEnvironmentValue = env[lock.source_env];
+  if (typeof sourceEnvironmentValue !== "string" || !sourceEnvironmentValue.trim()) {
+    throw new ScopedExploreError(
+      "EXPLORE_SOURCE_UNAVAILABLE",
+      `${lock.source_env} is not set.`,
+      {
+        reason: "source_environment_missing",
+        source_env: lock.source_env,
+      },
+    );
+  }
   const inspection = await (input.inspectDatabaseFn ?? inspectDatabase)({
     engine: lock.engine,
     databaseUrlEnv: lock.source_env,
@@ -410,7 +422,7 @@ export async function prepareScopedExplore(input: {
         ...(boundary.organization_scope ? { verifySingleOrganization: true } : {}),
       }
       : {}),
-    env: input.env ?? process.env,
+    env,
   });
   let serverCompatibility: ReturnType<typeof assertSupportedDatabaseServerVersion>;
   try {
