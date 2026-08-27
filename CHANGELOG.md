@@ -1,6 +1,45 @@
 # Changelog
 
-## 1.7.15 (unreleased)
+## 1.8.0 (unreleased)
+
+### Unified Read-to-Action Authoring
+
+- Adds `boundary assist`, `W Workloads` in the terminal boundary editor, and
+  the Workbench read-workload compiler. Representative reviewed Explore plans
+  are validated without source execution and minimized into a disabled
+  boundary candidate for explicit human review and activation.
+- Adds optional OpenAI, Anthropic, and OpenAI-compatible question-to-plan
+  mapping after explicit structural-metadata egress consent. Model output is
+  untrusted and cannot grant authority; rows, values, credentials, trusted
+  scope, kept-out fields, SQL, activation, and write authority are excluded.
+- Records immutable generation-bound workload analyses, validates forbidden
+  examples as real plans, and fails closed on contradictory or malformed
+  requirements. Saving re-inspects schema and role posture without consuming
+  Explore budget, mutating source data, or replacing active authority.
+- Connects read-boundary activation to the existing Safe Action control plane
+  in CLI and Workbench while preserving separate read, proposal, activation,
+  approval, and apply authority.
+
+### Safe Action Human Control Plane
+
+- Adds intent-first terminal and preview Workbench authoring for bounded
+  `INSERT`, `UPDATE`, and `DELETE` capabilities, with source-unchanged
+  rehearsal, immutable revisions, proposal review, receipts, replay, evidence,
+  deterministic approval policy, and exact-digest supervised execution.
+- Keeps managed actions proposal-only by default. Executable posture requires
+  separate reviewed authority, and noninteractive activation requires an exact
+  rehearsal plus verified operator identity, reason, expiry, and single-use
+  digest-bound nonce.
+- Keeps authoring, activation, approval, apply, policy, credentials, trusted
+  identity, and SQL outside the model-facing surface. Production Explore
+  remains the locked two-tool read surface.
+
+Prepared package versions: `@synapsor/runner@1.8.0` and
+`synapsor-runner@1.8.0`. Spec and DSL remain `@synapsor/spec@1.10.0` and
+`@synapsor/dsl@1.10.0`; this release adds authoring and control-plane workflows
+without changing the public Explore plan grammar.
+
+## 1.7.15 (published 2026-08-27)
 
 ### Actionable Database Role Safety
 
@@ -27,7 +66,7 @@
   Unknown table-scoped privileges remain fail-closed without being mislabeled
   as global authority.
 
-Prepared package versions: `@synapsor/runner@1.7.15` and
+Published package versions: `@synapsor/runner@1.7.15` and
 `synapsor-runner@1.7.15`. Spec and DSL remain `@synapsor/spec@1.10.0` and
 `@synapsor/dsl@1.10.0`; this release changes enforcement and diagnostics, not
 the public plan grammar.

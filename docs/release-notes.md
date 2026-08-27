@@ -10,7 +10,7 @@ npx -y @synapsor/runner demo --quick
 The OSS runner command is `synapsor-runner`. The `synapsor` command is reserved
 for the Synapsor Cloud CLI.
 
-## Unreleased
+## 1.8.0 (unreleased)
 
 ### Boundary Assist And Unified Read-to-Action Onboarding
 
@@ -87,9 +87,11 @@ for the Synapsor Cloud CLI.
   policy, credential, and SQL tools remain absent, and the locked production
   Explore two-tool surface is not widened.
 
-No package is published by this unreleased change.
+Prepared package versions: `@synapsor/runner@1.8.0` and
+`synapsor-runner@1.8.0`. Spec and DSL remain `1.10.0` because the public
+Explore plan grammar is unchanged.
 
-## 1.7.15 (unreleased)
+## 1.7.15 (published 2026-08-27)
 
 ### Actionable Database Role Safety
 
@@ -108,7 +110,7 @@ No package is published by this unreleased change.
 - MySQL global dynamic privileges are conservatively recognized as elevated
   even when a server version reports an unfamiliar privilege name.
 
-Package versions: `@synapsor/runner@1.7.15` and
+Published package versions: `@synapsor/runner@1.7.15` and
 `synapsor-runner@1.7.15`. Spec and DSL remain `1.10.0` because this release
 does not change the public Explore plan grammar.
 

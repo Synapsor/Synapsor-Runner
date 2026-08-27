@@ -2599,7 +2599,7 @@ export default defineCapability({
     const guided = await initializeGuidedProject({
       projectRoot: tempDir,
       build,
-      runnerVersion: "1.7.15",
+      runnerVersion: "1.8.0",
       instantOnboarding: true,
     });
     const modelCalls: Array<Record<string, unknown>> = [];
