@@ -83,6 +83,7 @@ export async function tryCommand(
   dependencies: {
     inspectDatabaseFn?: InspectDatabaseFn;
     createScopedExploreBoundarySetRuntimeFn?: typeof createScopedExploreBoundarySetRuntime;
+    env?: NodeJS.ProcessEnv;
   } = {},
 ): Promise<number> {
   const [subcommand, ...rest] = args;
@@ -425,7 +426,7 @@ function relativeComparisonArg(value: string): "preceding_period" | "same_period
 
 async function tryProtectLatest(
   args: string[],
-  dependencies: { inspectDatabaseFn?: InspectDatabaseFn },
+  dependencies: { inspectDatabaseFn?: InspectDatabaseFn; env?: NodeJS.ProcessEnv },
 ): Promise<number> {
   assertKnownOptions(
     args,
@@ -517,6 +518,7 @@ async function tryProtectLatest(
     ...(dependencies.inspectDatabaseFn
       ? { inspectDatabaseFn: dependencies.inspectDatabaseFn }
       : {}),
+    ...(dependencies.env ? { env: dependencies.env } : {}),
   });
   const payload = {
     ok: true,

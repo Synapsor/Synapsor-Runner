@@ -20,6 +20,11 @@ import { configMigrate, configShow, configValidate } from "./contract-commands.j
 import { inferPrimaryKeyCandidate } from "./onboarding.js";
 import { updateModelAuthorityMetadataMode } from "./model-output-config.js";
 import {
+  assessDatabaseRolePosture,
+  databaseRolePostureRemediation,
+} from "./database-role-posture.js";
+import { terminalTheme } from "./boundary-cli-picker.js";
+import {
   DEFAULT_GENERATED_DIR,
   type ExplorationBoundaryDraft,
   type GenerationLock,
@@ -49,14 +54,24 @@ export async function inspect(args: string[]): Promise<number> {
     if (databaseInput.inlineUrl) {
       process.stderr.write("Tip: prefer `--from-env DATABASE_URL` for reusable setup so connection strings do not land in shell history.\n");
     }
-    process.stdout.write(formatSchemaInspectionForCli(inspection, databaseInput.configDatabaseUrlEnv));
+    process.stdout.write(formatSchemaInspectionForCli(
+      inspection,
+      databaseInput.configDatabaseUrlEnv,
+      process.stdout.isTTY === true && !("NO_COLOR" in process.env),
+    ));
   }
   return 0;
 }
 
 
-function formatSchemaInspectionForCli(inspection: SchemaInspection, databaseUrlEnv: string): string {
+export function formatSchemaInspectionForCli(
+  inspection: SchemaInspection,
+  databaseUrlEnv: string,
+  color = false,
+): string {
   const serverCompatibility = databaseServerCompatibility(inspection);
+  const role = assessDatabaseRolePosture(inspection);
+  const theme = terminalTheme(color);
   const lines = [
     "Synapsor schema inspection",
     `Engine: ${inspection.engine}`,
@@ -65,6 +80,15 @@ function formatSchemaInspectionForCli(inspection: SchemaInspection, databaseUrlE
     `  ${databaseServerCompatibilityMessage(serverCompatibility)}`,
     `Current user: ${inspection.current_user}`,
     `Role posture fingerprint: ${rolePostureFingerprint(inspection)}`,
+    role.safe_for_model_reads
+      ? theme.success("Database role: SAFE FOR MODEL-FACING READS")
+      : theme.danger("Database role: UNSAFE FOR MODEL-FACING READS"),
+    ...(role.safe_for_model_reads
+      ? ["  Verified SELECT-only, non-owner, and without elevated privilege bypasses."]
+      : [
+          ...role.facts.map((fact) => `  - ${fact}`),
+          "  Elevated, owner, write-capable, or BYPASSRLS credentials can bypass independent database defenses.",
+        ]),
     `Schemas: ${inspection.schemas.join(", ") || "(none)"}`,
     "",
     `Found ${inspection.tables.length} tables/views:`,
@@ -85,8 +109,14 @@ function formatSchemaInspectionForCli(inspection: SchemaInspection, databaseUrlE
   }
   lines.push("");
   lines.push("Next:");
-  lines.push(`  ${cliCommandName()} onboard db --from-env ${databaseUrlEnv}`);
-  lines.push(`  ${cliCommandName()} tools preview --config ./synapsor.runner.json --store ./.synapsor/local.db`);
+  if (role.safe_for_model_reads) {
+    lines.push(`  ${cliCommandName()} onboard db --from-env ${databaseUrlEnv}`);
+    lines.push(`  ${cliCommandName()} tools preview --config ./synapsor.runner.json --store ./.synapsor/local.db`);
+  } else {
+    lines.push(`  ${databaseRolePostureRemediation(role)}`);
+    lines.push(`  Update ${databaseUrlEnv} without printing its value, then rerun ${cliCommandName()} inspect --from-env ${databaseUrlEnv}.`);
+    lines.push("  Runner will not create or serve model-facing database reads with this credential.");
+  }
   return `${lines.join("\n")}\n`;
 }
 

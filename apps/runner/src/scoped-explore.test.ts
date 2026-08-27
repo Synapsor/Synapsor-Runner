@@ -4845,6 +4845,8 @@ describe("Scoped Explore", () => {
 
     const changedRole = structuredClone(fixture.inspection);
     changedRole.role_posture!.read_only = false;
+    changedRole.role_posture!.superuser = true;
+    changedRole.role_posture!.bypass_rls = true;
     changedRole.role_posture!.writable_relations = ["public.subscriptions"];
     await expect(prepareScopedExplore({
       projectRoot: fixture.root,
@@ -4852,10 +4854,20 @@ describe("Scoped Explore", () => {
       env: fixture.env,
       inspectDatabaseFn: async () => changedRole,
     })).rejects.toMatchObject({
+      code: "EXPLORE_ROLE_UNSAFE",
+      message: expect.stringMatching(/PostgreSQL superuser[\s\S]*BYPASSRLS[\s\S]*query was refused before source execution/is),
+    });
+
+    const safeCatalogDrift = structuredClone(fixture.inspection);
+    safeCatalogDrift.current_user = "replacement_reader";
+    await expect(prepareScopedExplore({
+      projectRoot: fixture.root,
+      transport: "stdio",
+      env: fixture.env,
+      inspectDatabaseFn: async () => safeCatalogDrift,
+    })).rejects.toMatchObject({
       code: "EXPLORE_LOCK_STALE",
-      message: expect.stringContaining(
-        "synapsor-runner boundary rescan --from-env DATABASE_URL",
-      ),
+      message: expect.stringContaining("synapsor-runner boundary rescan --from-env DATABASE_URL"),
     });
 
     const overflowRuntime = await createScopedExploreRuntime({

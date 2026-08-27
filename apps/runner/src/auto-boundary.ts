@@ -34,6 +34,7 @@ import type {
 } from "./boundary-review-progress-types.js";
 import { formatDerivedScopePath } from "./derived-scope-display.js";
 import { exploreBoundaryVocabularyGaps } from "./explore-vocabulary.js";
+import { assertDatabaseRoleSafeForModelReads } from "./database-role-posture.js";
 
 export const AUTO_BOUNDARY_VERSION = "synapsor.auto-boundary.v1";
 export const GENERATION_LOCK_VERSION = "synapsor.generation-lock.v1";
@@ -4643,14 +4644,10 @@ export function reviewedRankedGroupLimit(budgets: ExplorationBudgets): number {
 }
 
 function assertExploreRolePosture(inspection: SchemaInspection, candidate: ExplorationBoundaryDraft): void {
-  const role = inspection.role_posture;
-  const enginePrivilegePostureSafe = inspection.engine === "mysql"
-    ? (role?.superuser === false || role?.superuser === "unsupported")
-      && (role?.bypass_rls === false || role?.bypass_rls === "unsupported")
-    : role?.superuser === false && role?.bypass_rls === false;
-  if (!role?.verified || !role.read_only || !enginePrivilegePostureSafe) {
-    throw new Error("Scoped Explore requires a verified non-superuser, non-BYPASSRLS, read-only database role.");
-  }
+  assertDatabaseRoleSafeForModelReads({
+    inspection,
+    statePreserved: "The reviewed boundary was not activated, existing active authority remains unchanged, and the source database was not changed.",
+  });
   const tables = new Map(inspection.tables.map((table) => [`${table.schema}.${table.name}`, table]));
   for (const resource of candidate.pack.resources) {
     const table = tables.get(resource.id);

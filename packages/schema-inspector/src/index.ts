@@ -2204,11 +2204,17 @@ export function mysqlGrantPosture(
     }
     const target = parseMysqlGrantTarget(match[2]!);
     const privileges = parseMysqlGrantPrivileges(match[1]!);
-    if (!target || !privileges.verified) {
+    if (!target) {
       verified = false;
       continue;
     }
-    elevated ||= privileges.elevated || /\bWITH\s+GRANT\s+OPTION\b/i.test(grant);
+    elevated ||= privileges.elevated
+      || /\bWITH\s+GRANT\s+OPTION\b/i.test(grant)
+      || (!privileges.verified && target.schema === "*" && target.table === "*");
+    if (!privileges.verified) {
+      verified = false;
+      continue;
+    }
     parsed.push({
       ...target,
       privileges: privileges.relation,

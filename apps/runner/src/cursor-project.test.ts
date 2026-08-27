@@ -127,6 +127,8 @@ describe("Cursor project MCP lifecycle", () => {
         "--authoring",
         "--project-root",
         ".",
+        "--config",
+        "./synapsor.runner.json",
       ],
     });
     await installCursorProject({ projectRoot: root, authoring: true });

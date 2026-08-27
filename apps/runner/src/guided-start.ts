@@ -92,6 +92,7 @@ import { startWorker } from "./runtime-commands.js";
 import { listProtectedPlans } from "./scoped-explore.js";
 import { ui } from "./ui-command.js";
 import { padTerminalBlock } from "./terminal-layout.js";
+import { assertDatabaseRoleSafeForModelReads } from "./database-role-posture.js";
 
 
 export type GuidedStartDependencies = {
@@ -533,6 +534,12 @@ async function startAutoBoundary(
       `Cause: ${cause}`,
     ].join("\n"));
   }
+  assertDatabaseRoleSafeForModelReads({
+    inspection,
+    sourceEnv,
+    nextAction: `Rerun ${cliCommandName()} start --from-env ${sourceEnv}.`,
+    statePreserved: "Existing project and review files were not replaced, no model-facing authority was created, and the source database was not changed.",
+  });
   const evidence = await loadStructuredProjectEvidence(project);
   const build = buildAutoBoundary({
     inspection,
@@ -988,6 +995,12 @@ export async function boundaryCommand(
       databaseUrlEnv: sourceEnv,
       schema: optionalArg(rest, "--schema"),
       env: process.env,
+    });
+    assertDatabaseRoleSafeForModelReads({
+      inspection,
+      sourceEnv,
+      nextAction: `Rerun ${cliCommandName()} boundary draft --from-env ${sourceEnv}.`,
+      statePreserved: "No boundary draft or active authority was changed, and the source database was not changed.",
     });
     const evidence = await loadStructuredProjectEvidence(project);
     const build = buildAutoBoundary({

@@ -1,6 +1,38 @@
 # Changelog
 
-## 1.7.14 (unreleased)
+## 1.7.15 (unreleased)
+
+### Actionable Database Role Safety
+
+- Makes database-role posture a first-class, fail-closed prerequisite for
+  model-facing reads. Boundary drafting, guided setup, rescan, activation,
+  local Explore, and production Explore refuse a writable, owner, elevated,
+  unverifiable, PostgreSQL superuser, or PostgreSQL `BYPASSRLS` credential
+  before creating or executing reviewed authority.
+- Keeps metadata-only `inspect` available for diagnosis. Human output now
+  labels the credential **SAFE** or **UNSAFE**, names the detected facts, and
+  tells the operator to replace only the named URL environment variable with
+  a dedicated SELECT-only, non-owner reader. It never prints the URL,
+  password, or other credential values.
+- Separates connectivity from authority in `doctor`: successful catalog access
+  is reported as metadata inspection, while role safety has its own pass/fail
+  result and remediation. A Docker root/admin credential can no longer produce
+  a misleading read-only success line.
+- Preserves existing drafts, active boundaries, approvals, and source data on
+  refusal. Headless activation rejects the unsafe role before consuming its
+  one-time confirmation, and rescan refuses before rewriting either draft or
+  active authority.
+- Tightens MySQL privilege inspection so unknown dynamic privileges granted at
+  global `*.*` scope remain unverifiable but are also recognized as elevated.
+  Unknown table-scoped privileges remain fail-closed without being mislabeled
+  as global authority.
+
+Prepared package versions: `@synapsor/runner@1.7.15` and
+`synapsor-runner@1.7.15`. Spec and DSL remain `@synapsor/spec@1.10.0` and
+`@synapsor/dsl@1.10.0`; this release changes enforcement and diagnostics, not
+the public plan grammar.
+
+## 1.7.14 (published 2026-08-26)
 
 ### CLI-First Explore Plan Playground
 

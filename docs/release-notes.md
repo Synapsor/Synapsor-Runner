@@ -62,7 +62,30 @@ for the Synapsor Cloud CLI.
 
 No package is published by this unreleased change.
 
-## 1.7.14 (unreleased)
+## 1.7.15 (unreleased)
+
+### Actionable Database Role Safety
+
+- Runner now refuses unsafe source credentials before boundary drafting,
+  guided setup, rescan, activation, local Explore, or production Explore can
+  create or execute model-facing read authority. Unsafe includes writable,
+  owner, elevated, unverifiable, PostgreSQL superuser, and PostgreSQL
+  `BYPASSRLS` posture.
+- `inspect` remains a metadata-only diagnostic and prominently reports
+  **SAFE** or **UNSAFE**, the detected facts, and one remediation using only
+  the configured URL environment-variable name. Database URLs, passwords, and
+  credential values stay hidden.
+- `doctor` now distinguishes successful metadata connectivity from a safe
+  read role. Drafts, active boundaries, approvals, and source data remain
+  unchanged when the role check refuses.
+- MySQL global dynamic privileges are conservatively recognized as elevated
+  even when a server version reports an unfamiliar privilege name.
+
+Package versions: `@synapsor/runner@1.7.15` and
+`synapsor-runner@1.7.15`. Spec and DSL remain `1.10.0` because this release
+does not change the public Explore plan grammar.
+
+## 1.7.14 (published 2026-08-26)
 
 ### Explore Plan Playground
 

@@ -209,7 +209,7 @@ secured runtime config from the boundary without secrets.
 
 ## Let Agents Propose Bounded Changes
 
-Open the write control plane from Ask:
+From Ask:
 
 ```text
 synapsor> /actions
@@ -222,8 +222,8 @@ synapsor-runner action review --project-root .
 ```
 
 Runner ranks schema-proven candidates. Humans review bounds, scope, approval,
-and execution. Proposal-only `WRITEBACK NONE` is the default; model suggestions
-grant nothing. The TUI handles rehearsal, activation, drafts, and the inbox.
+and execution. Proposal-only `WRITEBACK NONE` is the default; suggestions grant
+nothing. The TUI handles rehearsal, activation, and the inbox.
 
 Code-first remains:
 
@@ -234,8 +234,8 @@ synapsor-runner start \
   --based-on support.inspect_customer
 ```
 
-After a human reviews and activates that action, the agent can create an exact
-proposal, sometimes called a Data PR. It still cannot approve or apply it:
+After activation, the agent can create an exact proposal but cannot approve or
+apply it:
 
 ```text
 Proposal  support.propose_plan_credit on CUS-3001
