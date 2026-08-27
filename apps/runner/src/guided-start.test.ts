@@ -20,6 +20,38 @@ describe("guided start surfaces", () => {
     vi.restoreAllMocks();
   });
 
+  it("refuses an elevated source role before creating guided authority", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-start-role-unsafe-"));
+    const unsafe = inspection();
+    unsafe.current_user = "postgres";
+    unsafe.role_posture = {
+      verified: true,
+      superuser: true,
+      bypass_rls: true,
+      read_only: false,
+      writable_relations: ["public.service_visits"],
+      owned_relations: ["public.service_visits"],
+      reasons: [],
+    };
+    process.chdir(projectRoot);
+    try {
+      await expect(start(
+        ["--from-env", "DATABASE_URL", "--no-open"],
+        { interactive: false, schemaInspector: async () => unsafe },
+      )).rejects.toMatchObject({
+        code: "DATABASE_ROLE_UNSAFE",
+        message: expect.stringMatching(/PostgreSQL superuser[\s\S]*BYPASSRLS[\s\S]*State preserved/is),
+      });
+      await expect(fs.stat(path.join(projectRoot, "synapsor.runner.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+      await expect(fs.stat(path.join(projectRoot, "synapsor/generated/exploration-boundary.draft.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      process.chdir(suiteCwd);
+      await fs.rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
   it("runs fresh Auto Boundary onboarding continuously in the CLI register", async () => {
     const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-start-cli-"));
     const schemaInspector = vi.fn(async () => inspection());

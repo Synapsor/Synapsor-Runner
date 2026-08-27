@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   envPresenceCheck,
   formatLocalDoctorSetupReport,
+  inspectConfiguredSource,
   localDoctorSetupStatus,
   type LocalDoctorReport,
 } from "./doctor-domain.js";
@@ -81,5 +82,44 @@ describe("doctor setup status", () => {
     const output = formatLocalDoctorSetupReport(report);
     expect(output).toContain("x SYNAPSOR_TEST_REQUIRED_JWKS is required");
     expect(output).toContain("SYNAPSOR_TEST_PENDING_TENANT is not set yet.");
+  });
+
+  it("fails doctor on an elevated read credential and names a least-privilege recovery", async () => {
+    process.env.SYNAPSOR_TEST_REQUIRED_READ_URL = "postgresql://value-is-never-read";
+    const checks: LocalDoctorReport["checks"] = [];
+    await inspectConfiguredSource({
+      config: { capabilities: [] } as never,
+      sourceName: "analytics",
+      source: { engine: "postgres", read_url_env: "SYNAPSOR_TEST_REQUIRED_READ_URL" } as never,
+      checks,
+      inspectDatabaseFn: async () => ({
+        engine: "postgres",
+        server_version: "PostgreSQL 16.4",
+        current_user: "postgres",
+        role_posture: {
+          verified: true,
+          superuser: true,
+          bypass_rls: true,
+          read_only: false,
+          writable_relations: ["public.orders"],
+          owned_relations: ["public.orders"],
+          reasons: [],
+        },
+        inspected_at: "2026-08-26T00:00:00.000Z",
+        schemas: ["public"],
+        tables: [],
+        warnings: [],
+      }),
+    });
+
+    expect(checks).toContainEqual(expect.objectContaining({
+      name: "source:analytics:read-role-posture",
+      ok: false,
+      level: "fail",
+      message: expect.stringMatching(/postgres.*superuser[\s\S]*BYPASSRLS[\s\S]*Update SYNAPSOR_TEST_REQUIRED_READ_URL/is),
+    }));
+    expect(checks.find((check) => check.name === "source:analytics:read-connectivity")?.message)
+      .toContain("Metadata inspection succeeded");
+    expect(checks.map((check) => check.message).join("\n")).not.toContain("postgresql://value-is-never-read");
   });
 });

@@ -21,7 +21,7 @@ what state remains, and one next action. Do not delete the project or add
 | Failure | State preserved | One next action |
 | --- | --- | --- |
 | Database connection or metadata inspection failed | Existing project/review files and source rows | Fix the URL/network without printing the credential, then rerun `npx -y @synapsor/runner start`. |
-| Read role is writable, owner, superuser, `BYPASSRLS`, or unverifiable | Disabled metadata draft; no source-row Explore | Supply a verifiably SELECT-only non-owner staging role, then rerun the same `start` command. |
+| Read role is writable, owner, elevated, superuser, `BYPASSRLS`, or unverifiable | Existing config, draft, active authority, approvals, and source rows | Point the named source URL environment variable at a verifiably SELECT-only non-owner role, then rerun the same command. |
 | Schema or project choice is ambiguous | Existing files; no authority activation | Rerun with the exact reviewed schema, for example `npx -y @synapsor/runner start --schema public`. |
 | Tenant or principal scope is unresolved | Conservative blocked resource decisions | In CLI, select the table and choose its database-inspected Record ID and Tenant isolation values; in Workbench, open **Resolve blocked access**. No signed key is needed for this interactive disabled-draft decision. |
 | Sensitive field remains unresolved | Field stays kept out; active tools unchanged | Open Workbench **Exceptions** and record one reviewed field decision. |
@@ -95,9 +95,48 @@ must be current, and the inspected database role must still be SELECT-only,
 non-owner, non-superuser, and not `BYPASSRLS`. Runner also enforces a read-only
 transaction for every Explore call.
 
-A write-capable, owner, superuser, `BYPASSRLS`, or unverifiable credential may
-still inspect metadata with a warning. It cannot enable source-row Explore.
-Use a dedicated staging reader instead of weakening this check.
+A write-capable, owner, elevated, superuser, `BYPASSRLS`, or unverifiable
+credential may still run metadata-only `inspect` so the problem can be
+diagnosed. It cannot draft, rescan, activate, serve, or execute source-row
+Explore authority. `doctor` reports metadata connectivity and role safety as
+separate checks. Use a dedicated reader instead of weakening this check.
+
+To diagnose without exposing a credential value:
+
+```bash
+synapsor-runner inspect --from-env DATABASE_URL
+synapsor-runner doctor --config ./synapsor.runner.json --preflight
+```
+
+The unsafe-role message names the environment variable to replace and the
+facts Runner observed. It never prints the database URL or password. Create
+the reader with a database administrator outside Runner, then export only its
+URL in the launching shell.
+
+PostgreSQL example (replace identifiers and secrets before running it in an
+administrator session):
+
+```sql
+CREATE ROLE synapsor_reader LOGIN PASSWORD '<secret>';
+GRANT CONNECT ON DATABASE appdb TO synapsor_reader;
+GRANT USAGE ON SCHEMA public TO synapsor_reader;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO synapsor_reader;
+```
+
+The role must not own reviewed relations and must not have `SUPERUSER`,
+`BYPASSRLS`, or write grants. Add an operator-managed default-privileges rule
+if future tables should be readable.
+
+MySQL example:
+
+```sql
+CREATE USER 'synapsor_reader'@'%' IDENTIFIED BY '<secret>';
+GRANT SELECT ON appdb.* TO 'synapsor_reader'@'%';
+```
+
+Do not add `GRANT OPTION`, global `*.*` authority, DDL, or DML grants to the
+model-facing reader. A separate setup/admin credential may remain elevated;
+do not configure it as the source read URL.
 
 ## Workbench Ask Is Missing Or Refused
 

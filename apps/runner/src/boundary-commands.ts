@@ -35,6 +35,7 @@ import { fileExists, readJsonFileWithLocation } from "./cli-files.js";
 import { shellQuote } from "./cli-format.js";
 import { usage } from "./cli-help.js";
 import { redactCliErrorMessage } from "./cli-logging.js";
+import { assertDatabaseRoleSafeForModelReads } from "./database-role-posture.js";
 import { assertKnownOptions, envValue, listArg, optionalArg, positional, repeatedArgs } from "./cli-options.js";
 import { readRuntimeConfig } from "./cli-project.js";
 import {
@@ -5367,6 +5368,24 @@ export async function boundaryActivateCommand(
       "Open /access and save a reviewed setting for this boundary, or Rescan, then review and activate the resulting disabled revision.",
     ].join("\n"));
   }
+  const reviewAuthority = await resolveSavedBoundaryReviewAuthority({
+    projectRoot,
+    draft: context.draft,
+    candidate: context.candidate,
+    ...(context.progress ? { progress: context.progress } : {}),
+  });
+  const activationInspection = await schemaInspector({
+    engine: reviewAuthority.generationLock.engine,
+    databaseUrlEnv: reviewAuthority.generationLock.source_env,
+    schema: reviewAuthority.generationLock.inspected_schema,
+    env: process.env,
+  });
+  assertDatabaseRoleSafeForModelReads({
+    inspection: activationInspection,
+    sourceEnv: reviewAuthority.generationLock.source_env,
+    nextAction: `Rerun ${cliCommandName()} boundary activate after updating the credential.`,
+    statePreserved: "The reviewed boundary was not activated, existing active boundaries remain unchanged, and the source database was not changed.",
+  });
   const headless = args.includes("--headless");
   const expectedConfirmation = `ACTIVATE ${context.bundle.candidate_digest}`;
   let confirmation = optionalArg(args, "--confirm")?.trim();
@@ -5575,18 +5594,6 @@ export async function boundaryActivateCommand(
   let activatedBoundary: Awaited<ReturnType<typeof activateExplorationBoundary>> | undefined;
   let productionReadiness: ProductionActivationReadiness | undefined;
   try {
-    const reviewAuthority = await resolveSavedBoundaryReviewAuthority({
-      projectRoot,
-      draft: context.draft,
-      candidate: context.candidate,
-      ...(context.progress ? { progress: context.progress } : {}),
-    });
-    const inspection = await schemaInspector({
-      engine: reviewAuthority.generationLock.engine,
-      databaseUrlEnv: reviewAuthority.generationLock.source_env,
-      schema: reviewAuthority.generationLock.inspected_schema,
-      env: process.env,
-    });
     const active = await activateExplorationBoundary({
       projectRoot,
       candidate: context.candidate,
@@ -5596,7 +5603,7 @@ export async function boundaryActivateCommand(
       actor: actor!,
       confirmation: expectedConfirmation,
       confirmedDecisions: context.candidate.unresolved_decisions,
-      currentInspection: inspection,
+      currentInspection: activationInspection,
       activeSetMode: "add",
     });
     if (active.deployment_profile === "production") {

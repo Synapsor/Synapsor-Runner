@@ -38,6 +38,37 @@ import {
 import { compileExplorePlan, validateExplorePlan } from "./scoped-explore.js";
 
 describe("boundary rescan reconciliation", () => {
+  it("refuses an elevated role before changing saved review or active authority", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-rescan-role-unsafe-"));
+    try {
+      const setup = await writeReviewedDirectCommerceProject(root);
+      const draftPath = path.join(root, "synapsor/generated/exploration-boundary.draft.json");
+      const beforeDraft = await fs.readFile(draftPath, "utf8");
+      const unsafe = structuredClone(setup.inspection);
+      unsafe.current_user = "postgres";
+      unsafe.role_posture = {
+        verified: true,
+        superuser: true,
+        bypass_rls: true,
+        read_only: false,
+        writable_relations: ["public.orders"],
+        owned_relations: ["public.orders"],
+        reasons: [],
+      };
+
+      await expect(prepareBoundaryRescan({ projectRoot: root, inspection: unsafe }))
+        .rejects.toMatchObject({
+          code: "DATABASE_ROLE_UNSAFE",
+          message: expect.stringMatching(/PostgreSQL superuser[\s\S]*BYPASSRLS[\s\S]*existing draft/is),
+        });
+      expect(await fs.readFile(draftPath, "utf8")).toBe(beforeDraft);
+      expect((await loadActivatedExplorationBoundaries(root))[0]?.activation.digest)
+        .toBe(setup.activeDigest);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("repairs a stale policy-neutral authoring baseline without changing reviewed authority", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-baseline-repair-"));
     const inspection = normalizedCommerceInspection();

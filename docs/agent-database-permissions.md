@@ -17,6 +17,31 @@ The model can select only reviewed business inputs. Tenant IDs, principal IDs,
 database URLs, deployment profiles, approval identity, and authority digests
 are not MCP arguments.
 
+## The Model-Facing Reader Must Be Dedicated
+
+Runner verifies the effective source credential before it creates or executes
+model-facing read authority. A writable, owner, elevated, unverifiable,
+PostgreSQL superuser, or PostgreSQL `BYPASSRLS` role is refused. On MySQL,
+global authority, `GRANT OPTION`, ownership/write posture, or privilege
+evidence Runner cannot verify also fails closed.
+
+Metadata-only `inspect` remains available because it is the recovery tool:
+
+```bash
+synapsor-runner inspect --from-env DATABASE_URL
+```
+
+Human output shows **SAFE** or **UNSAFE**, the observed posture, and the
+environment-variable name to update. It does not print the URL or password.
+`doctor` separately reports metadata connectivity and read-role safety, so a
+successful catalog query is never described as proof of least privilege.
+
+Use a dedicated SELECT-only, non-owner credential for Runner reads. Keep
+schema migration, setup, and write credentials separate and outside the
+model-facing source URL. See [Troubleshooting First
+Run](troubleshooting-first-run.md#scoped-explore-is-not-advertised) for
+PostgreSQL and MySQL examples.
+
 ## Field And Relationship Permissions
 
 Fields can be model-visible, Runner-output-only, or kept out. Relationships
