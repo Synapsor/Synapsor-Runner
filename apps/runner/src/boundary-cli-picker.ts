@@ -119,7 +119,7 @@ export type BoundaryResourceSelection =
         | "relationships";
     }
   | {
-      action: "create" | "rename" | "confirm" | "limits" | "privacy_all";
+      action: "create" | "rename" | "confirm" | "limits" | "privacy_all" | "workloads" | "actions";
     }
   | {
       action: "model_output";
@@ -868,6 +868,8 @@ async function chooseResource(
               `${theme.key("A")} New boundary`,
               `${theme.key("P")} Privacy for all tables`,
               `${theme.key("L")} Limits`,
+              `${theme.key("W")} Workloads - compile representative reads`,
+              `${theme.key("Y")} Safe actions - proposal-only first [NEEDS ACTIVE READS]`,
               `${theme.key("T")} Ask plan check`,
               `${theme.key("O")} Model output [${modelOutputActionStatus}]`,
               `${theme.key("M")} Map`,
@@ -918,6 +920,11 @@ async function chooseResource(
           if (key.name === "a") return { action: "create" };
           if (key.name === "p") return { action: "privacy_all" };
           if (key.name === "l") return { action: "limits" };
+          if (key.name === "w") return { action: "workloads" };
+          if (key.name === "y") {
+            actionNotice = "Safe actions need an active reviewed read boundary. Press Enter/C to review and activate reads first.";
+            continue;
+          }
           if (key.name === "t") {
             return { action: "intent_check", boundary_name: candidateBoundaryName };
           }
@@ -1010,6 +1017,9 @@ async function chooseResource(
             `${theme.key("A")} New boundary`,
             `${theme.key("P")} Privacy for all tables`,
             `${theme.key("L")} Limits`,
+            `${theme.key("W")} Workloads - compile representative reads`,
+            `${theme.key("Y")} Safe actions - proposal-only first ` +
+              `[${highlightedBoundary.active ? "AVAILABLE" : "NEEDS ACTIVE READS"}]`,
             `${theme.key("T")} Ask plan check`,
             `${theme.key("O")} Model output [${modelOutputActionStatus}]`,
             `${theme.key("M")} Map`,
@@ -1062,6 +1072,12 @@ async function chooseResource(
         if (key.name === "a") return { action: "create" };
         if (key.name === "p") return { action: "privacy_all" };
         if (key.name === "l") return { action: "limits" };
+        if (key.name === "w") return { action: "workloads" };
+        if (key.name === "y") {
+          if (highlightedBoundary.active) return { action: "actions" };
+          actionNotice = "Safe actions need an active reviewed read boundary. Activate this boundary first.";
+          continue;
+        }
         if (key.name === "t") {
           return { action: "intent_check", boundary_name: highlightedBoundary.name };
         }
@@ -1221,6 +1237,9 @@ async function chooseResource(
         `${theme.key("M")} Map`,
         `${theme.key("N")} Rename`,
         `${theme.key("L")} Limits`,
+        `${theme.key("W")} Workloads - compile representative reads`,
+        `${theme.key("Y")} Safe actions - proposal-only first ` +
+          `[${selectedBoundaryEntry?.active ? "AVAILABLE" : "NEEDS ACTIVE READS"}]`,
         `${theme.key("T")} Ask plan check`,
         `${theme.key("O")} Model output [${modelOutputActionStatus}]`,
         `${theme.key("C")} ${focusedAccess ? "Review + activate" : "Complete review"}`,
@@ -1429,6 +1448,12 @@ async function chooseResource(
       }
       if (key.name === "n") return { action: "rename" };
       if (key.name === "l") return { action: "limits" };
+      if (key.name === "w") return { action: "workloads" };
+      if (key.name === "y") {
+        if (selectedBoundaryEntry?.active) return { action: "actions" };
+        actionNotice = "Safe actions need an active reviewed read boundary. Press C to activate reads first.";
+        continue;
+      }
       if (key.name === "t") {
         return { action: "intent_check", boundary_name: highlighted.candidate_boundary_name };
       }

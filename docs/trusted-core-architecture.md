@@ -161,6 +161,7 @@ to focused command owners:
 | Arguments, help, output, files, and redaction | `cli-options.ts`, `cli-help.ts`, `cli-format.ts`, `cli-files.ts`, `cli-logging.ts` |
 | Project, config, and local-store resolution | `cli-project.ts`, `config-domain.ts`, `config-inspect.ts` |
 | Onboarding, boundary review/activation, and Workbench | `guided-start.ts`, `onboarding.ts`, `boundary-commands.ts`, `ui-command.ts` |
+| Representative-read analysis and minimum boundary candidates | `read-workload-assist.ts`, `read-workloads.ts`, `read-workload-authoring.ts`, `read-workload-model.ts` |
 | Safe Action authority, design, suggestions, immutable revisions, and terminal control plane | `action-authority.ts`, `action-design.ts`, `action-suggestions.ts`, `guided-action.ts`, `action-tui.ts` |
 | Safe Action operator inbox and disposable rehearsal | `action-operator.ts`, `guided-action-runtime.ts` |
 | MCP serving, project installers, audit, and runtime | `mcp-runtime.ts`, `mcp-project.ts`, `mcp-audit.ts`, `runtime-commands.ts` |
@@ -190,6 +191,32 @@ and canonical Spec path into an immutable disabled revision. Rehearsal invokes
 the real semantic proposal path with a disposable ledger and must prove that
 the source stayed unchanged. Activation recomputes the exact digest and archives
 the revision before updating the separate action-runtime config.
+
+Boundary Assist follows the same adapter/domain split. Exact operator or Plan
+Playground workloads enter `read-workload-assist.ts` directly. The optional
+model adapter receives a redacted structural catalog and must call one bounded
+submission tool; its output then enters that same deterministic path. The
+trusted service validates each exact plan without source execution, extracts
+resource/return/filter/sort/group/measure/time/relationship authority atoms,
+unions and minimizes those atoms, recompiles every allowed plan, and proves
+every exact forbidden plan is denied. Immutable analyses record redacted plan
+shapes and disabled candidate provenance. Applying one analysis re-inspects the
+schema and role posture and uses the normal boundary-review mutation service;
+it does not activate authority or write source data.
+
+```text
+questions -- optional model --> exact plans
+exact plans ------------------> deterministic workload compiler
+                                -> immutable analysis
+                                -> disabled boundary revision
+                                -> separate human activation
+```
+
+`minimum` is always relative to the supplied workload. Scope, suppression,
+privacy budgets, role posture, generation locks, and hard ceilings are inherited
+and cannot be weakened by a workload or model response. Read-to-Action handoff
+only changes navigation: the separate Safe Action authority and activation
+state machine remains intact.
 
 Local Ask treats `/actions` as an operator-shell handoff, not a model tool. It
 closes the current read gateway, passes only the current provider/model and

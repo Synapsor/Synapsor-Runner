@@ -127,6 +127,25 @@ import { executeGuidedActionPreview as executeManagedGuidedActionPreview } from 
 import { withDisposableActionPreviewLedger } from "./action-preview-ledger.js";
 import { generateModelActionSuggestion } from "./action-suggestion-model.js";
 import {
+  analyzeReadWorkloadSet,
+  normalizeReadWorkloadSet,
+  type ReadWorkloadSet,
+} from "./read-workload-assist.js";
+import {
+  commitReadWorkloadCandidate,
+  prepareReadWorkloadCandidate,
+} from "./read-workload-authoring.js";
+import {
+  generateModelReadWorkload,
+  readWorkloadCatalog,
+} from "./read-workload-model.js";
+import {
+  listReadWorkloadAnalyses,
+  readReadWorkloadAnalysis,
+  storeReadWorkloadAnalysis,
+  type ReadWorkloadView,
+} from "./read-workloads.js";
+import {
   importActionSuggestion,
   listActionSuggestions,
   readActionSuggestion,
@@ -288,6 +307,7 @@ export type LocalUiOptions = {
   safeActionPreview?: SafeActionPreview;
   guidedActionPreview?: GuidedActionPreview;
   guidedActionSuggestion?: typeof generateModelActionSuggestion;
+  readWorkloadSuggestion?: typeof generateModelReadWorkload;
   freshnessEvaluator?: ProposalFreshnessEvaluator;
   schemaInspector?: typeof inspectDatabase;
   ledgerScope?: WorkbenchLedgerScope;
@@ -494,6 +514,7 @@ export async function startLocalUiServer(options: LocalUiOptions = {}): Promise<
   const safeActionPreview = options.safeActionPreview ?? executeSafeActionPreview;
   const guidedActionPreview = options.guidedActionPreview ?? executeGuidedActionPreview;
   const guidedActionSuggestion = options.guidedActionSuggestion ?? generateModelActionSuggestion;
+  const readWorkloadSuggestion = options.readWorkloadSuggestion ?? generateModelReadWorkload;
   const schemaInspector = options.schemaInspector ?? inspectDatabase;
   const freshnessEvaluator = options.freshnessEvaluator
     ?? ((proposal: StoredProposal) => evaluateWorkbenchFreshness(configPath, proposal));
@@ -531,6 +552,7 @@ export async function startLocalUiServer(options: LocalUiOptions = {}): Promise<
         safeActionPreview,
         guidedActionPreview,
         guidedActionSuggestion,
+        readWorkloadSuggestion,
         freshnessEvaluator,
         schemaInspector,
         ledgerScope: options.ledgerScope,
@@ -620,6 +642,7 @@ async function handleRequest(input: {
   safeActionPreview: SafeActionPreview;
   guidedActionPreview: GuidedActionPreview;
   guidedActionSuggestion: typeof generateModelActionSuggestion;
+  readWorkloadSuggestion: typeof generateModelReadWorkload;
   freshnessEvaluator: ProposalFreshnessEvaluator;
   schemaInspector: typeof inspectDatabase;
   ledgerScope?: WorkbenchLedgerScope;
@@ -655,6 +678,7 @@ async function handleRequest(input: {
     safeActionPreview,
     guidedActionPreview,
     guidedActionSuggestion,
+    readWorkloadSuggestion,
     freshnessEvaluator,
     schemaInspector,
     ledgerScope,
@@ -942,6 +966,190 @@ async function handleRequest(input: {
         first_value: instantFirstValue,
       },
     });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/boundary/workloads") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Boundary Workbench is not enabled for this session." });
+      return;
+    }
+    const draft = JSON.parse(await fs.readFile(
+      path.join(boundaryRoot, "exploration-boundary.draft.json"),
+      "utf8",
+    )) as ExplorationBoundaryDraft;
+    sendJson(response, 200, {
+      ok: true,
+      workloads: await listReadWorkloadAnalyses({ projectRoot, generatedBoundary: draft }),
+      starter_workload: workbenchReadWorkloadStarter(draft),
+      structural_catalog: readWorkloadCatalog(draft),
+      defaults: {
+        openai_model: DEFAULT_TERMINAL_OPENAI_ASK_MODEL,
+        anthropic_model: DEFAULT_TERMINAL_ANTHROPIC_ASK_MODEL,
+        openai_key_env: "OPENAI_API_KEY",
+        anthropic_key_env: "ANTHROPIC_API_KEY",
+      },
+      trust: {
+        source_query_executed: false,
+        explore_budget_consumed: false,
+        source_database_changed: false,
+        authority_activated: false,
+        model_can_activate: false,
+      },
+    });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/boundary/workloads/analyze") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Boundary Workbench is not enabled for this session." });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required for Boundary Assist." });
+      return;
+    }
+    try {
+      const body = await readJsonBody(request);
+      const draft = JSON.parse(await fs.readFile(
+        path.join(boundaryRoot, "exploration-boundary.draft.json"),
+        "utf8",
+      )) as ExplorationBoundaryDraft;
+      let workload: ReadWorkloadView;
+      if (body.mode === "exact") {
+        const exact = normalizeReadWorkloadSet(body.workload);
+        if (exact.source.kind !== "operator_exact_plan" && exact.source.kind !== "plan_playground") {
+          throw new Error("Exact Workbench input must declare source.kind=operator_exact_plan or plan_playground.");
+        }
+        workload = await storeReadWorkloadAnalysis({
+          projectRoot,
+          generatedBoundary: draft,
+          source: exact.source,
+          analysis: analyzeReadWorkloadSet({ workload: exact, generatedBoundary: draft }),
+        });
+      } else if (body.mode === "model") {
+        const intent = workbenchReadWorkloadIntent(body.intent);
+        const provider = workbenchReadWorkloadProvider(body.provider);
+        const model = optionalWorkbenchText(body.model, "model", 128)
+          ?? (provider === "anthropic" ? DEFAULT_TERMINAL_ANTHROPIC_ASK_MODEL : DEFAULT_TERMINAL_OPENAI_ASK_MODEL);
+        const apiKeyEnv = optionalWorkbenchText(body.api_key_env, "API key environment variable", 128);
+        const baseUrl = optionalWorkbenchText(body.base_url, "provider base URL", 2_048);
+        const mapped = await readWorkloadSuggestion({
+          name: intent.name,
+          allowedQuestions: intent.allowed_questions,
+          forbiddenQuestions: intent.forbidden_questions,
+          provider,
+          model,
+          generatedBoundary: draft,
+          ...(apiKeyEnv ? { apiKeyEnv } : {}),
+          ...(baseUrl ? { baseUrl } : {}),
+          egressAcknowledged: body.egress_acknowledged === true,
+          dependencies: askProviderDependencies,
+        });
+        workload = await storeReadWorkloadAnalysis({
+          projectRoot,
+          generatedBoundary: draft,
+          source: mapped.workload.source!,
+          analysis: mapped.analysis,
+        });
+      } else if (body.mode === "saved") {
+        workload = await readReadWorkloadAnalysis({
+          projectRoot,
+          analysisId: requiredReviewText(body.analysis_id, "workload analysis id"),
+          generatedBoundary: draft,
+        });
+      } else {
+        throw new Error("Boundary Assist mode must be exact, model, or saved.");
+      }
+      const actor = optionalWorkbenchText(body.actor, "reviewer identity", 128);
+      const reason = optionalWorkbenchText(body.reason, "review reason", 500);
+      if (Boolean(actor) !== Boolean(reason)) {
+        throw new Error("An actionable Boundary Assist preview requires both reviewer identity and review reason.");
+      }
+      const preview = workload.state === "ready" && actor && reason
+        ? await prepareReadWorkloadCandidate({
+          projectRoot,
+          workload,
+          actor,
+          reason,
+          schemaInspector,
+        })
+        : undefined;
+      sendJson(response, workload.state === "ready" ? 200 : 409, {
+        ok: workload.state === "ready",
+        workload,
+        ...(preview ? {
+          preview: {
+            decision_digest: preview.mutation.decision_digest,
+            candidate_digest: preview.mutation.candidate_digest,
+            semantic_diff: preview.mutation.semantic_diff,
+            authority_activated: false,
+            source_database_changed: false,
+          },
+        } : {}),
+      });
+    } catch (error) {
+      sendJson(response, 400, workbenchReadWorkloadError(error));
+    }
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/boundary/workloads/apply") {
+    if (!boundaryRoot) {
+      sendJson(response, 404, { ok: false, error: "Boundary Workbench is not enabled for this session." });
+      return;
+    }
+    if (!hasValidCsrf(request, csrfToken)) {
+      sendJson(response, 403, { ok: false, error: "CSRF token required to save a Boundary Assist draft." });
+      return;
+    }
+    try {
+      const body = await readJsonBody(request);
+      const actor = requiredReviewText(body.actor, "reviewer identity");
+      const reason = requiredReviewText(body.reason, "review reason");
+      const decisionDigest = requiredReviewText(body.decision_digest, "workload decision digest");
+      const draft = JSON.parse(await fs.readFile(
+        path.join(boundaryRoot, "exploration-boundary.draft.json"),
+        "utf8",
+      )) as ExplorationBoundaryDraft;
+      const workload = await readReadWorkloadAnalysis({
+        projectRoot,
+        analysisId: requiredReviewText(body.analysis_id, "workload analysis id"),
+        generatedBoundary: draft,
+      });
+      const preview = await prepareReadWorkloadCandidate({
+        projectRoot,
+        workload,
+        actor,
+        reason,
+        schemaInspector,
+      });
+      if (preview.mutation.decision_digest !== decisionDigest
+        || body.confirmation !== `APPLY WORKLOAD ${decisionDigest}`) {
+        sendJson(response, 409, {
+          ok: false,
+          error: "The workload preview changed or its exact confirmation is missing. Analyze it again before saving.",
+          expected_decision_digest: preview.mutation.decision_digest,
+          authority_changed: false,
+          source_database_changed: false,
+        });
+        return;
+      }
+      const committed = await commitReadWorkloadCandidate({ projectRoot, preview });
+      sendJson(response, 200, {
+        ok: true,
+        analysis_id: workload.analysis_id,
+        candidate_digest: committed.candidate_digest,
+        review_revision: committed.review_revision,
+        authority_activated: false,
+        source_query_executed: false,
+        explore_budget_consumed: false,
+        source_database_changed: false,
+        next: "Review and activate this disabled read boundary, then continue to Action Assist if writes are needed.",
+      });
+    } catch (error) {
+      sendJson(response, 409, workbenchReadWorkloadError(error));
+    }
     return;
   }
 
@@ -6261,6 +6469,97 @@ async function readJsonBody(request: IncomingMessage): Promise<JsonRecord> {
   const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
   if (!isRecord(parsed)) throw new Error("request body must be a JSON object");
   return parsed;
+}
+
+function workbenchReadWorkloadStarter(
+  draft: ExplorationBoundaryDraft,
+): ReadWorkloadSet | null {
+  const resource = draft.pack.resources.find((candidate) => candidate.groupable_fields.length > 0)
+    ?? draft.pack.resources[0];
+  if (!resource) return null;
+  const dimension = resource.groupable_fields[0];
+  return {
+    schema_version: "synapsor.read-workload-set.v1",
+    name: "representative_reads",
+    allowed: [{
+      id: "representative_count",
+      description: dimension
+        ? `Count ${resource.id} grouped by ${dimension}.`
+        : `Count reviewed ${resource.id} records.`,
+      plan: {
+        kind: "aggregate",
+        resource: resource.id,
+        ...(dimension ? { dimensions: [{ field: dimension }] } : {}),
+        measures: [{ function: "count" }],
+      },
+    }],
+    forbidden: [],
+    source: { kind: "plan_playground" },
+  };
+}
+
+function workbenchReadWorkloadIntent(value: unknown): {
+  name: string;
+  allowed_questions: string[];
+  forbidden_questions: string[];
+} {
+  if (!isRecord(value)) {
+    throw new Error("Model-assisted Boundary Assist requires one question-intent object.");
+  }
+  const allowedKeys = new Set(["name", "allowed_questions", "forbidden_questions"]);
+  const unknown = Object.keys(value).filter((key) => !allowedKeys.has(key));
+  if (unknown.length) {
+    throw new Error(`Question intent contains unsupported fields: ${unknown.join(", ")}.`);
+  }
+  const name = optionalWorkbenchText(value.name, "workload name", 80);
+  if (!name) throw new Error("Question intent requires a workload name.");
+  const questions = (input: unknown, label: string, required: boolean): string[] => {
+    if (!Array.isArray(input)) {
+      if (!required && input === undefined) return [];
+      throw new Error(`${label} must be an array of representative questions.`);
+    }
+    if ((required && input.length === 0) || input.length > 40) {
+      throw new Error(`${label} must contain ${required ? "1-40" : "0-40"} questions.`);
+    }
+    return input.map((question, index) => {
+      const normalized = optionalWorkbenchText(question, `${label}[${index}]`, 500);
+      if (!normalized) throw new Error(`${label}[${index}] must not be empty.`);
+      return normalized;
+    });
+  };
+  return {
+    name,
+    allowed_questions: questions(value.allowed_questions, "allowed questions", true),
+    forbidden_questions: questions(value.forbidden_questions, "forbidden questions", false),
+  };
+}
+
+function workbenchReadWorkloadProvider(value: unknown): AskProvider {
+  if (value === "openai" || value === "anthropic" || value === "openai_compatible") return value;
+  throw new Error("Boundary Assist provider must be openai, anthropic, or openai_compatible.");
+}
+
+function optionalWorkbenchText(value: unknown, label: string, maximum: number): string | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  if (typeof value !== "string") throw new Error(`${label} must be text.`);
+  const normalized = value.trim();
+  if (!normalized) return undefined;
+  if (normalized.length > maximum || /[\u0000-\u001f\u007f]/.test(normalized)) {
+    throw new Error(`${label} must be at most ${maximum} characters without control characters.`);
+  }
+  return normalized;
+}
+
+function workbenchReadWorkloadError(error: unknown): JsonRecord {
+  return {
+    ok: false,
+    error: error instanceof Error ? error.message : "Boundary Assist could not analyze this workload.",
+    authority_changed: false,
+    authority_activated: false,
+    source_query_executed: false,
+    explore_budget_consumed: false,
+    source_database_changed: false,
+  };
 }
 
 async function readOptionalJson(filePath: string): Promise<unknown | null> {

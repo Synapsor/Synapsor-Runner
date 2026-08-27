@@ -479,6 +479,10 @@ the local reviewed contract and proposal before writeback.
   ${cmd} boundary draft --from-env DATABASE_URL --profile production --single-tenant --organization-id internal-finance --principal-claim sub [--project-root .]
   ${cmd} boundary rescan [--from-env DATABASE_URL] [--project-root .] [--json]
   ${cmd} boundary review [--project-root .] [--output boundary-review.json] [--json]
+  ${cmd} boundary assist --workload representative-plans.json [--project-root .] [--json]
+  ${cmd} boundary assist --intent representative-questions.json --provider openai --acknowledge-structural-metadata-egress [--project-root .]
+  ${cmd} boundary assist --list [--project-root .]
+  ${cmd} boundary assist --analysis rw_... --actor reviewer@example.com --reason "Compile reviewed workload" --apply --confirm "APPLY WORKLOAD sha256:..."
   ${cmd} boundary review --access [--project-root .]  # focused table/column/path editor
   ${cmd} boundary review --map [--project-root .]
   ${cmd} boundary review --map --all [--details] [--project-root .]
@@ -533,6 +537,18 @@ enters the existing \`try ask\` analytics shell immediately; it does not create
 another authority path. Existing MCP client setup and Later leave the reviewed
 boundary active without starting a provider. JSON and headless routes never
 show this menu or launch Ask.
+
+\`boundary assist\` is an optional workload compiler before activation. Exact
+workload JSON contains allowed and forbidden Explore plans. The optional model
+path sends a redacted structural catalog plus representative questions only
+after explicit egress acknowledgement; the model maps language to plans but
+cannot grant authority. Runner validates, extracts exact operation atoms,
+minimizes, recompiles allowed plans, proves exact deny tests, and persists an
+immutable analysis without executing a source query or consuming Explore
+budget. Add \`--actor\` and \`--reason\` for an actionable preview. Saving
+requires \`--apply --confirm "APPLY WORKLOAD <decision-digest>"\` and creates a
+disabled revision only. Press \`W\` in the TUI for the same flow. After read
+activation, press \`Y\` to enter proposal-first Safe Action review.
 
 Choose the boundary workflow by intent:
   boundary rescan

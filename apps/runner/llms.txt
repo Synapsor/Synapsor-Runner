@@ -10,6 +10,7 @@ Start here:
 - Database authority and application guardrails: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/why-synapsor-vs-app-guardrails.md
 - Auto Boundary, Scoped Explore, and Protect: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/auto-boundary-and-scoped-explore.md
 - Explore Plan Playground: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/explore-plan-playground.md
+- Read Workload Boundary Assist: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/read-workload-boundary-assist.md
 - Connect a staging database: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/getting-started-own-database.md
 - Security boundary: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/security-boundary.md
 - Proposal and evidence freshness: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/proposal-evidence-freshness.md
@@ -23,10 +24,12 @@ Start here:
 - Human approval for agent writes: https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/human-approval-ai-database-writes.md
 
 Current adoption loop:
-Connect staging -> deterministic whole-schema draft -> human boundary review ->
-bounded Explore in the CLI, preview Workbench, or an MCP client -> optional
-Protect This Query -> digest-bound human activation -> named capability ->
-exact proposal -> outside-model decision -> guarded commit -> receipt and replay.
+Connect staging -> deterministic whole-schema draft -> optionally compile
+representative read workloads into a smaller disabled draft -> human boundary
+review -> bounded Explore in the CLI, preview Workbench, or an MCP client ->
+optional Protect This Query -> digest-bound human activation -> named
+capability -> exact proposal -> outside-model decision -> guarded commit ->
+receipt and replay.
 
 Important boundaries:
 - No raw SQL or SQL-string tool argument.
@@ -45,6 +48,10 @@ Important boundaries:
   OpenAI-compatible endpoint, but it calls only the exact reviewed tools and
   adds no activation, approval, or commit authority.
 - Auto Boundary and Protect are deterministic and use no LLM.
+- Optional model-assisted Boundary Assist maps questions to exact candidate
+  Explore plans using redacted structural metadata. Runner then validates,
+  compiles, minimizes, and saves the candidate deterministically; the model
+  cannot grant or activate authority.
 - Generated authority starts disabled. The model cannot activate, approve,
   apply, commit, or widen it.
 - Existing hand-authored 1.x contracts and established CLI routes do not

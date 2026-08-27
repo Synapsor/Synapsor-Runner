@@ -518,6 +518,22 @@ export type BoundaryReviewMutationBatchPreview = {
   source_database_changed: false;
 };
 
+export type BoundaryExactCandidateMutationPreview = {
+  schema_version: "synapsor.boundary-exact-candidate-mutation-preview.v1";
+  bindings: BoundaryReviewMutationBindings;
+  decision_digest: `sha256:${string}`;
+  candidate_digest: `sha256:${string}`;
+  generated_contract_digest: `sha256:${string}`;
+  semantic_diff: BoundaryReviewSemanticDiff[];
+  candidate: ExplorationBoundaryDraft;
+  build: AutoBoundaryBuild;
+  previous_progress?: BoundaryReviewProgress;
+  boundary_root: string;
+  actor: string;
+  reason: string;
+  source_database_changed: false;
+};
+
 export type BoundaryReviewSemanticDiff = {
   resource_id: string;
   before_included: boolean;
@@ -1179,6 +1195,132 @@ export async function prepareBoundaryReviewMutationBatch(
   };
 }
 
+/**
+ * Revalidates an exact, already-minimized candidate against a fresh database
+ * inspection. The result is still a disabled review revision; this function
+ * never activates authority or changes source data.
+ */
+export async function prepareExactBoundaryCandidateMutation(
+  projectRoot: string,
+  input: {
+    candidate: ExplorationBoundaryDraft;
+    expected_generated_boundary_digest: `sha256:${string}`;
+    expected_candidate_digest: `sha256:${string}`;
+    actor: string;
+    reason: string;
+    expected_bindings?: BoundaryReviewMutationBindings;
+  },
+  schemaInspector: typeof inspectDatabase = inspectDatabase,
+): Promise<BoundaryExactCandidateMutationPreview> {
+  if (!input.actor.trim() || input.actor.trim().length > 128) {
+    throw new Error("Exact boundary candidate review requires a bounded human reviewer identity.");
+  }
+  if (!input.reason.trim() || input.reason.trim().length > 500) {
+    throw new Error("Exact boundary candidate review requires a concrete reason of at most 500 characters.");
+  }
+  if (input.candidate.activation !== "disabled_unreviewed") {
+    throw new Error("Exact boundary candidate review accepts only disabled candidate authority.");
+  }
+  const state = await loadBoundaryReviewFiles(projectRoot);
+  const bindings = reviewBindings(state);
+  if (input.expected_bindings) assertBindingsEqual(input.expected_bindings, bindings);
+  if (explorationBoundaryCandidateDigest(state.draft) !== input.expected_generated_boundary_digest) {
+    throw new Error(
+      "READ_WORKLOAD_STALE: the generated boundary changed after workload analysis. Re-run workload analysis against the current boundary draft.",
+    );
+  }
+  const configuredTrustedContext = await configuredTrustedContextForReviewMutation(
+    projectRoot,
+    state,
+  );
+  const inspection = await schemaInspector({
+    engine: state.lock.engine,
+    databaseUrlEnv: state.lock.source_env,
+    schema: state.lock.inspected_schema,
+    env: process.env,
+  });
+  for (const resource of input.candidate.pack.resources) {
+    assertCurrentInspectedResource(inspection, resource.id);
+  }
+  const project = await detectProjectContext(projectRoot);
+  const evidence = await loadStructuredProjectEvidence(project);
+  const build = buildReviewMutationBoundary({
+    inspection,
+    project,
+    evidence,
+    state,
+    configuredTrustedContext,
+  }).build;
+  const staleBindings = [
+    build.lock.schema_fingerprint !== state.lock.schema_fingerprint ? "schema fingerprint" : undefined,
+    build.lock.role_posture_fingerprint !== state.lock.role_posture_fingerprint
+      ? "role posture fingerprint"
+      : undefined,
+  ].filter((value): value is string => Boolean(value));
+  if (staleBindings.length) {
+    throw new Error(
+      "READ_WORKLOAD_STALE: the generated boundary changed after workload analysis "
+      + `(${staleBindings.join(", ")} changed). Re-run boundary rescan and workload analysis against the current schema and trusted authority.`,
+    );
+  }
+  if (explorationBoundaryCandidateDigest(input.candidate) !== input.expected_candidate_digest) {
+    throw new Error(
+      "READ_WORKLOAD_CANDIDATE_MISMATCH: the supplied candidate does not match the reviewed workload analysis.",
+    );
+  }
+  const reboundCandidate = {
+    ...structuredClone(input.candidate),
+    generation_lock_fingerprint: build.exploration_boundary.generation_lock_fingerprint,
+  };
+  const reviewed = reviewExplorationBoundaryCandidate(
+    build.exploration_boundary,
+    reboundCandidate,
+  );
+  const resourceIds = [...new Set([
+    ...state.candidate.pack.resources.map((resource) => resource.id),
+    ...reviewed.candidate.pack.resources.map((resource) => resource.id),
+  ])].sort();
+  const differences = resourceIds.map((resourceId) => semanticDiff(
+    resourceId,
+    state.candidate,
+    reviewed.candidate,
+    false,
+  ));
+  const core = {
+    schema_version: "synapsor.boundary-exact-candidate-mutation-decision.v1",
+    bindings,
+    actor: input.actor.trim(),
+    reason: input.reason.trim(),
+    source_analysis: {
+      generated_boundary_digest: input.expected_generated_boundary_digest,
+      candidate_digest: input.expected_candidate_digest,
+    },
+    next: {
+      generated_contract_digest: build.contract_digest,
+      generation_lock_fingerprint: build.exploration_boundary.generation_lock_fingerprint,
+      schema_fingerprint: build.lock.schema_fingerprint,
+      role_posture_fingerprint: build.lock.role_posture_fingerprint,
+      candidate_digest: reviewed.digest,
+    },
+    semantic_diff: differences,
+  };
+  return {
+    schema_version: "synapsor.boundary-exact-candidate-mutation-preview.v1",
+    bindings,
+    decision_digest: canonicalJsonDigest(core),
+    candidate_digest: reviewed.digest,
+    generated_contract_digest: build.contract_digest,
+    semantic_diff: differences,
+    candidate: reviewed.candidate,
+    build,
+    ...(state.progress ? { previous_progress: state.progress } : {}),
+    boundary_root: state.boundary_root,
+    actor: input.actor.trim(),
+    reason: input.reason.trim(),
+    source_database_changed: false,
+  };
+}
+
 export async function commitBoundaryResourceReviewMutation(
   projectRoot: string,
   preview: BoundaryReviewMutationPreview,
@@ -1371,6 +1513,33 @@ export async function commitBoundaryReviewMutationBatch(
   return {
     ...result,
     semantic_diff: preview.semantic_diff,
+  };
+}
+
+export async function commitExactBoundaryCandidateMutation(
+  projectRoot: string,
+  preview: BoundaryExactCandidateMutationPreview,
+): Promise<{
+  candidate_digest: `sha256:${string}`;
+  review_revision: number;
+  semantic_diff: BoundaryReviewSemanticDiff[];
+  authority_activated: false;
+  source_database_changed: false;
+}> {
+  const result = await commitPreparedBoundaryReviewMutation({
+    projectRoot,
+    bindings: preview.bindings,
+    build: preview.build,
+    candidate: preview.candidate,
+    boundaryRoot: preview.boundary_root,
+    previousProgress: preview.previous_progress,
+    actor: preview.actor,
+    reason: preview.reason,
+  });
+  return {
+    ...result,
+    semantic_diff: preview.semantic_diff,
+    authority_activated: false,
   };
 }
 

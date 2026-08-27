@@ -53,6 +53,15 @@ schema proofs
 
 At no point does Runner turn the model into a database administrator.
 
+For a new agent, Action Assist follows read setup rather than creating a second
+onboarding system. Compile representative reads with `W Workloads`, review and
+activate the resulting read boundary, then press `Y Safe actions`. Workbench
+uses the equivalent **Compile read workload -> Activate changes -> Add safe
+action** path. The handoff shares reviewed structural evidence only; read
+authority never implies write permission, and each Action revision retains its
+own rehearsal, digest, activation, approval, and execution posture. See
+[Boundary Assist](read-workload-boundary-assist.md).
+
 ## Human Control Plane And Agent Data Plane
 
 The human control plane may:

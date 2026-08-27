@@ -323,6 +323,33 @@ schema, but grant no operation and are not valid plan identifiers. Exact
 database IDs remain visible beside them. A label on a kept-out field stays
 human-only and does not expose that field to a model.
 
+### Optional: Start From Representative Agent Jobs
+
+Before activation, press `W Workloads` in the terminal boundary editor or open
+**Compile read workload** in Workbench. This narrows the generated boundary to
+the exact operations needed by representative reads:
+
+```text
+exact representative plans
+  -> deterministic validation
+  -> field/operation/relationship atoms
+  -> minimized disabled boundary
+  -> ordinary human review and activation
+```
+
+Without a model, import exact JSON or use Workbench's visual aggregate builder.
+With a model, type representative allowed and forbidden questions, choose
+OpenAI, Anthropic, or an OpenAI-compatible endpoint, and separately acknowledge
+the structural metadata egress. The model maps language to plans; it cannot
+grant access. Runner sends no rows, database values, kept-out fields,
+credentials, URL values, or trusted tenant/principal values.
+
+The coverage report must show that every required plan compiles and every exact
+deny-test plan remains refused. Candidate creation runs no source query, spends
+no Explore budget, changes no source data, and never activates authority. See
+[Boundary Assist](read-workload-boundary-assist.md) for the JSON shape and
+scripted command.
+
 Choose **Try first safe read**. Runner calls the real local runtime and shows:
 
 ```text
@@ -520,6 +547,11 @@ Or from the ordinary shell:
 ```bash
 synapsor-runner action review --project-root .
 ```
+
+The boundary TUI also shows `Y Safe actions`. It is labelled **AVAILABLE** only
+after one reviewed read boundary is active and returns to read review when the
+Action TUI closes. This keeps read and proposal setup in one onboarding flow
+without merging their authority or activation decisions.
 
 Describe the allowed proposal in business language first. Runner ranks only
 reviewed metadata and schema-proven candidates. Schema metadata supplies

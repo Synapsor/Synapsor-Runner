@@ -37,6 +37,10 @@ your database, then read deeper concepts.
 - [Explore Plan Playground](explore-plan-playground.md): validate or replay one
   exact JSON Explore plan without a model, locally or through authenticated
   production HTTP, with a preview Workbench editor.
+- [Boundary Assist](read-workload-boundary-assist.md): compile exact
+  representative plans, a visual Workbench workload, or optional model-mapped
+  questions into a minimized disabled read-boundary candidate, then continue
+  through separate activation and proposal-first Action Assist.
 - [Troubleshooting First Run](troubleshooting-first-run.md): common first-run
   failures, redacted diagnostics, and fixes.
 

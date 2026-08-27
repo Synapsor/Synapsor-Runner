@@ -711,6 +711,62 @@ describe("boundary review terminal picker", () => {
     await expect(selected).resolves.toEqual({ action: "limits" });
   });
 
+  it("keeps Boundary Assist visible and opens it with W from the boundary list", async () => {
+    const { input, output } = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const selected = session.chooseResource([summary("public.orders", 0)]);
+    const firstView = stripAnsi(output.read()?.toString() ?? "");
+    expect(firstView).toContain("W Workloads - compile representative reads");
+    await send(input, "w");
+    await expect(selected).resolves.toEqual({ action: "workloads" });
+  });
+
+  it("shows Safe Actions status and opens proposal-only authoring only after read activation", async () => {
+    const inactiveTerminal = fakeTerminal();
+    const inactive = createBoundaryReviewInteractiveSession(
+      inactiveTerminal.input,
+      inactiveTerminal.output,
+    ).chooseResource([summary("public.orders", 0)]);
+    expect(stripAnsi(inactiveTerminal.output.read()?.toString() ?? ""))
+      .toContain("Y Safe actions - proposal-only first [NEEDS ACTIVE READS]");
+    await send(inactiveTerminal.input, "y");
+    expect(stripAnsi(inactiveTerminal.output.read()?.toString() ?? ""))
+      .toContain("Safe actions need an active reviewed read boundary");
+    await send(inactiveTerminal.input, "q");
+    await expect(inactive).resolves.toBeUndefined();
+
+    const activeTerminal = fakeTerminal();
+    const resource = summary("public.orders", 0);
+    resource.active = true;
+    resource.active_boundary_name = "reviewed_staging";
+    const active = createBoundaryReviewInteractiveSession(
+      activeTerminal.input,
+      activeTerminal.output,
+    ).chooseResource(
+      [resource],
+      {
+        confirmed_decisions: 6,
+        outstanding_decisions: 0,
+        outstanding_resource_decisions: 0,
+        outstanding_boundary_decisions: 0,
+        resources_requiring_signoff: 0,
+        boundaries: [{
+          name: "reviewed_staging",
+          selected: true,
+          active: true,
+          matches_active_digest: true,
+          table_count: 1,
+          outstanding_decisions: 0,
+        }],
+      },
+      { initialView: "access", startAtBoundaryList: true },
+    );
+    expect(stripAnsi(activeTerminal.output.read()?.toString() ?? ""))
+      .toContain("Y Safe actions - proposal-only first [AVAILABLE]");
+    await send(activeTerminal.input, "y");
+    await expect(active).resolves.toEqual({ action: "actions" });
+  });
+
   it("opens one boundary-wide privacy action from the boundary list", async () => {
     const { input, output } = fakeTerminal();
     const session = createBoundaryReviewInteractiveSession(input, output);

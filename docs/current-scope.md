@@ -2,7 +2,7 @@
 
 The canonical scope page is [Current Limitations](limitations.md).
 
-Current `1.7.11` scope:
+Current source-tree scope:
 
 - local semantic MCP tools over Postgres/MySQL without raw SQL tools;
 - explicit source-server capability profiles: complete reviewed grammar on
@@ -13,6 +13,11 @@ Current `1.7.11` scope:
 - one-command, resumable, review-by-exception onboarding from
   `DATABASE_URL` to a real safe read, bounded exploration, protected named
   tools, guided write proposals, and host-neutral MCP client setup;
+- optional Boundary Assist compilation from representative exact Explore plans
+  or explicitly consented model-mapped questions into a minimized, disabled
+  read-boundary revision. Runner validates and compiles every plan
+  deterministically; the model cannot grant, activate, approve, or apply
+  authority;
 - deterministic whole-schema Auto Boundary drafting from database metadata,
   statically parsed Prisma/Drizzle schemas, OpenAPI documents, and existing
   Synapsor definitions;

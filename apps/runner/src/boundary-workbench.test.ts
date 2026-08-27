@@ -25,6 +25,22 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(script).toContain("Retry after setting ");
   });
 
+  it("presents workload compilation as a disabled step before activation and Action Assist", () => {
+    const html = renderBoundaryWorkbench("test-csrf");
+    const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? "";
+
+    expect(html).toContain("Compile read workload");
+    expect(html).toContain("Visual aggregate builder");
+    expect(html).toContain("Map questions with a model");
+    expect(html).toContain("Allow structural metadata egress for this mapping");
+    expect(html).toContain("No source query or privacy budget");
+    expect(html).toContain("Separate activation remains required");
+    expect(script).toContain('getJson("/api/boundary/workloads")');
+    expect(script).toContain('post("/api/boundary/workloads/analyze"');
+    expect(script).toContain('post("/api/boundary/workloads/apply"');
+    expect(script).toContain('setView("action")');
+  });
+
   it("keeps the 1.7.0 reviewed-access controls discoverable in both Workbench and CLI", () => {
     const html = renderBoundaryWorkbench("test-csrf");
     const parityMarkers: Array<[string, string[]]> = [

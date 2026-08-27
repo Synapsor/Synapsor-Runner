@@ -27,6 +27,10 @@ import {
 import { compileSafeActionDraft } from "./safe-action.js";
 import { createScopedExploreRuntime } from "./scoped-explore.js";
 import { ACTION_SUGGESTION_VERSION } from "./action-design.js";
+import {
+  READ_WORKLOAD_SET_VERSION,
+  analyzeReadWorkloadSet,
+} from "./read-workload-assist.js";
 
 const changeSet = {
   schema_version: "synapsor.change-set.v2",
@@ -2570,6 +2574,212 @@ export default defineCapability({
       expect(JSON.stringify(boundary.review.resources[0])).not.toMatch(
         /Direct tenant scope unavailable|add.*tenant column/i,
       );
+    } finally {
+      await server.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("compiles and saves a Workbench read workload as a disabled boundary without source execution", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-read-workload-"));
+    const inspection = boundaryReviewInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root: tempDir,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const written = await writeAutoBoundaryArtifacts({ projectRoot: tempDir, build });
+    const guided = await initializeGuidedProject({
+      projectRoot: tempDir,
+      build,
+      runnerVersion: "1.7.15",
+      instantOnboarding: true,
+    });
+    const modelCalls: Array<Record<string, unknown>> = [];
+    const server = await startLocalUiServer({
+      projectRoot: tempDir,
+      boundaryRoot: written.root,
+      configPath: guided.config_path,
+      storePath: guided.store_path,
+      token: "read-workload-token",
+      csrfToken: "read-workload-csrf",
+      instantOnboarding: true,
+      schemaInspector: async () => inspection,
+      readWorkloadSuggestion: async (input) => {
+        modelCalls.push({
+          provider: input.provider,
+          model: input.model,
+          api_key_env: input.apiKeyEnv,
+          base_url: input.baseUrl,
+          egress_acknowledged: input.egressAcknowledged,
+          allowed_questions: input.allowedQuestions,
+          forbidden_questions: input.forbiddenQuestions,
+        });
+        const workload = {
+          schema_version: READ_WORKLOAD_SET_VERSION,
+          name: input.name,
+          allowed: [{
+            id: "member_count",
+            description: input.allowedQuestions[0]!,
+            plan: {
+              kind: "aggregate",
+              resource: "public.members",
+              measures: [{ function: "count" }],
+            },
+          }],
+          forbidden: [],
+          source: {
+            kind: "model" as const,
+            provider: input.provider,
+            model: input.model,
+          },
+        };
+        return {
+          workload,
+          analysis: analyzeReadWorkloadSet({
+            workload,
+            generatedBoundary: input.generatedBoundary,
+          }),
+          provider: input.provider,
+          model: input.model,
+          authority_granted: false,
+          source_query_executed: false,
+          explore_budget_consumed: false,
+          source_database_changed: false,
+        };
+      },
+    });
+    const baseUrl = `http://${server.host}:${server.port}`;
+    const headers = {
+      "x-synapsor-ui-token": "read-workload-token",
+      "x-synapsor-csrf": "read-workload-csrf",
+    };
+    try {
+      const catalog = await getJson(`${baseUrl}/api/boundary/workloads`, headers);
+      expect(catalog).toMatchObject({
+        ok: true,
+        starter_workload: {
+          schema_version: "synapsor.read-workload-set.v1",
+          source: { kind: "plan_playground" },
+        },
+        trust: {
+          source_query_executed: false,
+          explore_budget_consumed: false,
+          source_database_changed: false,
+          authority_activated: false,
+        },
+      });
+      expect(JSON.stringify(catalog.structural_catalog)).not.toContain("tenant_id");
+      expect(JSON.stringify(catalog.structural_catalog)).not.toContain("trainer_comments");
+
+      const mapped = await postJson(`${baseUrl}/api/boundary/workloads/analyze`, headers, {
+        mode: "model",
+        intent: {
+          name: "member_reads",
+          allowed_questions: ["How many members are in my reviewed scope?"],
+          forbidden_questions: [],
+        },
+        provider: "anthropic",
+        model: "claude-sonnet-test",
+        api_key_env: "ANTHROPIC_API_KEY",
+        egress_acknowledged: true,
+        actor: "workbench-reviewer",
+        reason: "Review the model mapping without granting it authority.",
+      });
+      expect(mapped).toMatchObject({
+        ok: true,
+        workload: {
+          source: {
+            kind: "model",
+            provider: "anthropic",
+            model: "claude-sonnet-test",
+          },
+          authority_granted: false,
+          source_query_executed: false,
+        },
+        preview: { authority_activated: false },
+      });
+      expect(modelCalls).toEqual([{
+        provider: "anthropic",
+        model: "claude-sonnet-test",
+        api_key_env: "ANTHROPIC_API_KEY",
+        base_url: undefined,
+        egress_acknowledged: true,
+        allowed_questions: ["How many members are in my reviewed scope?"],
+        forbidden_questions: [],
+      }]);
+
+      const analyzed = await postJson(`${baseUrl}/api/boundary/workloads/analyze`, headers, {
+        mode: "exact",
+        workload: catalog.starter_workload,
+        actor: "workbench-reviewer",
+        reason: "Compile the representative read before granting any authority.",
+      });
+      expect(analyzed).toMatchObject({
+        ok: true,
+        workload: {
+          state: "ready",
+          authority_granted: false,
+          source_query_executed: false,
+          explore_budget_consumed: false,
+          source_database_changed: false,
+          analysis: {
+            status: "ready",
+            candidate: { activation: "disabled_unreviewed" },
+          },
+        },
+        preview: {
+          authority_activated: false,
+          source_database_changed: false,
+        },
+      });
+      await expect(fs.access(path.join(tempDir, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+
+      const missingConfirmation = await fetch(`${baseUrl}/api/boundary/workloads/apply`, {
+        method: "POST",
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify({
+          analysis_id: analyzed.workload.analysis_id,
+          actor: "workbench-reviewer",
+          reason: "Compile the representative read before granting any authority.",
+          decision_digest: analyzed.preview.decision_digest,
+          confirmation: "APPLY SOMETHING ELSE",
+        }),
+      });
+      expect(missingConfirmation.status).toBe(409);
+      await expect(missingConfirmation.json()).resolves.toMatchObject({
+        ok: false,
+        authority_changed: false,
+        source_database_changed: false,
+      });
+
+      const applied = await postJson(`${baseUrl}/api/boundary/workloads/apply`, headers, {
+        analysis_id: analyzed.workload.analysis_id,
+        actor: "workbench-reviewer",
+        reason: "Compile the representative read before granting any authority.",
+        decision_digest: analyzed.preview.decision_digest,
+        confirmation: `APPLY WORKLOAD ${analyzed.preview.decision_digest}`,
+      });
+      expect(applied).toMatchObject({
+        ok: true,
+        authority_activated: false,
+        source_query_executed: false,
+        explore_budget_consumed: false,
+        source_database_changed: false,
+      });
+      const boundary = await getJson(`${baseUrl}/api/boundary`, headers);
+      expect(boundary.candidate.activation).toBe("disabled_unreviewed");
+      expect(boundary.active_boundaries).toEqual([]);
+      await expect(fs.access(path.join(tempDir, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       await server.close();
       await fs.rm(tempDir, { recursive: true, force: true });

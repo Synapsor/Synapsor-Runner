@@ -27,6 +27,7 @@ import {
   type GenerationLock
 } from "./auto-boundary.js";
 import {
+  boundaryAssistCommand,
   boundaryActivateCommand,
   boundaryDeleteCommand,
   boundaryDisableCommand,
@@ -804,6 +805,9 @@ export async function boundaryCommand(
     runPostActivationAskHandoff(input);
   if (subcommand === "review") {
     return boundaryReviewCommand(rest, schemaInspector, undefined, activationHandoff);
+  }
+  if (subcommand === "assist") {
+    return boundaryAssistCommand(rest, schemaInspector);
   }
   if (subcommand === "activate") {
     return boundaryActivateCommand(rest, schemaInspector, undefined, activationHandoff);

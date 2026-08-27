@@ -92,6 +92,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     .plan-playground-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin:14px 0}.plan-playground-head h3{font-size:20px}.plan-playground-head p{max-width:720px;margin:3px 0 0}.plan-playground-grid{display:grid;grid-template-columns:minmax(0,1fr) 286px;gap:16px;align-items:start}.plan-playground-editor{min-width:0}.plan-code-shell{overflow:hidden;border:1px solid var(--line-strong);border-radius:7px;background:#09110e;box-shadow:0 14px 34px rgba(0,0,0,.18)}.plan-code-shell.invalid{border-color:var(--bad);box-shadow:0 0 0 2px color-mix(in srgb,var(--bad) 22%,transparent)}.plan-code-toolbar,.plan-code-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:42px;padding:7px 10px;border-bottom:1px solid #26372f;background:#101a16}.plan-code-footer{min-height:34px;border-top:1px solid #26372f;border-bottom:0;color:#8d9a94;font-size:11px}.plan-code-title,.plan-code-state{display:flex;align-items:center;gap:7px;min-width:0}.plan-code-title strong{color:#eef5f1;font-size:12px}.plan-code-toolbar .badge{padding:2px 7px;font-size:10px}.plan-code-toolbar button{min-height:30px;padding:4px 9px;font-size:11px}.plan-code-editor{display:grid;grid-template-columns:auto minmax(0,1fr);min-height:430px;max-height:65vh;overflow:hidden}.plan-line-numbers{min-width:48px;margin:0;padding:14px 11px 30px 7px;overflow:hidden;border:0;border-right:1px solid #22322a;border-radius:0;background:#0b1511;color:#52635b;font:12px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;text-align:right;user-select:none}.plan-code-stage{position:relative;min-width:0;min-height:430px;overflow:hidden}.plan-code-highlight,.plan-code-stage textarea{position:absolute;inset:0;width:100%;height:100%;min-height:0;margin:0;padding:14px 16px 30px;overflow:auto;border:0;border-radius:0;background:transparent;font:12px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;tab-size:2;white-space:pre}.plan-code-highlight{max-height:none;pointer-events:none}.plan-code-highlight.syntax-block{padding-top:14px}.plan-code-highlight.syntax-block::before{display:none}.plan-code-stage textarea{z-index:1;resize:none;color:transparent;-webkit-text-fill-color:transparent;caret-color:#eef5f1;outline:0}.plan-code-stage textarea::selection{background:rgba(117,227,183,.24)}.plan-code-stage textarea:focus-visible{outline:0}.plan-playground-side{position:sticky;top:86px;display:grid;gap:10px}.plan-playground-side .field{padding:12px;border:1px solid var(--line);border-radius:7px;background:var(--surface)}.plan-playground-scope{padding:12px;border:1px solid var(--line);border-radius:7px;background:var(--surface-2)}.plan-playground-scope p{font-size:12px}.plan-playground-side button{width:100%}.plan-playground-side small{color:var(--muted)}.plan-playground-result{margin-top:16px}.plan-playground-result pre{max-height:520px}.plan-output-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:12px;margin-top:12px}.plan-output-grid details{min-width:0;margin:0;padding:12px;border:1px solid var(--line);border-radius:7px}.plan-output-grid pre{margin-bottom:4px}.plan-sql-note{display:flex;gap:7px;align-items:flex-start;margin:8px 0;color:var(--muted);font-size:12px}
     .instant-path{scroll-margin-top:76px}.instant-reveal{display:grid;grid-template-columns:minmax(310px,.8fr) minmax(520px,1.2fr);gap:54px;align-items:center;min-height:calc(100vh - 160px)}.instant-copy{display:grid;gap:20px;align-content:center}.instant-kicker{margin:0;color:#71e2b7;font-size:11px;font-weight:850;text-transform:uppercase}.instant-copy h2{max-width:610px;margin:0;color:#f4f8f6;font-size:46px;line-height:1.2}.instant-copy h2 span{display:block;color:#718078}.instant-copy>p{max-width:520px;margin:0;color:#aab6b0;font-size:17px;line-height:1.65}.instant-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.instant-actions button{min-height:52px;padding:12px 20px}.instant-actions .secondary{border-color:#314038;color:#d9e2dd}.instant-trust{display:block;color:#718078;font-size:11px;text-transform:uppercase}.instant-path .status-message{flex:1 0 100%;color:#aab6b0}.instant-boundary{min-width:0;padding:24px;border:1px solid #2a3e34;border-radius:8px;background:#101a16;color:#eef5f1}.instant-boundary-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}.instant-boundary-head h3{margin:5px 0 1px;font-size:26px}.instant-boundary-head code{color:#75847c}.instant-badge{display:inline-flex;align-items:center;padding:5px 9px;border:1px solid #60412f;border-radius:999px;background:#211813;color:#f3b276;font-size:11px;font-weight:800;text-transform:uppercase}.instant-flow{display:grid;grid-template-columns:minmax(82px,1fr) minmax(124px,1.2fr) minmax(82px,1fr);gap:18px;align-items:center;min-height:190px;margin:18px 0;padding:18px 0;border-bottom:1px solid #23322b}.instant-node{position:relative;display:grid;place-items:center;min-height:84px;padding:10px;border:1px solid #33433b;border-radius:8px;text-align:center;color:#dfe9e4}.instant-node strong{display:block;font-size:18px}.instant-node span{color:#728078;font-size:10px;text-transform:uppercase}.instant-node.boundary{border-color:#5cd7a5;background:#142a21}.instant-node.boundary::before,.instant-node.boundary::after{content:"";position:absolute;top:calc(50% - 1px);width:20px;height:3px;background-image:repeating-linear-gradient(90deg,#78e6bb 0 8px,transparent 8px 16px),linear-gradient(#33433b,#33433b);background-position:0 0,center;background-repeat:repeat-x,no-repeat;background-size:32px 3px,100% 1px;animation:instant-edge-flow 1.9s linear infinite}.instant-node.boundary::before{right:100%}.instant-node.boundary::after{left:100%}@keyframes instant-edge-flow{to{background-position:32px 0,center}}.instant-blocked{position:absolute;top:calc(100% + 12px);left:50%;width:max-content;max-width:180px;transform:translateX(-50%);padding:3px 8px;border:1px solid #344039;border-radius:999px;background:#0c1411;color:#77847d;font-size:10px}.instant-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 28px}.instant-fact strong{display:block;margin-bottom:5px;color:#748279;font-size:10px;text-transform:uppercase}.instant-fact p{margin:0;color:#dce5e0}.instant-preview{display:grid;grid-template-columns:auto minmax(0,1fr);gap:14px;align-items:start;margin-top:22px;padding:17px;border:1px solid #2a3b32;border-radius:8px;background:#0b1310}.instant-preview-icon{display:grid;place-items:center;width:34px;height:34px;border-radius:7px;background:#173127;color:#77e7ba;font-weight:800}.instant-preview strong{display:block;color:#748279;font-size:10px;text-transform:uppercase}.instant-preview p{margin:5px 0 0;color:#eef5f1;font-size:16px}.instant-preview small{display:block;margin-top:6px;color:#718078}.instant-result{margin-top:12px}
     .plan-code-highlight{overflow:hidden}.plan-code-highlight .syntax-code{font:inherit;line-height:inherit}.status-message.loading{display:flex;align-items:center;gap:9px;color:var(--text)}.status-message.loading::before{content:"";width:14px;height:14px;flex:0 0 auto;border:2px solid color-mix(in srgb,var(--accent) 28%,transparent);border-top-color:var(--accent);border-radius:50%;animation:plan-progress-spin .75s linear infinite}#json-plan-playground[aria-busy=true] .plan-code-shell{border-color:color-mix(in srgb,var(--accent) 70%,var(--line-strong))}@keyframes plan-progress-spin{to{transform:rotate(360deg)}}
+    .workload-layout{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(280px,.85fr);gap:18px;align-items:start}.workload-side{position:sticky;top:86px}.workload-mode-panel.hidden{display:none}.workload-code-editor,.workload-code-stage{min-height:360px}.workload-question-list{display:grid;gap:10px}.workload-question-list textarea{min-height:128px}.workload-proof{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;overflow:hidden;border:1px solid var(--line);border-radius:7px;background:var(--line)}.workload-proof>div{padding:13px;background:var(--surface)}.workload-proof strong{display:block;color:var(--text);font-size:18px}.workload-proof span{font-size:11px;color:var(--muted)}.workload-entry{padding:11px 0;border-bottom:1px solid var(--line)}.workload-entry:last-child{border-bottom:0}.workload-entry p{margin:3px 0 0}.workload-review-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.workload-trust-list{display:grid;gap:7px;margin:12px 0}.workload-trust-list span::before{content:"✓";margin-right:7px;color:var(--good);font-weight:800}
     @media(prefers-reduced-motion:reduce){.instant-node.boundary::before,.instant-node.boundary::after,.status-message.loading::before{animation:none}}
     body.quick-start-mode,body.ask-focus-mode{--bg:#07100c;--surface:#101a16;--surface-2:#14211b;--text:#f2f7f4;--muted:#9aa8a1;--line:#27372f;--line-strong:#3b5045;--accent:#75e3b7;--accent-strong:#8aebc5;--accent-soft:#142d23;--good:#75e3b7;--good-soft:#142d23;background:#07100c}
     body.quick-start-mode header,body.ask-focus-mode header{background:#07100c;border-color:#1d2a24;backdrop-filter:none}
@@ -167,7 +168,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	    .access-final{position:sticky;bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:16px;margin:18px 0 0 auto;max-width:calc(100% - 318px);padding:12px 14px;border:1px solid var(--accent);border-radius:8px;background:color-mix(in srgb,var(--surface) 96%,transparent);box-shadow:0 10px 32px rgba(0,0,0,.18);backdrop-filter:blur(10px);z-index:2}.access-final p{min-width:0;margin:0;overflow-wrap:anywhere}.access-final strong{color:var(--text);overflow-wrap:anywhere}
 	    .hidden{display:none!important}.screen-reader{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 	    @media(max-width:960px){.workbench-layout{grid-template-columns:1fr;gap:18px}.workflow-rail{position:static}.rail-label,.rail-note{display:none}.steps{display:flex;overflow-x:auto;border-bottom:1px solid var(--line);padding-bottom:1px}.step{flex:0 0 auto;min-width:150px;border-left:0;border-bottom:3px solid transparent;border-radius:6px 6px 0 0}.step.active{border-left:0;border-bottom-color:var(--accent)}}
-	    @media(max-width:820px){header>div,main,body.quick-start-mode header>div,body.quick-start-mode main,body.ask-focus-mode header>div,body.ask-focus-mode main,body.access-focus-mode header>div,body.access-focus-mode main{width:calc(100% - 24px)}.summary{grid-template-columns:1fr 1fr}.metric:nth-child(2){border-right:0}.resource-list,.scope-grid,.form-grid,.preflight,.journey,.ask-grid,.instant-reveal,.access-editor,.access-column,.boundary-version-list,.plan-playground-grid,.plan-output-grid{grid-template-columns:1fr}.boundary-overview-head,.plan-playground-head{flex-direction:column}.access-editor-head{align-items:flex-start;flex-direction:column}.access-nav,.plan-playground-side{position:static}.access-resource-list{max-height:270px}.access-final{position:static;max-width:none;flex-direction:column;align-items:stretch}.instant-reveal{gap:28px;min-height:auto;padding:28px 0 44px}.instant-copy{display:contents}.instant-copy .instant-kicker{order:1}.instant-copy h2{order:2;font-size:36px}.instant-copy>p{order:3}.instant-boundary{order:4;padding:18px}.instant-actions{order:5}.instant-trust{order:6}.instant-flow{min-height:160px}.footer-actions{position:static}.ask-head{grid-template-columns:1fr}.ask-state{text-align:left}.ask-state .badge{margin:0 5px 0 0}body.ask-focus-mode .ask-state{position:static}}
+	    @media(max-width:820px){header>div,main,body.quick-start-mode header>div,body.quick-start-mode main,body.ask-focus-mode header>div,body.ask-focus-mode main,body.access-focus-mode header>div,body.access-focus-mode main{width:calc(100% - 24px)}.summary{grid-template-columns:1fr 1fr}.metric:nth-child(2){border-right:0}.resource-list,.scope-grid,.form-grid,.preflight,.journey,.ask-grid,.instant-reveal,.access-editor,.access-column,.boundary-version-list,.plan-playground-grid,.plan-output-grid,.workload-layout,.workload-proof{grid-template-columns:1fr}.boundary-overview-head,.plan-playground-head{flex-direction:column}.access-editor-head{align-items:flex-start;flex-direction:column}.access-nav,.plan-playground-side,.workload-side{position:static}.access-resource-list{max-height:270px}.access-final{position:static;max-width:none;flex-direction:column;align-items:stretch}.instant-reveal{gap:28px;min-height:auto;padding:28px 0 44px}.instant-copy{display:contents}.instant-copy .instant-kicker{order:1}.instant-copy h2{order:2;font-size:36px}.instant-copy>p{order:3}.instant-boundary{order:4;padding:18px}.instant-actions{order:5}.instant-trust{order:6}.instant-flow{min-height:160px}.footer-actions{position:static}.ask-head{grid-template-columns:1fr}.ask-state{text-align:left}.ask-state .badge{margin:0 5px 0 0}body.ask-focus-mode .ask-state{position:static}}
     @media(max-width:560px){.ask-composer{grid-template-columns:1fr}.ask-composer-actions{display:flex;flex-wrap:wrap;width:auto}.ask-composer-actions button{flex:1 1 120px}}
     @media(max-width:480px){header>div,main,body.quick-start-mode header>div,body.quick-start-mode main,body.ask-focus-mode header>div,body.ask-focus-mode main{width:calc(100% - 20px)}.brand-copy p{display:none}.header-status .badge{display:none}.summary{grid-template-columns:1fr}.metric{border-right:0;border-bottom:1px solid var(--line)}.toolbar>*,.actions>button{width:100%}.plan-code-toolbar{align-items:flex-start;flex-direction:column}.plan-code-toolbar .toolbar{width:100%}.plan-code-toolbar .toolbar>*{width:auto}.plan-code-footer{align-items:flex-start;flex-direction:column}.plan-code-editor,.plan-code-stage{min-height:360px}.step{min-width:132px}.ask-head,.ask-body{padding:14px}.instant-copy{gap:16px}.instant-copy h2{font-size:32px}.instant-copy>p{font-size:15px}.instant-actions{display:grid}.instant-actions button{width:100%}.instant-facts{grid-template-columns:1fr}.instant-flow{grid-template-columns:72px minmax(108px,1fr) 72px;gap:12px}.instant-node.boundary::before,.instant-node.boundary::after{width:14px}.instant-boundary-head h3{font-size:21px}.instant-preview{padding:13px}.instant-trust{margin-top:4px}}
 
@@ -185,7 +186,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     .band,.resource,.access-nav,.access-focus>#resource-detail,.access-focus>#global-decisions,.footer-actions{background:#0f1915;border-color:#26372f;box-shadow:none}
     .badge{background:#111d18;border-color:#304239}.badge.good{background:#10271d;border-color:#2f775b}.notice{background:#201b11}.success{background:#10271d}.error{background:#2b1917}
     .workbench-layout{display:block}.workspace{max-width:1240px;margin:0 auto}.split-actions>*{min-width:0}
-    .workflow-rail{position:static;margin:0 auto 38px;max-width:1240px}.workflow-rail>.rail-label,.workflow-rail>.rail-note{display:none}.steps{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:0;border-bottom:1px solid #26372f}.step{min-width:0;padding:13px 12px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:#7d8983;text-align:center}.step.active{border:0;border-bottom:2px solid #75e3b7;background:transparent;color:#75e3b7}.step.done{color:#aebbb5}
+    .workflow-rail{position:static;margin:0 auto 38px;max-width:1240px}.workflow-rail>.rail-label,.workflow-rail>.rail-note{display:none}.steps{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:0;border-bottom:1px solid #26372f}.step{min-width:0;padding:13px 12px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:#7d8983;text-align:center}.step.active{border:0;border-bottom:2px solid #75e3b7;background:transparent;color:#75e3b7}.step.done{color:#aebbb5}
     .summary{border-color:#26372f;background:#0f1915}.metric{border-color:#26372f}
     .instant-kicker{color:#75e3b7;font-size:11px;font-weight:800;text-transform:uppercase}
     #view-overview>h2{margin:0 0 20px;font-size:40px;line-height:1.18}
@@ -365,6 +366,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         <nav class="steps" aria-label="Workbench destinations">
           <button class="step" data-view="explore" type="button">Ask your data</button>
           <button class="step active" data-view="overview" type="button">Review data access</button>
+          <button class="step" data-view="workloads" type="button">Compile read workload</button>
           <button class="step" data-view="activate" type="button">Activate changes</button>
           <button class="step" data-view="protect" type="button">Make reusable</button>
           <button class="step" data-view="action" type="button">Add safe action</button>
@@ -449,6 +451,87 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      </div>
 	      <div id="access-staged" class="access-final hidden" aria-live="polite"><p><strong id="access-staged-summary">No access changes staged</strong><br><span class="muted">This remains a disabled draft until Step 2.</span></p><button id="review-staged-access" type="button">Step 2 · Review and activate →</button></div>
 	    </section>
+
+    <section id="view-workloads" class="view">
+      <p class="instant-kicker">Optional compiler · Before activation</p>
+      <h2>Turn representative reads into a smaller boundary</h2>
+      <p>Give Runner exact plans, build a common aggregate visually, or let an optional model map questions to exact plans. Runner validates and minimizes the result deterministically. Nothing here queries source rows or activates access.</p>
+      <div class="tabs" role="tablist" aria-label="Read workload input">
+        <button id="workload-exact-tab" class="tab active" type="button" role="tab">Exact plans</button>
+        <button id="workload-model-tab" class="tab" type="button" role="tab">Map questions with a model</button>
+        <button id="workload-saved-tab" class="tab" type="button" role="tab">Saved analyses</button>
+      </div>
+      <div class="workload-layout">
+        <div>
+          <section id="workload-exact-panel" class="workload-mode-panel">
+            <details class="band" open>
+              <summary>Visual aggregate builder</summary>
+              <p>Build one representative count or aggregate without writing JSON. Use the editor below for filters, rows, relationships, time windows, and the full reviewed grammar.</p>
+              <div class="form-grid">
+                <label class="field">Resource<select id="workload-builder-resource"></select></label>
+                <label class="field">Group by<select id="workload-builder-group"><option value="">No grouping</option></select></label>
+                <label class="field">Measure<select id="workload-builder-measure"><option value="count">Record count</option></select></label>
+                <label class="field">Description<input id="workload-builder-description" type="text" maxlength="280" placeholder="Orders grouped by status"></label>
+              </div>
+              <div class="actions"><button id="workload-add-plan" class="secondary" type="button">Add representative plan</button></div>
+            </details>
+            <div id="workload-code-shell" class="plan-code-shell">
+              <div class="plan-code-toolbar">
+                <div class="plan-code-title"><strong>read-workload.json</strong><span id="workload-json-state" class="badge">Waiting for JSON</span><span id="workload-line-count" class="badge">1 line</span></div>
+                <div class="toolbar"><button id="workload-open-file" class="quiet" type="button">Open JSON file</button><button id="workload-format" class="quiet" type="button">Format</button></div>
+              </div>
+              <input id="workload-file" class="screen-reader" type="file" accept="application/json,.json">
+              <div class="plan-code-editor workload-code-editor">
+                <pre id="workload-line-numbers" class="plan-line-numbers" aria-hidden="true">1</pre>
+                <div class="plan-code-stage workload-code-stage">
+                  <pre id="workload-json-highlight" class="plan-code-highlight" aria-hidden="true"></pre>
+                  <textarea id="workload-json" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Representative read workload JSON" wrap="off"></textarea>
+                </div>
+              </div>
+              <div class="plan-code-footer"><span>Exact Explore plans only. Do not add tenant, principal, SQL, approval, or activation fields.</span><span id="workload-cursor-position">Ln 1, Col 1</span></div>
+            </div>
+          </section>
+
+          <section id="workload-model-panel" class="workload-mode-panel hidden">
+            <div class="band">
+              <div class="form-grid">
+                <label class="field">Workload name<input id="workload-intent-name" type="text" maxlength="80" value="representative_reads"></label>
+                <label class="field">Provider<select id="workload-provider"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="openai_compatible">OpenAI-compatible or local</option></select></label>
+                <label class="field">Model<input id="workload-model" type="text" maxlength="128" value="gpt-5.6-luna"></label>
+                <label class="field">API key environment variable<input id="workload-key-env" type="text" maxlength="128" value="OPENAI_API_KEY"></label>
+                <label id="workload-base-url-wrap" class="field hidden">Provider base URL<input id="workload-base-url" type="url" maxlength="2048" placeholder="http://127.0.0.1:11434/v1"></label>
+              </div>
+              <div class="workload-question-list" style="margin-top:12px">
+                <label class="field">Reads that must work<textarea id="workload-allowed-questions" maxlength="12000" placeholder="One representative question per line"></textarea></label>
+                <label class="field">Reads that must stay forbidden<textarea id="workload-forbidden-questions" maxlength="12000" placeholder="Optional. One question per line; each must map to an exact test plan."></textarea></label>
+              </div>
+              <label class="check" style="margin-top:12px"><input id="workload-egress" type="checkbox"><span><strong>Allow structural metadata egress for this mapping</strong><small>Runner may send reviewed visible names, types, relationship IDs, labels, descriptions, and these questions. It does not send rows, database values, credentials, URLs, kept-out fields, or trusted tenant/principal values.</small></span></label>
+            </div>
+          </section>
+
+          <section id="workload-saved-panel" class="workload-mode-panel hidden">
+            <div id="workload-saved-list" class="band"><p>No saved analyses loaded.</p></div>
+          </section>
+        </div>
+
+        <aside class="workload-side">
+          <div class="band">
+            <h3>Human review record</h3>
+            <label class="field">Reviewer identity<input id="workload-actor" type="text" maxlength="128" autocomplete="username" placeholder="alex@example.com"></label>
+            <label class="field">Reason<input id="workload-reason" type="text" maxlength="500" value="Compile representative reads into a minimum candidate boundary."></label>
+            <div class="workload-trust-list">
+              <span>No source query or privacy budget</span>
+              <span>No source database change</span>
+              <span>Disabled revision only</span>
+              <span>Separate activation remains required</span>
+            </div>
+            <button id="workload-analyze" type="button">Analyze minimum boundary</button>
+            <div id="workload-status" class="status-message" role="status" aria-live="polite"></div>
+          </div>
+        </aside>
+      </div>
+      <div id="workload-result"></div>
+    </section>
 
     <section id="view-activate" class="view">
       <p class="instant-kicker">Step 2 of 2 · Human confirmation</p>
@@ -797,7 +880,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     let modelAuthorityMetadataMode="semantic";
     let candidateDigest;
 	    let currentView="overview";
-	    const validViews=new Set(["overview","exceptions","activate","explore","protect","action"]);
+	    const validViews=new Set(["overview","exceptions","workloads","activate","explore","protect","action"]);
 	    let viewHistoryReady=false;
 	    let resourceFilter="starter";
 	    let resourceSearch="";
@@ -822,6 +905,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     let guidedActionData=null;
     let guidedActionDraft=null;
     let guidedActionSuggestionId=null;
+    let readWorkloadData=null;
+    let readWorkloadPreview=null;
+    let readWorkloadMode="exact";
+    let selectedReadWorkloadAnalysis=null;
     let askStatus=null;
 	    let boundaryCatalog={schema_version:"synapsor.boundary-catalog.v1",table_count:0,relationship_count:0,boundaries:[]};
 	    let boundaryMermaid="flowchart LR";
@@ -1265,6 +1352,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	        renderResourceDetail();
 	      }
       if(view==="activate")renderSignoff();
+      if(view==="workloads")loadReadWorkloadAssist();
       if(view==="explore"){
         if(activeBoundaries.length)runPreflight();
         loadAskStatus();
@@ -6903,6 +6991,250 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       }
     }
 
+    function setReadWorkloadMode(mode){
+      readWorkloadMode=mode;
+      ["exact","model","saved"].forEach(name=>{
+        byId("workload-"+name+"-tab").classList.toggle("active",name===mode);
+        byId("workload-"+name+"-panel").classList.toggle("hidden",name!==mode);
+      });
+      byId("workload-analyze").textContent=mode==="saved"?"Review saved analysis":"Analyze minimum boundary";
+    }
+
+    function readWorkloadLines(value){
+      return value.split("\\n").map(line=>line.trim()).filter(Boolean);
+    }
+
+    function updateReadWorkloadCursor(){
+      const editor=byId("workload-json");
+      const before=editor.value.slice(0,editor.selectionStart).split("\\n");
+      byId("workload-cursor-position").textContent="Ln "+before.length+", Col "+((before.at(-1)?.length||0)+1);
+    }
+
+    function syncReadWorkloadScroll(){
+      const editor=byId("workload-json");
+      byId("workload-json-highlight").scrollTop=editor.scrollTop;
+      byId("workload-json-highlight").scrollLeft=editor.scrollLeft;
+      byId("workload-line-numbers").scrollTop=editor.scrollTop;
+    }
+
+    function updateReadWorkloadEditor(){
+      const editor=byId("workload-json");
+      const source=editor.value;
+      const lines=Math.max(1,source.split("\\n").length);
+      byId("workload-line-numbers").textContent=Array.from({length:lines},(_,index)=>String(index+1)).join("\\n");
+      byId("workload-line-count").textContent=lines+" "+(lines===1?"line":"lines");
+      renderSyntaxCode("workload-json-highlight",source||" ","JSON");
+      const state=byId("workload-json-state");
+      const shell=byId("workload-code-shell");
+      try{
+        if(!source.trim())throw new Error("Waiting for JSON");
+        const parsed=JSON.parse(source);
+        if(!parsed||typeof parsed!=="object"||Array.isArray(parsed))throw new Error("Workload JSON must be one object.");
+        state.className="badge good";
+        state.textContent="Valid JSON";
+        state.removeAttribute("title");
+        shell.classList.remove("invalid");
+      }catch(error){
+        const waiting=!source.trim();
+        state.className=waiting?"badge":"badge bad";
+        state.textContent=waiting?"Waiting for JSON":"Invalid JSON";
+        state.title=String(error.message||error);
+        shell.classList.toggle("invalid",!waiting);
+      }
+      updateReadWorkloadCursor();
+      syncReadWorkloadScroll();
+    }
+
+    function renderReadWorkloadBuilder(){
+      const resources=readWorkloadData?.structural_catalog?.resources||[];
+      const selector=byId("workload-builder-resource");
+      selector.innerHTML=resources.map(resource=>'<option value="'+esc(resource.id)+'">'+esc(resource.label||resource.id)+'</option>').join("");
+      const update=()=>{
+        const resource=resources.find(item=>item.id===selector.value)||resources[0];
+        const fields=resource?.fields||[];
+        const groups=fields.filter(field=>field.operations?.group);
+        byId("workload-builder-group").innerHTML='<option value="">No grouping</option>'+groups.map(field=>'<option value="'+esc(field.id)+'">'+esc(field.label||field.id)+'</option>').join("");
+        const measures=['<option value="count">Record count</option>'];
+        fields.forEach(field=>{
+          (field.operations?.aggregate||[]).forEach(fn=>measures.push('<option value="aggregate|'+esc(fn)+'|'+esc(field.id)+'">'+esc(humanizeIdentifier(fn))+" of "+esc(field.label||field.id)+'</option>'));
+          if(field.operations?.count_distinct)measures.push('<option value="count_distinct|count_distinct|'+esc(field.id)+'">Unique '+esc(field.label||field.id)+'</option>');
+        });
+        byId("workload-builder-measure").innerHTML=measures.join("");
+      };
+      selector.onchange=update;
+      update();
+    }
+
+    function addBuiltReadWorkloadPlan(){
+      const status=byId("workload-status");
+      try{
+        const workload=JSON.parse(byId("workload-json").value);
+        if(!Array.isArray(workload.allowed)||!Array.isArray(workload.forbidden))throw new Error("Workload JSON must contain allowed and forbidden arrays.");
+        const resource=byId("workload-builder-resource").value;
+        if(!resource)throw new Error("No reviewed resource is available for the visual builder.");
+        const group=byId("workload-builder-group").value;
+        const measureValue=byId("workload-builder-measure").value;
+        const description=byId("workload-builder-description").value.trim()||("Count "+resource+(group?" grouped by "+group:""));
+        const baseId=(description.toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,54)||"representative_read");
+        const ids=new Set([...(workload.allowed||[]),...(workload.forbidden||[])].map(entry=>entry.id));
+        let id=baseId;
+        for(let suffix=2;ids.has(id);suffix+=1)id=baseId+"_"+suffix;
+        const measureParts=measureValue.split("|");
+        const measure=measureValue==="count"
+          ?{function:"count"}
+          :{function:measureParts[1],field:measureParts[2]};
+        workload.allowed.push({
+          id,
+          description,
+          plan:{
+            kind:"aggregate",
+            resource,
+            ...(group?{dimensions:[{field:group}]}:{}),
+            measures:[measure]
+          }
+        });
+        workload.source={kind:"plan_playground"};
+        byId("workload-json").value=JSON.stringify(workload,null,2);
+        updateReadWorkloadEditor();
+        status.className="status-message success";
+        status.textContent="Representative plan added. Review the JSON, then analyze it.";
+      }catch(error){
+        status.className="status-message error";
+        status.textContent=error.message;
+      }
+    }
+
+    function renderSavedReadWorkloads(){
+      const panel=byId("workload-saved-list");
+      const workloads=readWorkloadData?.workloads||[];
+      if(!workloads.length){panel.innerHTML='<p>No saved workload analyses yet. Analyze exact plans or questions first.</p>';return}
+      panel.innerHTML='<h3>Immutable workload analyses</h3>'+workloads.map(item=>'<button class="resource '+(selectedReadWorkloadAnalysis===item.analysis_id?'selected':'')+'" type="button" data-read-workload="'+esc(item.analysis_id)+'"><span><strong>'+esc(item.analysis.workload_name)+'</strong><small>'+esc(item.analysis_id)+'</small></span><span class="badge '+(item.state==="ready"?'good':item.state==="blocked"?'bad':'warn')+'">'+esc(item.state.toUpperCase())+'</span></button>').join("");
+      panel.querySelectorAll("[data-read-workload]").forEach(button=>button.onclick=()=>{
+        selectedReadWorkloadAnalysis=button.dataset.readWorkload;
+        renderSavedReadWorkloads();
+      });
+    }
+
+    function updateReadWorkloadProvider(){
+      const provider=byId("workload-provider").value;
+      byId("workload-base-url-wrap").classList.toggle("hidden",provider!=="openai_compatible");
+      const defaults=readWorkloadData?.defaults||{};
+      if(provider==="openai"){
+        byId("workload-model").value=defaults.openai_model||"gpt-5.6-luna";
+        byId("workload-key-env").value=defaults.openai_key_env||"OPENAI_API_KEY";
+      }else if(provider==="anthropic"){
+        byId("workload-model").value=defaults.anthropic_model||"claude-sonnet-4-20250514";
+        byId("workload-key-env").value=defaults.anthropic_key_env||"ANTHROPIC_API_KEY";
+      }
+    }
+
+    async function loadReadWorkloadAssist(){
+      if(readWorkloadData)return;
+      const status=byId("workload-status");
+      try{
+        status.className="status-message loading";
+        status.textContent="Loading reviewed structural grammar...";
+        readWorkloadData=await getJson("/api/boundary/workloads");
+        if(readWorkloadData.starter_workload&&!byId("workload-json").value.trim()){
+          byId("workload-json").value=JSON.stringify(readWorkloadData.starter_workload,null,2);
+        }
+        selectedReadWorkloadAnalysis=(readWorkloadData.workloads||[]).find(item=>item.state==="ready")?.analysis_id||null;
+        renderReadWorkloadBuilder();
+        renderSavedReadWorkloads();
+        updateReadWorkloadEditor();
+        updateReadWorkloadProvider();
+        status.className="status-message";
+        status.textContent="Ready. Build or paste representative reads, then analyze the minimum required authority.";
+      }catch(error){
+        status.className="status-message error";
+        status.textContent=error.message;
+      }
+    }
+
+    function renderReadWorkloadResult(payload){
+      const panel=byId("workload-result");
+      const workload=payload?.workload;
+      if(!workload){panel.innerHTML="";return}
+      const analysis=workload.analysis;
+      const coverage=analysis.coverage;
+      const exposure=analysis.exposure;
+      const entries=(label,items)=>'<details class="band"><summary>'+esc(label)+' ('+items.length+')</summary>'+items.map(item=>'<div class="workload-entry"><strong>'+esc(item.id)+' <span class="badge '+(item.status==="supported"||item.status==="denied"?'good':'bad')+'">'+esc(item.status.toUpperCase())+'</span></strong><p>'+esc(item.description)+'</p>'+(item.reason?'<small>'+esc(item.reason)+'</small>':'')+'</div>').join("")+'</details>';
+      panel.innerHTML='<section class="band '+(analysis.status==="ready"?'success':'error')+'"><div class="split-actions"><div><p class="instant-kicker">Deterministic workload proof</p><h3>'+esc(analysis.workload_name)+'</h3><p>'+esc(analysis.status==="ready"?'Every required plan compiles under the minimized disabled candidate.':'Runner refused to create a candidate until every blocker is resolved.')+'</p></div><span class="badge '+(analysis.status==="ready"?'good':'bad')+'">'+esc(analysis.status.toUpperCase())+'</span></div><div class="workload-proof"><div><strong>'+coverage.allowed_supported+'/'+coverage.allowed_total+'</strong><span>required reads supported</span></div><div><strong>'+coverage.forbidden_denied+'/'+coverage.forbidden_total+'</strong><span>exact deny tests refused</span></div><div><strong>'+exposure.candidate_resources+'/'+exposure.generated_resources+'</strong><span>resources retained</span></div><div><strong>'+exposure.candidate_operation_fields+'</strong><span>field operations retained</span></div></div>'+(analysis.blockers.length?'<div class="error"><strong>Blockers</strong><ul>'+analysis.blockers.map(item=>'<li>'+esc(item)+'</li>').join("")+'</ul></div>':'')+'<p><strong>Authority status:</strong> disabled · <strong>Source query:</strong> not executed · <strong>Explore budget:</strong> not consumed · <strong>Source database:</strong> unchanged</p>'+(payload.preview?'<div class="workload-review-actions"><button id="workload-apply" type="button">Save disabled read boundary</button><span>Activation remains a separate human step.</span></div><details><summary>Advanced exact review identifiers</summary><p>Analysis: <code>'+esc(workload.analysis_id)+'</code><br>Decision: <code>'+esc(payload.preview.decision_digest)+'</code><br>Candidate: <code>'+esc(payload.preview.candidate_digest)+'</code></p></details>':'')+'</section>'+entries("Required read checks",analysis.allowed)+entries("Forbidden read checks",analysis.forbidden);
+      if(payload.preview)byId("workload-apply").onclick=applyReadWorkloadCandidate;
+    }
+
+    async function analyzeReadWorkload(){
+      const status=byId("workload-status");
+      readWorkloadPreview=null;
+      try{
+        const actor=byId("workload-actor").value.trim();
+        const reason=byId("workload-reason").value.trim();
+        if(!actor||!reason)throw new Error("Enter the reviewer identity and concrete review reason.");
+        let body={mode:readWorkloadMode,actor,reason};
+        if(readWorkloadMode==="exact"){
+          body.workload=JSON.parse(byId("workload-json").value);
+        }else if(readWorkloadMode==="model"){
+          const provider=byId("workload-provider").value;
+          body={...body,
+            intent:{
+              name:byId("workload-intent-name").value.trim(),
+              allowed_questions:readWorkloadLines(byId("workload-allowed-questions").value),
+              forbidden_questions:readWorkloadLines(byId("workload-forbidden-questions").value)
+            },
+            provider,
+            model:byId("workload-model").value.trim(),
+            api_key_env:byId("workload-key-env").value.trim(),
+            ...(provider==="openai_compatible"?{base_url:byId("workload-base-url").value.trim()}:{}),
+            egress_acknowledged:byId("workload-egress").checked
+          };
+        }else{
+          if(!selectedReadWorkloadAnalysis)throw new Error("Select one saved ready analysis.");
+          body.analysis_id=selectedReadWorkloadAnalysis;
+        }
+        status.className="status-message loading";
+        status.textContent=readWorkloadMode==="model"?"Mapping questions, then validating exact plans...":"Validating and minimizing exact plans...";
+        const payload=await post("/api/boundary/workloads/analyze",body);
+        readWorkloadPreview=payload;
+        renderReadWorkloadResult(payload);
+        status.className="status-message success";
+        status.textContent="Analysis complete. Review coverage and exposure before saving the disabled revision.";
+      }catch(error){
+        const payload=error.payload;
+        if(payload?.workload)renderReadWorkloadResult(payload);
+        status.className="status-message error";
+        status.textContent=error.message;
+      }
+    }
+
+    async function applyReadWorkloadCandidate(){
+      if(!readWorkloadPreview?.preview)return;
+      if(!window.confirm("Save this exact minimized candidate as the selected disabled boundary draft? Existing active authority and source data stay unchanged."))return;
+      const status=byId("workload-status");
+      try{
+        status.className="status-message loading";
+        status.textContent="Rechecking schema, role posture, and the exact workload decision...";
+        const decision=readWorkloadPreview.preview.decision_digest;
+        const payload=await post("/api/boundary/workloads/apply",{
+          analysis_id:readWorkloadPreview.workload.analysis_id,
+          actor:byId("workload-actor").value.trim(),
+          reason:byId("workload-reason").value.trim(),
+          decision_digest:decision,
+          confirmation:"APPLY WORKLOAD "+decision
+        });
+        document.querySelector('[data-view="workloads"]').classList.add("done");
+        readWorkloadData=null;
+        await load();
+        byId("workload-result").innerHTML='<section class="band success"><h3>Disabled read boundary saved</h3><p>No source query ran, no privacy budget was consumed, no source data changed, and no authority was activated.</p><div class="actions"><button id="workload-go-activate" type="button">Review and activate reads</button><button id="workload-go-action" class="secondary" type="button">Continue to Action Assist</button></div></section>';
+        byId("workload-go-activate").onclick=()=>setView("activate");
+        byId("workload-go-action").onclick=()=>setView("action");
+        status.className="status-message success";
+        status.textContent=payload.next;
+      }catch(error){
+        status.className="status-message error";
+        status.textContent=error.message;
+      }
+    }
+
     async function loadGuidedAction(){
       const status=byId("action-status");
       if(guidedActionData){
@@ -7487,7 +7819,10 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       reviewInvalidations=payload.review_progress?.invalidated_decisions||[];
       reviewProgressHealthy=true;
        showDeploymentProfile(candidate.deployment_profile);
-      if(payload.operator_identity)byId("actor").value=payload.operator_identity;
+      if(payload.operator_identity){
+        byId("actor").value=payload.operator_identity;
+        byId("workload-actor").value=payload.operator_identity;
+      }
        byId("header-state").textContent=activeBoundaries.length
          ?activeBoundaries.length===1?"1 active reviewed boundary":activeBoundaries.length+" active reviewed boundaries"
         :namedAuthorityActive
@@ -7516,6 +7851,46 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     }
 
 	    document.querySelectorAll("[data-view]").forEach(button=>button.onclick=()=>setView(button.dataset.view));
+	    byId("workload-exact-tab").onclick=()=>setReadWorkloadMode("exact");
+	    byId("workload-model-tab").onclick=()=>setReadWorkloadMode("model");
+	    byId("workload-saved-tab").onclick=()=>setReadWorkloadMode("saved");
+	    byId("workload-provider").onchange=updateReadWorkloadProvider;
+	    byId("workload-add-plan").onclick=addBuiltReadWorkloadPlan;
+	    byId("workload-open-file").onclick=()=>byId("workload-file").click();
+	    byId("workload-file").onchange=async event=>{
+	      const file=event.currentTarget.files?.[0];
+	      if(!file)return;
+	      const status=byId("workload-status");
+	      try{
+	        if(file.size>64*1024)throw new Error("Workload JSON files must be 64 KiB or smaller.");
+	        byId("workload-json").value=await file.text();
+	        updateReadWorkloadEditor();
+	        status.className="status-message";
+	        status.textContent="Loaded "+file.name+" locally. Nothing was sent or analyzed yet.";
+	      }catch(error){
+	        status.className="status-message error";
+	        status.textContent=error.message;
+	      }finally{
+	        event.currentTarget.value="";
+	      }
+	    };
+	    byId("workload-format").onclick=()=>{
+	      const status=byId("workload-status");
+	      try{
+	        byId("workload-json").value=JSON.stringify(JSON.parse(byId("workload-json").value),null,2);
+	        updateReadWorkloadEditor();
+	        status.className="status-message";
+	        status.textContent="Workload JSON formatted.";
+	      }catch(error){
+	        status.className="status-message error";
+	        status.textContent=error.message;
+	      }
+	    };
+	    byId("workload-json").addEventListener("input",updateReadWorkloadEditor);
+	    byId("workload-json").addEventListener("scroll",syncReadWorkloadScroll);
+	    byId("workload-json").addEventListener("click",updateReadWorkloadCursor);
+	    byId("workload-json").addEventListener("keyup",updateReadWorkloadCursor);
+	    byId("workload-analyze").onclick=analyzeReadWorkload;
 	    function setResourceFilter(filter){
 	      resourceFilter=resourceFilter===filter?"all":filter;
 	      const collectionLabel=reviewedCollectionLabel();

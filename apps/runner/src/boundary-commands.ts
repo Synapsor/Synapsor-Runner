@@ -108,6 +108,25 @@ import {
 } from "./action-suggestions.js";
 import { generateModelActionSuggestion } from "./action-suggestion-model.js";
 import {
+  generateModelReadWorkload,
+} from "./read-workload-model.js";
+import {
+  analyzeReadWorkloadSet,
+  normalizeReadWorkloadSet,
+  type ReadWorkloadSet,
+} from "./read-workload-assist.js";
+import {
+  commitReadWorkloadCandidate,
+  prepareReadWorkloadCandidate,
+  type ReadWorkloadCandidatePreview,
+} from "./read-workload-authoring.js";
+import {
+  listReadWorkloadAnalyses,
+  readReadWorkloadAnalysis,
+  storeReadWorkloadAnalysis,
+  type ReadWorkloadView,
+} from "./read-workloads.js";
+import {
   boundaryReviewRequestsFromDecisionFile,
   parseBoundaryReviewDecisionFile,
 } from "./boundary-review-decision-file.js";
@@ -186,6 +205,257 @@ export type BoundaryReviewCommandOptions = {
   }) => string;
   startAtBoundaryList?: boolean;
 };
+
+export async function boundaryAssistCommand(
+  args: string[],
+  schemaInspector: typeof inspectDatabase = inspectDatabase,
+): Promise<number> {
+  const allowed = new Set([
+    "--project-root", "--workload", "--intent", "--analysis", "--list",
+    "--provider", "--model", "--api-key-env", "--base-url",
+    "--acknowledge-structural-metadata-egress", "--actor", "--reason",
+    "--apply", "--confirm", "--json",
+  ]);
+  assertKnownOptions(args, allowed, "boundary assist");
+  const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
+  const context = await loadBoundaryReviewContext(projectRoot);
+  if (args.includes("--list")) {
+    if (args.some((arg) => ["--workload", "--intent", "--analysis", "--apply"].includes(arg))) {
+      throw new Error("boundary assist --list cannot be combined with workload creation or application flags.");
+    }
+    const workloads = await listReadWorkloadAnalyses({
+      projectRoot,
+      generatedBoundary: context.draft,
+    });
+    if (args.includes("--json")) {
+      process.stdout.write(`${JSON.stringify({ ok: true, workloads }, null, 2)}\n`);
+    } else {
+      process.stdout.write(`${formatReadWorkloadList(workloads)}\n`);
+    }
+    return 0;
+  }
+
+  const workloadPath = optionalArg(args, "--workload");
+  const intentPath = optionalArg(args, "--intent");
+  const analysisId = optionalArg(args, "--analysis");
+  const selectedInputs = [workloadPath, intentPath, analysisId].filter(Boolean);
+  if (selectedInputs.length !== 1) {
+    throw new Error(
+      "boundary assist requires exactly one of --workload <exact-plan.json>, --intent <questions.json>, or --analysis <rw_id>. Use --list to inspect saved analyses.",
+    );
+  }
+
+  let workload: ReadWorkloadView;
+  if (analysisId) {
+    workload = await readReadWorkloadAnalysis({
+      projectRoot,
+      analysisId,
+      generatedBoundary: context.draft,
+    });
+  } else if (workloadPath) {
+    const exact = normalizeReadWorkloadSet(
+      await readJsonFileWithLocation<unknown>(path.resolve(workloadPath), "read workload"),
+    );
+    if (exact.source?.kind !== "operator_exact_plan" && exact.source?.kind !== "plan_playground") {
+      throw new Error("Exact workload import must declare source.kind=operator_exact_plan or plan_playground.");
+    }
+    const analysis = analyzeReadWorkloadSet({
+      workload: exact,
+      generatedBoundary: context.draft,
+    });
+    workload = await storeReadWorkloadAnalysis({
+      projectRoot,
+      generatedBoundary: context.draft,
+      source: exact.source,
+      analysis,
+    });
+  } else {
+    const intent = parseReadWorkloadIntent(
+      await readJsonFileWithLocation<unknown>(path.resolve(intentPath!), "read workload intent"),
+    );
+    const provider = optionalArg(args, "--provider");
+    if (provider !== "openai" && provider !== "anthropic" && provider !== "openai_compatible") {
+      throw new Error("Model-assisted boundary assist requires --provider openai, anthropic, or openai_compatible.");
+    }
+    const defaultModel = provider === "anthropic"
+      ? DEFAULT_TERMINAL_ANTHROPIC_ASK_MODEL
+      : DEFAULT_TERMINAL_OPENAI_ASK_MODEL;
+    const mapped = await generateModelReadWorkload({
+      name: intent.name,
+      allowedQuestions: intent.allowed_questions,
+      forbiddenQuestions: intent.forbidden_questions,
+      provider,
+      model: optionalArg(args, "--model") ?? defaultModel,
+      generatedBoundary: context.draft,
+      ...(optionalArg(args, "--api-key-env") ? { apiKeyEnv: optionalArg(args, "--api-key-env") } : {}),
+      ...(optionalArg(args, "--base-url") ? { baseUrl: optionalArg(args, "--base-url") } : {}),
+      egressAcknowledged: args.includes("--acknowledge-structural-metadata-egress"),
+    });
+    workload = await storeReadWorkloadAnalysis({
+      projectRoot,
+      generatedBoundary: context.draft,
+      source: mapped.workload.source!,
+      analysis: mapped.analysis,
+    });
+  }
+
+  let preview: ReadWorkloadCandidatePreview | undefined;
+  const actor = optionalArg(args, "--actor");
+  const reason = optionalArg(args, "--reason");
+  if (Boolean(actor) !== Boolean(reason)) {
+    throw new Error("An actionable Boundary Assist preview requires both --actor <human> and --reason <concrete-review-reason>.");
+  }
+  if (workload.state === "ready" && actor && reason) {
+    preview = await prepareReadWorkloadCandidate({
+      projectRoot,
+      workload,
+      actor,
+      reason,
+      expectedBindings: context.bundle.mutation_bindings,
+      schemaInspector,
+    });
+  }
+  const output = {
+    ok: workload.state === "ready",
+    workload,
+    ...(preview ? {
+      preview: {
+        decision_digest: preview.mutation.decision_digest,
+        candidate_digest: preview.mutation.candidate_digest,
+        semantic_diff: preview.mutation.semantic_diff,
+        authority_activated: false,
+        source_database_changed: false,
+      },
+    } : {}),
+  };
+  if (!args.includes("--apply")) {
+    if (args.includes("--json")) process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
+    else process.stdout.write(`${formatReadWorkloadPreview(workload, preview)}\n`);
+    return workload.state === "ready" ? 0 : 2;
+  }
+  if (!preview) {
+    throw new Error("READ_WORKLOAD_BLOCKED: resolve every listed blocker before creating a boundary revision.");
+  }
+  if (!actor || !reason) {
+    throw new Error("Applying a workload candidate requires --actor <human> and --reason <concrete-review-reason>.");
+  }
+  const expectedConfirmation = `APPLY WORKLOAD ${preview.mutation.decision_digest}`;
+  if (optionalArg(args, "--confirm") !== expectedConfirmation) {
+    throw new Error(
+      `No boundary revision was saved. Re-run with --confirm ${shellQuote(expectedConfirmation)} after reviewing the preview.`,
+    );
+  }
+  const committed = await commitReadWorkloadCandidate({ projectRoot, preview });
+  const applied = {
+    ok: true,
+    analysis_id: workload.analysis_id,
+    candidate_digest: committed.candidate_digest,
+    review_revision: committed.review_revision,
+    authority_activated: false,
+    source_query_executed: false,
+    explore_budget_consumed: false,
+    source_database_changed: false,
+    next: `${cliCommandName()} boundary review --project-root ${displayPath(projectRoot)}`,
+  };
+  if (args.includes("--json")) process.stdout.write(`${JSON.stringify(applied, null, 2)}\n`);
+  else {
+    const theme = terminalTheme(process.stdout.isTTY && !process.env.NO_COLOR);
+    process.stdout.write([
+      theme.success("READ BOUNDARY CANDIDATE SAVED"),
+      `Workload: ${workload.analysis.workload_name}`,
+      `Coverage: ${workload.analysis.coverage.allowed_supported}/${workload.analysis.coverage.allowed_total} allowed; `
+        + `${workload.analysis.coverage.forbidden_denied}/${workload.analysis.coverage.forbidden_total} forbidden examples denied`,
+      "Status: disabled review revision; agent authority is unchanged.",
+      "Source query executed: no | Explore budget consumed: no | Source database changed: no",
+      `Next: review the focused decisions with ${applied.next}, then activate the exact boundary explicitly.`,
+      "After read activation, run the existing Action Assist flow only for proposal capabilities this agent needs.",
+      "",
+    ].join("\n"));
+  }
+  return 0;
+}
+
+function parseReadWorkloadIntent(value: unknown): {
+  name: string;
+  allowed_questions: string[];
+  forbidden_questions: string[];
+} {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Read workload intent must be one JSON object.");
+  }
+  const record = value as Record<string, unknown>;
+  const keys = Object.keys(record);
+  const unknown = keys.filter((key) => !["name", "allowed_questions", "forbidden_questions"].includes(key));
+  if (unknown.length) throw new Error(`Read workload intent contains unknown key ${unknown[0]}.`);
+  if (typeof record.name !== "string" || !record.name.trim() || record.name.trim().length > 80) {
+    throw new Error("Read workload intent requires name with 1-80 characters.");
+  }
+  const questions = (key: "allowed_questions" | "forbidden_questions", required: boolean) => {
+    const values = record[key];
+    if (!Array.isArray(values) || (required && values.length < 1) || values.length > 40
+      || values.some((item) => typeof item !== "string" || !item.trim() || item.trim().length > 500)) {
+      throw new Error(`${key} must contain ${required ? "1-40" : "0-40"} questions of at most 500 characters.`);
+    }
+    return values.map((item) => (item as string).trim());
+  };
+  return {
+    name: record.name.trim(),
+    allowed_questions: questions("allowed_questions", true),
+    forbidden_questions: questions("forbidden_questions", false),
+  };
+}
+
+function formatReadWorkloadList(workloads: ReadWorkloadView[]): string {
+  if (!workloads.length) {
+    return [
+      "BOUNDARY ASSIST WORKLOADS",
+      "No workload analyses are stored for this project.",
+      `Create one with ${cliCommandName()} boundary assist --workload <exact-plan.json>.`,
+    ].join("\n");
+  }
+  return [
+    "BOUNDARY ASSIST WORKLOADS",
+    ...workloads.map((workload) =>
+      `${workload.analysis_id}  ${workload.state.toUpperCase().padEnd(8)}  ${workload.analysis.workload_name}  `
+      + `${workload.analysis.coverage.allowed_supported}/${workload.analysis.coverage.allowed_total} allowed`),
+  ].join("\n");
+}
+
+function formatReadWorkloadPreview(
+  workload: ReadWorkloadView,
+  preview?: ReadWorkloadCandidatePreview,
+): string {
+  const analysis = workload.analysis;
+  const lines = [
+    "BOUNDARY ASSIST - READ WORKLOAD",
+    `Workload: ${analysis.workload_name}`,
+    `Analysis: ${workload.analysis_id} (${workload.state})`,
+    `Coverage: ${analysis.coverage.allowed_supported}/${analysis.coverage.allowed_total} allowed questions supported`,
+    `Deny tests: ${analysis.coverage.forbidden_denied}/${analysis.coverage.forbidden_total} exact forbidden plans denied`,
+    `Candidate: ${analysis.exposure.candidate_resources} resources | ${analysis.exposure.candidate_return_fields} return fields | `
+      + `${analysis.exposure.candidate_operation_fields} operation fields | ${analysis.exposure.candidate_relationships} relationships`,
+    "Agent authority: disabled | Source query: no | Explore budget: no | Source database changed: no",
+  ];
+  if (analysis.blockers.length) {
+    lines.push("", "BLOCKERS", ...analysis.blockers.map((blocker) => `  - ${blocker}`));
+  }
+  if (preview) {
+    const confirmation = `APPLY WORKLOAD ${preview.mutation.decision_digest}`;
+    lines.push(
+      "",
+      "This replaces only the selected disabled boundary draft. Existing active boundaries remain unchanged.",
+      `Save disabled revision: ${cliCommandName()} boundary assist --analysis ${workload.analysis_id} --apply --actor <human> --reason <reason> --confirm ${shellQuote(confirmation)}`,
+      "Activation remains a separate human decision.",
+    );
+  } else if (workload.state === "ready") {
+    lines.push(
+      "",
+      `Prepare the digest-bound disabled revision: ${cliCommandName()} boundary assist --analysis ${workload.analysis_id} --actor <human> --reason <reason>`,
+      "Runner will recheck current schema and trusted authority before showing the exact apply phrase.",
+    );
+  }
+  return lines.join("\n");
+}
 
 type ProductionActivationReadiness = {
   ready: boolean;
@@ -1237,6 +1507,38 @@ async function interactiveBoundaryReviewLoop(input: {
       }
       return 0;
     }
+    if (selected.action === "workloads") {
+      try {
+        accessNotice = await interactiveReadWorkloadAssist({
+          projectRoot: input.projectRoot,
+          schemaInspector: input.schemaInspector,
+          session: input.session,
+        });
+      } catch (error) {
+        accessNotice = {
+          tone: "danger",
+          title: "Boundary Assist did not change the draft.",
+          lines: [redactCliErrorMessage(error instanceof Error ? error.message : String(error))],
+          footer: "Active authority and source data are unchanged.",
+        };
+      }
+      continue;
+    }
+    if (selected.action === "actions") {
+      await reviewActionsCommand(
+        ["--project-root", input.projectRoot],
+        inspectActionProject,
+      );
+      accessNotice = {
+        tone: "success",
+        title: "Returned from Safe Actions.",
+        lines: [
+          "Read-boundary review and active authority are unchanged.",
+          "New action revisions remain disabled until their own rehearsal and activation.",
+        ],
+      };
+      continue;
+    }
     if (selected.action === "intent_check") {
       const currentMode = await askIntentCheckModeForBoundary(
         input.projectRoot,
@@ -1735,6 +2037,256 @@ async function interactiveBoundaryReviewLoop(input: {
     }
     if (result !== "back" && result !== 0) return result;
   }
+}
+
+async function interactiveReadWorkloadAssist(input: {
+  projectRoot: string;
+  schemaInspector: typeof inspectDatabase;
+  session: BoundaryReviewInteractiveSession;
+}): Promise<BoundaryAccessNotice> {
+  const choice = await input.session.promptText([
+    "BOUNDARY ASSIST - REPRESENTATIVE READS",
+    "Runner compiles exact representative plans into the smallest candidate read boundary.",
+    "1  Exact workload JSON (no model)",
+    "2  Type representative questions (optional model maps language to exact plans)",
+    "3  Import question intent JSON",
+    "4  Saved workload analysis",
+    "Choose 1, 2, 3, or 4",
+  ].join("\n"));
+  if (choice === undefined) return boundaryAssistBackNotice();
+  if (choice !== "1" && choice !== "2" && choice !== "3" && choice !== "4") {
+    return {
+      tone: "warning",
+      title: "Choose one Boundary Assist input mode.",
+      lines: ["Press W again and enter 1, 2, 3, or 4."],
+    };
+  }
+  let context = await loadBoundaryReviewContext(input.projectRoot);
+  let workload: ReadWorkloadView;
+  if (choice === "1") {
+    const file = await input.session.promptText(
+      "Exact workload JSON file [Esc Back]",
+    );
+    if (file === undefined) return boundaryAssistBackNotice();
+    if (!file.trim()) throw new Error("Choose one exact workload JSON file.");
+    const exact = normalizeReadWorkloadSet(
+      await readJsonFileWithLocation<unknown>(path.resolve(file.trim()), "read workload"),
+    );
+    if (exact.source?.kind !== "operator_exact_plan" && exact.source?.kind !== "plan_playground") {
+      throw new Error("Exact workload import must declare source.kind=operator_exact_plan or plan_playground.");
+    }
+    const analysis = analyzeReadWorkloadSet({ workload: exact, generatedBoundary: context.draft });
+    workload = await storeReadWorkloadAnalysis({
+      projectRoot: input.projectRoot,
+      generatedBoundary: context.draft,
+      source: exact.source,
+      analysis,
+    });
+  } else if (choice === "2" || choice === "3") {
+    let intent: ReturnType<typeof parseReadWorkloadIntent>;
+    if (choice === "2") {
+      const nameText = await input.session.promptText(
+        "Workload name [representative_reads] [Esc Back]",
+      );
+      if (nameText === undefined) return boundaryAssistBackNotice();
+      const allowedQuestions = await promptReadWorkloadQuestions(
+        input.session,
+        "Required read",
+        true,
+      );
+      if (!allowedQuestions) return boundaryAssistBackNotice();
+      const forbiddenQuestions = await promptReadWorkloadQuestions(
+        input.session,
+        "Forbidden read",
+        false,
+      );
+      if (!forbiddenQuestions) return boundaryAssistBackNotice();
+      intent = parseReadWorkloadIntent({
+        name: nameText.trim() || "representative_reads",
+        allowed_questions: allowedQuestions,
+        forbidden_questions: forbiddenQuestions,
+      });
+    } else {
+      const file = await input.session.promptText(
+        "Question intent JSON file (name, allowed_questions, forbidden_questions) [Esc Back]",
+      );
+      if (file === undefined) return boundaryAssistBackNotice();
+      if (!file.trim()) throw new Error("Choose one question intent JSON file.");
+      intent = parseReadWorkloadIntent(
+        await readJsonFileWithLocation<unknown>(path.resolve(file.trim()), "read workload intent"),
+      );
+    }
+    const providerText = await input.session.promptText(
+      "Provider: openai, anthropic, or openai_compatible [openai] [Esc Back]",
+    );
+    if (providerText === undefined) return boundaryAssistBackNotice();
+    const provider = providerText.trim() || "openai";
+    if (provider !== "openai" && provider !== "anthropic" && provider !== "openai_compatible") {
+      throw new Error("Provider must be openai, anthropic, or openai_compatible.");
+    }
+    const defaultModel = provider === "anthropic"
+      ? DEFAULT_TERMINAL_ANTHROPIC_ASK_MODEL
+      : DEFAULT_TERMINAL_OPENAI_ASK_MODEL;
+    const modelText = await input.session.promptText(
+      `Model [${defaultModel}] [Esc Back]`,
+    );
+    if (modelText === undefined) return boundaryAssistBackNotice();
+    const keyDefault = provider === "anthropic" ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY";
+    const keyText = await input.session.promptText(
+      `API key environment variable [${keyDefault}] [Esc Back]`,
+    );
+    if (keyText === undefined) return boundaryAssistBackNotice();
+    let baseUrl: string | undefined;
+    if (provider === "openai_compatible") {
+      const base = await input.session.promptText(
+        "OpenAI-compatible base URL (use a loopback URL for a local model) [Esc Back]",
+      );
+      if (base === undefined) return boundaryAssistBackNotice();
+      if (!base.trim()) throw new Error("openai_compatible requires one base URL.");
+      baseUrl = base.trim();
+    }
+    const acknowledged = await input.session.confirm([
+      "Send only reviewed visible resource/field names, types, relationship IDs, labels/descriptions, and these questions to the selected model?",
+      "Runner will not send database rows, values, kept-out fields, credentials, URLs, or trusted tenant/principal values.",
+    ].join(" "), { defaultValue: false });
+    if (!acknowledged) return boundaryAssistBackNotice("Model mapping was not started.");
+    const mapped = await generateModelReadWorkload({
+      name: intent.name,
+      allowedQuestions: intent.allowed_questions,
+      forbiddenQuestions: intent.forbidden_questions,
+      provider,
+      model: modelText.trim() || defaultModel,
+      generatedBoundary: context.draft,
+      apiKeyEnv: keyText.trim() || keyDefault,
+      ...(baseUrl ? { baseUrl } : {}),
+      egressAcknowledged: true,
+    });
+    workload = await storeReadWorkloadAnalysis({
+      projectRoot: input.projectRoot,
+      generatedBoundary: context.draft,
+      source: mapped.workload.source!,
+      analysis: mapped.analysis,
+    });
+  } else {
+    const workloads = await listReadWorkloadAnalyses({
+      projectRoot: input.projectRoot,
+      generatedBoundary: context.draft,
+    });
+    if (!workloads.length) {
+      return {
+        tone: "warning",
+        title: "No saved workload analyses are available.",
+        lines: ["Press W and choose exact plans or optional model mapping first."],
+      };
+    }
+    const selectedId = await input.session.promptText([
+      "SAVED WORKLOAD ANALYSES",
+      ...workloads.slice(0, 12).map((entry) =>
+        `${entry.analysis_id}  [${entry.state}]  ${entry.analysis.workload_name}`),
+      "Analysis ID [Esc Back]",
+    ].join("\n"));
+    if (selectedId === undefined) return boundaryAssistBackNotice();
+    workload = await readReadWorkloadAnalysis({
+      projectRoot: input.projectRoot,
+      analysisId: selectedId.trim(),
+      generatedBoundary: context.draft,
+    });
+  }
+  if (workload.state !== "ready") {
+    return {
+      tone: "danger",
+      title: `Workload ${workload.analysis.workload_name} is ${workload.state}.`,
+      lines: workload.analysis.blockers.length
+        ? workload.analysis.blockers.slice(0, 5)
+        : [workload.stale_reason ?? "Re-run this workload against the current generated boundary."],
+      footer: "Nothing was saved or activated.",
+    };
+  }
+  const actorDefault = process.env.USER?.trim() || "local-reviewer";
+  const actorText = await input.session.promptText(`Reviewer identity [${actorDefault}] [Esc Back]`);
+  if (actorText === undefined) return boundaryAssistBackNotice();
+  const reasonDefault = `Compile representative workload ${workload.analysis.workload_name}.`;
+  const reasonText = await input.session.promptText(`Review reason [${reasonDefault}] [Esc Back]`);
+  if (reasonText === undefined) return boundaryAssistBackNotice();
+  context = await loadBoundaryReviewContext(input.projectRoot);
+  const preview = await prepareReadWorkloadCandidate({
+    projectRoot: input.projectRoot,
+    workload,
+    actor: actorText.trim() || actorDefault,
+    reason: reasonText.trim() || reasonDefault,
+    expectedBindings: context.bundle.mutation_bindings,
+    schemaInspector: input.schemaInspector,
+  });
+  const coverage = workload.analysis.coverage;
+  const exposure = workload.analysis.exposure;
+  const save = await input.session.confirm([
+    `Save this disabled candidate for ${workload.analysis.workload_name}?`,
+    `${coverage.allowed_supported}/${coverage.allowed_total} allowed questions work; `
+      + `${coverage.forbidden_denied}/${coverage.forbidden_total} exact forbidden plans remain denied.`,
+    `${exposure.candidate_resources} resources, ${exposure.candidate_return_fields} return fields, `
+      + `${exposure.candidate_operation_fields} operation fields, ${exposure.candidate_relationships} relationships.`,
+    "This replaces only the selected disabled draft. Existing active boundaries and source data remain unchanged.",
+  ].join(" "), { defaultValue: false });
+  if (!save) {
+    return {
+      tone: "success",
+      title: "Workload analysis saved; boundary draft unchanged.",
+      lines: [
+        `Analysis: ${workload.analysis_id}`,
+        "Press W and choose Saved workload analysis when you are ready to review it again.",
+      ],
+    };
+  }
+  const committed = await commitReadWorkloadCandidate({
+    projectRoot: input.projectRoot,
+    preview,
+  });
+  return {
+    tone: "success",
+    title: "Minimum read boundary saved as a disabled review revision.",
+    lines: [
+      `${coverage.allowed_supported}/${coverage.allowed_total} allowed questions work; `
+        + `${coverage.forbidden_denied}/${coverage.forbidden_total} exact deny tests remain blocked.`,
+      `${exposure.candidate_resources} resources | ${exposure.candidate_return_fields} return fields | `
+        + `${exposure.candidate_relationships} relationships`,
+      `Review revision ${committed.review_revision}; agent authority is unchanged.`,
+    ],
+    footer: "Press C to review and activate this read boundary. After read setup, use Action Assist only for proposal capabilities.",
+  };
+}
+
+async function promptReadWorkloadQuestions(
+  session: BoundaryReviewInteractiveSession,
+  label: string,
+  required: boolean,
+): Promise<string[] | undefined> {
+  const questions: string[] = [];
+  while (questions.length < 20) {
+    const answer = await session.promptText(
+      `${label} ${questions.length + 1}${questions.length === 0 && required
+        ? " (required)"
+        : " (blank when done)"} [Esc Back]`,
+    );
+    if (answer === undefined) return undefined;
+    const normalized = answer.trim();
+    if (!normalized) {
+      if (required && questions.length === 0) continue;
+      return questions;
+    }
+    if (normalized.length > 500) {
+      throw new Error(`${label} questions must be at most 500 characters each.`);
+    }
+    questions.push(normalized);
+  }
+  return questions;
+}
+
+function boundaryAssistBackNotice(detail = "Boundary Assist closed."): BoundaryAccessNotice {
+  return {
+    tone: "success",
+    title: detail,
+    lines: ["The selected disabled draft, active authority, and source database are unchanged."],
+  };
 }
 
 async function interactiveBoundaryLimitsReview(input: {

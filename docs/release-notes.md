@@ -12,6 +12,33 @@ for the Synapsor Cloud CLI.
 
 ## Unreleased
 
+### Boundary Assist And Unified Read-to-Action Onboarding
+
+- `boundary assist`, the terminal boundary editor's `W Workloads` entry, and
+  Workbench's **Compile read workload** step compile representative exact
+  Explore plans into a minimized disabled read-boundary candidate. Workbench
+  adds a visual aggregate builder, multiline highlighted JSON/file import, and
+  immutable saved-analysis replay.
+- Optional OpenAI, Anthropic, and OpenAI-compatible mapping converts
+  operator-authored questions into exact candidate plans only after explicit
+  structural-metadata egress consent. The catalog excludes rows, database
+  values, credentials, database URL values, trusted tenant/principal values,
+  kept-out/model-withheld fields, SQL, and every activation/write authority.
+- The trusted compiler validates and compiles allowed plans without source
+  execution, extracts exact operation and relationship atoms, minimizes the
+  candidate, and requires forbidden examples to be valid exact plans that the
+  minimized candidate denies. Invalid IDs and contradictory requirements block
+  rather than count as successful deny tests.
+- Analyses and human review results are immutable and generation-bound. Saving
+  re-inspects schema and database-role posture, preserves existing active
+  boundaries, writes a disabled revision only, consumes no Explore budget, and
+  changes no source data. Human activation remains separate.
+- After read activation, `Y Safe actions` opens the existing proposal-first
+  Action Assist from the same terminal flow. Workbench links the equivalent
+  activation and action steps. Read authority still grants no write authority;
+  Safe Action rehearsal, digest, activation, approval, and apply remain
+  independent.
+
 ### Safe Action Human Control Plane
 
 - Local `synapsor>` Ask now opens the same operator-only control plane with

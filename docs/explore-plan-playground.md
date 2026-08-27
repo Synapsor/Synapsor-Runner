@@ -148,6 +148,29 @@ cat ./orders-by-region.json | \
 `--plan-json` is available for short experiments. `--input` is a compatibility
 alias for `--plan`.
 
+## Turn Representative Plans Into A Boundary Draft
+
+The playground proves one exact plan. Boundary Assist can combine several
+representative plans into the smallest disabled read-boundary revision that
+supports that workload:
+
+```bash
+synapsor-runner boundary assist \
+  --workload ./support-read-workloads.json \
+  --project-root .
+```
+
+Use `W Workloads` in `boundary review --access` for the guided terminal flow,
+or open **Read workloads** in Workbench. The workload file contains named
+allowed plans and optional exact forbidden plans; see
+[Read Workload Boundary Assist](read-workload-boundary-assist.md) for its
+schema and review flow.
+
+Boundary Assist validates and compiles without querying source rows or
+consuming Explore budget. Saving records a disabled candidate only. A human
+must still review and activate it with `C`, after which `Y Safe actions` opens
+the separate proposal-only write-authoring flow.
+
 ## Use The Interactive CLI
 
 Open the stateful terminal playground:

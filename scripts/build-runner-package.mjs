@@ -239,6 +239,7 @@ const publicDocs = [
   "prevent-llm-arbitrary-sql.md",
   "production.md",
   "production-scoped-explore-http.md",
+  "read-workload-boundary-assist.md",
   "reviewed-relationships.md",
   "reviewed-database-views.md",
   "proposal-evidence-freshness.md",

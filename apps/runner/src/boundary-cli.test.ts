@@ -22,6 +22,7 @@ import {
   main,
 } from "./cli.js";
 import {
+  boundaryAssistCommand,
   boundaryActivateCommand as boundaryActivateCommandInternal,
   boundaryReviewCommand as boundaryReviewCommandInternal,
   formatFocusedBoundaryActivationReview,
@@ -49,6 +50,15 @@ import {
   prepareBoundaryResourceReviewMutation,
   reviewedBoundaryOperationRepairFields,
 } from "./boundary-review-mutation.js";
+import { analyzeReadWorkloadSet, READ_WORKLOAD_SET_VERSION } from "./read-workload-assist.js";
+import {
+  commitReadWorkloadCandidate,
+  prepareReadWorkloadCandidate,
+} from "./read-workload-authoring.js";
+import {
+  readReadWorkloadAnalysis,
+  storeReadWorkloadAnalysis,
+} from "./read-workloads.js";
 import { loadCompletedBoundaryReviewOverrides } from "./boundary-review-policy.js";
 import { boundaryCommand } from "./guided-start.js";
 import { initializeGuidedProject, readGuidedOnboardingState } from "./guided-project.js";
@@ -6437,6 +6447,194 @@ describe("boundary operator-plane CLI", () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   }, 30_000);
+
+  it("revalidates a workload-minimized candidate and saves it disabled without active authority", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-read-workload-authoring-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const analysis = analyzeReadWorkloadSet({
+        generatedBoundary: build.exploration_boundary,
+        workload: {
+          schema_version: READ_WORKLOAD_SET_VERSION,
+          name: "service_reporting",
+          allowed: [{
+            id: "visits_by_status",
+            description: "Count service visits by status",
+            plan: {
+              kind: "aggregate",
+              resource: "public.service_visits",
+              measures: [{ function: "count" }],
+              dimensions: [{ field: "status" }],
+            },
+          }],
+          forbidden: [{
+            id: "raw_visit_times",
+            description: "Do not return individual scheduled timestamps",
+            plan: {
+              kind: "rows",
+              resource: "public.service_visits",
+              select: ["scheduled_at"],
+            },
+          }],
+          source: { kind: "operator_exact_plan" },
+        },
+      });
+      expect(analysis.status).toBe("ready");
+      const stored = await storeReadWorkloadAnalysis({
+        projectRoot: root,
+        generatedBoundary: build.exploration_boundary,
+        source: { kind: "operator_exact_plan" },
+        analysis,
+        now: "2026-08-27T12:00:00.000Z",
+      });
+      const preview = await prepareReadWorkloadCandidate({
+        projectRoot: root,
+        workload: stored,
+        actor: "reviewer@example.test",
+        reason: "Compile the representative service reporting workload into a minimum boundary.",
+        schemaInspector: async () => inspection,
+      });
+      expect(preview.mutation.candidate.activation).toBe("disabled_unreviewed");
+      expect(preview.authority_activated).toBe(false);
+      expect(preview.mutation.candidate.pack.resources[0]).toMatchObject({
+        id: "public.service_visits",
+        selectable_fields: [],
+        groupable_fields: ["status"],
+      });
+      await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+
+      const committed = await commitReadWorkloadCandidate({
+        projectRoot: root,
+        preview,
+        now: "2026-08-27T12:01:00.000Z",
+      });
+      expect(committed).toMatchObject({
+        authority_activated: false,
+        source_database_changed: false,
+        review_revision: 1,
+      });
+      const context = await loadBoundaryReviewContext(root);
+      expect(context.bundle.candidate_digest).toBe(committed.candidate_digest);
+      expect(context.candidate.activation).toBe("disabled_unreviewed");
+      await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+      const reviewed = await readReadWorkloadAnalysis({
+        projectRoot: root,
+        analysisId: stored.analysis_id,
+        generatedBoundary: context.draft,
+      });
+      expect(reviewed).toMatchObject({
+        state: "reviewed",
+        review: {
+          authority_activated: false,
+          candidate_digest: committed.candidate_digest,
+        },
+      });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 25_000);
+
+  it("previews and applies an exact workload through boundary assist with a digest-bound human decision", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-assist-cli-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const workloadPath = path.join(root, "representative-reads.json");
+    let output = "";
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output += String(chunk);
+      return true;
+    });
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await fs.writeFile(workloadPath, `${JSON.stringify({
+        schema_version: READ_WORKLOAD_SET_VERSION,
+        name: "service_reporting",
+        allowed: [{
+          id: "visits_by_status",
+          description: "Count service visits by status",
+          plan: {
+            kind: "aggregate",
+            resource: "public.service_visits",
+            measures: [{ function: "count" }],
+            dimensions: [{ field: "status" }],
+          },
+        }],
+        forbidden: [{
+          id: "raw_visit_times",
+          description: "Do not return individual scheduled timestamps",
+          plan: { kind: "rows", resource: "public.service_visits", select: ["scheduled_at"] },
+        }],
+        source: { kind: "operator_exact_plan" },
+      }, null, 2)}\n`, "utf8");
+      await expect(boundaryAssistCommand([
+        "--project-root", root,
+        "--workload", workloadPath,
+        "--actor", "reviewer@example.test",
+        "--reason", "Review the minimum service reporting workload.",
+        "--json",
+      ], async () => inspection)).resolves.toBe(0);
+      const preview = JSON.parse(output);
+      expect(preview).toMatchObject({
+        ok: true,
+        workload: { state: "ready" },
+        preview: {
+          authority_activated: false,
+          source_database_changed: false,
+        },
+      });
+      expect(preview.preview.decision_digest).toMatch(/^sha256:/);
+
+      output = "";
+      await expect(boundaryAssistCommand([
+        "--project-root", root,
+        "--analysis", preview.workload.analysis_id,
+        "--actor", "reviewer@example.test",
+        "--reason", "Review the minimum service reporting workload.",
+        "--apply",
+        "--confirm", `APPLY WORKLOAD ${preview.preview.decision_digest}`,
+        "--json",
+      ], async () => inspection)).resolves.toBe(0);
+      expect(JSON.parse(output)).toMatchObject({
+        ok: true,
+        analysis_id: preview.workload.analysis_id,
+        authority_activated: false,
+        source_query_executed: false,
+        explore_budget_consumed: false,
+        source_database_changed: false,
+      });
+      await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      stdout.mockRestore();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 25_000);
 });
 
 function boundaryInspection(): SchemaInspection {

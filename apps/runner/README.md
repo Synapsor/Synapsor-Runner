@@ -29,8 +29,7 @@ npm install --global @synapsor/runner
 ```
 
 Paste the URL into the hidden prompt or export `DATABASE_URL`. Runner inspects
-schema metadata, not source rows, then proposes conservative read access.
-Nothing is granted until review and activation. No DSL or JSON is required.
+metadata, proposes conservative access, and grants nothing before activation.
 
 With `DATABASE_URL`, use the CLI:
 
@@ -38,12 +37,19 @@ With `DATABASE_URL`, use the CLI:
 synapsor-runner start --cli --from-env DATABASE_URL
 ```
 
-Review the starting boundary, then press Enter to activate it. Use `M` for
-OpenAI, Anthropic, or a loopback model, and `E` to edit access. Runner asks
-before reviewed visible data leaves the machine. Changes remain disabled until
-human confirmation.
+Review the starting boundary, then press Enter to activate. Use `M` to choose a
+model and `E` to edit access. Runner asks before reviewed data leaves the
+machine; edits remain disabled until confirmation.
 
 See [Database To First Safe Tool](docs/guided-onboarding.md).
+
+### Compile From Representative Jobs
+
+Press `W Workloads` to combine exact representative Explore plans into a
+minimized, disabled draft. Model mapping requires consent; Runner validates
+and grants nothing. After activation,
+`Y Safe actions` opens proposal-first write setup. See
+[Boundary Assist](docs/read-workload-boundary-assist.md).
 
 ## Prove The Boundary Without A Database
 
@@ -80,10 +86,8 @@ Extended proof:
   stale apply refused: yes
 ```
 
-The simulated agent can inspect reviewed evidence and form an exact proposal,
-but cannot approve or commit it. Runner waits for an outside-model decision,
-rechecks the effect, and records a receipt.
-
+The simulated agent proposes from reviewed evidence; Runner waits for an
+outside-model decision, rechecks the effect, and records a receipt.
 Temporary state stays under `./.synapsor/try/`.
 `demo --quick` remains a noninteractive compatibility alias.
 
