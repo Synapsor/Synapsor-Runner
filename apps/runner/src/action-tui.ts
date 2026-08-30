@@ -331,7 +331,15 @@ export async function runActionControlPlane(input: {
           continue;
         }
         if (choice === "new") {
-          const intent = await prompter.text("What should the agent be allowed to propose?");
+          const intent = await prompter.text("What should the agent be allowed to propose?", {
+            title: "DESCRIBE ONE PROPOSAL ACTION",
+            context: [
+              "Describe one business change, not SQL or a table-edit command.",
+              "Runner maps it to one source-proven target, then asks only for unresolved bounds and guards.",
+              "The result stays disabled until a source-unchanged rehearsal and separate exact activation.",
+              "Example: Update dispatcher alert level and maximum open requests with version conflict protection.",
+            ],
+          });
           if (!intent) continue;
           const activated = await createAndReviewQuickAction({
             projectRoot,
@@ -350,7 +358,14 @@ export async function runActionControlPlane(input: {
           continue;
         }
         if (choice === "new_advanced") {
-          const intent = await prompter.text("What should the agent be allowed to propose?");
+          const intent = await prompter.text("What should the agent be allowed to propose?", {
+            title: "DESCRIBE ONE ADVANCED PROPOSAL ACTION",
+            context: [
+              "Describe one business change, not SQL or a table-edit command.",
+              "Runner ranks only source-proven targets; you will review every field, guard, approval, and execution choice.",
+              "Nothing activates or writes until separate rehearsal and exact activation.",
+            ],
+          });
           if (!intent) continue;
           const route = modelSuggestionSession
             ? await prompter.choose("MAP BUSINESS INTENT", [
@@ -2250,7 +2265,17 @@ export async function collectQuickGuidedRehearsalArgs(
   if (!lookupArgument) return args;
   const resource = `${capability.subject.schema}.${capability.subject.table}`;
   const value = await prompter.text(
-    `Existing ${resource} ID for disposable rehearsal (read once; never changed)`,
+    `Existing ${lookupArgument} value`,
+    {
+      title: "CHOOSE ONE EXISTING ROW FOR REHEARSAL",
+      context: [
+        `Target: ${details.draft.operation.toUpperCase()} ${resource}`,
+        `Row identity argument: ${lookupArgument}`,
+        "Runner reads this one authorized row under trusted tenant/principal scope to verify before-state and conflict guards.",
+        "The proposal is written only to a disposable ledger; the source row is never changed.",
+        "Enter an exact existing ID for the current trusted scope.",
+      ],
+    },
   );
   if (value === undefined) return undefined;
   if (!value.trim()) {

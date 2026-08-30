@@ -850,7 +850,7 @@ describe("boundary review terminal picker", () => {
     expect(firstViewPlain).toContain("NAME");
     expect(firstViewPlain).toContain("STATUS");
     expect(firstViewPlain).toContain("TABLES");
-    expect(firstViewPlain).toContain("AUTHORITY");
+    expect(firstViewPlain).toContain("READ ACCESS");
     expect(firstViewPlain).toContain("reviewed_staging");
     expect(firstViewPlain).toContain("DRAFT - NO ACCESS");
     expect(firstViewPlain).toContain("A New boundary");
@@ -962,6 +962,57 @@ describe("boundary review terminal picker", () => {
       action: "actions",
       boundary_name: "reviewed_staging",
     });
+  });
+
+  it("shows active Action Boundary authority separately from the Read Boundary list", async () => {
+    const terminal = fakeTerminal(120, 30);
+    const resource = summary("public.orders", 0);
+    resource.active = true;
+    resource.active_boundary_name = "reviewed_staging";
+    const selected = createBoundaryReviewInteractiveSession(
+      terminal.input,
+      terminal.output,
+    ).chooseResource(
+      [resource],
+      {
+        confirmed_decisions: 6,
+        outstanding_decisions: 0,
+        outstanding_resource_decisions: 0,
+        outstanding_boundary_decisions: 0,
+        resources_requiring_signoff: 0,
+        action_boundary: {
+          name: "default_action_boundary",
+          state: "active",
+          active_action_count: 2,
+          draft_action_count: 0,
+        },
+        boundaries: [{
+          name: "reviewed_staging",
+          selected: true,
+          active: true,
+          matches_active_digest: true,
+          table_count: 1,
+          outstanding_decisions: 0,
+          proposal_action_state: "active",
+          proposal_action_active_count: 2,
+          proposal_action_draft_count: 0,
+        }],
+      },
+      { initialView: "access", startAtBoundaryList: true },
+    );
+
+    const rendered = stripAnsi(terminal.output.read()?.toString() ?? "");
+    expect(rendered).toContain("READ BOUNDARIES - EXPLORE");
+    expect(rendered).toContain("READ ACCESS");
+    expect(rendered).toContain("ACTION BOUNDARY - PROPOSALS (SEPARATE)");
+    expect(rendered).toContain('Action Boundary "default_action_boundary": ACTIVE');
+    expect(rendered).toContain("2 active | 0 disabled");
+    expect(rendered).toContain("Linked to reviewed_staging. Y opens it");
+    expect(rendered).toContain("Y Safe actions - 2 active proposal actions [ACTIVE]");
+    expect(rendered).not.toContain("Y Safe actions - prepare proposal [AVAILABLE]");
+
+    await send(terminal.input, "q");
+    await expect(selected).resolves.toBeUndefined();
   });
 
   it("opens one boundary-wide privacy action from the boundary list", async () => {

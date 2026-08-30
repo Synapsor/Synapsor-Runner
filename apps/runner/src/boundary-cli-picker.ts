@@ -147,6 +147,12 @@ export type BoundaryReviewOverview = {
   outstanding_boundary_decisions: number;
   resources_requiring_signoff: number;
   model_authority_metadata_mode?: "semantic" | "exact";
+  action_boundary?: {
+    name?: string;
+    state: "off" | "disabled" | "active" | "active_with_disabled_changes";
+    active_action_count: number;
+    draft_action_count: number;
+  };
   boundaries?: Array<{
     name: string;
     selected: boolean;
@@ -156,7 +162,9 @@ export type BoundaryReviewOverview = {
     outstanding_decisions: number;
     policy_review_required?: boolean;
     ask_intent_check_mode?: "balanced" | "boundary_only";
-    proposal_action_state?: "none" | "draft" | "rehearsed";
+    proposal_action_state?: "none" | "draft" | "rehearsed" | "active";
+    proposal_action_active_count?: number;
+    proposal_action_draft_count?: number;
   }>;
 };
 
@@ -256,16 +264,59 @@ type BoundaryRelationshipConnection = {
 const tierOrder: BoundaryFieldTier[] = ["visible", "withheld_from_model", "kept_out"];
 
 function safeActionAccessLabel(
-  state: "none" | "draft" | "rehearsed" | undefined,
+  state: "none" | "draft" | "rehearsed" | "active" | undefined,
   available: boolean,
+  activeCount = 0,
 ): string {
   if (!available) return "Safe actions - prepare proposal [FINISH READ REVIEW]";
-  if (state === "rehearsed") return "Safe actions - proposal rehearsed [READY FOR REVIEW]";
-  if (state === "draft") return "Safe actions - continue proposal setup [DISABLED]";
+  if (state === "rehearsed") {
+    return activeCount > 0
+      ? `Safe actions - ${activeCount} active + rehearsed change [READY FOR REVIEW]`
+      : "Safe actions - proposal rehearsed [READY FOR REVIEW]";
+  }
+  if (state === "draft") {
+    return activeCount > 0
+      ? `Safe actions - ${activeCount} active + disabled change [DRAFT]`
+      : "Safe actions - continue proposal setup [DISABLED]";
+  }
+  if (state === "active") {
+    return `Safe actions - ${activeCount} active proposal ${plural(activeCount, "action", "actions")} [ACTIVE]`;
+  }
   return "Safe actions - prepare proposal [AVAILABLE]";
 }
 
 type TerminalTheme = ReturnType<typeof terminalTheme>;
+
+function linkedActionBoundaryLines(
+  overview: BoundaryReviewOverview | undefined,
+  boundary: NonNullable<BoundaryReviewOverview["boundaries"]>[number],
+  theme: TerminalTheme,
+): string[] {
+  const activeCount = boundary.proposal_action_active_count ?? 0;
+  const draftCount = boundary.proposal_action_draft_count ?? 0;
+  const global = overview?.action_boundary;
+  const state = global?.state ?? (activeCount ? "active" : draftCount ? "disabled" : "off");
+  const stateLabel = state === "active_with_disabled_changes"
+    ? "ACTIVE + DISABLED CHANGES"
+    : state === "active"
+      ? "ACTIVE"
+      : state === "disabled"
+        ? "DISABLED DRAFT"
+        : "OFF";
+  const name = global?.name ? ` "${safeTerminalText(global.name)}"` : "";
+  const status = `Action Boundary${name}: ${stateLabel} | ${activeCount} active | ${draftCount} disabled`;
+  const styledStatus = state === "active"
+    ? theme.success(status)
+    : state === "off"
+      ? theme.dim(status)
+      : theme.warning(status);
+  const linked = `Linked to ${safeTerminalText(boundary.name)}. Y opens it; approval and apply stay outside the agent.`;
+  return [
+    theme.bold("ACTION BOUNDARY - PROPOSALS (SEPARATE)"),
+    styledStatus,
+    linked,
+  ];
+}
 
 function databaseCompatibilityLine(
   compatibility: BoundaryResourceReviewView["database_server_compatibility"],
@@ -1085,6 +1136,7 @@ async function chooseResource(
               `${theme.key("Y")} ${safeActionAccessLabel(
                 highlightedBoundary.proposal_action_state,
                 reviewLeft === "Complete" && !highlightedBoundary.policy_review_required,
+                highlightedBoundary.proposal_action_active_count,
               )}`,
               `${theme.key("T")} Ask plan check`,
               `${theme.key("O")} Model output [${modelOutputActionStatus}]`,
@@ -1095,6 +1147,8 @@ async function chooseResource(
               `${theme.key("Q")} Quit`,
             ], terminalContentWidth(output.columns)),
             ...(actionNotice ? [theme.warning(actionNotice)] : []),
+            "",
+            ...linkedActionBoundaryLines(overview, highlightedBoundary, theme),
             "",
             theme.dim(
               "Activation returns here so you can keep editing. Press Q when finished " +
@@ -1188,12 +1242,11 @@ async function chooseResource(
           return index === selectedBoundary ? theme.focus(line) : line;
         });
         render([
-          theme.title("BOUNDARIES"),
-          "Each boundary is a saved set of reviewed tables, fields, relationships, and limits.",
-          theme.dim("One boundary is selected for editing; only an explicitly activated boundary grants Explore access."),
+          theme.title("READ BOUNDARIES - EXPLORE"),
+          "Each row controls reviewed Explore reads. Proposal authority is separate below.",
           ...(boundaryListCompatibility ? [boundaryListCompatibility] : []),
           "",
-          theme.bold(savedBoundaryRow("", "NAME", "STATUS", "TABLES", "AUTHORITY")),
+          theme.bold(savedBoundaryRow("", "NAME", "STATUS", "TABLES", "READ ACCESS")),
           ...rows,
           "",
           highlightedBoundary.ask_intent_check_mode === "boundary_only"
@@ -1209,6 +1262,8 @@ async function chooseResource(
               : "Runner refuses a valid but contradictory model plan before Explore execution.",
           ),
           modelOutputStatus,
+          "",
+          ...linkedActionBoundaryLines(overview, highlightedBoundary, theme),
           ...(options?.notice
             ? ["", ...formatBoundaryAccessNotice(theme, options.notice)]
             : []),
@@ -1240,6 +1295,7 @@ async function chooseResource(
             `${theme.key("Y")} ${safeActionAccessLabel(
               highlightedBoundary.proposal_action_state,
               highlightedActionAvailable,
+              highlightedBoundary.proposal_action_active_count,
             )}`,
             `${theme.key("T")} Ask plan check`,
             `${theme.key("O")} Model output [${modelOutputActionStatus}]`,
@@ -1251,8 +1307,6 @@ async function chooseResource(
             `${theme.key("Q")} Quit`,
           ], terminalContentWidth(output.columns)),
           ...(actionNotice ? [theme.warning(actionNotice)] : []),
-          theme.dim("New boundaries start with a table you choose, then open its column access for review."),
-          theme.dim("Activation adds or updates this reviewed boundary. Each query remains inside one boundary."),
           ...(confirmExactModelOutput ? exactModelOutputConfirmationLines(theme) : []),
         ]);
         const key = await nextKey();
@@ -1468,6 +1522,7 @@ async function chooseResource(
         `${theme.key("Y")} ${safeActionAccessLabel(
           overview?.boundaries?.find((entry) => entry.selected)?.proposal_action_state,
           candidateActionAvailable,
+          overview?.boundaries?.find((entry) => entry.selected)?.proposal_action_active_count,
         )}`,
         `${theme.key("T")} Ask plan check`,
         `${theme.key("O")} Model output [${modelOutputActionStatus}]`,

@@ -757,7 +757,7 @@ describe("Safe Action terminal control plane", () => {
 
   it("asks only for the existing row identity that UPDATE rehearsal cannot invent", async () => {
     const details = {
-      draft: { capability: "orders.propose_quick_update" },
+      draft: { capability: "orders.propose_quick_update", operation: "update" },
       preview_args: { order_id: "replace-with-order-id", credit_cents: 50 },
       contract: {
         capabilities: [{
@@ -771,11 +771,31 @@ describe("Safe Action terminal control plane", () => {
         }],
       },
     } as unknown as Parameters<typeof collectQuickGuidedRehearsalArgs>[0];
-    const prompter = scriptedPrompter({ choices: [], texts: ["ord-1"], confirms: [] });
+    const textPrompts: Array<{
+      label: string;
+      options: Parameters<ActionControlPrompter["text"]>[1];
+    }> = [];
+    const prompter = scriptedPrompter({
+      choices: [],
+      texts: ["ord-1"],
+      confirms: [],
+      onText: (label, promptOptions) => textPrompts.push({ label, options: promptOptions }),
+    });
     await expect(collectQuickGuidedRehearsalArgs(details, prompter)).resolves.toEqual({
       order_id: "ord-1",
       credit_cents: 50,
     });
+    expect(textPrompts).toEqual([{
+      label: "Existing order_id value",
+      options: {
+        title: "CHOOSE ONE EXISTING ROW FOR REHEARSAL",
+        context: expect.arrayContaining([
+          "Target: UPDATE public.orders",
+          "Row identity argument: order_id",
+          expect.stringContaining("disposable ledger"),
+        ]),
+      },
+    }]);
   });
 
   it("makes hard DELETE human-reviewed, exact, and proposal-only by default", async () => {

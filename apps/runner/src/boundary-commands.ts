@@ -1526,6 +1526,20 @@ async function interactiveBoundaryReviewLoop(input: {
     const modelAuthorityMetadataMode = modelOutputConfigPath
       ? await readModelAuthorityMetadataMode(modelOutputConfigPath)
       : "semantic";
+    const actionBoundaryCurrent = guidedActions.action_boundary.draft
+      ?? guidedActions.action_boundary.active;
+    const actionBoundaryOverview = {
+      ...(actionBoundaryCurrent ? { name: actionBoundaryCurrent.name } : {}),
+      state: guidedActions.action_boundary.active && guidedActions.action_boundary.draft
+        ? "active_with_disabled_changes" as const
+        : guidedActions.action_boundary.active
+          ? "active" as const
+          : guidedActions.action_boundary.draft
+            ? "disabled" as const
+            : "off" as const,
+      active_action_count: guidedActions.action_boundary.active?.authority.capabilities.length ?? 0,
+      draft_action_count: guidedActions.action_boundary.draft?.authority.capabilities.length ?? 0,
+    };
     if (startWithAgentJob) {
       startWithAgentJob = false;
       try {
@@ -1562,16 +1576,26 @@ async function interactiveBoundaryReviewLoop(input: {
       {
         ...boundaryReviewOverview(context.bundle),
         model_authority_metadata_mode: modelAuthorityMetadataMode,
-        boundaries: boundaryLibrary.entries.map((entry) => ({
-          ...entry,
-          ask_intent_check_mode: askIntentModes[entry.name] ?? "balanced",
-          proposal_action_state: guidedActions.drafts.some((draft) =>
-            draft.boundary_name === entry.name && draft.effect_preview)
-            ? "rehearsed" as const
-            : guidedActions.drafts.some((draft) => draft.boundary_name === entry.name)
-              ? "draft" as const
-              : "none" as const,
-        })),
+        action_boundary: actionBoundaryOverview,
+        boundaries: boundaryLibrary.entries.map((entry) => {
+          const actionDrafts = guidedActions.drafts.filter((draft) =>
+            draft.boundary_name === entry.name);
+          const activeActions = guidedActions.activations.filter((activation) =>
+            activation.boundary_name === entry.name);
+          return {
+            ...entry,
+            ask_intent_check_mode: askIntentModes[entry.name] ?? "balanced",
+            proposal_action_state: actionDrafts.some((draft) => draft.effect_preview)
+              ? "rehearsed" as const
+              : actionDrafts.length
+                ? "draft" as const
+                : activeActions.length
+                  ? "active" as const
+                  : "none" as const,
+            proposal_action_active_count: activeActions.length,
+            proposal_action_draft_count: actionDrafts.length,
+          };
+        }),
       },
       {
         initialView: input.initialView ?? "boundaries",
