@@ -2257,7 +2257,7 @@ function boundaryModelAssistFailureNotice(
       title: "The selected model could not draft a structured Boundary.",
       lines: [
         "Runner discarded two prose responses because neither called the required bounded authoring tool.",
-        "Use a larger local model with reliable tool calling, or open Agent job with W and choose 2 for Runner-guided exact plan cards.",
+        "Use a larger local model with reliable tool calling, or open Agent job with W and select Runner-guided exact plan cards.",
         "No model output was accepted.",
       ],
       footer: firstRun
@@ -2331,38 +2331,103 @@ async function interactiveReadWorkloadAssist(input: {
       lines: ["Runner uses the job to keep the read and proposal drafts together; it does not infer authority from this sentence."],
     });
   }
-  const choice = await input.session.promptText(
-    input.jobFirst ? "Mapping method [1]" : "Choose 1-5",
-    {
-      context: input.jobFirst
-        ? [
-            "MAP THE JOB TO REVIEWED STRUCTURE",
-            currentModel
-              ? `1  Model-assisted with ${currentModel.provider}/${currentModel.model}  [recommended]`
-              : "1  Model-assisted with OpenAI, Anthropic, or a local model  [recommended]",
-            "2  Runner-guided exact plan cards  [no model]",
-            "3  Full manual table and field setup",
-            "4  Advanced exact read-workload JSON",
-            "5  Advanced question-intent JSON plus model",
-            "6  Reopen a saved workload analysis",
-            "",
-            "A model receives only reviewed structural metadata after you approve egress. It cannot activate authority.",
-          ]
-        : [
-            "HOW SHOULD RUNNER MAP THIS JOB?",
-            "1  Runner-guided cards (recommended; no model)",
-            currentModel
-              ? `2  Current ${currentModel.provider}/${currentModel.model} model (one metadata-egress review)`
-              : "2  Configure a model for bounded structural mapping",
-            "3  Advanced: exact read-workload JSON",
-            "4  Advanced: question-intent JSON plus model",
-            "5  Reopen a saved workload analysis",
-          ],
-    },
-  );
-  if (choice === undefined) return boundaryAssistResult(boundaryAssistBackNotice());
-  const normalizedChoice = choice.trim() || (input.jobFirst ? "1" : "");
-  if (input.jobFirst && normalizedChoice === "3") {
+  type MappingMode = "model" | "cards" | "exact" | "intent_model" | "saved";
+  let mode: MappingMode | undefined;
+  let manualSelected = false;
+  if (input.jobFirst && input.session.chooseOption) {
+    const selected = await input.session.chooseOption(
+      "MAP THE JOB TO REVIEWED STRUCTURE",
+      [
+        {
+          value: "model",
+          label: currentModel
+            ? `Model-assisted with ${currentModel.provider}/${currentModel.model}  [recommended]`
+            : "Model-assisted with OpenAI, Anthropic, or a local model  [recommended]",
+          detail: "Runner validates the untrusted proposal; the model cannot activate authority.",
+        },
+        {
+          value: "cards",
+          label: "Runner-guided exact plan cards  [no model]",
+          detail: "Choose compiler-valid representative questions yourself.",
+        },
+        {
+          value: "manual",
+          label: "Full manual table and field setup",
+          detail: "Open the exact schema editor without making a model request.",
+        },
+        {
+          value: "exact",
+          label: "Advanced exact read-workload JSON",
+          detail: "Supply reviewed plan JSON directly.",
+        },
+        {
+          value: "intent_model",
+          label: "Advanced question-intent JSON plus model",
+          detail: "Supply exact question intents for bounded model mapping.",
+        },
+        {
+          value: "saved",
+          label: "Reopen a saved workload analysis",
+          detail: "Continue a prior disabled analysis against the current Boundary.",
+        },
+      ],
+      {
+        initialValue: "model",
+        context: [
+          "A model receives only reviewed structural metadata after you approve egress.",
+          "Use Up/Down to inspect a path; Enter selects only the highlighted path.",
+        ],
+      },
+    );
+    if (selected === undefined) return boundaryAssistResult(boundaryAssistBackNotice());
+    manualSelected = selected === "manual";
+    if (!manualSelected) {
+      mode = ({
+        model: "model",
+        cards: "cards",
+        exact: "exact",
+        intent_model: "intent_model",
+        saved: "saved",
+      } as const)[selected as MappingMode];
+    }
+  } else {
+    const choice = await input.session.promptText(
+      input.jobFirst ? "Mapping method [1]" : "Choose 1-5",
+      {
+        context: input.jobFirst
+          ? [
+              "MAP THE JOB TO REVIEWED STRUCTURE",
+              currentModel
+                ? `1  Model-assisted with ${currentModel.provider}/${currentModel.model}  [recommended]`
+                : "1  Model-assisted with OpenAI, Anthropic, or a local model  [recommended]",
+              "2  Runner-guided exact plan cards  [no model]",
+              "3  Full manual table and field setup",
+              "4  Advanced exact read-workload JSON",
+              "5  Advanced question-intent JSON plus model",
+              "6  Reopen a saved workload analysis",
+              "",
+              "A model receives only reviewed structural metadata after you approve egress. It cannot activate authority.",
+            ]
+          : [
+              "HOW SHOULD RUNNER MAP THIS JOB?",
+              "1  Runner-guided cards (recommended; no model)",
+              currentModel
+                ? `2  Current ${currentModel.provider}/${currentModel.model} model (one metadata-egress review)`
+                : "2  Configure a model for bounded structural mapping",
+              "3  Advanced: exact read-workload JSON",
+              "4  Advanced: question-intent JSON plus model",
+              "5  Reopen a saved workload analysis",
+            ],
+      },
+    );
+    if (choice === undefined) return boundaryAssistResult(boundaryAssistBackNotice());
+    const normalizedChoice = choice.trim() || (input.jobFirst ? "1" : "");
+    manualSelected = input.jobFirst === true && normalizedChoice === "3";
+    mode = input.jobFirst
+      ? ({ "1": "model", "2": "cards", "4": "exact", "5": "intent_model", "6": "saved" } as const)[normalizedChoice as "1" | "2" | "4" | "5" | "6"]
+      : ({ "1": "cards", "2": "model", "3": "exact", "4": "intent_model", "5": "saved" } as const)[normalizedChoice as "1" | "2" | "3" | "4" | "5"];
+  }
+  if (manualSelected) {
     return boundaryAssistResult({
       tone: "success",
       title: "Manual Boundary setup selected.",
@@ -2370,14 +2435,13 @@ async function interactiveReadWorkloadAssist(input: {
       footer: "Use the table list now. W reopens one-job assisted setup.",
     });
   }
-  const mode = input.jobFirst
-    ? ({ "1": "model", "2": "cards", "4": "exact", "5": "intent_model", "6": "saved" } as const)[normalizedChoice as "1" | "2" | "4" | "5" | "6"]
-    : ({ "1": "cards", "2": "model", "3": "exact", "4": "intent_model", "5": "saved" } as const)[normalizedChoice as "1" | "2" | "3" | "4" | "5"];
   if (!mode) {
     return boundaryAssistResult({
       tone: "warning",
       title: "Choose one Boundary Assist input mode.",
-      lines: [`Press W again and enter a number from 1 through ${input.jobFirst ? 6 : 5}.`],
+      lines: [input.jobFirst
+        ? "Press W again, move to one mapping path, and press Enter."
+        : "Press W again and enter a number from 1 through 5."],
     });
   }
   let actionIntents = input.jobFirst

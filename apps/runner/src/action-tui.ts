@@ -1126,8 +1126,17 @@ export async function collectQuickProposalActionInput(
   options: Awaited<ReturnType<typeof guidedActionOptions>>,
   prompter: ActionControlPrompter,
   intent: string,
+  initialContext: string[] = [],
 ): Promise<GuidedActionInput | "advanced" | undefined> {
   const decisions: QuickProposalDecisions = {};
+  let firstChoice = true;
+  const choiceContext = (context: string[]): string[] => {
+    if (!firstChoice) return context;
+    firstChoice = false;
+    return initialContext.length
+      ? [...initialContext, "", ...context]
+      : context;
+  };
   while (true) {
     const preparation = prepareQuickProposalAction({ options, intent, decisions });
     if (preparation.state === "ready") {
@@ -1153,7 +1162,7 @@ export async function collectQuickProposalActionInput(
           detail: "Change values, transitions, approval, execution, or receipts.",
         },
         { value: "back", label: "Back" },
-      ], quickActionCardLines(preparation.summary));
+      ], choiceContext(quickActionCardLines(preparation.summary)));
       if (decision === "advanced") return "advanced";
       if (decision === "delegate") {
         const autoApproval = await collectDeterministicAutoApproval({
@@ -1167,7 +1176,11 @@ export async function collectQuickProposalActionInput(
     }
     const unresolved = preparation.decision;
     if (unresolved.kind === "resource" || unresolved.kind === "operation" || unresolved.kind === "guard_column") {
-      const value = await prompter.choose(unresolved.title.toUpperCase(), unresolved.choices, [unresolved.help]);
+      const value = await prompter.choose(
+        unresolved.title.toUpperCase(),
+        unresolved.choices,
+        choiceContext([unresolved.help]),
+      );
       if (!value) return undefined;
       if (unresolved.kind === "resource") decisions.resource = value;
       if (unresolved.kind === "operation") decisions.operation = value as GuidedActionOperation;
@@ -1175,7 +1188,11 @@ export async function collectQuickProposalActionInput(
       continue;
     }
     if (unresolved.kind === "fields") {
-      const value = await prompter.choose(unresolved.title.toUpperCase(), unresolved.choices, [unresolved.help]);
+      const value = await prompter.choose(
+        unresolved.title.toUpperCase(),
+        unresolved.choices,
+        choiceContext([unresolved.help]),
+      );
       if (!value) return undefined;
       decisions.fields = [value];
       continue;
@@ -1240,7 +1257,7 @@ export function createTerminalActionPrompter(input: ReadStream, output: WriteStr
         while (true) {
           render([
             theme.title(`  ${title}`),
-            ...context.map((line) => `  ${theme.dim(line)}`),
+            ...context.map((line) => `  ${formatActionPromptContextLine(theme, line)}`),
             "",
             ...choices.flatMap((choice, index) => [
               `${index === selected ? theme.focus("  >") : "   "} ${choice.disabled ? theme.dim(choice.label) : choice.label}`,
@@ -1283,6 +1300,21 @@ export function createTerminalActionPrompter(input: ReadStream, output: WriteStr
       await this.choose(title, [{ value: "back", label: backLabel }], lines);
     },
   };
+}
+
+function formatActionPromptContextLine(
+  theme: ReturnType<typeof terminalTheme>,
+  line: string,
+): string {
+  if (!line) return "";
+  const trimmed = line.trim();
+  if (trimmed === "READ REVIEW COMPLETE - NOT ACTIVE") return theme.success(line);
+  if (/[A-Z]/u.test(trimmed)
+    && trimmed === trimmed.toUpperCase()
+    && /^[A-Z0-9][A-Z0-9 +&/():.'-]*$/u.test(trimmed)) {
+    return theme.title(line);
+  }
+  return theme.dim(line);
 }
 
 async function collectAndCreateAction(input: {
@@ -2829,7 +2861,19 @@ async function createAndReviewQuickAction(input: {
   prepareOnly?: boolean;
   actionBoundaryJobIntent?: string;
 }): Promise<string | undefined> {
-  const quick = await collectQuickProposalActionInput(input.options, input.prompter, input.intent);
+  const quick = await collectQuickProposalActionInput(
+    input.options,
+    input.prompter,
+    input.intent,
+    input.prepareOnly && input.actionBoundaryJobIntent
+      ? [
+          "READ REVIEW COMPLETE - NOT ACTIVE",
+          `Read Boundary: ${input.options.boundary_name} is fully reviewed and remains disabled.`,
+          "Agent read authority: unchanged | source database changed: no",
+          "Preparing a separate disabled Action Boundary; proposal, approval, apply, and writes remain off.",
+        ]
+      : [],
+  );
   let draft: GuidedActionDraft | undefined;
   let quickStart = true;
   if (quick === "advanced") {

@@ -99,6 +99,66 @@ describe("boundary review terminal picker", () => {
     await expect(confirmed).resolves.toBe(true);
   });
 
+  it("uses an in-place highlighted picker for one-of-many onboarding choices", async () => {
+    const terminal = fakeTerminal(96, 20);
+    const session = withTerminalColors(() =>
+      createBoundaryReviewInteractiveSession(terminal.input, terminal.output));
+    const selected = session.chooseOption!(
+      "MAP THE JOB TO REVIEWED STRUCTURE",
+      [
+        { value: "model", label: "Model-assisted  [recommended]", detail: "Validated before review." },
+        { value: "cards", label: "Runner-guided exact plan cards", detail: "No model." },
+        { value: "manual", label: "Full manual setup" },
+      ],
+      { initialValue: "model", context: ["Only structural metadata may leave after consent."] },
+    );
+
+    await emitKey(terminal.input, { name: "down", sequence: "\u001b[B" });
+    await emitKey(terminal.input, { name: "enter", sequence: "\r" });
+    await expect(selected).resolves.toBe("cards");
+
+    const rendered = terminal.output.read()?.toString() ?? "";
+    expect(rendered).toContain("\u001b[1;36m  MAP THE JOB TO REVIEWED STRUCTURE");
+    expect(rendered).toContain("\u001b[1;96mRunner-guided exact plan cards");
+    expect(stripAnsi(rendered)).toContain("Up/Down Navigate   Enter Select   Esc Back");
+  });
+
+  it("colors section headings above line prompts without changing y/N input", async () => {
+    const textTerminal = fakeTerminal();
+    const textSession = withTerminalColors(() =>
+      createBoundaryReviewInteractiveSession(textTerminal.input, textTerminal.output));
+    const job = textSession.promptText("What job are you giving this agent?", {
+      context: [
+        "SET UP ONE AGENT JOB",
+        "Describe one bounded job.",
+      ],
+    });
+    await send(textTerminal.input, "Review maintenance work.\n");
+    await expect(job).resolves.toBe("Review maintenance work.");
+    expect(textTerminal.output.read()?.toString() ?? "")
+      .toContain("\u001b[1;36mSET UP ONE AGENT JOB\u001b[0m");
+
+    const terminal = fakeTerminal();
+    const session = withTerminalColors(() =>
+      createBoundaryReviewInteractiveSession(terminal.input, terminal.output));
+    const confirmed = session.confirm(
+      "Should this job include an Action Boundary?",
+      {
+        defaultValue: true,
+        context: [
+          "READ AND ACTION BOUNDARIES",
+          "Read and proposal authority remain separate.",
+        ],
+      },
+    );
+
+    await send(terminal.input, "\n");
+    await expect(confirmed).resolves.toBe(true);
+    const rendered = terminal.output.read()?.toString() ?? "";
+    expect(rendered).toContain("\u001b[1;36mREAD AND ACTION BOUNDARIES\u001b[0m");
+    expect(stripAnsi(rendered)).toContain("[Y/n] [Esc Back]:");
+  });
+
   it("shows one prompt colon when a styled default is followed by Escape guidance", async () => {
     const terminal = fakeTerminal();
     const session = createBoundaryReviewInteractiveSession(

@@ -263,6 +263,34 @@ describe("Safe Action terminal control plane", () => {
     });
   });
 
+  it("keeps the reviewed-but-disabled Read handoff visible in the first Action choice", async () => {
+    const prompts: Array<{ title: string; context: string[] }> = [];
+    const prompter = scriptedPrompter({
+      choices: ["create"],
+      texts: ["0,2500"],
+      confirms: [],
+      onChoose: (title, _choices, context = []) => prompts.push({ title, context }),
+    });
+
+    await collectQuickProposalActionInput(
+      options,
+      prompter,
+      "Let support update an order credit_cents within a reviewed limit.",
+      [
+        "READ REVIEW COMPLETE - NOT ACTIVE",
+        "Read Boundary: reviewed_staging is fully reviewed and remains disabled.",
+        "Agent read authority: unchanged | source database changed: no",
+      ],
+    );
+
+    expect(prompts[0]).toMatchObject({ title: "REVIEW PROPOSAL ACTION" });
+    expect(prompts[0]?.context.slice(0, 3)).toEqual([
+      "READ REVIEW COMPLETE - NOT ACTIVE",
+      "Read Boundary: reviewed_staging is fully reviewed and remains disabled.",
+      "Agent read authority: unchanged | source database changed: no",
+    ]);
+  });
+
   it("collects a proposal-only UPDATE without inferring business bounds or execution", async () => {
     const prompter = scriptedPrompter({
       choices: [
@@ -1017,12 +1045,16 @@ function scriptedPrompter(input: {
   choices: string[];
   texts: string[];
   confirms: boolean[];
-  onChoose?: (title: string, choices: Parameters<ActionControlPrompter["choose"]>[1]) => void;
+  onChoose?: (
+    title: string,
+    choices: Parameters<ActionControlPrompter["choose"]>[1],
+    context?: string[],
+  ) => void;
   onConfirm?: (label: string, defaultValue: boolean | undefined) => void;
 }): ActionControlPrompter {
   return {
-    async choose(title, choices) {
-      input.onChoose?.(title, choices);
+    async choose(title, choices, context) {
+      input.onChoose?.(title, choices, context);
       const value = input.choices.shift();
       if (value === undefined) throw new Error(`Unexpected choice prompt: ${choices.map((choice) => choice.value).join(", ")}`);
       expect(choices.some((choice) => choice.value === value && !choice.disabled)).toBe(true);

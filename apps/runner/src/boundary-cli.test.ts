@@ -2314,10 +2314,17 @@ describe("boundary operator-plane CLI", () => {
       ]));
       return { state: "closed" as const, source_database_changed: false as const, activated_actions: [] };
     });
+    const mappingChoices: string[] = [];
     const session: BoundaryReviewInteractiveSession = {
       chooseResource: async () => undefined,
       editFieldTiers: async () => undefined,
       promptText: async () => answers.shift(),
+      chooseOption: async (title, choices, options) => {
+        expect(title).toBe("MAP THE JOB TO REVIEWED STRUCTURE");
+        expect(options?.initialValue).toBe("model");
+        mappingChoices.push(...choices.map((choice) => choice.value));
+        return "model";
+      },
       confirm: async () => true,
       confirmActivation: async () => false,
       confirmReviewedDisabled: async () => true,
@@ -2345,6 +2352,14 @@ describe("boundary operator-plane CLI", () => {
 
       expect(modelReadWorkloadGenerator).toHaveBeenCalledOnce();
       expect(modelActionSuggestionSetGenerator).toHaveBeenCalledOnce();
+      expect(mappingChoices).toEqual([
+        "model",
+        "cards",
+        "manual",
+        "exact",
+        "intent_model",
+        "saved",
+      ]);
       expect(actionAssessment?.status, actionAssessment?.blockers.join("; ")).toBe("suggested");
       expect(runDelegationActionReview).toHaveBeenCalledOnce();
       const reviewed = await loadBoundaryReviewContext(root);

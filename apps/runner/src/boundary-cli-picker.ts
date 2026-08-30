@@ -171,6 +171,17 @@ type BoundaryPromptOptions = {
   context?: string[];
 };
 
+export type BoundaryPromptChoice = {
+  value: string;
+  label: string;
+  detail?: string;
+  disabled?: boolean;
+};
+
+type BoundaryChoicePromptOptions = BoundaryPromptOptions & {
+  initialValue?: string;
+};
+
 export type BoundaryReviewInteractiveSession = {
   chooseResource(
     resources: BoundaryResourceReviewSummary[],
@@ -204,6 +215,11 @@ export type BoundaryReviewInteractiveSession = {
   selectReadWorkloadCards?(
     cards: ReadWorkloadPlanCard[],
   ): Promise<string[] | undefined>;
+  chooseOption?(
+    title: string,
+    choices: BoundaryPromptChoice[],
+    options?: BoundaryChoicePromptOptions,
+  ): Promise<string | undefined>;
   promptText(prompt: string, options?: BoundaryPromptOptions): Promise<string | undefined>;
   confirm(
     prompt: string,
@@ -303,12 +319,15 @@ export function createBoundaryReviewInteractiveSession(
       editRelationshipPaths(view, summary, input, output),
     resolveBlockedResource: (view) => resolveBlockedResource(view, input, output),
     selectReadWorkloadCards: (cards) => selectReadWorkloadCards(cards, input, output),
+    chooseOption: (title, choices, options) =>
+      chooseBoundaryPromptOption(title, choices, options, input, output, theme),
     promptText: (prompt, options = {}) => withAlternateTerminalScreen(
       output,
       () => readTerminalTextWithEscape(
         terminalPromptWithContext(
           formatTextPromptWithBack(prompt, theme),
           options.context,
+          theme,
         ),
         input,
         output,
@@ -321,6 +340,7 @@ export function createBoundaryReviewInteractiveSession(
           `${theme.bold(prompt)} ${theme.key(defaultValue ? "[Y/n]" : "[y/N]")} ` +
             `${theme.key("[Esc Back]")}: `,
           options.context,
+          theme,
         ),
         input,
         output,
@@ -332,7 +352,7 @@ export function createBoundaryReviewInteractiveSession(
     confirmActivation: (prompt, options = {}) => withAlternateTerminalScreen(
       output,
       () => readTerminalActivationConfirmation(
-        terminalPromptWithContext(theme.bold(prompt), options.context),
+        terminalPromptWithContext(theme.bold(prompt), options.context, theme),
         input,
         output,
       ),
@@ -342,6 +362,7 @@ export function createBoundaryReviewInteractiveSession(
         terminalPromptWithContext(
           `${theme.bold(prompt)} ${theme.key("[y/N]")} ${theme.key("[Esc Back]")}: `,
           options.context,
+          theme,
         ),
         input,
         output,
@@ -350,6 +371,69 @@ export function createBoundaryReviewInteractiveSession(
       return answer.toLowerCase() === "y" || answer.toLowerCase() === "yes";
     }),
   };
+}
+
+async function chooseBoundaryPromptOption(
+  title: string,
+  choices: BoundaryPromptChoice[],
+  options: BoundaryChoicePromptOptions | undefined,
+  input: ReadStream,
+  output: WriteStream,
+  theme: TerminalTheme,
+): Promise<string | undefined> {
+  if (!choices.length) return undefined;
+  const requested = options?.initialValue === undefined
+    ? -1
+    : choices.findIndex((choice) =>
+        choice.value === options.initialValue && choice.disabled !== true);
+  let selected = requested >= 0
+    ? requested
+    : Math.max(0, choices.findIndex((choice) => choice.disabled !== true));
+  return withRawKeys(input, output, async (nextKey, render) => {
+    while (true) {
+      render([
+        theme.title(`  ${title}`),
+        ...(options?.context ?? []).map((line) =>
+          line ? `  ${theme.dim(line)}` : ""),
+        "",
+        ...choices.flatMap((choice, index) => {
+          const focused = index === selected;
+          const marker = focused ? theme.focus("  >") : "   ";
+          const label = choice.disabled
+            ? theme.dim(choice.label)
+            : focused
+              ? theme.focus(choice.label)
+              : choice.label;
+          return [
+            `${marker} ${label}`,
+            ...(choice.detail
+              ? [`      ${theme.dim(choice.detail)}`]
+              : []),
+          ];
+        }),
+        "",
+        `  ${theme.key("Up/Down")} Navigate   ${theme.key("Enter")} Select   ${theme.key("Esc")} Back`,
+      ]);
+      const key = await nextKey();
+      if (isEscapeKey(key) || (key.ctrl && ["c", "d"].includes(key.name ?? ""))) {
+        return undefined;
+      }
+      if (key.name === "up" || key.name === "down") {
+        const direction = key.name === "up" ? -1 : 1;
+        for (let offset = 1; offset <= choices.length; offset += 1) {
+          const candidate = (selected + direction * offset + choices.length) % choices.length;
+          if (choices[candidate]!.disabled !== true) {
+            selected = candidate;
+            break;
+          }
+        }
+      }
+      if ((key.name === "return" || key.name === "enter")
+        && choices[selected]!.disabled !== true) {
+        return choices[selected]!.value;
+      }
+    }
+  });
 }
 
 async function selectReadWorkloadCards(
@@ -4106,11 +4190,27 @@ function formatTextPromptWithBack(prompt: string, theme: TerminalTheme): string 
   return `${label} ${theme.key("[Esc Back]")}: `;
 }
 
-function terminalPromptWithContext(prompt: string, context: string[] | undefined): string {
+function terminalPromptWithContext(
+  prompt: string,
+  context: string[] | undefined,
+  theme: TerminalTheme,
+): string {
   if (!context?.length) return prompt;
   const lines = [...context];
   while (lines.at(-1)?.trim() === "") lines.pop();
-  return [...lines, "", prompt].join("\n");
+  const heading = lines.findIndex((line) => line.trim().length > 0);
+  const rendered = lines.map((line, index) =>
+    index === heading && isTerminalPromptHeading(line)
+      ? theme.title(line)
+      : line);
+  return [...rendered, "", prompt].join("\n");
+}
+
+function isTerminalPromptHeading(value: string): boolean {
+  const trimmed = value.trim();
+  return /[A-Z]/u.test(trimmed)
+    && trimmed === trimmed.toUpperCase()
+    && /^[A-Z0-9][A-Z0-9 +&/():.'-]*$/u.test(trimmed);
 }
 
 function isTrustedScopeField(view: BoundaryResourceReviewView, field: string): boolean {
