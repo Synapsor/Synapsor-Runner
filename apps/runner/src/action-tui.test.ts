@@ -274,7 +274,7 @@ describe("Safe Action terminal control plane", () => {
         context: expect.arrayContaining([
           "Target: UPDATE public.orders",
           "Agent-supplied field: credit_cents",
-          "Enter two numbers separated by a comma, for example 0.5,16.",
+          "Enter two numbers separated by a comma, for example 5,120.",
         ]),
       },
     });

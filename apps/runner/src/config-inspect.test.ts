@@ -139,6 +139,22 @@ describe("production config initialization", () => {
     expect(JSON.parse(stdout.join(""))).not.toHaveProperty("binding_verification");
   });
 
+  it("writes the production project root relative to the generated config", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-config-project-root-"));
+    const projectRoot = path.join(tempDir, "runner-production");
+    const output = path.join(projectRoot, "synapsor.runner.json");
+    await fs.mkdir(projectRoot, { recursive: true });
+    captureStdout();
+
+    await expect(configCommand(
+      productionArgs({ tempDir: projectRoot, output, engine: "postgres" }),
+      { env: {}, inspectDatabaseFn: vi.fn() },
+    )).resolves.toBe(0);
+
+    const config = JSON.parse(await fs.readFile(output, "utf8"));
+    expect(config.production_explore.project_root).toBe(".");
+  });
+
   it.each(["postgres", "mysql"] as const)(
     "verifies eligible bindings without persisting the %s credential",
     async (engine) => {

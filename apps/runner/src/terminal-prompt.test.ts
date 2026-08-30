@@ -110,6 +110,29 @@ describe("in-place terminal rendering", () => {
     expect(fitted.join("\n")).toContain("rows hidden");
   });
 
+  it("pages through an oversized frame without dropping its fixed header and controls", () => {
+    const lines = [
+      "TITLE",
+      ...Array.from({ length: 16 }, (_, index) => `Context ${index + 1}`),
+      "",
+      "> Confirm",
+      "Choice detail",
+      "",
+      "Enter Select",
+      "PgUp/PgDn Scroll hidden details",
+    ];
+
+    const firstPage = fitTerminalFrameToRows(lines, 12);
+    const secondPage = fitTerminalFrameToRows(lines, 12, 4);
+
+    expect(firstPage).toContain("Context 1");
+    expect(firstPage).not.toContain("Context 6");
+    expect(secondPage).toContain("Context 6");
+    expect(secondPage[0]).toBe("TITLE");
+    expect(secondPage).toContain("> Confirm");
+    expect(secondPage.at(-1)).toBe("PgUp/PgDn Scroll hidden details");
+  });
+
   it("never writes more physical rows than a live terminal reports", () => {
     const output = new PassThrough() as WriteStream & PassThrough & { rows: number };
     output.rows = 8;
@@ -170,5 +193,105 @@ describe("in-place terminal rendering", () => {
     const rendered = output.read()?.toString() ?? "";
     expect(rendered).toContain("\u001b[?25l");
     expect(rendered).toContain("\u001b[?25h");
+  });
+
+  it("handles Page Down inside every raw-screen interaction before returning normal keys", async () => {
+    const input = new PassThrough() as PassThrough & {
+      isTTY: boolean;
+      isRaw: boolean;
+      setRawMode(value: boolean): void;
+    };
+    input.isTTY = true;
+    input.isRaw = false;
+    input.setRawMode = (value: boolean) => {
+      input.isRaw = value;
+    };
+    const output = new PassThrough() as WriteStream & PassThrough;
+    Object.assign(output, { isTTY: true, columns: 100, rows: 12 });
+
+    const interaction = withRawTerminalScreen(
+      input as unknown as ReadStream,
+      output,
+      async (nextKey, render) => {
+        render([
+          "LONG REVIEW",
+          ...Array.from({ length: 16 }, (_, index) => `Context ${index + 1}`),
+          "",
+          "> Confirm",
+          "Choice detail",
+          "",
+          "Enter Select   Esc Back",
+        ]);
+        return nextKey();
+      },
+    );
+    const initial = output.read()?.toString() ?? "";
+    expect(initial).toContain("Context 1");
+    expect(initial).not.toContain("Context 6");
+    expect(initial).toContain("PgUp/PgDn Scroll hidden details");
+
+    input.emit("keypress", "", { name: "pagedown", sequence: "\u001b[6~" });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const paged = output.read()?.toString() ?? "";
+    expect(paged).toContain("Context 6");
+
+    input.emit("keypress", "\u001b", { name: "escape", sequence: "\u001b" });
+    await expect(interaction).resolves.toMatchObject({ name: "escape" });
+    expect(input.isRaw).toBe(false);
+  });
+
+  it("does not accumulate a no-op page offset at the end of a focused review", async () => {
+    const input = new PassThrough() as PassThrough & {
+      isTTY: boolean;
+      isRaw: boolean;
+      setRawMode(value: boolean): void;
+    };
+    input.isTTY = true;
+    input.isRaw = false;
+    input.setRawMode = (value: boolean) => {
+      input.isRaw = value;
+    };
+    const output = new PassThrough() as WriteStream & PassThrough;
+    Object.assign(output, { isTTY: true, columns: 100, rows: 12 });
+
+    const interaction = withRawTerminalScreen(
+      input as unknown as ReadStream,
+      output,
+      async (nextKey, render) => {
+        render([
+          "FOCUSED REVIEW",
+          ...Array.from({ length: 18 }, (_, index) => `Context ${index + 1}`),
+          "",
+          "> Use recommended policy",
+          "Choice detail",
+          "  Keep human approval",
+          "Choice detail",
+          "  Open advanced design",
+          "Choice detail",
+          "  Back",
+          "",
+          "Enter Select   Esc Back",
+        ]);
+        return nextKey();
+      },
+    );
+    const initial = output.read()?.toString() ?? "";
+    expect(initial).toContain("Use recommended policy");
+
+    let bottomPage = "";
+    for (let page = 0; page < 4; page += 1) {
+      input.emit("keypress", "", { name: "pagedown", sequence: "\u001b[6~" });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      bottomPage = output.read()?.toString() ?? "";
+    }
+
+    input.emit("keypress", "", { name: "pageup", sequence: "\u001b[5~" });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const pagedBack = output.read()?.toString() ?? "";
+    expect(pagedBack).not.toBe(bottomPage);
+
+    input.emit("keypress", "\u001b", { name: "escape", sequence: "\u001b" });
+    await expect(interaction).resolves.toMatchObject({ name: "escape" });
+    expect(input.isRaw).toBe(false);
   });
 });

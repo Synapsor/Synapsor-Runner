@@ -357,6 +357,35 @@ describe("boundary review terminal picker", () => {
     expect(activationTerminal.input.isRaw).toBe(false);
   });
 
+  it("pages through a long exact review before accepting its y/N decision", async () => {
+    const terminal = fakeTerminal(100, 12);
+    const session = createBoundaryReviewInteractiveSession(terminal.input, terminal.output);
+    const confirmed = session.confirmActivation!(
+      "Activate reviewed_staging exactly as shown?",
+      {
+        context: [
+          "REVIEW EXACT BOUNDARY",
+          ...Array.from({ length: 16 }, (_, index) => `Reviewed decision ${index + 1}`),
+          "Source database changed: no",
+        ],
+      },
+    );
+
+    const firstPage = stripAnsi(terminal.output.read()?.toString() ?? "");
+    expect(firstPage).toContain("Reviewed decision 1");
+    expect(firstPage).not.toContain("Reviewed decision 7");
+    expect(firstPage).toContain("PgUp/PgDn Scroll hidden details");
+
+    await emitKey(terminal.input, { name: "pagedown", sequence: "\u001b[6~" });
+    const secondPage = stripAnsi(terminal.output.read()?.toString() ?? "");
+    expect(secondPage).toContain("Reviewed decision 7");
+    expect(secondPage).toContain("Y Yes   N No   Esc Back");
+
+    await emitKey(terminal.input, { name: "y", sequence: "y" });
+    await expect(confirmed).resolves.toBe(true);
+    expect(terminal.input.isRaw).toBe(false);
+  });
+
   it("requires an explicit activation key and restores terminal state", async () => {
     const acceptedTerminal = fakeTerminal();
     const acceptedSession = createBoundaryReviewInteractiveSession(

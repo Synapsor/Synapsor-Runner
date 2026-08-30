@@ -339,7 +339,7 @@ export async function runActionControlPlane(input: {
               "Describe one business change, not SQL or a table-edit command.",
               "Runner maps it to one source-proven target, then asks only for unresolved bounds and guards.",
               "The result stays disabled until a source-unchanged rehearsal and separate exact activation.",
-              "Example: Update dispatcher alert level and maximum open requests with version conflict protection.",
+              "Example: Update one reviewed preference with version conflict protection.",
             ],
           });
           if (!intent) continue;
@@ -1277,6 +1277,11 @@ export async function collectQuickProposalActionInput(
         : undefined;
       const selectedResource = options.resources.find((candidate) =>
         candidate.id === preparation.selected.resource);
+      const selectedField = selectedResource?.structurally_eligible_fields.find((field) =>
+        field.name === unresolved.field);
+      const rangeExample = /(?:^|\b)(?:smallint|integer|bigint|int[248]?)(?:\b|$)/iu.test(
+        selectedField?.data_type ?? "",
+      ) ? "5,120" : "0.5,16";
       const target = preparation.selected.resource
         ? `${preparation.selected.operation?.toUpperCase() ?? "PROPOSAL"} ${preparation.selected.resource}`
         : "reviewed proposal target";
@@ -1290,7 +1295,7 @@ export async function collectQuickProposalActionInput(
             : []),
           `Agent-supplied field: ${unresolved.field}`,
           unresolved.help,
-          "Enter two numbers separated by a comma, for example 0.5,16.",
+          `Enter two numbers separated by a comma, for example ${rangeExample}.`,
           "These bounds constrain every proposal; they do not auto-approve or write anything.",
         ],
       });
@@ -1566,7 +1571,7 @@ async function reviewAndStageActionBoundaryLimits(input: {
       ...limits.map((limit) => actionBoundaryLimitSummary(limit)),
       "These use verified tenant/principal/object context. A tripped or indeterminate limit falls back to human review.",
     ].join(" "),
-    false,
+    true,
   );
   if (!accepted) return 0;
   await stageActionBoundaryLimits({ ...input, limits });
@@ -1663,7 +1668,7 @@ async function collectDeterministicAutoApproval(input: {
   if (style === "proposed") {
     const accepted = await input.prompter.confirm(
       "Use this exact deterministic policy in the disabled Action Boundary draft? You can edit it before activation.",
-      false,
+      true,
     );
     if (!accepted) return undefined;
     return structuredClone(input.initial);

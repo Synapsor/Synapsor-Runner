@@ -150,6 +150,90 @@ describe("boundary operator-plane CLI", () => {
     }]);
   });
 
+  it("keeps the configured OpenAI drafting model as a one-key default", async () => {
+    const choices: Array<{ title: string; values: string[]; initial?: string; labels: string[] }> = [];
+    const current = {
+      provider: "openai" as const,
+      model: "gpt-5.6-luna",
+      apiKey: "session-secret",
+    };
+    await expect(promptBoundaryMappingModel({
+      chooseOption: async (title, options, promptOptions) => {
+        choices.push({
+          title,
+          values: options.map((option) => option.value),
+          labels: options.map((option) => option.label),
+          ...(promptOptions?.initialValue ? { initial: promptOptions.initialValue } : {}),
+        });
+        return "current";
+      },
+      promptText: async () => {
+        throw new Error("Keeping the default model should not open a text prompt.");
+      },
+    }, current)).resolves.toEqual(current);
+    expect(choices).toEqual([{
+      title: "MODEL FOR BOUNDARY DRAFTING",
+      values: ["current", "change_model", "change_provider"],
+      labels: [
+        "Use openai[gpt-5.6-luna]  [default]",
+        "Change the model for openai",
+        "Choose another provider",
+      ],
+      initial: "current",
+    }]);
+  });
+
+  it("changes the OpenAI drafting model without replacing its in-memory credential", async () => {
+    const current = {
+      provider: "openai" as const,
+      model: "gpt-5.6-luna",
+      apiKey: "session-secret",
+    };
+    await expect(promptBoundaryMappingModel({
+      chooseOption: async () => "change_model",
+      promptText: async (label, options) => {
+        expect(label).toBe("Model for openai [gpt-5.6-luna]");
+        expect(options?.context).toContain("CHANGE BOUNDARY-DRAFTING MODEL");
+        return "gpt-4.1";
+      },
+    }, current)).resolves.toEqual({
+      provider: "openai",
+      model: "gpt-4.1",
+      apiKey: "session-secret",
+    });
+  });
+
+  it("switches a configured hosted drafting model to a detected local provider", async () => {
+    const current = {
+      provider: "openai" as const,
+      model: "gpt-5.6-luna",
+      apiKey: "session-secret",
+    };
+    const titles: string[] = [];
+    await expect(promptBoundaryMappingModel({
+      chooseOption: async (title) => {
+        titles.push(title);
+        return title === "MODEL FOR BOUNDARY DRAFTING"
+          ? "change_provider"
+          : "detected_local";
+      },
+      promptText: async () => {
+        throw new Error("A detected replacement provider should not require text setup.");
+      },
+    }, current, {
+      discoverModels: async () => ["qwen2.5:7b"],
+      env: {},
+    })).resolves.toEqual({
+      provider: "openai_compatible",
+      model: "qwen2.5:7b",
+      baseUrl: "http://127.0.0.1:11434/v1",
+    });
+    expect(titles).toEqual([
+      "MODEL FOR BOUNDARY DRAFTING",
+      "CHOOSE A MODEL FOR BOUNDARY DRAFTING",
+    ]);
+  });
+
   it("exports an exact review bundle and requires a replay-safe signed decision for headless activation", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-cli-"));
     const inspection = boundaryInspection();
@@ -1711,11 +1795,9 @@ describe("boundary operator-plane CLI", () => {
     ];
     const promptAnswers = [
       "Report service visit activity.",
-      "1",
-      "",
-      "1",
     ];
     const promptLabels: string[] = [];
+    const mappingChoices: string[][] = [];
     const activationPrompts: string[] = [];
     let output = "";
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
@@ -1729,8 +1811,19 @@ describe("boundary operator-plane CLI", () => {
         promptLabels.push(prompt);
         return promptAnswers.shift();
       },
-      confirm: async () => {
-        throw new Error("Plan cards must not add a separate save confirmation.");
+      chooseOption: async (title, options, promptOptions) => {
+        if (title === "MAP THE JOB TO REVIEWED STRUCTURE") {
+          expect(promptOptions?.initialValue).toBe("cards");
+          mappingChoices.push(options.map((option) => option.value));
+          return "cards";
+        }
+        expect(title).toBe("RUNNER-GUIDED READ DRAFT");
+        expect(promptOptions?.initialValue).toBe("use");
+        return "use";
+      },
+      confirm: async (prompt) => {
+        if (prompt.includes("Action Boundary")) return false;
+        throw new Error(`Plan cards must not add a separate save confirmation: ${prompt}`);
       },
       confirmActivation: async (prompt) => {
         activationPrompts.push(prompt);
@@ -1747,10 +1840,16 @@ describe("boundary operator-plane CLI", () => {
       )).resolves.toBe(0);
 
       expect(activationPrompts).toHaveLength(1);
-      expect(promptLabels).toHaveLength(4);
+      expect(promptLabels).toHaveLength(1);
       expect(promptLabels[0]).toContain("What job are you giving this agent?");
-      expect(promptLabels[2]).toContain("What may the agent propose?");
-      expect(promptLabels[3]).toContain("CHOOSE REPRESENTATIVE QUESTIONS");
+      expect(mappingChoices).toEqual([[
+        "model",
+        "cards",
+        "manual",
+        "exact",
+        "intent_model",
+        "saved",
+      ]]);
       expect(output).toContain("READ CANDIDATE READY");
       expect(output).toContain("EXPLORE OFF | PROPOSE OFF | DELEGATE OFF | APPLY OFF");
       expect(output).toContain("REVIEW EXACT BOUNDARY");
@@ -2175,10 +2274,6 @@ describe("boundary operator-plane CLI", () => {
     const choices = [{ action: "workloads" as const }, undefined];
     const answers = [
       "Answer service questions and propose a bounded visit status change.",
-      "1",
-      "Propose changing one service visit status.",
-      "",
-      "1",
     ];
     const actionCalls: Array<Parameters<typeof runActionControlPlane>[0]> = [];
     const accessNotices: Array<BoundaryAccessNotice | undefined> = [];
@@ -2198,8 +2293,18 @@ describe("boundary operator-plane CLI", () => {
       },
       editFieldTiers: async () => undefined,
       promptText: async () => answers.shift(),
-      confirm: async () => {
-        throw new Error("Deterministic cards and mocked action preparation need no model-egress confirmation.");
+      chooseOption: async (title, _options, promptOptions) => {
+        if (title === "MAP THE JOB TO REVIEWED STRUCTURE") {
+          expect(promptOptions?.initialValue).toBe("cards");
+          return "cards";
+        }
+        expect(title).toBe("RUNNER-GUIDED READ DRAFT");
+        expect(promptOptions?.initialValue).toBe("use");
+        return "use";
+      },
+      confirm: async (prompt) => {
+        if (prompt.includes("Action Boundary")) return true;
+        throw new Error(`Deterministic drafting must not request model egress: ${prompt}`);
       },
       confirmActivation: async () => false,
       confirmReviewedDisabled: async () => true,
@@ -2221,7 +2326,7 @@ describe("boundary operator-plane CLI", () => {
       expect(actionCalls[0]).toMatchObject({
         projectRoot: root,
         boundaryName: "reviewed_staging",
-        initialIntent: "Propose changing one service visit status.",
+        initialIntent: "Answer service questions and propose a bounded visit status change.",
         prepareOnly: true,
         actionBoundaryJobIntent: "Answer service questions and propose a bounded visit status change.",
       });
@@ -2232,7 +2337,7 @@ describe("boundary operator-plane CLI", () => {
       expect(delegation).toMatchObject({
         state: "disabled",
         actions: [{
-          intent: "Propose changing one service visit status.",
+          intent: "Answer service questions and propose a bounded visit status change.",
           rehearsal: "not_started",
           state: "disabled",
         }],
@@ -2265,14 +2370,9 @@ describe("boundary operator-plane CLI", () => {
     const choices = [{ action: "workloads" as const }, undefined];
     const answers = [
       "Report service visit activity.",
-      "2",
-      "",
-      "Count service visits by status.",
-      "",
-      "",
     ];
     const prompts: string[] = [];
-    const promptFrames: string[] = [];
+    const modelChoices: string[] = [];
     const confirms: string[] = [];
     const modelReadWorkloadGenerator = vi.fn(async (
       input: Parameters<typeof generateModelReadWorkload>[0],
@@ -2293,12 +2393,22 @@ describe("boundary operator-plane CLI", () => {
     const session: BoundaryReviewInteractiveSession = {
       chooseResource: async () => choices.shift(),
       editFieldTiers: async () => undefined,
-      promptText: async (prompt, promptOptions) => {
+      promptText: async (prompt) => {
         prompts.push(prompt);
-        promptFrames.push([prompt, ...(promptOptions?.context ?? [])].join("\n"));
         return answers.shift();
       },
+      chooseOption: async (title, options, promptOptions) => {
+        if (title === "MAP THE JOB TO REVIEWED STRUCTURE") {
+          expect(promptOptions?.initialValue).toBe("model");
+          return "model";
+        }
+        expect(title).toBe("MODEL FOR BOUNDARY DRAFTING");
+        expect(promptOptions?.initialValue).toBe("current");
+        modelChoices.push(...options.map((option) => option.label));
+        return "current";
+      },
       confirm: async (prompt) => {
+        if (prompt.includes("Action Boundary")) return false;
         confirms.push(prompt);
         return true;
       },
@@ -2323,10 +2433,10 @@ describe("boundary operator-plane CLI", () => {
       )).resolves.toBe(0);
 
       expect(prompts[0]).toContain("What job are you giving this agent?");
-      expect(promptFrames[1]).toContain("Current anthropic/claude-current model (one metadata-egress review)");
+      expect(modelChoices).toContain("Use anthropic[claude-current]  [default]");
       expect(prompts.some((prompt) => /Provider:|Model \[|API key environment/.test(prompt))).toBe(false);
       expect(confirms).toHaveLength(1);
-      expect(confirms[0]).toContain("anthropic/claude-current");
+      expect(confirms[0]).toContain("anthropic[claude-current]");
       expect(modelReadWorkloadGenerator).toHaveBeenCalledWith(expect.objectContaining({
         provider: "anthropic",
         model: "claude-current",
@@ -2419,6 +2529,7 @@ describe("boundary operator-plane CLI", () => {
       editFieldTiers: async () => undefined,
       promptText: async () => answers.shift(),
       chooseOption: async (title, choices, options) => {
+        if (title === "MODEL FOR BOUNDARY DRAFTING") return "current";
         expect(title).toBe("MAP THE JOB TO REVIEWED STRUCTURE");
         expect(options?.initialValue).toBe("model");
         mappingChoices.push(...choices.map((choice) => choice.value));
@@ -2473,6 +2584,261 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 25_000);
 
+  it("retries a refused Action Boundary draft once without restarting the agent job", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-action-model-retry-"));
+    const inspection = actionTargetInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const answers = [
+      "Analyze service visits and propose creating a maintenance request.",
+      "",
+    ];
+    const modelReadWorkloadGenerator = vi.fn(async (
+      input: Parameters<typeof generateModelReadWorkload>[0],
+    ): Promise<Awaited<ReturnType<typeof generateModelReadWorkload>>> => {
+      const card = buildReadWorkloadPlanCards(input.generatedBoundary).find((candidate) =>
+        candidate.plan.kind === "aggregate"
+        && candidate.plan.resource === "public.service_visits")!;
+      const workload = readWorkloadFromPlanCards({ cards: [card], selectedIds: [card.id] });
+      return {
+        workload,
+        analysis: analyzeReadWorkloadSet({ workload, generatedBoundary: input.generatedBoundary }),
+        provider: input.provider,
+        model: input.model,
+        authority_granted: false,
+        source_query_executed: false,
+        explore_budget_consumed: false,
+        source_database_changed: false,
+      };
+    });
+    let actionAttempt = 0;
+    const modelActionSuggestionSetGenerator = vi.fn(async (
+      input: Parameters<typeof generateModelActionSuggestionSet>[0],
+    ): Promise<Awaited<ReturnType<typeof generateModelActionSuggestionSet>>> => {
+      actionAttempt += 1;
+      if (actionAttempt === 1) {
+        throw new AskError(
+          "ASK_REQUIRED_TOOL_NOT_CALLED",
+          "The model returned prose instead of the required Action Boundary tool.",
+        );
+      }
+      const assessment = assessActionSuggestion({
+        schema_version: ACTION_SUGGESTION_VERSION,
+        intent: input.jobIntent,
+        operation: "insert",
+        resource: "public.maintenance_requests",
+        fields: ["request_kind", "estimated_hours"],
+        suggested_by: { kind: "model", provider: input.provider, model: input.model },
+      }, input.options.resources);
+      return {
+        assessments: [assessment],
+        provider: input.provider,
+        model: input.model,
+        authority_granted: false,
+        source_database_changed: false,
+      };
+    });
+    const recoveryChoices: string[][] = [];
+    const runDelegationActionReview = vi.fn(async () => ({
+      state: "closed" as const,
+      source_database_changed: false as const,
+      activated_actions: [],
+    }));
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => undefined,
+      editFieldTiers: async () => undefined,
+      promptText: async () => answers.shift(),
+      chooseOption: async (title, choices) => {
+        if (title === "MAP THE JOB TO REVIEWED STRUCTURE") return "model";
+        if (title === "MODEL FOR BOUNDARY DRAFTING") return "current";
+        if (title === "MODEL COULD NOT PRODUCE A STRUCTURED DRAFT") {
+          recoveryChoices.push(choices.map((choice) => choice.value));
+          return "retry";
+        }
+        throw new Error(`Unexpected Action Boundary retry choice: ${title}`);
+      },
+      confirm: async () => true,
+      confirmActivation: async () => false,
+      confirmReviewedDisabled: async () => true,
+    };
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await expect(boundaryReviewCommandInternal(
+        ["--project-root", root, "--access", "--job-first"],
+        async () => inspection,
+        session,
+        undefined,
+        {
+          startWithAgentJob: true,
+          modelAuthoringSession: {
+            provider: "openai",
+            model: "gpt-5.6-luna",
+            apiKey: "session-secret",
+          },
+          modelReadWorkloadGenerator,
+          modelActionSuggestionSetGenerator,
+          actionProjectInspector: async () => inspection,
+          runDelegationActionReview,
+        },
+      )).resolves.toBe(0);
+
+      expect(modelReadWorkloadGenerator).toHaveBeenCalledOnce();
+      expect(modelActionSuggestionSetGenerator).toHaveBeenCalledTimes(2);
+      expect(recoveryChoices).toEqual([[
+        "runner",
+        "retry",
+        "change_model",
+        "back",
+      ]]);
+      expect(runDelegationActionReview).toHaveBeenCalledOnce();
+      await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 25_000);
+
+  it("replaces a refused Action Boundary model once and re-confirms structural metadata egress", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-action-model-replacement-"));
+    const inspection = actionTargetInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const modelReadWorkloadGenerator = vi.fn(async (
+      input: Parameters<typeof generateModelReadWorkload>[0],
+    ): Promise<Awaited<ReturnType<typeof generateModelReadWorkload>>> => {
+      const card = buildReadWorkloadPlanCards(input.generatedBoundary).find((candidate) =>
+        candidate.plan.kind === "aggregate"
+        && candidate.plan.resource === "public.service_visits")!;
+      const workload = readWorkloadFromPlanCards({ cards: [card], selectedIds: [card.id] });
+      return {
+        workload,
+        analysis: analyzeReadWorkloadSet({ workload, generatedBoundary: input.generatedBoundary }),
+        provider: input.provider,
+        model: input.model,
+        authority_granted: false,
+        source_query_executed: false,
+        explore_budget_consumed: false,
+        source_database_changed: false,
+      };
+    });
+    const attemptedActionModels: string[] = [];
+    const modelActionSuggestionSetGenerator = vi.fn(async (
+      input: Parameters<typeof generateModelActionSuggestionSet>[0],
+    ): Promise<Awaited<ReturnType<typeof generateModelActionSuggestionSet>>> => {
+      attemptedActionModels.push(input.model);
+      if (input.model === "gpt-5.6-luna") {
+        throw new Error(
+          "ACTION_SUGGESTION_SET_BLOCKED: Suggestion 1 uses a field outside the reviewed action catalog.",
+        );
+      }
+      const assessment = assessActionSuggestion({
+        schema_version: ACTION_SUGGESTION_VERSION,
+        intent: input.jobIntent,
+        operation: "insert",
+        resource: "public.maintenance_requests",
+        fields: ["request_kind", "estimated_hours"],
+        suggested_by: { kind: "model", provider: input.provider, model: input.model },
+      }, input.options.resources);
+      return {
+        assessments: [assessment],
+        provider: input.provider,
+        model: input.model,
+        authority_granted: false,
+        source_database_changed: false,
+      };
+    });
+    let modelChooserCount = 0;
+    const egressPrompts: string[] = [];
+    const recoveryContexts: string[][] = [];
+    const runDelegationActionReview = vi.fn(async () => ({
+      state: "closed" as const,
+      source_database_changed: false as const,
+      activated_actions: [],
+    }));
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => undefined,
+      editFieldTiers: async () => undefined,
+      promptText: async (prompt) => {
+        if (prompt.includes("What job are you giving this agent?")) {
+          return "Analyze service visits and propose creating a maintenance request.";
+        }
+        if (prompt.includes("Model for openai")) return "gpt-action-replacement";
+        return "";
+      },
+      chooseOption: async (title, _choices, options) => {
+        if (title === "MAP THE JOB TO REVIEWED STRUCTURE") return "model";
+        if (title === "MODEL FOR BOUNDARY DRAFTING") {
+          modelChooserCount += 1;
+          return modelChooserCount === 1 ? "current" : "change_model";
+        }
+        if (title === "MODEL DRAFT DID NOT FIT THE REVIEWED GRAMMAR") {
+          recoveryContexts.push(options?.context ?? []);
+          return "change_model";
+        }
+        throw new Error(`Unexpected Action Boundary replacement choice: ${title}`);
+      },
+      confirm: async (prompt) => {
+        if (prompt.includes("structural names")) egressPrompts.push(prompt);
+        return true;
+      },
+      confirmActivation: async () => false,
+      confirmReviewedDisabled: async () => true,
+    };
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await expect(boundaryReviewCommandInternal(
+        ["--project-root", root, "--access", "--job-first"],
+        async () => inspection,
+        session,
+        undefined,
+        {
+          startWithAgentJob: true,
+          modelAuthoringSession: {
+            provider: "openai",
+            model: "gpt-5.6-luna",
+            apiKey: "session-secret",
+          },
+          modelReadWorkloadGenerator,
+          modelActionSuggestionSetGenerator,
+          actionProjectInspector: async () => inspection,
+          runDelegationActionReview,
+        },
+      )).resolves.toBe(0);
+
+      expect(modelReadWorkloadGenerator).toHaveBeenCalledOnce();
+      expect(attemptedActionModels).toEqual(["gpt-5.6-luna", "gpt-action-replacement"]);
+      expect(egressPrompts).toHaveLength(2);
+      expect(egressPrompts[0]).toContain("openai[gpt-5.6-luna]");
+      expect(egressPrompts[1]).toContain("openai[gpt-action-replacement]");
+      expect(recoveryContexts[0]?.join("\n")).toContain("outside the reviewed action catalog");
+      expect(runDelegationActionReview).toHaveBeenCalledOnce();
+      await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 25_000);
+
   it("continues the same job through Runner guidance when a local model returns prose instead of the required tool", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-model-fallback-"));
     const inspection = actionTargetInspection();
@@ -2511,6 +2877,7 @@ describe("boundary operator-plane CLI", () => {
       },
       chooseOption: async (title, _choices, options) => {
         if (title === "MAP THE JOB TO REVIEWED STRUCTURE") return "model";
+        if (title === "MODEL FOR BOUNDARY DRAFTING") return "current";
         if (title === "MODEL COULD NOT PRODUCE A STRUCTURED DRAFT") {
           expect(options?.initialValue).toBe("runner");
           fallbackChoices.push(title);
@@ -2556,6 +2923,365 @@ describe("boundary operator-plane CLI", () => {
       );
       await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
         .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 25_000);
+
+  it("continues the same job through Runner guidance when a structured model draft violates reviewed grammar", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-model-grammar-fallback-"));
+    const inspection = actionTargetInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const fallbackContexts: string[][] = [];
+    const fallbackOptionValues: string[][] = [];
+    const runDelegationActionReview = vi.fn(async () => ({
+      state: "closed" as const,
+      source_database_changed: false as const,
+      activated_actions: [],
+    }));
+    const modelReadWorkloadGenerator = vi.fn(async (
+      input: Parameters<typeof generateModelReadWorkload>[0],
+    ): Promise<Awaited<ReturnType<typeof generateModelReadWorkload>>> => {
+      const workload = {
+        schema_version: READ_WORKLOAD_SET_VERSION,
+        name: input.name,
+        allowed: [{
+          id: "too_many_dimensions",
+          description: "Count service visits across four dimensions.",
+          plan: {
+            kind: "aggregate",
+            resource: "public.service_visits",
+            measures: [{ function: "count" }],
+            dimensions: [
+              { field: "status" },
+              { field: "status" },
+              { field: "status" },
+              { field: "status" },
+            ],
+          },
+        }],
+        forbidden: [],
+        source: { kind: "model" as const, provider: input.provider, model: input.model },
+      };
+      const analysis = analyzeReadWorkloadSet({
+        workload,
+        generatedBoundary: input.generatedBoundary,
+      });
+      expect(analysis.status).toBe("blocked");
+      return {
+        workload,
+        analysis,
+        provider: input.provider,
+        model: input.model,
+        authority_granted: false,
+        source_query_executed: false,
+        explore_budget_consumed: false,
+        source_database_changed: false,
+      };
+    });
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => undefined,
+      editFieldTiers: async () => undefined,
+      promptText: async (prompt) => {
+        if (prompt.includes("What job are you giving this agent?")) {
+          return "Explain service visits and propose creating a maintenance request.";
+        }
+        throw new Error(`Unexpected grammar-fallback text prompt: ${prompt}`);
+      },
+      chooseOption: async (title, choices, options) => {
+        if (title === "MAP THE JOB TO REVIEWED STRUCTURE") return "model";
+        if (title === "MODEL FOR BOUNDARY DRAFTING") return "current";
+        if (title === "MODEL DRAFT DID NOT FIT THE REVIEWED GRAMMAR") {
+          expect(options?.initialValue).toBe("runner");
+          fallbackContexts.push(options?.context ?? []);
+          fallbackOptionValues.push(choices.map((choice) => choice.value));
+          return "runner";
+        }
+        if (title === "RUNNER-GUIDED READ DRAFT") return "use";
+        throw new Error(`Unexpected grammar-fallback choice: ${title}`);
+      },
+      confirm: async () => true,
+      confirmActivation: async () => false,
+      confirmReviewedDisabled: async () => true,
+    };
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await expect(boundaryReviewCommandInternal(
+        ["--project-root", root, "--access", "--job-first"],
+        async () => inspection,
+        session,
+        undefined,
+        {
+          startWithAgentJob: true,
+          modelAuthoringSession: {
+            provider: "openai",
+            model: "gpt-5.6-luna",
+            apiKey: "session-secret",
+          },
+          modelReadWorkloadGenerator,
+          actionProjectInspector: async () => inspection,
+          runDelegationActionReview,
+        },
+      )).resolves.toBe(0);
+
+      expect(modelReadWorkloadGenerator).toHaveBeenCalledOnce();
+      expect(fallbackContexts).toHaveLength(1);
+      expect(fallbackOptionValues).toEqual([[
+        "runner",
+        "retry",
+        "change_model",
+        "back",
+      ]]);
+      expect(fallbackContexts[0]?.join("\n")).toContain("dimensions");
+      expect(fallbackContexts[0]?.join("\n")).toContain("not saved or executed");
+      expect(runDelegationActionReview).toHaveBeenCalledOnce();
+      expect(runDelegationActionReview).toHaveBeenCalledWith(expect.objectContaining({
+        initialIntent: "Explain service visits and propose creating a maintenance request.",
+        prepareOnly: true,
+      }));
+      const reviewed = await loadBoundaryReviewContext(root);
+      expect(reviewed.candidate.pack.resources.map((resource) => resource.id)).toContain(
+        "public.maintenance_requests",
+      );
+      await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 25_000);
+
+  it("lets the operator retry one refused structured model draft without re-entering the job", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-model-retry-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    let attempt = 0;
+    const modelReadWorkloadGenerator = vi.fn(async (
+      input: Parameters<typeof generateModelReadWorkload>[0],
+    ): Promise<Awaited<ReturnType<typeof generateModelReadWorkload>>> => {
+      attempt += 1;
+      const workload = attempt === 1
+        ? {
+            schema_version: READ_WORKLOAD_SET_VERSION,
+            name: input.name,
+            allowed: [{
+              id: "invalid_first_attempt",
+              description: "Count service visits across too many dimensions.",
+              plan: {
+                kind: "aggregate",
+                resource: "public.service_visits",
+                measures: [{ function: "count" }],
+                dimensions: Array.from({ length: 4 }, () => ({ field: "status" })),
+              },
+            }],
+            forbidden: [],
+            source: { kind: "model" as const, provider: input.provider, model: input.model },
+          }
+        : readWorkloadFromPlanCards({
+            cards: [buildReadWorkloadPlanCards(input.generatedBoundary)[0]!],
+            selectedIds: [buildReadWorkloadPlanCards(input.generatedBoundary)[0]!.id],
+          });
+      return {
+        workload,
+        analysis: analyzeReadWorkloadSet({ workload, generatedBoundary: input.generatedBoundary }),
+        provider: input.provider,
+        model: input.model,
+        authority_granted: false,
+        source_query_executed: false,
+        explore_budget_consumed: false,
+        source_database_changed: false,
+      };
+    });
+    const recoveryChoices: string[][] = [];
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => undefined,
+      editFieldTiers: async () => undefined,
+      promptText: async (prompt) => {
+        if (prompt.includes("What job are you giving this agent?")) return "Explain service visit activity.";
+        throw new Error(`Unexpected model-retry prompt: ${prompt}`);
+      },
+      chooseOption: async (title, choices) => {
+        if (title === "MAP THE JOB TO REVIEWED STRUCTURE") return "model";
+        if (title === "MODEL FOR BOUNDARY DRAFTING") return "current";
+        if (title === "MODEL DRAFT DID NOT FIT THE REVIEWED GRAMMAR") {
+          recoveryChoices.push(choices.map((choice) => choice.value));
+          return "retry";
+        }
+        throw new Error(`Unexpected model-retry choice: ${title}`);
+      },
+      confirm: async (prompt) => prompt.includes("Action Boundary") ? false : true,
+      confirmActivation: async () => false,
+      confirmReviewedDisabled: async () => true,
+    };
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await expect(boundaryReviewCommandInternal(
+        ["--project-root", root, "--access", "--job-first"],
+        async () => inspection,
+        session,
+        undefined,
+        {
+          startWithAgentJob: true,
+          modelAuthoringSession: {
+            provider: "openai",
+            model: "gpt-5.6-luna",
+            apiKey: "session-secret",
+          },
+          modelReadWorkloadGenerator,
+        },
+      )).resolves.toBe(0);
+
+      expect(modelReadWorkloadGenerator).toHaveBeenCalledTimes(2);
+      expect(recoveryChoices).toEqual([[
+        "runner",
+        "retry",
+        "change_model",
+        "back",
+      ]]);
+      const reviewed = await loadBoundaryReviewContext(root);
+      expect(reviewed.candidate.pack.resources).toHaveLength(1);
+      await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 25_000);
+
+  it("lets the operator replace a refused drafting model and requires fresh metadata-egress review", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-model-replacement-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({
+      inspection,
+      project: {
+        root,
+        package_manager: "npm",
+        frameworks: ["node"],
+        schema_inputs: [],
+        database_env_names: ["DATABASE_URL"],
+      },
+      sourceEnv: "DATABASE_URL",
+      inspectedSchema: "public",
+    });
+    const attemptedModels: string[] = [];
+    const egressPrompts: string[] = [];
+    const modelReadWorkloadGenerator = vi.fn(async (
+      input: Parameters<typeof generateModelReadWorkload>[0],
+    ): Promise<Awaited<ReturnType<typeof generateModelReadWorkload>>> => {
+      attemptedModels.push(input.model);
+      const workload = input.model === "gpt-5.6-luna"
+        ? {
+            schema_version: READ_WORKLOAD_SET_VERSION,
+            name: input.name,
+            allowed: [{
+              id: "invalid_original_model",
+              description: "Count service visits across too many dimensions.",
+              plan: {
+                kind: "aggregate",
+                resource: "public.service_visits",
+                measures: [{ function: "count" }],
+                dimensions: Array.from({ length: 4 }, () => ({ field: "status" })),
+              },
+            }],
+            forbidden: [],
+            source: { kind: "model" as const, provider: input.provider, model: input.model },
+          }
+        : readWorkloadFromPlanCards({
+            cards: [buildReadWorkloadPlanCards(input.generatedBoundary)[0]!],
+            selectedIds: [buildReadWorkloadPlanCards(input.generatedBoundary)[0]!.id],
+          });
+      return {
+        workload,
+        analysis: analyzeReadWorkloadSet({ workload, generatedBoundary: input.generatedBoundary }),
+        provider: input.provider,
+        model: input.model,
+        authority_granted: false,
+        source_query_executed: false,
+        explore_budget_consumed: false,
+        source_database_changed: false,
+      };
+    });
+    let modelChooserCount = 0;
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => undefined,
+      editFieldTiers: async () => undefined,
+      promptText: async (prompt) => {
+        if (prompt.includes("What job are you giving this agent?")) return "Explain service visit activity.";
+        if (prompt.includes("Model for openai")) return "gpt-replacement";
+        throw new Error(`Unexpected model-replacement prompt: ${prompt}`);
+      },
+      chooseOption: async (title) => {
+        if (title === "MAP THE JOB TO REVIEWED STRUCTURE") return "model";
+        if (title === "MODEL FOR BOUNDARY DRAFTING") {
+          modelChooserCount += 1;
+          return modelChooserCount === 1 ? "current" : "change_model";
+        }
+        if (title === "MODEL DRAFT DID NOT FIT THE REVIEWED GRAMMAR") return "change_model";
+        throw new Error(`Unexpected model-replacement choice: ${title}`);
+      },
+      confirm: async (prompt) => {
+        if (prompt.includes("Action Boundary")) return false;
+        if (prompt.includes("structural names")) {
+          egressPrompts.push(prompt);
+          return true;
+        }
+        throw new Error(`Unexpected model-replacement confirmation: ${prompt}`);
+      },
+      confirmActivation: async () => false,
+      confirmReviewedDisabled: async () => true,
+    };
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      await expect(boundaryReviewCommandInternal(
+        ["--project-root", root, "--access", "--job-first"],
+        async () => inspection,
+        session,
+        undefined,
+        {
+          startWithAgentJob: true,
+          modelAuthoringSession: {
+            provider: "openai",
+            model: "gpt-5.6-luna",
+            apiKey: "session-secret",
+          },
+          modelReadWorkloadGenerator,
+        },
+      )).resolves.toBe(0);
+
+      expect(attemptedModels).toEqual(["gpt-5.6-luna", "gpt-replacement"]);
+      expect(egressPrompts).toHaveLength(2);
+      expect(egressPrompts[0]).toContain("openai[gpt-5.6-luna]");
+      expect(egressPrompts[1]).toContain("openai[gpt-replacement]");
+      const draft = await readDelegationDraft(root, "explain_service_visit_activity");
+      expect(draft?.model_assist).toMatchObject({
+        provider: "openai",
+        model: "gpt-replacement",
+      });
+      const stored = await fs.readFile(
+        path.join(root, ".synapsor/delegations/explain_service_visit_activity/draft.json"),
+        "utf8",
+      );
+      expect(stored).not.toContain("session-secret");
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

@@ -11,6 +11,7 @@ import {
 } from "./auto-boundary.js";
 import {
   readTerminalActivationConfirmation,
+  readTerminalBooleanConfirmation,
   readTerminalTextWithEscape,
   withAlternateTerminalScreen,
   withRawTerminalScreen,
@@ -388,9 +389,9 @@ export function createBoundaryReviewInteractiveSession(
         output,
       ),
     ),
-    confirm: (prompt, options = {}) => withAlternateTerminalScreen(output, async () => {
+    confirm: (prompt, options = {}) => withAlternateTerminalScreen(output, () => {
       const defaultValue = options.defaultValue === true;
-      const answer = await readTerminalTextWithEscape(
+      return readTerminalBooleanConfirmation(
         terminalPromptWithContext(
           `${theme.bold(prompt)} ${theme.key(defaultValue ? "[Y/n]" : "[y/N]")} ` +
             `${theme.key("[Esc Back]")}: `,
@@ -399,10 +400,8 @@ export function createBoundaryReviewInteractiveSession(
         ),
         input,
         output,
+        { defaultValue },
       );
-      if (answer === undefined) return undefined;
-      if (!answer) return defaultValue;
-      return answer.toLowerCase() === "y" || answer.toLowerCase() === "yes";
     }),
     confirmActivation: (prompt, options = {}) => withAlternateTerminalScreen(
       output,
@@ -412,8 +411,8 @@ export function createBoundaryReviewInteractiveSession(
         output,
       ),
     ),
-    confirmReviewedDisabled: (prompt, options = {}) => withAlternateTerminalScreen(output, async () => {
-      const answer = await readTerminalTextWithEscape(
+    confirmReviewedDisabled: (prompt, options = {}) => withAlternateTerminalScreen(output, () =>
+      readTerminalBooleanConfirmation(
         terminalPromptWithContext(
           `${theme.bold(prompt)} ${theme.key("[y/N]")} ${theme.key("[Esc Back]")}: `,
           options.context,
@@ -421,10 +420,8 @@ export function createBoundaryReviewInteractiveSession(
         ),
         input,
         output,
-      );
-      if (answer === undefined) return undefined;
-      return answer.toLowerCase() === "y" || answer.toLowerCase() === "yes";
-    }),
+        { defaultValue: false },
+      )),
   };
 }
 

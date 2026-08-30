@@ -180,6 +180,7 @@ async function configInit(
   }
   const projectRootValue = optionalArg(args, "--project-root") ?? ".";
   const projectRoot = path.resolve(projectRootValue);
+  const configProjectRoot = path.relative(path.dirname(path.resolve(output)), projectRoot) || ".";
   const drafted = productionExplore ? await readProductionExploreDraft(projectRoot) : undefined;
   const requestedEngine = optionalArg(args, "--engine");
   if (productionExplore && !requestedEngine && !drafted?.lock.engine) {
@@ -254,7 +255,7 @@ async function configInit(
   );
   const config = productionExplore
     ? productionExploreConfigTemplate({
-      projectRoot: projectRootValue,
+      projectRoot: configProjectRoot,
       engine,
       source,
       readUrlEnv,

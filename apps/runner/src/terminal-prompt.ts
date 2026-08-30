@@ -25,9 +25,14 @@ export type InPlaceTerminalRenderer = {
 
 type InPlaceTerminalRendererOptions = {
   maxRows?: () => number | undefined;
+  bodyScrollOffset?: () => number;
 };
 
-export function fitTerminalFrameToRows(lines: string[], maxRows: number | undefined): string[] {
+export function fitTerminalFrameToRows(
+  lines: string[],
+  maxRows: number | undefined,
+  bodyScrollOffset = 0,
+): string[] {
   if (maxRows === undefined || !Number.isFinite(maxRows)) return lines;
   const limit = Math.max(1, Math.floor(maxRows));
   if (lines.length <= limit) return lines;
@@ -55,9 +60,16 @@ export function fitTerminalFrameToRows(lines: string[], maxRows: number | undefi
   const desiredStart = focus !== undefined && focus >= bodyStartBoundary && focus < bodyEndBoundary
     ? focus - Math.floor(bodyBudget / 4)
     : bodyStartBoundary;
-  let bodyStart = Math.max(
+  const automaticBodyStart = Math.max(
     bodyStartBoundary,
     Math.min(desiredStart, Math.max(bodyStartBoundary, bodyEndBoundary - bodyBudget)),
+  );
+  let bodyStart = Math.max(
+    bodyStartBoundary,
+    Math.min(
+      automaticBodyStart + Math.trunc(bodyScrollOffset),
+      Math.max(bodyStartBoundary, bodyEndBoundary - bodyBudget),
+    ),
   );
   let bodyEnd = Math.min(bodyEndBoundary, bodyStart + bodyBudget);
 
@@ -127,7 +139,11 @@ export function createInPlaceTerminalRenderer(
         output.write("\u001b[2J\u001b[H");
         renderedLines = 0;
       }
-      const visibleLines = fitTerminalFrameToRows(lines, maxRows);
+      const visibleLines = fitTerminalFrameToRows(
+        lines,
+        maxRows,
+        options.bodyScrollOffset?.() ?? 0,
+      );
       const targetLines = Math.max(renderedLines, visibleLines.length);
       if (!targetLines) return;
       if (renderedLines) moveToFrameStart();
@@ -247,9 +263,12 @@ export async function withRawTerminalScreen<T>(
   }
   const wasRaw = input.isRaw;
   const wasFlowing = input.readableFlowing === true;
+  let bodyScrollOffset = 0;
   const renderer = createInPlaceTerminalRenderer(output, {
     maxRows: () => output.rows,
+    bodyScrollOffset: () => bodyScrollOffset,
   });
+  let latestLines: string[] = [];
   const queuedKeys: TerminalKeypress[] = [];
   const keyWaiters: Array<(key: TerminalKeypress) => void> = [];
   let terminalClosed = false;
@@ -271,17 +290,47 @@ export async function withRawTerminalScreen<T>(
   input.setRawMode(true);
   input.resume();
   output.write("\u001b[?25l");
+  const paintLatestFrame = () => renderer.render(latestLines);
   const render = (lines: string[]) => {
     const width = Math.min(terminalContentWidth(output.columns), 116);
     const normalized = lines.flatMap((line) =>
       wrapStyledTerminalLine(line, width).map((wrapped) => padTerminalLine(wrapped)));
-    renderer.render(normalized);
+    const maxRows = output.rows;
+    latestLines = maxRows !== undefined && normalized.length > maxRows
+      ? [...normalized, padTerminalLine("  PgUp/PgDn Scroll hidden details")]
+      : normalized;
+    paintLatestFrame();
   };
-  const nextKey = () => {
+  const readNextKey = () => {
     const queued = queuedKeys.shift();
     if (queued) return Promise.resolve(queued);
     if (terminalClosed) return Promise.resolve(closedKey);
     return new Promise<TerminalKeypress>((resolve) => keyWaiters.push(resolve));
+  };
+  const nextKey = async (): Promise<TerminalKeypress> => {
+    while (true) {
+      const key = await readNextKey();
+      if (key.name === "pageup" || key.name === "pagedown") {
+        const pageRows = Math.max(1, (output.rows ?? 24) - 8);
+        const candidateOffset = bodyScrollOffset
+          + (key.name === "pageup" ? -pageRows : pageRows);
+        const currentPage = fitTerminalFrameToRows(
+          latestLines,
+          output.rows,
+          bodyScrollOffset,
+        ).join("\n");
+        const candidatePage = fitTerminalFrameToRows(
+          latestLines,
+          output.rows,
+          candidateOffset,
+        ).join("\n");
+        if (candidatePage !== currentPage) bodyScrollOffset = candidateOffset;
+        paintLatestFrame();
+        continue;
+      }
+      bodyScrollOffset = 0;
+      return key;
+    }
   };
   try {
     return await operation(nextKey, render);
@@ -302,60 +351,58 @@ export async function readTerminalActivationConfirmation(
   input: ReadStream,
   output: WriteStream,
 ): Promise<boolean | undefined> {
-  if (!input.isTTY || !output.isTTY || typeof input.setRawMode !== "function") {
-    throw new Error("Interactive activation confirmation requires a real terminal.");
-  }
-  const wasRaw = input.isRaw;
-  const wasFlowing = input.readableFlowing === true;
-  readline.emitKeypressEvents(input);
-  input.setRawMode(true);
-  input.resume();
-  output.write(padTerminalBlock(`${prompt} [y/N] [Esc Back]: `));
+  return readTerminalBooleanConfirmation(
+    `${prompt} [y/N] [Esc Back]: `,
+    input,
+    output,
+    {
+      defaultValue: false,
+      requireExplicitYes: true,
+      enterNotice: "Press Y to activate, or N/Esc to cancel. Enter alone does not activate.",
+    },
+  );
+}
 
-  return new Promise<boolean | undefined>((resolve) => {
-    let settled = false;
-    const finish = (value: boolean | undefined) => {
-      if (settled) return;
-      settled = true;
-      input.off("keypress", onKeypress);
-      input.off("end", onEnd);
-      input.off("close", onEnd);
-      input.off("error", onError);
-      input.setRawMode(wasRaw);
-      if (!wasFlowing) input.pause();
-      resolve(value);
-    };
-    const onEnd = () => {
-      output.write("\nActivation was not confirmed. No authority changed.\n");
-      finish(undefined);
-    };
-    const onError = () => onEnd();
-    const onKeypress = (_text: string, key: PromptKey & { ctrl?: boolean }) => {
+export async function readTerminalBooleanConfirmation(
+  prompt: string,
+  input: ReadStream,
+  output: WriteStream,
+  options: {
+    defaultValue?: boolean;
+    requireExplicitYes?: boolean;
+    enterNotice?: string;
+  } = {},
+): Promise<boolean | undefined> {
+  if (!input.isTTY || !output.isTTY || typeof input.setRawMode !== "function") {
+    throw new Error("Interactive confirmation requires a real terminal.");
+  }
+  const promptLines = padTerminalBlock(prompt).split("\n");
+  let notice = "";
+  return withRawTerminalScreen(input, output, async (nextKey, render) => {
+    while (true) {
+      render([
+        ...promptLines,
+        ...(notice ? ["", `  ${notice}`] : []),
+        "",
+        "  Y Yes   N No   Esc Back",
+      ]);
+      const key = await nextKey();
       const value = (key.sequence ?? "").toLowerCase();
       if (key.name === "y" || value === "y") {
-        output.write("y\n");
-        finish(true);
-        return;
+        return true;
       }
       if (key.name === "n" || value === "n") {
-        output.write("n\n");
-        finish(false);
-        return;
+        return false;
       }
-      if (key.name === "escape" || key.sequence === "\u001b" || (key.ctrl && key.name === "d")) {
-        output.write("\nActivation cancelled. No authority changed.\n");
-        finish(undefined);
-        return;
+      if (key.name === "escape" || key.sequence === "\u001b"
+        || (key.ctrl && ["c", "d"].includes(key.name ?? ""))) {
+        return undefined;
       }
       if (key.name === "return" || key.name === "enter" || key.sequence === "\r" || key.sequence === "\n") {
-        output.write("\nPress Y to activate, or N/Esc to cancel. Enter alone does not activate.\n");
-        output.write(padTerminalBlock(`${prompt} [y/N] [Esc Back]: `));
+        if (!options.requireExplicitYes) return options.defaultValue === true;
+        notice = options.enterNotice
+          ?? "Press Y to confirm, or N/Esc to cancel. Enter alone does not confirm.";
       }
-    };
-
-    input.on("keypress", onKeypress);
-    input.once("end", onEnd);
-    input.once("close", onEnd);
-    input.once("error", onError);
+    }
   });
 }

@@ -3261,7 +3261,7 @@ END
         principal_claim: "sub",
       },
       production_explore: {
-        project_root: tempDir,
+        project_root: ".",
         tenant_limits: { max_response_cells_per_response: 500 },
       },
       capabilities: [],
